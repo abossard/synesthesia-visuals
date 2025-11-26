@@ -1,0 +1,109 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.11,
+			"DESCRIPTION" : "Vorticity confinement (0.03-0.2). Higher = lower viscosity smoke.",
+			"MAX" : 0.3,
+			"MIN" : 0.0,
+			"NAME" : "vorticity_amount",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.55,
+			"DESCRIPTION" : "Fluid viscosity coefficient.",
+			"MAX" : 1.0,
+			"MIN" : 0.1,
+			"NAME" : "viscosity",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Pressure constant.",
+			"MAX" : 0.5,
+			"MIN" : 0.05,
+			"NAME" : "pressure_k",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Master audio reactivity amount.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "audio_reactivity",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Bass influence on fluid forces.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "bass_emphasis",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "High frequency influence on colors.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "high_emphasis",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		}
+	],
+	"CREDIT" : "nimitz 2018 (@stormoid) - Ported to Synesthesia",
+	"DESCRIPTION" : "Single pass fluid simulation with vorticity confinement and coloring. Based on 2011 paper: Simple and fast fluids (Martin Guay, Fabrice Colin, Richard Egli). Audio-reactive forces and palette modulation.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"PASSES" : 
+	[
+		{
+			"TARGET" : "bufferA",
+			"WIDTH" : 1920,
+			"HEIGHT" : 1080,
+			"FLOAT" : true,
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		},
+		{
+			"TARGET" : "bufferB",
+			"WIDTH" : 1920,
+			"HEIGHT" : 1080,
+			"FLOAT" : true,
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		},
+		{
+			"TARGET" : "bufferC",
+			"WIDTH" : 1920,
+			"HEIGHT" : 1080,
+			"FLOAT" : true,
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		},
+		{
+			"TARGET" : "bufferD",
+			"WIDTH" : 1920,
+			"HEIGHT" : 1080,
+			"FLOAT" : true,
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : ["simulation", "fluid", "curl", "smoke", "vorticity", "audio-reactive"],
+	"TITLE" : "Chimera's Breath (Fluid Sim)",
+	"WIDTH" : 1920
+}

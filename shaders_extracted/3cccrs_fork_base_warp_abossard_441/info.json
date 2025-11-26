@@ -1,0 +1,16 @@
+{
+  "id": "3cccRS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Base warp  abossard 441",
+  "description": "Base for warp fBM (Fractional Brownian Motion) implemented from articles from @iq https://iquilezles.org/articles/warp/warp.htm\nWith transform_rose colormap from colormap-shaders",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "noise",
+    "fbm",
+    "warp",
+    "cineshader"
+  ]
+}

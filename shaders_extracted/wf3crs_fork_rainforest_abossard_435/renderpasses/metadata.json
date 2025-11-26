@@ -1,0 +1,56 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4dXGR8",
+        "filepath": "/media/previz/buffer00.png",
+        "type": "buffer",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [
+      {
+        "id": "4dXGR8",
+        "filepath": "/media/previz/buffer00.png",
+        "type": "buffer",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dXGR8",
+        "channel": 0
+      }
+    ],
+    "name": "Buffer A",
+    "description": "",
+    "type": "buffer"
+  }
+]

@@ -1,0 +1,71 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Scales the glow intensity of the inner and outer atmospheres.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "atmosphere_mix",
+			"TYPE" : "slider",
+			"UI_GROUP" : "look"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Master audio-driven modulation intensity.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "audio_reactivity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Bass frequency reactivity (crater depth, size pulses).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bass_react",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Mid frequency reactivity (color shifts, atmosphere).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "mid_react",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "High frequency reactivity (rim flashes, sparkles).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "high_react",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Trigger a random color punch explosion.",
+			"NAME" : "punch_button",
+			"TYPE" : "bang",
+			"UI_GROUP" : "audio"
+		}
+	],
+	"CREDIT" : "Andre",
+	"DESCRIPTION" : "",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Moon",
+	"WIDTH" : 1920
+}

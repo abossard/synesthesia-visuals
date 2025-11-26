@@ -1,0 +1,43 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4sfGRn",
+        "filepath": "/media/a/fb918796edc3d2221218db0811e240e72e340350008338b0c07a52bd353666a6.jpg",
+        "type": "texture",
+        "channel": 1,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "4dXGRr",
+        "filepath": "/presets/tex00.jpg",
+        "type": "keyboard",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "id": "wcdcD7",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Multiscale abossard 511",
+  "description": "A mipmap-based approach to multiscale fluid dynamics.",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "simulation",
+    "water",
+    "fluid",
+    "mipmap",
+    "turbulence",
+    "mip",
+    "diffusion",
+    "advection",
+    "navier",
+    "stokes",
+    "eddy"
+  ]
+}

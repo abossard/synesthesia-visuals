@@ -1,0 +1,63 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4dXGR8",
+        "filepath": "/media/previz/buffer00.png",
+        "type": "buffer",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [
+      {
+        "id": "4sf3Rr",
+        "filepath": "/media/a/ad56fba948dfba9ae698198c109e71f118a54d209c0ea50d77ea546abad89c57.png",
+        "type": "texture",
+        "channel": 0,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dXGR8",
+        "channel": 0
+      }
+    ],
+    "name": "Buffer A",
+    "description": "",
+    "type": "buffer"
+  },
+  {
+    "inputs": [],
+    "outputs": [],
+    "name": "Common",
+    "description": "",
+    "type": "common"
+  }
+]

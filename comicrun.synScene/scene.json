@@ -1,0 +1,137 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.55,
+			"DESCRIPTION" : "Compresses or exaggerates the inked outlines inherited from the original ISF edge mask.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "edge_width_scale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "lines"
+		},
+		{
+			"DEFAULT" : 0.45,
+			"DESCRIPTION" : "Slides the canyon palette between muted clay and vivid graphic-novel tones.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "tone_shift",
+			"TYPE" : "slider",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0.7,
+			"DESCRIPTION" : "Gates how much the Synesthesia audio uniforms modulate camera sway, palette accents, and lighting bursts.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "audio_reactivity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "Bass response weight for camera sway and glow intensity.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bass_emphasis",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "High-frequency emphasis for rim flash and scanlines.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "high_emphasis",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Flight speed multiplier through the canyon.",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "flight_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Camera pitch offset (negative = look down, positive = look up).",
+			"MAX" : 0.3,
+			"MIN" : -0.3,
+			"NAME" : "camera_tilt",
+			"TYPE" : "slider",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Camera pan (negative = look left, positive = look right).",
+			"MAX" : 0.5,
+			"MIN" : -0.5,
+			"NAME" : "camera_pan",
+			"TYPE" : "slider",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Blend user media layer into canyon surface.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_blend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Media layer scale for tiling.",
+			"MAX" : 5,
+			"MIN" : 0.1,
+			"NAME" : "media_scale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "Scanline intensity (0 = off, 1 = strong modulation).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scanline_intensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Fisheye lens distortion (0 = off, 1 = strong barrel).",
+			"MAX" : 1.5,
+			"MIN" : 0,
+			"NAME" : "fisheye_strength",
+			"TYPE" : "slider",
+			"UI_GROUP" : "camera"
+		}
+	],
+	"CREDIT" : "Andre — port of tctyW7 cartoon canyon (Shane)",
+	"DESCRIPTION" : "Audio-reactive fork of Shane's desert canyon raymarch (Shadertoy tctyW7) rebuilt for Synesthesia per the ISF migration guide. Adds beat-driven camera sway, spectral outlines, and downsampled buffer for faster renders.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"PASSES" : 
+	[
+		{
+			"TARGET" : "cartoon_buffer",
+			"WIDTH" : 1280,
+			"HEIGHT" : 720,
+			"FLOAT" : true,
+			"FILTER" : "linear",
+			"WRAP" : "clamp"
+		}
+	],
+	"TAGS" : [
+		"cartoon",
+		"raymarch",
+		"audio",
+		"media"
+	],
+	"TITLE" : "ComicRun",
+	"WIDTH" : 1920
+}

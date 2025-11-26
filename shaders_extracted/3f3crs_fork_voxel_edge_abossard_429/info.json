@@ -1,0 +1,18 @@
+{
+  "id": "3f3cRS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Voxel Edge abossard 429",
+  "description": "Correct edge detection for voxels. The marching function is fb39ca4's DDA, but using floating point operations instead of integers. The most interesting bits are probably the exact 3D intersector, the occlusion and the edge detection code.",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "procedural",
+    "3d",
+    "raymarching",
+    "voxel",
+    "occlusion",
+    "dda"
+  ]
+}

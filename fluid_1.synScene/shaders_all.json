@@ -1,0 +1,193 @@
+{
+ "userName": "abossard",
+ "date": "2025-11-19T23:01:10.552Z",
+ "numShaders": 1,
+ "shaders": [
+  {
+   "ver": "0.1",
+   "info": {
+    "id": "WfdyW4",
+    "date": "0",
+    "viewed": 0,
+    "name": "Fork Chimera's  abossard 201",
+    "description": "Single pass fluid simulation with vorticity confinement and coloring. Fullscreen recommended (it's fast enough)\n\nclick and drag to add force and color. (mouse only define in common tab)",
+    "likes": 0,
+    "published": "Private",
+    "usePreview": 0,
+    "tags": [
+     "simulation",
+     "fluid",
+     "curl",
+     "smoke",
+     "dust",
+     "navierstokes",
+     "vorticity"
+    ]
+   },
+   "renderpass": [
+    {
+     "inputs": [
+      {
+       "id": "XdfGR8",
+       "filepath": "/media/previz/buffer03.png",
+       "type": "buffer",
+       "channel": 0,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "repeat",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      }
+     ],
+     "outputs": [
+      {
+       "id": "4dfGRr",
+       "channel": 0
+      }
+     ],
+     "code": "// Chimera's Breath\n// by nimitz 2018 (twitter: @stormoid)\n// https://www.shadertoy.com/view/4tGfDW\n// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License\n// Contact the author for other licensing options\n\n/*\n\tSimulation code is in the \"common\" tab (and extra defines)\n\n\tThe main interest here is the addition of vorticity confinement with the curl stored in\n\tthe alpha channel of the simulation texture (which was not used in the paper)\n\tthis in turns allows for believable simulation of much lower viscosity fluids.\n\tWithout vorticity confinement, the fluids that can be simulated are much more akin to\n\tthick oil.\n\t\n\tBase Simulation based on the 2011 paper: \"Simple and fast fluids\"\n\t(Martin Guay, Fabrice Colin, Richard Egli)\n\t(https://hal.inria.fr/inria-00596050/document)\n\n\tThe actual simulation only requires one pass, Buffer A, B and C\tare just copies \n\tof each other to increase the simulation speed (3 simulation passes per frame)\n\tand Buffer D is drawing colors on the simulated fluid \n\t(could be using particles instead in a real scenario)\n*/\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    vec4 col = textureLod(iChannel0, fragCoord/iResolution.xy, 0.);\n    if (fragCoord.y < 1. || fragCoord.y >= (iResolution.y-1.))\n        col = vec4(0);\n    fragColor = col;\n}",
+     "name": "Image",
+     "description": "",
+     "type": "image"
+    },
+    {
+     "inputs": [],
+     "outputs": [],
+     "code": "//Chimera's Breath\n//by nimitz 2018 (twitter: @stormoid)\n\n/*\n\tThe main interest here is the addition of vorticity confinement with the curl stored in\n\tthe alpha channel of the simulation texture (which was not used in the paper)\n\tthis in turns allows for believable simulation of much lower viscosity fluids.\n\tWithout vorticity confinement, the fluids that can be simulated are much more akin to\n\tthick oil.\n\t\n\tBase Simulation based on the 2011 paper: \"Simple and fast fluids\"\n\t(Martin Guay, Fabrice Colin, Richard Egli)\n\t(https://hal.inria.fr/inria-00596050/document)\n\n\tThe actual simulation only requires one pass, Buffer A, B and C\tare just copies \n\tof each other to increase the simulation speed (3 simulation passes per frame)\n\tand Buffer D is drawing colors on the simulated fluid \n\t(could be using particles instead in a real scenario)\n*/\n\n#define dt 0.15\n#define USE_VORTICITY_CONFINEMENT\n//#define MOUSE_ONLY\n\n//Recommended values between 0.03 and 0.2\n//higher values simulate lower viscosity fluids (think billowing smoke)\n#define VORTICITY_AMOUNT 0.11\n\nfloat mag2(vec2 p){return dot(p,p);}\nvec2 point1(float t) {\n    t *= 0.62;\n    return vec2(0.12,0.5 + sin(t)*0.2);\n}\nvec2 point2(float t) {\n    t *= 0.62;\n    return vec2(0.88,0.5 + cos(t + 1.5708)*0.2);\n}\n\nvec4 solveFluid(sampler2D smp, vec2 uv, vec2 w, float time, vec3 mouse, vec3 lastMouse)\n{\n\tconst float K = 0.2;\n\tconst float v = 0.55;\n    \n    vec4 data = textureLod(smp, uv, 0.0);\n    vec4 tr = textureLod(smp, uv + vec2(w.x , 0), 0.0);\n    vec4 tl = textureLod(smp, uv - vec2(w.x , 0), 0.0);\n    vec4 tu = textureLod(smp, uv + vec2(0 , w.y), 0.0);\n    vec4 td = textureLod(smp, uv - vec2(0 , w.y), 0.0);\n    \n    vec3 dx = (tr.xyz - tl.xyz)*0.5;\n    vec3 dy = (tu.xyz - td.xyz)*0.5;\n    vec2 densDif = vec2(dx.z ,dy.z);\n    \n    data.z -= dt*dot(vec3(densDif, dx.x + dy.y) ,data.xyz); //density\n    vec2 laplacian = tu.xy + td.xy + tr.xy + tl.xy - 4.0*data.xy;\n    vec2 viscForce = vec2(v)*laplacian;\n    data.xyw = textureLod(smp, uv - dt*data.xy*w, 0.).xyw; //advection\n    \n    vec2 newForce = vec2(0);\n    #ifndef MOUSE_ONLY\n    #if 1\n    newForce.xy += 0.75*vec2(.0003, 0.00015)/(mag2(uv-point1(time))+0.0001);\n    newForce.xy -= 0.75*vec2(.0003, 0.00015)/(mag2(uv-point2(time))+0.0001);\n    #else\n    newForce.xy += 0.9*vec2(.0003, 0.00015)/(mag2(uv-point1(time))+0.0002);\n    newForce.xy -= 0.9*vec2(.0003, 0.00015)/(mag2(uv-point2(time))+0.0002);\n    #endif\n    #endif\n    \n    if (mouse.z > 1. && lastMouse.z > 1.)\n    {\n        vec2 vv = clamp(vec2(mouse.xy*w - lastMouse.xy*w)*400., -6., 6.);\n        newForce.xy += .001/(mag2(uv - mouse.xy*w)+0.001)*vv;\n    }\n    \n    data.xy += dt*(viscForce.xy - K/dt*densDif + newForce); //update velocity\n    data.xy = max(vec2(0), abs(data.xy)-1e-4)*sign(data.xy); //linear velocity decay\n    \n    #ifdef USE_VORTICITY_CONFINEMENT\n   \tdata.w = (tr.y - tl.y - tu.x + td.x);\n    vec2 vort = vec2(abs(tu.w) - abs(td.w), abs(tl.w) - abs(tr.w));\n    vort *= VORTICITY_AMOUNT/length(vort + 1e-9)*data.w;\n    data.xy += vort;\n    #endif\n    \n    data.y *= smoothstep(.5,.48,abs(uv.y-0.5)); //Boundaries\n    \n    data = clamp(data, vec4(vec2(-10), 0.5 , -10.), vec4(vec2(10), 3.0 , 10.));\n    \n    return data;\n}",
+     "name": "Common",
+     "description": "",
+     "type": "common"
+    },
+    {
+     "inputs": [
+      {
+       "id": "4sXGR8",
+       "filepath": "/media/previz/buffer02.png",
+       "type": "buffer",
+       "channel": 0,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "repeat",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      }
+     ],
+     "outputs": [
+      {
+       "id": "4dXGR8",
+       "channel": 0
+      }
+     ],
+     "code": "//Chimera's Breath\n//by nimitz 2018 (twitter: @stormoid)\n\n//see \"Common\" tab for fluid simulation code\n\nfloat length2(vec2 p){return dot(p,p);}\nmat2 mm2(in float a){float c = cos(a), s = sin(a);return mat2(c,s,-s,c);}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    vec2 uv = fragCoord.xy/iResolution.xy;\n    vec2 w = 1.0/iResolution.xy;\n    \n    vec4 lastMouse = texelFetch(iChannel0, ivec2(0,0), 0);\n    vec4 data = solveFluid(iChannel0, uv, w, iTime, iMouse.xyz, lastMouse.xyz);\n    \n    if (iFrame < 20)\n    {\n        data = vec4(0.5,0,0,0);\n    }\n    \n    if (fragCoord.y < 1.)\n        data = iMouse;\n    \n    fragColor = data;\n    \n}",
+     "name": "Buffer A",
+     "description": "",
+     "type": "buffer"
+    },
+    {
+     "inputs": [
+      {
+       "id": "4dXGR8",
+       "filepath": "/media/previz/buffer00.png",
+       "type": "buffer",
+       "channel": 0,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "repeat",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      }
+     ],
+     "outputs": [
+      {
+       "id": "XsXGR8",
+       "channel": 0
+      }
+     ],
+     "code": "//Chimera's Breath\n//by nimitz 2018 (twitter: @stormoid)\n\n//see \"Common\" tab for fluid simulation code\n\nfloat length2(vec2 p){return dot(p,p);}\nmat2 mm2(in float a){float c = cos(a), s = sin(a);return mat2(c,s,-s,c);}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    vec2 uv = fragCoord.xy/iResolution.xy;\n    vec2 w = 1.0/iResolution.xy;\n    \n    vec4 lastMouse = texelFetch(iChannel0, ivec2(0,0), 0);\n    vec4 data = solveFluid(iChannel0, uv, w, iTime, iMouse.xyz, lastMouse.xyz);\n    \n    if (iFrame < 20)\n    {\n        data = vec4(0.5,0,0,0);\n    }\n    \n    if (fragCoord.y < 1.)\n        data = iMouse;\n    \n    fragColor = data;\n    \n}",
+     "name": "Buffer B",
+     "description": "",
+     "type": "buffer"
+    },
+    {
+     "inputs": [
+      {
+       "id": "XsXGR8",
+       "filepath": "/media/previz/buffer01.png",
+       "type": "buffer",
+       "channel": 0,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "repeat",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      }
+     ],
+     "outputs": [
+      {
+       "id": "4sXGR8",
+       "channel": 0
+      }
+     ],
+     "code": "//Chimera's Breath\n//by nimitz 2018 (twitter: @stormoid)\n\n//see \"Common\" tab for fluid simulation code\n\nfloat length2(vec2 p){return dot(p,p);}\nmat2 mm2(in float a){float c = cos(a), s = sin(a);return mat2(c,s,-s,c);}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    vec2 uv = fragCoord.xy/iResolution.xy;\n    vec2 w = 1.0/iResolution.xy;\n    \n    vec4 lastMouse = texelFetch(iChannel0, ivec2(0,0), 0);\n    vec4 data = solveFluid(iChannel0, uv, w, iTime, iMouse.xyz, lastMouse.xyz);\n    \n    if (iFrame < 20)\n    {\n        data = vec4(0.5,0,0,0);\n    }\n    \n    if (fragCoord.y < 1.)\n        data = iMouse;\n    \n    fragColor = data;\n    \n}",
+     "name": "Buffer C",
+     "description": "",
+     "type": "buffer"
+    },
+    {
+     "inputs": [
+      {
+       "id": "4dXGR8",
+       "filepath": "/media/previz/buffer00.png",
+       "type": "buffer",
+       "channel": 0,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "clamp",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      },
+      {
+       "id": "XdfGR8",
+       "filepath": "/media/previz/buffer03.png",
+       "type": "buffer",
+       "channel": 1,
+       "sampler": {
+        "filter": "linear",
+        "wrap": "repeat",
+        "vflip": "true",
+        "srgb": "false",
+        "internal": "byte"
+       },
+       "published": 1
+      }
+     ],
+     "outputs": [
+      {
+       "id": "XdfGR8",
+       "channel": 0
+      }
+     ],
+     "code": "//Chimera's Breath\n//by nimitz 2018 (twitter: @stormoid)\n\n//see \"Common\" tab for fluid simulation code\n\nmat2 mm2(in float a){float c = cos(a), s = sin(a);return mat2(c,s,-s,c);}\n\n//shader incoming relating to this palette\nvec3 getPalette(float x, vec3 c1, vec3 c2, vec3 p1, vec3 p2)\n{\n    float x2 = fract(x/2.0);\n    x = fract(x);   \n    mat3 m = mat3(c1, p1, c2);\n    mat3 m2 = mat3(c2, p2, c1);\n    float omx = 1.0-x;\n    vec3 pws = vec3(omx*omx, 2.0*omx*x, x*x);\n    return clamp(mix(m*pws, m2*pws, step(x2,0.5)),0.,1.);\n}\n\nvec4 pal(float x)\n{\n    vec3 pal = getPalette(-x, vec3(0.2, 0.5, .7), vec3(.9, 0.4, 0.1), vec3(1., 1.2, .5), vec3(1., -0.4, -.0));\n    return vec4(pal, 1.);\n}\n\nvec4 pal2(float x)\n{\n    vec3 pal = getPalette(-x, vec3(0.4, 0.3, .5), vec3(.9, 0.75, 0.4), vec3(.1, .8, 1.3), vec3(1.25, -0.1, .1));\n    return vec4(pal, 1.);\n}\n\nvoid mainImage( out vec4 fragColor, in vec2 fragCoord )\n{\n    vec2 uv = fragCoord.xy / iResolution.xy;\n    vec2 mo = iMouse.xy / iResolution.xy;\n    vec2 w = 1.0/iResolution.xy;\n    \n    vec2 velo = textureLod(iChannel0, uv, 0.).xy;\n    vec4 col = textureLod(iChannel1, uv - dt*velo*w*3., 0.); //advection\n    if (fragCoord.y < 1. && fragCoord.x < 1.)\n        col = vec4(0);\n    vec4 lastMouse = texelFetch(iChannel1, ivec2(0,0), 0).xyzw;\n    \n    if (iMouse.z > 1. && lastMouse.z > 1.)\n    {\n        float str = smoothstep(-.5,1.,length(mo - lastMouse.xy/iResolution.xy));   \n        col += str*0.0009/(pow(length(uv - mo),1.7)+0.002)*pal2(-iTime*0.7);\n    }\n    \n    #ifndef MOUSE_ONLY\n    col += .0025/(0.0005+pow(length(uv - point1(iTime)),1.75))*dt*0.12*pal(iTime*0.05 - .0);\n    col += .0025/(0.0005+pow(length(uv - point2(iTime)),1.75))*dt*0.12*pal2(iTime*0.05 + 0.675);\n    #endif\n    \n    \n    if (iFrame < 20)\n    {\n        col = vec4(0.);\n    }\n    \n    col = clamp(col, 0.,5.);\n    col = max(col - (0.0001 + col*0.004)*.5, 0.); //decay\n    \n    if (fragCoord.y < 1. && fragCoord.x < 1.)\n        col = iMouse;\n\n    fragColor = col;\n    \n}\n",
+     "name": "Buffer D",
+     "description": "",
+     "type": "buffer"
+    }
+   ]
+  }
+ ]
+}

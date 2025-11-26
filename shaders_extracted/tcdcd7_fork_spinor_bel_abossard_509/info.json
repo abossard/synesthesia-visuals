@@ -1,0 +1,18 @@
+{
+  "id": "tcdcD7",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Spinor Bel abossard 509",
+  "description": "Feynman belt trick to demonstrate that 3D rotations have a Z2 fundamental group, implying the existence of spinors. The magick is the cube can be rotated 720° without any of the attaching strings intersecting or tangling.",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "math",
+    "rotation",
+    "physics",
+    "quaternions",
+    "belttrick",
+    "spinors"
+  ]
+}

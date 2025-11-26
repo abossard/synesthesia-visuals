@@ -1,0 +1,45 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "Xsf3Rn",
+        "filepath": "/media/a/cbcbb5a6cfb55c36f8f021fbb0e3f69ac96339a39fa85cd96f2017a2192821b5.png",
+        "type": "texture",
+        "channel": 1,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "4sXGzn",
+        "filepath": "/media/a/a6a1cf7a09adfed8c362492c88c30d74fb3d2f4f7ba180ba34b98556660fada1.mp3",
+        "type": "music",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [],
+    "outputs": [],
+    "name": "Sound",
+    "description": "",
+    "type": "sound"
+  }
+]

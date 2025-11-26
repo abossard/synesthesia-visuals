@@ -1,0 +1,19 @@
+curl 'https://www.shadertoy.com/shadertoy' \
+  --compressed \
+  -X POST \
+  -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0' \
+  -H 'Accept: */*' \
+  -H 'Accept-Language: en-US,en;q=0.5' \
+  -H 'Accept-Encoding: gzip, deflate, br, zstd' \
+  -H 'Referer: https://www.shadertoy.com/view/XlVGR3' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'Origin: https://www.shadertoy.com' \
+  -H 'Connection: keep-alive' \
+  -H 'Cookie: cf_clearance=nHMLhQWtBrUnentqilcaoYVGFwbxE4LewYGpknxySlI-1763590169-1.2.1.1-PLcEO4TuTzV_y_U4xbbjjoRJ9110Plh2hL2FGsF2JgjK33jaczSsPpM097JnIG6RxmfbXpc2cUUtu9Wxr0kzPrvxD.P.ccwyH98FB641NuMLy4fsDHfAUGnTu65BcdMEM8AnkiymBObO1fXnxjgsctlTrrORUJ9_oPqlgz2ZPIyuKGfCRxcoJyKWmHa0nB2K59IUNcI1Hv742V3WIFmerKIHiv9iMWEUWqeQHibAzW7FW6mbedLdaU6uigkrfyIa; AWSALB=0C/LikrVouRGc+J5Wl/WQpjAT+AF+xjRTGeBt1a6WhsG3H7ZYgbys107gdNki2zq8hO+yprp4UoMxM4Vr0G5tjFne/Pz9siQKqvIeRJUd4zRmjKbD2iXM7wIktyW; AWSALBCORS=0C/LikrVouRGc+J5Wl/WQpjAT+AF+xjRTGeBt1a6WhsG3H7ZYgbys107gdNki2zq8hO+yprp4UoMxM4Vr0G5tjFne/Pz9siQKqvIeRJUd4zRmjKbD2iXM7wIktyW; sdtd=jv9c1lrn7aml254fuodpgr845f; scmp=0' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-origin' \
+  -H 'Pragma: no-cache' \
+  -H 'Cache-Control: no-cache' \
+  -H 'TE: trailers' \
+  --data-raw 's=%7B%20%22shaders%22%20%3A%20%5B%22XlVGR3%22%5D%20%7D&nt=1&nl=1&np=1'

@@ -1,0 +1,25 @@
+{
+  "id": "wftyD7",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork a pixel fl abossard 448",
+  "description": "A cellular automaton that simulates a compressible pixel fluid inside an arbitrary container.\nSimulation consists of two main passes:\n(1) averaging mass while keeping total mass constant\n(2) enforcing a vertical pressure gradient",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "pixel",
+    "fluid",
+    "sandbox",
+    "diffusion",
+    "cellular",
+    "gravity",
+    "ca",
+    "automaton",
+    "boundary",
+    "compressible",
+    "conditions",
+    "communicating",
+    "vessels"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "Wf3cRS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Rainforest abossard 435",
+  "description": "Another terrain, with cheap trees made of ellipsoids and noise. It computes analytic normals for the terrain and clouds. The art composed to camera as usual. Making-of Tutorial: [url]https://www.youtube.com/watch?v=BFld4EBO2RE[/url]",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "procedural",
+    "3d",
+    "raymarching",
+    "reprojection"
+  ]
+}

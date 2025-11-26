@@ -1,0 +1,71 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "XsXGRn",
+        "filepath": "/media/a/cd4c518bc6ef165c39d4405b347b51ba40f8d7a065ab0e8d2e4f422cbc1e8a43.jpg",
+        "type": "texture",
+        "channel": 0,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "XsfGRn",
+        "filepath": "/media/a/1f7dca9c22f324751f2a5a59c9b181dfe3b5564a04b724c657732d0bf09c99db.jpg",
+        "type": "texture",
+        "channel": 3,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "4dXGzn",
+        "filepath": "/media/a/0c7bf5fe9462d5bffbd11126e82908e39be3ce56220d900f633d58fb432e56f5.png",
+        "type": "texture",
+        "channel": 2,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "repeat",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "Xsf3zn",
+        "filepath": "/media/a/f735bee5b64ef98879dc618b016ecf7939a5756040c2cde21ccb15e69a6e1cfb.png",
+        "type": "texture",
+        "channel": 1,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  }
+]

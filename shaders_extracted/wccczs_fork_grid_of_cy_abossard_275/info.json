@@ -1,0 +1,20 @@
+{
+  "id": "WccczS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Grid of Cy abossard 275",
+  "description": "Using a 2D regular grid as acceleration structure for raytracing (an infinite amount of) cylinders. I trace across the 2D grid and then intersect the cylinder inside each cell. When the first intersection is found, the tracing can stop.",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "procedural",
+    "3d",
+    "raytracing",
+    "grid",
+    "dda",
+    "cylinder",
+    "regulargrid",
+    "vr"
+  ]
+}

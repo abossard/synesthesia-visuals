@@ -1,0 +1,29 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4dlXz7",
+        "filepath": "https://soundcloud.com/klauslunde/zebra-tribute",
+        "type": "musicstream",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 0
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  }
+]

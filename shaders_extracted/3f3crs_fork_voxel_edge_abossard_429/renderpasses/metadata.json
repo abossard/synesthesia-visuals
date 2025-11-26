@@ -1,0 +1,29 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "Xsf3zn",
+        "filepath": "/media/a/f735bee5b64ef98879dc618b016ecf7939a5756040c2cde21ccb15e69a6e1cfb.png",
+        "type": "texture",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "repeat",
+          "vflip": "false",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  }
+]

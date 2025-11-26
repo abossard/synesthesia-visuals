@@ -1,0 +1,26 @@
+[
+  {
+    "inputs": [],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [],
+    "outputs": [
+      {
+        "id": "XsfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Sound",
+    "description": "",
+    "type": "sound"
+  }
+]

@@ -1,0 +1,21 @@
+[
+  {
+    "inputs": [],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [],
+    "outputs": [],
+    "name": "Common",
+    "description": "",
+    "type": "common"
+  }
+]

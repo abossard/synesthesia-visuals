@@ -1,0 +1,19 @@
+{
+  "id": "WfdyW4",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Chimera's  abossard 201",
+  "description": "Single pass fluid simulation with vorticity confinement and coloring. Fullscreen recommended (it's fast enough)\n\nclick and drag to add force and color. (mouse only define in common tab)",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "simulation",
+    "fluid",
+    "curl",
+    "smoke",
+    "dust",
+    "navierstokes",
+    "vorticity"
+  ]
+}

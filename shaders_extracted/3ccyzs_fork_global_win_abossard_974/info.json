@@ -1,0 +1,24 @@
+{
+  "id": "3ccyzS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Global Win abossard 974",
+  "description": "Generates pressure systems (click to show) and wind flow patterns from a land/ocean map.\n\nBased on [url=https://web.archive.org/web/20130619132254/http://jc.tech-galaxy.com/bricka/climate_cookbook.html]The Climate Cookbook[/url] and some simple modelling.",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "simulation",
+    "earth",
+    "map",
+    "flow",
+    "vector",
+    "model",
+    "atmosphere",
+    "particle",
+    "wind",
+    "pressure",
+    "circulation",
+    "climate"
+  ]
+}

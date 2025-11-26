@@ -1,0 +1,26 @@
+{
+  "id": "3c3czS",
+  "date": "0",
+  "viewed": 0,
+  "name": "Fork Oceanic abossard 111",
+  "description": "This shader demonstrates volumetric (multi sliced) height-clouds with density (based on fractal noise, 'against sun'-shading and god-rays) and a reflecting water simulation.\n\nEnable/Disable God-Rays by changing the code (see comment)",
+  "likes": 0,
+  "published": "Private",
+  "usePreview": 0,
+  "tags": [
+    "procedural",
+    "3d",
+    "raymarching",
+    "waves",
+    "sea",
+    "raycasting",
+    "clouds",
+    "water",
+    "ocean",
+    "godrays",
+    "lightrays",
+    "sunrays",
+    "waterrender",
+    "oceanic"
+  ]
+}

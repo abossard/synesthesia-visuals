@@ -1,0 +1,29 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4dXGzn",
+        "filepath": "/media/a/0c7bf5fe9462d5bffbd11126e82908e39be3ce56220d900f633d58fb432e56f5.png",
+        "type": "texture",
+        "channel": 0,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  }
+]

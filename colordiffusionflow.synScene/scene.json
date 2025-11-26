@@ -1,0 +1,109 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 1.9,
+			"DESCRIPTION" : "",
+			"MAX" : 3,
+			"MIN" : -3,
+			"NAME" : "rate1",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "",
+			"MAX" : 3,
+			"MIN" : -3,
+			"NAME" : "rate2",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 85,
+			"DESCRIPTION" : "",
+			"MAX" : 100,
+			"MIN" : 20,
+			"NAME" : "loopcycle",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.45,
+			"DESCRIPTION" : "",
+			"MAX" : 2.5,
+			"MIN" : -2.5,
+			"NAME" : "color1",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1.125,
+			"MIN" : -1.25,
+			"NAME" : "color2",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1.33,
+			"DESCRIPTION" : "",
+			"MAX" : 3.1459,
+			"MIN" : 0.01,
+			"NAME" : "cycle1",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.22,
+			"DESCRIPTION" : "",
+			"MAX" : 0.497,
+			"MIN" : -0.497,
+			"NAME" : "cycle2",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.095,
+			"DESCRIPTION" : "",
+			"MAX" : 0.01,
+			"MIN" : 0.001,
+			"NAME" : "nudge",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.85,
+			"DESCRIPTION" : "",
+			"MAX" : 0.9,
+			"MIN" : 0.001,
+			"NAME" : "depthX",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "",
+			"MAX" : 0.9,
+			"MIN" : 0.001,
+			"NAME" : "depthY",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		}
+	],
+	"CREDIT" : "by mojovideotech",
+	"DESCRIPTION" : "from http://glslsandbox.com/e#35553.0",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "colordiffusionflow.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "ColorDiffusionFlow",
+	"WIDTH" : 1920
+}

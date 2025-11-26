@@ -1,0 +1,277 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.42,
+			"DESCRIPTION" : "",
+			"MAX" : 0.5,
+			"MIN" : 0.01,
+			"NAME" : "zoom",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1.8,
+			"DESCRIPTION" : "",
+			"MAX" : 10,
+			"MIN" : 0.1,
+			"NAME" : "horizontalScale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1.4,
+			"DESCRIPTION" : "",
+			"MAX" : 10,
+			"MIN" : 0.1,
+			"NAME" : "verticalScale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 12.9,
+			"DESCRIPTION" : "",
+			"MAX" : 20,
+			"MIN" : 1,
+			"NAME" : "gridSize",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 5,
+			"MIN" : 0,
+			"NAME" : "spacing",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.1,
+			"DESCRIPTION" : "",
+			"MAX" : 0.5,
+			"MIN" : 0.01,
+			"NAME" : "speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0.1,
+			"NAME" : "maxOpacity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Selects which post-processing variant to apply to the noise value.",
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "noiseStyle",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 8,
+			"MIN" : 1,
+			"NAME" : "octaves",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0.1,
+			"NAME" : "persistence",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 2.2,
+			"DESCRIPTION" : "",
+			"MAX" : 4,
+			"MIN" : 1,
+			"NAME" : "lacunarity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0,
+				0
+			],
+			"DESCRIPTION" : "",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "colorRamp0_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp0Pos",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp0Alpha",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				1,
+				0.6667
+			],
+			"DESCRIPTION" : "",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "colorRamp1_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp1Pos",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp1Alpha",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0.8588,
+				0.8588,
+				0.8588
+			],
+			"DESCRIPTION" : "",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "colorRamp2_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp2Pos",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "colorRamp2Alpha",
+			"TYPE" : "slider",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0,
+				0
+			],
+			"DESCRIPTION" : "",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "backgroundColor_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "ungrouped"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "useBackgroundColor_bool",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "ungrouped"
+		}
+	],
+	"CREDIT" : "By fluidstorm.com (ISF)",
+	"DESCRIPTION" : "Dynamic Pixel Grid with Procedural Noise Animation",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "fluid_noise_pixel.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Fluid Noise Pixel",
+	"WIDTH" : 1920
+}

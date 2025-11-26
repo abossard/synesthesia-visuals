@@ -1,0 +1,91 @@
+[
+  {
+    "inputs": [
+      {
+        "id": "4dXGR8",
+        "filepath": "/media/previz/buffer00.png",
+        "type": "buffer",
+        "channel": 0,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "XsBSR3",
+        "filepath": "/media/a/cb49c003b454385aa9975733aff4571c62182ccdda480aaba9a8d250014f00ec.png",
+        "type": "texture",
+        "channel": 1,
+        "sampler": {
+          "filter": "nearest",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dfGRr",
+        "channel": 0
+      }
+    ],
+    "name": "Image",
+    "description": "",
+    "type": "image"
+  },
+  {
+    "inputs": [
+      {
+        "id": "XdX3Rr",
+        "filepath": "/media/a/aea6b99da1d53055107966b59ac5444fc8bc7b3ce2d0bbb6a4a3cbae1d97f3aa.bin",
+        "type": "volume",
+        "channel": 0,
+        "sampler": {
+          "filter": "mipmap",
+          "wrap": "repeat",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      },
+      {
+        "id": "4dXGR8",
+        "filepath": "/media/previz/buffer00.png",
+        "type": "buffer",
+        "channel": 1,
+        "sampler": {
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": "true",
+          "srgb": "false",
+          "internal": "byte"
+        },
+        "published": 1
+      }
+    ],
+    "outputs": [
+      {
+        "id": "4dXGR8",
+        "channel": 0
+      }
+    ],
+    "name": "Buffer A",
+    "description": "",
+    "type": "buffer"
+  },
+  {
+    "inputs": [],
+    "outputs": [],
+    "name": "Common",
+    "description": "",
+    "type": "common"
+  }
+]
