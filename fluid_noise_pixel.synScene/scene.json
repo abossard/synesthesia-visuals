@@ -89,6 +89,78 @@
 			"UI_GROUP" : "Pixels"
 		},
 		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Show user media (image/video)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "showMedia_bool",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 16,
+			"DESCRIPTION" : "Pixelation size for media",
+			"MAX" : 64,
+			"MIN" : 4,
+			"NAME" : "mediaPixelSize",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Media layer opacity",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "mediaOpacity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Diagonal sweep gloss intensity (0=off)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glossDiagonal",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Gloss"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Parallel bands gloss intensity (0=off)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glossParallel",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Gloss"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "Radial pulse gloss intensity (0=off)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glossRadial",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Gloss"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Gloss animation speed",
+			"MAX" : 2.0,
+			"MIN" : 0.1,
+			"NAME" : "glossSpeed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Gloss"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "Width of gloss highlights",
+			"MAX" : 0.5,
+			"MIN" : 0.02,
+			"NAME" : "glossWidth",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Gloss"
+		},
+		{
 			"DEFAULT" : 5,
 			"DESCRIPTION" : "Number of discrete color steps (4-8 for retro)",
 			"MAX" : 16,
@@ -193,8 +265,8 @@
 	"MEDIA" : 
 	[
 		{
-			"FILTER" : "linear",
-			"WRAP" : "repeat"
+			"FILTER" : "nearest",
+			"WRAP" : "clamp"
 		}
 	],
 	"TITLE" : "Fluid Noise Pixel",

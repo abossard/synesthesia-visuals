@@ -1,10 +1,11 @@
 // === ARCADE PIXEL SHADER ===
-// Retro C64/Synthwave style with beat reactivity
+// Retro C64/Synthwave style with beat reactivity + pixelated media + gloss effects
 
 vec4 backgroundColor = vec4(backgroundColor_color, 1.0);
 vec3 borderColor = borderColor_color;
 bool useBackgroundColor = (useBackgroundColor_bool > 0.5);
 bool beatReactive = (beatReactive_bool > 0.5);
+bool showMedia = (showMedia_bool > 0.5);
 
 // === SIMPLEX NOISE (simplified for blocky look) ===
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -116,16 +117,69 @@ vec3 getBlendedPaletteColor(float t, float theme) {
     return mix(synthwave, pastel, theme);
 }
 
+// === GLOSS/SPARKLE EFFECTS ===
+
+// 1. Diagonal sweep - single bright line moving diagonally
+float glossDiagonalEffect(vec2 uv, float time, float beatBoost) {
+    float diag = (uv.x + uv.y) * 0.5; // normalize to 0-1 range
+    float sweep = fract(diag - time * glossSpeed + beatBoost * 0.2);
+    float highlight = smoothstep(glossWidth, 0.0, abs(sweep - 0.5) * 2.0);
+    return highlight * glossDiagonal;
+}
+
+// 2. Parallel bands - multiple diagonal stripes
+float glossParallelEffect(vec2 uv, float time, float beatBoost) {
+    float diag = (uv.x + uv.y) * 3.0; // more repetitions
+    float bands = fract(diag - time * glossSpeed * 0.7);
+    float highlight = smoothstep(glossWidth * 0.5, 0.0, abs(bands - 0.5) * 2.0);
+    // Add second set of bands offset
+    float bands2 = fract(diag * 0.6 - time * glossSpeed * 0.5 + 0.3);
+    float highlight2 = smoothstep(glossWidth * 0.3, 0.0, abs(bands2 - 0.5) * 2.0);
+    return (highlight * 0.7 + highlight2 * 0.3) * glossParallel * (1.0 + beatBoost * 0.5);
+}
+
+// 3. Radial pulse - expanding ring from center
+float glossRadialEffect(vec2 uv, float time, float beatBoost) {
+    vec2 center = uv - 0.5;
+    float dist = length(center);
+    // Pulse expands outward, triggered more on beat
+    float pulse = fract(dist * 2.0 - time * glossSpeed - beatBoost * 0.3);
+    float ring = smoothstep(glossWidth, 0.0, abs(pulse - 0.5) * 2.0);
+    // Fade out at edges
+    ring *= smoothstep(0.7, 0.3, dist);
+    return ring * glossRadial * (1.0 + beatBoost);
+}
+
+// === PIXELATED MEDIA SAMPLING ===
+vec4 samplePixelatedMedia(vec2 uv, float pixelSize) {
+    // Pixelate the UV coordinates first
+    vec2 gridRes = RENDERSIZE.xy / pixelSize;
+    vec2 pixelatedUV = floor(uv * gridRes) / gridRes + 0.5 / gridRes;
+    
+    // Sample media with aspect correction using pixelated UVs
+    // _textureMedia handles aspect ratio internally
+    vec4 mediaColor = _textureMedia(pixelatedUV);
+    
+    // Quantize media colors for extra retro look
+    float steps = max(paletteSize, 2.0);
+    mediaColor.rgb = floor(mediaColor.rgb * steps + 0.5) / steps;
+    
+    return mediaColor;
+}
+
 vec4 renderMain() {
     vec4 out_FragColor = vec4(0.0);
     vec2 pix = _xy.xy;
+    vec2 uv = _uv;
     
     // === BEAT REACTIVITY ===
     float beatPulse = 0.0;
     float colorFlash = 0.0;
+    float glossBeatBoost = 0.0;
     if (beatReactive) {
         beatPulse = syn_BassLevel * beatPulseStrength * 8.0;
         colorFlash = syn_HighHits * 0.3;
+        glossBeatBoost = syn_BassHits * 2.0 + syn_OnBeat * 0.5;
     }
     
     // Grid size with beat pulse
@@ -145,6 +199,24 @@ vec4 renderMain() {
     // === SCANLINES ===
     float scanline = 1.0 - scanlineStrength * 0.5 * (1.0 - mod(pix.y, 2.0));
     
+    // === MEDIA LAYER (rendered first as base) ===
+    vec4 mediaLayer = vec4(0.0);
+    if (showMedia) {
+        mediaLayer = samplePixelatedMedia(uv, mediaPixelSize);
+        mediaLayer.a *= mediaOpacity;
+        
+        // Compute gloss effects for media
+        float totalGloss = 0.0;
+        totalGloss += glossDiagonalEffect(uv, TIME, glossBeatBoost);
+        totalGloss += glossParallelEffect(uv, TIME, glossBeatBoost);
+        totalGloss += glossRadialEffect(uv, TIME, glossBeatBoost);
+        
+        // Apply gloss as additive white highlight
+        vec3 glossColor = vec3(1.0, 0.95, 0.9); // Warm white
+        mediaLayer.rgb += glossColor * totalGloss * mediaLayer.a;
+        mediaLayer.rgb *= scanline;
+    }
+    
     // === PIXEL RENDERING ===
     bool inGap = within.x < gap || within.x > gs - gap || 
                  within.y < gap || within.y > gs - gap;
@@ -152,6 +224,12 @@ vec4 renderMain() {
                     within.x < gap + border || within.x > gs - gap - border ||
                     within.y < gap + border || within.y > gs - gap - border);
     bool inCell = !inGap && !inBorder;
+    
+    // Start with media as base (Option B: additive blend)
+    if (showMedia && mediaLayer.a > 0.0) {
+        out_FragColor.rgb = mix(out_FragColor.rgb, mediaLayer.rgb, mediaLayer.a);
+        out_FragColor.a = max(out_FragColor.a, mediaLayer.a);
+    }
     
     if (inBorder) {
         // Hard pixel border
@@ -189,13 +267,20 @@ vec4 renderMain() {
         intensity = clamp(intensity + colorFlash, 0.0, 1.0);
         
         // Get color from blended palette
-        vec3 color = getBlendedPaletteColor(intensity, colorTheme);
+        vec3 noiseColor = getBlendedPaletteColor(intensity, colorTheme);
         
         // Apply scanline
-        color *= scanline;
+        noiseColor *= scanline;
         
-        out_FragColor = vec4(color, maxOpacity);
+        // Additive blend with media layer (Option B)
+        if (showMedia && mediaLayer.a > 0.0) {
+            // Additive blend: noise adds color to media
+            vec3 blended = out_FragColor.rgb + noiseColor * 0.5;
+            out_FragColor = vec4(blended, maxOpacity);
+        } else {
+            out_FragColor = vec4(noiseColor, maxOpacity);
+        }
     }
     
     return out_FragColor;
-} 
+}
