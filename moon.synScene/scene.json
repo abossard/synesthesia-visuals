@@ -11,47 +11,49 @@
 			"UI_GROUP" : "look"
 		},
 		{
-			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Master audio-driven modulation intensity.",
-			"MAX" : 1,
-			"MIN" : 0,
-			"NAME" : "audio_reactivity",
-			"TYPE" : "slider",
-			"UI_GROUP" : "audio"
-		},
-		{
-			"DEFAULT" : 0.8,
-			"DESCRIPTION" : "Bass frequency reactivity (crater depth, size pulses).",
-			"MAX" : 1,
-			"MIN" : 0,
-			"NAME" : "bass_react",
-			"TYPE" : "slider",
-			"UI_GROUP" : "audio"
-		},
-		{
-			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Mid frequency reactivity (color shifts, atmosphere).",
-			"MAX" : 1,
-			"MIN" : 0,
-			"NAME" : "mid_react",
-			"TYPE" : "slider",
-			"UI_GROUP" : "audio"
-		},
-		{
 			"DEFAULT" : 0.6,
-			"DESCRIPTION" : "High frequency reactivity (rim flashes, sparkles).",
+			"DESCRIPTION" : "Bass-driven wobble intensity (rubber/jelly deformation).",
 			"MAX" : 1,
 			"MIN" : 0,
-			"NAME" : "high_react",
+			"NAME" : "wobble_intensity",
 			"TYPE" : "slider",
-			"UI_GROUP" : "audio"
+			"UI_GROUP" : "wobble"
 		},
 		{
-			"DEFAULT" : 0,
-			"DESCRIPTION" : "Trigger a random color punch explosion.",
-			"NAME" : "punch_button",
-			"TYPE" : "bang",
-			"UI_GROUP" : "audio"
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Speed of wobble oscillation.",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "wobble_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "wobble"
+		},
+		{
+			"DEFAULT" : 0.7,
+			"DESCRIPTION" : "Intensity of dust particles on high-frequency peaks.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "dust_intensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "dust"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How far dust particles spread from the moon rim.",
+			"MAX" : 1,
+			"MIN" : 0.1,
+			"NAME" : "dust_spread",
+			"TYPE" : "slider",
+			"UI_GROUP" : "dust"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Angular coverage of dust particles around rim (0=narrow, 1=full circle).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "rim_glow",
+			"TYPE" : "slider",
+			"UI_GROUP" : "dust"
 		},
 		{
 			"DEFAULT" : 0.0,
@@ -82,7 +84,7 @@
 		},
 		{
 			"DEFAULT" : 0.3,
-			"DESCRIPTION" : "Audio-driven distortion amount on media.",
+			"DESCRIPTION" : "Wobble-driven distortion amount on media.",
 			"MAX" : 1,
 			"MIN" : 0,
 			"NAME" : "media_distortion",
