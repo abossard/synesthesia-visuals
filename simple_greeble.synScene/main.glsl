@@ -1266,6 +1266,9 @@ vec3 laser_heatmap( float u ) { float r = 0.5; vec3 c = vec3( smoothbump( r * fl
 // spawn at player + that
 #define BASE_LASER_SPAWN_DISTANCE (40.0)
 
+const int MAX_LASER_BEAMS = 10;
+const float LASER_OFFSETS[MAX_LASER_BEAMS] = float[]( 0.0, 1.0, -1.0, -0.5, 0.5, 1.5, -1.5, 0.75, -0.75, 2.0 );
+
 // for lasers capsules...
 vec2 sphere_trace( vec2 O, vec2 d, float radius, vec2 C )
 {
@@ -1287,13 +1290,12 @@ vec3 lasers( Ray view_ray, float hs, float time, float t0 )
 {
 	float fade = 1.0 - smoothstep( -TRENCH_DEPTH * 0.05, 0.0, view_ray.o.z );
 	float pos = FLYING_SPEED * time; // camera pos
-	float densityMix = smoothstep( 0.0, 1.0, saturate( laser_density * 0.5 ) );
-	float spawnDistance = mix( 18.0, BASE_LASER_SPAWN_DISTANCE, densityMix );
+	float introBlend = smoothstep( 0.0, 1.0, intro_position );
+	float spawnDistance = mix( BASE_LASER_SPAWN_DISTANCE, 18.0, introBlend );
 	float laser_period = spawnDistance * 2.0 / ( FLYING_SPEED + LASER_SPEED );
 	float offset = hs * 5.0;
 	float nth = floor( ( pos - offset ) / laser_period );
-	float introBlend = smoothstep( 0.0, 1.0, intro_position );
-	float approachShift = introBlend * mix( 6.0, 18.0, densityMix );
+	float approachShift = introBlend * 10.0;
 	float y0 = offset + nth * laser_period + spawnDistance - approachShift;
 	float yy_t = ( pos - ( offset + nth * laser_period ) ) * ( 1.0 / FLYING_SPEED );
 	float laser_pos = y0 - yy_t * LASER_SPEED;
@@ -1467,16 +1469,39 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 	fragColor.rgb = shade( view_ray.o, view_ray.d, camera, p, n, l
 						   , traced_shadow, sun_shadow, first_bounce, to, ao, exposure, uv );
 #ifdef LASERS
-	float laserStrength = smoothstep( 0.0, 0.05, laser_density ) * laser_density;
-	if ( laserStrength > 0.0 )
+	float density = clamp( laser_density, 0.0, 2.0 );
+	int beamCount = int( floor( density * 5.0 + 0.5 ) );
+	beamCount = min( MAX_LASER_BEAMS, max( 0, beamCount ) );
+	if ( beamCount > 0 )
 	{
-		fragColor.rgb += laserStrength * lasers( view_ray, 0.0, travelTime, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, 1.0, travelTime, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, -1.0, travelTime, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, -0.5, travelTime, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, +0.5, travelTime, to.t );
+		for ( int i = 0; i < MAX_LASER_BEAMS; ++i )
+		{
+			if ( i >= beamCount ) break;
+			fragColor.rgb += lasers( view_ray, LASER_OFFSETS[i], travelTime, to.t );
+		}
 	}
 #endif
+
+	float tiltStrength = clamp( tilt_strength, 0.0, 1.0 );
+	if ( tiltStrength > 0.0001 )
+	{
+		float focusWidth = max( tilt_narrowness, 0.05 );
+		float distToCenter = abs( _uv.y - 0.5 );
+		float inner = focusWidth * 0.25;
+		float outer = focusWidth * 0.75;
+		float blurMask = smoothstep( inner, outer, distToCenter );
+		blurMask = smoothstep( 0.0, 1.0, blurMask * blurMask );
+		if ( blurMask > 0.0 )
+		{
+			vec2 texel = vec2( 1.0 ) / RENDERSIZE.xy;
+			vec4 blurSample1 = texture( syn_FinalPass, _uv + vec2( 0.0, texel.y * 2.0 ) );
+			vec4 blurSample2 = texture( syn_FinalPass, _uv - vec2( 0.0, texel.y * 2.0 ) );
+			vec4 blurSample3 = texture( syn_FinalPass, _uv + vec2( texel.x * 1.5, texel.y * 1.5 ) );
+			vec4 blurSample4 = texture( syn_FinalPass, _uv - vec2( texel.x * 1.5, texel.y * 1.5 ) );
+			vec3 blurColor = (blurSample1.rgb + blurSample2.rgb + blurSample3.rgb + blurSample4.rgb + fragColor.rgb) / 5.0;
+			fragColor.rgb = mix( fragColor.rgb, blurColor, tiltStrength * blurMask );
+		}
+	}
 	fragColor.rgb *= fade;
 	fragColor.rgb = mix( fragColor.rgb, debug_color.rgb, debug_color.a );
 }

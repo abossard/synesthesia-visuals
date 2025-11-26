@@ -21,7 +21,7 @@
 		},
 		{
 			"DEFAULT" : 1.0,
-			"DESCRIPTION" : "Scale the number and brightness of incoming green lasers.",
+			"DESCRIPTION" : "Scale the number of incoming green lasers.",
 			"MAX" : 2.0,
 			"MIN" : 0.0,
 			"NAME" : "laser_density",
@@ -36,6 +36,24 @@
 			"NAME" : "flight_speed",
 			"TYPE" : "slider",
 			"UI_GROUP" : "flight"
+		},
+		{
+			"DEFAULT" : 0.35,
+			"DESCRIPTION" : "Controls how narrow the in-focus band is for the tilt-shift effect.",
+			"MAX" : 0.8,
+			"MIN" : 0.1,
+			"NAME" : "tilt_narrowness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Strength of the miniature tilt-shift look (0 disables).",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "tilt_strength",
+			"TYPE" : "slider",
+			"UI_GROUP" : "effects"
 		}
 	],
 	"CREDIT" : "Anonymous",
