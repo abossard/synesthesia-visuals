@@ -866,18 +866,10 @@ CameraRet get_camera1_movie_dive_path( float t )
 	return cam;
 }
 
-mat4 get_camera1_movie_dive( mat4 camera, float tan_half_fovy, float t, float introBlend, inout vec4 debug_color, inout float exposure )
+mat4 get_camera1_movie_dive( mat4 camera, float tan_half_fovy, float t, inout vec4 debug_color, inout float exposure )
 {
-	CameraRet start = get_camera1_movie_dive_path( 0.0 );
-	vec3 centerStart = get_camera1_movie_dive_path( 0.05 ).eye;
-	vec3 centerTarget = get_camera1_movie_dive_path( t + 0.05 ).eye;
+	vec3 center = get_camera1_movie_dive_path( t + 0.05 ).eye;
 	CameraRet cam = get_camera1_movie_dive_path( t );
-	vec3 center = mix( centerStart, centerTarget, introBlend );
-	cam.eye = mix( start.eye, cam.eye, introBlend );
-	cam.pitch = mix( start.pitch, cam.pitch, introBlend );
-	cam.roll = mix( start.roll, cam.roll, introBlend );
-	cam.debug_color = mix( start.debug_color, cam.debug_color, introBlend );
-	cam.exposure = mix( start.exposure, cam.exposure, introBlend );
 	vec3 eye = cam.eye;
 	vec3 up = vec3( 0, 0, 1 );
 	up.xz = rotate_with_angle( up.xz, cam.roll );
@@ -901,18 +893,10 @@ CameraRet get_camera2_path( float t )
 	return cam;
 }
 
-mat4 get_camera2( mat4 camera, float tan_half_fovy, float t, float introBlend, inout vec4 debug_color, inout float exposure )
+mat4 get_camera2( mat4 camera, float tan_half_fovy, float t, inout vec4 debug_color, inout float exposure )
 {
-	CameraRet start = get_camera2_path( 0.0 );
-	vec3 centerStart = get_camera2_path( 0.02 ).eye;
-	vec3 centerTarget = get_camera2_path( t + 0.02 ).eye;
+	vec3 center = get_camera2_path( t + 0.02 ).eye;
 	CameraRet cam = get_camera2_path( t );
-	vec3 center = mix( centerStart, centerTarget, introBlend );
-	cam.eye = mix( start.eye, cam.eye, introBlend );
-	cam.pitch = mix( start.pitch, cam.pitch, introBlend );
-	cam.roll = mix( start.roll, cam.roll, introBlend );
-	cam.debug_color = mix( start.debug_color, cam.debug_color, introBlend );
-	cam.exposure = mix( start.exposure, cam.exposure, introBlend );
 	vec3 eye = cam.eye;
 	vec3 up = vec3( 0, 0, 1 );
 	up.xz = rotate_with_angle( up.xz, cam.roll );
@@ -1303,11 +1287,14 @@ vec3 lasers( Ray view_ray, float hs, float time, float t0 )
 {
 	float fade = 1.0 - smoothstep( -TRENCH_DEPTH * 0.05, 0.0, view_ray.o.z );
 	float pos = FLYING_SPEED * time; // camera pos
-	float spawnDistance = BASE_LASER_SPAWN_DISTANCE * mix( 0.5, 1.5, saturate( laser_density * 0.5 ) );
+	float densityMix = smoothstep( 0.0, 1.0, saturate( laser_density * 0.5 ) );
+	float spawnDistance = mix( 18.0, BASE_LASER_SPAWN_DISTANCE, densityMix );
 	float laser_period = spawnDistance * 2.0 / ( FLYING_SPEED + LASER_SPEED );
 	float offset = hs * 5.0;
 	float nth = floor( ( pos - offset ) / laser_period );
-	float y0 = offset + nth * laser_period + spawnDistance;
+	float introBlend = smoothstep( 0.0, 1.0, intro_position );
+	float approachShift = introBlend * mix( 6.0, 18.0, densityMix );
+	float y0 = offset + nth * laser_period + spawnDistance - approachShift;
 	float yy_t = ( pos - ( offset + nth * laser_period ) ) * ( 1.0 / FLYING_SPEED );
 	float laser_pos = y0 - yy_t * LASER_SPEED;
 	vec2 orig = hash21( nth * hs );
@@ -1375,10 +1362,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 	float loopIndex = floor( baseTime / time_slice );
 	float time = baseTime - loopIndex * time_slice;
 	float fade = 1.0;
-	float introSlider = smoothstep( 0.0, 1.0, intro_position );
-	float loopFadeWindow = 2.0;
-	float loopBlend = smoothstep( 0.0, loopFadeWindow, time ) * smoothstep( 0.0, loopFadeWindow, time_slice - time );
-	float travelBlend = introSlider * loopBlend;
+	float travelBlend = smoothstep( 0.0, 1.0, intro_position );
+	float travelTime = mix( 0.0, time, travelBlend );
 	float exposure = 1.0;
 	mat4 camera;
 
@@ -1398,8 +1383,8 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 #else
 		float camera_select = 0.0;
 #endif
-		if ( camera_select == 0.0 ) camera = get_camera1_movie_dive( camera, tan_half_fovy, time, travelBlend, debug_color, exposure );
-		else camera = get_camera2( camera, tan_half_fovy, time + CAM2_TIME_OFFSET, travelBlend, debug_color, exposure );
+		if ( camera_select == 0.0 ) camera = get_camera1_movie_dive( camera, tan_half_fovy, travelTime, debug_color, exposure );
+		else camera = get_camera2( camera, tan_half_fovy, travelTime + CAM2_TIME_OFFSET, debug_color, exposure );
 	}
 #endif
 
@@ -1482,14 +1467,14 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 	fragColor.rgb = shade( view_ray.o, view_ray.d, camera, p, n, l
 						   , traced_shadow, sun_shadow, first_bounce, to, ao, exposure, uv );
 #ifdef LASERS
-	float laserStrength = smoothstep( 0.0, 0.05, laser_density ) * laser_density * travelBlend;
+	float laserStrength = smoothstep( 0.0, 0.05, laser_density ) * laser_density;
 	if ( laserStrength > 0.0 )
 	{
-		fragColor.rgb += laserStrength * lasers( view_ray, 0.0, time, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, 1.0, time, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, -1.0, time, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, -0.5, time, to.t );
-		fragColor.rgb += laserStrength * lasers( view_ray, +0.5, time, to.t );
+		fragColor.rgb += laserStrength * lasers( view_ray, 0.0, travelTime, to.t );
+		fragColor.rgb += laserStrength * lasers( view_ray, 1.0, travelTime, to.t );
+		fragColor.rgb += laserStrength * lasers( view_ray, -1.0, travelTime, to.t );
+		fragColor.rgb += laserStrength * lasers( view_ray, -0.5, travelTime, to.t );
+		fragColor.rgb += laserStrength * lasers( view_ray, +0.5, travelTime, to.t );
 	}
 #endif
 	fragColor.rgb *= fade;
