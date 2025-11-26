@@ -9,6 +9,33 @@
 			"NAME" : "slider1",
 			"TYPE" : "slider",
 			"UI_GROUP" : "default"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Blend from holding position outside the trench (0) to full trench dive (1).",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "intro_position",
+			"TYPE" : "slider",
+			"UI_GROUP" : "flight"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Scale the number and brightness of incoming green lasers.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "laser_density",
+			"TYPE" : "slider",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Multiply overall flight speed of the trench run.",
+			"MAX" : 2.5,
+			"MIN" : 0.1,
+			"NAME" : "flight_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "flight"
 		}
 	],
 	"CREDIT" : "Anonymous",
