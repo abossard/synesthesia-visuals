@@ -1,0 +1,100 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Render quality (0=fast, 1=high). Affects ray steps, cloud layers, and water detail.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "quality",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Performance"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "God-ray intensity (0=off for better performance)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "god_rays",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Performance"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Distance LOD threshold (higher=more detail at distance, slower)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "lod_distance",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Performance"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Water surface base height",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "water_level",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Water"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "General wave intensity multiplier",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "wave_gain",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Water"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Large ocean wave height",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "large_waves",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Water"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Small ripple wave height",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "small_waves",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Water"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Camera/animation speed",
+			"MAX" : 2,
+			"MIN" : 0.1,
+			"NAME" : "time_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How much audio affects visuals",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "audio_reactivity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Audio"
+		}
+	],
+	"CREDIT" : "Frank Hugenroth (original), Converted by Copilot",
+	"DESCRIPTION" : "Volumetric height-clouds with god-rays, density, and reflecting water simulation. Original shader from Shadertoy.",
+	"GPU" : 0,
+	"HEIGHT" : 540,
+	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Oceanic",
+	"WIDTH" : 1280
+}
