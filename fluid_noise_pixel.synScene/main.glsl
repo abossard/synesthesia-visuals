@@ -150,11 +150,31 @@ float glossRadialEffect(vec2 uv, float time, float beatBoost) {
     return ring * glossRadial * (1.0 + beatBoost);
 }
 
+// === 2D ROTATION HELPER ===
+vec2 rotate2D(vec2 uv, float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    return vec2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+}
+
 // === PIXELATED MEDIA SAMPLING ===
 vec4 samplePixelatedMedia(vec2 uv, float pixelSize) {
-    // Pixelate the UV coordinates first
+    // Center UV around 0.5 for proper rotation/scale
+    vec2 centered = uv - 0.5;
+    
+    // Apply scale (inverse - smaller scale value = zoom in)
+    centered /= mediaScale;
+    
+    // Apply rotation (convert degrees to radians)
+    float angle = mediaRotation * 3.14159265 / 180.0;
+    centered = rotate2D(centered, angle);
+    
+    // Move back from center
+    vec2 transformedUV = centered + 0.5;
+    
+    // Pixelate the UV coordinates
     vec2 gridRes = RENDERSIZE.xy / pixelSize;
-    vec2 pixelatedUV = floor(uv * gridRes) / gridRes + 0.5 / gridRes;
+    vec2 pixelatedUV = floor(transformedUV * gridRes) / gridRes + 0.5 / gridRes;
     
     // Sample media with aspect correction using pixelated UVs
     // _textureMedia handles aspect ratio internally

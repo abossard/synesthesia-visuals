@@ -116,6 +116,24 @@
 			"UI_GROUP" : "Media"
 		},
 		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Media scale (zoom in/out)",
+			"MAX" : 3.0,
+			"MIN" : 0.1,
+			"NAME" : "mediaScale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Media rotation in degrees",
+			"MAX" : 360.0,
+			"MIN" : 0.0,
+			"NAME" : "mediaRotation",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
 			"DEFAULT" : 0.5,
 			"DESCRIPTION" : "Diagonal sweep gloss intensity (0=off)",
 			"MAX" : 1,
