@@ -136,9 +136,9 @@
 		{
 			"FILTER" : "linear",
 			"FLOAT" : true,
-			"HEIGHT" : 720,
+			"HEIGHT" : 540,
 			"TARGET" : "cartoon_buffer",
-			"WIDTH" : 1280,
+			"WIDTH" : 960,
 			"WRAP" : "clamp"
 		}
 	],

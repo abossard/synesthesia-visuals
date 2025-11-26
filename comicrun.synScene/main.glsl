@@ -1,7 +1,7 @@
 #define FAR 400.0
 #define EDGE_WIDTH_BASE 0.005
-#define MAX_TRACE_STEPS 128
-#define MAX_SHADOW_STEPS 16
+#define MAX_TRACE_STEPS 96
+#define MAX_SHADOW_STEPS 12
 
 #define ID_SKY    0.0
 #define ID_SHIP   1.0
@@ -13,7 +13,7 @@ const float freqA = 0.34 * 0.15 / 3.75;
 const float freqB = 0.25 * 0.25 / 2.75;
 const float ampA = 20.0;
 const float ampB = 4.0;
-const vec2 CARTOON_BUFFER_RES = vec2(1280.0, 720.0);
+const vec2 CARTOON_BUFFER_RES = vec2(960.0, 540.0);
 
 vec3 gRO;
 mat3 gbaseShip;
@@ -63,7 +63,7 @@ float fbm(vec2 p)
 {
 	float f = 0.0;
 	float amp = 0.5;
-	for (int i = 0; i < 5; ++i)
+	for (int i = 0; i < 3; ++i)
 	{
 		f += amp * noise(p);
 		p = p * 2.02;
@@ -127,18 +127,24 @@ vec2 path(float z)
 	            10.0 + ampB * cos(z * freqB) * (0.5 + 0.5 * sin(z * 0.0015)));
 }
 
-float texScrape(vec2 uv)
+// LOD-aware texture scrape - skip detail for distant geometry
+float texScrape(vec2 uv, float lod)
 {
 	float n = fbm(uv);
-	float detail = fbm(uv * 2.7 + vec2(0.3, 0.7));
-	return mix(n, detail, 0.6);
+	if (lod < 0.5) {
+		float detail = fbm(uv * 2.7 + vec2(0.3, 0.7));
+		return mix(n, detail, 0.6);
+	}
+	return n;
 }
 
 float sdGround(vec3 p)
 {
 	p += vec3(0.0, 2.0, 0.0);
-	float tx1 = 2.5 * texScrape(p.xz / 28.0 + p.xy / 100.0);
-	float tx2 = 2.0 * texScrape(p.xy / vec2(31.0, 15.0));
+	// LOD based on distance from camera (approximate via z)
+	float lod = smoothstep(50.0, 200.0, abs(p.z - gRO.z));
+	float tx1 = 2.5 * texScrape(p.xz / 28.0 + p.xy / 100.0, lod);
+	float tx2 = 2.0 * texScrape(p.xy / vec2(31.0, 15.0), lod);
 	float tx = tx1 - tx2;
 
 	vec3 q = p * 0.125;
@@ -249,6 +255,10 @@ float mapFull(vec3 p0)
 	float dPath = sdPath(p0);
 	vec3 pShipSpace = (p0 - gRO) * gbaseShip;
 	float dShip = sdShip(pShipSpace);
+	// Early-out: skip fire particles when no high frequencies
+	if (gHighPulse < 0.01) {
+		return min(dShip, min(dPath, d));
+	}
 	float pGlow;
 	float dFire = sdFireParticles(pShipSpace, pGlow);
 	return min(dFire, min(dShip, min(dPath, d)));
@@ -264,6 +274,11 @@ vec2 mapColor(vec3 p0)
 	float d = sdGround(p0);
 	float dPath = sdPath(p0);
 	vec3 pShipSpace = (p0 - gRO) * gbaseShip;
+	// Early-out: skip fire particles when no high frequencies
+	if (gHighPulse < 0.01) {
+		return min2(vec2(sdShip(pShipSpace), ID_SHIP),
+		            min2(vec2(dPath, ID_PATH), vec2(d, ID_GROUND)));
+	}
 	float pGlow;
 	float dFire = sdFireParticles(pShipSpace, pGlow);
 	return min2(vec2(dFire, ID_FIRE),
@@ -449,7 +464,8 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 			vec3 ld = lp - sp;
 			ld /= max(length(ld), 0.001);
 			float shd = softShadow(sp, ld, 0.1, FAR, 8.0);
-			cur = curve(sp);
+			// Skip expensive curve() for distant hits
+			cur = (t < FAR * 0.7) ? curve(sp) : 0.5;
 			float ao = 1.0;
 			float dif = max(dot(ld, sn), 0.0);
 			float spe = pow(max(dot(reflect(-ld, sn), -rd), 0.0), 5.0);
