@@ -20,6 +20,15 @@
 			"UI_GROUP" : "color"
 		},
 		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Night mode: 0 = day, 1 = full dark with neon accents.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "night_mode",
+			"TYPE" : "slider",
+			"UI_GROUP" : "color"
+		},
+		{
 			"DEFAULT" : 0.7,
 			"DESCRIPTION" : "Gates how much the Synesthesia audio uniforms modulate camera sway, palette accents, and lighting bursts.",
 			"MAX" : 1,
@@ -47,7 +56,7 @@
 			"UI_GROUP" : "audio"
 		},
 		{
-			"DEFAULT" : 1.0,
+			"DEFAULT" : 1,
 			"DESCRIPTION" : "Flight speed multiplier through the canyon.",
 			"MAX" : 3,
 			"MIN" : 0.1,
@@ -56,7 +65,7 @@
 			"UI_GROUP" : "camera"
 		},
 		{
-			"DEFAULT" : 0.0,
+			"DEFAULT" : 0,
 			"DESCRIPTION" : "Camera pitch offset (negative = look down, positive = look up).",
 			"MAX" : 0.3,
 			"MIN" : -0.3,
@@ -65,7 +74,7 @@
 			"UI_GROUP" : "camera"
 		},
 		{
-			"DEFAULT" : 0.0,
+			"DEFAULT" : 0,
 			"DESCRIPTION" : "Camera pan (negative = look left, positive = look right).",
 			"MAX" : 0.5,
 			"MIN" : -0.5,
@@ -74,7 +83,16 @@
 			"UI_GROUP" : "camera"
 		},
 		{
-			"DEFAULT" : 0.0,
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Fisheye lens distortion (0 = off, 1 = strong barrel).",
+			"MAX" : 1.5,
+			"MIN" : 0,
+			"NAME" : "fisheye_strength",
+			"TYPE" : "slider",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0,
 			"DESCRIPTION" : "Blend user media layer into canyon surface.",
 			"MAX" : 1,
 			"MIN" : 0,
@@ -83,7 +101,7 @@
 			"UI_GROUP" : "media"
 		},
 		{
-			"DEFAULT" : 1.0,
+			"DEFAULT" : 1,
 			"DESCRIPTION" : "Media layer scale for tiling.",
 			"MAX" : 5,
 			"MIN" : 0.1,
@@ -99,15 +117,6 @@
 			"NAME" : "scanline_intensity",
 			"TYPE" : "slider",
 			"UI_GROUP" : "effects"
-		},
-		{
-			"DEFAULT" : 0.0,
-			"DESCRIPTION" : "Fisheye lens distortion (0 = off, 1 = strong barrel).",
-			"MAX" : 1.5,
-			"MIN" : 0,
-			"NAME" : "fisheye_strength",
-			"TYPE" : "slider",
-			"UI_GROUP" : "camera"
 		}
 	],
 	"CREDIT" : "Andre — port of tctyW7 cartoon canyon (Shane)",
@@ -115,18 +124,26 @@
 	"GPU" : 0,
 	"HEIGHT" : 1080,
 	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
 	"PASSES" : 
 	[
 		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 720,
 			"TARGET" : "cartoon_buffer",
 			"WIDTH" : 1280,
-			"HEIGHT" : 720,
-			"FLOAT" : true,
-			"FILTER" : "linear",
 			"WRAP" : "clamp"
 		}
 	],
-	"TAGS" : [
+	"TAGS" : 
+	[
 		"cartoon",
 		"raymarch",
 		"audio",

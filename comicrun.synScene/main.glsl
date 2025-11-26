@@ -7,6 +7,7 @@
 #define ID_SHIP   1.0
 #define ID_GROUND 2.0
 #define ID_PATH   3.0
+#define ID_FIRE   4.0
 
 const float freqA = 0.34 * 0.15 / 3.75;
 const float freqB = 0.25 * 0.25 / 2.75;
@@ -20,6 +21,10 @@ float gedge;
 float gedge2;
 float glastt;
 float gEdgeWidth;
+float gHighPulse;
+float gBassPulse;
+
+#define NUM_FIRE_PARTICLES 12
 
 mat2 rot2(float th)
 {
@@ -192,6 +197,39 @@ float sdShip(vec3 p0)
 	return min(d, sdBox(p, vec3(1.0, 2.0, 0.2)));
 }
 
+// Fire sparkle particles behind the rocket, driven by highPulse
+float sdFireParticles(vec3 p0, out float particleGlow)
+{
+	particleGlow = 0.0;
+	float d = 1e10;
+	float intensity = clamp(gHighPulse, 0.0, 1.0);
+	if (intensity < 0.01) return d;
+	
+	for (int i = 0; i < NUM_FIRE_PARTICLES; ++i)
+	{
+		float fi = float(i);
+		float seed = fi * 7.31 + TIME * 2.5;
+		float life = fract(seed * 0.1 + fi * 0.08);
+		
+		// Particle spawns behind ship exhaust (negative x in ship space)
+		vec3 offset = vec3(
+			-8.0 - life * 15.0,  // Trail behind ship
+			(hash11(fi * 1.7) - 0.5) * 3.0 * (1.0 - life),  // Spread Y
+			(hash11(fi * 2.3) - 0.5) * 3.0 * (1.0 - life)   // Spread Z
+		);
+		
+		float radius = mix(0.3, 0.08, life) * intensity;
+		float dP = length(p0 - offset) - radius;
+		
+		if (dP < d)
+		{
+			d = dP;
+			particleGlow = (1.0 - life) * intensity;
+		}
+	}
+	return d;
+}
+
 float sdPath(vec3 p0)
 {
 	float d2 = length(path(p0.z) - p0.xy) - 0.5;
@@ -209,7 +247,11 @@ float mapFull(vec3 p0)
 {
 	float d = sdGround(p0);
 	float dPath = sdPath(p0);
-	return min(sdShip((p0 - gRO) * gbaseShip), min(dPath, d));
+	vec3 pShipSpace = (p0 - gRO) * gbaseShip;
+	float dShip = sdShip(pShipSpace);
+	float pGlow;
+	float dFire = sdFireParticles(pShipSpace, pGlow);
+	return min(dFire, min(dShip, min(dPath, d)));
 }
 
 vec2 min2(vec2 c0, vec2 c1)
@@ -221,8 +263,12 @@ vec2 mapColor(vec3 p0)
 {
 	float d = sdGround(p0);
 	float dPath = sdPath(p0);
-	return min2(vec2(sdShip((p0 - gRO) * gbaseShip), ID_SHIP),
-	            min2(vec2(dPath, ID_PATH), vec2(d, ID_GROUND)));
+	vec3 pShipSpace = (p0 - gRO) * gbaseShip;
+	float pGlow;
+	float dFire = sdFireParticles(pShipSpace, pGlow);
+	return min2(vec2(dFire, ID_FIRE),
+	            min2(vec2(sdShip(pShipSpace), ID_SHIP),
+	                 min2(vec2(dPath, ID_PATH), vec2(d, ID_GROUND))));
 }
 
 float logBisectTrace(vec3 ro, vec3 rd)
@@ -341,29 +387,27 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 	float toneShift = mix(-0.25, 0.65, tone_shift);
 	vec2 normUV = clamp(fragCoord / resolution, 0.0, 1.0);
 	float bassPulse = audio_reactivity * bass_emphasis * clamp(syn_BassLevel * 0.9 + syn_BassHits * 1.4, 0.0, 2.5);
-	float midPulse = audio_reactivity * clamp(syn_MidLevel * 0.8 + syn_MidHighHits * 0.9, 0.0, 2.5);
 	float highPulse = audio_reactivity * high_emphasis * clamp(syn_HighLevel * 0.7 + syn_HighHits * 1.2, 0.0, 2.5);
-	float levelPulse = audio_reactivity * clamp(syn_Level, 0.0, 1.0);
-	float beatPulse = audio_reactivity * syn_OnBeat;
-	float spectrumSweep = texture(syn_Spectrum, normUV.x).g;
-	float trailBass = texture(syn_LevelTrail, normUV.x).g;
-	float audioDrive = clamp(levelPulse + 0.5 * bassPulse, 0.0, 2.0);
-	vec2 audioSway = vec2(sin(TIME * 0.35 + spectrumSweep * 6.2831), cos(TIME * 0.22 + trailBass * 4.5));
+	gBassPulse = bassPulse;
+	gHighPulse = highPulse;
+	
+	// Bass gives a smooth speed boost only
+	float speedBoost = 1.0 + 0.3 * bassPulse;
 
 	if (dBox < 0.0)
 	{
-		vec3 lookAt = vec3(0.0, 0.0, TIME * 100.0 * flight_speed);
+		vec3 lookAt = vec3(0.0, 0.0, TIME * 100.0 * flight_speed * speedBoost);
 		vec3 ro = lookAt + vec3(0.0, 0.0, -0.25);
 		vec2 pathLook = path(lookAt.z);
 		vec2 pathRo = path(ro.z);
-		lookAt.xy += pathLook * (1.0 + 0.35 * bassPulse) + audioSway * 6.0 * bassPulse;
-		ro.xy += pathRo * (1.0 + 0.25 * midPulse) + audioSway * 4.0 * bassPulse;
-	lookAt.y -= 0.071 - 0.4 * beatPulse + camera_tilt * 10.0;
-		float FOV = 1.5707963 * (1.0 + 0.25 * bassPulse - 0.12 * highPulse);
+		lookAt.xy += pathLook;
+		ro.xy += pathRo;
+		lookAt.y -= 0.071 + camera_tilt * 10.0;
+		float FOV = 1.5707963;
 		vec3 forward = normalize(lookAt - ro);
 		vec3 right = normalize(vec3(forward.z, 0.0, -forward.x));
-	right.xy *= rot2(pathLook.x / 64.0 + camera_pan);
-		right.xy *= rot2(-0.7 * cos(TIME * 0.12) + 0.2 * beatPulse);
+		right.xy *= rot2(pathLook.x / 64.0 + camera_pan);
+		right.xy *= rot2(-0.7 * cos(TIME * 0.12));
 		vec3 up = cross(forward, right);
 	
 	// Apply fisheye lens distortion
@@ -382,16 +426,13 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 		vec3 p2 = vec3(path(gRO.z + 1.0), gRO.z + 1.0);
 		forward = normalize(p2 - gRO);
 		right = normalize(vec3(forward.z, 0.0, -forward.x));
-		right.xy *= rot2(pathLook.x / 32.0 + 0.1 * bassPulse);
+		right.xy *= rot2(pathLook.x / 32.0);
 		up = cross(forward, right);
 		gbaseShip = mat3(forward, up, right);
 		float dist = mix(35.0, 15.0, smoothstep(7000.0, 8500.0, gRO.z));
 		dist = mix(dist, 45.0, smoothstep(10000.0, 12000.0, gRO.z));
-		dist = mix(dist, dist * 1.4, audioDrive * 0.25);
-		dist *= mix(1.0, 0.75, clamp(levelPulse, 0.0, 1.0));
-		ro += (dist * (0.5 + 0.5 * cos(0.31 * TIME)) + 2.0) * vec3(0.3, 1.0 + 0.3 * bassPulse, -2.0);
-		ro += vec3(0.0, beatPulse * 2.0, 0.0);
-		ro.x += 0.3 * dist * cos(0.31 * TIME + audioDrive) + spectrumSweep * 6.0 * bassPulse;
+		ro += (dist * (0.5 + 0.5 * cos(0.31 * TIME)) + 2.0) * vec3(0.3, 1.0, -2.0);
+		ro.x += 0.3 * dist * cos(0.31 * TIME);
 		float t = logBisectTrace(ro, rd);
 		ed = gedge;
 		ed2 = gedge2;
@@ -419,34 +460,53 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 			col = clamp(mix(vec3(0.8, 0.5, 0.3), vec3(0.5, 0.25, 0.125), (sp.y + 1.0) * 0.15), vec3(0.5, 0.25, 0.125), vec3(1.0));
 			col = pow(col, vec3(1.5));
 			col = (col * (dif + 0.1) + fre2 * spe) * shd * ao + amb * col;
-			vec3 audioTint = vec3(1.0 + 0.6 * bassPulse, 1.0 + 0.35 * midPulse, 1.0 + 0.25 * highPulse);
-			col *= audioTint;
-			col += 0.25 * highPulse * vec3(0.2, 0.4, 0.8) * smoothstep(0.0, 0.5, cur);
 			vec3 stylized = 0.5 + 0.5 * cos(vec3(0.8, 0.6, 0.4) * (sp.y * 0.2 + toneShift * 6.0));
-			col = mix(col, stylized, 0.35 + 0.4 * toneShift + audioDrive * 0.2);
+			col = mix(col, stylized, 0.35 + 0.4 * toneShift);
 		}
 		col = pow(max(col, 0.0), vec3(0.75));
-		vec3 cGround = vec3(248.0, 210.0, 155.0) / 256.0;
-		vec3 cSky = vec3(177.0, 186.0, 213.0) / 256.0;
+		
+		// Night mode palette: lerp to dark with neon accents
+		vec3 cGroundDay = vec3(248.0, 210.0, 155.0) / 256.0;
+		vec3 cSkyDay = vec3(177.0, 186.0, 213.0) / 256.0;
+		vec3 cGroundNight = vec3(0.05, 0.02, 0.1);
+		vec3 cSkyNight = vec3(0.02, 0.03, 0.08);
+		vec3 cGround = mix(cGroundDay, cGroundNight, night_mode);
+		vec3 cSky = mix(cSkyDay, cSkyNight, night_mode);
 		if (t < FAR)
 		{
 			vec3 cFill;
 			vec3 spCol = ro + t * rd;
-			if (mapCol.y == ID_PATH)
+			if (mapCol.y == ID_FIRE)
 			{
-				cFill = mix(vec3(1.0, 0.01, 0.01), vec3(1.0, 0.4, 0.1), audioDrive);
+				// Fire particles: orange to yellow gradient
+				vec3 pShipSpace = (spCol - gRO) * gbaseShip;
+				float pGlow;
+				sdFireParticles(pShipSpace, pGlow);
+				cFill = mix(vec3(1.0, 0.3, 0.0), vec3(1.0, 0.9, 0.2), pGlow);
+				// Emissive glow
+				col = cFill * (1.0 + 2.0 * pGlow);
+			}
+			else if (mapCol.y == ID_PATH)
+			{
+				// Day: red path, Night: neon cyan
+				vec3 pathDay = vec3(1.0, 0.2, 0.1);
+				vec3 pathNight = vec3(0.0, 1.0, 0.9);
+				cFill = mix(pathDay, pathNight, night_mode);
 			}
 			else if (mapCol.y == ID_SHIP)
 			{
 				vec3 pShip = (spCol - gRO) * gbaseShip;
-				cFill = mix(vec3(0.0, 1.0, 1.0), vec3(0.7), smoothstep(0.0, 0.1, pShip.x - 1.3));
-				cFill = mix(cFill, vec3(0.1, 0.8, 0.3), audioDrive * 0.5);
+				// Day: cyan nose to gray body, Night: magenta neon
+				vec3 shipDay = mix(vec3(0.0, 1.0, 1.0), vec3(0.7), smoothstep(0.0, 0.1, pShip.x - 1.3));
+				vec3 shipNight = mix(vec3(1.0, 0.1, 0.8), vec3(0.3, 0.0, 0.4), smoothstep(0.0, 0.1, pShip.x - 1.3));
+				cFill = mix(shipDay, shipNight, night_mode);
 			}
 			else
 			{
-				cFill = mix(cGround, vec3(248.0, 185.0, 155.0) / 256.0, smoothstep(0.0, 0.1, spCol.y - 8.0));
-				cFill = mix(cFill, vec3(1.0, 0.0, 0.0), 0.4 * smoothstep(1000.0, 3000.0, gRO.z));
+				cFill = mix(cGround, vec3(248.0, 185.0, 155.0) / 256.0 * (1.0 - night_mode * 0.9), smoothstep(0.0, 0.1, spCol.y - 8.0));
+				cFill = mix(cFill, vec3(1.0, 0.0, 0.0) * (1.0 - night_mode * 0.8), 0.4 * smoothstep(1000.0, 3000.0, gRO.z));
 				vec3 col3 = cos(spCol.y * 0.08 + 1.1) * clamp(mix(vec3(0.8, 0.5, 0.3), vec3(0.5, 0.25, 0.125), (spCol.y + 1.0) * 0.15), vec3(0.5, 0.25, 0.125), vec3(1.0));
+				col3 = mix(col3, col3 * 0.1 + vec3(0.05, 0.0, 0.1), night_mode);
 				cFill = mix(cFill, col3, 0.5 * smoothstep(6000.0, 8500.0, gRO.z));
 				if (media_blend > 0.0)
 				{
@@ -455,9 +515,7 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 					cFill = mix(cFill, mediaSample, media_blend * 0.7);
 				}
 			}
-			vec3 audioInk = mix(vec3(0.95, 0.5, 0.2), vec3(0.25, 0.65, 1.1), clamp(highPulse, 0.0, 1.0));
-			cFill = mix(cFill, audioInk, clamp(0.4 * bassPulse + 0.3 * spectrumSweep, 0.0, 0.8));
-			col = mix(cFill, cSky, t / FAR) * (0.5 + 0.5 * smoothstep(0.4, 0.5, length(col) + audioDrive * 0.3));
+			col = mix(cFill, cSky, t / FAR) * (0.5 + 0.5 * smoothstep(0.4, 0.5, length(col)));
 			col = mix(col, vec3(0.0), ed);
 			col = mix(vec3(0.0), col, 0.5 + 0.5 * smoothstep(0.4, 0.41, cur));
 			ed2 += cur < 0.35 ? 1.0 : 0.0;
@@ -471,9 +529,8 @@ vec4 renderScene(vec2 fragCoord, vec2 resolution)
 		}
 		col = mix(col, cSky * abs(1.0 - rd.y), sqrt(smoothstep(FAR - (ed < 0.0 ? 200.0 : 100.0), FAR, lastt1)));
 	}
-	col = mix(col, col * (1.0 + vec3(0.6, 0.3, 0.1) * bassPulse), 0.5);
-	col = mix(col, vec3(1.0), clamp(0.2 * highPulse + 0.3 * beatPulse, 0.0, 0.4));
-	col = mix(col, vec3(0.2), smoothstep(0.0, 1.0 / resolution.y, dBox));
+	vec3 borderCol = mix(vec3(0.2), vec3(0.02), night_mode);
+	col = mix(col, borderCol, smoothstep(0.0, 1.0 / resolution.y, dBox));
 	col = mix(col, vec3(0.0), smoothstep(1.0 / resolution.y, 0.0, abs(dBox) - 0.005));
 	float edgeOut = clamp(ed2 * 0.25, 0.0, 1.0);
 	return vec4(clamp(col, 0.0, 1.0), edgeOut);
@@ -494,23 +551,13 @@ vec4 renderMain(void)
 	float edgeMask = smoothstep(0.2, 0.9, base.a);
 	vec3 color = mix(base.rgb, blur, edgeMask * 0.65);
 
-	float bassPulse = audio_reactivity * bass_emphasis * clamp(syn_BassHits * 1.3 + syn_BassLevel, 0.0, 2.5);
-	float midPulse = audio_reactivity * clamp(syn_MidHits * 1.0 + syn_MidLevel, 0.0, 2.5);
-	float highPulse = audio_reactivity * high_emphasis * clamp(syn_HighHits * 1.2 + syn_HighLevel, 0.0, 2.5);
-	float spectrumSweep = texture(syn_Spectrum, fract(_uv.x + TIME * 0.07)).g;
-	float trailBass = texture(syn_LevelTrail, _uv.x).g;
+	// Scanlines: normal in day mode, cyan tint in night mode
+	float scanlineVal = sin(((_uv.y * RENDERSIZE.y) * 0.35 + TIME * 18.0));
+	vec3 scanlineDay = vec3(1.0 + scanline_intensity * scanlineVal);
+	vec3 scanlineNight = vec3(1.0) + scanline_intensity * scanlineVal * vec3(0.0, 0.8, 1.0);
+	vec3 scanlineTint = mix(scanlineDay, scanlineNight, night_mode);
+	color *= scanlineTint;
 
-	vec3 bassGlow = vec3(0.95, 0.45, 0.15) * bassPulse;
-	vec3 rimFlash = vec3(0.25, 0.6, 1.2) * highPulse;
-	color += bassGlow * (0.3 + 0.7 * edgeMask);
-	color += rimFlash * edgeMask * smoothstep(0.3, 1.0, spectrumSweep);
-
-	float scanline = 1.0 + scanline_intensity * audio_reactivity * sin(((_uv.y * RENDERSIZE.y) * 0.35 + TIME * 18.0) + syn_BPMTwitcher * 6.2831);
-	color *= scanline;
-
-	float contrastBump = 1.0 + 0.4 * midPulse;
-	color = pow(color, vec3(1.0 / (1.2 + 0.4 * spectrumSweep)));
-	color = mix(color, vec3(1.0), clamp(0.3 * syn_OnBeat * audio_reactivity + 0.4 * trailBass, 0.0, 0.7));
-	color = clamp(color * contrastBump, 0.0, 1.0);
+	color = clamp(color, 0.0, 1.0);
 	return vec4(color, 1.0);
 }
