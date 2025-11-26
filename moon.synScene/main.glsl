@@ -202,6 +202,12 @@ vec4 renderMoon()
 	float bassWobble = syn_BassLevel * 0.7 + syn_BassHits * 1.5;
 	bassWobble *= wobble_intensity;
 	
+	// Calculate radial position for rim-focused wobble
+	float distFromCenter = length(centered);
+	float radialT = clamp(distFromCenter / radius, 0.0, 1.0);
+	// Rim falloff: 0 at center, ramps up toward rim (power curve for sharper transition)
+	float rimFalloff = pow(radialT, 2.5);
+	
 	// Multiple wobble frequencies for organic rubber feel
 	float wobblePhase1 = sin(TIME * wobble_speed * 4.0) * bassWobble;
 	float wobblePhase2 = sin(TIME * wobble_speed * 6.3 + 1.0) * bassWobble * 0.6;
@@ -212,6 +218,9 @@ vec4 renderMoon()
 	float wobbleAmount = wobblePhase1 * sin(angle * 2.0 + TIME * wobble_speed) 
 	                   + wobblePhase2 * sin(angle * 3.0 - TIME * wobble_speed * 1.3)
 	                   + wobblePhase3 * cos(angle * 4.0 + TIME * wobble_speed * 0.7);
+	
+	// Apply rim falloff - center stays static, rim wobbles
+	wobbleAmount *= rimFalloff;
 	
 	// Apply wobble to radius (makes sphere bulge/contract directionally)
 	float wobbledRadius = radius * (1.0 + wobbleAmount * 0.15);
@@ -234,8 +243,8 @@ vec4 renderMoon()
 
 	vec3 norm = normalize(vec3(centered, max(zIn, 1e-3))); // normals from sphere
 	
-	// Add wobble displacement to normals for surface ripple effect
-	float normalWobble = bassWobble * 0.3;
+	// Add wobble displacement to normals for surface ripple effect (only at rim)
+	float normalWobble = bassWobble * 0.3 * rimFalloff;
 	norm.x += sin(angle * 3.0 + TIME * wobble_speed * 5.0) * normalWobble;
 	norm.y += cos(angle * 2.0 - TIME * wobble_speed * 4.0) * normalWobble;
 	norm = normalize(norm);
@@ -282,11 +291,11 @@ vec4 renderMoon()
 		mediaUV *= media_scale;
 		mediaUV += 0.5;
 		
-		// Wobble-driven distortion on media
-		float distortAmt = media_distortion * bassWobble;
+		// Subtle wobble-driven distortion on media (kept minimal for clarity)
+		float distortAmt = media_distortion * bassWobble * 0.3;
 		vec2 noiseOffset = vec2(
-			fbm(vec3(mediaUV * 3.0, TIME * 0.5)) * distortAmt * 0.1,
-			fbm(vec3(mediaUV.yx * 3.0, TIME * 0.5 + 10.0)) * distortAmt * 0.1
+			fbm(vec3(mediaUV * 3.0, TIME * 0.5)) * distortAmt * 0.03,
+			fbm(vec3(mediaUV.yx * 3.0, TIME * 0.5 + 10.0)) * distortAmt * 0.03
 		);
 		mediaUV += noiseOffset;
 		
