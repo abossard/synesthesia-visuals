@@ -3,93 +3,202 @@
 	[
 		{
 			"DEFAULT" : 1.9,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Primary animation speed.",
 			"MAX" : 3,
 			"MIN" : -3,
 			"NAME" : "rate1",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
 		},
 		{
 			"DEFAULT" : 0.6,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Secondary animation speed.",
 			"MAX" : 3,
 			"MIN" : -3,
 			"NAME" : "rate2",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
 		},
 		{
 			"DEFAULT" : 85,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Loop cycle length.",
 			"MAX" : 100,
 			"MIN" : 20,
 			"NAME" : "loopcycle",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
 		},
 		{
 			"DEFAULT" : 0.45,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Color hue 1.",
 			"MAX" : 2.5,
 			"MIN" : -2.5,
 			"NAME" : "color1",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Color"
 		},
 		{
 			"DEFAULT" : 1,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Color hue 2.",
 			"MAX" : 1.125,
 			"MIN" : -1.25,
 			"NAME" : "color2",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Color"
 		},
 		{
 			"DEFAULT" : 1.33,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Color cycle 1.",
 			"MAX" : 3.1459,
 			"MIN" : 0.01,
 			"NAME" : "cycle1",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Color"
 		},
 		{
 			"DEFAULT" : 0.22,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Color cycle 2.",
 			"MAX" : 0.497,
 			"MIN" : -0.497,
 			"NAME" : "cycle2",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Color"
 		},
 		{
 			"DEFAULT" : 0.095,
-			"DESCRIPTION" : "",
-			"MAX" : 0.01,
+			"DESCRIPTION" : "Phase nudge.",
+			"MAX" : 0.1,
 			"MIN" : 0.001,
 			"NAME" : "nudge",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
 		},
 		{
 			"DEFAULT" : 0.85,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "X-axis wave depth.",
 			"MAX" : 0.9,
 			"MIN" : 0.001,
 			"NAME" : "depthX",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
 		},
 		{
 			"DEFAULT" : 0.25,
-			"DESCRIPTION" : "",
+			"DESCRIPTION" : "Y-axis wave depth.",
 			"MAX" : 0.9,
 			"MIN" : 0.001,
 			"NAME" : "depthY",
 			"TYPE" : "slider",
-			"UI_GROUP" : "ungrouped"
+			"UI_GROUP" : "Motion"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Master audio reactivity amount.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "audio_reactivity",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "Bass heartbeat pulse strength.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "pulse_strength",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "High frequency color shimmer.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "shimmer_amount",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Trigger a bright flash.",
+			"NAME" : "flash_button",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Triggers"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Trigger a twitch/glitch effect.",
+			"NAME" : "twitch_button",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Triggers"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Trigger a color inversion.",
+			"NAME" : "invert_button",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Triggers"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How strongly media deflects the flow.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "media_influence",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Brightness threshold for media mask.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "media_threshold",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Softness of media mask edges.",
+			"MAX" : 0.5,
+			"MIN" : 0.01,
+			"NAME" : "media_edge_softness",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "0=Flow around, 1=Mask reveal, 2=Tint blend",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "media_blend_mode",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Invert the media mask.",
+			"NAME" : "media_invert",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Media mask reacts to audio.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "media_audio_react",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Glow at media edges.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "media_edge_glow",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
 		}
 	],
 	"CREDIT" : "by mojovideotech",
@@ -101,7 +210,7 @@
 	[
 		{
 			"FILTER" : "linear",
-			"WRAP" : "repeat"
+			"WRAP" : "clamp"
 		}
 	],
 	"TITLE" : "ColorDiffusionFlow",
