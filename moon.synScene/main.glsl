@@ -7,7 +7,10 @@ const float OUT_OUTER = 0.4; // 0.01 is nice too
 
 float noise3D(vec3 p)
 {
-	return fract(sin(dot(p ,vec3(12.9898,78.233,128.852))) * 43758.5453)*2.0-1.0;
+	// Improved hash to reduce banding artifacts
+	p = fract(p * vec3(443.897, 441.423, 437.195));
+	p += dot(p, p.yzx + 19.19);
+	return fract((p.x + p.y) * p.z) * 2.0 - 1.0;
 }
 
 float simplex3D(vec3 p)
@@ -100,6 +103,13 @@ float fbm(vec3 p)
 	return f;
 }
 
+vec2 rotate2D(vec2 p, float angle)
+{
+	float c = cos(angle);
+	float s = sin(angle);
+	return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+}
+
 vec4 renderMoon()
 {    
 	vec2 fragCoord = _xy;
@@ -163,6 +173,41 @@ vec4 renderMoon()
 	float glowFactor = glowControl * (1.0 + audioPulse * 2.5);
 
 	vec3 color = vec3(n * diffuse) * insideMask;
+
+	// Media projection with cubemap-style UVs
+	if (inside && media_blend > 0.0)
+	{
+		// Front-facing cubemap projection using sphere normals
+		vec2 mediaUV = norm.xy * 0.5 + 0.5;
+		
+		// Animated rotation
+		mediaUV -= 0.5;
+		mediaUV = rotate2D(mediaUV, TIME * media_rotation_speed);
+		mediaUV *= media_scale;
+		mediaUV += 0.5;
+		
+		// Audio-driven noise distortion
+		float distortAmt = media_distortion * audioPulse;
+		vec2 noiseOffset = vec2(
+			fbm(vec3(mediaUV * 3.0, TIME * 0.5)) * distortAmt * 0.1,
+			fbm(vec3(mediaUV.yx * 3.0, TIME * 0.5 + 10.0)) * distortAmt * 0.1
+		);
+		mediaUV += noiseOffset;
+		
+		// Sample media
+		vec3 mediaCol = texture(syn_Media, mediaUV).rgb;
+		
+		// Apply diffuse shading to media
+		mediaCol *= diffuse * 0.8 + 0.2; // Keep some ambient so it's visible
+		
+		// Limb fade - fade media at sphere edges
+		float viewDot = max(0.0, norm.z); // front-facing = 1, edge = 0
+		float limbMask = smoothstep(0.0, 0.5 + media_limb_fade * 0.5, viewDot);
+		
+		// Blend media with surface
+		color = mix(color, mediaCol, media_blend * limbMask);
+	}
+
 	color *= audioTint;
 	float craterBoost = mix(1.0, 1.0 + audioPulse * 0.4, audio_reactivity);
 	color *= craterBoost;

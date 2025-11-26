@@ -52,6 +52,51 @@
 			"NAME" : "punch_button",
 			"TYPE" : "bang",
 			"UI_GROUP" : "audio"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Blend amount of user media onto moon surface.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_blend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Scale of media projection on sphere.",
+			"MAX" : 4,
+			"MIN" : 0.1,
+			"NAME" : "media_scale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0.1,
+			"DESCRIPTION" : "Rotation speed of media on moon surface.",
+			"MAX" : 2,
+			"MIN" : -2,
+			"NAME" : "media_rotation_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Audio-driven distortion amount on media.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_distortion",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How much limb fade affects media at sphere edges.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_limb_fade",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
 		}
 	],
 	"CREDIT" : "Andre",

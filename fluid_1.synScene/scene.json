@@ -5,17 +5,19 @@
 			"DEFAULT" : 0.11,
 			"DESCRIPTION" : "Vorticity confinement (0.03-0.2). Higher = lower viscosity smoke.",
 			"MAX" : 0.3,
-			"MIN" : 0.0,
+			"MIN" : 0,
 			"NAME" : "vorticity_amount",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Simulation"
 		},
 		{
 			"DEFAULT" : 0.55,
 			"DESCRIPTION" : "Fluid viscosity coefficient.",
-			"MAX" : 1.0,
+			"MAX" : 1,
 			"MIN" : 0.1,
 			"NAME" : "viscosity",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Simulation"
 		},
@@ -25,33 +27,67 @@
 			"MAX" : 0.5,
 			"MIN" : 0.05,
 			"NAME" : "pressure_k",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Simulation"
 		},
 		{
 			"DEFAULT" : 0.2,
 			"DESCRIPTION" : "Master audio reactivity amount.",
-			"MAX" : 1.0,
-			"MIN" : 0.0,
+			"MAX" : 1,
+			"MIN" : 0,
 			"NAME" : "audio_reactivity",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Audio"
 		},
 		{
 			"DEFAULT" : 0.5,
 			"DESCRIPTION" : "Bass influence on fluid forces.",
-			"MAX" : 1.0,
-			"MIN" : 0.0,
+			"MAX" : 1,
+			"MIN" : 0,
 			"NAME" : "bass_emphasis",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Audio"
 		},
 		{
 			"DEFAULT" : 0.5,
 			"DESCRIPTION" : "High frequency influence on colors.",
-			"MAX" : 1.0,
-			"MIN" : 0.0,
+			"MAX" : 1,
+			"MIN" : 0,
 			"NAME" : "high_emphasis",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "BPM/rhythm influence on simulation speed.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "rhythm_emphasis",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "High frequency particle spawn rate.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "particle_rate",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "Bass-driven density injection strength.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bass_injection",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Audio"
 		}
@@ -61,41 +97,6 @@
 	"GPU" : 0,
 	"HEIGHT" : 1080,
 	"IMAGE_PATH" : "new_scene.png",
-	"PASSES" : 
-	[
-		{
-			"TARGET" : "bufferA",
-			"WIDTH" : 1920,
-			"HEIGHT" : 1080,
-			"FLOAT" : true,
-			"FILTER" : "linear",
-			"WRAP" : "repeat"
-		},
-		{
-			"TARGET" : "bufferB",
-			"WIDTH" : 1920,
-			"HEIGHT" : 1080,
-			"FLOAT" : true,
-			"FILTER" : "linear",
-			"WRAP" : "repeat"
-		},
-		{
-			"TARGET" : "bufferC",
-			"WIDTH" : 1920,
-			"HEIGHT" : 1080,
-			"FLOAT" : true,
-			"FILTER" : "linear",
-			"WRAP" : "repeat"
-		},
-		{
-			"TARGET" : "bufferD",
-			"WIDTH" : 1920,
-			"HEIGHT" : 1080,
-			"FLOAT" : true,
-			"FILTER" : "linear",
-			"WRAP" : "repeat"
-		}
-	],
 	"MEDIA" : 
 	[
 		{
@@ -103,7 +104,50 @@
 			"WRAP" : "repeat"
 		}
 	],
-	"TAGS" : ["simulation", "fluid", "curl", "smoke", "vorticity", "audio-reactive"],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "bufferA",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "bufferB",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "bufferC",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "bufferD",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : 
+	[
+		"simulation",
+		"fluid",
+		"curl",
+		"smoke",
+		"vorticity",
+		"audio-reactive"
+	],
 	"TITLE" : "Chimera's Breath (Fluid Sim)",
 	"WIDTH" : 1920
 }
