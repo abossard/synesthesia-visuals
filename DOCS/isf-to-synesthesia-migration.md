@@ -187,6 +187,7 @@ ISF → SSF:
 - **Black Output**: Check alpha—set `fragColor.a = 1.0`; ensure not multiplying color by zeroed audio uniforms (add floor like `max(syn_Level,0.05)`).
 - **Performance Collapse**: Profile by temporarily disabling audio branches; narrow culprit loops or multi-pass chain; reduce pass resolutions.
 - **Media Sampling Distortion**: Use `_correctMediaCoords(uv)` or `_textureMedia(uv)` for aspect-correct sampling instead of raw `texture(syn_Media, uv)`.
+- **Media Tiling/Repeating**: If media appears multiple times on screen, check `scene.json` `MEDIA` array — set `"WRAP": "clamp"` instead of `"repeat"` to display a single instance.
 
 ### Licensing & Attribution
 

@@ -1,0 +1,108 @@
+{
+	"CREDIT" : "Anonymous",
+	"DESCRIPTION" : "Warped fBM noise with media overlay and bass-reactive shake",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "clamp"
+		}
+	],
+	"TITLE" : "Base warp",
+	"WIDTH" : 1920,
+	"CONTROLS" : [
+		{
+			"NAME" : "warp_amount",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 0.3,
+			"UI_GROUP" : "Warp",
+			"DESCRIPTION" : "Amount of pattern-based UV warp"
+		},
+		{
+			"NAME" : "warp_speed",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 3.0,
+			"DEFAULT" : 1.0,
+			"UI_GROUP" : "Warp",
+			"DESCRIPTION" : "Speed of warp animation"
+		},
+		{
+			"NAME" : "bpm_sync",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 1.0,
+			"UI_GROUP" : "Warp",
+			"DESCRIPTION" : "Sync movement to BPM (0=time, 1=BPM)"
+		},
+		{
+			"NAME" : "hue_shift",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 0.0,
+			"UI_GROUP" : "Color",
+			"DESCRIPTION" : "Shift hue of warp colormap"
+		},
+		{
+			"NAME" : "saturation",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 2.0,
+			"DEFAULT" : 1.0,
+			"UI_GROUP" : "Color",
+			"DESCRIPTION" : "Saturation multiplier"
+		},
+		{
+			"NAME" : "brightness",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 2.0,
+			"DEFAULT" : 1.0,
+			"UI_GROUP" : "Color",
+			"DESCRIPTION" : "Brightness multiplier"
+		},
+		{
+			"NAME" : "bass_threshold",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 0.3,
+			"UI_GROUP" : "Audio",
+			"DESCRIPTION" : "Minimum bass level to trigger shake"
+		},
+		{
+			"NAME" : "shake_intensity",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 0.2,
+			"DEFAULT" : 0.05,
+			"UI_GROUP" : "Audio",
+			"DESCRIPTION" : "Intensity of bass-reactive shake"
+		},
+		{
+			"NAME" : "media_blend",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 0.5,
+			"UI_GROUP" : "Media",
+			"DESCRIPTION" : "Base blend amount between warp and media"
+		},
+		{
+			"NAME" : "audio_blend",
+			"TYPE" : "slider",
+			"MIN" : 0.0,
+			"MAX" : 1.0,
+			"DEFAULT" : 0.5,
+			"UI_GROUP" : "Media",
+			"DESCRIPTION" : "Audio reactivity for media blend (mid level)"
+		}
+	]
+}
