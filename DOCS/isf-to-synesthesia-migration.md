@@ -112,8 +112,8 @@ ISF → SSF:
 - Presence (Structural energy): `syn_BassPresence`, etc. (slow-moving; use in palette shifts).
 - Time Accumulators: `syn_Time`, band-specific times `syn_BassTime`… (speed up motion only when frequency band active).
 - Beat Tools: `syn_OnBeat`, `syn_ToggleOnBeat`, `syn_RandomOnBeat`, `syn_BeatTime` (discrete beat events) vs BPM family `syn_BPM`, `syn_BPMTwitcher`, `syn_BPMSin`, `syn_BPMSin2/4`, `syn_BPMTri` variants.
-- Spectrum Textures: `syn_Spectrum` channels (r raw FFT, g juiced FFT, b smooth FFT, a waveform) for continuous shapes.
-- Level History Texture: `syn_LevelTrail` (r full, g bass, b mid, a high) for vertical trail analyzers.
+- Spectrum Textures: `syn_Spectrum` is a **sampler1D** — use `texture(syn_Spectrum, freq)` where `freq` is a single float (0.0–1.0 across frequency bins). Channels: r=raw FFT, g=juiced FFT, b=smooth FFT, a=waveform.
+- Level History Texture: `syn_LevelTrail` is a **sampler1D** — use `texture(syn_LevelTrail, x)` where `x` is time position. Channels: r=full, g=bass, b=mid, a=high.
 
 ## Manual Migration Checklist
 
@@ -176,7 +176,7 @@ ISF → SSF:
 - **Float Pass Use**: Use `FLOAT: true` only for passes storing high dynamic range or iterative accumulation; prefer default RGBA8 for simple color transforms.
 - **Loop Bounds**: Replace `for(int i=0;i<256;i++)` with dynamic early exit or fewer samples scaled by audio activity (`int steps = int(mix(40.0,120.0,syn_Intensity));`).
 - **Branch Minimization**: Precompute audio-driven masks, avoid nested `if` inside heavy loops; use mix/step functions.
-- **Texture Sampling**: Prefer single `texture(syn_Spectrum, uv)` reuse across code branches; store to local variable.
+- **Texture Sampling**: Prefer single `texture(syn_Spectrum, freq)` reuse across code branches; store to local variable. Note: `syn_Spectrum` and `syn_LevelTrail` are **sampler1D** — pass a single `float`, not `vec2`.
 - **Smoothing vs Responsiveness**: Excess smoothing of hits reduces energy; balance by mixing raw `syn_BassHits` & smoothed `tracker` variables.
 - **Gamma/Contrast**: finalize output with `_gamma()` or `_contrast()` before post-effects to minimize banding at low light.
 

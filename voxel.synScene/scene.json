@@ -1,0 +1,205 @@
+{
+	"CONTROLS" : [
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Base movement speed",
+			"MAX" : 3.0,
+			"MIN" : 0.0,
+			"NAME" : "speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Movement"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Blend movement with BPM sync",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "bpmBlend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Movement"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Bass-driven time acceleration",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "bassTimeBlend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Movement"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Camera roll/sway amount",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "cameraSway",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Camera shake on bass hits",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "cameraShake",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Audio-reactive look-ahead distance",
+			"MAX" : 5.0,
+			"MIN" : 0.0,
+			"NAME" : "lookAheadAudio",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Lens distortion base amount",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "lensDistortion",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Audio-reactive lens distortion",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "lensDistortAudio",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Base edge glow intensity",
+			"MAX" : 3.0,
+			"MIN" : 0.0,
+			"NAME" : "glowIntensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEFAULT" : 2.0,
+			"DESCRIPTION" : "Bass-reactive glow boost",
+			"MAX" : 5.0,
+			"MIN" : 0.0,
+			"NAME" : "bassGlowAmount",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEFAULT" : 3.0,
+			"DESCRIPTION" : "High frequency glow boost",
+			"MAX" : 5.0,
+			"MIN" : 0.0,
+			"NAME" : "highGlowAmount",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEF_COLOR" : [1.0, 0.12, 0.0, 1.0],
+			"DESCRIPTION" : "Edge glow color (orange default)",
+			"NAME" : "glowColor",
+			"TYPE" : "color",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Spectrum-driven color shift",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "spectrumColorShift",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Flash intensity on beat",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "beatFlash",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Edge Glow"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Terrain voxel scale",
+			"MAX" : 3.0,
+			"MIN" : 0.3,
+			"NAME" : "terrainScale",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Terrain"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Terrain evolution speed",
+			"MAX" : 3.0,
+			"MIN" : 0.0,
+			"NAME" : "terrainSpeed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Terrain"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Audio-reactive terrain speed boost",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "terrainAudioSpeed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Terrain"
+		},
+		{
+			"DEFAULT" : 0.07,
+			"DESCRIPTION" : "Fog/atmosphere density",
+			"MAX" : 0.2,
+			"MIN" : 0.01,
+			"NAME" : "fogDensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Atmosphere"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Black & white blend (cyclic)",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "bwBlendAmount",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Atmosphere"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Vignette amount",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "vignetteAmount",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Atmosphere"
+		},
+		{
+			"DEFAULT" : 0.1,
+			"DESCRIPTION" : "Vignette edge sharpness",
+			"MAX" : 0.5,
+			"MIN" : 0.01,
+			"NAME" : "vignetteStrength",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Atmosphere"
+		}
+	],
+	"CREDIT" : "Inigo Quilez (iq)",
+	"DESCRIPTION" : "Voxel edge detection shader with extensive audio reactivity. Features BPM-synced movement, bass-triggered edge glow, configurable terrain, and atmosphere controls. Original: https://iquilezles.org/articles/voxellines",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Voxel Edge",
+	"WIDTH" : 1920
+}

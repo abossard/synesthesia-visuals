@@ -1,0 +1,157 @@
+{
+	"CONTROLS" : [
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Switch between paper (0) and dark neon (1) mode",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "dark_mode",
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Style"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Base hue for neon colors",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "neon_hue",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Style"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Color cycling amount synced to BPM",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "color_cycle",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Style"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Bass-reactive glow intensity",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "bass_glow",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Wind particle opacity",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "wind_opacity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Style"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Grid line opacity",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_opacity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Style"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Simulation speed multiplier",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How much speed is affected by BPM",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bpm_sync",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Amount of dynamic vortex turbulence",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "turbulence",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How much bass affects turbulence intensity",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "turbulence_bass",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Media overlay blend amount",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_blend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Media blend mode: 0=Overlay, 0.5=Multiply, 1=Screen",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_mode",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : [0.5, 0.5],
+			"DESCRIPTION" : "Move media position on screen",
+			"MAX" : [1, 1],
+			"MIN" : [0, 0],
+			"NAME" : "media_pos",
+			"TYPE" : "xy",
+			"UI_GROUP" : "Media"
+		}
+	],
+	"CREDIT" : "David A Roberts <https://davidar.io>",
+	"DESCRIPTION" : "Atmospheric pressure and circulation model - Global wind patterns visualization",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "clamp"
+		}
+	],
+	"PASSES" : [
+		{
+			"TARGET" : "bufferA",
+			"WIDTH" : 160,
+			"HEIGHT" : 72,
+			"FLOAT" : false,
+			"WRAP" : "clamp",
+			"FILTER" : "linear"
+		},
+		{
+			"TARGET" : "bufferB",
+			"FLOAT" : true,
+			"WRAP" : "clamp",
+			"FILTER" : "linear"
+		},
+		{
+			"TARGET" : "bufferC",
+			"FLOAT" : true,
+			"WRAP" : "repeat",
+			"FILTER" : "linear"
+		}
+	],
+	"TITLE" : "Global Wind",
+	"WIDTH" : 1920
+}
