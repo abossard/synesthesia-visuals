@@ -11,7 +11,7 @@
 		},
 		{
 			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Blend movement with BPM sync",
+			"DESCRIPTION" : "Smooth BPM sine wave nudge",
 			"MAX" : 1.0,
 			"MIN" : 0.0,
 			"NAME" : "bpmBlend",
@@ -38,7 +38,7 @@
 		},
 		{
 			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Camera shake on bass hits",
+			"DESCRIPTION" : "Smooth camera wiggle from bass presence",
 			"MAX" : 2.0,
 			"MIN" : 0.0,
 			"NAME" : "cameraShake",
@@ -65,7 +65,7 @@
 		},
 		{
 			"DEFAULT" : 0.3,
-			"DESCRIPTION" : "Audio-reactive lens distortion",
+			"DESCRIPTION" : "Smooth lens breathing with highs",
 			"MAX" : 2.0,
 			"MIN" : 0.0,
 			"NAME" : "lensDistortAudio",
@@ -117,7 +117,7 @@
 		},
 		{
 			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Flash intensity on beat",
+			"DESCRIPTION" : "Soft glow pulsing with beat",
 			"MAX" : 1.0,
 			"MIN" : 0.0,
 			"NAME" : "beatFlash",

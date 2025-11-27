@@ -230,27 +230,36 @@ vec4 renderMain(void) {
     if (_mouse.z <= 0.00001) mo = vec2(0.0);
     
     // === MOVEMENT CONTROLS ===
-    // Base speed with BPM sync
+    // Base speed with smooth BPM nudge (no jumps)
     float baseSpeed = speed * 2.0;
-    float bpmTime = syn_BPMTwitcher * bpmBlend * 10.0;
-    float bassTimeContrib = syn_BassTime * bassTimeBlend * 0.2;
-    float time = baseSpeed * (TIME + bassTimeContrib) + bpmTime + 50.0 * mo.x;
+    // Use syn_BPMSin for smooth wave instead of BPMTwitcher jumps
+    float bpmNudge = syn_BPMSin * bpmBlend * 0.5;
+    // Use accumulated bass time for gradual speed variation
+    float bassTimeContrib = syn_BassTime * bassTimeBlend * 0.1;
+    float time = baseSpeed * (TIME + bassTimeContrib) + bpmNudge + 50.0 * mo.x;
     
-    // Set terrain globals
+    // Set terrain globals - use presence (slow-moving) instead of level
     g_terrainScale = terrainScale;
-    g_terrainSpeed = terrainSpeed + syn_MidLevel * terrainAudioSpeed;
+    g_terrainSpeed = terrainSpeed + syn_MidPresence * terrainAudioSpeed * 0.5;
     
-    // Camera with configurable sway
-    float cr = cameraSway * cos(0.1 * TIME) + syn_BassHits * cameraShake * 0.3;
+    // Camera with smooth sway - use sin waves and presence, not hits
+    float baseSway = cameraSway * cos(0.1 * TIME);
+    // Smooth wiggle from bass presence, not sudden hits
+    float audioWiggle = sin(TIME * 3.0) * syn_BassPresence * cameraShake * 0.1;
+    float cr = baseSway + audioWiggle;
+    
     vec3 ro = path(time + 0.0, 1.0);
-    vec3 ta = path(time + 5.0 + syn_Level * lookAheadAudio, 1.0) - vec3(0.0, 6.0, 0.0);
+    // Smooth look-ahead using presence instead of level
+    float smoothLookAhead = syn_Presence * lookAheadAudio * 0.5;
+    vec3 ta = path(time + 5.0 + smoothLookAhead, 1.0) - vec3(0.0, 6.0, 0.0);
     gro = ro;
     
     mat3 cam = setCamera(ro, ta, cr);
     
-    // Build ray with configurable lens distortion
+    // Build ray with smooth lens breathing
     float r2 = p.x * p.x * 0.32 + p.y * p.y;
-    float distortAmount = lensDistortion + syn_HighLevel * lensDistortAudio * 0.5;
+    // Use presence for slow lens breathing, not sudden high hits
+    float distortAmount = lensDistortion + syn_HighPresence * lensDistortAudio * 0.3;
     p *= (7.0 - sqrt(37.5 - 11.5 * r2 * distortAmount)) / (r2 + 1.0);
     vec3 rd = normalize(cam * vec3(p.xy, -2.5));
     
@@ -275,8 +284,9 @@ vec4 renderMain(void) {
     float vig = 0.5 + 0.5 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), vignetteStrength);
     col *= mix(1.0, vig, vignetteAmount);
     
-    // Beat flash
-    col += beatFlash * syn_OnBeat * glowCol * 0.3;
+    // Soft beat glow (not flash) - use smoothed BPMSin instead of OnBeat
+    float beatGlow = (0.5 + 0.5 * syn_BPMSin) * beatFlash;
+    col += beatGlow * glowCol * 0.1;
     
     return vec4(col, 1.0);
 }
