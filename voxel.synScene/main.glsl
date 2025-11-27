@@ -27,6 +27,23 @@ float noise(in vec3 x) {
                mix(mix(e, f1, f.x), mix(g, h, f.x), f.y), f.z);
 }
 
+// HSV to RGB conversion
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+// RGB to HSV conversion
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
 float mapTerrain(vec3 p, float terrainScale, float terrainSpeed) {
     p *= 0.1 * terrainScale;
     p.xz *= 0.6;
@@ -119,7 +136,7 @@ float isEdge(in vec2 uv, vec4 va, vec4 vb, vec4 vc, vec4 vd) {
     return maxcomp(max(wb, wc));
 }
 
-vec3 render(in vec3 ro, in vec3 rd, float glowIntensity, float bassGlow, float highGlow, vec3 glowColor, float fogDensity, float bwBlend) {
+vec3 render(in vec3 ro, in vec3 rd, float glowIntensity, float bassGlow, float highGlow, vec3 glowColor, float fogDensity, float bwBlend, float wallHue, float wallSaturation) {
     vec3 col = vec3(0.0);
     
     // raymarch
@@ -160,8 +177,16 @@ vec3 render(in vec3 ro, in vec3 rd, float glowIntensity, float bassGlow, float h
         vec3 wir = smoothstep(0.4, 0.5, abs(uvw - 0.5));
         float vvv = (1.0 - wir.x * wir.y) * (1.0 - wir.x * wir.z) * (1.0 - wir.y * wir.z);
         
+        // Base wall color with hue shift
         col = vec3(0.5);
         col += 0.8 * vec3(0.1, 0.3, 0.4);
+        
+        // Apply hue shift to walls
+        vec3 wallHSV = rgb2hsv(col);
+        wallHSV.x = fract(wallHSV.x + wallHue); // Shift hue
+        wallHSV.y *= wallSaturation; // Adjust saturation
+        col = hsv2rgb(wallHSV);
+        
         col *= 1.0 - 0.75 * (1.0 - vvv) * www;
         
         // lighting
@@ -276,8 +301,34 @@ vec4 renderMain(void) {
         highGlowAmount, 
         glowCol,
         fogDensity,
-        bwBlendAmount
+        bwBlendAmount,
+        wallHueShift,
+        wallSaturation
     );
+    
+    // === GOD RAYS ===
+    if (godRaysIntensity > 0.01) {
+        vec2 uv = _uv;
+        vec2 lightPos = vec2(0.5 + 0.2 * sin(TIME * 0.3), 0.3); // Light source position
+        vec2 deltaUV = (uv - lightPos) * (1.0 / float(godRaysSamples)) * godRaysDecay;
+        
+        float illumination = 1.0;
+        vec3 rayCol = vec3(0.0);
+        vec2 sampleUV = uv;
+        
+        for (int i = 0; i < godRaysSamples; i++) {
+            sampleUV -= deltaUV;
+            // Sample brightness based on distance to center
+            float dist = length(sampleUV - lightPos);
+            float brightness = exp(-dist * 3.0) * illumination;
+            rayCol += glowCol * brightness * godRaysIntensity * 0.1;
+            illumination *= godRaysDensity;
+        }
+        
+        // Add god rays with audio modulation
+        float rayAudio = 1.0 + syn_HighPresence * godRaysAudio * 0.5;
+        col += rayCol * rayAudio;
+    }
     
     // Configurable vignetting
     vec2 q = _xy / RENDERSIZE.xy;

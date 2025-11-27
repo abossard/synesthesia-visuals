@@ -186,6 +186,69 @@
 			"NAME" : "vignetteStrength",
 			"TYPE" : "slider",
 			"UI_GROUP" : "Atmosphere"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Wall hue shift (0-1 color wheel)",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "wallHueShift",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Walls"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Wall color saturation",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "wallSaturation",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Walls"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "God rays intensity",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "godRaysIntensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "God Rays"
+		},
+		{
+			"DEFAULT" : 16,
+			"DESCRIPTION" : "God rays quality (samples)",
+			"MAX" : 32,
+			"MIN" : 4,
+			"NAME" : "godRaysSamples",
+			"TYPE" : "slider",
+			"UI_GROUP" : "God Rays"
+		},
+		{
+			"DEFAULT" : 0.96,
+			"DESCRIPTION" : "God rays density falloff",
+			"MAX" : 0.99,
+			"MIN" : 0.8,
+			"NAME" : "godRaysDensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "God Rays"
+		},
+		{
+			"DEFAULT" : 0.1,
+			"DESCRIPTION" : "God rays spread/decay",
+			"MAX" : 0.5,
+			"MIN" : 0.01,
+			"NAME" : "godRaysDecay",
+			"TYPE" : "slider",
+			"UI_GROUP" : "God Rays"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "God rays audio reactivity",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "godRaysAudio",
+			"TYPE" : "slider",
+			"UI_GROUP" : "God Rays"
 		}
 	],
 	"CREDIT" : "Inigo Quilez (iq)",
