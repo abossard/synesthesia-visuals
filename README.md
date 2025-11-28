@@ -34,6 +34,7 @@ This project uses:
 
 | Guide | Description |
 |-------|-------------|
+| [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic/VPT + BlackHole |
 | [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
 | [Processing Games Guide](docs/processing-games-guide.md) | Creating interactive VJ games in Java |
 | [ISF to Synesthesia Migration](docs/isf-to-synesthesia-migration.md) | Converting shaders to SSF format |
