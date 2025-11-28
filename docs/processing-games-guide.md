@@ -1507,7 +1507,578 @@ Here are additional concepts to explore:
 | **Simon Extreme** | Simon Says with increasing pattern length | Medium |
 | **Pong** | Classic pong using rows as paddles | Medium |
 
-### Animation Loops
+---
+
+## Matrix-Based Interactive Experiences
+
+The Launchpad's 8×8 grid is uniquely suited for experiences that treat the pads as:
+- **Spatial controls** - Position, area, zones
+- **Multi-touch surfaces** - Simultaneous input from multiple points
+- **Living maps** - Dynamic worlds that evolve based on interaction
+- **Instruments** - Musical and visual performance tools
+
+### Design Principles for Grid-Based Experiences
+
+1. **Every pad should have meaning** - Either as input, feedback, or both
+2. **Visual feedback is instant** - LEDs respond immediately to touch
+3. **Screen and pads tell different stories** - Pads show state, screen shows beauty
+4. **Multi-touch is a superpower** - Design for 2-10 simultaneous inputs
+5. **Persistence matters** - Let actions have lasting effects
+
+---
+
+## Deep-Dive Experience Concepts
+
+### 1. Maze Builder + Particle Flow
+
+**Concept**: Draw walls on the grid to create a maze. Particles continuously flow from sources to sinks, finding paths through your maze in real-time.
+
+**How it works**:
+- **Empty pads** = open space (particles can flow)
+- **Press once** = create wall (pad turns blue)
+- **Press wall again** = remove wall
+- **Hold corner pad** = spawn particle source (green)
+- **Hold opposite corner** = create particle sink (red)
+- Particles use pathfinding (A* or flow fields) to navigate
+- Screen shows beautiful particle trails flowing through maze
+
+**Visual Output**:
+- Particles leave glowing trails as they flow
+- Congestion points glow brighter
+- Dead ends pulse slowly
+- Flow speed varies with path length
+
+```java
+// Maze state
+int[][] maze = new int[8][8]; // 0=open, 1=wall
+PVector source = new PVector(0, 0);
+PVector sink = new PVector(7, 7);
+ArrayList<Particle> particles = new ArrayList<Particle>();
+
+void noteOn(int channel, int pitch, int velocity) {
+  PVector pos = noteToGrid(pitch);
+  int x = (int)pos.x, y = (int)pos.y;
+  
+  // Toggle wall
+  maze[x][y] = 1 - maze[x][y];
+  lightPad(x, y, maze[x][y] == 1 ? 45 : 0); // Blue for wall
+  
+  // Recalculate flow field
+  recalculateFlowField();
+}
+```
+
+---
+
+### 2. Conductive Surface
+
+**Concept**: The grid becomes an electronic circuit. Some pads are "power sources", others are "loads". Draw conductive paths to complete circuits and light up the loads.
+
+**How it works**:
+- **Fixed source pads** (red) provide power
+- **Fixed load pads** (yellow) need power to activate
+- **Press empty pads** to create conductive bridges (copper color)
+- When a path connects source to load → load activates (green glow)
+- Screen shows electricity flowing along paths
+
+**Advanced mechanics**:
+- Add resistor pads that dim the output
+- Add switch pads (toggle on/off)
+- Add capacitor pads (store charge temporarily)
+- Multiple simultaneous circuits possible
+
+---
+
+### 3. Terrain Sculptor + Water Simulation
+
+**Concept**: Each pad represents terrain height. Sculpt mountains and valleys, then watch water flow downhill and pool in basins.
+
+**How it works**:
+- **Press pad** = raise terrain (pad gets brighter)
+- **Long press** = lower terrain (pad gets dimmer)
+- Water constantly drips from the sky
+- Water flows to lowest adjacent cell
+- Pools form in basins (blue pads)
+- Rivers emerge naturally
+
+**LED feedback**:
+- Height shown by color intensity (dim=low, bright=high)
+- Water shown by blue overlay
+- Flowing water pulses
+
+**Screen visualization**:
+- 3D terrain mesh
+- Particle-based water simulation
+- Reflections and caustics in pools
+
+---
+
+### 4. Organism Evolution
+
+**Concept**: Grow a digital organism. Each pad is a cell that can become bone, muscle, sensor, or brain. Watch your creation come to life.
+
+**How it works**:
+- Start with one "core" cell (yellow)
+- **Tap adjacent pad** = add cell to organism
+- **Hold pad** = cycle cell type:
+  - **Bone** (white) = structure
+  - **Muscle** (red) = movement
+  - **Sensor** (green) = environmental awareness
+  - **Brain** (purple) = decision making
+- Organism develops behaviors based on structure
+- More sensors = more awareness
+- More muscles = more movement
+- Brain cells enable learning
+
+**Emergent behaviors**:
+- Creatures seek light (screen brightness)
+- Creatures avoid obstacles
+- Multiple organisms can interact
+
+---
+
+### 5. Sound Sculpture
+
+**Concept**: Each pad is a point in 3D sound space. Press pads to place sound sources. The screen visualizes sound wave interference patterns.
+
+**How it works**:
+- **Press pad** = place sound emitter at that position
+- Each emitter produces circular waves
+- Multiple emitters create interference patterns
+- Constructive interference = bright zones
+- Destructive interference = dark zones
+- Patterns evolve in real-time
+
+**Audio integration**:
+- Each emitter has a frequency based on position
+- Column = pitch, Row = timbre
+- Interference creates complex harmonics
+- Output via Syphon for audio-reactive visuals
+
+---
+
+### 6. Magnetic Field Playground
+
+**Concept**: Place magnets (poles) on the grid. Watch magnetic field lines form and evolve. Add iron filings particles that align to the field.
+
+**How it works**:
+- **Tap pad** = place North pole (red)
+- **Double-tap** = place South pole (blue)
+- **Tap again** = remove magnet
+- Field lines automatically calculated
+- Screen shows beautiful field line visualization
+- Particles (iron filings) align and flow along field lines
+
+**Physics**:
+- Realistic magnetic field calculation
+- Particles experience torque and force
+- Multiple magnets create complex patterns
+
+---
+
+### 7. City Lights
+
+**Concept**: You're a city planner controlling street lights. Citizens (particles) walk the streets at night. Light their paths efficiently.
+
+**How it works**:
+- Citizens spawn at edges and walk across grid
+- Press pads to place street lights
+- Lights illuminate adjacent cells
+- Citizens prefer lit paths
+- Goal: Light the city efficiently (minimize lights, maximize coverage)
+- Score based on citizen satisfaction vs power usage
+
+**Gameplay layers**:
+- Time-of-day cycle
+- Rush hours with more citizens
+- Budget constraints
+- Crime in dark areas
+
+---
+
+### 8. Quantum Superposition
+
+**Concept**: A particle exists in superposition across multiple pads simultaneously. Press pads to "observe" and collapse the wave function.
+
+**How it works**:
+- Particle wave spreads across grid (probability cloud)
+- Brighter pads = higher probability
+- Press any pad to "observe"
+- Wave function collapses to that point (or nearby based on probability)
+- Particle then spreads again as new wave
+
+**Advanced features**:
+- Multiple entangled particles
+- Quantum tunneling through walls
+- Interference between particle waves
+
+---
+
+### 9. Neural Network Trainer
+
+**Concept**: Train a tiny neural network using the grid. Input layer on left, output layer on right. Adjust weights by pressing connection points.
+
+**How it works**:
+- Left column = input neurons (sensor data)
+- Right column = output neurons (actions)
+- Middle pads = hidden layer weights
+- Press middle pads to strengthen connections
+- Network learns to solve simple tasks
+- Screen shows network activity in real-time
+
+**Training tasks**:
+- Pattern recognition
+- Simple classification
+- XOR problem
+
+---
+
+### 10. Wind Map Controller
+
+**Concept**: Control wind direction across a world map. Watch how your wind patterns affect weather, clouds, and particles.
+
+**How it works**:
+- Each pad represents a wind vector
+- Press and drag to set wind direction
+- Hold pad to increase wind strength
+- Particles (clouds, leaves, dust) flow according to wind field
+- Complex patterns emerge from simple inputs
+
+**Visualizations**:
+- Vector field arrows
+- Particle streams
+- Cloud formation and movement
+- Weather patterns developing
+
+---
+
+### 11. Ecosystem Simulator
+
+**Concept**: Manage a tiny ecosystem. Place plants, herbivores, and predators. Watch the food chain in action.
+
+**How it works**:
+- **Green pads** = plants (reproduce slowly)
+- **Yellow pads** = herbivores (eat plants, reproduce, can starve)
+- **Red pads** = predators (eat herbivores, reproduce, can starve)
+- Press pad to add entity
+- Ecosystem evolves based on predator-prey dynamics
+- Balance is key - too many predators = collapse
+
+**Dynamics**:
+- Plants spread to adjacent empty cells
+- Herbivores move toward plants
+- Predators hunt herbivores
+- Starvation removes entities
+- Population graphs on screen
+
+---
+
+### 12. Seismic Drum Machine
+
+**Concept**: A drum machine where hits create seismic waves that propagate across the grid. Waves interact, creating complex rhythmic patterns.
+
+**How it works**:
+- Press pad = trigger drum hit + seismic wave
+- Wave radiates outward from hit point
+- When waves reach other active pads = trigger those drums too
+- Polyrhythms emerge from wave interference
+- Tempo based on wave propagation speed
+
+**Musical output**:
+- Different rows = different drum sounds
+- Wave intensity = velocity
+- Simultaneous hits create fills
+- Synced to Syphon for visual output
+
+---
+
+### 13. Pixel Art World
+
+**Concept**: Paint pixel art on the grid. But your art comes to life - characters walk, water flows, fire spreads.
+
+**How it works**:
+- Color palette on scene buttons
+- Press pads to paint
+- Specific colors have behaviors:
+  - **Blue** = water (flows down)
+  - **Red/orange** = fire (spreads, consumes)
+  - **Green** = grass (grows slowly)
+  - **Brown** = dirt (static)
+  - **Yellow** = sand (falls like water)
+- Create living pixel art scenes
+
+---
+
+### 14. Infection Containment
+
+**Concept**: An infection spreads across the grid. Build quarantine walls to contain it before it reaches the edges.
+
+**How it works**:
+- Infection starts in center (red)
+- Spreads to adjacent cells every beat
+- Press pads to build walls (blue)
+- Walls block infection spread
+- Goal: Contain infection using minimal walls
+- If infection reaches edge = game over
+
+**Strategy elements**:
+- Limited wall budget
+- Walls take time to build
+- Some infections can jump walls
+- Multiple infection sources
+
+---
+
+### 15. Gravity Painter
+
+**Concept**: The grid is a canvas floating in space. Place "gravity wells" that pull paint particles, creating cosmic artwork.
+
+**How it works**:
+- Paint particles continuously emit from edges
+- Press pads to create gravity wells
+- Particles orbit wells, leaving color trails
+- Multiple wells create complex orbital paths
+- Long-press = stronger gravity
+- Double-press = repulsor (pushes particles away)
+
+**Artistic output**:
+- Spiraling cosmic patterns
+- Color based on velocity
+- Fade trails over time
+- Syphon output for projection
+
+---
+
+### 16. Light Diffusion
+
+**Concept**: The grid is a light diffusion surface. Place light sources and blockers. Watch light spread, reflect, and mix colors.
+
+**How it works**:
+- Press pad = place light source
+- Hold = cycle colors (RGB)
+- Light spreads to adjacent cells each frame
+- Intensity decreases with distance
+- Multiple lights mix colors
+- Place walls to create shadows
+
+**Physics**:
+- Light diffuses like heat equation
+- Reflective walls bounce light
+- Colored lights mix additively
+- Screen shows high-res diffusion
+
+---
+
+### 17. Rhythm Garden
+
+**Concept**: A garden where plants grow to the beat. Each pad is a plot. Tend your garden by pressing pads on the beat.
+
+**How it works**:
+- Music plays with visible beat indicator
+- Press pad on the beat = plant grows
+- Press off-beat = plant wilts
+- Different positions grow different plants
+- Garden evolves over song duration
+- Combo system for consecutive on-beat presses
+
+**Visuals**:
+- Beautiful garden visualization
+- Plants sway to music
+- Flowers bloom on perfect hits
+- Seasons change with song structure
+
+---
+
+### 18. Ant Colony Simulator
+
+**Concept**: Manage an ant colony. Place food, obstacles, and pheromone trails. Watch emergent behavior.
+
+**How it works**:
+- Ants emerge from nest (center pad)
+- Press pads to place food (green)
+- Long-press = place obstacle (blue)
+- Ants find food and leave pheromone trails
+- Other ants follow trails
+- Efficient paths emerge naturally
+
+**Optimization game**:
+- Score based on food collected
+- Time limited
+- Strategic food placement
+- Watch beautiful swarm patterns
+
+---
+
+### 19. Harmonograph
+
+**Concept**: A classic harmonograph drawing machine controlled by the grid. Each pad influences the pendulum.
+
+**How it works**:
+- Virtual pendulums draw patterns
+- Left column = X pendulum frequency
+- Right column = Y pendulum frequency  
+- Top row = X phase
+- Bottom row = Y phase
+- Press pads to adjust parameters
+- Watch classic Lissajous-like patterns form
+
+**Artistic output**:
+- Complex geometric patterns
+- Slowly evolving shapes
+- Color cycling
+- Record drawings as SVG
+
+---
+
+### 20. Grid Roguelike
+
+**Concept**: A tiny turn-based roguelike on the 8×8 grid. Navigate dungeons, fight monsters, collect loot.
+
+**How it works**:
+- Hero starts in corner (bright pad)
+- Monsters scattered on grid (red pads)
+- Treasure appears (yellow pads)
+- Press adjacent pad to move there
+- Move onto monster = combat
+- Find exit to next level
+
+**Roguelike elements**:
+- Fog of war (unexplored = dim)
+- HP system
+- Different monster types
+- Procedural level generation
+- Screen shows expanded view with stats
+
+---
+
+## Experience Design Framework
+
+When designing new grid-based experiences, consider:
+
+| Dimension | Questions to Ask |
+|-----------|------------------|
+| **Input Type** | Tap, hold, double-tap, multi-touch, drag? |
+| **Temporal** | Real-time, turn-based, rhythm-based, time-limited? |
+| **Spatial** | Position matters? Adjacency? Patterns? Zones? |
+| **Persistence** | Actions have lasting effects? Can undo? |
+| **Feedback** | Immediate LED response? Delayed revelation? |
+| **Emergence** | Simple rules → complex behaviors? |
+| **Agency** | Direct control or influence? |
+| **Audio** | Sound responsive? Music synced? |
+| **Visual Output** | Abstract? Representational? 3D? |
+| **Multiplayer** | Cooperative? Competitive? Solo? |
+
+---
+
+## Implementation Template
+
+For any grid-based experience:
+
+```java
+import themidibus.*;
+import codeanticode.syphon.*;
+
+MidiBus launchpad;
+SyphonServer syphon;
+
+// Grid state
+int[][] gridState = new int[8][8];
+boolean[][] padPressed = new boolean[8][8];
+
+void setup() {
+  size(1920, 1080, P3D);  // Full HD for VJ output
+  
+  // MIDI setup with fallback
+  initMidi();
+  
+  // Syphon for visual output
+  syphon = new SyphonServer(this, "GridExperience");
+  
+  clearAllPads();
+  initExperience();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    launchpad = new MidiBus(this, lpIn, lpOut);
+  }
+}
+
+void draw() {
+  // 1. Update simulation
+  updateExperience();
+  
+  // 2. Update Launchpad LEDs
+  updateLaunchpadDisplay();
+  
+  // 3. Draw screen visualization
+  drawVisualization();
+  
+  // 4. Send to Syphon
+  syphon.sendScreen();
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  PVector pos = noteToGrid(pitch);
+  padPressed[(int)pos.x][(int)pos.y] = true;
+  onPadPress((int)pos.x, (int)pos.y);
+}
+
+void noteOff(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  PVector pos = noteToGrid(pitch);
+  padPressed[(int)pos.x][(int)pos.y] = false;
+  onPadRelease((int)pos.x, (int)pos.y);
+}
+
+// Override these for your experience
+void initExperience() {}
+void updateExperience() {}
+void updateLaunchpadDisplay() {}
+void drawVisualization() {}
+void onPadPress(int x, int y) {}
+void onPadRelease(int x, int y) {}
+
+// Standard utilities
+PVector noteToGrid(int note) {
+  return new PVector((note % 10) - 1, (note / 10) - 1);
+}
+
+int gridToNote(int col, int row) {
+  return (row + 1) * 10 + (col + 1);
+}
+
+boolean isValidPad(int note) {
+  int col = note % 10;
+  int row = note / 10;
+  return col >= 1 && col <= 8 && row >= 1 && row <= 8;
+}
+
+void lightPad(int col, int row, int colorIndex) {
+  if (launchpad == null) return;
+  launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
+}
+
+void clearAllPads() {
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      lightPad(col, row, 0);
+    }
+  }
+}
+```
 
 ```java
 // Animated rainbow wave
