@@ -6,7 +6,7 @@ This folder contains guides and references for the VJ/visual performance toolkit
 
 | Document | Description |
 |----------|-------------|
-| [Live VJ Setup Guide](live-vj-setup-guide.md) | **Complete live rig setup**: Processing + Syphon + Synesthesia + Magic/VPT + BlackHole + MIDI |
+| [Live VJ Setup Guide](live-vj-setup-guide.md) | **Complete live rig setup**: Processing + Syphon + Synesthesia + Magic + BlackHole + MIDI |
 | [MIDI Controller Setup](midi-controller-setup.md) | Setup guides for Akai MIDImix and Launchpad Mini Mk3 |
 | [Processing Games Guide](processing-games-guide.md) | How to create interactive VJ games with Processing |
 | [ISF to Synesthesia Migration](isf-to-synesthesia-migration.md) | Converting ISF/Shadertoy shaders to Synesthesia SSF format |

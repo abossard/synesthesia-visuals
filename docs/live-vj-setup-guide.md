@@ -1,4 +1,4 @@
-# VJ / Live-Performance Stack: Processing + Synesthesia + Magic/VPT
+# VJ / Live-Performance Stack: Processing + Synesthesia + Magic
 
 A comprehensive guide for setting up a flexible, low-cost live visual system on macOS.
 
@@ -8,7 +8,7 @@ This setup enables:
 - Custom games/world simulations using **Processing** (2D/3D, particles, raycast games)
 - Frame sharing via **Syphon** for mixing and post-processing
 - Music-reactive scenes and shaders with **Synesthesia**
-- Layer compositing with **Magic Music Visuals** or **VPT 8** as Syphon mixers
+- Layer compositing with **Magic Music Visuals** as Syphon mixer
 - Audio routing into visual apps via **BlackHole**
 - Tactile control using **Launchpad Mini Mk3** and **Akai MIDImix**
 
@@ -71,20 +71,6 @@ Modular visual synth / VJ environment.
 **Resources**:
 - [Magic Music Visuals](https://magicmusicvisuals.com/)
 - [User's Guide](https://magicmusicvisuals.com/guide)
-
----
-
-### VPT 8 (Video Projection Tool)
-
-Free, multipurpose realtime projection/mapping tool by HC Gilje.
-
-**Features**:
-- Multiple layers
-- Syphon in/out (macOS)
-- MIDI, OSC, ArtNet control
-
-**Resources**:
-- [VPT 8 Official](https://hcgilje.wordpress.com/vpt/)
 
 ---
 
@@ -350,33 +336,13 @@ SyphonClient (Synesthesia) ┘
 
 ---
 
-## VPT 8: Free Syphon + MIDI Mixer
-
-VPT 8 is an alternative or additional free mixer:
-- Free realtime projection/mapping and mixing tool
-- Supports Syphon sources as inputs on macOS
-- Can output via Syphon as well
-- MIDI/OSC/ArtNet can control most parameters
-
-### Basic Flow
-
-1. In VPT, load `defaultproject-vpt8` / `projectpath.maxpat` for full UI
-2. In the **Sources** list, turn ON a `syph` module
-3. Use dropdown to pick the Syphon server (Processing or Synesthesia)
-4. In the **Layers** section, assign that syph source to a layer
-5. Use Akai MIDImix as VPT's MIDI input and map:
-   - Faders → layer opacity / master brightness
-   - Knobs → FX parameters / color adjustments
-
----
-
 ## Live Rig Architecture
 
 ### Visual Flow
 
 **Minimal Chain**:
 ```
-[Processing Game/World] --Syphon--> [Magic / VPT] --output--> Projector
+[Processing Game/World] --Syphon--> [Magic] --output--> Projector
 ```
 
 **Expanded with Synesthesia**:
@@ -388,7 +354,7 @@ Audio Player / DAW
          |
          +---> Synesthesia (audio-reactive scenes) --Syphon--+
          |                                                    |
-         +---> Magic / VPT (audio-reactive mixing) <----------+
+         +---> Magic (audio-reactive mixing) <----------------+
                          ^
                          |
                  Syphon from Processing (games/sims)
@@ -402,7 +368,7 @@ Audio Player / DAW
 | Controller | Connected To | Controls |
 |------------|--------------|----------|
 | **Launchpad Mini Mk3** | Processing game sketch via TheMidiBus | Movement/shooting in games, LED feedback, rainbow effects |
-| **Akai MIDImix** | Magic or VPT | Faders: layer opacity / crossfade; Knobs: post-FX (blur, color, glow); Buttons: scene changes, bypass toggles |
+| **Akai MIDImix** | Magic Music Visuals | Faders: layer opacity / crossfade; Knobs: post-FX (blur, color, glow); Buttons: scene changes, bypass toggles |
 
 ---
 
@@ -438,7 +404,7 @@ For reliability in live performance:
 │                        VIDEO FLOW                                │
 ├─────────────────────────────────────────────────────────────────┤
 │  Processing ──Syphon──┐                                         │
-│                       ├──→ Magic/VPT ──→ Projector              │
+│                       ├──→ Magic ──→ Projector                  │
 │  Synesthesia ─Syphon──┘                                         │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -446,7 +412,7 @@ For reliability in live performance:
 │                        MIDI FLOW                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │  Launchpad ──→ Processing (games, LED control)                  │
-│  MIDImix   ──→ Magic/VPT (faders, knobs for mixing)             │
+│  MIDImix   ──→ Magic (faders, knobs for mixing)                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -470,7 +436,7 @@ For reliability in live performance:
 - [ ] Configure audio input to BlackHole
 - [ ] Load desired scenes/shaders
 
-#### Mixer Setup (Magic or VPT)
+#### Mixer Setup (Magic Music Visuals)
 - [ ] Add SyphonClient modules for each source
 - [ ] Configure audio input to BlackHole
 - [ ] Set up layer routing and effects
@@ -506,10 +472,6 @@ For reliability in live performance:
 - [User's Guide](https://magicmusicvisuals.com/guide) - Full reference
 - [Forum](https://magicmusicvisuals.com/forum) - SyphonClient, MIDI threads
 - [Tutorial Videos](https://magicmusicvisuals.com/tutorials) - Audio-reactive scenes
-
-### VPT 8
-- [Official Documentation](https://hcgilje.wordpress.com/vpt/)
-- Tutorials for mixing/mapping
 
 ### BlackHole
 - [GitHub](https://github.com/ExistentialAudio/BlackHole)
