@@ -744,7 +744,768 @@ void clearAllPads() {
 
 ---
 
-## Advanced Techniques
+## Game Ideas for Launchpad
+
+This section contains game concepts designed specifically for the 8×8 Launchpad grid with visual output via Syphon. Each game idea includes concept description, core mechanics, and implementation hints.
+
+### 4. Flocker (Boids Simulation)
+
+A flock of birds/particles follows the location of pressed pads on the Launchpad. Based on Craig Reynolds' Boids algorithm.
+
+**Concept**:
+- A flock of 50-200 "boids" (birds/fish/particles) swim across the screen
+- When you press a pad, all boids are attracted to that location
+- Multiple pads can be pressed simultaneously for multiple attraction points
+- Pads light up based on how many boids are near that grid cell
+
+**Core Mechanics**:
+- **Separation**: Boids avoid crowding nearby boids
+- **Alignment**: Boids steer toward average heading of neighbors
+- **Cohesion**: Boids move toward center of mass of neighbors
+- **Attraction**: Pressed pads create attraction points
+
+```java
+import themidibus.*;
+import java.util.ArrayList;
+
+MidiBus launchpad;
+ArrayList<Boid> flock = new ArrayList<Boid>();
+ArrayList<PVector> attractors = new ArrayList<PVector>();
+boolean[][] padPressed = new boolean[8][8];
+
+void setup() {
+  size(800, 800, P3D);
+  
+  MidiBus.list();
+  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  
+  // Create initial flock
+  for (int i = 0; i < 150; i++) {
+    flock.add(new Boid(random(width), random(height)));
+  }
+  
+  clearAllPads();
+}
+
+void draw() {
+  background(10);
+  
+  // Update attractors from pressed pads
+  attractors.clear();
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      if (padPressed[col][row]) {
+        float x = map(col, 0, 7, 50, width - 50);
+        float y = map(7 - row, 0, 7, 50, height - 50);
+        attractors.add(new PVector(x, y));
+        
+        // Draw attractor point
+        fill(255, 100, 100, 150);
+        noStroke();
+        ellipse(x, y, 40, 40);
+      }
+    }
+  }
+  
+  // Update and draw flock
+  for (Boid b : flock) {
+    b.flock(flock);
+    b.attractTo(attractors);
+    b.update();
+    b.edges();
+    b.display();
+  }
+  
+  // Update Launchpad LEDs based on boid density
+  updateLaunchpadFromDensity();
+}
+
+void updateLaunchpadFromDensity() {
+  int[][] density = new int[8][8];
+  
+  // Count boids per grid cell
+  for (Boid b : flock) {
+    int col = constrain((int)map(b.position.x, 0, width, 0, 8), 0, 7);
+    int row = constrain((int)map(b.position.y, 0, height, 0, 8), 0, 7);
+    row = 7 - row; // Flip Y
+    density[col][row]++;
+  }
+  
+  // Light pads based on density
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      int count = density[col][row];
+      int colorIndex;
+      if (padPressed[col][row]) {
+        colorIndex = 5; // Red for pressed
+      } else if (count > 10) {
+        colorIndex = 21; // Bright green
+      } else if (count > 5) {
+        colorIndex = 17; // Medium green
+      } else if (count > 0) {
+        colorIndex = 19; // Dim green
+      } else {
+        colorIndex = 0; // Off
+      }
+      lightPad(col, row, colorIndex);
+    }
+  }
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  PVector pos = noteToGrid(pitch);
+  padPressed[(int)pos.x][(int)pos.y] = true;
+}
+
+void noteOff(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  PVector pos = noteToGrid(pitch);
+  padPressed[(int)pos.x][(int)pos.y] = false;
+}
+
+class Boid {
+  PVector position, velocity, acceleration;
+  float maxSpeed = 4;
+  float maxForce = 0.1;
+  
+  Boid(float x, float y) {
+    position = new PVector(x, y);
+    velocity = PVector.random2D().mult(random(2, 4));
+    acceleration = new PVector();
+  }
+  
+  void flock(ArrayList<Boid> boids) {
+    PVector sep = separate(boids).mult(1.5);
+    PVector ali = align(boids).mult(1.0);
+    PVector coh = cohesion(boids).mult(1.0);
+    acceleration.add(sep).add(ali).add(coh);
+  }
+  
+  void attractTo(ArrayList<PVector> points) {
+    for (PVector target : points) {
+      PVector desired = PVector.sub(target, position);
+      float d = desired.mag();
+      if (d < 300) {
+        desired.setMag(maxSpeed);
+        PVector steer = PVector.sub(desired, velocity);
+        steer.limit(maxForce * 2);
+        acceleration.add(steer);
+      }
+    }
+  }
+  
+  PVector separate(ArrayList<Boid> boids) {
+    float desiredSeparation = 25;
+    PVector steer = new PVector();
+    int count = 0;
+    for (Boid other : boids) {
+      float d = PVector.dist(position, other.position);
+      if (d > 0 && d < desiredSeparation) {
+        PVector diff = PVector.sub(position, other.position);
+        diff.normalize().div(d);
+        steer.add(diff);
+        count++;
+      }
+    }
+    if (count > 0) steer.div(count);
+    if (steer.mag() > 0) {
+      steer.setMag(maxSpeed);
+      steer.sub(velocity);
+      steer.limit(maxForce);
+    }
+    return steer;
+  }
+  
+  PVector align(ArrayList<Boid> boids) {
+    float neighborDist = 50;
+    PVector sum = new PVector();
+    int count = 0;
+    for (Boid other : boids) {
+      float d = PVector.dist(position, other.position);
+      if (d > 0 && d < neighborDist) {
+        sum.add(other.velocity);
+        count++;
+      }
+    }
+    if (count > 0) {
+      sum.div(count);
+      sum.setMag(maxSpeed);
+      PVector steer = PVector.sub(sum, velocity);
+      steer.limit(maxForce);
+      return steer;
+    }
+    return new PVector();
+  }
+  
+  PVector cohesion(ArrayList<Boid> boids) {
+    float neighborDist = 50;
+    PVector sum = new PVector();
+    int count = 0;
+    for (Boid other : boids) {
+      float d = PVector.dist(position, other.position);
+      if (d > 0 && d < neighborDist) {
+        sum.add(other.position);
+        count++;
+      }
+    }
+    if (count > 0) {
+      sum.div(count);
+      PVector desired = PVector.sub(sum, position);
+      desired.setMag(maxSpeed);
+      PVector steer = PVector.sub(desired, velocity);
+      steer.limit(maxForce);
+      return steer;
+    }
+    return new PVector();
+  }
+  
+  void update() {
+    velocity.add(acceleration);
+    velocity.limit(maxSpeed);
+    position.add(velocity);
+    acceleration.mult(0);
+  }
+  
+  void edges() {
+    if (position.x > width) position.x = 0;
+    if (position.x < 0) position.x = width;
+    if (position.y > height) position.y = 0;
+    if (position.y < 0) position.y = height;
+  }
+  
+  void display() {
+    float theta = velocity.heading() + HALF_PI;
+    fill(127, 200, 255);
+    noStroke();
+    pushMatrix();
+    translate(position.x, position.y);
+    rotate(theta);
+    beginShape();
+    vertex(0, -6);
+    vertex(-3, 6);
+    vertex(3, 6);
+    endShape(CLOSE);
+    popMatrix();
+  }
+}
+
+// Utility functions...
+PVector noteToGrid(int note) {
+  return new PVector((note % 10) - 1, (note / 10) - 1);
+}
+
+int gridToNote(int col, int row) {
+  return (row + 1) * 10 + (col + 1);
+}
+
+boolean isValidPad(int note) {
+  int col = note % 10;
+  int row = note / 10;
+  return col >= 1 && col <= 8 && row >= 1 && row <= 8;
+}
+
+void lightPad(int col, int row, int colorIndex) {
+  launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
+}
+
+void clearAllPads() {
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      lightPad(col, row, 0);
+    }
+  }
+}
+```
+
+---
+
+### 5. Virus Grower (Fractal Growth Game)
+
+A virus/organism grows from pressed pads, spreading across the grid. Fight it by pressing infected cells!
+
+**Concept**:
+- Press a pad to spawn a "virus" that grows outward like a fractal tree
+- Infected pads glow green, spreading pads pulse
+- As the virus spreads, newly covered pads turn red (danger zone)
+- Press red pads to weaken the virus
+- Press the original "heart" pad (yellow) to kill the entire virus
+- Multiple viruses can exist simultaneously
+
+**Core Mechanics**:
+- **Growth**: Virus spreads to adjacent cells over time
+- **Health**: Each virus has health that decreases when you hit red cells
+- **Heart**: The origin cell is the weak point - hitting it kills the virus
+- **Score**: Points for killing viruses, penalty for full grid infection
+
+```java
+import themidibus.*;
+import java.util.ArrayList;
+
+MidiBus launchpad;
+ArrayList<Virus> viruses = new ArrayList<Virus>();
+int score = 0;
+int lastSpawnTime = 0;
+
+void setup() {
+  size(800, 800);
+  textSize(32);
+  textAlign(CENTER, CENTER);
+  
+  MidiBus.list();
+  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  
+  clearAllPads();
+}
+
+void draw() {
+  background(10);
+  
+  // Update all viruses
+  for (int i = viruses.size() - 1; i >= 0; i--) {
+    Virus v = viruses.get(i);
+    v.update();
+    v.display();
+    
+    if (v.isDead()) {
+      score += 100;
+      flashVictory(v);
+      viruses.remove(i);
+    } else if (v.hasWon()) {
+      score -= 50;
+      viruses.remove(i);
+      flashDefeat();
+    }
+  }
+  
+  // Update Launchpad
+  updateLaunchpad();
+  
+  // Draw score
+  fill(255);
+  text("Score: " + score, width/2, 30);
+  text("Viruses: " + viruses.size(), width/2, 70);
+  
+  // Draw grid
+  drawGrid();
+}
+
+void drawGrid() {
+  float cellSize = 80;
+  float offsetX = (width - cellSize * 8) / 2;
+  float offsetY = 120;
+  
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      float x = offsetX + col * cellSize;
+      float y = offsetY + (7 - row) * cellSize;
+      
+      int state = getCellState(col, row);
+      
+      switch(state) {
+        case 0: fill(30); break;           // Empty
+        case 1: fill(255, 255, 0); break;  // Heart (yellow)
+        case 2: fill(0, 200, 0); break;    // Infected (green)
+        case 3: fill(200, 0, 0); break;    // Danger (red)
+        case 4: fill(0, 100, 0); break;    // Growing edge
+      }
+      
+      stroke(60);
+      rect(x, y, cellSize - 2, cellSize - 2);
+    }
+  }
+}
+
+int getCellState(int col, int row) {
+  for (Virus v : viruses) {
+    if (v.heartX == col && v.heartY == row) return 1; // Heart
+    if (v.isInfected(col, row)) {
+      if (v.isEdge(col, row)) return 4; // Growing edge
+      return 2; // Infected
+    }
+    if (v.isDanger(col, row)) return 3; // Danger zone
+  }
+  return 0; // Empty
+}
+
+void updateLaunchpad() {
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      int state = getCellState(col, row);
+      int colorIndex;
+      switch(state) {
+        case 1: colorIndex = 13; break; // Yellow - heart
+        case 2: colorIndex = 21; break; // Green - infected
+        case 3: colorIndex = 5; break;  // Red - danger
+        case 4: colorIndex = 17; break; // Dim green - edge
+        default: colorIndex = 0;        // Off
+      }
+      lightPad(col, row, colorIndex);
+    }
+  }
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  
+  PVector pos = noteToGrid(pitch);
+  int col = (int)pos.x;
+  int row = (int)pos.y;
+  
+  // Check if hitting a virus
+  boolean hitSomething = false;
+  for (int i = viruses.size() - 1; i >= 0; i--) {
+    Virus v = viruses.get(i);
+    
+    // Hit heart = kill virus
+    if (v.heartX == col && v.heartY == row) {
+      score += 200;
+      flashVictory(v);
+      viruses.remove(i);
+      hitSomething = true;
+      break;
+    }
+    
+    // Hit danger zone = weaken virus
+    if (v.isDanger(col, row)) {
+      v.health -= 20;
+      v.removeDanger(col, row);
+      score += 10;
+      hitSomething = true;
+    }
+  }
+  
+  // If nothing hit, spawn new virus
+  if (!hitSomething && getCellState(col, row) == 0) {
+    viruses.add(new Virus(col, row));
+  }
+}
+
+void flashVictory(Virus v) {
+  // Flash green on the area
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      if (v.isInfected(col, row) || v.isDanger(col, row)) {
+        lightPad(col, row, 21);
+      }
+    }
+  }
+}
+
+void flashDefeat() {
+  // Flash red on entire grid
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      lightPad(col, row, 5);
+    }
+  }
+}
+
+class Virus {
+  int heartX, heartY;
+  int health = 100;
+  ArrayList<int[]> infected = new ArrayList<int[]>();
+  ArrayList<int[]> danger = new ArrayList<int[]>();
+  int lastGrowTime = 0;
+  int growInterval = 800;
+  
+  Virus(int x, int y) {
+    heartX = x;
+    heartY = y;
+    infected.add(new int[]{x, y});
+    addDangerAround(x, y);
+  }
+  
+  void update() {
+    if (millis() - lastGrowTime > growInterval) {
+      grow();
+      lastGrowTime = millis();
+    }
+  }
+  
+  void grow() {
+    if (danger.size() > 0) {
+      // Pick random danger cell to infect
+      int idx = (int)random(danger.size());
+      int[] cell = danger.remove(idx);
+      infected.add(cell);
+      addDangerAround(cell[0], cell[1]);
+    }
+  }
+  
+  void addDangerAround(int x, int y) {
+    int[][] neighbors = {{-1,0}, {1,0}, {0,-1}, {0,1}};
+    for (int[] n : neighbors) {
+      int nx = x + n[0];
+      int ny = y + n[1];
+      if (nx >= 0 && nx < 8 && ny >= 0 && ny < 8) {
+        if (!isInfected(nx, ny) && !isDanger(nx, ny)) {
+          danger.add(new int[]{nx, ny});
+        }
+      }
+    }
+  }
+  
+  boolean isInfected(int x, int y) {
+    for (int[] cell : infected) {
+      if (cell[0] == x && cell[1] == y) return true;
+    }
+    return false;
+  }
+  
+  boolean isDanger(int x, int y) {
+    for (int[] cell : danger) {
+      if (cell[0] == x && cell[1] == y) return true;
+    }
+    return false;
+  }
+  
+  boolean isEdge(int x, int y) {
+    // Check if this infected cell is at the edge
+    for (int[] d : danger) {
+      if (Math.abs(d[0] - x) + Math.abs(d[1] - y) == 1) return true;
+    }
+    return false;
+  }
+  
+  void removeDanger(int x, int y) {
+    for (int i = danger.size() - 1; i >= 0; i--) {
+      if (danger.get(i)[0] == x && danger.get(i)[1] == y) {
+        danger.remove(i);
+        return;
+      }
+    }
+  }
+  
+  boolean isDead() {
+    return health <= 0;
+  }
+  
+  boolean hasWon() {
+    return infected.size() >= 50; // Virus wins if too big
+  }
+  
+  void display() {
+    // Visual representation handled in main draw
+  }
+}
+
+// Utility functions (same as before)
+PVector noteToGrid(int note) {
+  return new PVector((note % 10) - 1, (note / 10) - 1);
+}
+
+int gridToNote(int col, int row) {
+  return (row + 1) * 10 + (col + 1);
+}
+
+boolean isValidPad(int note) {
+  int col = note % 10;
+  int row = note / 10;
+  return col >= 1 && col <= 8 && row >= 1 && row <= 8;
+}
+
+void lightPad(int col, int row, int colorIndex) {
+  launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
+}
+
+void clearAllPads() {
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      lightPad(col, row, 0);
+    }
+  }
+}
+```
+
+---
+
+### 6. Particle Painter
+
+Draw with particles! Press pads to spawn particle emitters that create flowing artwork.
+
+**Concept**:
+- Each pressed pad becomes a particle emitter
+- Particles flow in directions based on pad position (edge pads shoot outward)
+- Particles leave trails creating abstract paintings
+- Hold multiple pads for complex patterns
+- MIDImix faders control particle properties (size, speed, lifetime)
+
+**Implementation Hints**:
+- Use PixelFlow for GPU-accelerated particles
+- Each pad emits 5-20 particles per frame while pressed
+- Particles have color based on grid position
+- Trail effect using semi-transparent background
+
+---
+
+### 7. Wave Interference
+
+Create interfering wave patterns from multiple sources.
+
+**Concept**:
+- Press a pad to create a ripple/wave source at that location
+- Multiple pads create interference patterns (constructive/destructive)
+- Pads pulse based on wave amplitude at their location
+- Beautiful circular wave patterns on screen
+- Great for audio-reactive visuals (wave speed tied to music)
+
+**Implementation Hints**:
+- Use sine waves from each active point
+- Calculate amplitude as sum of all waves at each screen pixel
+- Color based on amplitude (positive = blue, negative = red)
+- Launchpad shows amplitude at each cell location
+
+---
+
+### 8. Gravity Wells
+
+Control planetary gravity to guide particles.
+
+**Concept**:
+- Particles constantly spawn from edges of screen
+- Press pads to create "gravity wells" that attract particles
+- Particles orbit around wells, creating swirling patterns
+- Multiple wells create chaotic orbital dynamics
+- Hold longer = stronger gravity
+
+**Implementation Hints**:
+- Simple gravitational formula: F = G * m1 * m2 / r²
+- Particles have velocity and acceleration
+- Wells accumulate mass while pressed
+- Particles leave colorful trails
+
+---
+
+### 9. Light Chaser (Reaction Game)
+
+A light chases around the grid - catch it before it escapes!
+
+**Concept**:
+- A single lit pad moves around the grid
+- Player must press it before it moves
+- Successful hits score points and speed up the game
+- Miss too many and game over
+- Combo system for consecutive hits
+
+**Implementation Hints**:
+- Light moves in patterns (random, snake, spiral)
+- Speed increases every 10 hits
+- Visual trail shows where light has been
+- Screen shows score, combo, and lives
+
+---
+
+### 10. Territory Control
+
+Two-player competitive game for territory.
+
+**Concept**:
+- Grid starts neutral (dim)
+- Player 1 presses left side pads (turn blue)
+- Player 2 presses right side pads (turn red)
+- Captured cells slowly "decay" back to neutral
+- Player with most territory after time wins
+
+**Implementation Hints**:
+- Each cell has ownership value (-1 to 1)
+- Pressing pushes value toward your color
+- Cells slowly drift back to 0
+- Screen shows territory percentage
+
+---
+
+### 11. Drum Sequencer Visual
+
+Turn the Launchpad into a visual drum machine.
+
+**Concept**:
+- Each row is a different instrument/color
+- A playhead moves across columns (synced to BPM)
+- Toggle pads to create patterns
+- When playhead hits active pad, visual effect triggers
+- Beautiful for live music performance
+
+**Implementation Hints**:
+- Sync to MIDI clock or internal tempo
+- Each row triggers different visual effect (circles, lines, explosions)
+- Pads show pattern state (on/off)
+- Playhead column highlighted
+
+---
+
+### 12. Cellular Automata (Game of Life)
+
+Conway's Game of Life controlled by Launchpad.
+
+**Concept**:
+- Toggle cells alive/dead by pressing pads
+- Press a button to step simulation
+- Hold button for continuous evolution
+- Watch patterns emerge and evolve
+- Classic patterns like gliders, oscillators appear
+
+**Implementation Hints**:
+- Standard Game of Life rules
+- Press pad = toggle cell state
+- Scene button = step/run simulation
+- Screen shows larger visualization with cell history
+
+---
+
+### 13. Maze Runner
+
+Navigate a procedurally generated maze.
+
+**Concept**:
+- Random maze fills the grid
+- Player (bright pad) starts in corner
+- Goal (pulsing pad) in opposite corner
+- Press adjacent pads to move
+- Timer adds pressure
+
+**Implementation Hints**:
+- Generate maze using recursive backtracking
+- Player can only move to empty adjacent cells
+- Walls shown as dim pads
+- Screen shows full maze with player position
+
+---
+
+### 14. Sound Reactive Equalizer
+
+Visualize audio as a grid equalizer.
+
+**Concept**:
+- Each column represents a frequency band
+- Pads light up from bottom based on amplitude
+- Colors shift with intensity
+- Press pads to "freeze" that frequency for effects
+
+**Implementation Hints**:
+- Use Processing Sound library for FFT
+- 8 frequency bands (bass to treble)
+- Map amplitude to number of lit pads in column
+- Syphon output shows smooth frequency visualization
+
+---
+
+## More Game Ideas (Concepts)
+
+Here are additional concepts to explore:
+
+| Game | Description | Difficulty |
+|------|-------------|------------|
+| **Memory Match** | Flip pairs of colored pads to find matches | Easy |
+| **Tron Light Cycles** | Two players leave trails, don't crash! | Medium |
+| **Asteroid Field** | Dodge asteroids falling down the grid | Easy |
+| **Piano Roll** | Play notes, pads light up as music plays | Medium |
+| **Color Mixer** | Press multiple pads to blend colors on screen | Easy |
+| **Breakout** | Classic brick breaker on the pad grid | Hard |
+| **Tower Defense** | Enemies path through grid, place towers | Hard |
+| **Etch-a-Sketch** | Two pads act as X/Y controllers for drawing | Easy |
+| **Simon Extreme** | Simon Says with increasing pattern length | Medium |
+| **Pong** | Classic pong using rows as paddles | Medium |
 
 ### Animation Loops
 
