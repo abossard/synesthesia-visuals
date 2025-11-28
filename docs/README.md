@@ -35,3 +35,7 @@ When working with this codebase:
 - Launchpad notes: Row 1-8 × Column 1-8 = notes 11-88
 - MIDImix faders: CC 20-27 for layers 1-8
 - Synesthesia uniforms: `syn_*` prefix for audio reactivity
+
+## Additional Resources
+
+- [PixelFlow](https://diwi.github.io/PixelFlow/) - GPU-accelerated Processing library for fluid simulation, particles, optical flow, and image processing effects

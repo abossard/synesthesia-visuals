@@ -6,6 +6,7 @@ Interactive VJ games and visuals built with Processing (Java) and controlled via
 
 - [Processing 4.x](https://processing.org/download)
 - [The MidiBus library](http://www.smallbutdigital.com/projects/themidibus/)
+- [PixelFlow library](https://diwi.github.io/PixelFlow/) - GPU-accelerated visual effects
 - Launchpad Mini Mk3 in Programmer mode
 
 ## Installing The MidiBus

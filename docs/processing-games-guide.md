@@ -6,6 +6,7 @@ This guide covers how to create interactive VJ games and visuals using Processin
 
 - [Processing 4.x](https://processing.org/download)
 - [The MidiBus library](http://www.smallbutdigital.com/projects/themidibus/)
+- [PixelFlow library](https://diwi.github.io/PixelFlow/) - GPU-accelerated effects (fluid simulation, particles, image processing)
 - Launchpad Mini Mk3 in Programmer mode
 
 ## Installing The MidiBus
@@ -882,9 +883,133 @@ Avoid sending too many MIDI messages per frame. Batch LED updates when possible.
 
 ---
 
+## PixelFlow for Advanced Effects
+
+[PixelFlow](https://diwi.github.io/PixelFlow/) is a GPU-accelerated library for Processing that provides powerful visual effects perfect for VJ applications.
+
+### Installing PixelFlow
+
+1. Open Processing
+2. Go to **Sketch → Import Library → Manage Libraries**
+3. Search for "PixelFlow"
+4. Click **Install**
+
+### Key Features
+
+- **Fluid Simulation** - Real-time 2D fluid dynamics
+- **Particle Systems** - GPU-accelerated particle effects
+- **Optical Flow** - Motion detection and visualization
+- **Image Processing** - Blur, bloom, edge detection, etc.
+- **SoftBody Dynamics** - Soft body physics simulation
+
+### Example: Fluid Simulation with MIDI Control
+
+```java
+import com.thomasdiewald.pixelflow.java.DwPixelFlow;
+import com.thomasdiewald.pixelflow.java.fluid.DwFluid2D;
+import themidibus.*;
+
+DwPixelFlow context;
+DwFluid2D fluid;
+MidiBus launchpad;
+
+void setup() {
+  size(800, 800, P2D);
+  
+  // Initialize PixelFlow
+  context = new DwPixelFlow(this);
+  
+  // Create fluid simulation
+  fluid = new DwFluid2D(context, width, height, 1);
+  fluid.param.dissipation_velocity = 0.70f;
+  fluid.param.dissipation_density  = 0.99f;
+  
+  // Connect to Launchpad
+  MidiBus.list();
+  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+}
+
+void draw() {
+  fluid.update();
+  
+  // Render fluid
+  background(0);
+  fluid.renderFluidTextures(g, 0);
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  
+  PVector pos = noteToGrid(pitch);
+  
+  // Convert grid position to screen coordinates
+  float px = map(pos.x, 0, 7, 100, width - 100);
+  float py = map(7 - pos.y, 0, 7, 100, height - 100);
+  
+  // Add density and velocity to fluid at pad position
+  float radius = 50;
+  float vx = random(-20, 20);
+  float vy = random(-20, 20);
+  
+  fluid.addDensity(px, py, radius, 1.0f, 0.5f, 0.2f, 1.0f);
+  fluid.addVelocity(px, py, radius, vx, vy);
+  
+  // Light the pad with a color based on position
+  int colorIndex = (int)map(pos.x + pos.y, 0, 14, 1, 63);
+  lightPad((int)pos.x, (int)pos.y, colorIndex);
+}
+
+// Include utility functions from earlier examples...
+```
+
+### Example: Particle System
+
+```java
+import com.thomasdiewald.pixelflow.java.DwPixelFlow;
+import com.thomasdiewald.pixelflow.java.flowfieldparticles.DwFlowFieldParticles;
+
+DwPixelFlow context;
+DwFlowFieldParticles particles;
+
+void setup() {
+  size(800, 800, P2D);
+  context = new DwPixelFlow(this);
+  
+  particles = new DwFlowFieldParticles(context, 1000);
+  particles.param.size_display = 10;
+  particles.param.size_collision = 10;
+}
+
+void draw() {
+  background(0);
+  particles.update(g);
+  particles.display(g);
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  // Spawn particles at pad position
+  PVector pos = noteToGrid(pitch);
+  float px = map(pos.x, 0, 7, 0, width);
+  float py = map(7 - pos.y, 0, 7, 0, height);
+  
+  // Add particles at this location
+  particles.spawn(px, py, 50);
+}
+```
+
+### PixelFlow Resources
+
+- [PixelFlow Documentation](https://diwi.github.io/PixelFlow/)
+- [PixelFlow Examples](https://github.com/diwi/PixelFlow/tree/master/examples)
+- [Fluid Simulation Guide](https://github.com/diwi/PixelFlow/wiki/Fluid)
+
+---
+
 ## Resources
 
 - [Processing Reference](https://processing.org/reference/)
 - [The MidiBus Documentation](http://www.smallbutdigital.com/projects/themidibus/)
+- [PixelFlow Library](https://diwi.github.io/PixelFlow/) - GPU-accelerated fluid simulation, particles, optical flow, and image processing
+- [PixelFlow GitHub](https://github.com/diwi/PixelFlow) - Source code and examples
 - [Launchpad Mini Mk3 Programmer's Reference](https://novationmusic.com/)
 - [Processing Sound Library](https://processing.org/reference/libraries/sound/) - For audio integration
