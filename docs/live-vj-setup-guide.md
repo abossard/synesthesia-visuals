@@ -33,15 +33,31 @@ All components are either free or affordable (< ~100 USD per tool).
 
 ### Syphon for Processing
 
-Syphon is a macOS framework to share frames between apps in realtime.
+[Syphon](http://syphon.info/) is an open source macOS technology that allows applications to share frames in realtime with zero latency and zero copy. It supports arbitrary resolutions (up to GPU limits, typically 16k x 16k), alpha channels, and works with both OpenGL and Metal backends.
+
+**Key Features**:
+- Hardware accelerated GPU surface sharing
+- Zero latency, zero copy frame transfer
+- Compatible with macOS 10.6 (Snow Leopard) or later
+- Interoperable between OpenGL and Metal renderers
 
 **Installation**:
-1. In Processing: **Sketch → Import Library… → Add Library…**
+1. In Processing: **Sketch → Import Library… → Manage Libraries…**
 2. Search for "Syphon" (by Andres Colubri)
 3. Install and restart Processing
+4. **Important**: On Apple Silicon Macs, use the Intel/x64 build of Processing (Syphon library is x86_64 only)
+
+**Official Examples** (from [Syphon/Processing GitHub](https://github.com/Syphon/Processing/tree/master/examples)):
+- `SendScreen` - Send the main window output
+- `SendFrames` - Send an off-screen PGraphics buffer
+- `ReceiveFrames` - Receive frames from another Syphon server
+- `MultipleServers` - Create multiple Syphon outputs
+- `SelectServer` - Choose from available Syphon sources
 
 **Resources**:
-- [GitHub: Syphon/Processing](https://github.com/Syphon/Processing)
+- [Syphon Official Site](http://syphon.info/) - Framework overview and compatible apps
+- [GitHub: Syphon/Processing](https://github.com/Syphon/Processing) - Processing library (version 4.0)
+- [Processing Libraries: Syphon](https://processing.org/reference/libraries/) - Listed under Video & Vision
 - [FH Potsdam Tutorial](https://interface.fh-potsdam.de/processing/using-syphon.html)
 
 ---

@@ -5,18 +5,29 @@
  * Pads light up and players must hit them quickly to score points.
  * 
  * Requirements:
- * - Processing 4.x
+ * - Processing 4.x (Intel/x64 build for Apple Silicon)
  * - The MidiBus library
- * - Launchpad Mini Mk3 in Programmer mode
+ * - Syphon library (for video output)
+ * - Launchpad Mini Mk3 in Programmer mode (optional)
  * 
  * Controls:
- * - Hit lit pads to score
+ * - Hit lit pads to score (Launchpad)
+ * - Click grid cells with mouse (fallback)
+ * - Press 'R' to reset game
  * - Game speeds up as score increases
+ * 
+ * Syphon Output:
+ * - Broadcasts as "WhackAMole" server
+ * - Receivable in Synesthesia, Magic, VPT, etc.
  */
 
 import themidibus.*;
+import codeanticode.syphon.*;
 
 MidiBus launchpad;
+SyphonServer syphon;
+boolean hasLaunchpad = false;
+
 int targetCol = -1, targetRow = -1;
 int score = 0;
 int lastSpawnTime = 0;
@@ -28,20 +39,61 @@ final int COLOR_TARGET = 21; // Green
 final int COLOR_HIT = 5;     // Red
 final int COLOR_MISS = 9;    // Orange
 
+void settings() {
+  size(800, 800, P3D);  // P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800);
   textSize(48);
   textAlign(CENTER, CENTER);
   
-  // List MIDI devices
-  MidiBus.list();
+  // Initialize Syphon server
+  syphon = new SyphonServer(this, "WhackAMole");
   
-  // Connect to Launchpad (use MIDI 2 port for Programmer mode)
-  // Adjust the device name to match your system
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  // Try to find and connect to Launchpad
+  initMidi();
   
   clearAllPads();
   spawnTarget();
+}
+
+void initMidi() {
+  MidiBus.list();
+  
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String launchpadIn = null;
+  String launchpadOut = null;
+  
+  // Scan for Launchpad device
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) {
+      launchpadIn = dev;
+      break;
+    }
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) {
+      launchpadOut = dev;
+      break;
+    }
+  }
+  
+  // Connect if found
+  if (launchpadIn != null && launchpadOut != null) {
+    try {
+      launchpad = new MidiBus(this, launchpadIn, launchpadOut);
+      hasLaunchpad = true;
+      println("Launchpad connected: " + launchpadIn);
+    } catch (Exception e) {
+      println("Failed to connect to Launchpad: " + e.getMessage());
+      hasLaunchpad = false;
+    }
+  } else {
+    println("No Launchpad found - using mouse/keyboard controls");
+    hasLaunchpad = false;
+  }
 }
 
 void draw() {
@@ -56,6 +108,10 @@ void draw() {
   textSize(24);
   fill(150);
   text("Speed: " + (1000 - spawnInterval + 300) / 10 + "%", width/2, 150);
+  
+  // Show controller status
+  fill(hasLaunchpad ? color(0, 255, 0) : color(255, 200, 0));
+  text(hasLaunchpad ? "Launchpad Connected" : "Mouse Mode (click grid)", width/2, height - 30);
   textSize(48);
   
   // Draw grid representation
@@ -66,6 +122,9 @@ void draw() {
     clearTarget();
     spawnTarget();
   }
+  
+  // Send frame to Syphon
+  syphon.sendScreen();
 }
 
 void drawGrid() {
@@ -110,22 +169,7 @@ void noteOn(int channel, int pitch, int velocity) {
   int col = (int)pos.x;
   int row = (int)pos.y;
   
-  if (col == targetCol && row == targetRow) {
-    // Hit!
-    score++;
-    lightPad(col, row, COLOR_HIT); // Flash red
-    delay(100);
-    clearPad(col, row);
-    spawnTarget();
-    
-    // Speed up as score increases
-    spawnInterval = max(300, 1000 - score * 50);
-  } else {
-    // Miss - flash orange
-    lightPad(col, row, COLOR_MISS);
-    delay(50);
-    clearPad(col, row);
-  }
+  handlePadHit(col, row);
 }
 
 void noteOff(int channel, int pitch, int velocity) {
@@ -150,6 +194,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   int note = gridToNote(col, row);
   launchpad.sendNoteOn(0, note, colorIndex);
 }
@@ -159,10 +204,48 @@ void clearPad(int col, int row) {
 }
 
 void clearAllPads() {
+  if (!hasLaunchpad || launchpad == null) return;
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
       clearPad(col, row);
     }
+  }
+}
+
+// Mouse fallback for when no Launchpad is available
+void mousePressed() {
+  float cellSize = 80;
+  float offsetX = (width - cellSize * 8) / 2;
+  float offsetY = 200;
+  
+  // Check if click is within grid
+  if (mouseX >= offsetX && mouseX < offsetX + cellSize * 8 &&
+      mouseY >= offsetY && mouseY < offsetY + cellSize * 8) {
+    
+    int col = (int)((mouseX - offsetX) / cellSize);
+    int row = 7 - (int)((mouseY - offsetY) / cellSize);  // Flip Y
+    
+    handlePadHit(col, row);
+  }
+}
+
+// Shared hit logic for both MIDI and mouse
+void handlePadHit(int col, int row) {
+  if (col == targetCol && row == targetRow) {
+    // Hit!
+    score++;
+    lightPad(col, row, COLOR_HIT);
+    delay(100);
+    clearPad(col, row);
+    spawnTarget();
+    
+    // Speed up as score increases
+    spawnInterval = max(300, 1000 - score * 50);
+  } else {
+    // Miss - flash orange
+    lightPad(col, row, COLOR_MISS);
+    delay(50);
+    clearPad(col, row);
   }
 }
 
@@ -174,4 +257,10 @@ void keyPressed() {
     clearAllPads();
     spawnTarget();
   }
+}
+
+// Cleanup on exit
+void exit() {
+  clearAllPads();
+  super.exit();
 }
