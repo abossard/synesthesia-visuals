@@ -8,6 +8,9 @@
  * - Aggression: Increases when cornered or chaos is high
  */
 
+// Agent configuration constants
+final float HEALING_DELAY_MS = 3000;  // Time after damage before healing starts
+
 class Agent {
   float x, y;           // Position
   float vx, vy;         // Velocity
@@ -86,7 +89,7 @@ class Agent {
     }
     
     // Heal slowly over time
-    if (millis() - lastDamageTime > 3000) {
+    if (millis() - lastDamageTime > HEALING_DELAY_MS) {
       health = min(maxHealth, health + 0.01f);
     }
     

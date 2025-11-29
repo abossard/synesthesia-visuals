@@ -12,7 +12,9 @@ class Bomb {
   float targetY;        // Where the bomb will land
   float fallSpeed;
   float radius;         // Explosion radius
-  float timer;          // Time until explosion
+  float landTime;       // Time when bomb landed (millis)
+  float fuseTime;       // How long until explosion after landing (ms)
+  boolean landed = false;
   boolean exploded = false;
   float warningPulse = 0;
   
@@ -22,7 +24,8 @@ class Bomb {
     this.y = -50;  // Start from above screen
     this.fallSpeed = 15;
     this.radius = 120;  // Explosion radius
-    this.timer = 1000;  // ms until explosion after landing
+    this.fuseTime = 1000;  // ms until explosion after landing
+    this.landTime = 0;
     this.warningPulse = 0;
   }
   
@@ -32,16 +35,24 @@ class Bomb {
       y += fallSpeed;
       if (y >= targetY) {
         y = targetY;
+        landed = true;
+        landTime = millis();
       }
-    } else {
-      // Landed, countdown to explosion
-      timer -= 16.67f;  // Assume 60fps
+    } else if (landed) {
+      // Landed, countdown to explosion using frame-rate independent timing
+      float elapsed = millis() - landTime;
       warningPulse += 0.3f;
       
-      if (timer <= 0) {
+      if (elapsed >= fuseTime) {
         exploded = true;
       }
     }
+  }
+  
+  // Get remaining time until explosion (for display)
+  float getTimeRemaining() {
+    if (!landed) return fuseTime;
+    return max(0, fuseTime - (millis() - landTime));
   }
   
   void display() {
@@ -82,7 +93,8 @@ class Bomb {
       
       // Danger zone indicator
       float pulseSize = sin(warningPulse) * 20;
-      float alpha = map(timer, 1000, 0, 30, 100);
+      float timeRemaining = getTimeRemaining();
+      float alpha = map(timeRemaining, fuseTime, 0, 30, 100);
       
       stroke(0, 100, 100, alpha);
       strokeWeight(3);
@@ -109,7 +121,7 @@ class Bomb {
       fill(0, 0, 100);
       textAlign(CENTER, CENTER);
       textSize(12);
-      text(nf(timer/1000, 1, 1), x, y - 30);
+      text(nf(timeRemaining/1000, 1, 1), x, y - 30);
     }
     
     strokeWeight(1);
