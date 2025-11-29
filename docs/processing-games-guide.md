@@ -2803,6 +2803,882 @@ boolean isValidPad(int note) {
 
 ---
 
+## Modular Architecture for VJ Projects
+
+This section covers how to structure Processing 4 projects following principles from **"A Philosophy of Software Design"** and **"Grokking Simplicity"**—creating deep, narrow modules that enable fast prototyping of new levels and games.
+
+### Core Principles for Deep, Narrow Modules
+
+1. **Information Hiding**: Each module should own its complexity. The Launchpad module handles all note↔grid math internally; clients just call `handlePad(col, row)`.
+
+2. **Deep Interfaces**: Expose simple, powerful methods that hide implementation complexity:
+   ```java
+   // ❌ Shallow: exposes internals
+   void setMidiNote(int channel, int pitch, int velocity);
+   
+   // ✅ Deep: hides MIDI complexity
+   void lightPad(int col, int row, int colorIndex);
+   void armExit();
+   void queueLevel(int levelId);
+   ```
+
+3. **Separate State from Effects**: Keep pure logic (calculations, state transitions) separate from I/O (MIDI, Syphon, audio):
+   ```java
+   // Pure logic: easy to test
+   LevelState updateGame(LevelState state, Inputs inputs);
+   
+   // Effects: isolated at edges
+   void renderToScreen(LevelState state, PGraphics g);
+   void syncToLaunchpad(LevelState state, LaunchpadGrid grid);
+   ```
+
+4. **Explicit Lifecycle**: Every module follows `init() → update() → draw() → dispose()`:
+   ```java
+   interface Level {
+     void init(SharedContext ctx);
+     void update(float dt, Inputs inputs);
+     void draw(PGraphics g);
+     void dispose();
+   }
+   ```
+
+### Reusable Module Library
+
+Here's a modular architecture that lets you create new levels in minutes:
+
+```mermaid
+classDiagram
+    class VJCore {
+        +SyphonServer syphon
+        +AudioInput audio
+        +LaunchpadGrid launchpad
+        +LevelManager levels
+        +run()
+    }
+    class LaunchpadGrid {
+        -MidiBus midi
+        -boolean connected
+        +lightPad(col, row, color)
+        +clearAll()
+        +handleNote(note, velocity)
+        +noteToCell(note): Cell
+    }
+    class AudioInput {
+        -AudioIn input
+        -FFT fft
+        +getBassLevel(): float
+        +getMidLevel(): float
+        +getHighLevel(): float
+        +getBeatPulse(): float
+    }
+    class LevelManager {
+        -Level[] levels
+        -int active
+        +queueLevel(int id)
+        +armExit()
+        +update(dt)
+        +draw(PGraphics)
+    }
+    class Level {
+        <<interface>>
+        +init(SharedContext)
+        +update(dt, Inputs)
+        +draw(PGraphics)
+        +onPad(col, row, velocity)
+        +onCC(cc, value)
+        +dispose()
+    }
+    VJCore --> LaunchpadGrid
+    VJCore --> AudioInput
+    VJCore --> LevelManager
+    LevelManager --> Level
+```
+
+### Quick-Start Template for New Projects
+
+Copy this template to start any new VJ project with full Launchpad, Syphon, and audio integration:
+
+```java
+// ===== NewProject.pde =====
+// Replace "NewProject" with your project name throughout
+
+import themidibus.*;
+import codeanticode.syphon.*;
+import processing.sound.*;
+
+// === Core Services (reuse across all projects) ===
+LaunchpadGrid grid;
+AudioAnalyzer audio;
+SyphonServer syphon;
+
+// === Project-specific state ===
+// Add your variables here
+
+void settings() {
+  size(1920, 1080, P3D);
+}
+
+void setup() {
+  // Initialize shared services
+  grid = new LaunchpadGrid(this);
+  audio = new AudioAnalyzer(this);
+  syphon = new SyphonServer(this, "NewProject");
+  
+  // Initialize your project
+  initProject();
+}
+
+void draw() {
+  // Update audio analysis
+  audio.update();
+  
+  // Your update logic
+  updateProject();
+  
+  // Your drawing code
+  drawProject();
+  
+  // Send to Syphon
+  syphon.sendScreen();
+  
+  // Sync Launchpad LEDs
+  syncLaunchpad();
+}
+
+// === MIDI Callbacks ===
+void noteOn(int channel, int pitch, int velocity) {
+  grid.handleNoteOn(pitch, velocity);
+}
+
+void noteOff(int channel, int pitch, int velocity) {
+  grid.handleNoteOff(pitch);
+}
+
+void controllerChange(int channel, int number, int value) {
+  handleCC(number, value);
+}
+
+// === Keyboard/Mouse Fallback ===
+void keyPressed() {
+  handleKeyboard(key, keyCode);
+}
+
+void mousePressed() {
+  handleMouse(mouseX, mouseY);
+}
+
+// === Project Implementation ===
+void initProject() {
+  // Your initialization code
+}
+
+void updateProject() {
+  // Your update logic
+}
+
+void drawProject() {
+  background(0);
+  // Your drawing code
+}
+
+void syncLaunchpad() {
+  // Update Launchpad LEDs based on state
+}
+
+void handleCC(int cc, int value) {
+  // Handle MIDImix faders/knobs
+}
+
+void handleKeyboard(char k, int kc) {
+  // Keyboard fallback controls
+}
+
+void handleMouse(int mx, int my) {
+  // Mouse fallback controls
+}
+```
+
+### Reusable LaunchpadGrid Module
+
+Save this as a `.pde` tab in your sketch:
+
+```java
+// ===== LaunchpadGrid.pde =====
+// Reusable Launchpad controller with auto-detection and fallback
+
+class LaunchpadGrid {
+  MidiBus midi;
+  boolean connected = false;
+  PApplet parent;
+  
+  // Pad state tracking
+  boolean[][] padPressed = new boolean[8][8];
+  int[][] padColors = new int[8][8];
+  
+  // Color constants
+  static final int OFF = 0;
+  static final int RED = 5;
+  static final int ORANGE = 9;
+  static final int YELLOW = 13;
+  static final int GREEN = 21;
+  static final int CYAN = 37;
+  static final int BLUE = 45;
+  static final int PURPLE = 53;
+  static final int PINK = 57;
+  static final int WHITE = 3;
+  
+  LaunchpadGrid(PApplet parent) {
+    this.parent = parent;
+    initMidi();
+  }
+  
+  void initMidi() {
+    String[] inputs = MidiBus.availableInputs();
+    String[] outputs = MidiBus.availableOutputs();
+    
+    String lpIn = null, lpOut = null;
+    for (String dev : inputs) {
+      if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+    }
+    for (String dev : outputs) {
+      if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+    }
+    
+    if (lpIn != null && lpOut != null) {
+      try {
+        midi = new MidiBus(parent, lpIn, lpOut);
+        connected = true;
+        clearAll();
+        println("Launchpad connected: " + lpIn);
+      } catch (Exception e) {
+        connected = false;
+        println("Launchpad connection failed: " + e.getMessage());
+      }
+    } else {
+      println("Launchpad not found. Using keyboard/mouse fallback.");
+    }
+  }
+  
+  // === Deep interface: hide MIDI complexity ===
+  
+  void lightPad(int col, int row, int colorIndex) {
+    if (!connected || midi == null) return;
+    if (col < 0 || col > 7 || row < 0 || row > 7) return;
+    
+    padColors[col][row] = colorIndex;
+    int note = (row + 1) * 10 + (col + 1);
+    midi.sendNoteOn(0, note, colorIndex);
+  }
+  
+  void clearPad(int col, int row) {
+    lightPad(col, row, OFF);
+  }
+  
+  void clearAll() {
+    for (int row = 0; row < 8; row++) {
+      for (int col = 0; col < 8; col++) {
+        lightPad(col, row, OFF);
+      }
+    }
+  }
+  
+  void lightRow(int row, int colorIndex) {
+    for (int col = 0; col < 8; col++) {
+      lightPad(col, row, colorIndex);
+    }
+  }
+  
+  void lightColumn(int col, int colorIndex) {
+    for (int row = 0; row < 8; row++) {
+      lightPad(col, row, colorIndex);
+    }
+  }
+  
+  void lightBorder(int colorIndex) {
+    lightRow(0, colorIndex);
+    lightRow(7, colorIndex);
+    lightColumn(0, colorIndex);
+    lightColumn(7, colorIndex);
+  }
+  
+  // === Note handling ===
+  
+  void handleNoteOn(int pitch, int velocity) {
+    if (!isValidPad(pitch)) return;
+    
+    int col = (pitch % 10) - 1;
+    int row = (pitch / 10) - 1;
+    padPressed[col][row] = true;
+    
+    // Override in main sketch to handle pad press
+    onPadPress(col, row, velocity);
+  }
+  
+  void handleNoteOff(int pitch) {
+    if (!isValidPad(pitch)) return;
+    
+    int col = (pitch % 10) - 1;
+    int row = (pitch / 10) - 1;
+    padPressed[col][row] = false;
+    
+    // Override in main sketch to handle pad release
+    onPadRelease(col, row);
+  }
+  
+  boolean isValidPad(int note) {
+    int col = note % 10;
+    int row = note / 10;
+    return col >= 1 && col <= 8 && row >= 1 && row <= 8;
+  }
+  
+  boolean isPadPressed(int col, int row) {
+    if (col < 0 || col > 7 || row < 0 || row > 7) return false;
+    return padPressed[col][row];
+  }
+  
+  // Border detection for special controls
+  boolean isBorderPad(int col, int row) {
+    return col == 0 || col == 7 || row == 0 || row == 7;
+  }
+  
+  boolean isCornerPad(int col, int row) {
+    return (col == 0 || col == 7) && (row == 0 || row == 7);
+  }
+}
+
+// Callbacks to override in main sketch
+void onPadPress(int col, int row, int velocity) {}
+void onPadRelease(int col, int row) {}
+```
+
+### Reusable AudioAnalyzer Module
+
+Save this as a `.pde` tab for beat detection and frequency analysis:
+
+```java
+// ===== AudioAnalyzer.pde =====
+// Audio analysis with BlackHole support for system audio capture
+
+class AudioAnalyzer {
+  AudioIn input;
+  FFT fft;
+  Amplitude amp;
+  PApplet parent;
+  
+  // Analysis results
+  float bassLevel = 0;
+  float midLevel = 0;
+  float highLevel = 0;
+  float overallLevel = 0;
+  
+  // Beat detection
+  float beatThreshold = 0.15;
+  float lastBassLevel = 0;
+  boolean beatDetected = false;
+  float beatPulse = 0;
+  float beatDecay = 0.95;
+  
+  // Smoothing
+  float smoothing = 0.3;
+  
+  AudioAnalyzer(PApplet parent) {
+    this.parent = parent;
+    initAudio();
+  }
+  
+  void initAudio() {
+    // Note: Sound library uses system default input device
+    // Configure BlackHole as default input in System Preferences > Sound
+    // for system audio capture
+    
+    try {
+      // Use system default (should be BlackHole if configured)
+      input = new AudioIn(parent, 0);
+      input.start();
+      
+      fft = new FFT(parent, 512);
+      fft.input(input);
+      
+      amp = new Amplitude(parent);
+      amp.input(input);
+      
+      println("Audio analyzer initialized");
+    } catch (Exception e) {
+      println("Audio initialization failed: " + e.getMessage());
+      println("Configure BlackHole as default input in System Preferences > Sound");
+    }
+  }
+  
+  void update() {
+    if (fft == null) return;
+    
+    fft.analyze();
+    
+    // Calculate frequency band levels
+    float newBass = 0, newMid = 0, newHigh = 0;
+    
+    // Bass: 0-200 Hz (bins 0-10 roughly)
+    for (int i = 0; i < 10; i++) {
+      newBass += fft.spectrum[i];
+    }
+    newBass /= 10;
+    
+    // Mids: 200-2000 Hz (bins 10-100 roughly)
+    for (int i = 10; i < 100; i++) {
+      newMid += fft.spectrum[i];
+    }
+    newMid /= 90;
+    
+    // Highs: 2000+ Hz (bins 100-256)
+    for (int i = 100; i < 256; i++) {
+      newHigh += fft.spectrum[i];
+    }
+    newHigh /= 156;
+    
+    // Smooth values
+    bassLevel = lerp(bassLevel, newBass, smoothing);
+    midLevel = lerp(midLevel, newMid, smoothing);
+    highLevel = lerp(highLevel, newHigh, smoothing);
+    overallLevel = amp.analyze();
+    
+    // Beat detection on bass transient
+    beatDetected = (bassLevel - lastBassLevel) > beatThreshold;
+    if (beatDetected) {
+      beatPulse = 1.0;
+    }
+    beatPulse *= beatDecay;
+    lastBassLevel = bassLevel;
+  }
+  
+  float getBass() { return bassLevel * 10; }
+  float getMid() { return midLevel * 10; }
+  float getHigh() { return highLevel * 10; }
+  float getLevel() { return overallLevel; }
+  float getBeat() { return beatPulse; }
+  boolean isBeat() { return beatDetected; }
+  
+  // Get spectrum for visualization
+  float[] getSpectrum() {
+    if (fft == null) return new float[8];
+    
+    float[] bands = new float[8];
+    int binSize = fft.spectrum.length / 8;
+    
+    for (int i = 0; i < 8; i++) {
+      float sum = 0;
+      for (int j = 0; j < binSize; j++) {
+        sum += fft.spectrum[i * binSize + j];
+      }
+      bands[i] = sum / binSize;
+    }
+    return bands;
+  }
+}
+```
+
+### BlackHole Audio Setup (macOS)
+
+To capture system audio for beat-reactive visuals:
+
+1. **Install BlackHole**:
+   ```bash
+   brew install blackhole-2ch
+   ```
+   Or download from [github.com/ExistentialAudio/BlackHole](https://github.com/ExistentialAudio/BlackHole)
+
+2. **Create Multi-Output Device** (to hear audio + route to Processing):
+   - Open **Audio MIDI Setup** (Applications → Utilities)
+   - Click **+** → **Create Multi-Output Device**
+   - Check your speakers + BlackHole 2ch
+   - Set your speakers as **Master** (clock source)
+
+3. **Configure Processing**:
+   - Set **System Preferences → Sound → Input** to "BlackHole 2ch"
+   - Or create an **Aggregate Device** with BlackHole as input
+
+4. **In your Processing sketch**:
+   ```java
+   // AudioIn will use system default input (BlackHole)
+   AudioIn input = new AudioIn(this, 0);
+   input.start();
+   ```
+
+---
+
+## Logo Shower and Hider
+
+A VJ-ready logo display system controlled by Launchpad. Perfect for event branding, sponsor displays, and beat-synced logo reveals.
+
+### Concept
+
+- Loads logos from a folder automatically
+- Launchpad border buttons control visibility with smooth animations
+- Navigation between logos using dedicated pads
+- Beat-synced movement when logos slide in
+- Fade effects for elegant transitions
+
+### Full Implementation
+
+```java
+// ===== LogoShowerHider.pde =====
+// Logo display system with Launchpad control and beat-synced animations
+
+import themidibus.*;
+import codeanticode.syphon.*;
+import processing.sound.*;
+
+// === Core Services ===
+LaunchpadGrid grid;
+AudioAnalyzer audio;
+SyphonServer syphon;
+
+// === Logo System ===
+ArrayList<PImage> logos = new ArrayList<PImage>();
+int currentLogoIndex = 0;
+String logoFolder = "logos";  // Put logo files in data/logos/
+
+// === Animation State ===
+float logoX = 0;           // Current X position
+float logoY = 0;           // Current Y position
+float targetX = 0;         // Target X position
+float targetY = 0;         // Target Y position
+float logoOpacity = 0;     // Current opacity (0-255)
+float targetOpacity = 0;   // Target opacity
+boolean logoVisible = false;
+
+// === Entry direction tracking ===
+int entryDirection = -1;   // 0=top, 1=right, 2=bottom, 3=left
+float entryProgress = 0;   // 0 = offscreen, 1 = centered
+
+// === Animation settings ===
+float slideSpeed = 0.05;   // Base slide speed
+float fadeSpeed = 0.08;    // Fade speed
+float beatInfluence = 0.3; // How much beat affects movement
+
+// === Launchpad mapping ===
+// Border pads: trigger show/hide from that edge
+// Scene buttons (column 8): previous/next logo
+// Corner pads: special presets
+
+void settings() {
+  size(1920, 1080, P3D);
+}
+
+void setup() {
+  // Initialize services
+  grid = new LaunchpadGrid(this);
+  audio = new AudioAnalyzer(this);
+  syphon = new SyphonServer(this, "LogoShower");
+  
+  // Load logos
+  loadLogos();
+  
+  // Start logo offscreen
+  resetLogoPosition();
+  
+  // Light up border pads to show controls
+  updateLaunchpadDisplay();
+}
+
+void loadLogos() {
+  File folder = new File(dataPath(logoFolder));
+  if (!folder.exists()) {
+    println("Logo folder not found! Create: data/logos/");
+    println("Add PNG/JPG files to that folder.");
+    return;
+  }
+  
+  File[] files = folder.listFiles();
+  if (files == null) return;
+  
+  for (File file : files) {
+    String name = file.getName().toLowerCase();
+    if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+      PImage img = loadImage(file.getAbsolutePath());
+      if (img != null) {
+        logos.add(img);
+        println("Loaded logo: " + file.getName());
+      }
+    }
+  }
+  
+  println("Total logos loaded: " + logos.size());
+}
+
+void resetLogoPosition() {
+  // Position logo offscreen based on last entry direction
+  switch(entryDirection) {
+    case 0: // Top
+      logoX = width / 2;
+      logoY = -200;
+      break;
+    case 1: // Right
+      logoX = width + 200;
+      logoY = height / 2;
+      break;
+    case 2: // Bottom
+      logoX = width / 2;
+      logoY = height + 200;
+      break;
+    case 3: // Left
+      logoX = -200;
+      logoY = height / 2;
+      break;
+    default:
+      logoX = -200;
+      logoY = height / 2;
+  }
+}
+
+void draw() {
+  // Update audio
+  audio.update();
+  
+  // Calculate beat-influenced speed
+  float currentSpeed = slideSpeed;
+  if (audio.isBeat() && logoVisible) {
+    currentSpeed += beatInfluence * audio.getBeat();
+  }
+  
+  // Animate position
+  logoX = lerp(logoX, targetX, currentSpeed);
+  logoY = lerp(logoY, targetY, currentSpeed);
+  
+  // Animate opacity
+  logoOpacity = lerp(logoOpacity, targetOpacity, fadeSpeed);
+  
+  // Draw
+  background(0);
+  
+  // Draw current logo
+  if (logos.size() > 0 && logoOpacity > 1) {
+    PImage logo = logos.get(currentLogoIndex);
+    
+    // Scale to fit while maintaining aspect ratio
+    float maxWidth = width * 0.6;
+    float maxHeight = height * 0.6;
+    float scale = min(maxWidth / logo.width, maxHeight / logo.height);
+    float w = logo.width * scale;
+    float h = logo.height * scale;
+    
+    pushMatrix();
+    translate(logoX, logoY);
+    
+    // Add subtle beat pulse
+    float beatScale = 1.0 + audio.getBeat() * 0.05;
+    scale(beatScale);
+    
+    imageMode(CENTER);
+    tint(255, logoOpacity);
+    image(logo, 0, 0, w, h);
+    noTint();
+    popMatrix();
+  }
+  
+  // Draw logo info
+  if (logos.size() > 0) {
+    fill(255, 100);
+    textAlign(LEFT, BOTTOM);
+    textSize(14);
+    text("Logo " + (currentLogoIndex + 1) + "/" + logos.size(), 20, height - 20);
+  }
+  
+  // Send to Syphon
+  syphon.sendScreen();
+}
+
+// === Logo Control ===
+
+void showLogo(int fromDirection) {
+  if (logos.size() == 0) return;
+  
+  entryDirection = fromDirection;
+  logoVisible = true;
+  
+  // Set starting position based on entry direction
+  resetLogoPosition();
+  
+  // Target is center
+  targetX = width / 2;
+  targetY = height / 2;
+  targetOpacity = 255;
+  
+  // Light the entry pad
+  updateLaunchpadDisplay();
+}
+
+void hideLogo() {
+  logoVisible = false;
+  
+  // Slide out in opposite direction
+  switch(entryDirection) {
+    case 0: // Entered from top, exit to top
+      targetX = width / 2;
+      targetY = -300;
+      break;
+    case 1: // Entered from right, exit to right
+      targetX = width + 300;
+      targetY = height / 2;
+      break;
+    case 2: // Entered from bottom, exit to bottom
+      targetX = width / 2;
+      targetY = height + 300;
+      break;
+    case 3: // Entered from left, exit to left
+      targetX = -300;
+      targetY = height / 2;
+      break;
+  }
+  targetOpacity = 0;
+  
+  updateLaunchpadDisplay();
+}
+
+void nextLogo() {
+  if (logos.size() == 0) return;
+  currentLogoIndex = (currentLogoIndex + 1) % logos.size();
+  updateLaunchpadDisplay();
+}
+
+void previousLogo() {
+  if (logos.size() == 0) return;
+  currentLogoIndex = (currentLogoIndex - 1 + logos.size()) % logos.size();
+  updateLaunchpadDisplay();
+}
+
+// === Launchpad Handling ===
+
+void updateLaunchpadDisplay() {
+  grid.clearAll();
+  
+  // Light border pads based on state
+  int borderColor = logoVisible ? LaunchpadGrid.GREEN : LaunchpadGrid.BLUE;
+  
+  // Top row (row 7): entry from top
+  for (int col = 1; col < 7; col++) {
+    grid.lightPad(col, 7, entryDirection == 0 && logoVisible ? LaunchpadGrid.GREEN : LaunchpadGrid.CYAN);
+  }
+  
+  // Bottom row (row 0): entry from bottom
+  for (int col = 1; col < 7; col++) {
+    grid.lightPad(col, 0, entryDirection == 2 && logoVisible ? LaunchpadGrid.GREEN : LaunchpadGrid.CYAN);
+  }
+  
+  // Left column (col 0): entry from left
+  for (int row = 1; row < 7; row++) {
+    grid.lightPad(0, row, entryDirection == 3 && logoVisible ? LaunchpadGrid.GREEN : LaunchpadGrid.CYAN);
+  }
+  
+  // Right column (col 7): entry from right
+  for (int row = 1; row < 7; row++) {
+    grid.lightPad(7, row, entryDirection == 1 && logoVisible ? LaunchpadGrid.GREEN : LaunchpadGrid.CYAN);
+  }
+  
+  // Corner pads for navigation
+  grid.lightPad(0, 7, LaunchpadGrid.ORANGE);  // Top-left: previous
+  grid.lightPad(7, 7, LaunchpadGrid.ORANGE);  // Top-right: next
+  grid.lightPad(0, 0, LaunchpadGrid.RED);     // Bottom-left: hide all
+  grid.lightPad(7, 0, LaunchpadGrid.PURPLE);  // Bottom-right: random logo
+  
+  // Center area: show current logo indicator
+  if (logos.size() > 0) {
+    int indicatorCol = 3 + (currentLogoIndex % 2);
+    int indicatorRow = 3 + (currentLogoIndex / 2) % 2;
+    grid.lightPad(indicatorCol, indicatorRow, LaunchpadGrid.WHITE);
+  }
+}
+
+void onPadPress(int col, int row, int velocity) {
+  // Corner controls
+  if (col == 0 && row == 7) {
+    previousLogo();
+    return;
+  }
+  if (col == 7 && row == 7) {
+    nextLogo();
+    return;
+  }
+  if (col == 0 && row == 0) {
+    hideLogo();
+    return;
+  }
+  if (col == 7 && row == 0) {
+    // Random logo
+    if (logos.size() > 0) {
+      currentLogoIndex = (int)random(logos.size());
+      updateLaunchpadDisplay();
+    }
+    return;
+  }
+  
+  // Border pads: show/hide from that direction
+  if (grid.isBorderPad(col, row)) {
+    int direction = -1;
+    
+    if (row == 7 && col > 0 && col < 7) direction = 0;      // Top
+    if (col == 7 && row > 0 && row < 7) direction = 1;      // Right  
+    if (row == 0 && col > 0 && col < 7) direction = 2;      // Bottom
+    if (col == 0 && row > 0 && row < 7) direction = 3;      // Left
+    
+    if (direction >= 0) {
+      if (logoVisible && entryDirection == direction) {
+        // Same direction pressed again: hide
+        hideLogo();
+      } else {
+        // Show from this direction
+        showLogo(direction);
+      }
+    }
+  }
+}
+
+void onPadRelease(int col, int row) {
+  // Could add momentary modes here
+}
+
+// === Keyboard Fallback ===
+
+void keyPressed() {
+  if (key == 'n' || keyCode == RIGHT) nextLogo();
+  if (key == 'p' || keyCode == LEFT) previousLogo();
+  if (key == 'h') hideLogo();
+  if (key == '1') showLogo(0);  // From top
+  if (key == '2') showLogo(1);  // From right
+  if (key == '3') showLogo(2);  // From bottom
+  if (key == '4') showLogo(3);  // From left
+  if (key == ' ') {
+    if (logoVisible) hideLogo();
+    else showLogo(3);  // Default: from left
+  }
+}
+
+// === Include LaunchpadGrid and AudioAnalyzer tabs ===
+// Copy the LaunchpadGrid.pde and AudioAnalyzer.pde code above into separate tabs
+```
+
+### Usage
+
+1. **Create logo folder**: `data/logos/` in your sketch folder
+2. **Add logo files**: PNG or JPG files (transparent PNGs work best)
+3. **Run the sketch**
+4. **Control with Launchpad**:
+   - Press **border pads** to show logo sliding in from that edge
+   - Press **same border pad again** to hide logo
+   - Press **top-left corner** for previous logo
+   - Press **top-right corner** for next logo
+   - Press **bottom-left corner** to hide immediately
+   - Press **bottom-right corner** for random logo
+
+### Keyboard Fallback
+
+- `1/2/3/4`: Show logo from top/right/bottom/left
+- `N` or `→`: Next logo
+- `P` or `←`: Previous logo
+- `H`: Hide logo
+- `SPACE`: Toggle visibility
+
+---
+
 ## Resources
 
 - [Processing Reference](https://processing.org/reference/)
@@ -2811,3 +3687,6 @@ boolean isValidPad(int note) {
 - [PixelFlow GitHub](https://github.com/diwi/PixelFlow) - Source code and examples
 - [Launchpad Mini Mk3 Programmer's Reference](https://novationmusic.com/)
 - [Processing Sound Library](https://processing.org/reference/libraries/sound/) - For audio integration
+- [BlackHole Audio Driver](https://github.com/ExistentialAudio/BlackHole) - Virtual audio device for macOS
+- [A Philosophy of Software Design](https://www.amazon.com/Philosophy-Software-Design-John-Ousterhout/dp/1732102201) - Deep module design principles
+- [Grokking Simplicity](https://www.manning.com/books/grokking-simplicity) - Functional programming in practice
