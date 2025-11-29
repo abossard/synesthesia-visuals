@@ -35,9 +35,9 @@ See [VJ Output Design Principles](../docs/processing-games-guide.md#vj-output-de
 ```
 processing-vj/
 ├── examples/           # Example game implementations
-│   ├── WhackAMole/    
-│   ├── SnakeGame/     
-│   └── SimonSays/     
+│   ├── WhackAMole/     # Reaction game - hit pads as they light up
+│   ├── PatternDraw/    # Draw patterns, then watch them explode
+│   └── CrowdBattle/    # Multi-agent crowd simulation with bombs
 └── lib/               # Shared utilities
     └── LaunchpadUtils.pde
 ```
