@@ -1,6 +1,6 @@
 # Processing → Syphon Visual Idea Board
 
-Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output for Magic/Synesthesia. Each entry includes a quick diagram, control surface suggestions (Launchpad + MIDImix), and references so you can prototype fast.
+Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output for Magic/Synesthesia. Each entry includes a quick diagram, Launchpad control suggestions, and references so you can prototype fast.
 
 ## Launchpad control guidance (from the main branch setup)
 - **Device/mode:** Launchpad Mini Mk3 in **Programmer mode** (enter Settings → press the orange Scene Launch button → exit Settings). This exposes the full 8×8 grid plus the right-column scene buttons without DAW behavior.
@@ -12,7 +12,7 @@ Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output 
   - **Top row (71–78):** global scene toggles (freeze, clear trails, palette cycle, RD preset A/B, camera layout). Scene buttons on the right column can be “shift” modifiers.
   - **Middle rows:** per-effect controls (spawn wells/blobs/ropes, toggle behaviors, swap meshes). Use consistent columns across sketches (e.g., col 0 = spawn, col 1 = reset, col 7 = randomize) to build muscle memory.
   - **Bottom row (11–18):** transport-style controls (start/stop, tap tempo, BPM sync, arm/disable audio-reactivity).
-- **MIDI bus pairing:** Run Launchpad in parallel with Akai MIDImix (faders/knobs) on the same MIDI channel—their note/CC ranges don’t collide, and you can LED-echo Launchpad presses in Processing while MIDImix drives continuous parameters.
+- **Continuous parameters via pads:** Use pad velocity for intensity, or implement "hold + tap" gestures on the right-column scene buttons to increment/decrement continuous values (e.g., hold scene button + tap grid pad to adjust gravity, trail length, etc.).
 - **Starter code snippet:**
   ```java
   // Convert Launchpad note to grid coordinate
@@ -38,8 +38,9 @@ Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output 
 
 - **What it looks like:** Starfield that swirls and shears around moving invisible wells; spirals, warped streams, lensing-like bends.
 - **How to drive it:**
-  - Launchpad (Programmer mode): middle rows place/enable wells; pad velocity = well strength; right-column scene buttons = well presets/clear.
-  - MIDImix faders: global gravity, drag, trail length; knobs: noise in velocity, well falloff.
+  - Launchpad: middle rows place/enable wells; pad velocity = well strength; right-column scene buttons = well presets/clear.
+  - Row 5: gravity strength (col 0–3), drag (col 4–5), trail length (col 6–7) via tap-to-cycle.
+  - Row 4: noise in velocity (col 0–3), well falloff (col 4–7) via tap-to-cycle.
   - Audio: bass boosts inward pull; highs spawn short-lived “spark” particles.
 - **Implementation notes:** N-body-lite with softened force (e.g., `force = m / (d^2 + ε)`). Use additive blending + fading trails via framebuffer. Mouse or pad positions map to normalized viewport.
 - **Example references:** Processing particles with interactive forces ([Daniel Shiffman’s attraction example](https://processing.org/examples/forces.html)); use [Syphon for Processing](https://github.com/Syphon/Syphon-Processing) for output.
@@ -49,7 +50,7 @@ Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output 
     [*] --> Idle
     Idle --> Sculpt : pad spawn/drag wells
     Sculpt --> Peak : audio bass surge or pad queue
-    Peak --> Cooldown : auto after bars or knob fade
+    Peak --> Cooldown : auto after bars or pad fade
     Cooldown --> Idle : natural decay
     Idle --> Exit : level exit arm
     Sculpt --> Exit : level exit arm
@@ -70,7 +71,8 @@ Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output 
 - **What it looks like:** Soft, wobbling blobs that merge/split; can resemble jellyfish bells or sliding logos.
 - **How to drive it:**
   - Launchpad: columns 0–1 spawn blobs of two colors; column 7 toggles “glitch mode” with LED warning; bottom row pads cycle palette/merge modes.
-  - MIDImix fader: global stiffness/softness; knobs: damping and blob-vs-blob attraction.
+  - Row 5: global stiffness/softness (col 0–3 = stiffer, col 4–7 = softer via tap-toggle).
+  - Row 4: damping (col 0–3), blob-vs-blob attraction (col 4–7) via tap-to-cycle.
   - Audio envelope modulates impulse magnitude and wobble decay.
 - **Implementation notes:** Mass-spring lattice or Verlet soft body with volume preservation. Render with smooth contours (Metaball/Marching Squares or `beginShape()` hull). Blend modes for neon gel look.
 - **Example references:** Toxiclibs or [verlet stick constraints](https://natureofcode.com/book/chapter-10-the-evolution-of-code/) patterns; [metaballs in Processing](https://processing.org/examples/metaballs.html).
@@ -81,7 +83,7 @@ Curated, VJ-ready concepts designed for Processing (P2D/P3D) with Syphon output 
     Idle --> Play : spawn blob pads / audio wobble
     Play --> MergeSplit : pad toggles or threshold wobble
     MergeSplit --> Peak : glitch mode or stacked spawns
-    Peak --> Settle : damping fader drop
+    Peak --> Settle : damping pad tap
     Settle --> Idle : motion floor only
     Idle --> Exit
     Play --> Exit
@@ -100,7 +102,8 @@ agents ➜ trails ➜ buffer fade
 - **What it looks like:** Hundreds of walkers paint long-exposure ribbons; forms calligraphic tunnels and swirls.
 - **How to drive it:**
   - Launchpad: row 7 selects behavior set (seek/orbit/flee/flock); row 6 toggles trail style per column; scene buttons randomize goal points.
-  - Knobs: speed, steering jitter, trail length; faders: cohesion/alignment weights.
+  - Row 5: speed (col 0–1), steering jitter (col 2–3), trail length (col 4–5), cohesion (col 6–7) via tap-to-cycle.
+  - Row 4: alignment weight (col 0–3), separation (col 4–7) via tap-to-cycle.
   - Audio: bass raises cohesion (agents clump), highs add jitter/chaos.
 - **Implementation notes:** Simple boids/steering with offscreen buffer that fades each frame. Use `PGraphics` with additive blending; occasional perlin flow fields for variation.
 - **Example references:** [Reza Ali’s boids writeup](https://www.syedrezaali.com/boids), Shiffman’s boids sketches, Magic/Synesthesia color grading on top.
@@ -111,7 +114,7 @@ agents ➜ trails ➜ buffer fade
     Idle --> Flock : behavior row selection
     Flock --> Orbit : pad set orbit target
     Orbit --> Peak : audio drop or pad boost cohesion
-    Peak --> Scatter : jitter knob up or pad chaos
+    Peak --> Scatter : jitter pad up or pad chaos
     Scatter --> Idle : fade jitter/length
     Idle --> Exit
     Flock --> Exit
@@ -130,7 +133,8 @@ agents ➜ trails ➜ buffer fade
 - **What it looks like:** Zebra/coral patterns crawling over spheres, torii, or extruded text; hypnotic morphing surface.
 - **How to drive it:**
   - Launchpad: row 5 chooses mesh (sphere/torus/text/logo variants); row 6 toggles lighting, palette inversion, and wireframe; LED color shows current mesh.
-  - MIDImix faders: feed/kill rates; knob: diffusion ratio or timestep.
+  - Row 4: feed rate (col 0–3), kill rate (col 4–7) via tap-to-cycle; hold scene button + tap to fine-tune.
+  - Row 3: diffusion ratio (col 0–3), timestep (col 4–7) via tap-to-cycle.
   - Audio: modulate pattern speed or contrast; kicks can trigger color palette shifts.
 - **Implementation notes:** Run Gray–Scott RD on `PGraphics`; upload as texture to a `PShape`. Keep RD size modest (256–512) for speed. Use `shader()` for lit look.
 - **Example references:** [Karl Sims RD](http://www.karlsims.com/rd.html); [Processing texture mapping docs](https://processing.org/tutorials/textures/).
@@ -138,9 +142,9 @@ agents ➜ trails ➜ buffer fade
   ```mermaid
   stateDiagram-v2
     [*] --> Idle
-    Idle --> Grow : feed/kill fader push
+    Idle --> Grow : feed/kill pad push
     Grow --> Morph : mesh swap pad or palette invert
-    Morph --> Peak : audio spike or twist knob
+    Morph --> Peak : audio spike or twist pad
     Peak --> Fade : reduce feed/kill or timer
     Fade --> Idle
     Idle --> Exit
@@ -149,7 +153,7 @@ agents ➜ trails ➜ buffer fade
     Peak --> Exit
     Fade --> Exit
   ```
-  Pads drive mesh swap (Morph) and can arm Exit; faders advance growth/morph stages.
+  Pads drive mesh swap (Morph) and can arm Exit; pads advance growth/morph stages.
 
 ## 5) Recursive City / Escher-Style Camera Ride
 
@@ -160,7 +164,7 @@ agents ➜ trails ➜ buffer fade
 - **What it looks like:** Infinite-feel highways or towers repeating and folding; demo-scene tunnel vibes.
 - **How to drive it:**
   - Launchpad: row 7 chooses layout presets (grid/spiral/stair), row 6 toggles mirror and fog; scene buttons punch-in “zoom burst” or “rotate 90°”.
-  - Knobs: camera speed, FOV, recursion depth/scale.
+  - Row 5: camera speed (col 0–1), FOV (col 2–3), recursion depth (col 4–5), scale (col 6–7) via tap-to-cycle.
   - Audio sidechain: kick = subtle camera shake; fills = zoom pulses.
 - **Implementation notes:** Build one modular block; instance via nested transforms. Frustum culling keeps FPS. Screen-space reflections or simple emissive windows for night-city look.
 - **Example references:** [Processing instancing via `pushMatrix`/`popMatrix`](https://processing.org/reference/pushMatrix_.html); look at demoscene “city flythrough” clips for palette ideas.
@@ -171,7 +175,7 @@ agents ➜ trails ➜ buffer fade
     Idle --> Cruise : layout preset pad
     Cruise --> Spiral : spiral/stair preset
     Spiral --> Peak : zoom burst scene button or audio swell
-    Peak --> Glide : FOV/fader ease back
+    Peak --> Glide : FOV/pad ease back
     Glide --> Idle
     Idle --> Exit
     Cruise --> Exit
@@ -191,7 +195,7 @@ wave + stiffness(bass)
 - **What it looks like:** Gooey floor reacting to footsteps; stiffens briefly on hard hits, then relaxes into liquid ripples.
 - **How to drive it:**
   - Launchpad: bottom row triggers “slams” at eight x-coordinates; row 6 toggles wireframe/shaded and boundary conditions; hold a pad to latch stiff mode.
-  - Faders: viscosity, elasticity, damping; knob: stiffness response time.
+  - Row 5: viscosity (col 0–1), elasticity (col 2–3), damping (col 4–5), stiffness response time (col 6–7) via tap-to-cycle.
   - Audio: bass increases stiffness and impulse magnitude; highs tweak ripple freq.
 - **Implementation notes:** 2D heightfield or spring-mass grid; update with verlet or semi-implicit Euler. Map height to color/normal for lighting. Blur normals for glossy wet look.
 - **Example references:** [Jos Stam’s stable fluids concepts](https://www.dgp.toronto.edu/people/stam/reality/Research/pdf/GDC03.pdf) applied to heightfields; Processing shaders for normal mapping.
@@ -201,7 +205,7 @@ wave + stiffness(bass)
     [*] --> Idle
     Idle --> Ripples : pad slam or audio kick
     Ripples --> Stiff : hold pad or bass threshold
-    Stiff --> Flow : damping fader or time decay
+    Stiff --> Flow : damping pad or time decay
     Flow --> Idle
     Idle --> Exit
     Ripples --> Exit
@@ -219,7 +223,7 @@ rule presets ↔ palette ↔ zoom
 - **What it looks like:** Pixel grids that pulse, grow, decay; zoom and palette shifts turn them into abstract textures.
 - **How to drive it:**
   - Launchpad: row 7 selects rule sets (Life/Brian’s Brain/Day & Night/1D); row 6 seeds patterns on press; row 5 toggles zoom/palette shift.
-  - Knobs: zoom, palette shift, birth/survival thresholds.
+  - Row 4: zoom (col 0–1), palette shift (col 2–3), birth threshold (col 4–5), survival threshold (col 6–7) via tap-to-cycle.
   - Audio: impulse seeds random live cells; highs modulate rule noise.
 - **Implementation notes:** GPU-friendly with shader ping-pong, or CPU 2D arrays if small. Palette LUT for quick color grading before Syphon.
 - **Example references:** [Brian’s Brain ruleset](https://en.wikipedia.org/wiki/Brian%27s_Brain); [Processing shader ping-pong tutorial](https://processing.org/tutorials/pshader/).
@@ -230,7 +234,7 @@ rule presets ↔ palette ↔ zoom
     Idle --> Seed : pad seed or audio impulse
     Seed --> Evolve : rule row select
     Evolve --> ZoomDrift : palette/zoom pads
-    ZoomDrift --> Peak : chaos knob or rapid seeds
+    ZoomDrift --> Peak : chaos pad or rapid seeds
     Peak --> Settle : reduce birth/survival
     Settle --> Idle
     Idle --> Exit
@@ -251,7 +255,7 @@ rule presets ↔ palette ↔ zoom
 - **What it looks like:** Bending tunnels and volumetric-looking clouds; strong forward motion depth cue.
 - **How to drive it:**
   - Launchpad: row 7 swaps palettes/textures; row 6 triggers camera jump/bend toggles; hold scene buttons to arm “hyperspeed” for next kick.
-  - Fader: twist/warp amount; knob: noise frequency.
+  - Row 5: twist/warp amount (col 0–3), noise frequency (col 4–7) via tap-to-cycle.
   - Audio: speed multiplier; kick = forward burst, snare = lateral wobble.
 - **Implementation notes:** Fake with polar UV distort + signed-distance step loop in a shader; single-iteration fog for speed. Render to `PGraphics` with `PShader` and Syphon out.
 - **Example references:** [Inigo Quilez SDF basics](https://iquilezles.org/articles/distfunctions/); [Processing PShader setup](https://processing.org/tutorials/pshader/).
@@ -259,8 +263,8 @@ rule presets ↔ palette ↔ zoom
   ```mermaid
   stateDiagram-v2
     [*] --> Idle
-    Idle --> Drift : palette swap pad or speed knob
-    Drift --> Bend : twist fader or bend pad
+    Idle --> Drift : palette swap pad or speed pad
+    Drift --> Bend : twist pad or bend pad
     Bend --> Peak : hyperspeed scene button or kick
     Peak --> Cool : auto decel
     Cool --> Idle
@@ -281,7 +285,8 @@ anchors ─ spring constraints ─ many ropes
 - **What it looks like:** Hundreds of ropes or cables swinging, tangling; can read as hair, roots, or laser curtains depending on shading.
 - **How to drive it:**
   - Launchpad: columns 0–2 spawn ropes anchored to mouse/center/random; column 7 toggles trail render; top row cycles gravity presets.
-  - Fader: gravity bias (droop vs float); knob: wind noise scale.
+  - Row 5: gravity bias droop (col 0–3), float (col 4–7) via tap-to-cycle.
+  - Row 4: wind noise scale (col 0–7) via tap-to-cycle.
   - Audio: kicks add violent impulses; highs add tremor jitter.
 - **Implementation notes:** Verlet integration with distance constraints; batch constraints for performance. Render as polylines with glow (additive blur) or ribbon quads.
 - **Example references:** [Verlet rope tutorial](https://gamedevelopment.tutsplus.com/tutorials/simulate-fabric-and-rope-using-verlet-integration--gamedev-519); Shiffman’s cloth/rope sketches.
@@ -290,10 +295,10 @@ anchors ─ spring constraints ─ many ropes
   stateDiagram-v2
     [*] --> Idle
     Idle --> Spawn : rope spawn pad
-    Spawn --> Sway : wind knob or gravity fader
+    Spawn --> Sway : wind pad or gravity pad
     Sway --> Peak : impulse (kick/pad)
     Peak --> Tangle : trail toggle or noise surge
-    Tangle --> Relax : damping fader
+    Tangle --> Relax : damping pad
     Relax --> Idle
     Idle --> Exit
     Spawn --> Exit
@@ -313,7 +318,7 @@ flow field ➜ collide with logo mask ➜ streaks
 - **What it looks like:** Particle streams bend around a solid logo, forming vortices and streaks; porous mode leaks flow through.
 - **How to drive it:**
   - Launchpad: row 7 switches logo masks; row 6 toggles porous/noise modes; scene buttons trigger “gust” bursts and clear the flow buffer.
-  - Knobs: wind speed, turbulence, particle count; fader: viscosity.
+  - Row 5: wind speed (col 0–1), turbulence (col 2–3), particle count (col 4–5), viscosity (col 6–7) via tap-to-cycle.
   - Audio: bass boosts wind + turbulence; mids control color hue.
 - **Implementation notes:** Generate vector field (Perlin + vortex) and mask collisions against logo alpha. Use FBO trails and motion blur. Load logo as `PGraphics` mask.
 - **Example references:** [Processing flow field tutorial](https://natureofcode.com/book/chapter-06-autonomous-agents/#chapter06_section6); [image masks](https://processing.org/reference/PGraphics_mask_.html).
@@ -322,9 +327,9 @@ flow field ➜ collide with logo mask ➜ streaks
   stateDiagram-v2
     [*] --> Idle
     Idle --> Stream : logo pad select
-    Stream --> Vortex : gust scene button or turbulence knob
+    Stream --> Vortex : gust scene button or turbulence pad
     Vortex --> Peak : porous toggle + audio surge
-    Peak --> Wake : viscosity fader rise
+    Peak --> Wake : viscosity pad rise
     Wake --> Idle
     Idle --> Exit
     Stream --> Exit
@@ -343,7 +348,8 @@ scene ➜ many mini-cameras ➜ tiled output
 - **What it looks like:** Screen tiled into cells, each a different moving camera view; collage of micro-perspectives.
 - **How to drive it:**
   - Launchpad: bottom row sets camera count (1–8); row 6 cycles path modes per column; scene buttons randomize tile layout with LED countdown.
-  - Knobs: per-tile zoom, tile jitter/offset; fader: camera speed.
+  - Row 5: per-tile zoom (col 0–3), tile jitter/offset (col 4–7) via tap-to-cycle.
+  - Row 4: camera speed (col 0–7) via tap-to-cycle.
   - Audio: shake amplitude and time offset between cameras.
 - **Implementation notes:** Render scene to small buffers per camera (or reuse one buffer with camera matrices and viewport offsets). Compose into grid/hex layouts using `PGraphics` blits.
 - **Example references:** [Multiple cameras in Processing P3D](https://forum.processing.org/one/topic/multiple-camera-views.html); [tiling with `image()` and `copy()`](https://processing.org/reference/copy_.html).
@@ -354,7 +360,7 @@ scene ➜ many mini-cameras ➜ tiled output
     Idle --> TileSet : bottom row camera count
     TileSet --> Pathing : path mode pads
     Pathing --> Peak : randomize scene button or audio swell
-    Peak --> Collage : zoom jitter knob down
+    Peak --> Collage : zoom jitter pad down
     Collage --> Idle
     Idle --> Exit
     TileSet --> Exit
@@ -373,7 +379,7 @@ ring buffer of frames ➜ sample offsets ➜ mix
 - **What it looks like:** Moving elements leave echo trails that warp and glitch; selective smearing by color/brightness.
 - **How to drive it:**
   - Launchpad: row 7 toggles freeze/melt and hue-only vs RGB; row 6 scrubs sampling offsets; bottom row sets trail length presets.
-  - Knobs: trail length, sampling pattern (linear, sinus, random jitter).
+  - Row 5: trail length (col 0–3), sampling pattern linear/sinus/random (col 4–7) via tap-to-cycle.
   - Audio: larger hits increase temporal offsets; highs modulate chroma shift.
 - **Implementation notes:** Maintain circular buffer of `PGraphics`; sample with varying time indices in a shader. Optional luma mask to smear only highlights.
 - **Example references:** [Feedback trails with FBOs](https://processing.org/reference/filter_.html) plus custom GLSL; Magic/Synesthesia feedback pairs well here.
@@ -404,7 +410,7 @@ mirrored slices/portals
 - **What it looks like:** Screen sliced into mirrored portals, each running a variant of the sim; feels like parallel realities.
 - **How to drive it:**
   - Launchpad: row 7 assigns slices to scene A/B/C; row 6 toggles mirror/warp; hold scene buttons to momentarily solo a reality.
-  - Knobs: divergence strength (gravity, color, noise) and slice distortion.
+  - Row 5: divergence strength gravity (col 0–1), color (col 2–3), noise (col 4–5), slice distortion (col 6–7) via tap-to-cycle.
   - Audio: morph rate between realities; kicks trigger slice swaps.
 - **Implementation notes:** Run multiple parameter sets of the same sim; render to layered FBOs and composite with mirror transforms (`scale(-1,1)`). Simple UV warps add portal feel.
 - **Example references:** [Offscreen buffers & transforms](https://processing.org/reference/PGraphics.html); mirror trick with `scale(-1,1)` about center.
@@ -413,7 +419,7 @@ mirrored slices/portals
   stateDiagram-v2
     [*] --> Idle
     Idle --> Assign : slice assignment pads
-    Assign --> Diverge : divergence knob up
+    Assign --> Diverge : divergence pad up
     Diverge --> Peak : portal warp pad or audio hit
     Peak --> Blend : reduce divergence
     Blend --> Idle
@@ -434,7 +440,7 @@ letters as agents ⇄ words ⇄ dissolve/reform
 - **What it looks like:** Words dissolve into swarms of characters, drift, then reform into new phrases or symbols.
 - **How to drive it:**
   - Launchpad: row 7 selects text presets; row 6 triggers dissolve/reform; column 7 enables letter-to-word cohesion boost (LED = active).
-  - Knobs: cohesion (magnet toward word layout) vs chaos; trail intensity.
+  - Row 5: cohesion (col 0–3), chaos (col 4–5), trail intensity (col 6–7) via tap-to-cycle.
   - Audio: bass causes explosive scattering; quiet sections let words reform.
 - **Implementation notes:** Represent each glyph as points; target positions for each word layout. Use boid-like cohesion toward target + noise for drift. SDF text textures helpful for glow fills.
 - **Example references:** [Geomerative library for glyph outlines](http://www.ricardmarxer.com/geomerative/); [Processing text to points](https://processing.org/reference/textToPoints_.html).
@@ -444,8 +450,8 @@ letters as agents ⇄ words ⇄ dissolve/reform
     [*] --> Idle
     Idle --> Phrase : text preset pad
     Phrase --> Dissolve : dissolve/reform pad
-    Dissolve --> Scatter : chaos knob
-    Scatter --> Reform : cohesion knob up
+    Dissolve --> Scatter : chaos pad
+    Scatter --> Reform : cohesion pad up
     Reform --> Idle
     Idle --> Exit
     Phrase --> Exit
@@ -460,7 +466,7 @@ letters as agents ⇄ words ⇄ dissolve/reform
 ### Quick build pipeline
 1. Prototype in Processing (P2D/P3D) with minimal dependencies.
 2. Add Syphon output (`SyphonServer server = new SyphonServer(this, "Processing");`).
-3. Map Launchpad (pads/toggles) and MIDImix (faders/knobs) via MIDI bus libraries like [The MidiBus](http://www.smallbutdigital.com/themidibus.php).
+3. Map Launchpad pads via [The MidiBus](http://www.smallbutdigital.com/themidibus.php); use tap-to-cycle for continuous parameters.
 4. Feed Syphon into Magic/Synesthesia; layer ISF shaders for color grading, warps, feedback, kaleidoscope.
 
 Pick one or two favorites and we can draft concrete class diagrams, buffers, and MIDI mappings tailored to your rig.
@@ -491,12 +497,14 @@ state: intro ➜ levelSelect ➜ level(n) ➜ transition ➜ level(n+1 mod N)
   - **Row 6 (61–68):** per-level macro toggles (e.g., freeze, randomize, palette shift) passed through to the active `Level` via `onPad()`.
   - **Row 5 (51–58):** transport: start/stop auto-rotate, tap tempo, set bars-per-level, toggle loop/favorites mode.
   - **Scene buttons (19–89):** “shift” for soft takeover: shift+top-row moves level up/down in favorites order; shift+row6 triggers global blackout/clear.
-  - **LED feedback:** green = active level, amber = queued next, red pulse = transition in progress. Echo MIDImix fader moves as dim white LEDs along row 6 for live HUD feel.
+  - **LED feedback:** green = active level, amber = queued next, red pulse = transition in progress. Use row 4 LED brightness to echo current parameter values for live HUD feel.
 
-- **MIDImix roles (consistent across levels)**
-  - Faders 1–4: camera/easing/speed/macros. Faders 5–8: audio-reactivity depth, crossfade amount, global brightness, post-FX wet/dry.
-  - Knobs 1–8: per-level parameters handed to the active `Level` (e.g., RD feed/kill, boid cohesion/jitter, rope gravity/wind). Keep ordering consistent so muscle memory transfers.
-  - Master fader: auto-rotate intensity (0 = manual only, 1 = every bar).
+- **Continuous parameter control (Launchpad only)**
+  - **Tap-to-cycle:** each parameter column cycles through 4–8 preset values on tap; LED color indicates current level.
+  - **Hold + tap:** hold a scene button as "shift", then tap a grid pad to increment/decrement a continuous value.
+  - **Velocity sensitivity:** pad velocity sets initial intensity (e.g., spawn strength, impulse magnitude).
+  - **Row 3 macros:** camera/easing/speed (col 0–1), audio-reactivity depth (col 2–3), crossfade (col 4–5), brightness (col 6–7).
+  - **Scene button 89 (top-right):** auto-rotate intensity toggle (off/slow/fast).
 
 - **Lightweight resource plan**
   - Each level keeps its own `PGraphics`/`PShader` objects sized to the window; store them in an array so you can re-enter without reallocation.
@@ -529,7 +537,6 @@ This pattern gives you one Processing window, one Syphon feed, and a playable �
 classDiagram
     class MidiIO {
       +onNote(OnNote)
-      +onCC(OnCC)
       +sendLED(note, velocity)
     }
     class LaunchpadGrid {
@@ -549,7 +556,6 @@ classDiagram
       +update(float dt, Inputs)
       +draw(PGraphics g)
       +handlePad(Cell, int velocity)
-      +handleCC(int cc, int value)
       +fsm : LevelFSM
     }
     class LevelManager {
@@ -597,4 +603,4 @@ classDiagram
 - Keep Syphon and The MidiBus as thin adapters at the edge; avoid mixing their callbacks with simulation logic. Prefer `Inputs` DTOs collected once per frame.
 - Expose a single `SketchConfig` object (JSON or YAML) that defines level order, pad bindings, and buffer sizes so you can ship presets without recompiling.
 - Reuse buffers aggressively: share one `PGraphics` history stack across levels; let each level own small per-feature buffers sized by intent (e.g., `rdTextureSize`, `trailSize`).
-- Document pad/CC maps in code (`PadBinding[]`) and in this doc so Launchpad muscle memory stays consistent between levels and future modules.
+- Document pad maps in code (`PadBinding[]`) and in this doc so Launchpad muscle memory stays consistent between levels and future modules.
