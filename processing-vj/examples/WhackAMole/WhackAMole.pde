@@ -286,17 +286,16 @@ void handlePadHit(int col, int row) {
     score++;
     lightPad(col, row, COLOR_HIT);
     spawnHitEffect(x, y, true);
-    delay(100);
+    // Note: LED flash is brief - particle effects provide main feedback
     clearPad(col, row);
     spawnTarget();
     
     // Speed up as score increases
     spawnInterval = max(300, 1000 - score * 50);
   } else {
-    // Miss - flash orange
+    // Miss - flash orange (brief LED flash, particle effect is main feedback)
     lightPad(col, row, COLOR_MISS);
     spawnHitEffect(x, y, false);
-    delay(50);
     clearPad(col, row);
   }
 }
