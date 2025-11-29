@@ -280,8 +280,8 @@ void addPanel(int col, int row) {
   
   panels.add(new CoverPanel(x + randOffsetX, y + randOffsetY, randWidth, randHeight, col, row));
   
-  // Update Launchpad LED
-  int colorIndex = (int)map(activePadCount, 0, 64, LP_BLUE, LP_RED);
+  // Update Launchpad LED - color shifts from blue to red as coverage increases
+  int colorIndex = (int)constrain(map(activePadCount, 0, 64, LP_BLUE, LP_RED), LP_RED, LP_BLUE);
   lightPad(col, row, colorIndex);
   
   // Check for multi-press release trigger
@@ -384,8 +384,8 @@ void clearGrid() {
 
 // MIDI callbacks
 void noteOn(int channel, int pitch, int velocity) {
-  // Check for scene launch buttons (trigger release)
-  if (pitch % 10 == 9 && pitch >= 19 && pitch <= 89) {
+  // Check for scene launch buttons (right column: notes 19, 29, 39... 89)
+  if (isSceneLaunch(pitch)) {
     triggerRelease();
     return;
   }
@@ -456,6 +456,13 @@ boolean isValidPad(int note) {
   return col >= 1 && col <= 8 && row >= 1 && row <= 8;
 }
 
+/**
+ * Check if MIDI note is a scene launch button (right column)
+ */
+boolean isSceneLaunch(int note) {
+  return note % 10 == 9 && note >= 19 && note <= 89;
+}
+
 void lightPad(int col, int row, int colorIndex) {
   if (!hasLaunchpad || launchpad == null) return;
   int note = gridToNote(col, row);
@@ -492,6 +499,13 @@ class CoverPanel {
   float crackProgress = 0;
   boolean cracking = false;
   
+  // Pre-calculated crack pattern (cached for performance)
+  float[] crackX;
+  float[] crackY;
+  float[] crackAngle;
+  float[] crackLen;
+  final int numCracks = 5;
+  
   CoverPanel(float x, float y, float w, float h, int col, int row) {
     this.x = x;
     this.y = y;
@@ -508,6 +522,18 @@ class CoverPanel {
     // Color based on position and current hue
     float hue = (panelHue + (col + row) * 8) % 360;
     this.c = color(hue, 70, 30);
+    
+    // Pre-calculate crack pattern in constructor
+    crackX = new float[numCracks];
+    crackY = new float[numCracks];
+    crackAngle = new float[numCracks];
+    crackLen = new float[numCracks];
+    for (int i = 0; i < numCracks; i++) {
+      crackX[i] = random(1);  // Normalized position (0-1)
+      crackY[i] = random(1);
+      crackAngle[i] = random(TWO_PI);
+      crackLen[i] = random(30, 80);
+    }
   }
   
   void update() {
@@ -552,15 +578,12 @@ class CoverPanel {
     stroke(0, 0, 100, (1 - crackProgress * 2) * 100);
     strokeWeight(2);
     
-    // Draw random crack lines
-    randomSeed((long)(noiseOffset * 1000));
-    int numCracks = 5;
+    // Draw pre-calculated crack lines with animated length
     for (int i = 0; i < numCracks; i++) {
-      float cx = x + random(w);
-      float cy = y + random(h);
-      float angle = random(TWO_PI);
-      float len = random(30, 80) * crackProgress * 2;
-      line(cx, cy, cx + cos(angle) * len, cy + sin(angle) * len);
+      float cx = x + crackX[i] * w;
+      float cy = y + crackY[i] * h;
+      float len = crackLen[i] * crackProgress * 2;
+      line(cx, cy, cx + cos(crackAngle[i]) * len, cy + sin(crackAngle[i]) * len);
     }
   }
   
