@@ -3679,6 +3679,514 @@ void keyPressed() {
 
 ---
 
+## Beat Detection and BPM Calculation
+
+This section covers algorithms and formulas for detecting beats and calculating BPM in Processing, essential for audio-reactive VJ visuals.
+
+### Energy-Based Beat Detection
+
+The most common approach detects beats by analyzing energy spikes in audio signals.
+
+#### Core Algorithm Formula
+
+```
+1. Calculate instant energy:
+   E = Σ(samples[i]²)  for samples in current window
+
+2. Calculate average energy over history:
+   avgE = Σ(previous_window_energies) / H  where H = history size
+
+3. Detect beat if:
+   E > avgE × threshold  (typical threshold: 1.3 - 1.5)
+```
+
+#### Implementation in Processing
+
+```java
+import processing.sound.*;
+
+class BeatDetector {
+  AudioIn input;
+  FFT fft;
+  
+  // Energy history for comparison
+  float[] energyHistory;
+  int historyIndex = 0;
+  int historySize = 43;  // ~1 second at 60fps
+  
+  // Frequency bands
+  float bassEnergy = 0;
+  float midEnergy = 0;
+  float highEnergy = 0;
+  
+  // Beat state
+  boolean isBeat = false;
+  float beatDecay = 0;
+  float threshold = 1.4;
+  
+  // BPM estimation
+  ArrayList<Long> beatTimes = new ArrayList<Long>();
+  float estimatedBPM = 120;
+  
+  BeatDetector(PApplet parent) {
+    input = new AudioIn(parent, 0);
+    input.start();
+    
+    fft = new FFT(parent, 512);
+    fft.input(input);
+    
+    energyHistory = new float[historySize];
+  }
+  
+  void update() {
+    fft.analyze();
+    
+    // Calculate energy in frequency bands
+    bassEnergy = calculateBandEnergy(0, 10);     // 0-200 Hz
+    midEnergy = calculateBandEnergy(10, 100);    // 200-2000 Hz  
+    highEnergy = calculateBandEnergy(100, 256);  // 2000+ Hz
+    
+    float totalEnergy = bassEnergy + midEnergy + highEnergy;
+    
+    // Calculate average from history
+    float avgEnergy = 0;
+    for (float e : energyHistory) avgEnergy += e;
+    avgEnergy /= historySize;
+    
+    // Beat detection with standard deviation adjustment
+    float stdDev = calculateStdDev(avgEnergy);
+    float adaptiveThreshold = threshold - (stdDev * 0.5);
+    
+    isBeat = (totalEnergy > avgEnergy * adaptiveThreshold) && (beatDecay <= 0);
+    
+    if (isBeat) {
+      beatDecay = 0.15;  // Minimum time between beats (in seconds)
+      recordBeatTime();
+    }
+    
+    beatDecay -= 1.0 / 60.0;  // Decrease at 60fps
+    
+    // Store energy in history
+    energyHistory[historyIndex] = totalEnergy;
+    historyIndex = (historyIndex + 1) % historySize;
+  }
+  
+  float calculateBandEnergy(int startBin, int endBin) {
+    if (startBin >= endBin || startBin >= fft.spectrum.length) return 0;
+    int actualEnd = min(endBin, fft.spectrum.length);
+    
+    float energy = 0;
+    for (int i = startBin; i < actualEnd; i++) {
+      energy += fft.spectrum[i] * fft.spectrum[i];
+    }
+    return sqrt(energy / (actualEnd - startBin));
+  }
+  
+  float calculateStdDev(float avg) {
+    float variance = 0;
+    for (float e : energyHistory) {
+      variance += (e - avg) * (e - avg);
+    }
+    return sqrt(variance / historySize);
+  }
+  
+  void recordBeatTime() {
+    long now = System.currentTimeMillis();
+    beatTimes.add(now);
+    
+    // Keep only last 8 beats for BPM calculation
+    while (beatTimes.size() > 8) {
+      beatTimes.remove(0);
+    }
+    
+    // Calculate BPM from beat intervals
+    if (beatTimes.size() >= 4) {
+      float totalInterval = 0;
+      int count = 0;
+      
+      for (int i = 1; i < beatTimes.size(); i++) {
+        float interval = beatTimes.get(i) - beatTimes.get(i - 1);
+        // Filter out unrealistic intervals (30-200 BPM range)
+        if (interval > 300 && interval < 2000) {
+          totalInterval += interval;
+          count++;
+        }
+      }
+      
+      if (count > 0) {
+        float avgInterval = totalInterval / count;
+        estimatedBPM = 60000 / avgInterval;
+      }
+    }
+  }
+  
+  // === Getters ===
+  boolean isBeat() { return isBeat; }
+  float getBass() { return bassEnergy * 10; }
+  float getMid() { return midEnergy * 10; }
+  float getHigh() { return highEnergy * 10; }
+  float getBPM() { return estimatedBPM; }
+  
+  // Get a pulse that decays after beat (useful for animations)
+  float getPulse() {
+    return max(0, 1.0 - (0.15 - beatDecay) / 0.15);
+  }
+}
+```
+
+### BPM Estimation Formulas
+
+#### Method 1: Beat Interval Average
+```
+BPM = 60000 / average(intervals_between_beats_in_ms)
+```
+Note: Use median for more robust estimation (filters outliers):
+```
+BPM = 60000 / median(intervals_between_beats_in_ms)
+```
+
+#### Method 2: Comb Filter Correlation
+```
+For each candidate BPM (60-200):
+  period = 60 * sample_rate / BPM
+  Generate impulse train with this period
+  correlation = cross_correlate(energy_signal, impulse_train)
+  
+BPM = candidate with highest correlation
+```
+
+#### Method 3: Onset Detection + Histogram
+```
+1. Detect all onsets (energy spikes)
+2. Calculate intervals between consecutive onsets
+3. Build histogram of intervals
+4. Most common interval → BPM = 60 / interval_in_seconds
+```
+
+### Using Processing's Built-in BeatDetector
+
+Processing's Sound library includes a simple beat detector:
+
+```java
+import processing.sound.*;
+
+SoundFile music;
+BeatDetector beatDetector;
+
+void setup() {
+  size(800, 600);
+  
+  music = new SoundFile(this, "music.mp3");
+  music.loop();
+  
+  beatDetector = new BeatDetector(this);
+  beatDetector.input(music);
+  beatDetector.sensitivity(140);  // ms between detections
+}
+
+void draw() {
+  if (beatDetector.isBeat()) {
+    background(255, 0, 0);  // Flash on beat
+  } else {
+    background(0);
+  }
+}
+```
+
+### Using Minim for Advanced Beat Detection
+
+The Minim library offers frequency-band beat detection:
+
+```java
+import ddf.minim.*;
+import ddf.minim.analysis.*;
+
+Minim minim;
+AudioPlayer player;
+BeatDetect beat;
+
+void setup() {
+  minim = new Minim(this);
+  player = minim.loadFile("music.mp3");
+  player.play();
+  
+  beat = new BeatDetect();
+  beat.setSensitivity(300);  // ms
+}
+
+void draw() {
+  beat.detect(player.mix);
+  
+  if (beat.isKick()) {
+    // Low frequency beat (kick drum)
+  }
+  if (beat.isSnare()) {
+    // Mid frequency beat (snare)
+  }
+  if (beat.isHat()) {
+    // High frequency beat (hi-hat)
+  }
+}
+```
+
+### Tap Tempo BPM Calculation
+
+For manual BPM input via tap tempo:
+
+```java
+class TapTempo {
+  ArrayList<Long> taps = new ArrayList<Long>();
+  float bpm = 120;
+  long lastTap = 0;
+  
+  void tap() {
+    long now = System.currentTimeMillis();
+    
+    // Reset if more than 2 seconds since last tap
+    if (now - lastTap > 2000) {
+      taps.clear();
+    }
+    
+    taps.add(now);
+    lastTap = now;
+    
+    // Keep last 8 taps
+    while (taps.size() > 8) {
+      taps.remove(0);
+    }
+    
+    // Calculate BPM
+    if (taps.size() >= 2) {
+      long totalTime = taps.get(taps.size() - 1) - taps.get(0);
+      float avgInterval = (float) totalTime / (taps.size() - 1);
+      bpm = 60000 / avgInterval;
+    }
+  }
+  
+  float getBPM() { return bpm; }
+  
+  // Get phase within current beat (0.0 - 1.0)
+  float getPhase() {
+    float msPerBeat = 60000 / bpm;
+    return (System.currentTimeMillis() % (long)msPerBeat) / msPerBeat;
+  }
+  
+  // Get sine wave synced to beat
+  float getBeatSine() {
+    return sin(getPhase() * TWO_PI);
+  }
+  
+  // Get pulse on beat (decays over beat duration)
+  float getBeatPulse() {
+    float phase = getPhase();
+    return max(0, 1.0 - phase * 2);  // Fast decay after beat
+  }
+}
+```
+
+### Beat Detection References
+
+- [Processing Sound BeatDetector](https://processing.org/reference/libraries/sound/beatdetector) - Official documentation
+- [BeatDetection.pde Example](https://github.com/processing/processing-sound/blob/master/examples/Analysis/BeatDetection/BeatDetection.pde) - Processing Sound example
+- [Minim BeatDetect Class](https://code.compartmental.net/minim/javadoc/ddf/minim/analysis/BeatDetect.html) - Frequency-band beat detection
+- [GameDev.net Beat Detection Algorithms](https://archive.gamedev.net/archive/reference/programming/features/beatdetection/page2.html) - Deep dive into algorithms
+- [Parallelcube Beat Detection Algorithm](https://www.parallelcube.com/2018/03/30/beat-detection-algorithm/) - Practical implementation guide
+- [Essentia BPM Detection Tutorial](https://essentia.upf.edu/tutorial_rhythm_beatdetection.html) - Professional audio library approach
+- [the-BPM-detector (wavelet)](https://github.com/panagiop/the-BPM-detector) - Wavelet-based BPM detection
+- [Open Source Beat Detection Models](https://biff.ai/a-rundown-of-open-source-beat-detection-models/) - Comparison of BeatNet, Madmom, BEAST
+
+---
+
+## Magic Music Visuals Integration
+
+Magic Music Visuals is a powerful VJ software that works alongside Processing via Syphon. This section covers best practices for controlling intensity, managing buildups and drops, and using global variables.
+
+### Global Variables for Intensity Control
+
+Magic uses global variables to control parameters across multiple modules and scenes.
+
+#### Setting Up Global Intensity
+
+1. **Create a Global Variable**:
+   - Go to **Global Parameters** panel
+   - Add a new variable: `intensity` (float, 0.0 - 1.0)
+
+2. **Reference in Modules**:
+   - In any module parameter, use `[intensity]` to reference the global
+   - Use expressions: `[audio] * [intensity]` to scale audio reactivity
+
+#### Best Global Variables for VJ Sets
+
+| Variable | Type | Range | Purpose |
+|----------|------|-------|---------|
+| `intensity` | float | 0.0-1.0 | Master visual intensity |
+| `energy` | float | 0.0-2.0 | Energy level (can exceed 1.0 for peaks) |
+| `buildLevel` | float | 0.0-1.0 | Buildup progress |
+| `dropActive` | bool | 0/1 | Whether drop is active |
+| `bpm` | float | 60-200 | Current BPM for sync |
+| `palette` | int | 0-N | Color palette selection |
+| `chaos` | float | 0.0-1.0 | Randomness/glitch amount |
+| `zoom` | float | 0.5-2.0 | Global zoom factor |
+
+### Buildup and Drop Effect Management
+
+#### Buildup Strategy
+
+During a buildup, gradually increase visual intensity:
+
+```
+buildLevel:      0.0 ──────────────────▶ 1.0
+                 │                        │
+brightness:      0.5 ──────────────────▶ 1.5
+zoom:            1.0 ──────────────────▶ 1.5
+rotation_speed:  0.5 ──────────────────▶ 2.0
+chaos:           0.1 ──────────────────▶ 0.8
+saturation:      0.7 ──────────────────▶ 1.0
+```
+
+#### Drop Strategy
+
+On the drop, snap to maximum then decay:
+
+```
+dropActive:  0 ─┐                ┌─ 0
+               └─ 1 ────────────┘
+                 │               │
+intensity:   ramp ─▶ SNAP TO MAX ─▶ SUSTAIN ─▶ decay
+                     (instant)      (4-8 bars)
+```
+
+#### Expression Examples for Magic
+
+```
+// Scale effect by intensity with minimum value
+brightness: 0.3 + ([intensity] * 0.7)
+
+// Buildup zoom with easing
+zoom: 1.0 + ([buildLevel] * [buildLevel] * 0.5)
+
+// Drop flash (spike then decay)
+flash: [dropActive] * (1.0 - [time_since_drop] * 0.1)
+
+// Audio-reactive with intensity control
+scale: 1.0 + ([audio_bass] * [intensity] * 0.5)
+
+// Chaos-controlled randomness
+rotation: [time] + (random() * [chaos] * 0.5)
+
+// Beat-synced pulse
+pulse: sin([time] * [bpm] / 60 * TWO_PI) * [intensity]
+```
+
+### MIDI/OSC Control Setup
+
+Map your controller to global variables for live performance:
+
+```
+MIDImix Fader 1 → [intensity]     (0-127 → 0.0-1.0)
+MIDImix Fader 2 → [energy]        (0-127 → 0.0-2.0)
+MIDImix Fader 3 → [zoom]          (0-127 → 0.5-2.0)
+MIDImix Knob 1  → [chaos]         (0-127 → 0.0-1.0)
+MIDImix Knob 2  → [rotation_speed] (0-127 → 0.0-4.0)
+
+Launchpad Pad   → [dropActive]     (momentary trigger)
+Launchpad Scene → Scene switch + [buildLevel] reset
+```
+
+### Processing → Magic Pipeline
+
+Use Syphon to send Processing visuals into Magic:
+
+```java
+// In Processing
+import codeanticode.syphon.*;
+SyphonServer syphon;
+
+void setup() {
+  size(1920, 1080, P3D);
+  syphon = new SyphonServer(this, "ProcessingViz");
+}
+
+void draw() {
+  // Your visuals
+  syphon.sendScreen();
+}
+```
+
+In Magic:
+1. Add a **Syphon Input** module
+2. Select "ProcessingViz" as the source
+3. Layer with Magic's built-in effects
+4. Control with global variables
+
+### ISF Shader Expression Syntax
+
+Magic supports ISF (Interactive Shader Format) shaders with expressions:
+
+```glsl
+/*{
+  "DESCRIPTION": "Audio-reactive circle",
+  "INPUTS": [
+    {"NAME": "intensity", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 2.0},
+    {"NAME": "audioLevel", "TYPE": "float", "DEFAULT": 0.5}
+  ]
+}*/
+
+void main() {
+    vec2 uv = isf_FragNormCoord;
+    vec2 center = vec2(0.5, 0.5);
+    
+    float radius = 0.3 + audioLevel * intensity * 0.2;
+    float dist = distance(uv, center);
+    
+    float circle = smoothstep(radius, radius - 0.02, dist);
+    gl_FragColor = vec4(vec3(circle), 1.0);
+}
+```
+
+### VJ Performance Workflow
+
+1. **Pre-Show Setup**:
+   - Set default global values (intensity=0.5, energy=0.5)
+   - Test MIDI mappings
+   - Pre-load scenes for different song sections
+
+2. **During Intro/Verse**:
+   - Keep `intensity` moderate (0.4-0.6)
+   - Low `chaos` values
+   - Subtle movements
+
+3. **During Buildup**:
+   - Gradually increase `buildLevel` 0→1 over 8-16 bars
+   - Increase `zoom` and `rotation_speed`
+   - Ramp up `chaos` toward the end
+
+4. **On Drop**:
+   - Snap `dropActive` to 1
+   - Reset `buildLevel` to 0
+   - Flash to maximum `intensity`
+   - Trigger scene change
+
+5. **Post-Drop Sustain**:
+   - Maintain high `energy` (0.8-1.0)
+   - Let `dropActive` decay
+   - Gradual return to normal over 4-8 bars
+
+### Magic Music Visuals References
+
+- [Magic User's Guide](https://magicmusicvisuals.com/documentation) - Official documentation
+- [Magic User's Guide (PDF)](https://magicmusicvisuals.com/downloads/Magic_UsersGuide.html) - Detailed reference
+- [Expressions, Variables, Syntax Forum](https://magicmusicvisuals.com/forums/viewtopic.php?t=3207) - Community syntax guide
+- [Global Input Volume/Gain](https://magicmusicvisuals.com/forums/viewtopic.php?t=2611) - Global audio control
+- [Using Third-Party Modules (ISF, FFGL)](https://magicmusicvisuals.com/forums/viewtopic.php?t=412) - Module integration
+- [Shadertoy to ISF Converter](https://magicmusicvisuals.com/forums/viewtopic.php?t=495) - Convert Shadertoy shaders
+- [ISF Documentation](https://isf.video/) - Interactive Shader Format reference
+- [Magic YouTube Tutorials](https://www.youtube.com/playlist?list=PLGfsa0Oh5SVD_lHKqWT2rGChi_pkXGw7x) - Video tutorials
+- [Magic Resources Page](https://magicmusicvisuals.com/resources) - Community resources
+- [ISF Circular Waveform Example](https://gist.github.com/jangxx/9b9e273c1640efa5ab3695da1907a6dd) - Practical ISF example
+
+---
+
 ## Resources
 
 - [Processing Reference](https://processing.org/reference/)
