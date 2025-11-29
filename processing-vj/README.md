@@ -2,6 +2,20 @@
 
 Interactive VJ games and visuals built with Processing (Java) and controlled via Launchpad Mini Mk3.
 
+## VJ Output Guidelines
+
+All projects output via Syphon for live visual mixing. Follow these critical rules:
+
+| Rule | Requirement |
+|------|-------------|
+| **Resolution** | Always `1920×1080` (Full HD) |
+| **No Controller UI** | Screen shows ONLY visuals—no Launchpad status, scores, or instructions |
+| **Black Backgrounds** | Use `background(0)` for clean overlay compositing |
+| **Particle Effects** | Emphasize dramatic, dynamic particle systems |
+| **High Contrast** | White/bright elements on black for maximum blend punch |
+
+See [VJ Output Design Principles](../docs/processing-games-guide.md#vj-output-design-principles) for details.
+
 ## Requirements
 
 - [Processing 4.x](https://processing.org/download)

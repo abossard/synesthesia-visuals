@@ -68,6 +68,32 @@ float bassActive = smoothstep(bass_threshold, bass_threshold + 0.1, syn_BassHits
   - Add `f` suffix to float literals in expressions (e.g., `0.3f` not `0.3`)
   - Cast explicitly when mixing int/float (e.g., `(int)pos.x`)
 
+### VJ Output Design Principles
+
+All Processing projects are designed for live VJ performance. Follow these critical visual guidelines:
+
+1. **No Controller UI on Screen**: The screen output should NEVER reveal that it's Launchpad-controlled
+   - ❌ No "Launchpad Connected" / "Mouse Mode" status text
+   - ❌ No grid representations showing controller layout
+   - ❌ No score counters, lives, or game state text
+   - ❌ No instructions or debug overlays
+
+2. **Design for Overlay Compositing**: Projects will be layered using blend modes in VJ software
+   - Use `background(0)` - black becomes transparent in Add/Screen blend modes
+   - Use high contrast white/bright elements that punch through overlays
+   - Prefer outlines over filled shapes for cleaner blending
+   - Monochrome (black/white) visuals composite cleanly
+
+3. **Emphasize Particle Effects**: VJ visuals should be dramatic and dynamic
+   - Use hundreds/thousands of particles for explosions
+   - Semi-transparent backgrounds for trail/ghosting effects
+   - Use PixelFlow for GPU-accelerated fluid simulations
+   - Always-moving visuals even without input
+
+4. **Separation of Controller and Visual Logic**:
+   - Launchpad LEDs = feedback for performer (private)
+   - Screen output = visuals for audience (public via Syphon)
+
 ### MIDI Setup Pattern
 ```java
 // Always scan for device, fall back gracefully
