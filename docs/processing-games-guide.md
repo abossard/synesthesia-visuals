@@ -18,6 +18,89 @@ This guide covers how to create interactive VJ games and visuals using Processin
 
 ---
 
+## VJ Output Design Principles
+
+**All Processing projects are designed for live VJ performance.** The screen output goes via Syphon to visual mixing software where it will be layered, blended, and composited with other sources. Follow these critical guidelines:
+
+### 1. Resolution: Always 1920×1080 (Full HD)
+
+```java
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+```
+
+- Never use smaller resolutions (800×800, 1280×720, etc.)
+- Full HD ensures crisp output on projectors and screens
+- Aspect ratio 16:9 matches standard displays
+
+### 2. No Controller UI on Screen
+
+**The screen output should NEVER reveal that it's Launchpad-controlled.** Do not display:
+
+- ❌ "Launchpad Connected" / "Mouse Mode" status text
+- ❌ Grid representations showing controller layout
+- ❌ Score counters, lives, or game state text
+- ❌ Instructions ("Press SPACE to explode")
+- ❌ Debug info or developer overlays
+
+The audience sees only the visual output—pure graphics with no visible game mechanics.
+
+### 3. Design for Overlay & Blend Compositing
+
+Projects will be layered using blend modes (Add, Screen, Multiply, etc.) in VJ software. Design accordingly:
+
+- **Black backgrounds** (`background(0)`) — black becomes transparent in Add/Screen blend modes
+- **High contrast elements** — white/bright colors punch through overlays
+- **Monochrome is powerful** — black and white visuals composite cleanly
+- **Avoid filled UI rectangles** — they block layers underneath
+
+```java
+void draw() {
+  background(0);  // Black = transparent in additive blending
+  
+  // Draw bright elements that will composite well
+  stroke(255);    // White for maximum contrast
+  noFill();       // Outlines blend better than filled shapes
+}
+```
+
+### 4. Crazy Particle Effects
+
+VJ visuals should be **dramatic and dynamic**. Emphasize:
+
+- **Particle explosions** — hundreds/thousands of particles
+- **Trails and motion blur** — semi-transparent backgrounds for ghosting
+- **GPU acceleration** — use PixelFlow for fluid simulations and massive particle counts
+- **Constant motion** — always-moving visuals even without input
+- **Audio reactivity** — respond to beats and frequencies
+
+```java
+// Semi-transparent background for trail effect
+void draw() {
+  // Ghost trail - don't fully clear, let particles leave traces
+  fill(0, 20);  // Black with low alpha
+  rect(0, 0, width, height);
+  
+  // Update and draw particle systems
+  for (Particle p : particles) {
+    p.update();
+    p.display();
+  }
+}
+```
+
+### 5. Separation of Controller and Visual Logic
+
+Keep MIDI/controller handling completely separate from visual output:
+
+- **Launchpad LEDs** — feedback for the performer (private)
+- **Screen output** — visuals for the audience (public via Syphon)
+
+The performer sees both; the audience sees only the screen.
+
+---
+
 ## Basic Structure
 
 ### Minimal MIDI Setup

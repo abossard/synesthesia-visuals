@@ -16,9 +16,10 @@
  * - Press 'C' to clear canvas
  * - Press 'R' to randomize colors
  * 
- * Syphon Output:
- * - Broadcasts as "PatternDraw" server at 1920x1080
- * - Receivable in Synesthesia, Magic, VPT, etc.
+ * VJ Output:
+ * - 1920x1080 Full HD via Syphon
+ * - Black background for overlay compositing
+ * - No visible UI - pure particle visuals
  */
 
 import themidibus.*;
@@ -57,7 +58,7 @@ final int LP_WHITE = 3;
 int[] lpPalette = {LP_RED, LP_ORANGE, LP_YELLOW, LP_GREEN, LP_CYAN, LP_BLUE, LP_PURPLE, LP_PINK};
 
 void settings() {
-  size(1280, 720, P3D);  // 720p (16:9), P3D required for Syphon
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
 }
 
 void setup() {
@@ -114,16 +115,19 @@ void initMidi() {
 }
 
 void draw() {
-  // Flash effect background
+  // Flash effect background or semi-transparent trail
   if (flashIntensity > 0) {
     background(0, 0, flashIntensity);
-    flashIntensity *= 0.9;
+    flashIntensity *= 0.9f;
   } else {
-    background(0);
+    // Semi-transparent background for trail effect
+    fill(0, 25);
+    noStroke();
+    rect(0, 0, width, height);
   }
   
-  // Draw grid
-  drawGrid();
+  // Draw grid cells as glowing orbs (no grid lines)
+  drawGlowingCells();
   
   // Update and draw particles
   updateParticles();
@@ -135,15 +139,12 @@ void draw() {
     randomizeColors();
   }
   
-  // Draw UI
-  drawUI();
-  
   // Send frame to Syphon
   syphon.sendScreen();
 }
 
-void drawGrid() {
-  float cellSize = min(width, height) * 0.8 / 8;
+void drawGlowingCells() {
+  float cellSize = min(width, height) * 0.7f / 8;
   float offsetX = (width - cellSize * 8) / 2;
   float offsetY = (height - cellSize * 8) / 2;
   
@@ -151,27 +152,28 @@ void drawGrid() {
   
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
-      float x = offsetX + col * cellSize;
-      float y = offsetY + (7 - row) * cellSize;  // Flip Y to match Launchpad
+      if (!grid[col][row]) continue;
       
-      if (grid[col][row]) {
-        // Filled cell - pulsing glow
-        float pulse = sin(frameCount * 0.1 + col + row) * 0.2 + 0.8;
-        fill(gridColors[col][row], pulse * 255);
-        
-        // Glow effect
-        for (int g = 3; g > 0; g--) {
-          fill(gridColors[col][row], 50 / g);
-          rect(x - g*3, y - g*3, cellSize - 4 + g*6, cellSize - 4 + g*6, 8);
-        }
-        
-        fill(gridColors[col][row]);
-        rect(x, y, cellSize - 4, cellSize - 4, 5);
-      } else {
-        // Empty cell
-        fill(30);
-        rect(x, y, cellSize - 4, cellSize - 4, 5);
+      float x = offsetX + col * cellSize + cellSize/2;
+      float y = offsetY + (7 - row) * cellSize + cellSize/2;
+      
+      // Pulsing glow
+      float pulse = sin(frameCount * 0.1f + col * 0.5f + row * 0.5f) * 0.3f + 0.7f;
+      
+      // Outer glow layers
+      for (int g = 4; g > 0; g--) {
+        float glowSize = cellSize * (0.4f + g * 0.2f) * pulse;
+        fill(gridColors[col][row], (40 / g));
+        ellipse(x, y, glowSize, glowSize);
       }
+      
+      // Core
+      fill(gridColors[col][row], 200 * pulse);
+      ellipse(x, y, cellSize * 0.35f, cellSize * 0.35f);
+      
+      // Bright center
+      fill(hue(gridColors[col][row]), saturation(gridColors[col][row]) * 0.5f, 100);
+      ellipse(x, y, cellSize * 0.15f, cellSize * 0.15f);
     }
   }
 }
@@ -188,36 +190,12 @@ void updateParticles() {
   }
 }
 
-void drawUI() {
-  fill(255);
-  textAlign(CENTER, TOP);
-  textSize(32);
-  text("PATTERN DRAW", width/2, 20);
-  
-  textSize(18);
-  fill(hasLaunchpad ? color(120, 80, 100) : color(40, 80, 100));
-  text(hasLaunchpad ? "Launchpad Connected" : "Mouse Mode (click grid)", width/2, 60);
-  
-  fill(200);
-  textSize(16);
-  text("Draw a pattern, then press SPACE to explode!", width/2, height - 40);
-  
-  // Count filled cells
-  int filledCount = 0;
-  for (int c = 0; c < 8; c++) {
-    for (int r = 0; r < 8; r++) {
-      if (grid[c][r]) filledCount++;
-    }
-  }
-  text("Cells: " + filledCount + "/64", width/2, height - 60);
-}
-
 void triggerExplosion() {
   exploding = true;
   explosionStartTime = millis();
   flashIntensity = 100;
   
-  float cellSize = min(width, height) * 0.8 / 8;
+  float cellSize = min(width, height) * 0.7f / 8;
   float offsetX = (width - cellSize * 8) / 2;
   float offsetY = (height - cellSize * 8) / 2;
   
@@ -228,8 +206,8 @@ void triggerExplosion() {
         float x = offsetX + col * cellSize + cellSize/2;
         float y = offsetY + (7 - row) * cellSize + cellSize/2;
         
-        // Create multiple particles per cell
-        for (int i = 0; i < 20; i++) {
+        // Create many particles per cell for dramatic effect
+        for (int i = 0; i < 40; i++) {
           particles.add(new Particle(x, y, gridColors[col][row]));
         }
       }
@@ -310,7 +288,7 @@ void noteOff(int channel, int pitch, int velocity) {
 
 // Mouse fallback
 void mousePressed() {
-  float cellSize = min(width, height) * 0.8 / 8;
+  float cellSize = min(width, height) * 0.7f / 8;
   float offsetX = (width - cellSize * 8) / 2;
   float offsetY = (height - cellSize * 8) / 2;
   
@@ -383,22 +361,22 @@ class Particle {
   color c;
   float life;
   float maxLife;
-  float gravity = 0.2;
-  float drag = 0.98;
+  float gravity = 0.12f;
+  float drag = 0.985f;
   
   Particle(float x, float y, color c) {
     this.x = x;
     this.y = y;
     this.c = c;
     
-    // Random explosion velocity
+    // Random explosion velocity - more dramatic
     float angle = random(TWO_PI);
-    float speed = random(5, 25);
+    float speed = random(8, 35);
     this.vx = cos(angle) * speed;
-    this.vy = sin(angle) * speed - random(5, 15);  // Bias upward
+    this.vy = sin(angle) * speed - random(8, 20);  // Bias upward
     
-    this.size = random(5, 20);
-    this.maxLife = random(60, 120);
+    this.size = random(6, 25);
+    this.maxLife = random(80, 150);
     this.life = maxLife;
   }
   
@@ -409,23 +387,31 @@ class Particle {
     vx *= drag;
     vy *= drag;
     life--;
-    size *= 0.98;
+    size *= 0.985f;
   }
   
   void display() {
     float alpha = map(life, 0, maxLife, 0, 100);
     
-    // Glow
+    // Outer glow
     noStroke();
-    fill(hue(c), saturation(c), brightness(c), alpha * 0.3f);
-    ellipse(x, y, size * 2, size * 2);
+    fill(hue(c), saturation(c), brightness(c), alpha * 0.2f);
+    ellipse(x, y, size * 3, size * 3);
+    
+    // Middle glow
+    fill(hue(c), saturation(c), brightness(c), alpha * 0.5f);
+    ellipse(x, y, size * 1.8f, size * 1.8f);
     
     // Core
     fill(hue(c), saturation(c), brightness(c), alpha);
     ellipse(x, y, size, size);
+    
+    // Bright center
+    fill(hue(c), saturation(c) * 0.3f, 100, alpha);
+    ellipse(x, y, size * 0.35f, size * 0.35f);
   }
   
   boolean isDead() {
-    return life <= 0 || size < 1 || y > height + 50;
+    return life <= 0 || size < 1 || y > height + 100;
   }
 }
