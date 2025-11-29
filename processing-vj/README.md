@@ -35,12 +35,27 @@ See [VJ Output Design Principles](../docs/processing-games-guide.md#vj-output-de
 ```
 processing-vj/
 ├── examples/           # Example game implementations
+│   └── BuildupRelease/ # VJ overlay for song buildups and drops
 │   ├── WhackAMole/     # Reaction game - hit pads as they light up
 │   ├── PatternDraw/    # Draw patterns, then watch them explode
 │   └── CrowdBattle/    # Multi-agent crowd simulation with bombs
 └── lib/               # Shared utilities
     └── LaunchpadUtils.pde
 ```
+
+## Examples
+
+### BuildupRelease
+A VJ overlay effect for song buildups and drops. Press pads on the Launchpad to gradually cover the screen with panels. Press multiple pads quickly (within 200ms) to trigger a dramatic crack/shatter release effect that reveals the full screen - perfect for syncing with music drops.
+
+**Controls:**
+- Press pads to add coverage panels
+- Press 3+ pads quickly to trigger release
+- Scene buttons (right column) trigger release
+- Press 'R' to manually trigger release
+- Press 'C' to clear all panels
+
+**Syphon Output:** "BuildupRelease" at 1920x1080
 
 ## Quick Start
 
