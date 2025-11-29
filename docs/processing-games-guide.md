@@ -24,25 +24,54 @@ This guide covers how to create interactive VJ games and visuals using Processin
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
 
 void setup() {
-  size(800, 800);
+  // MIDI setup with auto-detection
+  initMidi();
   
-  // List all available MIDI devices
-  MidiBus.list();
-  
-  // Connect to Launchpad (use MIDI 2 port for Programmer mode)
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  // Syphon output for VJ pipeline
+  syphon = new SyphonServer(this, "ProcessingGame");
   
   // Clear all pads at startup
   clearAllPads();
 }
 
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
+}
+
 void draw() {
   background(0);
   // Your visual code here
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void noteOn(int channel, int pitch, int velocity) {
@@ -56,12 +85,18 @@ void noteOff(int channel, int pitch, int velocity) {
 }
 
 void clearAllPads() {
+  if (!hasLaunchpad || launchpad == null) return;
   for (int row = 1; row <= 8; row++) {
     for (int col = 1; col <= 8; col++) {
       int note = row * 10 + col;
       launchpad.sendNoteOn(0, note, 0);
     }
   }
+}
+
+void keyPressed() {
+  // Keyboard fallback when Launchpad unavailable
+  println("Key pressed: " + key);
 }
 ```
 
@@ -108,6 +143,7 @@ final int COLOR_PINK = 57;
 final int COLOR_WHITE = 3;
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;  // Guard MIDI calls
   int note = gridToNote(col, row);
   launchpad.sendNoteOn(0, note, colorIndex);
 }
@@ -135,23 +171,52 @@ A simple reaction game where pads light up and players must hit them quickly.
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
 int targetCol = -1, targetRow = -1;
 int score = 0;
 int lastSpawnTime = 0;
 int spawnInterval = 1000; // ms
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800);
   textSize(48);
   textAlign(CENTER, CENTER);
   
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  initMidi();
+  syphon = new SyphonServer(this, "WhackAMole");
   
   clearAllPads();
   spawnTarget();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void draw() {
@@ -169,12 +234,14 @@ void draw() {
     clearTarget();
     spawnTarget();
   }
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void drawGrid() {
-  float cellSize = 80;
+  float cellSize = 100;
   float offsetX = (width - cellSize * 8) / 2;
-  float offsetY = 100;
+  float offsetY = 150;
   
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
@@ -212,6 +279,10 @@ void noteOn(int channel, int pitch, int velocity) {
   int col = (int)pos.x;
   int row = (int)pos.y;
   
+  handleHit(col, row);
+}
+
+void handleHit(int col, int row) {
   if (col == targetCol && row == targetRow) {
     // Hit!
     score++;
@@ -227,6 +298,37 @@ void noteOn(int channel, int pitch, int velocity) {
     lightPad(col, row, 5);
     delay(50);
     clearPad(col, row);
+  }
+}
+
+// Keyboard fallback when no Launchpad
+void keyPressed() {
+  // Use number keys 1-8 for column, q-i for row
+  int col = -1, row = -1;
+  if (key >= '1' && key <= '8') col = key - '1';
+  if (key == 'q') row = 7;
+  if (key == 'w') row = 6;
+  if (key == 'e') row = 5;
+  if (key == 'r') row = 4;
+  if (key == 't') row = 3;
+  if (key == 'y') row = 2;
+  if (key == 'u') row = 1;
+  if (key == 'i') row = 0;
+  
+  if (col >= 0 && row >= 0) handleHit(col, row);
+}
+
+// Mouse fallback
+void mousePressed() {
+  float cellSize = 100;
+  float offsetX = (width - cellSize * 8) / 2;
+  float offsetY = 150;
+  
+  int col = (int)((mouseX - offsetX) / cellSize);
+  int row = 7 - (int)((mouseY - offsetY) / cellSize);
+  
+  if (col >= 0 && col < 8 && row >= 0 && row < 8) {
+    handleHit(col, row);
   }
 }
 
@@ -248,6 +350,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   int note = gridToNote(col, row);
   launchpad.sendNoteOn(0, note, colorIndex);
 }
@@ -271,9 +374,12 @@ Classic snake game on the Launchpad grid.
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 import java.util.LinkedList;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
 
 LinkedList<PVector> snake = new LinkedList<PVector>();
 PVector food;
@@ -284,15 +390,40 @@ int moveInterval = 300;
 boolean gameOver = false;
 int score = 0;
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800);
   textSize(32);
   textAlign(CENTER, CENTER);
   
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  initMidi();
+  syphon = new SyphonServer(this, "SnakeGame");
   
   resetGame();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void resetGame() {
@@ -317,7 +448,8 @@ void draw() {
     fill(255, 0, 0);
     text("GAME OVER", width/2, height/2 - 30);
     text("Score: " + score, width/2, height/2 + 30);
-    text("Press any pad to restart", width/2, height/2 + 90);
+    text("Press any pad or SPACE to restart", width/2, height/2 + 90);
+    syphon.sendScreen();
     return;
   }
   
@@ -333,6 +465,8 @@ void draw() {
   
   fill(255);
   text("Score: " + score, width/2, 30);
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void moveSnake() {
@@ -433,9 +567,6 @@ void noteOn(int channel, int pitch, int velocity) {
   PVector head = snake.getFirst();
   
   // Determine direction based on pad pressed relative to head
-  // Use scene launch buttons for direction, or pads in cardinal directions
-  
-  // Simple: use quadrant of pressed pad relative to head
   float dx = pos.x - head.x;
   float dy = pos.y - head.y;
   
@@ -456,10 +587,30 @@ void noteOn(int channel, int pitch, int velocity) {
   }
 }
 
+// Keyboard fallback
+void keyPressed() {
+  if (gameOver && key == ' ') {
+    resetGame();
+    return;
+  }
+  if (key == 'w' || keyCode == UP) {
+    if (direction.y != -1) nextDirection = new PVector(0, 1);
+  }
+  if (key == 's' || keyCode == DOWN) {
+    if (direction.y != 1) nextDirection = new PVector(0, -1);
+  }
+  if (key == 'a' || keyCode == LEFT) {
+    if (direction.x != 1) nextDirection = new PVector(-1, 0);
+  }
+  if (key == 'd' || keyCode == RIGHT) {
+    if (direction.x != -1) nextDirection = new PVector(1, 0);
+  }
+}
+
 void drawGrid() {
-  float cellSize = 80;
+  float cellSize = 100;
   float offsetX = (width - cellSize * 8) / 2;
-  float offsetY = 80;
+  float offsetY = 100;
   
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
@@ -506,6 +657,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   int note = gridToNote(col, row);
   launchpad.sendNoteOn(0, note, colorIndex);
 }
@@ -515,9 +667,12 @@ void lightPad(int col, int row, int colorIndex) {
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 import java.util.ArrayList;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
 
 ArrayList<Integer> sequence = new ArrayList<Integer>();
 int playerIndex = 0;
@@ -536,15 +691,40 @@ int[][] quadrants = {
 int[] quadrantColors = {5, 13, 21, 45}; // Red, Yellow, Green, Blue
 int[] quadrantDimColors = {1, 9, 17, 41}; // Dim versions
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800);
   textSize(32);
   textAlign(CENTER, CENTER);
   
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  initMidi();
+  syphon = new SyphonServer(this, "SimonSays");
   
   startNewGame();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void startNewGame() {
@@ -566,11 +746,11 @@ void showQuadrants() {
   }
 }
 
-void lightQuadrant(int q, int color) {
+void lightQuadrant(int q, int colorVal) {
   int[] bounds = quadrants[q];
   for (int col = bounds[0]; col <= bounds[2]; col++) {
     for (int row = bounds[1]; row <= bounds[3]; row++) {
-      lightPad(col, row, color);
+      lightPad(col, row, colorVal);
     }
   }
 }
@@ -615,19 +795,7 @@ int getQuadrant(int col, int row) {
   return -1;
 }
 
-void noteOn(int channel, int pitch, int velocity) {
-  if (!isValidPad(pitch)) return;
-  
-  if (gameOver) {
-    startNewGame();
-    return;
-  }
-  
-  if (!playerTurn) return;
-  
-  PVector pos = noteToGrid(pitch);
-  int q = getQuadrant((int)pos.x, (int)pos.y);
-  
+void handleQuadrantPress(int q) {
   if (q < 0) return;
   
   // Flash the pressed quadrant
@@ -655,6 +823,55 @@ void noteOn(int channel, int pitch, int velocity) {
   }
 }
 
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  
+  if (gameOver) {
+    startNewGame();
+    return;
+  }
+  
+  if (!playerTurn) return;
+  
+  PVector pos = noteToGrid(pitch);
+  int q = getQuadrant((int)pos.x, (int)pos.y);
+  handleQuadrantPress(q);
+}
+
+// Keyboard/mouse fallback
+void keyPressed() {
+  if (gameOver && key == ' ') {
+    startNewGame();
+    return;
+  }
+  if (!playerTurn) return;
+  
+  int q = -1;
+  if (key == 'q' || key == '1') q = 0;  // Top-left
+  if (key == 'w' || key == '2') q = 1;  // Top-right
+  if (key == 'a' || key == '3') q = 2;  // Bottom-left
+  if (key == 's' || key == '4') q = 3;  // Bottom-right
+  
+  if (q >= 0) handleQuadrantPress(q);
+}
+
+void mousePressed() {
+  if (gameOver) {
+    startNewGame();
+    return;
+  }
+  if (!playerTurn) return;
+  
+  // Map mouse to quadrant
+  int q = -1;
+  if (mouseX < width/2 && mouseY < height/2) q = 0;
+  else if (mouseX >= width/2 && mouseY < height/2) q = 1;
+  else if (mouseX < width/2 && mouseY >= height/2) q = 2;
+  else if (mouseX >= width/2 && mouseY >= height/2) q = 3;
+  
+  if (q >= 0) handleQuadrantPress(q);
+}
+
 void flashGameOver() {
   for (int i = 0; i < 3; i++) {
     for (int row = 0; row < 8; row++) {
@@ -675,7 +892,7 @@ void draw() {
     fill(255, 0, 0);
     text("GAME OVER!", width/2, height/2 - 30);
     text("Score: " + score, width/2, height/2 + 30);
-    text("Press any pad to restart", width/2, height/2 + 90);
+    text("Press SPACE or any pad to restart", width/2, height/2 + 90);
   } else {
     fill(255);
     text("Score: " + score, width/2, 30);
@@ -688,13 +905,15 @@ void draw() {
   }
   
   drawQuadrants();
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void drawQuadrants() {
-  float size = 300;
+  float size = 400;
   float gap = 20;
   float startX = (width - size * 2 - gap) / 2;
-  float startY = 80;
+  float startY = 100;
   
   color[] colors = {color(255, 0, 0), color(255, 255, 0), color(0, 255, 0), color(0, 0, 255)};
   
@@ -729,6 +948,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   int note = gridToNote(col, row);
   launchpad.sendNoteOn(0, note, colorIndex);
 }
@@ -766,18 +986,24 @@ A flock of birds/particles follows the location of pressed pads on the Launchpad
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 import java.util.ArrayList;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
 ArrayList<Boid> flock = new ArrayList<Boid>();
 ArrayList<PVector> attractors = new ArrayList<PVector>();
 boolean[][] padPressed = new boolean[8][8];
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800, P3D);
-  
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  initMidi();
+  syphon = new SyphonServer(this, "Flocker");
   
   // Create initial flock
   for (int i = 0; i < 150; i++) {
@@ -785,6 +1011,28 @@ void setup() {
   }
   
   clearAllPads();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void draw() {
@@ -818,6 +1066,8 @@ void draw() {
   
   // Update Launchpad LEDs based on boid density
   updateLaunchpadFromDensity();
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void updateLaunchpadFromDensity() {
@@ -864,10 +1114,27 @@ void noteOff(int channel, int pitch, int velocity) {
   padPressed[(int)pos.x][(int)pos.y] = false;
 }
 
+// Mouse fallback for attractors
+void mousePressed() {
+  int col = (int)map(mouseX, 0, width, 0, 8);
+  int row = 7 - (int)map(mouseY, 0, height, 0, 8);
+  if (col >= 0 && col < 8 && row >= 0 && row < 8) {
+    padPressed[col][row] = true;
+  }
+}
+
+void mouseReleased() {
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 8; j++) {
+      padPressed[i][j] = false;
+    }
+  }
+}
+
 class Boid {
   PVector position, velocity, acceleration;
   float maxSpeed = 4;
-  float maxForce = 0.1;
+  float maxForce = 0.1f;
   
   Boid(float x, float y) {
     position = new PVector(x, y);
@@ -876,9 +1143,9 @@ class Boid {
   }
   
   void flock(ArrayList<Boid> boids) {
-    PVector sep = separate(boids).mult(1.5);
-    PVector ali = align(boids).mult(1.0);
-    PVector coh = cohesion(boids).mult(1.0);
+    PVector sep = separate(boids).mult(1.5f);
+    PVector ali = align(boids).mult(1.0f);
+    PVector coh = cohesion(boids).mult(1.0f);
     acceleration.add(sep).add(ali).add(coh);
   }
   
@@ -990,7 +1257,7 @@ class Boid {
   }
 }
 
-// Utility functions...
+// Utility functions
 PVector noteToGrid(int note) {
   return new PVector((note % 10) - 1, (note / 10) - 1);
 }
@@ -1006,6 +1273,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
 }
 
@@ -1040,22 +1308,51 @@ A virus/organism grows from pressed pads, spreading across the grid. Fight it by
 
 ```java
 import themidibus.*;
+import codeanticode.syphon.*;
 import java.util.ArrayList;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
 ArrayList<Virus> viruses = new ArrayList<Virus>();
 int score = 0;
 int lastSpawnTime = 0;
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(800, 800);
   textSize(32);
   textAlign(CENTER, CENTER);
   
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  initMidi();
+  syphon = new SyphonServer(this, "VirusGrower");
   
   clearAllPads();
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void draw() {
@@ -1088,12 +1385,14 @@ void draw() {
   
   // Draw grid
   drawGrid();
+  
+  syphon.sendScreen();  // Always at end of draw()
 }
 
 void drawGrid() {
-  float cellSize = 80;
+  float cellSize = 100;
   float offsetX = (width - cellSize * 8) / 2;
-  float offsetY = 120;
+  float offsetY = 150;
   
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
@@ -1145,13 +1444,7 @@ void updateLaunchpad() {
   }
 }
 
-void noteOn(int channel, int pitch, int velocity) {
-  if (!isValidPad(pitch)) return;
-  
-  PVector pos = noteToGrid(pitch);
-  int col = (int)pos.x;
-  int row = (int)pos.y;
-  
+void handleCellPress(int col, int row) {
   // Check if hitting a virus
   boolean hitSomething = false;
   for (int i = viruses.size() - 1; i >= 0; i--) {
@@ -1178,6 +1471,27 @@ void noteOn(int channel, int pitch, int velocity) {
   // If nothing hit, spawn new virus
   if (!hitSomething && getCellState(col, row) == 0) {
     viruses.add(new Virus(col, row));
+  }
+}
+
+void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  
+  PVector pos = noteToGrid(pitch);
+  handleCellPress((int)pos.x, (int)pos.y);
+}
+
+// Mouse fallback
+void mousePressed() {
+  float cellSize = 100;
+  float offsetX = (width - cellSize * 8) / 2;
+  float offsetY = 150;
+  
+  int col = (int)((mouseX - offsetX) / cellSize);
+  int row = 7 - (int)((mouseY - offsetY) / cellSize);
+  
+  if (col >= 0 && col < 8 && row >= 0 && row < 8) {
+    handleCellPress(col, row);
   }
 }
 
@@ -1290,7 +1604,7 @@ class Virus {
   }
 }
 
-// Utility functions (same as before)
+// Utility functions
 PVector noteToGrid(int note) {
   return new PVector((note % 10) - 1, (note / 10) - 1);
 }
@@ -1306,6 +1620,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
   launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
 }
 
@@ -1554,8 +1869,12 @@ int[][] maze = new int[8][8]; // 0=open, 1=wall
 PVector source = new PVector(0, 0);
 PVector sink = new PVector(7, 7);
 ArrayList<Particle> particles = new ArrayList<Particle>();
+MidiBus launchpad;
+boolean hasLaunchpad = false;
 
 void noteOn(int channel, int pitch, int velocity) {
+  if (!isValidPad(pitch)) return;
+  
   PVector pos = noteToGrid(pitch);
   int x = (int)pos.x, y = (int)pos.y;
   
@@ -1566,6 +1885,13 @@ void noteOn(int channel, int pitch, int velocity) {
   // Recalculate flow field
   recalculateFlowField();
 }
+
+void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
+  launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
+}
+
+// ... rest of implementation
 ```
 
 ---
@@ -1979,15 +2305,18 @@ import themidibus.*;
 import codeanticode.syphon.*;
 
 MidiBus launchpad;
+boolean hasLaunchpad = false;
 SyphonServer syphon;
 
 // Grid state
 int[][] gridState = new int[8][8];
 boolean[][] padPressed = new boolean[8][8];
 
+void settings() {
+  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+}
+
 void setup() {
-  size(1920, 1080, P3D);  // Full HD for VJ output
-  
   // MIDI setup with fallback
   initMidi();
   
@@ -2011,7 +2340,12 @@ void initMidi() {
   }
   
   if (lpIn != null && lpOut != null) {
-    launchpad = new MidiBus(this, lpIn, lpOut);
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
   }
 }
 
@@ -2067,7 +2401,7 @@ boolean isValidPad(int note) {
 }
 
 void lightPad(int col, int row, int colorIndex) {
-  if (launchpad == null) return;
+  if (!hasLaunchpad || launchpad == null) return;
   launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
 }
 
@@ -2076,6 +2410,25 @@ void clearAllPads() {
     for (int col = 0; col < 8; col++) {
       lightPad(col, row, 0);
     }
+  }
+}
+
+// Keyboard/mouse fallback
+void keyPressed() {
+  // Implement keyboard controls for when Launchpad is unavailable
+}
+
+void mousePressed() {
+  // Map mouse to grid for fallback interaction
+  float cellSize = min(width, height) / 10.0f;
+  float offsetX = (width - cellSize * 8) / 2;
+  float offsetY = (height - cellSize * 8) / 2;
+  
+  int col = (int)((mouseX - offsetX) / cellSize);
+  int row = 7 - (int)((mouseY - offsetY) / cellSize);
+  
+  if (col >= 0 && col < 8 && row >= 0 && row < 8) {
+    onPadPress(col, row);
   }
 }
 ```
@@ -2240,14 +2593,19 @@ Avoid sending too many MIDI messages per frame. Batch LED updates when possible.
 import com.thomasdiewald.pixelflow.java.DwPixelFlow;
 import com.thomasdiewald.pixelflow.java.fluid.DwFluid2D;
 import themidibus.*;
+import codeanticode.syphon.*;
 
 DwPixelFlow context;
 DwFluid2D fluid;
 MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
+void settings() {
+  size(1920, 1080, P2D);  // Full HD, P2D for PixelFlow
+}
 
 void setup() {
-  size(800, 800, P2D);
-  
   // Initialize PixelFlow
   context = new DwPixelFlow(this);
   
@@ -2256,9 +2614,33 @@ void setup() {
   fluid.param.dissipation_velocity = 0.70f;
   fluid.param.dissipation_density  = 0.99f;
   
-  // Connect to Launchpad
-  MidiBus.list();
-  launchpad = new MidiBus(this, "Launchpad Mini MK3 MIDI 2", "Launchpad Mini MK3 MIDI 2");
+  // MIDI setup with auto-detection
+  initMidi();
+  
+  // Syphon output
+  syphon = new SyphonServer(this, "FluidSimulation");
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void draw() {
@@ -2267,6 +2649,17 @@ void draw() {
   // Render fluid
   background(0);
   fluid.renderFluidTextures(g, 0);
+  
+  syphon.sendScreen();  // Always at end of draw()
+}
+
+void addFluidAt(float px, float py) {
+  float radius = 50;
+  float vx = random(-20, 20);
+  float vy = random(-20, 20);
+  
+  fluid.addDensity(px, py, radius, 1.0f, 0.5f, 0.2f, 1.0f);
+  fluid.addVelocity(px, py, radius, vx, vy);
 }
 
 void noteOn(int channel, int pitch, int velocity) {
@@ -2278,20 +2671,37 @@ void noteOn(int channel, int pitch, int velocity) {
   float px = map(pos.x, 0, 7, 100, width - 100);
   float py = map(7 - pos.y, 0, 7, 100, height - 100);
   
-  // Add density and velocity to fluid at pad position
-  float radius = 50;
-  float vx = random(-20, 20);
-  float vy = random(-20, 20);
-  
-  fluid.addDensity(px, py, radius, 1.0f, 0.5f, 0.2f, 1.0f);
-  fluid.addVelocity(px, py, radius, vx, vy);
+  addFluidAt(px, py);
   
   // Light the pad with a color based on position
   int colorIndex = (int)map(pos.x + pos.y, 0, 14, 1, 63);
   lightPad((int)pos.x, (int)pos.y, colorIndex);
 }
 
-// Include utility functions from earlier examples...
+// Mouse fallback
+void mouseDragged() {
+  addFluidAt(mouseX, mouseY);
+}
+
+// Utility functions
+PVector noteToGrid(int note) {
+  return new PVector((note % 10) - 1, (note / 10) - 1);
+}
+
+int gridToNote(int col, int row) {
+  return (row + 1) * 10 + (col + 1);
+}
+
+boolean isValidPad(int note) {
+  int col = note % 10;
+  int row = note / 10;
+  return col >= 1 && col <= 8 && row >= 1 && row <= 8;
+}
+
+void lightPad(int col, int row, int colorIndex) {
+  if (!hasLaunchpad || launchpad == null) return;
+  launchpad.sendNoteOn(0, gridToNote(col, row), colorIndex);
+}
 ```
 
 ### Example: Particle System
@@ -2299,33 +2709,89 @@ void noteOn(int channel, int pitch, int velocity) {
 ```java
 import com.thomasdiewald.pixelflow.java.DwPixelFlow;
 import com.thomasdiewald.pixelflow.java.flowfieldparticles.DwFlowFieldParticles;
+import themidibus.*;
+import codeanticode.syphon.*;
 
 DwPixelFlow context;
 DwFlowFieldParticles particles;
+MidiBus launchpad;
+boolean hasLaunchpad = false;
+SyphonServer syphon;
+
+void settings() {
+  size(1920, 1080, P2D);  // Full HD
+}
 
 void setup() {
-  size(800, 800, P2D);
   context = new DwPixelFlow(this);
   
   particles = new DwFlowFieldParticles(context, 1000);
   particles.param.size_display = 10;
   particles.param.size_collision = 10;
+  
+  initMidi();
+  syphon = new SyphonServer(this, "ParticleSystem");
+}
+
+void initMidi() {
+  String[] inputs = MidiBus.availableInputs();
+  String[] outputs = MidiBus.availableOutputs();
+  
+  String lpIn = null, lpOut = null;
+  for (String dev : inputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpIn = dev;
+  }
+  for (String dev : outputs) {
+    if (dev != null && dev.toLowerCase().contains("launchpad")) lpOut = dev;
+  }
+  
+  if (lpIn != null && lpOut != null) {
+    try {
+      launchpad = new MidiBus(this, lpIn, lpOut);
+      hasLaunchpad = true;
+    } catch (Exception e) {
+      hasLaunchpad = false;
+    }
+  }
 }
 
 void draw() {
   background(0);
   particles.update(g);
   particles.display(g);
+  
+  syphon.sendScreen();
+}
+
+void spawnParticlesAt(float px, float py) {
+  // Add particles at this location
+  particles.spawn(px, py, 50);
 }
 
 void noteOn(int channel, int pitch, int velocity) {
-  // Spawn particles at pad position
+  if (!isValidPad(pitch)) return;
+  
   PVector pos = noteToGrid(pitch);
   float px = map(pos.x, 0, 7, 0, width);
   float py = map(7 - pos.y, 0, 7, 0, height);
   
-  // Add particles at this location
-  particles.spawn(px, py, 50);
+  spawnParticlesAt(px, py);
+}
+
+// Mouse fallback
+void mousePressed() {
+  spawnParticlesAt(mouseX, mouseY);
+}
+
+// Utility functions
+PVector noteToGrid(int note) {
+  return new PVector((note % 10) - 1, (note / 10) - 1);
+}
+
+boolean isValidPad(int note) {
+  int col = note % 10;
+  int row = note / 10;
+  return col >= 1 && col <= 8 && row >= 1 && row <= 8;
 }
 ```
 
