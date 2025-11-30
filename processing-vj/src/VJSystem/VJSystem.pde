@@ -40,7 +40,7 @@ int lastFrameTime;
 // ============================================
 
 void settings() {
-  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon + 3D effects
+  size(1280, 720, P3D);  // HD Ready, P3D required for Syphon + 3D effects
 }
 
 // ============================================
@@ -87,11 +87,36 @@ void setup() {
   
   // Start first level
   levelManager.start();
-  
+
   println("VJSystem initialized");
   println("  Syphon server: VJSystem");
+  println("  Resolution: " + width + "x" + height);
   println("  Launchpad: " + (midi.isConnected() ? midi.getDeviceName() : "not found (keyboard mode)"));
   println("  Levels: " + levelManager.getLevelCount());
+
+  // Show keyboard controls if Launchpad not found
+  if (!midi.isConnected()) {
+    println();
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("  KEYBOARD CONTROLS (Launchpad Emulation)");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println("  Level Selection:");
+    println("    1-8          Switch to level 1-8");
+    println("    ← →          Previous/Next level");
+    println();
+    println("  Level Control:");
+    println("    S            Start level");
+    println("    R            Reset level");
+    println("    P            Pause/Resume");
+    println();
+    println("  Audio Simulation:");
+    println("    SPACE        Trigger beat (all bands)");
+    println("    B            Bass hit");
+    println("    M            Mid hit");
+    println("    H            High hit");
+    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println();
+  }
 }
 
 /**

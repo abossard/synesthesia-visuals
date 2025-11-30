@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(processing-java:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

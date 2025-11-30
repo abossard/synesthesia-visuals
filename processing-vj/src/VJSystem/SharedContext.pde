@@ -20,17 +20,19 @@ class SharedContext {
   LaunchpadHUD hud;
   
   SharedContext(PApplet parent) {
-    // Framebuffer at full resolution
-    framebuffer = parent.createGraphics(1920, 1080, P3D);
-    
+    // Framebuffer at sketch resolution
+    framebuffer = parent.createGraphics(parent.width, parent.height, P3D);
+
     // Syphon server
     syphon = new SyphonServer(parent, "VJSystem");
-    
+
     // Audio (stub for now)
     audio = new AudioEnvelope();
-    
-    // Config
+
+    // Config (update with actual dimensions)
     config = new SketchConfig();
+    config.width = parent.width;
+    config.height = parent.height;
   }
   
   /**

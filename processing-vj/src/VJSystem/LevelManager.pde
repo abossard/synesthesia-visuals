@@ -246,19 +246,19 @@ class LevelManager {
     
     // Show available, active, and queued levels on top row
     for (int col = 0; col < 8; col++) {
-      int color;
-      
+      int ledColor;
+
       if (col == activeIndex) {
-        color = LP_GREEN;           // Active level
+        ledColor = LP_GREEN;           // Active level
       } else if (col == queuedIndex) {
-        color = LP_AMBER;           // Queued level
+        ledColor = LP_AMBER;           // Queued level
       } else if (col < levels.size()) {
-        color = LP_WHITE_DIM;       // Available level
+        ledColor = LP_WHITE_DIM;       // Available level
       } else {
-        color = LP_OFF;             // No level
+        ledColor = LP_OFF;             // No level
       }
-      
-      hud.setPad(col, LEVEL_ROW, color);
+
+      hud.setPad(col, LEVEL_ROW, ledColor);
     }
     
     hud.endBatch();

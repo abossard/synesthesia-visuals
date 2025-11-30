@@ -9,7 +9,7 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
 ### 1.1 Project Setup
 - [x] Create `processing-vj/src/` directory structure
 - [x] Set up main sketch file `VJSystem.pde`
-- [x] Configure `size(1920, 1080, P3D)` for Full HD Syphon output
+- [x] Configure `size(1280, 720, P3D)` for HD Ready Syphon output
 - [x] Add library imports: Syphon, The MidiBus
 
 ### 1.2 MIDI Module (`midi/`)
@@ -51,16 +51,17 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
 
 ### 1.5 Shared Context (`core/`) ✅
 - [x] Create `SharedContext.pde`:
-  - `PGraphics framebuffer`
+  - `PGraphics framebuffer` (auto-sized to sketch dimensions)
   - `SyphonServer syphon`
   - `AudioEnvelope audioEnv` (for visual reactivity, not FSM)
-  - `SketchConfig config`
+  - `SketchConfig config` (auto-populated with sketch width/height)
 - [x] Create `Inputs.pde` DTO:
   - `float dt`
   - `float bassLevel`, `midLevel`, `highLevel` (visual modulation only)
   - `ArrayList<PadEvent> padEvents`
 - [x] Create `AudioEnvelope.pde` — manual/auto audio levels with smoothing
 - [x] Create `SketchConfig.pde` — level order, buffer sizes, timing
+- [x] Create `ScreenLayout.pde` — screen-relative positioning helper for resolution independence
 
 ### 1.6 Level Manager (`core/`) ✅
 - [x] Create `LevelManager.pde`:
@@ -80,6 +81,7 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
 - [x] Send framebuffer via `syphon.sendImage()`
 - [x] Route `noteOn()`/`noteOff()` to `LaunchpadGrid` → `LevelManager`
 - [x] Keyboard fallbacks: 1-8=levels, arrows=next/prev, space=beat, R=reset, S=start, P=pause
+- [x] Display keyboard controls help at startup when Launchpad not found
 
 ---
 
@@ -311,7 +313,8 @@ Create minimal placeholder for each level with correct pad bindings:
 ## Phase 7: Polish & Performance
 
 ### 7.1 Performance Optimization
-- [ ] Profile each level at 1080p60
+
+- [ ] Profile each level at 720p60
 - [ ] Add resolution scaling for heavy levels
 - [ ] Implement frame budget monitoring
 - [ ] Add LOD for particle counts
@@ -379,3 +382,298 @@ Create minimal placeholder for each level with correct pad bindings:
 2. Pick **one level from Phase 6** to implement alongside infrastructure
 3. Iterate: add features as needed while building levels
 4. Test frequently with real Launchpad + Syphon output
+
+---
+
+## Common Processing Syntax Errors to Avoid
+
+### Reserved Type Names
+
+Processing has built-in type names that cannot be used as variable names. Always use descriptive alternatives:
+
+**❌ AVOID:**
+
+```java
+int color;  // ERROR: 'color' is a reserved type name
+color = LP_RED;
+```
+
+**✅ USE:**
+
+```java
+int ledColor;  // Use specific, descriptive names
+ledColor = LP_RED;
+```
+
+### Short Parameter Names in Constructors/Methods
+
+Processing's parser can have issues with very short or ambiguous parameter names (especially `from`, `to`, `evt`). Use explicit, descriptive parameter names:
+
+**❌ AVOID:**
+
+```java
+TransitionRule(State from, FSMEvent evt, State to) {
+  this.fromState = from;
+  this.onEvent = evt;
+  this.toState = to;
+}
+
+void addRule(State from, FSMEvent evt, State to) {
+  rules.add(new TransitionRule(from, evt, to));
+}
+
+interface FSMListener {
+  void onStateChange(State from, State to, FSMEvent trigger);
+}
+```
+
+**✅ USE:**
+
+```java
+TransitionRule(State fromState, FSMEvent onEvent, State toState) {
+  this.fromState = fromState;
+  this.onEvent = onEvent;
+  this.toState = toState;
+}
+
+void addRule(State fromState, FSMEvent onEvent, State toState) {
+  rules.add(new TransitionRule(fromState, onEvent, toState));
+}
+
+interface FSMListener {
+  void onStateChange(State fromState, State toState, FSMEvent trigger);
+}
+```
+
+### Testing with processing-java
+
+Always test your sketch with `processing-java` before committing:
+
+```bash
+# Build only (faster for syntax checking)
+processing-java --sketch=/path/to/VJSystem --build
+
+# Run the sketch
+processing-java --sketch=/path/to/VJSystem --run
+```
+
+### Other Reserved Words to Avoid
+
+Common Processing reserved words that should not be used as variable names:
+
+- `color` - use `ledColor`, `fillColor`, `strokeColor` instead
+- `width` / `height` - use `w` / `h`, `canvasWidth` / `canvasHeight` instead
+- `key` - use `pressedKey`, `inputKey` instead
+- `frameCount` - use `frame`, `frameNum` instead
+- `pixels` - use `pixelData`, `imagePixels` instead
+
+---
+
+## Screen-Relative Positioning with ScreenLayout
+
+The `ScreenLayout` class provides resolution-independent positioning helpers. **Always use ScreenLayout instead of hardcoded pixel values** to ensure visuals work correctly at any resolution.
+
+### Basic Usage
+
+```java
+void draw(PGraphics g) {
+  g.beginDraw();
+  g.background(0);
+
+  // Create layout helper
+  ScreenLayout layout = new ScreenLayout(g);
+
+  // Draw a circle at center
+  float circleSize = layout.scaleMin(0.2);  // 20% of smallest dimension
+  g.ellipse(layout.centerX(), layout.centerY(), circleSize, circleSize);
+
+  g.endDraw();
+}
+```
+
+### Center Positioning
+
+```java
+layout.centerX()          // Center X coordinate
+layout.centerY()          // Center Y coordinate
+layout.center()           // Center as PVector
+```
+
+### Relative Positioning (0.0 - 1.0)
+
+```java
+layout.relX(0.5)          // 50% across width
+layout.relY(0.25)         // 25% down height
+layout.rel(0.5, 0.5)      // Center as PVector
+```
+
+### Grid Positioning (Launchpad)
+
+Maps Launchpad pad positions (0-7) to screen coordinates with margins:
+
+```java
+layout.gridX(col)         // Map column to X
+layout.gridY(row)         // Map row to Y (inverted for screen)
+layout.gridPos(col, row)  // Position as PVector
+```
+
+### Safe Margins
+
+```java
+layout.marginLeft()       // Left edge (10% of width)
+layout.marginRight()      // Right edge (90% of width)
+layout.marginTop()        // Top edge (10% of height)
+layout.marginBottom()     // Bottom edge (90% of height)
+layout.contentWidth()     // Safe content area width (80%)
+layout.contentHeight()    // Safe content area height (80%)
+```
+
+### Size Scaling
+
+```java
+layout.scaleW(0.1)        // 10% of screen width
+layout.scaleH(0.1)        // 10% of screen height
+layout.scaleMin(0.1)      // 10% of smallest dimension (for circles/squares)
+layout.scaleMax(0.1)      // 10% of largest dimension
+```
+
+### Dimensions
+
+```java
+layout.width()            // Screen width
+layout.height()           // Screen height
+layout.aspectRatio()      // Width/height ratio
+```
+
+### Example: Particle System
+
+```java
+class Particle {
+  PVector pos;
+  PVector vel;
+  float size;
+
+  Particle(ScreenLayout layout) {
+    // Spawn at random position within margins
+    pos = new PVector(
+      random(layout.marginLeft(), layout.marginRight()),
+      random(layout.marginTop(), layout.marginBottom())
+    );
+    vel = PVector.random2D();
+    size = layout.scaleMin(0.02);  // 2% of smallest dimension
+  }
+
+  void draw(PGraphics g, ScreenLayout layout) {
+    g.ellipse(pos.x, pos.y, size, size);
+  }
+}
+```
+
+### Example: Text Sizing
+
+```java
+// Text size relative to screen height
+g.textSize(layout.scaleH(0.04));  // 4% of height (~29px at 720p)
+
+// Position at margin
+g.text("State: " + state, layout.marginLeft() * 0.5, layout.marginTop() * 0.5);
+```
+
+### Best Practices
+
+1. **Always create ScreenLayout at start of draw()** - It's lightweight and ensures fresh dimensions
+2. **Use scaleMin() for circular elements** - Maintains consistent appearance across aspect ratios
+3. **Use scaleW()/scaleH() for rectangular elements** - Respects screen aspect ratio
+4. **Use gridPos() for Launchpad feedback** - Automatically maps pad positions to screen
+5. **Avoid hardcoded pixel values** - Makes switching resolutions (720p ↔ 1080p) seamless
+
+---
+
+## Audio Reactivity Patterns
+
+The `AudioEnvelope` provides three frequency bands for visual modulation: bass, mid, and high (each 0-1). Use these to create dynamic, music-responsive visuals.
+
+### Accessing Audio in Levels
+
+Audio levels are available through the `Inputs` object passed to `update()`:
+
+```java
+void update(float dt, Inputs inputs) {
+  // Store for use in draw()
+  currentBass = inputs.bassLevel;
+  currentMid = inputs.midLevel;
+  currentHigh = inputs.highLevel;
+}
+```
+
+### Common Audio Mapping Patterns
+
+#### Bass → Size/Scale
+
+Low frequencies drive size changes and impact:
+
+```java
+// Reactive size scaling
+float bassBoost = lerp(bassBoost, currentBass, 0.3);  // Smooth decay
+float size = baseSize * (1.0 + bassBoost * 0.5);     // Up to 50% larger
+
+// Pulse speed
+float pulseSpeed = 2.0 + currentBass * 4.0;  // 2-6 Hz based on bass
+```
+
+#### Mid → Color/Hue
+
+Mid frequencies shift colors and create variety:
+
+```java
+// Accumulating hue shift
+hueShift += currentMid * dt * 60;  // Cycles over time
+float hue = (baseHue + hueShift) % 360;
+```
+
+#### High → Brightness/Detail
+
+High frequencies add sparkle and detail:
+
+```java
+// Brightness modulation
+float brightness = 70 + currentHigh * 30;  // 70-100% brightness
+
+// Glow rings on high hits
+if (currentHigh > 0.1) {
+  for (int i = 0; i < 3; i++) {
+    float ringSize = size * (1.2 + i * 0.3);
+    float ringAlpha = currentHigh * 30 * (1.0 - i / 3.0);
+    g.stroke(hue, saturation, brightness, ringAlpha);
+    g.ellipse(centerX, centerY, ringSize, ringSize);
+  }
+}
+```
+
+### Testing Audio Reactivity
+
+Use keyboard controls to simulate audio:
+
+- **SPACE** - Trigger all bands (simulates beat)
+- **B** - Bass hit (test size/scale reactions)
+- **M** - Mid hit (test color/hue shifts)
+- **H** - High hit (test brightness/details)
+
+### Best Practices
+
+1. **Use lerp() for smooth transitions** - Prevents jarring jumps
+2. **Store smoothed values** - Keep separate smoothed variables for visual appeal
+3. **Combine multiple bands** - Create rich interactions (e.g., bass affects size, mid affects hue)
+4. **Add thresholds** - Only trigger effects above minimum levels (e.g., `if (currentHigh > 0.1)`)
+5. **Scale appropriately** - Bass for big movements, high for subtle details
+6. **Test with keyboard** - Verify each band independently before testing with real audio
+
+### Example: Complete Audio-Reactive Draw
+
+See [EmptyLevel.pde](../processing-vj/src/VJSystem/EmptyLevel.pde) for a complete example demonstrating:
+
+- Bass → size boost and pulse speed
+- Mid → hue shift over time
+- High → outer glow rings and brightness
+- Smooth interpolation for natural motion
+- HSB color mode for easier hue manipulation

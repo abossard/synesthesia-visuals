@@ -6,9 +6,9 @@
 
 class SketchConfig {
   
-  // Display
-  int width = 1920;
-  int height = 1080;
+  // Display (defaults, overridden by sketch size)
+  int width = 1280;
+  int height = 720;
   int targetFPS = 60;
   
   // Levels

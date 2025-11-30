@@ -8,7 +8,7 @@ All projects output via Syphon for live visual mixing. Follow these critical rul
 
 | Rule | Requirement |
 |------|-------------|
-| **Resolution** | Always `1920×1080` (Full HD) |
+| **Resolution** | Always `1280×720` (HD Ready) |
 | **No Controller UI** | Screen shows ONLY visuals—no Launchpad status, scores, or instructions |
 | **Black Backgrounds** | Use `background(0)` for clean overlay compositing |
 | **Particle Effects** | Emphasize dramatic, dynamic particle systems |
@@ -59,7 +59,7 @@ A VJ overlay effect for song buildups and drops. Press pads on the Launchpad to 
 
 ## Quick Start
 
-1. Put Launchpad in Programmer mode:
+1. Put Launchpad in Programmer mode (optional):
    - Hold **Session** button
    - Press **orange Scene Launch** button
    - Release **Session**
@@ -67,6 +67,8 @@ A VJ overlay effect for song buildups and drops. Press pads on the Launchpad to 
 2. Open any example in Processing
 
 3. Run the sketch
+
+**Note:** If no Launchpad is connected, the sketch will run in keyboard mode and display available keyboard controls in the console.
 
 ## Creating New Games
 

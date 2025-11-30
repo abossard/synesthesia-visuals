@@ -55,10 +55,10 @@ class TransitionRule {
   FSMEvent onEvent;
   State toState;
   
-  TransitionRule(State from, FSMEvent evt, State to) {
-    this.fromState = from;
-    this.onEvent = evt;
-    this.toState = to;
+  TransitionRule(State fromState, FSMEvent onEvent, State toState) {
+    this.fromState = fromState;
+    this.onEvent = onEvent;
+    this.toState = toState;
   }
 }
 
@@ -211,8 +211,8 @@ class LevelFSM {
   /**
    * Add a transition rule
    */
-  void addRule(State from, FSMEvent evt, State to) {
-    rules.add(new TransitionRule(from, evt, to));
+  void addRule(State fromState, FSMEvent onEvent, State toState) {
+    rules.add(new TransitionRule(fromState, onEvent, toState));
   }
   
   /**
@@ -278,5 +278,5 @@ class LevelFSM {
 // ============================================
 
 interface FSMListener {
-  void onStateChange(State from, State to, FSMEvent trigger);
+  void onStateChange(State fromState, State toState, FSMEvent trigger);
 }
