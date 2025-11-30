@@ -50,7 +50,7 @@ A comprehensive technical guide to Magic Music Visuals for developers and engine
 | **Performer** | Syphon/NDI input, more modules |
 | **Pro** | FFGL plugins, Spout, advanced routing |
 
-For VJ work with Processing integration, **Performer** edition is recommended (Syphon input support).
+For VJ work with Processing integration, **Performer** edition is recommended (Syphon input support). The free Magic edition works well for learning and basic setups, but lacks Syphon input which is essential for receiving frames from Processing.
 
 ---
 
@@ -672,7 +672,7 @@ saturation: 0.5 + [intensity] * 0.5
 
 #### Ramp-Up (for buildups)
 ```java
-// In Processing, send OSC/MIDI to Magic
+// In Processing, send OSC to Magic
 void updateBuildLevel() {
   buildLevel += 0.001;  // Gradual over ~16 bars
   buildLevel = min(buildLevel, 1.0);
@@ -925,7 +925,7 @@ When creating a new VJ project, set up:
 
 ### Official Documentation
 - [Magic User's Guide](https://magicmusicvisuals.com/documentation) - Complete reference
-- [Magic User's Guide (PDF)](https://magicmusicvisuals.com/downloads/Magic_UsersGuide.html) - Downloadable version
+- [Magic User's Guide (HTML)](https://magicmusicvisuals.com/downloads/Magic_UsersGuide.html) - Downloadable reference
 - [Magic Tutorials](https://magicmusicvisuals.com/tutorials) - Video tutorials
 - [Magic Resources](https://magicmusicvisuals.com/resources) - Community resources
 
