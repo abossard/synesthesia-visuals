@@ -200,6 +200,9 @@ class Config:
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
     
+    # Feature flags - ComfyUI is disabled by default (experimental)
+    COMFYUI_ENABLED = os.environ.get('COMFYUI_ENABLED', '').lower() in ('1', 'true', 'yes', 'on')
+    
     @classmethod
     def find_vdj_path(cls) -> Optional[Path]:
         """Auto-detect VirtualDJ now_playing.txt location."""
@@ -1027,7 +1030,15 @@ class ComfyUIGenerator:
     # Directory for custom workflow files
     WORKFLOWS_DIR = Path(__file__).parent / "workflows"
     
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Optional[Path] = None, enabled: Optional[bool] = None):
+        """
+        Initialize ComfyUI generator.
+        
+        Args:
+            output_dir: Directory for generated images
+            enabled: Override Config.COMFYUI_ENABLED (None = use config)
+        """
+        self._enabled = enabled if enabled is not None else Config.COMFYUI_ENABLED
         self._output_dir = output_dir or (Config.APP_DATA_DIR / "generated_images")
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._health = ServiceHealth("ComfyUI")
@@ -1035,11 +1046,18 @@ class ComfyUIGenerator:
         self._available_models = []
         self._custom_workflows = {}
         self._active_workflow = None
-        self._check_connection()
-        self._load_custom_workflows()
+        
+        if self._enabled:
+            self._check_connection()
+            self._load_custom_workflows()
+        else:
+            logger.info("ComfyUI: Disabled (set COMFYUI_ENABLED=1 to enable)")
     
     def _check_connection(self):
         """Check if ComfyUI is running. Safe to call multiple times for reconnection."""
+        if not self._enabled:
+            return
+            
         try:
             resp = requests.get(f"{self.COMFYUI_URL}/system_stats", timeout=2)
             if resp.status_code == 200:
@@ -1061,6 +1079,8 @@ class ComfyUIGenerator:
     
     def _try_reconnect(self):
         """Attempt to reconnect if ComfyUI is down and enough time has passed."""
+        if not self._enabled:
+            return
         if not self._health.available and self._health.should_retry:
             logger.debug("ComfyUI: Attempting reconnection...")
             self._check_connection()
@@ -1135,8 +1155,14 @@ The engine will look for nodes with specific class_types:
             logger.info(f"ComfyUI: {len(self._custom_workflows)} custom workflow(s) loaded")
     
     @property
+    def is_enabled(self) -> bool:
+        """Check if ComfyUI is enabled in config."""
+        return self._enabled
+    
+    @property
     def is_available(self) -> bool:
-        return self._health.available
+        """Check if ComfyUI is enabled AND connected."""
+        return self._enabled and self._health.available
     
     @property
     def available_models(self) -> List[str]:
@@ -1173,6 +1199,7 @@ The engine will look for nodes with specific class_types:
     def get_status_info(self) -> Dict[str, Any]:
         """Get status information for display in UI."""
         return {
+            'enabled': self._enabled,
             'available': self._health.available,
             'models': self._available_models[:5] if self._available_models else [],
             'model_count': len(self._available_models),
@@ -1222,6 +1249,10 @@ The engine will look for nodes with specific class_types:
         Returns:
             Path to the generated image, or None if generation failed.
         """
+        # Check if ComfyUI is enabled
+        if not self._enabled:
+            return None
+        
         # Check cache first (always works even if ComfyUI is down)
         cache_file = self._get_image_path(artist, title)
         if cache_file.exists():

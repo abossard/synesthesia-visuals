@@ -103,7 +103,14 @@ ollama serve
 
 **Priority order:** `llama3.2` → `llama3.1` → `mistral` → `deepseek-r1` → `llama2` → `phi3` → `gemma2`
 
-### ComfyUI Image Generation (Optional)
+### ComfyUI Image Generation (Optional, Disabled by Default)
+
+ComfyUI integration is **disabled by default** as it's experimental. To enable:
+
+```bash
+# In your .env file or environment:
+COMFYUI_ENABLED=1
+```
 
 For generating song-matched visuals with black backgrounds (perfect for VJ overlays):
 
