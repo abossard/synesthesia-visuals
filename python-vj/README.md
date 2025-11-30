@@ -21,6 +21,70 @@ python vj_console.py          # Launch the terminal UI
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
 - **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
 - **📊 Pipeline View**: Colorful terminal UI showing processing steps and logs
+- **📁 Background Song Analyzer**: Pre-analyze MP3 folders for faster live performance
+
+## Background Song Analyzer
+
+Pre-analyze a folder of MP3 files to build the cache before a performance. This feature:
+
+- **Reads MP3 tags** (ID3): artist, title, album, BPM, key, genre, year, embedded lyrics
+- **Runs the full music pipeline**: lyrics fetching, LRC parsing, refrain detection, AI categorization
+- **Computes metrics** for visualization control: energy, danceability, valence (0.0-1.0 range)
+- **Caches results** for instant lookup during live performance
+- **Enables deeper OSC control** with BPM, key, and computed metrics
+
+### Usage
+
+```bash
+# Analyze all MP3s in a folder:
+python background_analyzer.py /path/to/music
+
+# With options:
+python background_analyzer.py /path/to/music --cache-dir ./my_cache --verbose
+
+# Single file with detailed output:
+python background_analyzer.py /path/to/song.mp3 -v
+
+# Show cache statistics:
+python background_analyzer.py --stats
+
+# List all analyzed songs:
+python background_analyzer.py --list
+```
+
+### Extended OSC Output
+
+The background analyzer adds additional OSC channels for enhanced visualization control:
+
+```
+/song/meta/bpm           [float]    - BPM from MP3 tags (if available)
+/song/meta/key           [string]   - Musical key (e.g., "Am", "C", "F#m")
+/song/meta/genre         [string]   - Genre from tags
+/song/meta/year          [string]   - Release year
+
+/song/meta/energy        [0.0-1.0]  - Computed energy level
+/song/meta/danceability  [0.0-1.0]  - Computed danceability
+/song/meta/valence       [0.0-1.0]  - Emotional positivity
+```
+
+### Example Output
+
+```
+============================================================
+  🎵 Background Song Analyzer
+============================================================
+
+[1/50] ✓ Daft Punk - One More Time
+[2/50] ✓ The Weeknd - Blinding Lights
+[3/50] ○ Unknown Artist - Track 03 (no lyrics)
+...
+
+Analysis complete:
+  Total files: 50
+  Successful: 50
+  With lyrics: 42
+  Cache directory: /python-vj/.cache/song_analysis
+```
 
 ## Multi-Screen Terminal UI
 
@@ -404,6 +468,27 @@ Status of running VJ apps for layer control in Magic Music Visuals etc.
 /vj/master/status       [karaoke, synesthesia, milksyphon, processing_count]
 ```
 
+### Channel 6: Song Metadata (`/song/meta/...`)
+Extended metadata from MP3 tags and computed metrics (from background_analyzer).
+
+```
+/song/meta/bpm          [float]    - BPM from MP3 tags (40-300 range)
+/song/meta/key          [string]   - Musical key (e.g., "Am", "C", "F#m")
+/song/meta/genre        [string]   - Genre from ID3 tags
+/song/meta/year         [string]   - Release year
+
+/song/meta/energy       [0.0-1.0]  - Computed energy level (calm→energetic)
+/song/meta/danceability [0.0-1.0]  - Computed danceability (introspective→danceable)
+/song/meta/valence      [0.0-1.0]  - Emotional positivity (sad/dark→happy/uplifting)
+```
+
+**Usage in Visualizations:**
+- Use `energy` to control particle count, speed, or effect intensity
+- Use `danceability` to drive beat-synced effects
+- Use `valence` to shift color palettes (dark blues → bright yellows)
+- Use `bpm` for precise beat synchronization
+- Use `key` for harmonic color mapping
+
 ### Channel 6: Image (`/karaoke/image/...`)
 AI-generated song images.
 
@@ -525,3 +610,4 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)
+- **mutagen**: MP3 tag reading for background_analyzer

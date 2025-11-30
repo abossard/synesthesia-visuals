@@ -758,6 +758,252 @@ class TestOSCSender(unittest.TestCase):
         self.assertGreater(len(messages), 0)
 
 
+class TestBackgroundAnalyzer(unittest.TestCase):
+    """Tests for BackgroundSongAnalyzer module."""
+    
+    def test_imports(self):
+        """BackgroundSongAnalyzer should be importable."""
+        from background_analyzer import (
+            BackgroundSongAnalyzer,
+            MP3Metadata,
+            AnalysisResult,
+        )
+    
+    def test_mp3_metadata_dataclass(self):
+        """MP3Metadata should store file metadata."""
+        from background_analyzer import MP3Metadata
+        
+        meta = MP3Metadata(
+            file_path="/test/song.mp3",
+            filename="song.mp3",
+            artist="Test Artist",
+            title="Test Song",
+            album="Test Album",
+            genre="Rock",
+            year="2024",
+            bpm=120.0,
+            key="Am"
+        )
+        
+        self.assertEqual(meta.artist, "Test Artist")
+        self.assertEqual(meta.title, "Test Song")
+        self.assertEqual(meta.bpm, 120.0)
+        self.assertEqual(meta.key, "Am")
+    
+    def test_mp3_metadata_to_dict(self):
+        """MP3Metadata.to_dict should exclude raw_tags."""
+        from background_analyzer import MP3Metadata
+        
+        meta = MP3Metadata(
+            file_path="/test/song.mp3",
+            filename="song.mp3",
+            raw_tags={"TBPM": "120"}
+        )
+        
+        d = meta.to_dict()
+        self.assertNotIn('raw_tags', d)
+        self.assertIn('file_path', d)
+    
+    def test_analysis_result_dataclass(self):
+        """AnalysisResult should store analysis output."""
+        from background_analyzer import MP3Metadata, AnalysisResult
+        
+        meta = MP3Metadata(file_path="/test.mp3", filename="test.mp3")
+        result = AnalysisResult(
+            metadata=meta,
+            lyrics_found=True,
+            line_count=50,
+            computed_energy=0.8
+        )
+        
+        self.assertTrue(result.lyrics_found)
+        self.assertEqual(result.line_count, 50)
+        self.assertEqual(result.computed_energy, 0.8)
+    
+    def test_parse_bpm_from_tag(self):
+        """parse_bpm_from_tag should handle various formats."""
+        from background_analyzer import parse_bpm_from_tag
+        
+        self.assertEqual(parse_bpm_from_tag("120"), 120.0)
+        self.assertEqual(parse_bpm_from_tag("120.5"), 120.5)
+        self.assertEqual(parse_bpm_from_tag("120 BPM"), 120.0)
+        self.assertEqual(parse_bpm_from_tag("BPM: 128"), 128.0)
+        self.assertIsNone(parse_bpm_from_tag(""))
+        self.assertIsNone(parse_bpm_from_tag("30"))  # Too slow
+        self.assertIsNone(parse_bpm_from_tag("500"))  # Too fast
+    
+    def test_parse_key_from_tag(self):
+        """parse_key_from_tag should normalize key notation."""
+        from background_analyzer import parse_key_from_tag
+        
+        self.assertEqual(parse_key_from_tag("Am"), "Am")
+        self.assertEqual(parse_key_from_tag("A minor"), "Am")
+        self.assertEqual(parse_key_from_tag("Amin"), "Am")
+        self.assertEqual(parse_key_from_tag("C"), "C")
+        self.assertEqual(parse_key_from_tag("C major"), "C")
+        self.assertEqual(parse_key_from_tag("F#m"), "F#m")
+        self.assertEqual(parse_key_from_tag("Bb"), "BB")
+        self.assertIsNone(parse_key_from_tag(""))
+    
+    def test_compute_energy_from_categories(self):
+        """compute_energy_from_categories should return 0.0-1.0."""
+        from background_analyzer import compute_energy_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        # High energy categories
+        high_energy = SongCategories(categories=[
+            SongCategory(name="energetic", score=0.9),
+            SongCategory(name="aggressive", score=0.7),
+            SongCategory(name="calm", score=0.1),
+        ])
+        
+        energy = compute_energy_from_categories(high_energy)
+        self.assertGreater(energy, 0.5)
+        self.assertLessEqual(energy, 1.0)
+        
+        # Low energy categories
+        low_energy = SongCategories(categories=[
+            SongCategory(name="calm", score=0.9),
+            SongCategory(name="peaceful", score=0.8),
+            SongCategory(name="energetic", score=0.1),
+        ])
+        
+        energy = compute_energy_from_categories(low_energy)
+        self.assertLess(energy, 0.5)
+        self.assertGreaterEqual(energy, 0.0)
+        
+        # None input
+        self.assertEqual(compute_energy_from_categories(None), 0.5)
+    
+    def test_compute_danceability_from_categories(self):
+        """compute_danceability_from_categories should return 0.0-1.0."""
+        from background_analyzer import compute_danceability_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        # Danceable categories with good BPM
+        danceable = SongCategories(categories=[
+            SongCategory(name="danceable", score=0.9),
+            SongCategory(name="energetic", score=0.7),
+        ])
+        
+        dance = compute_danceability_from_categories(danceable, bpm=120.0)
+        self.assertGreater(dance, 0.5)
+        self.assertLessEqual(dance, 1.0)
+        
+        # No BPM
+        dance_no_bpm = compute_danceability_from_categories(danceable)
+        self.assertGreater(dance_no_bpm, 0.5)
+    
+    def test_compute_valence_from_categories(self):
+        """compute_valence_from_categories should return 0.0-1.0."""
+        from background_analyzer import compute_valence_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        # Positive valence
+        positive = SongCategories(categories=[
+            SongCategory(name="happy", score=0.9),
+            SongCategory(name="uplifting", score=0.8),
+            SongCategory(name="sad", score=0.1),
+        ])
+        
+        valence = compute_valence_from_categories(positive)
+        self.assertGreater(valence, 0.5)
+        
+        # Negative valence
+        negative = SongCategories(categories=[
+            SongCategory(name="sad", score=0.9),
+            SongCategory(name="melancholic", score=0.8),
+            SongCategory(name="happy", score=0.1),
+        ])
+        
+        valence = compute_valence_from_categories(negative)
+        self.assertLess(valence, 0.5)
+    
+    def test_extract_keywords_from_lyrics(self):
+        """extract_keywords_from_lyrics should filter stop words."""
+        from background_analyzer import extract_keywords_from_lyrics
+        
+        lyrics = "love love love heart heart soul dream forever together"
+        keywords = extract_keywords_from_lyrics(lyrics)
+        
+        self.assertIn("love", keywords)
+        self.assertIn("heart", keywords)
+        self.assertIn("soul", keywords)
+        self.assertIn("dream", keywords)
+        # 'the', 'a', 'is' should not appear (stop words)
+    
+    def test_extract_keywords_max(self):
+        """extract_keywords_from_lyrics should respect max_keywords."""
+        from background_analyzer import extract_keywords_from_lyrics
+        
+        lyrics = "dream dream dream heart heart heart soul soul forever eternal love"
+        keywords = extract_keywords_from_lyrics(lyrics, max_keywords=3)
+        
+        self.assertEqual(len(keywords), 3)
+    
+    def test_build_osc_data(self):
+        """build_osc_data should create OSC-ready dict."""
+        from background_analyzer import MP3Metadata, AnalysisResult, build_osc_data
+        
+        meta = MP3Metadata(
+            file_path="/test.mp3",
+            filename="test.mp3",
+            artist="Artist",
+            title="Title",
+            genre="Rock",
+            bpm=120.0
+        )
+        result = AnalysisResult(
+            metadata=meta,
+            lyrics_found=True,
+            line_count=50,
+            computed_energy=0.8,
+            computed_danceability=0.7,
+            computed_valence=0.6
+        )
+        
+        osc = build_osc_data(result)
+        
+        self.assertEqual(osc['artist'], "Artist")
+        self.assertEqual(osc['title'], "Title")
+        self.assertEqual(osc['bpm'], 120.0)
+        self.assertTrue(osc['has_lyrics'])
+        self.assertEqual(osc['energy'], 0.8)
+    
+    def test_analyzer_instantiation(self):
+        """BackgroundSongAnalyzer should instantiate without errors."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(tmpdir))
+            self.assertIsNotNone(analyzer)
+            self.assertEqual(analyzer.cache_dir, Path(tmpdir))
+    
+    def test_analyzer_statistics(self):
+        """BackgroundSongAnalyzer.get_statistics should return stats dict."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(tmpdir))
+            stats = analyzer.get_statistics()
+            
+            self.assertIn('total_songs', stats)
+            self.assertIn('with_lyrics', stats)
+            self.assertIn('avg_energy', stats)
+            self.assertEqual(stats['total_songs'], 0)  # Empty cache
+    
+    def test_analyzer_list_songs(self):
+        """BackgroundSongAnalyzer.list_analyzed_songs should return list."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(tmpdir))
+            songs = analyzer.list_analyzed_songs()
+            
+            self.assertIsInstance(songs, list)
+            self.assertEqual(len(songs), 0)  # Empty cache
+
+
 if __name__ == "__main__":
     # Change to script directory for relative imports
     import os
