@@ -1,953 +1,593 @@
 #!/usr/bin/env python3
 """
-VJ Console - Textual Edition
-Modern reactive terminal UI for controlling VJ Processing apps and Karaoke Engine.
+VJ Console - Textual Edition with Multi-Screen Support
 
-Master control center for:
-- Starting/stopping Synesthesia and ProjectMilkSyphon
-- Song categorization (mood/theme) based on AI analysis
-- OSC output monitoring for VJ layer control
-- Processing app management
+Screens (press 1-4 to switch):
+1. Master Control - Main dashboard with all controls
+2. OSC View - Full OSC message debug view  
+3. Song AI Debug - Song categorization and pipeline details
+4. All Logs - Complete application logs
 """
 
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple, Any
 import logging
 import subprocess
 import time
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.widgets import Header, Footer, Static, Button
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane
 from textual.reactive import reactive
 from textual.binding import Binding
-from textual import work
 from rich.text import Text
 
-# Import existing VJ console components
 from vj_console_blessed import ProcessManager, ProcessingApp
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories
+from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 
 logger = logging.getLogger('vj_console')
 
+# ============================================================================
+# PURE FUNCTIONS (Calculations) - No side effects, same input = same output
+# ============================================================================
 
-class NowPlaying(Static):
-    """Widget displaying current track info."""
+def format_time(seconds: float) -> str:
+    """Format seconds as MM:SS."""
+    try:
+        mins, secs = int(seconds // 60), int(seconds % 60)
+        return f"{mins}:{secs:02d}"
+    except (ValueError, TypeError):
+        return "0:00"
 
-    track_artist = reactive("")
-    track_title = reactive("")
-    track_source = reactive("")
-    position_sec = reactive(0.0)
-    duration_sec = reactive(0.0)
-    is_connected = reactive(False)
-    is_playing = reactive(False)
+def format_duration(position: float, duration: float) -> str:
+    """Format position/duration as MM:SS / MM:SS."""
+    return f"{format_time(position)} / {format_time(duration)}"
 
-    def watch_track_artist(self, artist: str) -> None:
-        """Update display when track changes."""
-        self.update_display()
+def format_status_icon(active: bool, running_text: str = "● ON", stopped_text: str = "○ OFF") -> str:
+    """Format a status indicator."""
+    return f"[green]{running_text}[/]" if active else f"[dim]{stopped_text}[/]"
 
-    def watch_track_title(self, title: str) -> None:
-        """Update display when track changes."""
-        self.update_display()
+def format_bar(value: float, width: int = 15) -> str:
+    """Create a visual bar from 0.0-1.0 value."""
+    filled = int(value * width)
+    return "█" * filled + "░" * (width - filled)
 
-    def watch_position_sec(self, position: float) -> None:
-        """Update display when position changes."""
-        self.update_display()
+def color_by_score(score: float) -> str:
+    """Get color name based on score threshold."""
+    if score >= 0.7: return "green"
+    if score >= 0.4: return "yellow"
+    return "dim"
 
-    def update_display(self) -> None:
-        """Render the now playing widget."""
-        try:
-            if not self.track_artist:
-                self.update("[dim]Waiting for playback...[/dim]")
-                return
+def color_by_level(text: str) -> str:
+    """Get color based on log level in text."""
+    if "ERROR" in text or "EXCEPTION" in text: return "red"
+    if "WARNING" in text: return "yellow"
+    if "INFO" in text: return "green"
+    return "dim"
 
-            # Format playback time safely
-            try:
-                mins = int(self.position_sec // 60)
-                secs = int(self.position_sec % 60)
-                dur_mins = int(self.duration_sec // 60)
-                dur_secs = int(self.duration_sec % 60)
-                time_str = f"{mins}:{secs:02d} / {dur_mins}:{dur_secs:02d}"
-            except (ValueError, TypeError):
-                time_str = "0:00 / 0:00"
+def color_by_osc_channel(address: str) -> str:
+    """Get color based on OSC address channel."""
+    if "/karaoke/categories" in address: return "yellow"
+    if "/vj/" in address: return "cyan"
+    if "/karaoke/" in address: return "green"
+    return "white"
 
-            # Source icon
-            source_icon = "🎵" if self.track_source == "spotify" else "🎧"
+def truncate(text: str, max_len: int, suffix: str = "...") -> str:
+    """Truncate text with suffix if too long."""
+    return text[:max_len - len(suffix)] + suffix if len(text) > max_len else text
 
-            # Connection status
-            conn_status = "[bold green]● Connected[/]" if self.is_connected else "[yellow]◐ Connecting...[/]"
+def render_category_line(name: str, score: float) -> str:
+    """Render a single category with bar."""
+    color = color_by_score(score)
+    bar = format_bar(score)
+    return f"  [{color}]{name:15s} {bar} {score:.2f}[/]"
 
-            # Build display text
-            text = Text()
-            text.append(f"Spotify: {conn_status}\n")
-            text.append("Now Playing: ", style="bold")
-            text.append(f"{self.track_artist}", style="cyan")
-            text.append(" — ", style="dim")
-            text.append(f"{self.track_title}\n", style="white")
-            text.append(f"{source_icon} {self.track_source.title()}  │  {time_str}", style="dim")
+def render_osc_message(msg: Tuple[float, str, Any]) -> str:
+    """Render a single OSC message."""
+    ts, address, args = msg
+    time_str = time.strftime("%H:%M:%S", time.localtime(ts))
+    args_str = truncate(str(args), 40)
+    color = color_by_osc_channel(address)
+    return f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}"
 
-            self.update(text)
+def render_log_line(log: str) -> str:
+    """Render a single log line with color."""
+    return f"[{color_by_level(log)}]{log}[/]"
 
-        except Exception as e:
-            logger.exception(f"Error updating now playing display: {e}")
-            self.update(f"[red]Error displaying track info[/]\n[dim]{str(e)}[/dim]")
+# ============================================================================
+# WIDGETS - Reactive UI components
+# ============================================================================
 
-
-class PipelineStatus(Static):
-    """Widget displaying lyrics processing pipeline."""
-
-    pipeline_data = reactive({})
-
-    def watch_pipeline_data(self, data: dict) -> None:
-        """Update display when pipeline changes."""
-        try:
-            if not data:
-                self.update("[dim]No pipeline active[/dim]")
-                return
-
-            lines = []
-            lines.append("[bold magenta]═══ Processing Pipeline ═══[/]\n")
-
-            # Display pipeline steps
-            for color, text in data.get('display_lines', []):
-                if color == "green":
-                    lines.append(f"[green]{text}[/]")
-                elif color == "yellow":
-                    lines.append(f"[yellow]{text}[/]")
-                elif color == "red":
-                    lines.append(f"[red]{text}[/]")
-                else:
-                    lines.append(f"[dim]{text}[/]")
-
-            # Image prompt - handle both dict and string formats
-            image_prompt = data.get('image_prompt')
-            if image_prompt:
-                lines.append("\n[bold cyan]═══ Image Prompt ═══[/]")
-
-                # Handle dict format (from LLM with structure)
-                if isinstance(image_prompt, dict):
-                    prompt_text = image_prompt.get('description', str(image_prompt))
-                # Handle string format (direct prompt)
-                elif isinstance(image_prompt, str):
-                    prompt_text = image_prompt
-                else:
-                    prompt_text = str(image_prompt)
-
-                # Truncate if too long
-                if len(prompt_text) > 200:
-                    prompt_text = prompt_text[:200] + "..."
-
-                lines.append(f"[cyan]{prompt_text}[/]")
-
-            # Logs
-            logs = data.get('logs', [])
-            if logs:
-                lines.append("\n[bold yellow]═══ Logs ═══[/]")
-                for log in logs:
-                    if isinstance(log, str):
-                        lines.append(f"[dim]{log}[/]")
-
-            # Current lyric
-            current_lyric = data.get('current_lyric')
-            if current_lyric and isinstance(current_lyric, dict):
-                lyric_text = current_lyric.get('text', '')
-                if lyric_text:
-                    lines.append(f"\n[bold white]♪ {lyric_text}[/]")
-
-                    keywords = current_lyric.get('keywords')
-                    if keywords:
-                        lines.append(f"[yellow]  Keywords: {keywords}[/]")
-
-                    if current_lyric.get('is_refrain'):
-                        lines.append("[magenta]  [REFRAIN][/]")
-
-            self.update("\n".join(lines))
-
-        except Exception as e:
-            # Fallback to safe error message
-            logger.exception(f"Error updating pipeline display: {e}")
-            self.update(f"[red]Error displaying pipeline data[/]\n[dim]{str(e)}[/dim]")
+class ReactivePanel(Static):
+    """Base class for reactive panels with common patterns."""
+    
+    def render_section(self, title: str, emoji: str = "═") -> str:
+        return f"[bold]{emoji * 3} {title} {emoji * 3}[/]\n"
 
 
-class ProcessingAppsList(Static):
-    """Widget displaying Processing apps."""
+class NowPlayingPanel(ReactivePanel):
+    """Current track display."""
+    track_data = reactive({})
 
-    apps = reactive([])
-    selected_index = reactive(0)
-
-    def watch_apps(self, apps: list) -> None:
-        """Update display when apps change."""
-        self.update_display()
-
-    def watch_selected_index(self, index: int) -> None:
-        """Update display when selection changes."""
-        self.update_display()
-
-    def update_display(self) -> None:
-        """Render the apps list."""
-        try:
-            if not self.apps:
-                self.update("[dim](no apps found)[/dim]")
-                return
-
-            lines = []
-            lines.append("[bold magenta]═══ Processing Apps ═══[/]\n")
-
-            for i, app in enumerate(self.apps):
-                try:
-                    is_selected = i == self.selected_index
-                    is_running = hasattr(app, 'process') and app.process and app.process.poll() is None
-
-                    prefix = " ▸ " if is_selected else "   "
-                    status = " [bold green][running][/]" if is_running else ""
-
-                    app_name = getattr(app, 'name', 'Unknown')
-
-                    if is_selected:
-                        lines.append(f"[black on cyan]{prefix}{app_name}{status}[/]")
-                    else:
-                        lines.append(f"{prefix}{app_name}{status}")
-                except Exception as e:
-                    logger.debug(f"Error rendering app {i}: {e}")
-                    continue
-
-            self.update("\n".join(lines))
-
-        except Exception as e:
-            logger.exception(f"Error updating apps list: {e}")
-            self.update(f"[red]Error displaying apps[/]\n[dim]{str(e)}[/dim]")
+    def watch_track_data(self, data: dict) -> None:
+        if not data.get('artist'):
+            self.update("[dim]Waiting for playback...[/dim]")
+            return
+        
+        conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
+        time_str = format_duration(data.get('position', 0), data.get('duration', 0))
+        icon = "🎵" if data.get('source') == "spotify" else "🎧"
+        
+        self.update(
+            f"Spotify: {conn}\n"
+            f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
+            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]"
+        )
 
 
-class ServicesPanel(Static):
-    """Widget displaying service status."""
-
-    services_status = reactive({})
-
-    def watch_services_status(self, status: dict) -> None:
-        """Update display when service status changes."""
-        try:
-            lines = []
-            lines.append("[bold blue]═══ Services ═══[/]\n")
-
-            # Spotify
-            if status.get('spotify_configured'):
-                lines.append("[green]✓ Spotify API      Credentials configured[/]")
-            else:
-                lines.append("[dim]○ Spotify API      Set SPOTIPY_CLIENT_ID/SECRET in .env[/]")
-
-            # VirtualDJ
-            if status.get('virtualdj_found'):
-                vdj_file = status.get('vdj_file', 'found')
-                lines.append(f"[green]✓ VirtualDJ        {vdj_file}[/]")
-            else:
-                lines.append("[dim]○ VirtualDJ        Folder not found[/]")
-
-            # Ollama
-            ollama_models = status.get('ollama_models', [])
-            if ollama_models:
-                models = ', '.join(str(m) for m in ollama_models[:3])
-                lines.append(f"[green]✓ Ollama LLM       {models}[/]")
-            elif status.get('ollama_running'):
-                lines.append("[yellow]◐ Ollama LLM       Running (no models)[/]")
-            else:
-                lines.append("[dim]○ Ollama LLM       Not running (ollama serve)[/]")
-
-            # ComfyUI
-            if status.get('comfyui_running'):
-                lines.append("[green]✓ ComfyUI          http://127.0.0.1:8188[/]")
-            else:
-                lines.append("[dim]○ ComfyUI          Not running (port 8188)[/]")
-
-            # OpenAI
-            if status.get('openai_configured'):
-                lines.append("[green]✓ OpenAI API       Key configured[/]")
-            else:
-                lines.append("[dim]○ OpenAI API       OPENAI_API_KEY not set[/]")
-
-            # Synesthesia
-            if status.get('synesthesia_running'):
-                lines.append("[green]✓ Synesthesia      VJ app running[/]")
-            elif status.get('synesthesia_installed'):
-                lines.append("[yellow]○ Synesthesia      Installed (not running)[/]")
-            else:
-                lines.append("[dim]○ Synesthesia      Not installed[/]")
-
-            self.update("\n".join(lines))
-
-        except Exception as e:
-            logger.exception(f"Error updating services panel: {e}")
-            self.update(f"[red]Error displaying services[/]\n[dim]{str(e)}[/dim]")
-
-
-class SongCategoriesPanel(Static):
-    """Widget displaying song mood/theme categories."""
-
+class CategoriesPanel(ReactivePanel):
+    """Song mood/theme categories."""
     categories_data = reactive({})
 
     def watch_categories_data(self, data: dict) -> None:
-        """Update display when categories change."""
-        try:
-            lines = []
-            lines.append("[bold yellow]═══ Song Categories ═══[/]\n")
-
-            if not data or not data.get('categories'):
-                lines.append("[dim](waiting for song analysis...)[/dim]")
-                self.update("\n".join(lines))
-                return
-
-            # Primary mood
-            primary = data.get('primary_mood', '')
-            if primary:
-                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{primary.upper()}[/]")
-                lines.append("")
-
-            # Category bars
-            categories = data.get('categories', [])
-            for cat in categories[:10]:  # Top 10
-                name = cat.get('name', '')
-                score = cat.get('score', 0.0)
-                
-                # Create visual bar
-                bar_width = 15
-                filled = int(score * bar_width)
-                bar = "█" * filled + "░" * (bar_width - filled)
-                
-                # Color based on score
-                if score >= 0.7:
-                    color = "green"
-                elif score >= 0.4:
-                    color = "yellow"
-                else:
-                    color = "dim"
-                
-                lines.append(f"  [{color}]{name:15s} {bar} {score:.2f}[/]")
-
-            self.update("\n".join(lines))
-
-        except Exception as e:
-            logger.exception(f"Error updating categories panel: {e}")
-            self.update(f"[red]Error displaying categories[/]\n[dim]{str(e)}[/dim]")
+        lines = [self.render_section("Song Categories", "═")]
+        
+        if not data.get('categories'):
+            lines.append("[dim](waiting for song analysis...)[/dim]")
+        else:
+            if data.get('primary_mood'):
+                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{data['primary_mood'].upper()}[/]\n")
+            lines.extend(render_category_line(c['name'], c['score']) for c in data.get('categories', [])[:10])
+        
+        self.update("\n".join(lines))
 
 
-class OSCDebugPanel(Static):
-    """Widget displaying recent OSC messages for debugging."""
+class OSCPanel(ReactivePanel):
+    """OSC messages debug view."""
+    messages = reactive([])
+    full_view = reactive(False)
 
-    osc_messages = reactive([])
+    def watch_messages(self, msgs: list) -> None:
+        self._render()
+    
+    def watch_full_view(self, _: bool) -> None:
+        self._render()
 
-    def watch_osc_messages(self, messages: list) -> None:
-        """Update display when OSC messages change."""
-        try:
-            lines = []
-            lines.append("[bold magenta]═══ OSC Debug ═══[/]\n")
-
-            if not messages:
-                lines.append("[dim](no OSC messages yet)[/dim]")
-                self.update("\n".join(lines))
-                return
-
-            # Show recent messages (newest first)
-            for msg in reversed(messages[-15:]):
-                try:
-                    ts, address, args = msg
-                    # Format timestamp
-                    time_str = time.strftime("%H:%M:%S", time.localtime(ts))
-                    # Truncate args if too long
-                    args_str = str(args)
-                    if len(args_str) > 40:
-                        args_str = args_str[:37] + "..."
-                    
-                    # Color by channel
-                    if "/karaoke/categories" in address:
-                        color = "yellow"
-                    elif "/vj/" in address:
-                        color = "cyan"
-                    elif "/karaoke/" in address:
-                        color = "green"
-                    else:
-                        color = "white"
-                    
-                    lines.append(f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}")
-                except (ValueError, TypeError):
-                    continue
-
-            self.update("\n".join(lines))
-
-        except Exception as e:
-            logger.exception(f"Error updating OSC debug panel: {e}")
-            self.update(f"[red]Error displaying OSC messages[/]\n[dim]{str(e)}[/dim]")
+    def _render(self) -> None:
+        limit = 50 if self.full_view else 15
+        lines = [self.render_section("OSC Debug", "═")]
+        
+        if not self.messages:
+            lines.append("[dim](no OSC messages yet)[/dim]")
+        else:
+            lines.extend(render_osc_message(m) for m in reversed(self.messages[-limit:]))
+        
+        self.update("\n".join(lines))
 
 
-class MasterControlPanel(Static):
-    """Widget for master control of VJ apps (Synesthesia, ProjectMilkSyphon, etc.)."""
+class LogsPanel(ReactivePanel):
+    """Application logs view."""
+    logs = reactive([])
 
-    status_data = reactive({})
+    def watch_logs(self, data: list) -> None:
+        lines = [self.render_section("Application Logs", "═")]
+        
+        if not data:
+            lines.append("[dim](no logs yet)[/dim]")
+        else:
+            lines.extend(render_log_line(log) for log in reversed(data[-100:]))
+        
+        self.update("\n".join(lines))
 
-    def watch_status_data(self, data: dict) -> None:
-        """Update display when status changes."""
-        try:
-            lines = []
-            lines.append("[bold blue]═══ Master Control ═══[/]\n")
 
-            # Synesthesia
-            syn_running = data.get('synesthesia_running', False)
-            syn_icon = "[green]● RUNNING[/]" if syn_running else "[dim]○ stopped[/]"
-            lines.append(f"  [S] Synesthesia     {syn_icon}")
+class MasterControlPanel(ReactivePanel):
+    """VJ app control panel."""
+    status = reactive({})
 
-            # ProjectMilkSyphon
-            pms_running = data.get('milksyphon_running', False)
-            pms_icon = "[green]● RUNNING[/]" if pms_running else "[dim]○ stopped[/]"
-            lines.append(f"  [M] ProjMilkSyphon  {pms_icon}")
+    def watch_status(self, data: dict) -> None:
+        syn = format_status_icon(data.get('synesthesia'), "● RUNNING", "○ stopped")
+        pms = format_status_icon(data.get('milksyphon'), "● RUNNING", "○ stopped")
+        kar = format_status_icon(data.get('karaoke'), "● ACTIVE", "○ inactive")
+        proc = data.get('processing_apps', 0)
+        
+        self.update(
+            self.render_section("Master Control", "═") +
+            f"  [S] Synesthesia     {syn}\n"
+            f"  [M] ProjMilkSyphon  {pms}\n"
+            f"  [P] Processing Apps {proc} running\n"
+            f"  [K] Karaoke Engine  {kar}\n\n"
+            "[dim]Press letter key to toggle app[/dim]"
+        )
 
-            # Processing apps count
-            proc_count = data.get('processing_apps', 0)
-            lines.append(f"  [P] Processing Apps {proc_count} running")
 
-            # Karaoke engine
-            karaoke_active = data.get('karaoke_active', False)
-            kar_icon = "[green]● ACTIVE[/]" if karaoke_active else "[dim]○ inactive[/]"
-            lines.append(f"  [K] Karaoke Engine  {kar_icon}")
+class PipelinePanel(ReactivePanel):
+    """Processing pipeline status."""
+    pipeline_data = reactive({})
 
-            lines.append("")
-            lines.append("[dim]Press letter key to toggle app[/dim]")
+    def watch_pipeline_data(self, data: dict) -> None:
+        lines = [self.render_section("Processing Pipeline", "═")]
+        
+        for color, text in data.get('display_lines', []):
+            lines.append(f"[{color}]{text}[/]")
+        
+        if data.get('image_prompt'):
+            prompt = data['image_prompt']
+            if isinstance(prompt, dict):
+                prompt = prompt.get('description', str(prompt))
+            lines.append(f"\n[bold cyan]Image Prompt:[/]\n[cyan]{truncate(str(prompt), 200)}[/]")
+        
+        if data.get('current_lyric'):
+            lyric = data['current_lyric']
+            lines.append(f"\n[bold white]♪ {lyric.get('text', '')}[/]")
+            if lyric.get('keywords'):
+                lines.append(f"[yellow]  Keywords: {lyric['keywords']}[/]")
+            if lyric.get('is_refrain'):
+                lines.append("[magenta]  [REFRAIN][/]")
+        
+        self.update("\n".join(lines))
 
-            self.update("\n".join(lines))
 
-        except Exception as e:
-            logger.exception(f"Error updating master control panel: {e}")
-            self.update(f"[red]Error displaying master control[/]\n[dim]{str(e)}[/dim]")
+class ServicesPanel(ReactivePanel):
+    """External services status."""
+    services = reactive({})
 
+    def watch_services(self, s: dict) -> None:
+        def svc(ok, name, detail): 
+            return f"[green]✓ {name:14s} {detail}[/]" if ok else f"[dim]○ {name:14s} {detail}[/]"
+        
+        lines = [self.render_section("Services", "═")]
+        lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
+        lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
+        lines.append(svc(s.get('ollama'), "Ollama LLM", ', '.join(s.get('ollama_models', [])) or "Not running"))
+        lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
+        lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
+        lines.append(svc(s.get('synesthesia'), "Synesthesia", "Running" if s.get('synesthesia') else "Installed" if s.get('synesthesia_installed') else "Not installed"))
+        self.update("\n".join(lines))
+
+
+class AppsListPanel(ReactivePanel):
+    """Processing apps list."""
+    apps = reactive([])
+    selected = reactive(0)
+
+    def watch_apps(self, _: list) -> None:
+        self._render()
+    
+    def watch_selected(self, _: int) -> None:
+        self._render()
+
+    def _render(self) -> None:
+        lines = [self.render_section("Processing Apps", "═")]
+        
+        if not self.apps:
+            lines.append("[dim](no apps found)[/dim]")
+        else:
+            for i, app in enumerate(self.apps):
+                is_sel = i == self.selected
+                is_run = hasattr(app, 'process') and app.process and app.process.poll() is None
+                prefix = " ▸ " if is_sel else "   "
+                status = " [green][running][/]" if is_run else ""
+                name = getattr(app, 'name', 'Unknown')
+                line = f"{prefix}{name}{status}"
+                lines.append(f"[black on cyan]{line}[/]" if is_sel else line)
+        
+        self.update("\n".join(lines))
+
+
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
 
 class VJConsoleApp(App):
-    """Modern VJ Console with Textual."""
+    """Multi-screen VJ Console application."""
 
     CSS = """
-    Screen {
-        background: $surface;
-    }
-
-    #header-container {
-        background: $primary;
-        color: $text;
-        height: 3;
-        content-align: center middle;
-    }
-
-    #main-container {
-        layout: vertical;
-        height: 1fr;
-    }
-
-    #status-bar {
-        height: 1;
-        background: $panel;
-    }
-
-    #content-container {
-        layout: horizontal;
-        height: 1fr;
-    }
-
-    #left-panel {
-        width: 40%;
-        border: solid $primary;
-    }
-
-    #right-panel {
-        width: 60%;
-        border: solid $accent;
-    }
-
-    NowPlaying {
-        height: auto;
-        padding: 1;
-        border: solid $accent;
-    }
-
-    PipelineStatus {
-        height: 1fr;
-        padding: 1;
-        overflow-y: auto;
-    }
-
-    ProcessingAppsList {
-        height: auto;
-        padding: 1;
-    }
-
-    ServicesPanel {
-        height: auto;
-        padding: 1;
-    }
-
-    SongCategoriesPanel {
-        height: auto;
-        padding: 1;
-        border: solid yellow;
-    }
-
-    OSCDebugPanel {
-        height: auto;
-        max-height: 15;
-        padding: 1;
-        border: solid magenta;
-        overflow-y: auto;
-    }
-
-    MasterControlPanel {
-        height: auto;
-        padding: 1;
-        border: solid blue;
-    }
+    Screen { background: $surface; }
+    TabbedContent { height: 1fr; }
+    TabPane { padding: 1; }
+    .panel { padding: 1; border: solid $primary; height: auto; }
+    .full-height { height: 1fr; overflow-y: auto; }
+    #left-col { width: 40%; }
+    #right-col { width: 60%; }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("k,up", "navigate_up", "Up"),
-        Binding("j,down", "navigate_down", "Down"),
-        Binding("enter", "select", "Select"),
-        Binding("shift+k", "toggle_karaoke", "Karaoke"),
-        Binding("plus,equals", "timing_up", "Timing +"),
-        Binding("minus,underscore", "timing_down", "Timing -"),
+        Binding("1", "screen_master", "Master"),
+        Binding("2", "screen_osc", "OSC"),
+        Binding("3", "screen_ai", "AI Debug"),
+        Binding("4", "screen_logs", "Logs"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
-        Binding("o", "toggle_osc_debug", "OSC Debug"),
+        Binding("k,up", "nav_up", "Up"),
+        Binding("j,down", "nav_down", "Down"),
+        Binding("enter", "select_app", "Select"),
+        Binding("plus,equals", "timing_up", "+Timing"),
+        Binding("minus", "timing_down", "-Timing"),
     ]
 
-    # Reactive state
-    daemon_mode = reactive(True)  # Always on for live reliability
-    karaoke_enabled = reactive(True)
+    current_tab = reactive("master")
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
-    show_osc_debug = reactive(True)
 
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(self):
         super().__init__()
-        self.project_root = project_root or self._find_project_root()
         self.process_manager = ProcessManager()
-        self.process_manager.discover_apps(self.project_root)
+        self.process_manager.discover_apps(self._find_project_root())
         self.karaoke_engine: Optional[KaraokeEngine] = None
-        self.selected_app_index = 0
+        self._logs: List[str] = []
 
     def _find_project_root(self) -> Path:
-        """Find the project root directory."""
-        current = Path(__file__).parent.parent
-
-        if (current / "processing-vj").exists():
-            return current
-
-        cwd = Path.cwd()
-        if (cwd / "processing-vj").exists():
-            return cwd
-
-        for _ in range(3):
-            current = current.parent
-            if (current / "processing-vj").exists():
-                return current
-
+        for p in [Path(__file__).parent.parent, Path.cwd()]:
+            if (p / "processing-vj").exists():
+                return p
         return Path.cwd()
 
     def compose(self) -> ComposeResult:
-        """Create the UI layout."""
         yield Header(show_clock=True)
+        
+        with TabbedContent(id="screens"):
+            # Tab 1: Master Control
+            with TabPane("1️⃣ Master Control", id="master"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield MasterControlPanel(id="master-ctrl", classes="panel")
+                        yield AppsListPanel(id="apps", classes="panel")
+                        yield ServicesPanel(id="services", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield NowPlayingPanel(id="now-playing", classes="panel")
+                        yield CategoriesPanel(id="categories", classes="panel")
+                        yield PipelinePanel(id="pipeline", classes="panel")
+                        yield OSCPanel(id="osc-mini", classes="panel")
 
-        with Container(id="main-container"):
-            # Status bar
-            with Horizontal(id="status-bar"):
-                yield Static("[bold]Daemon:[/] [green]● ALWAYS ON[/] (auto-restart)")
-                yield Static(f"[bold]Karaoke:[/] {'[green]● ON[/]' if self.karaoke_enabled else '[dim]○ OFF[/]'}")
-                yield Static(f"[bold]Synesthesia:[/] {'[green]● Running[/]' if self.synesthesia_running else '[dim]○ Stopped[/]'}")
+            # Tab 2: OSC View
+            with TabPane("2️⃣ OSC View", id="osc"):
+                yield OSCPanel(id="osc-full", classes="panel full-height")
 
-            # Main content
-            with Horizontal(id="content-container"):
-                # Left panel - Processing apps, master control, and services
-                with VerticalScroll(id="left-panel"):
-                    yield MasterControlPanel(id="master-control")
-                    yield ProcessingAppsList(id="apps-list")
-                    yield ServicesPanel(id="services")
+            # Tab 3: Song AI Debug  
+            with TabPane("3️⃣ Song AI Debug", id="ai"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield CategoriesPanel(id="categories-full", classes="panel full-height")
+                    with VerticalScroll(id="right-col"):
+                        yield PipelinePanel(id="pipeline-full", classes="panel full-height")
 
-                # Right panel - Now playing, categories, pipeline, and OSC debug
-                with VerticalScroll(id="right-panel"):
-                    yield NowPlaying(id="now-playing")
-                    yield SongCategoriesPanel(id="categories")
-                    yield PipelineStatus(id="pipeline")
-                    yield OSCDebugPanel(id="osc-debug")
+            # Tab 4: All Logs
+            with TabPane("4️⃣ All Logs", id="logs"):
+                yield LogsPanel(id="logs-panel", classes="panel full-height")
 
         yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize after UI is mounted."""
-        self.title = "🎛  VJ Console - Synesthesia Visuals"
-        self.sub_title = "Master Control Center"
-
-        # Update apps list
-        apps_widget = self.query_one("#apps-list", ProcessingAppsList)
-        apps_widget.apps = self.process_manager.apps
-
-        # Start daemon mode (always on for live reliability)
+        self.title = "🎛 VJ Console"
+        self.sub_title = "Press 1-4 to switch screens"
+        
+        # Initialize
+        self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
+        self._start_karaoke()
+        
+        # Background updates
+        self.set_interval(0.5, self._update_data)
+        self.set_interval(2.0, self._check_apps)
 
-        # Start karaoke engine
-        self.start_karaoke()
-
-        # Start Synesthesia
-        self.start_synesthesia()
-
-        # Check for ProjectMilkSyphon
-        self.check_milksyphon()
-
-        # Start background update worker
-        self.set_interval(0.5, self.update_data)
-        self.set_interval(2.0, self.check_apps_status)
-
-        # Update services status
-        self.update_services()
-
-    def start_karaoke(self) -> None:
-        """Start the karaoke engine."""
-        if self.karaoke_engine:
-            return
-
+    # === Actions (impure, side effects) ===
+    
+    def _start_karaoke(self) -> None:
         try:
             self.karaoke_engine = KaraokeEngine()
             self.karaoke_engine.start()
-            self.karaoke_enabled = True
-            logger.info("Karaoke Engine started")
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
 
-    def stop_karaoke(self) -> None:
-        """Stop the karaoke engine."""
-        if self.karaoke_engine:
-            self.karaoke_engine.stop()
-            self.karaoke_engine = None
-        self.karaoke_enabled = False
-
-    def start_synesthesia(self) -> None:
-        """Start Synesthesia if not already running."""
-        import subprocess
-        from pathlib import Path
-
-        # Check if already running
+    def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
+        """Run a subprocess, return True if successful."""
         try:
-            result = subprocess.run(['pgrep', '-x', 'Synesthesia'], capture_output=True, timeout=1)
-            if result.returncode == 0:
-                logger.info("Synesthesia already running")
-                self.synesthesia_running = True
-                return
-        except Exception as e:
-            logger.debug(f"pgrep check failed: {e}")
+            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+            return result.returncode == 0
+        except Exception:
+            return False
 
-        # Launch Synesthesia
-        synesthesia_path = Path("/Applications/Synesthesia.app")
-        if not synesthesia_path.exists():
-            logger.warning("Synesthesia not found at /Applications/Synesthesia.app")
-            return
+    def _check_apps(self) -> None:
+        """Check running status of external apps."""
+        self.synesthesia_running = self._run_process(['pgrep', '-x', 'Synesthesia'], 1)
+        self.milksyphon_running = self._run_process(['pgrep', '-f', 'projectMilkSyphon'], 1)
+        self._update_services()
 
+    def _update_services(self) -> None:
+        """Update services panel with current status."""
+        import os
+        ollama_ok, ollama_models, comfyui_ok = False, [], False
+        
         try:
-            subprocess.Popen(['open', '-a', 'Synesthesia'])
-            logger.info("Synesthesia launched")
-            self.synesthesia_running = True
-        except Exception as e:
-            logger.exception(f"Failed to launch Synesthesia: {e}")
-
-    def update_data(self) -> None:
-        """Update all reactive data (called every 0.5s)."""
-        # Update now playing
-        if self.karaoke_engine:
-            state = self.karaoke_engine._state
-            now_playing = self.query_one("#now-playing", NowPlaying)
-
-            # Update connection status
-            if self.karaoke_engine._spotify and hasattr(self.karaoke_engine._spotify, '_sp'):
-                now_playing.is_connected = bool(self.karaoke_engine._spotify._sp)
-
-            # Update track info
-            if state.active and state.track:
-                track = state.track
-                now_playing.track_artist = track.artist
-                now_playing.track_title = track.title
-                now_playing.track_source = track.source
-                now_playing.position_sec = state.position_sec
-                now_playing.duration_sec = track.duration_sec
-                now_playing.is_playing = state.active
-
-                # Update pipeline
-                pipeline_widget = self.query_one("#pipeline", PipelineStatus)
-                pipeline_data = {
-                    'display_lines': self.karaoke_engine.pipeline.get_display_lines(),
-                    'image_prompt': self.karaoke_engine.pipeline.image_prompt,
-                    'logs': self.karaoke_engine.pipeline.get_log_lines(5),
-                }
-
-                # Current lyric
-                if state.lines:
-                    from karaoke_engine import get_active_line_index
-                    offset_ms = self.karaoke_engine.timing_offset_ms
-                    adjusted_pos = state.position_sec + (offset_ms / 1000.0)
-                    idx = get_active_line_index(state.lines, adjusted_pos)
-
-                    if 0 <= idx < len(state.lines):
-                        line = state.lines[idx]
-                        pipeline_data['current_lyric'] = {
-                            'text': line.text,
-                            'keywords': line.keywords,
-                            'is_refrain': line.is_refrain,
-                        }
-
-                pipeline_widget.pipeline_data = pipeline_data
-
-                # Update song categories panel
-                categories_widget = self.query_one("#categories", SongCategoriesPanel)
-                categories = self.karaoke_engine.current_categories
-                if categories:
-                    cat_data = {
-                        'primary_mood': categories.primary_mood,
-                        'categories': [
-                            {'name': c.name, 'score': c.score}
-                            for c in categories.get_top(10)
-                        ]
-                    }
-                    categories_widget.categories_data = cat_data
-
-                # Update OSC debug panel
-                osc_debug_widget = self.query_one("#osc-debug", OSCDebugPanel)
-                osc_messages = self.karaoke_engine.osc_sender.get_recent_messages(20)
-                osc_debug_widget.osc_messages = osc_messages
-
-        # Update master control panel
-        self.update_master_control()
-
-    def update_master_control(self) -> None:
-        """Update the master control panel status."""
-        master_widget = self.query_one("#master-control", MasterControlPanel)
-        
-        # Count running Processing apps
-        running_apps = sum(1 for app in self.process_manager.apps 
-                         if self.process_manager.is_running(app))
-        
-        master_widget.status_data = {
-            'synesthesia_running': self.synesthesia_running,
-            'milksyphon_running': self.milksyphon_running,
-            'processing_apps': running_apps,
-            'karaoke_active': self.karaoke_enabled and self.karaoke_engine is not None,
-        }
-        
-        # Send master status via OSC
-        if self.karaoke_engine:
-            self.karaoke_engine.osc_sender.send_master_status(
-                karaoke_active=self.karaoke_enabled,
-                synesthesia_running=self.synesthesia_running,
-                milksyphon_running=self.milksyphon_running,
-                processing_apps=running_apps
-            )
-
-    def check_apps_status(self) -> None:
-        """Check status of all managed apps (called every 2s)."""
-        self.check_synesthesia()
-        self.check_milksyphon()
-        self.update_services()
-
-    def check_synesthesia(self) -> None:
-        """Check if Synesthesia is running."""
-        try:
-            result = subprocess.run(
-                ['pgrep', '-x', 'Synesthesia'],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            was_running = self.synesthesia_running
-            self.synesthesia_running = result.returncode == 0
+            import requests
+            # Single request to Ollama - reuse response
+            ollama_resp = requests.get("http://localhost:11434/api/tags", timeout=1)
+            if ollama_resp.status_code == 200:
+                ollama_ok = True
+                ollama_models = ollama_resp.json().get('models', [])
             
-            # Send status via OSC if changed
-            if was_running != self.synesthesia_running and self.karaoke_engine:
-                self.karaoke_engine.osc_sender.send_synesthesia_status(self.synesthesia_running)
-        except Exception as e:
-            logger.debug(f"Error checking Synesthesia: {e}")
-            self.synesthesia_running = False
+            comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
+        except Exception:
+            pass
 
-    def check_milksyphon(self) -> None:
-        """Check if ProjectMilkSyphon is running."""
-        try:
-            result = subprocess.run(
-                ['pgrep', '-f', 'projectMilkSyphon'],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            was_running = self.milksyphon_running
-            self.milksyphon_running = result.returncode == 0
-            
-            # Send status via OSC if changed
-            if was_running != self.milksyphon_running and self.karaoke_engine:
-                self.karaoke_engine.osc_sender.send_milksyphon_status(self.milksyphon_running)
-        except Exception as e:
-            logger.debug(f"Error checking ProjectMilkSyphon: {e}")
-            self.milksyphon_running = False
-
-    def stop_synesthesia(self) -> None:
-        """Stop Synesthesia."""
-        try:
-            subprocess.run(['pkill', '-x', 'Synesthesia'], timeout=2)
-            logger.info("Synesthesia stopped")
-            self.synesthesia_running = False
-        except Exception as e:
-            logger.exception(f"Failed to stop Synesthesia: {e}")
-
-    def start_milksyphon(self) -> None:
-        """Start ProjectMilkSyphon if not already running."""
-        # Check if already running
-        try:
-            result = subprocess.run(['pgrep', '-f', 'projectMilkSyphon'], capture_output=True, timeout=1)
-            if result.returncode == 0:
-                logger.info("ProjectMilkSyphon already running")
-                self.milksyphon_running = True
-                return
-        except Exception as e:
-            logger.debug(f"pgrep check failed: {e}")
-
-        # Common locations for ProjectMilkSyphon
-        milksyphon_paths = [
-            Path("/Applications/projectMilkSyphon.app"),
-            Path.home() / "Applications" / "projectMilkSyphon.app",
-        ]
-        
-        for path in milksyphon_paths:
-            if path.exists():
-                try:
-                    subprocess.Popen(['open', '-a', str(path)])
-                    logger.info("ProjectMilkSyphon launched")
-                    self.milksyphon_running = True
-                    return
-                except Exception as e:
-                    logger.exception(f"Failed to launch ProjectMilkSyphon: {e}")
-        
-        logger.warning("ProjectMilkSyphon not found")
-
-    def stop_milksyphon(self) -> None:
-        """Stop ProjectMilkSyphon."""
-        try:
-            subprocess.run(['pkill', '-f', 'projectMilkSyphon'], timeout=2)
-            logger.info("ProjectMilkSyphon stopped")
-            self.milksyphon_running = False
-        except Exception as e:
-            logger.exception(f"Failed to stop ProjectMilkSyphon: {e}")
-
-    def update_services(self) -> None:
-        """Update services status."""
-        services = self.query_one("#services", ServicesPanel)
-
-        status = {
-            'spotify_configured': KaraokeConfig.has_spotify_credentials(),
-            'virtualdj_found': False,
-            'ollama_running': False,
-            'ollama_models': [],
-            'comfyui_running': False,
-            'openai_configured': bool(__import__('os').environ.get('OPENAI_API_KEY')),
-        }
-
-        # Check VirtualDJ
         vdj_path = KaraokeConfig.find_vdj_path()
-        if vdj_path:
-            status['virtualdj_found'] = True
-            status['vdj_file'] = vdj_path.name
-
-        # Check Ollama
+        
         try:
-            import requests
-            resp = requests.get("http://localhost:11434/api/tags", timeout=1)
-            if resp.status_code == 200:
-                models = resp.json().get('models', [])
-                status['ollama_running'] = True
-                status['ollama_models'] = [m.get('name', '').split(':')[0] for m in models[:3]]
+            self.query_one("#services", ServicesPanel).services = {
+                'spotify': KaraokeConfig.has_spotify_credentials(),
+                'virtualdj': bool(vdj_path),
+                'vdj_file': vdj_path.name if vdj_path else '',
+                'ollama': ollama_ok,
+                'ollama_models': [m.get('name', '').split(':')[0] for m in ollama_models[:3]],
+                'comfyui': comfyui_ok,
+                'openai': bool(os.environ.get('OPENAI_API_KEY')),
+                'synesthesia': self.synesthesia_running,
+                'synesthesia_installed': Path('/Applications/Synesthesia.app').exists(),
+            }
         except Exception:
             pass
 
-        # Check ComfyUI
+    def _update_data(self) -> None:
+        """Update all panels with current data."""
+        if not self.karaoke_engine:
+            return
+            
+        state = self.karaoke_engine._state
+        
+        # Build track data
+        track_data = {}
+        if state.active and state.track:
+            t = state.track
+            is_connected = bool(
+                self.karaoke_engine._spotify and 
+                getattr(self.karaoke_engine._spotify, '_sp', None)
+            )
+            track_data = {
+                'artist': t.artist, 
+                'title': t.title, 
+                'source': t.source,
+                'position': state.position_sec, 
+                'duration': t.duration_sec,
+                'connected': is_connected
+            }
+        
+        # Update now playing panel
         try:
-            import requests
-            resp = requests.get("http://127.0.0.1:8188/system_stats", timeout=1)
-            status['comfyui_running'] = resp.status_code == 200
+            self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
         except Exception:
             pass
 
-        # Check Synesthesia
-        status['synesthesia_installed'] = Path('/Applications/Synesthesia.app').exists()
-        status['synesthesia_running'] = self.synesthesia_running
+        # Build categories data
+        cats = self.karaoke_engine.current_categories
+        cat_data = {}
+        if cats:
+            cat_data = {
+                'primary_mood': cats.primary_mood, 
+                'categories': [{'name': c.name, 'score': c.score} for c in cats.get_top(10)]
+            }
+        
+        # Update categories panels
+        for panel_id in ["categories", "categories-full"]:
+            try:
+                self.query_one(f"#{panel_id}", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
 
-        services.services_status = status
+        # Update pipeline
+        pipeline_data = {
+            'display_lines': self.karaoke_engine.pipeline.get_display_lines(),
+            'image_prompt': self.karaoke_engine.pipeline.image_prompt,
+        }
+        if state.lines:
+            offset_ms = self.karaoke_engine.timing_offset_ms
+            idx = get_active_line_index(state.lines, state.position_sec + offset_ms / 1000.0)
+            if 0 <= idx < len(state.lines):
+                line = state.lines[idx]
+                pipeline_data['current_lyric'] = {'text': line.text, 'keywords': line.keywords, 'is_refrain': line.is_refrain}
+        
+        for panel_id in ["pipeline", "pipeline-full"]:
+            try:
+                self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
 
-    # Actions
-    def action_navigate_up(self) -> None:
-        """Navigate up in apps list."""
-        apps_widget = self.query_one("#apps-list", ProcessingAppsList)
-        if apps_widget.selected_index > 0:
-            apps_widget.selected_index -= 1
+        # Update OSC panels
+        osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+        for panel_id in ["osc-mini", "osc-full"]:
+            try:
+                panel = self.query_one(f"#{panel_id}", OSCPanel)
+                panel.full_view = panel_id == "osc-full"
+                panel.messages = osc_msgs
+            except Exception:
+                pass
 
-    def action_navigate_down(self) -> None:
-        """Navigate down in apps list."""
-        apps_widget = self.query_one("#apps-list", ProcessingAppsList)
-        if apps_widget.selected_index < len(self.process_manager.apps) - 1:
-            apps_widget.selected_index += 1
+        # Update master control
+        running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+        try:
+            self.query_one("#master-ctrl", MasterControlPanel).status = {
+                'synesthesia': self.synesthesia_running,
+                'milksyphon': self.milksyphon_running,
+                'processing_apps': running_apps,
+                'karaoke': self.karaoke_engine is not None,
+            }
+        except Exception:
+            pass
 
-    def action_select(self) -> None:
-        """Select/toggle current app."""
-        apps_widget = self.query_one("#apps-list", ProcessingAppsList)
-        if 0 <= apps_widget.selected_index < len(self.process_manager.apps):
-            app = self.process_manager.apps[apps_widget.selected_index]
+        # Send OSC status
+        self.karaoke_engine.osc_sender.send_master_status(
+            karaoke_active=True, synesthesia_running=self.synesthesia_running,
+            milksyphon_running=self.milksyphon_running, processing_apps=running_apps
+        )
 
+    # === Screen switching ===
+    
+    def action_screen_master(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "master"
+    
+    def action_screen_osc(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "osc"
+    
+    def action_screen_ai(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "ai"
+    
+    def action_screen_logs(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "logs"
+
+    # === App control ===
+    
+    def action_toggle_synesthesia(self) -> None:
+        if self.synesthesia_running:
+            self._run_process(['pkill', '-x', 'Synesthesia'])
+        else:
+            subprocess.Popen(['open', '-a', 'Synesthesia'])
+        self._check_apps()
+
+    def action_toggle_milksyphon(self) -> None:
+        if self.milksyphon_running:
+            self._run_process(['pkill', '-f', 'projectMilkSyphon'])
+        else:
+            for p in [Path("/Applications/projectMilkSyphon.app"), Path.home() / "Applications/projectMilkSyphon.app"]:
+                if p.exists():
+                    subprocess.Popen(['open', '-a', str(p)])
+                    break
+        self._check_apps()
+
+    def action_nav_up(self) -> None:
+        panel = self.query_one("#apps", AppsListPanel)
+        if panel.selected > 0:
+            panel.selected -= 1
+
+    def action_nav_down(self) -> None:
+        panel = self.query_one("#apps", AppsListPanel)
+        if panel.selected < len(self.process_manager.apps) - 1:
+            panel.selected += 1
+
+    def action_select_app(self) -> None:
+        panel = self.query_one("#apps", AppsListPanel)
+        if 0 <= panel.selected < len(self.process_manager.apps):
+            app = self.process_manager.apps[panel.selected]
             if self.process_manager.is_running(app):
                 self.process_manager.stop_app(app)
             else:
                 self.process_manager.launch_app(app)
 
-    def action_toggle_karaoke(self) -> None:
-        """Toggle karaoke engine."""
-        if self.karaoke_enabled:
-            self.stop_karaoke()
-        else:
-            self.start_karaoke()
-
-    def action_toggle_synesthesia(self) -> None:
-        """Toggle Synesthesia."""
-        if self.synesthesia_running:
-            self.stop_synesthesia()
-        else:
-            self.start_synesthesia()
-
-    def action_toggle_milksyphon(self) -> None:
-        """Toggle ProjectMilkSyphon."""
-        if self.milksyphon_running:
-            self.stop_milksyphon()
-        else:
-            self.start_milksyphon()
-
-    def action_toggle_osc_debug(self) -> None:
-        """Toggle OSC debug panel visibility."""
-        self.show_osc_debug = not self.show_osc_debug
-        osc_panel = self.query_one("#osc-debug", OSCDebugPanel)
-        osc_panel.display = self.show_osc_debug
-
     def action_timing_up(self) -> None:
-        """Increase timing offset."""
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(+200)
 
     def action_timing_down(self) -> None:
-        """Decrease timing offset."""
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
 
     def on_unmount(self) -> None:
-        """Cleanup when app closes."""
-        self.stop_karaoke()
+        if self.karaoke_engine:
+            self.karaoke_engine.stop()
         self.process_manager.cleanup()
 
 
 def main():
-    """Run the VJ Console app."""
-    app = VJConsoleApp()
-    app.run()
+    VJConsoleApp().run()
 
 
 if __name__ == '__main__':

@@ -23,6 +23,30 @@ python vj_console_blessed.py  # Alternative UI (Blessed)
 - **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
 - **📊 Pipeline View**: Colorful terminal UI showing processing steps and logs
 
+## Multi-Screen Terminal UI
+
+The VJ Console features a tabbed interface with 4 screens. Press number keys to switch:
+
+| Key | Screen | Description |
+|-----|--------|-------------|
+| `1` | **Master Control** | Main dashboard with all controls, apps list, and services status |
+| `2` | **OSC View** | Full-screen OSC message debug view with all emitted messages |
+| `3` | **Song AI Debug** | Song categorization details and processing pipeline |
+| `4` | **All Logs** | Complete application logs for debugging |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `S` | Toggle Synesthesia |
+| `M` | Toggle ProjectMilkSyphon |
+| `K` | Toggle Karaoke Engine |
+| `↑/k` | Navigate up in app list |
+| `↓/j` | Navigate down in app list |
+| `Enter` | Start/stop selected Processing app |
+| `+/-` | Adjust lyrics timing (±200ms) |
+| `Q` | Quit |
+
 ## Architecture
 
 ```mermaid
