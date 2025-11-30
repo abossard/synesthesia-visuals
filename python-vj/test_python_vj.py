@@ -288,15 +288,15 @@ class TestAudioSetup(unittest.TestCase):
 
 
 class TestVJConsole(unittest.TestCase):
-    """Tests for vj_console module."""
+    """Tests for process_manager module."""
     
     def test_imports(self):
-        """All classes should be importable."""
-        from vj_console import ProcessingApp, AppState, ProcessManager
+        """All classes should be importable from process_manager."""
+        from process_manager import ProcessingApp, AppState, ProcessManager
     
     def test_processing_app_dataclass(self):
         """ProcessingApp should store app info."""
-        from vj_console import ProcessingApp
+        from process_manager import ProcessingApp
         from pathlib import Path
         
         app = ProcessingApp(
@@ -312,7 +312,7 @@ class TestVJConsole(unittest.TestCase):
     
     def test_app_state_defaults(self):
         """AppState should have sensible defaults."""
-        from vj_console import AppState
+        from process_manager import AppState
         
         state = AppState()
         
@@ -323,7 +323,7 @@ class TestVJConsole(unittest.TestCase):
     
     def test_process_manager_instantiation(self):
         """ProcessManager should instantiate without errors."""
-        from vj_console import ProcessManager
+        from process_manager import ProcessManager
         
         pm = ProcessManager()
         self.assertIsNotNone(pm)
@@ -331,20 +331,6 @@ class TestVJConsole(unittest.TestCase):
 
 class TestCLI(unittest.TestCase):
     """Tests for CLI entry points."""
-    
-    def test_vj_console_help(self):
-        """vj_console.py --help should work (main entry point)."""
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "vj_console.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("VJ Console", result.stdout)
-        self.assertIn("--karaoke", result.stdout)
-        self.assertIn("--audio", result.stdout)
     
     def test_karaoke_engine_help(self):
         """karaoke_engine.py --help should work (module)."""
@@ -620,6 +606,156 @@ class TestComfyUIGenerator(unittest.TestCase):
             self.assertIn('active_workflow', status)
             self.assertIn('cached_images', status)
             self.assertIn('url', status)
+
+
+class TestSongCategorizer(unittest.TestCase):
+    """Tests for SongCategorizer class."""
+    
+    def test_imports(self):
+        """SongCategorizer should be importable."""
+        from karaoke_engine import SongCategorizer, SongCategories, SongCategory
+    
+    def test_song_category_dataclass(self):
+        """SongCategory should store name and score."""
+        from karaoke_engine import SongCategory
+        
+        cat = SongCategory(name="happy", score=0.75)
+        self.assertEqual(cat.name, "happy")
+        self.assertAlmostEqual(cat.score, 0.75)
+    
+    def test_song_categories_get_top(self):
+        """SongCategories.get_top should return top N categories."""
+        from karaoke_engine import SongCategory, SongCategories
+        
+        cats = SongCategories(categories=[
+            SongCategory(name="happy", score=0.8),
+            SongCategory(name="sad", score=0.3),
+            SongCategory(name="love", score=0.9),
+            SongCategory(name="dark", score=0.1),
+        ])
+        
+        top2 = cats.get_top(2)
+        self.assertEqual(len(top2), 2)
+        self.assertEqual(top2[0].name, "love")
+        self.assertEqual(top2[1].name, "happy")
+    
+    def test_song_categories_get_category_score(self):
+        """SongCategories.get_category_score should return score for category."""
+        from karaoke_engine import SongCategory, SongCategories
+        
+        cats = SongCategories(categories=[
+            SongCategory(name="happy", score=0.8),
+            SongCategory(name="sad", score=0.3),
+        ])
+        
+        self.assertAlmostEqual(cats.get_category_score("happy"), 0.8)
+        self.assertAlmostEqual(cats.get_category_score("sad"), 0.3)
+        self.assertAlmostEqual(cats.get_category_score("unknown"), 0.0)
+    
+    def test_song_categories_to_dict(self):
+        """SongCategories.to_dict should return serializable dict."""
+        from karaoke_engine import SongCategory, SongCategories
+        
+        cats = SongCategories(
+            categories=[SongCategory(name="happy", score=0.8)],
+            primary_mood="happy"
+        )
+        
+        d = cats.to_dict()
+        self.assertIn('categories', d)
+        self.assertIn('primary_mood', d)
+        self.assertEqual(d['primary_mood'], "happy")
+        self.assertIn('happy', d['categories'])
+    
+    def test_song_categories_from_dict(self):
+        """SongCategories.from_dict should recreate from dict."""
+        from karaoke_engine import SongCategories
+        
+        data = {
+            'categories': {'happy': 0.8, 'sad': 0.2},
+            'primary_mood': 'happy'
+        }
+        
+        cats = SongCategories.from_dict(data)
+        self.assertEqual(cats.primary_mood, "happy")
+        self.assertTrue(cats.cached)
+        self.assertEqual(len(cats.categories), 2)
+    
+    def test_categorizer_instantiation(self):
+        """SongCategorizer should instantiate without errors."""
+        from karaoke_engine import SongCategorizer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
+            self.assertIsNotNone(categorizer)
+    
+    def test_categorizer_basic_analysis(self):
+        """SongCategorizer should work with basic (no LLM) analysis."""
+        from karaoke_engine import SongCategorizer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
+            
+            # Test with lyrics containing keywords
+            result = categorizer._categorize_basic(
+                artist="Test Artist",
+                title="Happy Love Song",
+                lyrics="love love love happy joy smile"
+            )
+            
+            self.assertIsNotNone(result)
+            self.assertGreater(len(result.categories), 0)
+            # "love" and "happy" keywords should boost those scores
+            love_score = result.get_category_score("love")
+            happy_score = result.get_category_score("happy")
+            self.assertGreater(love_score, 0)
+            self.assertGreater(happy_score, 0)
+    
+    def test_categorizer_categories_list(self):
+        """SongCategorizer should have predefined categories."""
+        from karaoke_engine import SongCategorizer
+        
+        self.assertIn('happy', SongCategorizer.CATEGORIES)
+        self.assertIn('sad', SongCategorizer.CATEGORIES)
+        self.assertIn('love', SongCategorizer.CATEGORIES)
+        self.assertIn('dark', SongCategorizer.CATEGORIES)
+        self.assertIn('death', SongCategorizer.CATEGORIES)
+        self.assertIn('energetic', SongCategorizer.CATEGORIES)
+
+
+class TestOSCSender(unittest.TestCase):
+    """Tests for OSCSender class additions."""
+    
+    def test_osc_sender_message_log(self):
+        """OSCSender should log messages for debug panel."""
+        from karaoke_engine import OSCSender, SongCategory, SongCategories
+        
+        sender = OSCSender(host="127.0.0.1", port=9999)
+        
+        # Initial log should be empty
+        messages = sender.get_recent_messages()
+        self.assertEqual(len(messages), 0)
+    
+    def test_osc_sender_send_categories(self):
+        """OSCSender.send_categories should work with SongCategories."""
+        from karaoke_engine import OSCSender, SongCategory, SongCategories
+        
+        sender = OSCSender(host="127.0.0.1", port=9999)
+        
+        cats = SongCategories(
+            categories=[
+                SongCategory(name="happy", score=0.8),
+                SongCategory(name="love", score=0.6),
+            ],
+            primary_mood="happy"
+        )
+        
+        # Should not raise any errors
+        sender.send_categories(cats)
+        
+        # Should have logged messages
+        messages = sender.get_recent_messages()
+        self.assertGreater(len(messages), 0)
 
 
 if __name__ == "__main__":

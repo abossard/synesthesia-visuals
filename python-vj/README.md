@@ -1,6 +1,6 @@
 # Python VJ Tools
 
-Console application and karaoke engine for VJ performance control.
+Master control center and karaoke engine for VJ performance control.
 
 ## Quick Start
 
@@ -12,24 +12,145 @@ python vj_console.py          # Launch the terminal UI
 
 ## Features
 
+- **🎛️ Master Control**: Start/stop Synesthesia, ProjectMilkSyphon, and Processing apps
 - **🎤 Karaoke Engine**: Monitors Spotify/VirtualDJ, fetches synced lyrics, sends via OSC
-- **📡 3 OSC Channels**: Full lyrics, refrain-only, and keywords for VJ mixing
+- **🏷️ Song Categorization**: AI-powered mood/theme analysis (dark, happy, love, death, etc.)
+- **📡 6 OSC Channels**: Lyrics, refrain, keywords, categories, images, and app status
 - **🤖 AI Analysis**: OpenAI or local Ollama for refrain detection and image prompts
 - **🎨 ComfyUI Integration**: Generates song-matched visuals with black backgrounds
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
+- **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
 - **📊 Pipeline View**: Colorful terminal UI showing processing steps and logs
+
+## Multi-Screen Terminal UI
+
+The VJ Console features a tabbed interface with 4 screens. Press number keys to switch:
+
+| Key | Screen | Description |
+|-----|--------|-------------|
+| `1` | **Master Control** | Main dashboard with all controls, apps list, and services status |
+| `2` | **OSC View** | Full-screen OSC message debug view with all emitted messages |
+| `3` | **Song AI Debug** | Song categorization details and processing pipeline |
+| `4` | **All Logs** | Complete application logs for debugging |
+
+### Screenshots
+
+#### Screen 1: Master Control
+Main dashboard with app status, Processing apps list, and processing pipeline.
+
+![Master Control](docs/screenshots/01-master-control.svg)
+
+#### Screen 2: OSC View
+Real-time view of all emitted OSC messages for debugging.
+
+![OSC View](docs/screenshots/02-osc-view.svg)
+
+#### Screen 3: Song AI Debug
+Song categorization scores and AI analysis pipeline status.
+
+![Song AI Debug](docs/screenshots/03-ai-debug.svg)
+
+#### Screen 4: All Logs
+Complete application logs for debugging and monitoring.
+
+![All Logs](docs/screenshots/04-logs.svg)
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `S` | Toggle Synesthesia |
+| `M` | Toggle ProjectMilkSyphon |
+| `K` | Toggle Karaoke Engine |
+| `↑/k` | Navigate up in app list |
+| `↓/j` | Navigate down in app list |
+| `Enter` | Start/stop selected Processing app |
+| `+/-` | Adjust lyrics timing (±200ms) |
+| `Q` | Quit |
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Input["🎵 Audio Sources"]
+        Spotify[Spotify API]
+        VDJ[VirtualDJ]
+    end
+
+    subgraph Console["🎛️ VJ Console (Master Control)"]
+        KaraokeEngine[Karaoke Engine]
+        SongCategorizer[Song Categorizer]
+        LLMAnalyzer[LLM Analyzer]
+        ProcessManager[Process Manager]
+        OSCSender[OSC Sender]
+    end
+
+    subgraph AI["🤖 AI Services"]
+        Ollama[Ollama LLM]
+        OpenAI[OpenAI API]
+        ComfyUI[ComfyUI]
+    end
+
+    subgraph VJApps["🎨 VJ Applications"]
+        Synesthesia[Synesthesia]
+        MilkSyphon[ProjectMilkSyphon]
+        Processing[Processing Apps]
+    end
+
+    subgraph Mixer["🎬 VJ Mixer"]
+        Magic[Magic Music Visuals]
+    end
+
+    Spotify --> KaraokeEngine
+    VDJ --> KaraokeEngine
+    
+    KaraokeEngine --> SongCategorizer
+    SongCategorizer --> LLMAnalyzer
+    LLMAnalyzer --> Ollama
+    LLMAnalyzer --> OpenAI
+    KaraokeEngine --> ComfyUI
+    
+    ProcessManager --> Synesthesia
+    ProcessManager --> MilkSyphon
+    ProcessManager --> Processing
+    
+    OSCSender -->|/karaoke/lyrics/*| Processing
+    OSCSender -->|/karaoke/categories/*| Magic
+    OSCSender -->|/vj/apps/*| Magic
+    
+    Synesthesia -->|Syphon| Magic
+    MilkSyphon -->|Syphon| Magic
+    Processing -->|Syphon| Magic
+```
 
 ## Components
 
 ### VJ Console (`vj_console.py`)
 
-A colorful terminal UI application for managing VJ sessions:
+Modern Textual-based terminal UI for managing VJ sessions:
 
+- **Master Control Panel**: Start/stop Synesthesia and ProjectMilkSyphon
+- **Song Categories Panel**: Live display of current song's mood/theme analysis
+- **OSC Debug Panel**: Real-time view of all emitted OSC messages
 - **Processing App Launcher**: Lists and launches Processing sketches from the project
 - **Daemon Mode**: Auto-restarts crashed apps for reliable live performance  
 - **Karaoke Engine Integration**: Monitors Spotify/VirtualDJ and sends lyrics via OSC
 - **Pipeline Display**: Shows real-time processing steps for each song
 - **Timing Adjustment**: Fine-tune lyrics sync with +/- keys (±200ms per press)
+
+### Song Categorizer
+
+AI-powered song categorization that analyzes:
+- **Lyrics content** (when available)
+- **Song title and artist name**
+- **Album metadata**
+
+Outputs confidence scores (0.0-1.0) for categories like:
+- `happy`, `sad`, `melancholic`, `uplifting`, `nostalgic`
+- `energetic`, `calm`, `aggressive`, `peaceful`, `intense`
+- `love`, `heartbreak`, `death`, `hope`, `freedom`, `rebellion`
+- `dark`, `bright`, `mysterious`, `romantic`, `spiritual`
+- `danceable`, `introspective`, `anthemic`, `intimate`
 
 ### Karaoke Engine (`karaoke_engine.py`)
 
@@ -39,7 +160,7 @@ Monitors music playback and sends synced lyrics via OSC:
 - **VirtualDJ Support**: Monitors `now_playing.txt` file (auto-detected on macOS)
 - **LRCLIB Lyrics**: Fetches synced lyrics (LRC format) from LRCLIB API  
 - **AI Analysis**: Detects refrain/chorus, extracts keywords, generates image prompts
-- **OSC Output**: Sends track metadata, lyrics, and position to Processing
+- **OSC Output**: Sends track metadata, lyrics, categories, and position to Processing
 
 ## Installation
 
@@ -218,12 +339,13 @@ Settings, lyrics cache, and state files are stored in `python-vj/.cache/`:
 - `settings.json` - Timing offset and user preferences
 - `lyrics/` - Cached lyrics (avoids re-downloading)
 - `llm_cache/` - AI analysis results (refrain detection, keywords, image prompts)
+- `song_categories/` - Song categorization cache (mood/theme scores)
 - `generated_images/` - ComfyUI generated images by song
 - `state.json` - Current karaoke state for debugging
 
 ## OSC Protocol
 
-The Karaoke Engine sends OSC messages on **3 separate channels** for flexible VJ mixing:
+The VJ Console sends OSC messages on **multiple channels** for flexible VJ mixing and layer control:
 
 ### Channel 1: Full Lyrics (`/karaoke/...`)
 Complete lyrics with all lines for karaoke-style display.
@@ -252,6 +374,43 @@ Key words extracted from each line (stop words removed).
 /karaoke/keywords/reset  [song_id]
 /karaoke/keywords/line   [index, time_sec, keywords]
 /karaoke/keywords/active [index, current_keywords]
+```
+
+### Channel 4: Song Categories (`/karaoke/categories/...`)
+AI-powered mood and theme analysis for each song.
+
+```
+/karaoke/categories/mood     [primary_mood]           - Primary mood (e.g., "happy", "melancholic")
+/karaoke/categories/{name}   [score]                  - Individual category score (0.0-1.0)
+/karaoke/categories/all      [name1, score1, ...]     - All top categories as flat list
+```
+
+**Available Categories:**
+- Emotional: `happy`, `sad`, `melancholic`, `uplifting`, `nostalgic`
+- Energy: `energetic`, `calm`, `aggressive`, `peaceful`, `intense`
+- Themes: `love`, `heartbreak`, `death`, `hope`, `freedom`, `rebellion`
+- Mood: `dark`, `bright`, `mysterious`, `romantic`, `spiritual`
+- Musical: `danceable`, `introspective`, `anthemic`, `intimate`
+- Vocal: `voice`, `instrumental_feel`
+
+### Channel 5: VJ App Status (`/vj/...`)
+Status of running VJ apps for layer control in Magic Music Visuals etc.
+
+```
+/vj/apps/status         [app_name, running]          - Single app status
+/vj/apps/all            [name1, running1, ...]       - All apps status
+/vj/synesthesia/status  [running]                    - Synesthesia running (1/0)
+/vj/milksyphon/status   [running]                    - ProjectMilkSyphon running (1/0)
+/vj/master/status       [karaoke, synesthesia, milksyphon, processing_count]
+```
+
+### Channel 6: Image (`/karaoke/image/...`)
+AI-generated song images.
+
+```
+/karaoke/image          [path]                       - Load image at path
+/karaoke/image/clear    []                           - Clear displayed image
+/karaoke/image/opacity  [opacity]                    - Set opacity (0.0-1.0)
 ```
 
 ## Processing Syphon Outputs
@@ -363,5 +522,6 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **spotipy**: Spotify Web API client
 - **python-osc**: OSC protocol implementation
 - **requests**: HTTP client for LRCLIB API
-- **blessed**: Terminal UI library
+- **textual**: Modern terminal UI library
 - **psutil**: Process management
+- **openai**: OpenAI API client (optional)

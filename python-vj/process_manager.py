@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""
+Process Manager - Manages Processing app processes with auto-restart.
+
+This module contains the core process management classes used by the VJ Console:
+- ProcessingApp: Represents a Processing sketch that can be launched
+- AppState: Current state of the VJ Console
+- ProcessManager: Manages Processing app processes with auto-restart
+"""
+
+import os
+import sys
+import time
+import subprocess
+import logging
+import shutil
+from pathlib import Path
+from threading import Thread, Event
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict
+
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    env_locations = [
+        Path.cwd() / '.env',
+        Path(__file__).parent / '.env',
+        Path.home() / '.env',
+    ]
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
+except ImportError:
+    pass
+
+logger = logging.getLogger('process_manager')
+
+
+@dataclass
+class ProcessingApp:
+    """Represents a Processing sketch that can be launched."""
+    name: str
+    path: Path
+    description: str = ""
+    process: Optional[subprocess.Popen] = None
+    restart_count: int = 0
+    last_restart: float = 0
+    enabled: bool = False
+
+
+@dataclass
+class AppState:
+    """Current state of the VJ Console."""
+    selected_index: int = 0
+    daemon_mode: bool = False
+    karaoke_enabled: bool = True
+    running: bool = True
+    message: str = ""
+    message_time: float = 0
+    needs_redraw: bool = True
+    last_draw_time: float = 0
+
+
+class ProcessManager:
+    """Manages Processing app processes with auto-restart."""
+    
+    def __init__(self, processing_path: Optional[str] = None):
+        self.apps: List[ProcessingApp] = []
+        self.monitor_thread: Optional[Thread] = None
+        self.stop_event = Event()
+        
+        # Find Processing executable
+        self.processing_cmd = self._find_processing(processing_path)
+        if self.processing_cmd:
+            logger.info(f"Processing found: {self.processing_cmd}")
+        else:
+            logger.warning("Processing not found in PATH. Apps must be run manually.")
+    
+    def _find_processing(self, custom_path: Optional[str] = None) -> Optional[str]:
+        """Find the Processing executable."""
+        if custom_path and Path(custom_path).exists():
+            return custom_path
+        
+        # Common locations
+        candidates = [
+            "processing-java",  # Linux/CLI
+            "/Applications/Processing.app/Contents/MacOS/Processing",  # macOS
+            Path.home() / "Applications" / "Processing.app" / "Contents" / "MacOS" / "Processing",
+        ]
+        
+        # Check PATH first
+        processing_java = shutil.which("processing-java")
+        if processing_java:
+            return processing_java
+        
+        for candidate in candidates:
+            if isinstance(candidate, str):
+                if shutil.which(candidate):
+                    return candidate
+            elif candidate.exists():
+                return str(candidate)
+        
+        return None
+    
+    def discover_apps(self, project_root: Path) -> List[ProcessingApp]:
+        """Discover Processing sketches in the project."""
+        self.apps = []
+
+        # Look for .pde files in processing-vj/src
+        examples_dir = project_root / "processing-vj" / "src"
+        if not examples_dir.exists():
+            logger.warning(f"Source directory not found: {examples_dir}")
+            return self.apps
+        
+        for sketch_dir in examples_dir.iterdir():
+            if sketch_dir.is_dir():
+                pde_files = list(sketch_dir.glob("*.pde"))
+                if pde_files:
+                    # Use main .pde file that matches directory name
+                    main_file = sketch_dir / f"{sketch_dir.name}.pde"
+                    if not main_file.exists() and pde_files:
+                        main_file = pde_files[0]
+                    
+                    description = self._extract_description(main_file)
+                    
+                    self.apps.append(ProcessingApp(
+                        name=sketch_dir.name,
+                        path=sketch_dir,
+                        description=description
+                    ))
+        
+        self.apps.sort(key=lambda a: a.name)
+        logger.info(f"Discovered {len(self.apps)} Processing apps")
+        return self.apps
+    
+    def _extract_description(self, pde_file: Path) -> str:
+        """Extract description from Processing sketch comments."""
+        try:
+            content = pde_file.read_text()
+            # Look for first line comment or docstring
+            lines = content.split('\n')
+            for line in lines[:20]:  # Check first 20 lines
+                line = line.strip()
+                if line.startswith('/**') or line.startswith('/*'):
+                    continue
+                if line.startswith('*') and len(line) > 2:
+                    desc = line.lstrip('* ').strip()
+                    if desc and not desc.startswith('@'):
+                        return desc[:60]  # Truncate
+                if line.startswith('//'):
+                    desc = line.lstrip('/ ').strip()
+                    if desc:
+                        return desc[:60]
+        except Exception:
+            pass
+        return ""
+    
+    def launch_app(self, app: ProcessingApp) -> bool:
+        """Launch a Processing app."""
+        if app.process and app.process.poll() is None:
+            logger.warning(f"{app.name} is already running")
+            return False
+        
+        if not self.processing_cmd:
+            logger.error("Processing not found. Cannot launch apps.")
+            return False
+        
+        try:
+            # Use processing-java to run the sketch
+            cmd = [
+                self.processing_cmd,
+                "--sketch=" + str(app.path),
+                "--run"
+            ]
+            
+            # Start in new process group for proper cleanup
+            app.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True
+            )
+            app.enabled = True
+            app.last_restart = time.time()
+            logger.info(f"Launched {app.name} (PID: {app.process.pid})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to launch {app.name}: {e}")
+            return False
+    
+    def stop_app(self, app: ProcessingApp):
+        """Stop a running Processing app."""
+        if app.process:
+            try:
+                # Try graceful termination first
+                app.process.terminate()
+                try:
+                    app.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    app.process.kill()
+                logger.info(f"Stopped {app.name}")
+            except Exception as e:
+                logger.error(f"Error stopping {app.name}: {e}")
+            finally:
+                app.process = None
+        app.enabled = False
+    
+    def is_running(self, app: ProcessingApp) -> bool:
+        """Check if an app is currently running."""
+        if app.process is None:
+            return False
+        return app.process.poll() is None
+    
+    def start_monitoring(self, daemon_mode: bool = True):
+        """Start background thread to monitor and restart crashed apps."""
+        self.stop_event.clear()
+        self.monitor_thread = Thread(target=self._monitor_loop, args=(daemon_mode,), daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """Stop the monitoring thread."""
+        self.stop_event.set()
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=2)
+    
+    def _monitor_loop(self, daemon_mode: bool):
+        """Monitor running apps and restart if crashed (daemon mode)."""
+        while not self.stop_event.is_set():
+            for app in self.apps:
+                if app.enabled and not self.is_running(app):
+                    if daemon_mode:
+                        # App crashed - restart it
+                        cooldown = min(30, 5 * (app.restart_count + 1))
+                        if time.time() - app.last_restart > cooldown:
+                            logger.warning(f"{app.name} crashed. Restarting...")
+                            app.restart_count += 1
+                            self.launch_app(app)
+                    else:
+                        logger.info(f"{app.name} exited")
+                        app.enabled = False
+            
+            time.sleep(2)
+    
+    def cleanup(self):
+        """Stop all running apps and monitoring."""
+        self.stop_monitoring()
+        for app in self.apps:
+            if self.is_running(app):
+                self.stop_app(app)

@@ -113,6 +113,16 @@ def retry_with_backoff(
     return wrapper
 
 
+def sanitize_cache_filename(artist: str, title: str) -> str:
+    """
+    Create a safe filename from artist and title for cache purposes.
+    Removes special characters and normalizes whitespace.
+    """
+    safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
+    safe = re.sub(r'\s+', '_', safe)
+    return safe
+
+
 class ServiceHealth:
     """
     Tracks service health and manages reconnection attempts.
@@ -321,6 +331,7 @@ class PipelineTracker:
         "parse_lrc",
         "analyze_refrain",
         "extract_keywords",
+        "categorize_song",
         "llm_analysis",
         "generate_image_prompt",
         "comfyui_generate",
@@ -333,6 +344,7 @@ class PipelineTracker:
         "parse_lrc": "⏱ Parse LRC Timecodes",
         "analyze_refrain": "🔁 Detect Refrain",
         "extract_keywords": "🔑 Extract Keywords",
+        "categorize_song": "🏷️ Categorize Song",
         "llm_analysis": "🤖 AI Analysis",
         "generate_image_prompt": "🎨 Generate Image Prompt",
         "comfyui_generate": "🖼 ComfyUI Generate Image",
@@ -345,6 +357,7 @@ class PipelineTracker:
         self.logs: List[str] = []
         self.image_prompt = ""
         self.generated_image_path = ""
+        self.song_categories: Optional['SongCategories'] = None
         self._max_logs = 20
         self.reset()
     
@@ -353,6 +366,7 @@ class PipelineTracker:
         self.current_track = track_key
         self.image_prompt = ""
         self.generated_image_path = ""
+        self.song_categories = None
         self.steps = {
             name: PipelineStep(name=name, status="pending")
             for name in self.STEPS
@@ -842,7 +856,8 @@ Respond in JSON format:
         Generate an image prompt for a song based on metadata.
         Used as fallback when full lyrics aren't available.
         """
-        cache_file = self._cache_dir / f"imgprompt_{re.sub(r'[^\\w]', '', f'{artist}_{title}'.lower())}.txt"
+        safe_name = re.sub(r'[^\w]', '', f'{artist}_{title}'.lower())
+        cache_file = self._cache_dir / f"imgprompt_{safe_name}.txt"
         
         if cache_file.exists():
             try:
@@ -997,9 +1012,295 @@ Respond with ONLY the image prompt text, no JSON or explanation."""
             pass
     
     def _get_cache_path(self, artist: str, title: str) -> Path:
-        safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
-        safe = re.sub(r'\s+', '_', safe)
-        return self._cache_dir / f"{safe}.json"
+        return self._cache_dir / f"{sanitize_cache_filename(artist, title)}.json"
+
+
+# =============================================================================
+# SONG CATEGORIZER - AI-powered song categorization by mood/theme
+# =============================================================================
+
+@dataclass
+class SongCategory:
+    """A single song category with confidence score."""
+    name: str
+    score: float  # 0.0 to 1.0 confidence
+    
+    def __repr__(self) -> str:
+        return f"{self.name}: {self.score:.2f}"
+
+
+@dataclass
+class SongCategories:
+    """Complete categorization of a song."""
+    categories: List[SongCategory] = field(default_factory=list)
+    primary_mood: str = ""
+    cached: bool = False
+    
+    def get_top(self, n: int = 5) -> List[SongCategory]:
+        """Get top N categories by score."""
+        return sorted(self.categories, key=lambda c: c.score, reverse=True)[:n]
+    
+    def get_category_score(self, name: str) -> float:
+        """Get score for a specific category."""
+        for cat in self.categories:
+            if cat.name.lower() == name.lower():
+                return cat.score
+        return 0.0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'categories': {c.name: c.score for c in self.categories},
+            'primary_mood': self.primary_mood,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'SongCategories':
+        """Create from dictionary."""
+        categories = [
+            SongCategory(name=name, score=score)
+            for name, score in data.get('categories', {}).items()
+        ]
+        return cls(
+            categories=categories,
+            primary_mood=data.get('primary_mood', ''),
+            cached=True
+        )
+
+
+class SongCategorizer:
+    """
+    AI-powered song categorization by mood, theme, and emotional content.
+    
+    Analyzes song lyrics, title, and artist to assign category scores.
+    Categories include: dark, happy, voice, love, death, energetic, sad,
+    romantic, aggressive, peaceful, nostalgic, uplifting, melancholic, etc.
+    
+    LIVE EVENT BEHAVIOR:
+    - Uses existing LLM infrastructure (OpenAI or Ollama)
+    - Results are cached to avoid repeated analysis
+    - Falls back to keyword-based analysis if LLM unavailable
+    
+    Usage:
+        categorizer = SongCategorizer()
+        categories = categorizer.categorize("Artist", "Title", lyrics="...")
+        print(categories.get_top(5))  # Top 5 categories
+    """
+    
+    # All supported categories
+    CATEGORIES = [
+        # Emotional valence
+        'happy', 'sad', 'melancholic', 'uplifting', 'nostalgic',
+        # Energy level
+        'energetic', 'calm', 'aggressive', 'peaceful', 'intense',
+        # Themes
+        'love', 'heartbreak', 'death', 'hope', 'freedom', 'rebellion',
+        # Mood/atmosphere
+        'dark', 'bright', 'mysterious', 'romantic', 'spiritual',
+        # Musical characteristics (inferred from lyrics)
+        'danceable', 'introspective', 'anthemic', 'intimate',
+        # Vocal characteristics
+        'voice', 'instrumental_feel',
+    ]
+    
+    # Configuration constants
+    MAX_LYRICS_LENGTH = 2000  # Max characters of lyrics to send to LLM
+    KEYWORD_SCORE_FACTOR = 0.15  # Score per keyword match in basic analysis
+    DEFAULT_CATEGORY_SCORE = 0.1  # Default score for categories without keywords
+    
+    def __init__(self, llm: Optional[LLMAnalyzer] = None, cache_dir: Optional[Path] = None):
+        """
+        Initialize the song categorizer.
+        
+        Args:
+            llm: LLMAnalyzer instance (creates one if not provided)
+            cache_dir: Directory for caching results
+        """
+        self._llm = llm or LLMAnalyzer()
+        self._cache_dir = (cache_dir or Config.APP_DATA_DIR) / "song_categories"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    @property
+    def is_available(self) -> bool:
+        """Check if categorization is available (LLM running)."""
+        return self._llm.is_available
+    
+    def categorize(
+        self, 
+        artist: str, 
+        title: str, 
+        lyrics: Optional[str] = None,
+        album: Optional[str] = None
+    ) -> SongCategories:
+        """
+        Categorize a song based on its metadata and lyrics.
+        
+        Args:
+            artist: Artist name
+            title: Song title
+            lyrics: Optional lyrics text (improves accuracy)
+            album: Optional album name
+            
+        Returns:
+            SongCategories with scores for each category
+        """
+        # Check cache first
+        cache_file = self._get_cache_path(artist, title)
+        if cache_file.exists():
+            try:
+                data = json.loads(cache_file.read_text())
+                return SongCategories.from_dict(data)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Use LLM if available
+        if self._llm.is_available:
+            result = self._categorize_with_llm(artist, title, lyrics, album)
+        else:
+            result = self._categorize_basic(artist, title, lyrics)
+        
+        # Cache the result
+        self._save_to_cache(cache_file, result)
+        return result
+    
+    def _categorize_with_llm(
+        self, 
+        artist: str, 
+        title: str, 
+        lyrics: Optional[str],
+        album: Optional[str]
+    ) -> SongCategories:
+        """Use LLM for sophisticated categorization."""
+        
+        # Build prompt
+        categories_str = ', '.join(self.CATEGORIES)
+        lyrics_section = ""
+        if lyrics:
+            # Truncate lyrics if too long
+            max_len = self.MAX_LYRICS_LENGTH
+            lyrics_preview = lyrics[:max_len] if len(lyrics) > max_len else lyrics
+            lyrics_section = f"\nLyrics:\n{lyrics_preview}\n"
+        
+        prompt = f"""Analyze this song and rate how strongly it matches each category on a scale of 0.0 to 1.0.
+
+Song: "{title}" by {artist}
+{f'Album: {album}' if album else ''}
+{lyrics_section}
+
+Categories to rate: {categories_str}
+
+Also determine the PRIMARY MOOD (one word that best describes the overall feeling).
+
+Respond in JSON format:
+{{
+  "categories": {{
+    "happy": 0.3,
+    "sad": 0.7,
+    "love": 0.8,
+    ... (include ALL categories with scores)
+  }},
+  "primary_mood": "melancholic"
+}}
+
+Rate ALL categories even if the score is 0.0. Be nuanced - most songs have multiple applicable categories."""
+
+        try:
+            result = self._llm._call_llm(prompt)
+            if result and 'categories' in result:
+                categories = [
+                    SongCategory(name=name, score=min(1.0, max(0.0, float(score))))
+                    for name, score in result.get('categories', {}).items()
+                    if isinstance(score, (int, float))
+                ]
+                return SongCategories(
+                    categories=categories,
+                    primary_mood=result.get('primary_mood', ''),
+                    cached=False
+                )
+        except Exception as e:
+            logger.debug(f"LLM categorization failed: {e}")
+        
+        # Fall back to basic analysis
+        return self._categorize_basic(artist, title, lyrics)
+    
+    def _categorize_basic(
+        self, 
+        artist: str, 
+        title: str, 
+        lyrics: Optional[str]
+    ) -> SongCategories:
+        """
+        Basic keyword-based categorization without LLM.
+        Uses simple heuristics based on common words.
+        """
+        text = f"{title} {artist} {lyrics or ''}".lower()
+        
+        # Keyword mappings for each category
+        keyword_map = {
+            'love': ['love', 'heart', 'kiss', 'baby', 'darling', 'sweetheart', 'romance'],
+            'happy': ['happy', 'joy', 'smile', 'laugh', 'fun', 'good', 'great', 'wonderful'],
+            'sad': ['sad', 'cry', 'tears', 'pain', 'hurt', 'lonely', 'alone', 'miss'],
+            'dark': ['dark', 'shadow', 'night', 'black', 'death', 'fear', 'demon', 'evil'],
+            'death': ['death', 'die', 'dead', 'grave', 'funeral', 'kill', 'blood'],
+            'energetic': ['dance', 'move', 'party', 'jump', 'run', 'fast', 'energy', 'power'],
+            'calm': ['calm', 'peace', 'quiet', 'still', 'gentle', 'soft', 'slow'],
+            'aggressive': ['fight', 'war', 'hate', 'anger', 'rage', 'destroy', 'kill'],
+            'romantic': ['romance', 'moon', 'stars', 'night', 'together', 'forever', 'dream'],
+            'melancholic': ['memory', 'past', 'gone', 'lost', 'fade', 'remember', 'once'],
+            'uplifting': ['rise', 'fly', 'hope', 'strong', 'believe', 'dream', 'shine'],
+            'nostalgic': ['remember', 'yesterday', 'old', 'time', 'years', 'back', 'used to'],
+            'hopeful': ['hope', 'tomorrow', 'future', 'believe', 'faith', 'dream'],
+            'freedom': ['free', 'freedom', 'fly', 'escape', 'break', 'wild', 'open'],
+            'rebellion': ['rebel', 'fight', 'revolution', 'against', 'break', 'resist'],
+            'spiritual': ['soul', 'spirit', 'god', 'heaven', 'angel', 'pray', 'blessed'],
+            'mysterious': ['mystery', 'secret', 'hidden', 'unknown', 'strange', 'wonder'],
+            'heartbreak': ['broken', 'heart', 'leave', 'gone', 'goodbye', 'apart', 'over'],
+            'peaceful': ['peace', 'calm', 'serene', 'tranquil', 'quiet', 'rest'],
+            'intense': ['fire', 'burn', 'explode', 'storm', 'thunder', 'rage'],
+            'danceable': ['dance', 'move', 'groove', 'rhythm', 'beat', 'shake'],
+            'introspective': ['think', 'wonder', 'mind', 'feel', 'inside', 'self'],
+            'anthemic': ['we', 'together', 'all', 'world', 'everyone', 'unite'],
+            'intimate': ['close', 'touch', 'whisper', 'hold', 'near', 'breath'],
+            'voice': ['sing', 'voice', 'say', 'tell', 'speak', 'words'],
+            'instrumental_feel': [],  # No specific keywords, low default
+            'bright': ['light', 'sun', 'day', 'bright', 'shine', 'glow', 'warm'],
+        }
+        
+        categories = []
+        max_score = 0.0
+        primary_mood = "neutral"
+        
+        for category in self.CATEGORIES:
+            keywords = keyword_map.get(category, [])
+            if not keywords:
+                score = self.DEFAULT_CATEGORY_SCORE
+            else:
+                # Count keyword matches
+                matches = sum(1 for kw in keywords if kw in text)
+                score = min(1.0, matches * self.KEYWORD_SCORE_FACTOR)  # Cap at 1.0
+            
+            categories.append(SongCategory(name=category, score=score))
+            
+            if score > max_score:
+                max_score = score
+                primary_mood = category
+        
+        return SongCategories(
+            categories=categories,
+            primary_mood=primary_mood,
+            cached=False
+        )
+    
+    def _save_to_cache(self, cache_file: Path, result: SongCategories):
+        """Save categorization result to cache."""
+        try:
+            cache_file.write_text(json.dumps(result.to_dict(), indent=2))
+        except IOError:
+            pass
+    
+    def _get_cache_path(self, artist: str, title: str) -> Path:
+        """Get cache file path for a song."""
+        return self._cache_dir / f"{sanitize_cache_filename(artist, title)}.json"
 
 
 # =============================================================================
@@ -1681,15 +1982,31 @@ class VirtualDJMonitor:
 
 class OSCSender:
     """
-    Sends karaoke data via OSC on 3 channels:
+    Sends karaoke and VJ control data via OSC.
+    
+    Channels:
     - /karaoke/... - Full lyrics
     - /karaoke/refrain/... - Chorus only
     - /karaoke/keywords/... - Key words only
+    - /karaoke/categories/... - Song mood/theme categories
+    - /vj/apps/... - Running apps status
     """
     
     def __init__(self, host: str = "127.0.0.1", port: int = 9000):
         self._client = udp_client.SimpleUDPClient(host, port)
+        self._message_log: List[tuple] = []  # For OSC debug panel
+        self._max_log_entries = 100
         logger.info(f"OSC: sending to {host}:{port}")
+    
+    def _log_message(self, address: str, args: list):
+        """Log OSC message for debug panel."""
+        self._message_log.append((time.time(), address, args))
+        if len(self._message_log) > self._max_log_entries:
+            self._message_log = self._message_log[-self._max_log_entries:]
+    
+    def get_recent_messages(self, count: int = 20) -> List[tuple]:
+        """Get recent OSC messages for debug display."""
+        return self._message_log[-count:]
     
     # === Track info ===
     
@@ -1758,6 +2075,74 @@ class OSCSender:
     def send_image_opacity(self, opacity: float):
         """Set image opacity (0.0-1.0)."""
         self._client.send_message("/karaoke/image/opacity", [opacity])
+        self._log_message("/karaoke/image/opacity", [opacity])
+    
+    # === Song Categories channel ===
+    
+    def send_categories(self, categories: 'SongCategories'):
+        """Send all song category scores."""
+        # Send primary mood
+        self._client.send_message("/karaoke/categories/mood", [categories.primary_mood])
+        self._log_message("/karaoke/categories/mood", [categories.primary_mood])
+        
+        # Send top categories as individual messages
+        for cat in categories.get_top(10):
+            self._client.send_message(f"/karaoke/categories/{cat.name}", [cat.score])
+            self._log_message(f"/karaoke/categories/{cat.name}", [cat.score])
+        
+        # Send all categories as a batch (for apps that prefer single message)
+        cat_data = [(c.name, c.score) for c in categories.get_top(10)]
+        flat_args = []
+        for name, score in cat_data:
+            flat_args.extend([name, score])
+        self._client.send_message("/karaoke/categories/all", flat_args)
+        self._log_message("/karaoke/categories/all", flat_args)
+    
+    def send_category(self, name: str, score: float):
+        """Send a single category score."""
+        self._client.send_message(f"/karaoke/categories/{name}", [score])
+        self._log_message(f"/karaoke/categories/{name}", [score])
+    
+    # === VJ App Status channel ===
+    
+    def send_app_status(self, app_name: str, running: bool):
+        """Send app running status (for layer control in Magic etc)."""
+        self._client.send_message("/vj/apps/status", [app_name, 1 if running else 0])
+        self._log_message("/vj/apps/status", [app_name, 1 if running else 0])
+    
+    def send_all_apps_status(self, apps: Dict[str, bool]):
+        """Send status of all apps at once."""
+        flat_args = []
+        for name, running in apps.items():
+            flat_args.extend([name, 1 if running else 0])
+        self._client.send_message("/vj/apps/all", flat_args)
+        self._log_message("/vj/apps/all", flat_args)
+    
+    def send_synesthesia_status(self, running: bool):
+        """Send Synesthesia running status."""
+        self._client.send_message("/vj/synesthesia/status", [1 if running else 0])
+        self._log_message("/vj/synesthesia/status", [1 if running else 0])
+    
+    def send_milksyphon_status(self, running: bool):
+        """Send ProjectMilkSyphon running status."""
+        self._client.send_message("/vj/milksyphon/status", [1 if running else 0])
+        self._log_message("/vj/milksyphon/status", [1 if running else 0])
+    
+    def send_master_status(self, karaoke_active: bool, synesthesia_running: bool, 
+                          milksyphon_running: bool, processing_apps: int):
+        """Send overall master status."""
+        self._client.send_message("/vj/master/status", [
+            1 if karaoke_active else 0,
+            1 if synesthesia_running else 0,
+            1 if milksyphon_running else 0,
+            processing_apps
+        ])
+        self._log_message("/vj/master/status", [
+            1 if karaoke_active else 0,
+            1 if synesthesia_running else 0,
+            1 if milksyphon_running else 0,
+            processing_apps
+        ])
 
 
 # =============================================================================
@@ -1796,6 +2181,7 @@ class KaraokeEngine:
         self._settings = Settings()  # Persistent settings (timing offset)
         self._llm = LLMAnalyzer()    # AI-powered analysis
         self._comfyui = ComfyUIGenerator()  # Image generation
+        self._categorizer = SongCategorizer(llm=self._llm)  # Song categorization
         
         # Pipeline tracking for UI
         self.pipeline = PipelineTracker()
@@ -1804,6 +2190,7 @@ class KaraokeEngine:
         self._state = PlaybackState()
         self._last_track_key = ""
         self._current_image_path: Optional[Path] = None
+        self._current_categories: Optional[SongCategories] = None
         
         # State file with smart default
         if state_file:
@@ -1831,6 +2218,16 @@ class KaraokeEngine:
         new_offset = self._settings.adjust_timing(delta_ms)
         logger.info(f"Timing offset adjusted to {new_offset}ms")
         return new_offset
+    
+    @property
+    def current_categories(self) -> Optional[SongCategories]:
+        """Get the current song's categories."""
+        return self._current_categories
+    
+    @property
+    def osc_sender(self) -> OSCSender:
+        """Access the OSC sender for debug/monitoring."""
+        return self._osc
     
     def run(self, poll_interval: float = 0.1):
         """Run the engine (blocking). Use start() for background."""
@@ -1941,7 +2338,26 @@ class KaraokeEngine:
             # Keywords are extracted in detect_refrains, just log
             self.pipeline.complete("extract_keywords", "Done")
             
-            # Step 6: LLM analysis (if available)
+            # Step 6: Categorize song
+            self.pipeline.start("categorize_song", "Analyzing mood/theme...")
+            try:
+                self._current_categories = self._categorizer.categorize(
+                    track.artist, track.title, lyrics=lrc, album=track.album
+                )
+                self.pipeline.song_categories = self._current_categories
+                top_cats = self._current_categories.get_top(3)
+                cats_str = ", ".join([f"{c.name}:{c.score:.1f}" for c in top_cats])
+                if self._current_categories.cached:
+                    self.pipeline.complete("categorize_song", f"Cached: {cats_str}")
+                else:
+                    self.pipeline.complete("categorize_song", f"{cats_str}")
+                # Send categories via OSC
+                self._osc.send_categories(self._current_categories)
+            except Exception as e:
+                self.pipeline.error("categorize_song", str(e)[:40])
+                self._current_categories = None
+            
+            # Step 7: LLM analysis (if available)
             if self._llm.is_available:
                 self.pipeline.start("llm_analysis", f"Using {self._llm.backend_info}...")
                 try:
@@ -1986,6 +2402,22 @@ class KaraokeEngine:
             self.pipeline.skip("parse_lrc", "No lyrics")
             self.pipeline.skip("analyze_refrain", "No lyrics")
             self.pipeline.skip("extract_keywords", "No lyrics")
+            
+            # Still try to categorize based on title/artist without lyrics
+            self.pipeline.start("categorize_song", "Analyzing from metadata...")
+            try:
+                self._current_categories = self._categorizer.categorize(
+                    track.artist, track.title, album=track.album
+                )
+                self.pipeline.song_categories = self._current_categories
+                top_cats = self._current_categories.get_top(3)
+                cats_str = ", ".join([f"{c.name}:{c.score:.1f}" for c in top_cats])
+                self.pipeline.complete("categorize_song", f"{cats_str}")
+                self._osc.send_categories(self._current_categories)
+            except Exception as e:
+                self.pipeline.error("categorize_song", str(e)[:40])
+                self._current_categories = None
+            
             self.pipeline.skip("llm_analysis", "No lyrics")
             self.pipeline.skip("generate_image_prompt", "No lyrics")
             self.pipeline.skip("comfyui_generate", "No prompt")
