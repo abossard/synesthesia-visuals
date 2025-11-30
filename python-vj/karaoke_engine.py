@@ -135,8 +135,10 @@ class Settings:
         if self._file.exists():
             try:
                 return json.loads(self._file.read_text())
-            except (json.JSONDecodeError, IOError):
-                pass
+            except json.JSONDecodeError:
+                logger.warning(f"Corrupted settings file, using defaults: {self._file}")
+            except IOError as e:
+                logger.debug(f"Could not read settings: {e}")
         return {'timing_offset_ms': 0}
     
     def _save(self):
@@ -324,8 +326,17 @@ class LyricsFetcher:
         if cache_file.exists():
             try:
                 data = json.loads(cache_file.read_text())
-                logger.debug(f"Using cached lyrics: {artist} - {title}")
-                return data.get('syncedLyrics')
+                # Check for expired "not found" entries (24h TTL)
+                if data.get('not_found'):
+                    cached_at = data.get('cached_at', 0)
+                    if time.time() - cached_at > 86400:  # 24 hours
+                        logger.debug(f"Cache expired, retrying: {artist} - {title}")
+                        cache_file.unlink()  # Delete expired entry
+                    else:
+                        return None  # Still within TTL, return no lyrics
+                else:
+                    logger.debug(f"Using cached lyrics: {artist} - {title}")
+                    return data.get('syncedLyrics')
             except (json.JSONDecodeError, IOError):
                 pass
         
@@ -346,8 +357,8 @@ class LyricsFetcher:
                 logger.info(f"Fetched and cached lyrics: {artist} - {title}")
                 return data.get('syncedLyrics')
             elif resp.status_code == 404:
-                # Cache the "not found" result too
-                self._save_to_cache(cache_file, {'not_found': True})
+                # Cache the "not found" result with timestamp (expires after 24h)
+                self._save_to_cache(cache_file, {'not_found': True, 'cached_at': time.time()})
                 logger.debug(f"No lyrics found: {artist} - {title}")
             else:
                 logger.warning(f"LRCLIB error {resp.status_code}")
