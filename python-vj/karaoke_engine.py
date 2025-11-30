@@ -17,7 +17,6 @@ All services are optional and will auto-reconnect if they become available.
 import time
 import logging
 import argparse
-from pathlib import Path
 from typing import Optional
 
 # Domain and infrastructure
@@ -99,7 +98,6 @@ class KaraokeEngine:
         # Current state
         self._current_lines = []
         self._last_active_index = -1
-        self._last_position_send = 0.0  # Throttle position updates
         self._running = False
     
     @property
@@ -162,8 +160,8 @@ class KaraokeEngine:
         """Current lyrics lines (for vj_console.py)."""
         return self._current_lines
     
-    def start(self, poll_interval: float = 0.1):
-        """Start in background thread."""
+    def start(self, poll_interval: float = 2.0):
+        """Start in background thread. Polls every 2 seconds."""
         if self._running:
             return
         
@@ -180,8 +178,8 @@ class KaraokeEngine:
         self._ai_orchestrator.stop()
         logger.info("Karaoke engine stopped")
     
-    def run(self, poll_interval: float = 0.1):
-        """Run in foreground (blocking)."""
+    def run(self, poll_interval: float = 2.0):
+        """Run in foreground (blocking). Polls every 2 seconds."""
         self._running = True
         self._ai_orchestrator.start()
         try:
@@ -215,15 +213,12 @@ class KaraokeEngine:
             else:
                 self._on_no_track()
         
-        # Send position updates (throttled to every 2 seconds)
+        # Send position updates (every 2s via loop interval)
         if state.track:
-            current_time = time.time()
-            if current_time - self._last_position_send >= 2.0:
-                self._osc.send_karaoke("position", "update", {
-                    "time": state.position,
-                    "playing": state.is_playing
-                })
-                self._last_position_send = current_time
+            self._osc.send_karaoke("position", "update", {
+                "time": state.position,
+                "playing": state.is_playing
+            })
             
             # Update active line
             if self._current_lines:
