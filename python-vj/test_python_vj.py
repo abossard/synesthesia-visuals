@@ -419,31 +419,26 @@ class TestVirtualDJAPI(unittest.TestCase):
         self.assertEqual(status.elapsed_ms, 60000)
         self.assertAlmostEqual(status.length_sec, 180.0)
     
-    def test_client_requires_aiohttp(self):
-        """VirtualDJClient should import without errors."""
-        from vdj_api import VirtualDJClient, AIOHTTP_AVAILABLE
+    def test_client_uses_requests(self):
+        """VirtualDJClient should use requests library."""
+        from vdj_api import VirtualDJClient
+        import requests
         
-        # Should have aiohttp available since we installed it
-        self.assertTrue(AIOHTTP_AVAILABLE)
+        # Create client (will fail to connect, but that's ok)
+        client = VirtualDJClient(base_url="http://127.0.0.1:59999")
+        
+        # Should have a requests session
+        self.assertIsInstance(client._session, requests.Session)
     
-    def test_watcher_configuration(self):
-        """VirtualDJWatcher should accept configuration options."""
-        from vdj_api import VirtualDJClient, VirtualDJWatcher
+    def test_client_connection_check(self):
+        """VirtualDJClient should check connection on init."""
+        from vdj_api import VirtualDJClient
         
-        # Create a mock client
-        client = VirtualDJClient(base_url="http://127.0.0.1:8080")
+        # Connect to a port that's definitely not running VDJ
+        client = VirtualDJClient(base_url="http://127.0.0.1:59999")
         
-        watcher = VirtualDJWatcher(
-            client,
-            decks=(1, 2, 3, 4),
-            poll_interval=1.0,
-            position_interval=5.0,
-        )
-        
-        self.assertEqual(watcher.decks, (1, 2, 3, 4))
-        self.assertAlmostEqual(watcher.poll_interval, 1.0)
-        self.assertAlmostEqual(watcher.position_interval, 5.0)
-        self.assertFalse(watcher.is_running)
+        # Should not be connected
+        self.assertFalse(client.is_connected())
     
     def test_monitor_unavailable_without_vdj(self):
         """VirtualDJMonitor should be unavailable when VDJ is not running."""

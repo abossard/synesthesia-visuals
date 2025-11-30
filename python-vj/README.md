@@ -566,8 +566,7 @@ The Network Control API provides:
 
 - **spotipy**: Spotify Web API client
 - **python-osc**: OSC protocol implementation
-- **requests**: HTTP client for LRCLIB API
-- **aiohttp**: Async HTTP client for VirtualDJ Network Control API
+- **requests**: HTTP client (LRCLIB, VirtualDJ API, Ollama, ComfyUI)
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)

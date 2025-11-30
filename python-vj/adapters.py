@@ -242,7 +242,7 @@ class VirtualDJMonitor:
     
     Deep module - simple interface, complex implementation.
     Public interface: get_playback() -> Optional[Dict]
-    Hides: HTTP API communication, async/sync bridging, masterdeck detection, error handling
+    Hides: HTTP API communication, masterdeck detection, error handling
     
     VirtualDJ Setup:
         - Enable the "Network Control" plugin (Effects -> Other)
@@ -260,50 +260,28 @@ class VirtualDJMonitor:
         
         self._last_track_key = ""
         self._start_time = 0.0
-        self._last_status = None
+        self._client = None
         self._decks = (1, 2)  # Monitor decks 1 and 2
         
-        # Try to import aiohttp and check connection
-        try:
-            import aiohttp
-            self._aiohttp_available = True
-        except ImportError:
-            self._aiohttp_available = False
-            logger.info("VirtualDJ: aiohttp not installed (pip install aiohttp)")
-            return
-        
-        # Check initial connection
-        self._check_connection()
+        # Initialize client and check connection
+        self._init_client()
     
-    def _check_connection(self):
-        """Check if VirtualDJ Network Control is reachable."""
-        if not self._aiohttp_available:
-            return
-        
-        import asyncio
-        try:
-            # Run async connection check synchronously
-            loop = asyncio.new_event_loop()
-            try:
-                connected = loop.run_until_complete(self._async_check_connection())
-                if connected:
-                    self._health.mark_available(self._base_url)
-                    logger.info(f"VirtualDJ: ✓ connected to {self._base_url}")
-                else:
-                    logger.info(f"VirtualDJ: not running at {self._base_url}")
-            finally:
-                loop.close()
-        except Exception as e:
-            logger.debug(f"VirtualDJ: connection check failed: {e}")
-    
-    async def _async_check_connection(self) -> bool:
-        """Async connection check."""
+    def _init_client(self):
+        """Initialize the VirtualDJ client."""
         from vdj_api import VirtualDJClient
         try:
-            async with VirtualDJClient(base_url=self._base_url, password=self._password) as client:
-                return await client.check_connection()
-        except Exception:
-            return False
+            self._client = VirtualDJClient(
+                base_url=self._base_url,
+                password=self._password
+            )
+            if self._client.is_connected():
+                self._health.mark_available(self._base_url)
+                logger.info(f"VirtualDJ: ✓ connected to {self._base_url}")
+            else:
+                logger.info(f"VirtualDJ: not running at {self._base_url}")
+        except Exception as e:
+            logger.debug(f"VirtualDJ: connection failed: {e}")
+            self._client = None
     
     @property
     def is_available(self) -> bool:
@@ -315,18 +293,21 @@ class VirtualDJMonitor:
         Get current VirtualDJ track or None.
         Uses the Network Control API to get masterdeck info.
         """
-        if not self._aiohttp_available:
-            return None
+        if self._client is None:
+            # Try to reconnect if enough time has passed
+            if self._health.should_retry:
+                self._init_client()
+            if self._client is None:
+                return None
         
-        import asyncio
         try:
-            # Run async poll synchronously
-            loop = asyncio.new_event_loop()
-            try:
-                status = loop.run_until_complete(self._async_get_playback())
-            finally:
-                loop.close()
+            # Find the masterdeck
+            master = self._client.get_masterdeck(self._decks)
+            if master is None:
+                return None
             
+            # Get status for that deck
+            status = self._client.get_deck_status(master)
             if status is None:
                 if self._health.available:
                     self._health.mark_unavailable("No response")
@@ -334,8 +315,6 @@ class VirtualDJMonitor:
             
             if not self._health.available:
                 self._health.mark_available(self._base_url)
-            
-            self._last_status = status
             
             # Track change detection
             track_key = f"{status.artist}::{status.title}"
@@ -362,26 +341,6 @@ class VirtualDJMonitor:
             self._health.mark_unavailable(str(e))
             logger.debug(f"VirtualDJ error: {e}")
             return None
-    
-    async def _async_get_playback(self):
-        """Async playback fetch using VirtualDJ API."""
-        from vdj_api import VirtualDJClient
-        try:
-            async with VirtualDJClient(base_url=self._base_url, password=self._password) as client:
-                # Find the masterdeck
-                master = await client.get_masterdeck(self._decks)
-                if master is None:
-                    return None
-                # Get status for that deck
-                return await client.get_deck_status(master)
-        except Exception:
-            return None
-    
-    def _try_reconnect(self):
-        """Attempt to reconnect if service is down and enough time has passed."""
-        if not self._health.available and self._health.should_retry:
-            logger.debug("VirtualDJ: Attempting reconnection...")
-            self._check_connection()
 
 
 # =============================================================================
