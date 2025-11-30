@@ -263,14 +263,18 @@ class PipelinePanel(ReactivePanel):
             return
         lines = [self.render_section("Processing Pipeline", "═")]
         
+        has_content = False
+        
         for color, text in self.pipeline_data.get('display_lines', []):
             lines.append(f"[{color}]{text}[/]")
+            has_content = True
         
         if self.pipeline_data.get('image_prompt'):
             prompt = self.pipeline_data['image_prompt']
             if isinstance(prompt, dict):
                 prompt = prompt.get('description', str(prompt))
             lines.append(f"\n[bold cyan]Image Prompt:[/]\n[cyan]{truncate(str(prompt), 200)}[/]")
+            has_content = True
         
         if self.pipeline_data.get('current_lyric'):
             lyric = self.pipeline_data['current_lyric']
@@ -279,6 +283,10 @@ class PipelinePanel(ReactivePanel):
                 lines.append(f"[yellow]  Keywords: {lyric['keywords']}[/]")
             if lyric.get('is_refrain'):
                 lines.append("[magenta]  [REFRAIN][/]")
+            has_content = True
+        
+        if not has_content:
+            lines.append("[dim]No active processing...[/]")
         
         self.update("\n".join(lines))
 

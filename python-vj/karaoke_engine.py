@@ -190,19 +190,31 @@ class KaraokeEngine:
     # Private implementation
     
     def _run_loop(self, poll_interval: float):
-        """Main loop."""
+        """Main loop with fast lyrics checking, slow position updates."""
+        last_position_update = 0
+        lyrics_check_interval = 0.1  # Check lyrics every 100ms for precision
+        
         while self._running:
             try:
-                self._tick()
-                time.sleep(poll_interval)
+                current_time = time.time()
+                
+                # Fast: Check lyrics every 100ms
+                self._check_lyrics()
+                
+                # Slow: Update position every poll_interval (2s)
+                if current_time - last_position_update >= poll_interval:
+                    self._send_position_update()
+                    last_position_update = current_time
+                
+                time.sleep(lyrics_check_interval)
             except KeyboardInterrupt:
                 break
             except Exception as e:
                 logger.error(f"Loop error: {e}")
                 time.sleep(1)
     
-    def _tick(self):
-        """Single update cycle."""
+    def _check_lyrics(self):
+        """Fast check for lyric changes (100ms precision)."""
         # Get current playback state
         state = self._playback.get_current_state()
         
@@ -213,20 +225,23 @@ class KaraokeEngine:
             else:
                 self._on_no_track()
         
-        # Send position updates (every 2s via loop interval)
+        # Update active line (apply timing offset for early display)
+        if state.track and self._current_lines:
+            offset_sec = self._settings.timing_offset_ms / 1000.0
+            active_index = get_active_line_index(self._current_lines, state.position + offset_sec)
+            if active_index != self._last_active_index:
+                self._last_active_index = active_index
+                if active_index >= 0:
+                    self._send_active_line(active_index)
+    
+    def _send_position_update(self):
+        """Send position update (less frequent to reduce OSC traffic)."""
+        state = self._playback.get_current_state()
         if state.track:
             self._osc.send_karaoke("position", "update", {
                 "time": state.position,
                 "playing": state.is_playing
             })
-            
-            # Update active line
-            if self._current_lines:
-                active_index = get_active_line_index(self._current_lines, state.position)
-                if active_index != self._last_active_index:
-                    self._last_active_index = active_index
-                    if active_index >= 0:
-                        self._send_active_line(active_index)
     
     def _on_track_change(self, track):
         """Handle new track."""

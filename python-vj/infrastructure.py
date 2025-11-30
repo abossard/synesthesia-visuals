@@ -105,8 +105,8 @@ class Settings:
     
     @property
     def timing_offset_ms(self) -> int:
-        """Get timing offset in milliseconds."""
-        return self._data.get('timing_offset_ms', 0)
+        """Get timing offset in milliseconds. Negative = show lyrics early."""
+        return self._data.get('timing_offset_ms', -500)  # Default: 500ms early
     
     @timing_offset_ms.setter
     def timing_offset_ms(self, value: int):
