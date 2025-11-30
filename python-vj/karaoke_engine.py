@@ -2,10 +2,10 @@
 """
 Karaoke Engine - Monitors Spotify/VirtualDJ and sends lyrics via OSC
 
-Architecture follows "A Philosophy of Software Design" principles:
-- Deep modules with simple interfaces
-- Information hiding
-- Separation of concerns
+Smart defaults for macOS VJ setups:
+- Auto-loads .env file for Spotify credentials
+- Auto-detects VirtualDJ folder
+- Uses standard OSC port 9000
 
 Sends lyrics on 3 OSC channels:
 - /karaoke/... - Full lyrics
@@ -13,7 +13,8 @@ Sends lyrics on 3 OSC channels:
 - /karaoke/keywords/... - Key words extracted from each line
 
 Usage:
-    python karaoke_engine.py [--osc-host HOST] [--osc-port PORT]
+    python vj_console.py              # Full UI (recommended)
+    python vj_console.py --karaoke    # Standalone karaoke mode
 """
 
 import os
@@ -27,6 +28,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from threading import Thread, Event
+
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    env_locations = [
+        Path.cwd() / '.env',
+        Path(__file__).parent / '.env',
+        Path.home() / '.env',
+    ]
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
+except ImportError:
+    pass
 
 from pythonosc import udp_client
 import requests
@@ -44,6 +60,57 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('karaoke')
+
+
+# =============================================================================
+# CONFIGURATION - Smart defaults for macOS
+# =============================================================================
+
+class Config:
+    """Configuration with smart defaults for macOS VJ setups."""
+    
+    # OSC defaults
+    DEFAULT_OSC_HOST = "127.0.0.1"
+    DEFAULT_OSC_PORT = 9000  # Standard OSC port for Processing
+    
+    # VirtualDJ paths to search (in order of priority)
+    VDJ_SEARCH_PATHS = [
+        Path.home() / "Documents" / "VirtualDJ" / "History" / "now_playing.txt",
+        Path.home() / "Documents" / "VirtualDJ" / "now_playing.txt", 
+        Path.home() / "Music" / "VirtualDJ" / "now_playing.txt",
+        Path("/tmp") / "virtualdj_now_playing.txt",
+    ]
+    
+    # State file location
+    DEFAULT_STATE_FILE = Path.home() / ".cache" / "karaoke" / "state.json"
+    
+    @classmethod
+    def find_vdj_path(cls) -> Optional[Path]:
+        """Auto-detect VirtualDJ now_playing.txt location."""
+        for path in cls.VDJ_SEARCH_PATHS:
+            if path.exists():
+                return path
+            if path.parent.exists():
+                return path
+        vdj_folder = Path.home() / "Documents" / "VirtualDJ"
+        if vdj_folder.exists():
+            return vdj_folder / "now_playing.txt"
+        return None
+    
+    @classmethod
+    def get_spotify_credentials(cls) -> Dict[str, str]:
+        """Get Spotify credentials from environment."""
+        return {
+            'client_id': os.environ.get('SPOTIPY_CLIENT_ID', ''),
+            'client_secret': os.environ.get('SPOTIPY_CLIENT_SECRET', ''),
+            'redirect_uri': os.environ.get('SPOTIPY_REDIRECT_URI', 'http://localhost:8888/callback'),
+        }
+    
+    @classmethod
+    def has_spotify_credentials(cls) -> bool:
+        """Check if Spotify credentials are configured."""
+        creds = cls.get_spotify_credentials()
+        return bool(creds['client_id'] and creds['client_secret'])
 
 
 # =============================================================================
@@ -250,12 +317,12 @@ class SpotifyMonitor:
     
     def _init_client(self):
         if not SPOTIFY_AVAILABLE:
-            logger.info("Spotify: spotipy not installed")
+            logger.info("Spotify: spotipy not installed (pip install spotipy)")
             return
         
-        required = ['SPOTIPY_CLIENT_ID', 'SPOTIPY_CLIENT_SECRET', 'SPOTIPY_REDIRECT_URI']
-        if any(not os.environ.get(v) for v in required):
+        if not Config.has_spotify_credentials():
             logger.info("Spotify: credentials not configured")
+            logger.info("  Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET in .env file")
             return
         
         try:
@@ -264,7 +331,7 @@ class SpotifyMonitor:
             ))
             self._sp.current_user()  # Test connection
             self._available = True
-            logger.info("Spotify: connected")
+            logger.info("Spotify: ✓ connected")
         except Exception as e:
             logger.warning(f"Spotify: {e}")
     
@@ -291,28 +358,28 @@ class SpotifyMonitor:
 
 
 class VirtualDJMonitor:
-    """Monitors VirtualDJ now_playing.txt file."""
-    
-    DEFAULT_PATHS = [
-        Path.home() / "Documents" / "VirtualDJ" / "now_playing.txt",
-        Path("/tmp/virtualdj_now_playing.txt"),
-    ]
+    """Monitors VirtualDJ now_playing.txt file. Auto-detects folder on macOS."""
     
     def __init__(self, file_path: Optional[str] = None):
-        self._path = Path(file_path) if file_path else self._find_path()
+        if file_path:
+            self._path = Path(file_path)
+        else:
+            self._path = Config.find_vdj_path()
+        
         self._last_content = ""
         self._start_time = 0.0
-        logger.info(f"VirtualDJ: monitoring {self._path}")
-    
-    def _find_path(self) -> Path:
-        for p in self.DEFAULT_PATHS:
-            if p.exists():
-                return p
-        return self.DEFAULT_PATHS[0]
+        
+        if self._path:
+            if self._path.exists():
+                logger.info(f"VirtualDJ: ✓ found {self._path}")
+            else:
+                logger.info(f"VirtualDJ: monitoring {self._path} (file not yet created)")
+        else:
+            logger.info("VirtualDJ: folder not found (will use Spotify only)")
     
     def get_playback(self) -> Optional[Dict[str, Any]]:
         """Get current VirtualDJ track or None."""
-        if not self._path.exists():
+        if not self._path or not self._path.exists():
             return None
         
         try:
@@ -426,15 +493,20 @@ class KaraokeEngine:
     - OSC output on 3 channels
     
     Simple interface: start(), stop(), run()
+    Uses smart defaults from Config class.
     """
     
     def __init__(
         self,
-        osc_host: str = "127.0.0.1",
-        osc_port: int = 9000,
+        osc_host: Optional[str] = None,
+        osc_port: Optional[int] = None,
         vdj_path: Optional[str] = None,
-        state_file: str = "karaoke_state.json"
+        state_file: Optional[str] = None
     ):
+        # Use Config defaults
+        osc_host = osc_host or Config.DEFAULT_OSC_HOST
+        osc_port = osc_port or Config.DEFAULT_OSC_PORT
+        
         # Dependencies
         self._osc = OSCSender(osc_host, osc_port)
         self._lyrics = LyricsFetcher()
@@ -444,7 +516,13 @@ class KaraokeEngine:
         # State
         self._state = PlaybackState()
         self._last_track_key = ""
-        self._state_file = Path(state_file)
+        
+        # State file with smart default
+        if state_file:
+            self._state_file = Path(state_file)
+        else:
+            self._state_file = Config.DEFAULT_STATE_FILE
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Threading
         self._stop = Event()
@@ -596,29 +674,33 @@ class KaraokeEngine:
 
 
 # =============================================================================
-# MAIN
+# MAIN - For standalone testing. Use vj_console.py as main entry point.
 # =============================================================================
 
 def main():
+    """Standalone entry point - prefer using vj_console.py instead."""
+    print("=" * 50)
+    print("  ℹ️  For full VJ control, use: python vj_console.py")
+    print("=" * 50)
+    print("  Running karaoke engine in standalone mode...\n")
+    
     parser = argparse.ArgumentParser(
-        description='Karaoke Engine - Synced lyrics via OSC',
+        description='Karaoke Engine - Synced lyrics via OSC (standalone mode)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+For full VJ control with terminal UI, use:
+    python vj_console.py
+
 OSC Channels:
   /karaoke/...          Full lyrics
   /karaoke/refrain/...  Chorus/refrain only
   /karaoke/keywords/... Key words only
-
-Each channel sends:
-  .../reset [song_id]
-  .../line [index, time_sec, text]
-  .../active [index, text?]
 """
     )
-    parser.add_argument('--osc-host', default='127.0.0.1')
-    parser.add_argument('--osc-port', type=int, default=9000)
-    parser.add_argument('--vdj-path', help='VirtualDJ now_playing.txt path')
-    parser.add_argument('--state-file', default='karaoke_state.json')
+    parser.add_argument('--osc-host', default=Config.DEFAULT_OSC_HOST)
+    parser.add_argument('--osc-port', type=int, default=Config.DEFAULT_OSC_PORT)
+    parser.add_argument('--vdj-path', help='VirtualDJ now_playing.txt path (auto-detected)')
+    parser.add_argument('--state-file', help='State file path')
     parser.add_argument('--poll-interval', type=float, default=0.1)
     parser.add_argument('-v', '--verbose', action='store_true')
     

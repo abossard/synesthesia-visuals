@@ -1,6 +1,9 @@
 # VJ Control and Karaoke Engine dependencies
 # Install with: pip install -r requirements.txt
 
+# Environment variables from .env file
+python-dotenv>=1.0.0
+
 # Spotify API
 spotipy>=2.23.0
 

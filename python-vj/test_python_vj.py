@@ -220,8 +220,22 @@ class TestVJConsole(unittest.TestCase):
 class TestCLI(unittest.TestCase):
     """Tests for CLI entry points."""
     
+    def test_vj_console_help(self):
+        """vj_console.py --help should work (main entry point)."""
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "vj_console.py", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("VJ Console", result.stdout)
+        self.assertIn("--karaoke", result.stdout)
+        self.assertIn("--audio", result.stdout)
+    
     def test_karaoke_engine_help(self):
-        """karaoke_engine.py --help should work."""
+        """karaoke_engine.py --help should work (module)."""
         import subprocess
         result = subprocess.run(
             [sys.executable, "karaoke_engine.py", "--help"],
@@ -230,8 +244,7 @@ class TestCLI(unittest.TestCase):
             timeout=10
         )
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Karaoke Engine", result.stdout)
-        self.assertIn("--osc-port", result.stdout)
+        self.assertIn("vj_console.py", result.stdout)  # Should recommend main script
     
     def test_audio_setup_help(self):
         """audio_setup.py --help should work."""
@@ -244,6 +257,26 @@ class TestCLI(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("--fix", result.stdout)
+
+
+class TestConfig(unittest.TestCase):
+    """Tests for Config class."""
+    
+    def test_config_defaults(self):
+        """Config should have OSC defaults."""
+        from karaoke_engine import Config
+        
+        self.assertEqual(Config.DEFAULT_OSC_HOST, "127.0.0.1")
+        self.assertEqual(Config.DEFAULT_OSC_PORT, 9000)
+    
+    def test_config_spotify_credentials(self):
+        """Config should check for Spotify credentials."""
+        from karaoke_engine import Config
+        
+        creds = Config.get_spotify_credentials()
+        self.assertIn('client_id', creds)
+        self.assertIn('client_secret', creds)
+        self.assertIn('redirect_uri', creds)
 
 
 if __name__ == "__main__":

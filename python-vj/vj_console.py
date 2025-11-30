@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
 """
-VJ Console - Terminal UI for managing VJ applications
+VJ Console - Main entry point for the VJ Control System
 
-A console application that:
+A terminal UI application that:
 - Lists and manages Processing apps from the project
 - Runs apps in daemon mode with auto-restart on crash
 - Monitors Spotify/VirtualDJ via the Karaoke Engine
+- Shows live OSC status and messages
 
-Requirements:
-    pip install blessed psutil
+Smart defaults for macOS:
+- Auto-loads .env file for Spotify credentials
+- Auto-detects VirtualDJ folder
+- Uses standard OSC port 9000
 
 Usage:
-    python vj_console.py
+    python vj_console.py              # Launch terminal UI
+    python vj_console.py --karaoke    # Run karaoke engine only
+    python vj_console.py --audio      # Check audio setup
+    python vj_console.py --help       # Show all options
 
-Controls:
-    Up/Down arrows: Navigate menu
+Controls (in terminal UI):
+    Up/Down arrows or j/k: Navigate menu
     Enter: Select/toggle option
     q: Quit
     d: Toggle daemon mode
+    K: Toggle karaoke engine
     r: Restart selected app
 """
 
@@ -27,11 +34,27 @@ import time
 import signal
 import subprocess
 import logging
+import argparse
 from pathlib import Path
 from threading import Thread, Event
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 import shutil
+
+# Load .env file if present (before other imports)
+try:
+    from dotenv import load_dotenv
+    env_locations = [
+        Path.cwd() / '.env',
+        Path(__file__).parent / '.env',
+        Path.home() / '.env',
+    ]
+    for env_path in env_locations:
+        if env_path.exists():
+            load_dotenv(env_path)
+            break
+except ImportError:
+    pass
 
 # Terminal UI
 try:
@@ -47,14 +70,22 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
-# Import karaoke engine
-from karaoke_engine import KaraokeEngine
+# Import karaoke engine module
+from karaoke_engine import KaraokeEngine, Config as KaraokeConfig
 
-# Configure logging
+# Import audio setup module (for --audio command)
+try:
+    from audio_setup import AudioSetup, print_status as print_audio_status
+    AUDIO_SETUP_AVAILABLE = True
+except ImportError:
+    AUDIO_SETUP_AVAILABLE = False
+
+# Configure logging to file only (not to stderr which messes up terminal UI)
+log_file = Path(__file__).parent / 'vj_console.log'
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler('vj_console.log'), logging.StreamHandler()]
+    handlers=[logging.FileHandler(log_file)]
 )
 logger = logging.getLogger('vj_console')
 
@@ -272,13 +303,18 @@ class ProcessManager:
 
 
 class VJConsole:
-    """Main VJ Console application with terminal UI."""
+    """
+    Main VJ Console application with colorful terminal UI.
+    
+    Features:
+    - Arrow key navigation
+    - Color-coded status indicators
+    - Live OSC status display
+    - Auto-refresh display
+    """
     
     def __init__(self, project_root: Optional[Path] = None):
-        if not BLESSED_AVAILABLE:
-            raise RuntimeError("blessed library required. Install with: pip install blessed")
-        
-        self.term = Terminal()
+        self.term = Terminal() if BLESSED_AVAILABLE else None
         self.project_root = project_root or self._find_project_root()
         
         self.process_manager = ProcessManager()
@@ -287,35 +323,45 @@ class VJConsole:
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self.state = AppState()
         
-        # Menu items: apps + special options
-        self.menu_items = [
-            ("─── Processing Apps ───", None),  # Header
-        ] + [
-            (app.name, app) for app in self.process_manager.apps
-        ] + [
-            ("─── Services ───", None),  # Header
-            ("Karaoke Engine", "karaoke"),
-            ("─── Actions ───", None),  # Header
-            ("Toggle Daemon Mode", "daemon"),
-            ("Stop All Apps", "stop_all"),
-            ("Quit", "quit"),
-        ]
+        # Build menu with item types
+        self._build_menu()
+    
+    def _build_menu(self):
+        """Build the menu items list with types."""
+        self.menu_items = []
+        
+        # Processing Apps section
+        self.menu_items.append(("═══ Processing Apps ═══", None, "header"))
+        if self.process_manager.apps:
+            for app in self.process_manager.apps:
+                self.menu_items.append((app.name, app, "app"))
+        else:
+            self.menu_items.append(("  (no apps found)", None, "disabled"))
+        
+        # Services section
+        self.menu_items.append(("═══ Services ═══", None, "header"))
+        self.menu_items.append(("🎤 Karaoke Engine", "karaoke", "service"))
+        
+        # Settings section
+        self.menu_items.append(("═══ Settings ═══", None, "header"))
+        self.menu_items.append(("⚡ Daemon Mode (auto-restart)", "daemon", "toggle"))
+        
+        # Actions section
+        self.menu_items.append(("═══ Actions ═══", None, "header"))
+        self.menu_items.append(("⏹  Stop All Apps", "stop_all", "action"))
+        self.menu_items.append(("❌ Quit", "quit", "action"))
     
     def _find_project_root(self) -> Path:
         """Find the project root directory."""
-        # Start from current script location
         current = Path(__file__).parent.parent
         
-        # Look for processing-vj directory
         if (current / "processing-vj").exists():
             return current
         
-        # Try current working directory
         cwd = Path.cwd()
         if (cwd / "processing-vj").exists():
             return cwd
         
-        # Go up from script location
         for _ in range(3):
             current = current.parent
             if (current / "processing-vj").exists():
@@ -325,25 +371,30 @@ class VJConsole:
     
     def start_karaoke(self):
         """Start the karaoke engine."""
-        if self.karaoke_engine and self.karaoke_engine.running:
+        if self.karaoke_engine:
             return
         
-        self.karaoke_engine = KaraokeEngine()
-        self.karaoke_engine.start()
-        self.state.karaoke_enabled = True
-        self.set_message("Karaoke Engine started")
-    
+        try:
+            self.karaoke_engine = KaraokeEngine()
+            self.karaoke_engine.start()
+            self.state.karaoke_enabled = True
+            self.set_message("✓ Karaoke Engine started", "success")
+        except Exception as e:
+            self.set_message(f"✗ Karaoke error: {e}", "error")
+            logger.exception("Karaoke start error")
+        
     def stop_karaoke(self):
         """Stop the karaoke engine."""
         if self.karaoke_engine:
             self.karaoke_engine.stop()
             self.karaoke_engine = None
         self.state.karaoke_enabled = False
-        self.set_message("Karaoke Engine stopped")
+        self.set_message("✓ Karaoke Engine stopped", "info")
     
-    def set_message(self, msg: str):
-        """Set a temporary status message."""
+    def set_message(self, msg: str, msg_type: str = "info"):
+        """Set a temporary status message with type."""
         self.state.message = msg
+        self.state.message_type = msg_type
         self.state.message_time = time.time()
     
     def handle_selection(self):
@@ -351,22 +402,20 @@ class VJConsole:
         if self.state.selected_index >= len(self.menu_items):
             return
         
-        label, item = self.menu_items[self.state.selected_index]
+        label, item, item_type = self.menu_items[self.state.selected_index]
         
-        if item is None:
-            # Header - skip
+        if item is None or item_type in ("header", "disabled"):
             return
         
         if isinstance(item, ProcessingApp):
-            # Toggle app running state
             if self.process_manager.is_running(item):
                 self.process_manager.stop_app(item)
-                self.set_message(f"Stopped {item.name}")
+                self.set_message(f"⏹ Stopped {item.name}", "info")
             else:
                 if self.process_manager.launch_app(item):
-                    self.set_message(f"Launched {item.name}")
+                    self.set_message(f"▶ Launched {item.name}", "success")
                 else:
-                    self.set_message(f"Failed to launch {item.name}")
+                    self.set_message(f"✗ Failed to launch {item.name}", "error")
         
         elif item == "karaoke":
             if self.state.karaoke_enabled:
@@ -376,158 +425,348 @@ class VJConsole:
         
         elif item == "daemon":
             self.state.daemon_mode = not self.state.daemon_mode
-            status = "enabled" if self.state.daemon_mode else "disabled"
-            self.set_message(f"Daemon mode {status}")
             if self.state.daemon_mode:
                 self.process_manager.start_monitoring(daemon_mode=True)
+                self.set_message("⚡ Daemon mode enabled", "success")
             else:
                 self.process_manager.stop_monitoring()
+                self.set_message("⚡ Daemon mode disabled", "info")
         
         elif item == "stop_all":
+            count = 0
             for app in self.process_manager.apps:
                 if self.process_manager.is_running(app):
                     self.process_manager.stop_app(app)
-            self.set_message("Stopped all apps")
+                    count += 1
+            self.set_message(f"⏹ Stopped {count} apps", "info")
         
         elif item == "quit":
             self.state.running = False
     
     def navigate(self, direction: int):
-        """Navigate menu up or down."""
+        """Navigate menu up or down, skipping headers."""
         new_index = self.state.selected_index + direction
+        attempts = 0
+        max_attempts = len(self.menu_items)
         
-        # Skip headers
-        while 0 <= new_index < len(self.menu_items):
-            if self.menu_items[new_index][1] is not None:
-                self.state.selected_index = new_index
-                break
-            new_index += direction
+        while attempts < max_attempts:
             if new_index < 0:
                 new_index = len(self.menu_items) - 1
             elif new_index >= len(self.menu_items):
                 new_index = 0
+            
+            _, item, item_type = self.menu_items[new_index]
+            if item is not None and item_type not in ("header", "disabled"):
+                self.state.selected_index = new_index
+                break
+            
+            new_index += direction
+            attempts += 1
     
     def draw(self):
-        """Draw the terminal UI."""
-        # Clear screen
-        print(self.term.home + self.term.clear)
+        """Draw the colorful terminal UI with OSC panel."""
+        t = self.term
         
-        # Header
-        header = " VJ Console - Synesthesia Visuals "
-        print(self.term.center(self.term.bold_white_on_blue(header)))
+        # Clear screen
+        print(t.home + t.clear)
+        
+        # Header bar
+        header = " 🎛  VJ Console - Synesthesia Visuals "
+        padding = (t.width - len(header) + 4) // 2
+        print(t.white_on_blue(" " * t.width))
+        print(t.white_on_blue(" " * padding + t.bold(header) + " " * (t.width - padding - len(header) + 2)))
+        print(t.white_on_blue(" " * t.width))
         print()
         
-        # Status bar
-        daemon_status = self.term.green("●") if self.state.daemon_mode else self.term.red("○")
-        karaoke_status = self.term.green("●") if self.state.karaoke_enabled else self.term.red("○")
+        # Status indicators
+        daemon_icon = t.bold_green("● ON ") if self.state.daemon_mode else t.dim("○ OFF")
+        karaoke_icon = t.bold_green("● ON ") if self.state.karaoke_enabled else t.dim("○ OFF")
         
-        status_line = f"  Daemon: {daemon_status}  Karaoke: {karaoke_status}"
-        print(status_line)
+        print(f"  {t.bold('Daemon:')} {daemon_icon}    {t.bold('Karaoke:')} {karaoke_icon}")
         print()
         
         # Menu items
-        for i, (label, item) in enumerate(self.menu_items):
-            if item is None:
-                # Header
-                print(self.term.bold(f"  {label}"))
+        for i, (label, item, item_type) in enumerate(self.menu_items):
+            if item_type == "header":
+                print()
+                print(t.bold_magenta(f"  {label}"))
                 continue
             
-            # Selection indicator
-            if i == self.state.selected_index:
-                prefix = self.term.bold_white_on_blue(" ▶ ")
+            if item_type == "disabled":
+                print(t.dim(f"    {label}"))
+                continue
+            
+            # Selection highlighting
+            is_selected = i == self.state.selected_index
+            if is_selected:
+                prefix = t.bold_black_on_cyan(" ▸ ")
             else:
                 prefix = "   "
             
             # Status indicator
             status = ""
+            status_color = t.dim
+            
             if isinstance(item, ProcessingApp):
                 if self.process_manager.is_running(item):
-                    status = self.term.green(" [running]")
+                    status = " [running]"
+                    status_color = t.bold_green
                 elif item.enabled:
-                    status = self.term.yellow(" [starting]")
-            elif item == "karaoke" and self.state.karaoke_enabled:
-                status = self.term.green(" [running]")
-            elif item == "daemon" and self.state.daemon_mode:
-                status = self.term.green(" [enabled]")
+                    status = " [starting...]"
+                    status_color = t.yellow
+            elif item == "karaoke":
+                if self.state.karaoke_enabled:
+                    status = " [running]"
+                    status_color = t.bold_green
+            elif item == "daemon":
+                if self.state.daemon_mode:
+                    status = " [enabled]"
+                    status_color = t.bold_green
             
-            # Description
-            desc = ""
-            if isinstance(item, ProcessingApp) and item.description:
-                desc = self.term.dim(f" - {item.description}")
-            
-            line = f"{prefix}{label}{status}{desc}"
-            print(line)
+            # Build line
+            if is_selected:
+                text = f"{prefix}{label}{status}"
+                padding = " " * max(0, 50 - len(label) - len(status))
+                print(t.black_on_cyan(text + padding))
+            else:
+                print(f"{prefix}{label}{status_color(status)}")
         
         print()
         
-        # Karaoke status
-        if self.karaoke_engine and self.karaoke_engine.state.active:
-            track_info = f"  🎵 {self.karaoke_engine.state.artist} - {self.karaoke_engine.state.title}"
-            print(self.term.cyan(track_info))
-            if self.karaoke_engine.state.has_synced_lyrics:
-                active_line = self.karaoke_engine.compute_active_line()
-                if 0 <= active_line < len(self.karaoke_engine.state.lines):
-                    lyric = self.karaoke_engine.state.lines[active_line].text
-                    print(self.term.white(f"     {lyric}"))
-            print()
+        # OSC Info Panel
+        self._draw_osc_panel(t)
         
-        # Message
-        if self.state.message and time.time() - self.state.message_time < 3:
-            print(self.term.yellow(f"  {self.state.message}"))
+        # Status message
+        if self.state.message and time.time() - self.state.message_time < 4:
+            msg_type = getattr(self.state, 'message_type', 'info')
+            if msg_type == "success":
+                print(t.bold_green(f"  {self.state.message}"))
+            elif msg_type == "error":
+                print(t.bold_red(f"  {self.state.message}"))
+            elif msg_type == "warning":
+                print(t.bold_yellow(f"  {self.state.message}"))
+            else:
+                print(t.cyan(f"  {self.state.message}"))
         
-        # Help
+        # Help footer
         print()
-        print(self.term.dim("  ↑↓: Navigate  Enter: Select  d: Daemon  q: Quit"))
+        print(t.dim("─" * min(t.width, 80)))
+        help_text = "  ↑↓/jk: Navigate   Enter: Select   d: Daemon   K: Karaoke   r: Restart   q: Quit"
+        print(t.dim(help_text))
+    
+    def _draw_osc_panel(self, t):
+        """Draw OSC connection info and current messages."""
+        print(t.bold_yellow("  ═══ OSC Status ═══"))
+        
+        host = KaraokeConfig.DEFAULT_OSC_HOST
+        port = KaraokeConfig.DEFAULT_OSC_PORT
+        
+        if self.state.karaoke_enabled:
+            print(t.green(f"    📡 Sending to {host}:{port}"))
+            print(t.dim(f"    ├─ /karaoke/track"))
+            print(t.dim(f"    ├─ /karaoke/lyrics/..."))
+            print(t.dim(f"    ├─ /karaoke/refrain/..."))
+            print(t.dim(f"    └─ /karaoke/keywords/..."))
+            
+            if self.karaoke_engine and hasattr(self.karaoke_engine, '_state'):
+                state = self.karaoke_engine._state
+                if state.active and state.track:
+                    print()
+                    print(t.bold_cyan(f"    🎵 {state.track.artist} - {state.track.title}"))
+                    pos = state.position_sec
+                    print(t.dim(f"    /karaoke/pos [{pos:.1f}, 1]"))
+                    
+                    if state.lines:
+                        from karaoke_engine import get_active_line_index
+                        idx = get_active_line_index(state.lines, pos)
+                        print(t.dim(f"    /karaoke/line/active [{idx}]"))
+                        
+                        if 0 <= idx < len(state.lines):
+                            line = state.lines[idx]
+                            if line.keywords:
+                                print(t.yellow(f"    Keywords: {line.keywords}"))
+                            if line.is_refrain:
+                                print(t.magenta(f"    [REFRAIN]"))
+                else:
+                    print(t.dim(f"    (waiting for playback...)"))
+        else:
+            print(t.dim(f"    ○ OSC inactive"))
+            print(t.dim(f"    Target: {host}:{port}"))
+        
+        print()
     
     def run(self):
-        """Main run loop."""
-        # Find first non-header item
-        for i, (_, item) in enumerate(self.menu_items):
-            if item is not None:
+        """Main run loop with robust error handling."""
+        if not self.term:
+            print("Error: Terminal not available")
+            return
+        
+        # Find first selectable item
+        for i, (_, item, item_type) in enumerate(self.menu_items):
+            if item is not None and item_type not in ("header", "disabled"):
                 self.state.selected_index = i
                 break
         
-        with self.term.fullscreen(), self.term.cbreak(), self.term.hidden_cursor():
-            while self.state.running:
-                self.draw()
-                
-                # Handle input with timeout for refresh
-                key = self.term.inkey(timeout=0.5)
-                
-                if key:
-                    if key.name == 'KEY_UP' or key == 'k':
-                        self.navigate(-1)
-                    elif key.name == 'KEY_DOWN' or key == 'j':
-                        self.navigate(1)
-                    elif key.name == 'KEY_ENTER' or key == '\n':
-                        self.handle_selection()
-                    elif key == 'd':
-                        # Quick toggle daemon mode
-                        self.state.daemon_mode = not self.state.daemon_mode
-                        status = "enabled" if self.state.daemon_mode else "disabled"
-                        self.set_message(f"Daemon mode {status}")
-                    elif key == 'r':
-                        # Restart selected app
-                        _, item = self.menu_items[self.state.selected_index]
-                        if isinstance(item, ProcessingApp):
-                            self.process_manager.stop_app(item)
-                            time.sleep(0.5)
-                            self.process_manager.launch_app(item)
-                            self.set_message(f"Restarted {item.name}")
-                    elif key == 'q' or key.name == 'KEY_ESCAPE':
-                        self.state.running = False
-        
-        # Cleanup
-        self.stop_karaoke()
-        self.process_manager.cleanup()
-        print("VJ Console closed.")
+        try:
+            with self.term.fullscreen(), self.term.cbreak(), self.term.hidden_cursor():
+                while self.state.running:
+                    try:
+                        self.draw()
+                        
+                        key = self.term.inkey(timeout=0.5)
+                        
+                        if key:
+                            if key.name == 'KEY_UP' or key == 'k':
+                                self.navigate(-1)
+                            elif key.name == 'KEY_DOWN' or key == 'j':
+                                self.navigate(1)
+                            elif key.name == 'KEY_ENTER' or key == '\n':
+                                self.handle_selection()
+                            elif key == 'd':
+                                self._toggle_daemon()
+                            elif key == 'K':
+                                if self.state.karaoke_enabled:
+                                    self.stop_karaoke()
+                                else:
+                                    self.start_karaoke()
+                            elif key == 'r':
+                                self._restart_selected()
+                            elif key == 'q' or key.name == 'KEY_ESCAPE':
+                                self.state.running = False
+                    except Exception as e:
+                        logger.exception("Draw error")
+                        self.set_message(f"Error: {e}", "error")
+                        time.sleep(0.5)
+        except Exception as e:
+            logger.exception("Fatal UI error")
+            print(f"\nUI Error: {e}")
+        finally:
+            self.stop_karaoke()
+            self.process_manager.cleanup()
+            print("\n  VJ Console closed. Goodbye! 👋\n")
+    
+    def _toggle_daemon(self):
+        """Toggle daemon mode."""
+        self.state.daemon_mode = not self.state.daemon_mode
+        if self.state.daemon_mode:
+            self.process_manager.start_monitoring(daemon_mode=True)
+            self.set_message("⚡ Daemon mode enabled", "success")
+        else:
+            self.process_manager.stop_monitoring()
+            self.set_message("⚡ Daemon mode disabled", "info")
+    
+    def _restart_selected(self):
+        """Restart the selected app."""
+        if self.state.selected_index >= len(self.menu_items):
+            return
+        _, item, _ = self.menu_items[self.state.selected_index]
+        if isinstance(item, ProcessingApp):
+            self.process_manager.stop_app(item)
+            time.sleep(0.5)
+            self.process_manager.launch_app(item)
+            self.set_message(f"🔄 Restarted {item.name}", "success")
+
+
+# =============================================================================
+# STANDALONE MODES
+# =============================================================================
+
+def run_karaoke_only():
+    """Run karaoke engine in standalone mode."""
+    print("\n" + "="*50)
+    print("  🎤 Karaoke Engine - Standalone Mode")
+    print("="*50)
+    
+    vdj_path = KaraokeConfig.find_vdj_path()
+    print(f"\n  OSC: localhost:{KaraokeConfig.DEFAULT_OSC_PORT}")
+    print(f"  VirtualDJ: {vdj_path or 'not found'}")
+    print(f"  Spotify: {'configured' if KaraokeConfig.has_spotify_credentials() else 'not configured'}")
+    print("\n  Press Ctrl+C to stop\n")
+    
+    engine = KaraokeEngine()
+    try:
+        engine.run()
+    except KeyboardInterrupt:
+        print("\n  Goodbye! 👋")
+
+
+def run_audio_check(fix: bool = False):
+    """Run audio setup check."""
+    if sys.platform != 'darwin':
+        print("Audio setup check is designed for macOS only.")
+        print("On macOS, it verifies BlackHole and Multi-Output Device configuration.")
+        return
+    
+    if not AUDIO_SETUP_AVAILABLE:
+        print("Error: audio_setup module not available")
+        return
+    
+    audio = AudioSetup()
+    results = audio.check_system()
+    print_audio_status(results)
+    
+    if fix:
+        print("Attempting to fix audio setup...")
+        if audio.fix_audio_setup():
+            print("✅ Successfully updated default audio output!")
+            results = audio.check_system()
+            print_audio_status(results)
+        else:
+            print("❌ Could not automatically fix audio setup.")
+            print("Please configure manually in System Settings → Sound")
 
 
 def main():
-    """Main entry point."""
+    """Main entry point with multiple modes."""
+    parser = argparse.ArgumentParser(
+        description='VJ Console - Control center for VJ performances',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Modes:
+  (default)     Launch terminal UI
+  --karaoke     Run karaoke engine only (no UI)
+  --audio       Check macOS audio setup
+  --audio --fix Attempt to fix audio routing
+
+Examples:
+  python vj_console.py              # Full terminal UI
+  python vj_console.py --karaoke    # Karaoke engine only
+  python vj_console.py --audio      # Check audio
+"""
+    )
+    parser.add_argument('--karaoke', action='store_true',
+                        help='Run karaoke engine in standalone mode')
+    parser.add_argument('--audio', action='store_true',
+                        help='Check macOS audio setup (BlackHole, Multi-Output)')
+    parser.add_argument('--fix', action='store_true',
+                        help='Attempt to fix audio routing (use with --audio)')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Enable verbose logging')
+    
+    args = parser.parse_args()
+    
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
+        logging.getLogger().addHandler(console_handler)
+    
+    # Mode: Audio check
+    if args.audio:
+        run_audio_check(fix=args.fix)
+        return
+    
+    # Mode: Karaoke only
+    if args.karaoke:
+        run_karaoke_only()
+        return
+    
+    # Mode: Full terminal UI (default)
     if not BLESSED_AVAILABLE:
-        print("Error: blessed library required.")
+        print("Error: blessed library required for terminal UI.")
         print("Install with: pip install blessed")
+        print("\nAlternatively, run in standalone mode:")
+        print("  python vj_console.py --karaoke")
         sys.exit(1)
     
     try:
