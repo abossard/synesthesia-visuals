@@ -659,7 +659,7 @@ Use keyboard controls to simulate audio:
 - **M** - Mid hit (test color/hue shifts)
 - **H** - High hit (test brightness/details)
 
-### Best Practices
+### Audio Reactivity Best Practices
 
 1. **Use lerp() for smooth transitions** - Prevents jarring jumps
 2. **Store smoothed values** - Keep separate smoothed variables for visual appeal
