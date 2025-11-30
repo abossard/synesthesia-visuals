@@ -22,7 +22,7 @@ from textual.reactive import reactive
 from textual.binding import Binding
 from rich.text import Text
 
-from vj_console_blessed import ProcessManager, ProcessingApp
+from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 
 logger = logging.getLogger('vj_console')

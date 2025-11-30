@@ -288,15 +288,15 @@ class TestAudioSetup(unittest.TestCase):
 
 
 class TestVJConsole(unittest.TestCase):
-    """Tests for vj_console module."""
+    """Tests for process_manager module."""
     
     def test_imports(self):
-        """All classes should be importable from vj_console_blessed."""
-        from vj_console_blessed import ProcessingApp, AppState, ProcessManager
+        """All classes should be importable from process_manager."""
+        from process_manager import ProcessingApp, AppState, ProcessManager
     
     def test_processing_app_dataclass(self):
         """ProcessingApp should store app info."""
-        from vj_console_blessed import ProcessingApp
+        from process_manager import ProcessingApp
         from pathlib import Path
         
         app = ProcessingApp(
@@ -312,7 +312,7 @@ class TestVJConsole(unittest.TestCase):
     
     def test_app_state_defaults(self):
         """AppState should have sensible defaults."""
-        from vj_console_blessed import AppState
+        from process_manager import AppState
         
         state = AppState()
         
@@ -323,7 +323,7 @@ class TestVJConsole(unittest.TestCase):
     
     def test_process_manager_instantiation(self):
         """ProcessManager should instantiate without errors."""
-        from vj_console_blessed import ProcessManager
+        from process_manager import ProcessManager
         
         pm = ProcessManager()
         self.assertIsNotNone(pm)
@@ -331,20 +331,6 @@ class TestVJConsole(unittest.TestCase):
 
 class TestCLI(unittest.TestCase):
     """Tests for CLI entry points."""
-    
-    def test_vj_console_blessed_help(self):
-        """vj_console_blessed.py --help should work (main entry point)."""
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "vj_console_blessed.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("VJ Console", result.stdout)
-        self.assertIn("--karaoke", result.stdout)
-        self.assertIn("--audio", result.stdout)
     
     def test_karaoke_engine_help(self):
         """karaoke_engine.py --help should work (module)."""

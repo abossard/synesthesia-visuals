@@ -7,8 +7,7 @@ Master control center and karaoke engine for VJ performance control.
 ```bash
 cd python-vj
 pip install -r requirements.txt
-python vj_console.py          # Launch the terminal UI (Textual)
-python vj_console_blessed.py  # Alternative UI (Blessed)
+python vj_console.py          # Launch the terminal UI
 ```
 
 ## Features
