@@ -4,25 +4,30 @@
  * White text on black background for clean VJ compositing.
  * Outputs 3 SEPARATE Syphon channels for Magic Music Visuals:
  *   - KaraokeFullLyrics   : Full lyrics with prev/current/next
- *   - KaraokeRefrain      : Chorus/refrain lines only  
- *   - KaraokeKeywords     : Key words extracted from lyrics
+ *   - KaraokeRefrain      : Chorus/refrain lines only (AI-detected)
+ *   - KaraokeSongInfo     : Artist & Song Title (brief display on track change)
  * 
  * Requirements:
  * - Processing 4.x (Intel/x64 build for Apple Silicon)
  * - oscP5 library
  * - Syphon library
- * - Python Karaoke Engine running
+ * - Python Karaoke Engine (karaoke_engine.py)
  * 
- * OSC Channels Received:
- *   /karaoke/...          Full lyrics
- *   /karaoke/refrain/...  Chorus only
- *   /karaoke/keywords/... Key words only
+ * OSC Protocol (sent by karaoke_engine.py):
+ *   /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
+ *   /karaoke/pos [position, playing]
+ *   /karaoke/lyrics/reset [song_id]
+ *   /karaoke/lyrics/line [index, time_sec, text]
+ *   /karaoke/line/active [index]
+ *   /karaoke/refrain/reset [song_id]
+ *   /karaoke/refrain/line [index, time_sec, text]
+ *   /karaoke/refrain/active [index, text]
  * 
  * Controls:
  * - 's': Toggle show/hide all
  * - '1': Toggle full lyrics
  * - '2': Toggle refrain
- * - '3': Toggle keywords
+ * - '3': Toggle song info
  * - 'f': Cycle fonts (uses system fonts via PFont.list)
  * - 'g': Cycle font sizes
  * - 'r': Reset/reconnect OSC
@@ -45,22 +50,22 @@ int OSC_PORT = 9000;
 // Three separate Syphon outputs - each can be selected in Magic
 SyphonServer syphonFull;
 SyphonServer syphonRefrain;
-SyphonServer syphonKeywords;
+SyphonServer syphonSongInfo;
 
 // Off-screen buffers for each channel
 PGraphics bufferFull;
 PGraphics bufferRefrain;
-PGraphics bufferKeywords;
+PGraphics bufferSongInfo;
 
 // State for each channel
 KaraokeState stateFull;
 RefrainState stateRefrain;
-KeywordsState stateKeywords;
+SongInfoState stateSongInfo;
 
 // Visibility toggles
-boolean showFull = true;
-boolean showRefrain = true;
-boolean showKeywords = true;
+bool showFull = true;
+bool showRefrain = true;
+bool showSongInfo = true;
 
 // Operator overlay + broadcast message
 boolean typingBroadcast = false;  // Capture text input until Enter/Esc
@@ -91,7 +96,7 @@ void setup() {
   // Initialize states
   stateFull = new KaraokeState();
   stateRefrain = new RefrainState();
-  stateKeywords = new KeywordsState();
+  stateSongInfo = new SongInfoState();
   
   // Initialize OSC receiver
   osc = new OscP5(this, OSC_PORT);
@@ -100,14 +105,14 @@ void setup() {
   // Create off-screen buffers for each Syphon output
   bufferFull = createGraphics(1280, 720, P3D);
   bufferRefrain = createGraphics(1280, 720, P3D);
-  bufferKeywords = createGraphics(1280, 720, P3D);
+  bufferSongInfo = createGraphics(1280, 720, P3D);
   
   // Initialize THREE separate Syphon servers
   syphonFull = new SyphonServer(this, "KaraokeFullLyrics");
   syphonRefrain = new SyphonServer(this, "KaraokeRefrain");
-  syphonKeywords = new SyphonServer(this, "KaraokeKeywords");
+  syphonSongInfo = new SyphonServer(this, "KaraokeSongInfo");
   
-  println("Syphon outputs: KaraokeFullLyrics, KaraokeRefrain, KaraokeKeywords");
+  println("Syphon outputs: KaraokeFullLyrics, KaraokeRefrain, KaraokeSongInfo");
   
   // Load fonts (scaled for HD Ready)
   availableFonts = PFont.list();
@@ -123,13 +128,16 @@ void draw() {
   // Animation updates
   fadeAmount = lerp(fadeAmount, targetFade, 0.1);
   
+  // Update text fade timers
+  updateTextFades();
+  
   // Clear main display
   background(0);
   
   // Render each channel to its buffer
   renderFullLyrics();
   renderRefrain();
-  renderKeywords();
+  renderSongInfo();
   
   // Show preview on main display (composited)
   tint(255, showFull ? 255 : 50);
@@ -141,7 +149,7 @@ void draw() {
   // Send each buffer to its own Syphon server
   syphonFull.sendImage(bufferFull);
   syphonRefrain.sendImage(bufferRefrain);
-  syphonKeywords.sendImage(bufferKeywords);
+  syphonSongInfo.sendImage(bufferSongInfo);
 }
 
 // ========== FULL LYRICS CHANNEL ==========
@@ -159,14 +167,14 @@ void renderFullLyrics() {
     float lineHeight = fontSize * 1.4;
     float maxWidth = bufferFull.width * 0.86;
     
-    // Title/artist at top - dim white
+    // Title/artist at top - pure white
     bufferFull.textSize(fontSize * 0.6);
-    bufferFull.fill(255, 150 * fadeAmount);
+    bufferFull.fill(255, stateFull.textOpacity);
     bufferFull.text(stateFull.artist + " — " + stateFull.title, bufferFull.width / 2, 60);
   
     if (!stateFull.hasSyncedLyrics || stateFull.lines.size() == 0) {
       bufferFull.textSize(fontSize * 0.8);
-      bufferFull.fill(255, 120 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity);
       drawWrappedBlock(bufferFull, "No synced lyrics", bufferFull.width / 2, bufferFull.height / 2, maxWidth, fontSize * 0.8, fontSize * 1.0);
       drawBroadcastMessage(bufferFull);
       bufferFull.endDraw();
@@ -186,24 +194,24 @@ void renderFullLyrics() {
     ArrayList<String> currLines = new ArrayList<String>();
     ArrayList<String> nextLines = new ArrayList<String>();
     
-    // Previous line - dim white
+    // Previous line - pure white
     if (active > 0) {
       bufferFull.textSize(prevFontSize);
-      bufferFull.fill(255, 100 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity);
       prevLines = wrapText(stateFull.lines.get(active - 1).text, bufferFull, maxWidth);
     }
   
-    // Current line - bright white
+    // Current line - pure white
     if (active >= 0 && active < stateFull.lines.size()) {
-      bufferFull.fill(255, 255 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity);
       bufferFull.textSize(fontSize);
       currLines = wrapText(stateFull.lines.get(active).text, bufferFull, maxWidth);
     }
   
-    // Next line - dim white
+    // Next line - pure white
     if (active >= 0 && active < stateFull.lines.size() - 1) {
       bufferFull.textSize(nextFontSize);
-      bufferFull.fill(255, 120 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity);
       nextLines = wrapText(stateFull.lines.get(active + 1).text, bufferFull, maxWidth);
     }
     
@@ -232,15 +240,15 @@ void renderFullLyrics() {
       drawWrappedLines(bufferFull, nextLines, bufferFull.width / 2, y, nextLineHeight);
     }
   
-    // Progress bar - white
+    // Progress bar - pure white
     if (stateFull.durationSec > 0) {
       float progress = stateFull.positionSec / stateFull.durationSec;
       float barW = bufferFull.width * 0.6;
       float barX = (bufferFull.width - barW) / 2;
       bufferFull.noStroke();
-      bufferFull.fill(255, 50 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity * 0.3);
       bufferFull.rect(barX, bufferFull.height - 50, barW, 4, 2);
-      bufferFull.fill(255, 150 * fadeAmount);
+      bufferFull.fill(255, stateFull.textOpacity);
       bufferFull.rect(barX, bufferFull.height - 50, barW * progress, 4, 2);
     }
   }
@@ -264,8 +272,8 @@ void renderRefrain() {
     float lineHeight = fontSize * 1.25;
     float maxWidth = bufferRefrain.width * 0.86;
   
-    // Main text - bright white
-    bufferRefrain.fill(255, 255 * fadeAmount);
+    // Main text - pure white
+    bufferRefrain.fill(255, stateRefrain.textOpacity);
     bufferRefrain.textSize(fontSize);
     ArrayList<String> lines = wrapText(stateRefrain.currentText, bufferRefrain, maxWidth);
     float totalHeight = lines.size() * lineHeight;
@@ -277,32 +285,32 @@ void renderRefrain() {
   bufferRefrain.endDraw();
 }
 
-// ========== KEYWORDS CHANNEL ==========
+// ========== SONG INFO CHANNEL ==========
 
-void renderKeywords() {
-  bufferKeywords.beginDraw();
-  bufferKeywords.background(0);
-  bufferKeywords.textAlign(CENTER, TOP);
-  bufferKeywords.textFont(currentFont);
+void renderSongInfo() {
+  bufferSongInfo.beginDraw();
+  bufferSongInfo.background(0);
+  bufferSongInfo.textAlign(CENTER, CENTER);
+  bufferSongInfo.textFont(currentFont);
 
-  boolean drawChannel = showKeywords && stateKeywords.active && !stateKeywords.currentKeywords.isEmpty();
+  boolean drawChannel = showSongInfo && stateSongInfo.active;
 
   if (drawChannel) {
-    int fontSize = fontSizes[fontSizeIndex] + 24;  // Even larger for keywords
+    int fontSize = fontSizes[fontSizeIndex] + 24;  // Large for song info
     float lineHeight = fontSize * 1.25;
-    float maxWidth = bufferKeywords.width * 0.86;
-  
-    // Main text - bright white
-    bufferKeywords.fill(255, 255 * fadeAmount);
-    bufferKeywords.textSize(fontSize);
-    ArrayList<String> lines = wrapText(stateKeywords.currentKeywords, bufferKeywords, maxWidth);
-    float totalHeight = lines.size() * lineHeight;
-    float startY = bufferKeywords.height / 2 - totalHeight / 2;
-    drawWrappedLines(bufferKeywords, lines, bufferKeywords.width / 2, startY, lineHeight);
+    
+    // Artist - pure white
+    bufferSongInfo.fill(255, stateSongInfo.textOpacity);
+    bufferSongInfo.textSize(fontSize * 0.7);
+    bufferSongInfo.text(stateSongInfo.artist, bufferSongInfo.width / 2, bufferSongInfo.height / 2 - fontSize * 0.6);
+    
+    // Title - pure white, larger
+    bufferSongInfo.textSize(fontSize);
+    bufferSongInfo.text(stateSongInfo.title, bufferSongInfo.width / 2, bufferSongInfo.height / 2 + fontSize * 0.3);
   }
 
-  drawBroadcastMessage(bufferKeywords);
-  bufferKeywords.endDraw();
+  drawBroadcastMessage(bufferSongInfo);
+  bufferSongInfo.endDraw();
 }
 
 // ========== SHARED OVERLAYS ==========
@@ -339,8 +347,8 @@ void drawHUD() {
   rect(12, baseY - 12, width - 24, 118, 10);
 
   fill(255);
-  text("Local display only · Controls: [s] all [1] full [2] refrain [3] keywords [f] font [g] size [r] reconnect OSC [t] broadcast (HUD always on)", 20, baseY);
-  text("Status: full " + onOff(showFull) + " · refrain " + onOff(showRefrain) + " · keywords " + onOff(showKeywords) + " · font " + availableFonts[fontIndex] + " @ " + fontSizes[fontSizeIndex], 20, baseY + 18);
+  text("Local display only · Controls: [s] all [1] full [2] refrain [3] song info [f] font [g] size [r] reconnect OSC [t] broadcast (HUD always on)", 20, baseY);
+  text("Status: full " + onOff(showFull) + " · refrain " + onOff(showRefrain) + " · song info " + onOff(showSongInfo) + " · font " + availableFonts[fontIndex] + " @ " + fontSizes[fontSizeIndex], 20, baseY + 18);
 
   String messageLine;
   if (typingBroadcast) {
@@ -548,10 +556,22 @@ void oscEvent(OscMessage msg) {
     if (addr.equals("/karaoke/track")) {
       stateFull.active = msg.get(0).intValue() == 1;
       stateRefrain.active = stateFull.active;
-      stateKeywords.active = stateFull.active;
+      stateSongInfo.active = stateFull.active;
+      String newArtist = msg.get(2).stringValue();
+      String newTitle = msg.get(3).stringValue();
+      
+      // Detect track change and reset song info fade
+      if (!newArtist.equals(stateSongInfo.artist) || !newTitle.equals(stateSongInfo.title)) {
+        stateSongInfo.artist = newArtist;
+        stateSongInfo.title = newTitle;
+        stateSongInfo.textChangeTime = millis();
+        stateSongInfo.targetOpacity = 255;
+        stateSongInfo.textOpacity = 255;
+      }
+      
       stateFull.source = msg.get(1).stringValue();
-      stateFull.artist = msg.get(2).stringValue();
-      stateFull.title = msg.get(3).stringValue();
+      stateFull.artist = newArtist;
+      stateFull.title = newTitle;
       stateFull.album = msg.get(4).stringValue();
       stateFull.durationSec = msg.get(5).floatValue();
       stateFull.hasSyncedLyrics = msg.get(6).intValue() == 1;
@@ -574,7 +594,13 @@ void oscEvent(OscMessage msg) {
       stateFull.isPlaying = msg.get(1).intValue() == 1;
     }
     else if (addr.equals("/karaoke/line/active")) {
-      stateFull.activeIndex = msg.get(0).intValue();
+      int newIndex = msg.get(0).intValue();
+      if (newIndex != stateFull.lastActiveIndex) {
+        stateFull.lastActiveIndex = newIndex;
+        stateFull.lineChangeTime = millis();
+        stateFull.targetOpacity = 255;
+      }
+      stateFull.activeIndex = newIndex;
     }
     
     // === Refrain channel ===
@@ -591,31 +617,57 @@ void oscEvent(OscMessage msg) {
     else if (addr.equals("/karaoke/refrain/active")) {
       stateRefrain.activeIndex = msg.get(0).intValue();
       if (msg.typetag().length() > 1) {
-        stateRefrain.currentText = msg.get(1).stringValue();
-      }
-    }
-    
-    // === Keywords channel ===
-    else if (addr.equals("/karaoke/keywords/reset")) {
-      stateKeywords.lines.clear();
-    }
-    else if (addr.equals("/karaoke/keywords/line")) {
-      int idx = msg.get(0).intValue();
-      float t = msg.get(1).floatValue();
-      String kw = msg.get(2).stringValue();
-      while (stateKeywords.lines.size() <= idx) stateKeywords.lines.add(new LyricLine(0, ""));
-      stateKeywords.lines.set(idx, new LyricLine(t, kw));
-    }
-    else if (addr.equals("/karaoke/keywords/active")) {
-      stateKeywords.activeIndex = msg.get(0).intValue();
-      if (msg.typetag().length() > 1) {
-        stateKeywords.currentKeywords = msg.get(1).stringValue();
+        String newText = msg.get(1).stringValue();
+        if (!newText.equals(stateRefrain.lastText)) {
+          stateRefrain.lastText = newText;
+          stateRefrain.textChangeTime = millis();
+          stateRefrain.targetOpacity = 255;
+        }
+        stateRefrain.currentText = newText;
       }
     }
     
   } catch (Exception e) {
     println("OSC error: " + e.getMessage());
   }
+}
+
+// ========== TEXT FADE LOGIC ==========
+
+void updateTextFades() {
+  float fadeDelay = 5000; // 5 seconds before starting fade
+  float fadeDuration = 1000; // 1 second fade out
+  float currentTime = millis();
+  
+  // Full lyrics fade
+  float fullElapsed = currentTime - stateFull.lineChangeTime;
+  if (fullElapsed > fadeDelay) {
+    float fadeProgress = min(1.0, (fullElapsed - fadeDelay) / fadeDuration);
+    stateFull.targetOpacity = 255 * (1.0 - fadeProgress);
+  } else {
+    stateFull.targetOpacity = 255;
+  }
+  stateFull.textOpacity = lerp(stateFull.textOpacity, stateFull.targetOpacity, 0.15);
+  
+  // Refrain fade
+  float refrainElapsed = currentTime - stateRefrain.textChangeTime;
+  if (refrainElapsed > fadeDelay) {
+    float fadeProgress = min(1.0, (refrainElapsed - fadeDelay) / fadeDuration);
+    stateRefrain.targetOpacity = 255 * (1.0 - fadeProgress);
+  } else {
+    stateRefrain.targetOpacity = 255;
+  }
+  stateRefrain.textOpacity = lerp(stateRefrain.textOpacity, stateRefrain.targetOpacity, 0.15);
+  
+  // Song info fade
+  float songInfoElapsed = currentTime - stateSongInfo.textChangeTime;
+  if (songInfoElapsed > fadeDelay) {
+    float fadeProgress = min(1.0, (songInfoElapsed - fadeDelay) / fadeDuration);
+    stateSongInfo.targetOpacity = 255 * (1.0 - fadeProgress);
+  } else {
+    stateSongInfo.targetOpacity = 255;
+  }
+  stateSongInfo.textOpacity = lerp(stateSongInfo.textOpacity, stateSongInfo.targetOpacity, 0.15);
 }
 
 // ========== KEYBOARD CONTROLS ==========
@@ -660,7 +712,7 @@ void keyPressed() {
   else if (key == 's' || key == 'S') {
     showFull = !showFull;
     showRefrain = showFull;
-    showKeywords = showFull;
+    showSongInfo = showFull;
     println("All channels: " + (showFull ? "visible" : "hidden"));
   }
   else if (key == '1') {
@@ -672,8 +724,8 @@ void keyPressed() {
     println("Refrain: " + (showRefrain ? "visible" : "hidden"));
   }
   else if (key == '3') {
-    showKeywords = !showKeywords;
-    println("Keywords: " + (showKeywords ? "visible" : "hidden"));
+    showSongInfo = !showSongInfo;
+    println("Song info: " + (showSongInfo ? "visible" : "hidden"));
   }
   else if (key == 'f' || key == 'F') {
     cycleFont();
@@ -703,6 +755,10 @@ class KaraokeState {
   boolean isPlaying = false, hasSyncedLyrics = false;
   ArrayList<LyricLine> lines = new ArrayList<LyricLine>();
   int activeIndex = -1;
+  int lastActiveIndex = -1;
+  float lineChangeTime = 0;
+  float textOpacity = 0;
+  float targetOpacity = 255;
 }
 
 class RefrainState {
@@ -710,11 +766,17 @@ class RefrainState {
   ArrayList<LyricLine> lines = new ArrayList<LyricLine>();
   int activeIndex = -1;
   String currentText = "";
+  String lastText = "";
+  float textChangeTime = 0;
+  float textOpacity = 0;
+  float targetOpacity = 255;
 }
 
-class KeywordsState {
+class SongInfoState {
   boolean active = false;
-  ArrayList<LyricLine> lines = new ArrayList<LyricLine>();
-  int activeIndex = -1;
-  String currentKeywords = "";
+  String artist = "";
+  String title = "";
+  float textChangeTime = 0;
+  float textOpacity = 0;
+  float targetOpacity = 255;
 }

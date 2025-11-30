@@ -1,0 +1,2 @@
+fontName=AppleSDGothicNeo-Heavy
+fontSizeIndex=1
