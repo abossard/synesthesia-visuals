@@ -400,6 +400,141 @@ Because a vision softly creeping"""
         self.assertIn('mistral', LLMAnalyzer.PREFERRED_MODELS)
 
 
+class TestPipelineTracker(unittest.TestCase):
+    """Tests for PipelineTracker class."""
+    
+    def test_imports(self):
+        """PipelineTracker should be importable."""
+        from karaoke_engine import PipelineTracker, PipelineStep
+    
+    def test_instantiation(self):
+        """PipelineTracker should instantiate with default state."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        self.assertEqual(tracker.current_track, "")
+        self.assertEqual(tracker.image_prompt, "")
+        self.assertEqual(tracker.generated_image_path, "")
+    
+    def test_reset(self):
+        """reset() should initialize all steps as pending."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        tracker.reset("Artist - Title")
+        
+        self.assertEqual(tracker.current_track, "Artist - Title")
+        for step in tracker.steps.values():
+            self.assertEqual(step.status, "pending")
+    
+    def test_step_lifecycle(self):
+        """Steps should transition through start/complete/error states."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        tracker.reset("Test Track")
+        
+        # Start a step
+        tracker.start("fetch_lyrics", "Checking cache...")
+        self.assertEqual(tracker.steps["fetch_lyrics"].status, "running")
+        
+        # Complete the step
+        tracker.complete("fetch_lyrics", "Found 50 lines")
+        self.assertEqual(tracker.steps["fetch_lyrics"].status, "done")
+        
+        # Error on another step
+        tracker.start("llm_analysis", "Calling API...")
+        tracker.error("llm_analysis", "Connection timeout")
+        self.assertEqual(tracker.steps["llm_analysis"].status, "error")
+    
+    def test_skip_step(self):
+        """skip() should mark step as skipped."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        tracker.reset("Test Track")
+        
+        tracker.skip("comfyui_generate", "Not available")
+        self.assertEqual(tracker.steps["comfyui_generate"].status, "skipped")
+    
+    def test_log_entries(self):
+        """log() should add timestamped entries."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        tracker.log("Test message")
+        
+        self.assertEqual(len(tracker.logs), 1)
+        self.assertIn("Test message", tracker.logs[0])
+    
+    def test_get_display_lines(self):
+        """get_display_lines() should return formatted output."""
+        from karaoke_engine import PipelineTracker
+        
+        tracker = PipelineTracker()
+        tracker.reset("Test")
+        tracker.complete("detect_playback", "spotify")
+        
+        lines = tracker.get_display_lines()
+        self.assertTrue(len(lines) > 0)
+        # Each line is (color, text) tuple
+        self.assertEqual(len(lines[0]), 2)
+
+
+class TestComfyUIGenerator(unittest.TestCase):
+    """Tests for ComfyUIGenerator class."""
+    
+    def test_imports(self):
+        """ComfyUIGenerator should be importable."""
+        from karaoke_engine import ComfyUIGenerator
+    
+    def test_instantiation(self):
+        """ComfyUIGenerator should instantiate without errors."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            self.assertIsNotNone(gen)
+            # Will be False since ComfyUI isn't running
+            self.assertFalse(gen.is_available)
+    
+    def test_vj_prompt_enhancement(self):
+        """get_vj_prompt() should add VJ-specific requirements."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            
+            base_prompt = "A beautiful sunset"
+            vj_prompt = gen.get_vj_prompt(base_prompt)
+            
+            self.assertIn("black background", vj_prompt.lower())
+            self.assertIn("A beautiful sunset", vj_prompt)
+    
+    def test_image_path_generation(self):
+        """_get_image_path() should return safe file paths."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            
+            path = gen._get_image_path("Test Artist", "Song/Title:Special")
+            
+            # Should be a PNG file
+            self.assertTrue(str(path).endswith(".png"))
+            # Should not contain special characters
+            self.assertNotIn("/", path.name)
+            self.assertNotIn(":", path.name)
+    
+    def test_cached_count(self):
+        """get_cached_count() should return 0 for empty cache."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            self.assertEqual(gen.get_cached_count(), 0)
+
+
 if __name__ == "__main__":
     # Change to script directory for relative imports
     import os
