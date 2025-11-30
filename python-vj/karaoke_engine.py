@@ -2,6 +2,9 @@
 """
 Karaoke Engine - Monitors Spotify/VirtualDJ and sends lyrics via OSC
 
+LIVE EVENT SOFTWARE - Designed for resilience and graceful degradation.
+All services are optional and will auto-reconnect if they become available.
+
 Smart defaults for macOS VJ setups:
 - Auto-loads .env file for Spotify credentials
 - Auto-detects VirtualDJ folder
@@ -26,8 +29,9 @@ import argparse
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List, Dict, Any
-from threading import Thread, Event
+from typing import Optional, List, Dict, Any, Callable
+from threading import Thread, Event, Lock
+from functools import wraps
 
 # Load .env file if present
 try:
@@ -60,6 +64,112 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('karaoke')
+
+
+# =============================================================================
+# RESILIENCE HELPERS - For live event reliability
+# =============================================================================
+
+def safe_call(func: Callable, *args, default=None, log_error: bool = True, **kwargs):
+    """
+    Safely call a function, returning default on any exception.
+    Isolates failures to prevent cascading errors in live performance.
+    """
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        if log_error:
+            logger.debug(f"Safe call failed ({func.__name__}): {e}")
+        return default
+
+
+def retry_with_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 30.0,
+    exceptions: tuple = (Exception,)
+):
+    """
+    Retry a function with exponential backoff.
+    For use with network operations that may temporarily fail.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        delay = initial_delay
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except exceptions as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    time.sleep(min(delay, max_delay))
+                    delay *= 2
+        
+        raise last_exception
+    
+    return wrapper
+
+
+class ServiceHealth:
+    """
+    Tracks service health and manages reconnection attempts.
+    Designed for live events where services may come and go.
+    """
+    
+    # How often to retry unavailable services (seconds)
+    RECONNECT_INTERVAL = 30.0
+    
+    def __init__(self, name: str):
+        self.name = name
+        self._available = False
+        self._last_check = 0.0
+        self._last_error = ""
+        self._error_count = 0
+        self._lock = Lock()
+    
+    @property
+    def available(self) -> bool:
+        return self._available
+    
+    @property
+    def should_retry(self) -> bool:
+        """Check if enough time has passed to retry connection."""
+        return time.time() - self._last_check > self.RECONNECT_INTERVAL
+    
+    def mark_available(self, message: str = ""):
+        """Mark service as available after successful connection."""
+        with self._lock:
+            was_unavailable = not self._available
+            self._available = True
+            self._last_check = time.time()
+            self._error_count = 0
+            self._last_error = ""
+            if was_unavailable:
+                logger.info(f"{self.name}: ✓ Reconnected {message}")
+    
+    def mark_unavailable(self, error: str = ""):
+        """Mark service as unavailable after failure."""
+        with self._lock:
+            was_available = self._available
+            self._available = False
+            self._last_check = time.time()
+            self._error_count += 1
+            self._last_error = error
+            if was_available:
+                logger.warning(f"{self.name}: Lost connection - {error}")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get status dict for UI display."""
+        return {
+            'name': self.name,
+            'available': self._available,
+            'error': self._last_error,
+            'error_count': self._error_count,
+            'last_check': self._last_check,
+        }
 
 
 # =============================================================================
@@ -552,6 +662,12 @@ class LLMAnalyzer:
     """
     AI-powered lyrics analysis using OpenAI or local Ollama.
     
+    LIVE EVENT BEHAVIOR:
+    - Auto-reconnects to Ollama if it becomes available
+    - Falls back gracefully to basic analysis
+    - All LLM errors are caught (never crashes)
+    - Results are cached to minimize API calls
+    
     Fallback priority:
     1. OpenAI (if OPENAI_API_KEY is set)
     2. Local Ollama (auto-detects installed models)
@@ -574,21 +690,21 @@ class LLMAnalyzer:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._openai_client = None
         self._ollama_model = None
-        self._available = False
+        self._health = ServiceHealth("LLM")
         self._backend = "none"
         self._init_backend()
     
     def _init_backend(self):
-        """Initialize the best available LLM backend."""
+        """Initialize the best available LLM backend. Safe to call multiple times."""
         # Try OpenAI first
         openai_key = os.environ.get('OPENAI_API_KEY', '')
         if openai_key:
             try:
                 import openai
                 self._openai_client = openai.OpenAI(api_key=openai_key)
-                # Test connection
+                # Test connection with a simple API call
                 self._openai_client.models.list()
-                self._available = True
+                self._health.mark_available("OpenAI")
                 self._backend = "openai"
                 logger.info("LLM: ✓ OpenAI connected")
                 return
@@ -599,7 +715,7 @@ class LLMAnalyzer:
         self._init_ollama()
     
     def _init_ollama(self):
-        """Initialize Ollama with auto-detected model."""
+        """Initialize Ollama with auto-detected model. Safe to call multiple times."""
         try:
             resp = requests.get(f"{self.OLLAMA_URL}/api/tags", timeout=2)
             if resp.status_code == 200:
@@ -621,15 +737,24 @@ class LLMAnalyzer:
                     # Use first available model
                     self._ollama_model = available_names[0]
                 
-                self._available = True
+                self._health.mark_available(f"Ollama ({self._ollama_model})")
                 self._backend = "ollama"
                 logger.info(f"LLM: ✓ Ollama using {self._ollama_model} (from {len(available_names)} models)")
         except requests.RequestException:
-            logger.info("LLM: Ollama not available (using basic analysis)")
+            if self._health.available:
+                self._health.mark_unavailable("Connection failed")
+            else:
+                logger.info("LLM: Ollama not available (using basic analysis)")
+    
+    def _try_reconnect(self):
+        """Attempt to reconnect if LLM is down and enough time has passed."""
+        if not self._health.available and self._health.should_retry:
+            logger.debug("LLM: Attempting reconnection...")
+            self._init_backend()
     
     @property
     def is_available(self) -> bool:
-        return self._available
+        return self._health.available
     
     @property
     def backend_info(self) -> str:
@@ -653,7 +778,7 @@ class LLMAnalyzer:
                 'cached': bool                             # True if from cache
             }
         """
-        # Check cache first
+        # Check cache first (always works even if LLM is down)
         cache_file = self._get_cache_path(artist, title)
         if cache_file.exists():
             try:
@@ -663,7 +788,10 @@ class LLMAnalyzer:
             except (json.JSONDecodeError, IOError):
                 pass
         
-        if not self._available:
+        # Try to reconnect if LLM was down
+        self._try_reconnect()
+        
+        if not self._health.available:
             return self._basic_analysis(lyrics)
         
         # Build prompt - now includes image prompt generation
@@ -690,7 +818,8 @@ Respond in JSON format:
                 result['cached'] = False
                 return result
         except Exception as e:
-            logger.debug(f"LLM analysis failed: {e}")
+            self._health.mark_unavailable(str(e))
+            logger.debug(f"LLM analysis failed (will retry): {e}")
         
         return self._basic_analysis(lyrics)
     
@@ -707,7 +836,10 @@ Respond in JSON format:
             except IOError:
                 pass
         
-        if not self._available:
+        # Try reconnecting if we're down
+        self._try_reconnect()
+        
+        if not self._health.available:
             return self._basic_image_prompt(artist, title, keywords, themes)
         
         prompt = f"""Create a detailed visual prompt (50-100 words) for AI image generation that captures the essence of this song:
@@ -864,6 +996,11 @@ class ComfyUIGenerator:
     """
     Generates images using local ComfyUI installation via REST API.
     
+    LIVE EVENT BEHAVIOR:
+    - Auto-reconnects if ComfyUI becomes available
+    - All generation errors are caught (never crashes)
+    - Results are cached to minimize regeneration
+    
     Creates visuals for songs with black backgrounds (for transparency in VJ compositing).
     Images are cached locally and can be used as overlays in Magic Music Visuals.
     
@@ -893,7 +1030,7 @@ class ComfyUIGenerator:
     def __init__(self, output_dir: Optional[Path] = None):
         self._output_dir = output_dir or (Config.APP_DATA_DIR / "generated_images")
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        self._available = False
+        self._health = ServiceHealth("ComfyUI")
         self._client_id = None
         self._available_models = []
         self._custom_workflows = {}
@@ -902,22 +1039,31 @@ class ComfyUIGenerator:
         self._load_custom_workflows()
     
     def _check_connection(self):
-        """Check if ComfyUI is running and get available models."""
+        """Check if ComfyUI is running. Safe to call multiple times for reconnection."""
         try:
             resp = requests.get(f"{self.COMFYUI_URL}/system_stats", timeout=2)
             if resp.status_code == 200:
-                self._available = True
                 # Generate a unique client ID for this session
                 import uuid
                 self._client_id = str(uuid.uuid4())
                 
                 # Get available checkpoint models
                 self._fetch_available_models()
+                self._health.mark_available()
                 logger.info("ComfyUI: ✓ Connected")
             else:
-                logger.info("ComfyUI: Not responding")
+                self._health.mark_unavailable("Not responding")
         except requests.RequestException:
-            logger.info("ComfyUI: Not available (start ComfyUI on port 8188)")
+            if self._health.available:
+                self._health.mark_unavailable("Connection lost")
+            else:
+                logger.info("ComfyUI: Not available (start ComfyUI on port 8188)")
+    
+    def _try_reconnect(self):
+        """Attempt to reconnect if ComfyUI is down and enough time has passed."""
+        if not self._health.available and self._health.should_retry:
+            logger.debug("ComfyUI: Attempting reconnection...")
+            self._check_connection()
     
     def _fetch_available_models(self):
         """Fetch list of available checkpoint models from ComfyUI."""
@@ -936,12 +1082,16 @@ class ComfyUIGenerator:
     
     def _load_custom_workflows(self):
         """Load custom workflow JSON files from workflows directory."""
-        self.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            self.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
         
         # Create a sample workflow README
         readme_path = self.WORKFLOWS_DIR / "README.md"
         if not readme_path.exists():
-            readme_path.write_text("""# ComfyUI Workflows
+            try:
+                readme_path.write_text("""# ComfyUI Workflows
 
 Place your workflow JSON files here. Export from ComfyUI using:
 
@@ -968,6 +1118,8 @@ The engine will look for nodes with specific class_types:
 - `CheckpointLoaderSimple` - For model selection
 - `SaveImage` - For output retrieval
 """)
+            except Exception:
+                pass  # Ignore README write errors
         
         # Load all JSON files
         for wf_path in self.WORKFLOWS_DIR.glob("*.json"):
@@ -984,7 +1136,7 @@ The engine will look for nodes with specific class_types:
     
     @property
     def is_available(self) -> bool:
-        return self._available
+        return self._health.available
     
     @property
     def available_models(self) -> List[str]:
@@ -1021,13 +1173,14 @@ The engine will look for nodes with specific class_types:
     def get_status_info(self) -> Dict[str, Any]:
         """Get status information for display in UI."""
         return {
-            'available': self._available,
+            'available': self._health.available,
             'models': self._available_models[:5] if self._available_models else [],
             'model_count': len(self._available_models),
             'workflows': list(self._custom_workflows.keys()),
             'active_workflow': self._active_workflow,
             'cached_images': self.get_cached_count(),
             'url': self.COMFYUI_URL,
+            'error': self._health._last_error,
         }
     
     def get_vj_prompt(self, base_prompt: str) -> str:
@@ -1055,6 +1208,8 @@ The engine will look for nodes with specific class_types:
         """
         Generate an image using ComfyUI.
         
+        RESILIENCE: Auto-reconnects, handles all errors gracefully.
+        
         Args:
             prompt: The image generation prompt (will be enhanced for VJ use)
             artist: Artist name (for caching)
@@ -1067,14 +1222,17 @@ The engine will look for nodes with specific class_types:
         Returns:
             Path to the generated image, or None if generation failed.
         """
-        if not self._available:
-            return None
-        
-        # Check cache first
+        # Check cache first (always works even if ComfyUI is down)
         cache_file = self._get_image_path(artist, title)
         if cache_file.exists():
             logger.debug(f"Using cached image: {cache_file}")
             return cache_file
+        
+        # Try to reconnect if we're down
+        self._try_reconnect()
+        
+        if not self._health.available:
+            return None
         
         # Enhance prompt for VJ use
         vj_prompt = self.get_vj_prompt(prompt)
@@ -1091,7 +1249,7 @@ The engine will look for nodes with specific class_types:
             )
             
             if resp.status_code != 200:
-                logger.error(f"ComfyUI queue failed: {resp.status_code}")
+                self._health.mark_unavailable(f"Queue failed: {resp.status_code}")
                 return None
             
             prompt_id = resp.json().get('prompt_id')
@@ -1105,7 +1263,8 @@ The engine will look for nodes with specific class_types:
             return image_path
             
         except requests.RequestException as e:
-            logger.error(f"ComfyUI error: {e}")
+            self._health.mark_unavailable(str(e))
+            logger.debug(f"ComfyUI error (will retry): {e}")
             return None
     
     def _build_workflow(
@@ -1304,14 +1463,26 @@ The engine will look for nodes with specific class_types:
 # =============================================================================
 
 class SpotifyMonitor:
-    """Monitors Spotify playback. Gracefully disabled if unavailable."""
+    """
+    Monitors Spotify playback with automatic reconnection.
+    
+    LIVE EVENT BEHAVIOR:
+    - Gracefully disabled if credentials not configured
+    - Auto-reconnects if connection is lost
+    - All errors are caught and logged (never crashes)
+    """
     
     def __init__(self):
         self._sp = None
-        self._available = False
+        self._health = ServiceHealth("Spotify")
         self._init_client()
     
+    @property
+    def is_available(self) -> bool:
+        return self._health.available
+    
     def _init_client(self):
+        """Initialize Spotify client. Safe to call multiple times for reconnection."""
         if not SPOTIFY_AVAILABLE:
             logger.info("Spotify: spotipy not installed (pip install spotipy)")
             return
@@ -1326,20 +1497,37 @@ class SpotifyMonitor:
                 scope="user-read-playback-state"
             ))
             self._sp.current_user()  # Test connection
-            self._available = True
+            self._health.mark_available()
             logger.info("Spotify: ✓ connected")
         except Exception as e:
-            logger.warning(f"Spotify: {e}")
+            self._health.mark_unavailable(str(e))
+            logger.info(f"Spotify: {e} (will retry in {ServiceHealth.RECONNECT_INTERVAL}s)")
+    
+    def _try_reconnect(self):
+        """Attempt to reconnect if service is down and enough time has passed."""
+        if not self._health.available and self._health.should_retry:
+            logger.debug("Spotify: Attempting reconnection...")
+            self._init_client()
     
     def get_playback(self) -> Optional[Dict[str, Any]]:
-        """Get current Spotify playback or None."""
-        if not self._available:
+        """
+        Get current Spotify playback or None.
+        
+        RESILIENCE: Never raises exceptions. Auto-reconnects on failure.
+        """
+        # Try reconnecting if we're not available
+        self._try_reconnect()
+        
+        if not self._health.available or not self._sp:
             return None
         
         try:
             pb = self._sp.current_playback()
             if pb and pb.get('is_playing') and pb.get('item'):
                 item = pb['item']
+                # Successful call - ensure we're marked available
+                if not self._health.available:
+                    self._health.mark_available()
                 return {
                     'artist': item['artists'][0]['name'] if item.get('artists') else '',
                     'title': item.get('name', ''),
@@ -1347,16 +1535,26 @@ class SpotifyMonitor:
                     'duration_ms': item.get('duration_ms', 0),
                     'progress_ms': pb.get('progress_ms', 0),
                 }
+            return None  # Not playing, but API is working
         except Exception as e:
-            logger.debug(f"Spotify error: {e}")
-        
-        return None
+            self._health.mark_unavailable(str(e))
+            logger.debug(f"Spotify error (will retry): {e}")
+            return None
 
 
 class VirtualDJMonitor:
-    """Monitors VirtualDJ now_playing.txt file. Auto-detects folder on macOS."""
+    """
+    Monitors VirtualDJ now_playing.txt file with graceful file handling.
+    
+    LIVE EVENT BEHAVIOR:
+    - Auto-detects VirtualDJ folder on macOS
+    - Handles file appearing/disappearing during performance
+    - All file errors are caught (never crashes)
+    """
     
     def __init__(self, file_path: Optional[str] = None):
+        self._health = ServiceHealth("VirtualDJ")
+        
         if file_path:
             self._path = Path(file_path)
         else:
@@ -1367,21 +1565,40 @@ class VirtualDJMonitor:
         
         if self._path:
             if self._path.exists():
+                self._health.mark_available(str(self._path))
                 logger.info(f"VirtualDJ: ✓ found {self._path}")
             else:
                 logger.info(f"VirtualDJ: monitoring {self._path} (file not yet created)")
         else:
             logger.info("VirtualDJ: folder not found (will use Spotify only)")
     
+    @property
+    def is_available(self) -> bool:
+        return self._health.available
+    
     def get_playback(self) -> Optional[Dict[str, Any]]:
-        """Get current VirtualDJ track or None."""
-        if not self._path or not self._path.exists():
+        """
+        Get current VirtualDJ track or None.
+        
+        RESILIENCE: Handles file appearing/disappearing gracefully.
+        """
+        if not self._path:
+            return None
+        
+        # Check if file exists now (may have appeared)
+        if not self._path.exists():
+            if self._health.available:
+                self._health.mark_unavailable("File removed")
             return None
         
         try:
             content = self._path.read_text().strip()
             if not content:
                 return None
+            
+            # File is readable - mark available if we weren't
+            if not self._health.available:
+                self._health.mark_available(str(self._path))
             
             # Track change detection
             if content != self._last_content:
@@ -1402,9 +1619,9 @@ class VirtualDJMonitor:
                 'progress_ms': int((time.time() - self._start_time) * 1000),
             }
         except Exception as e:
+            self._health.mark_unavailable(str(e))
             logger.debug(f"VirtualDJ error: {e}")
-        
-        return None
+            return None
 
 
 # =============================================================================

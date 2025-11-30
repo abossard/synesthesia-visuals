@@ -9,7 +9,53 @@ Or simply: python test_python_vj.py
 import sys
 import unittest
 import tempfile
+import time
 from pathlib import Path
+
+
+class TestServiceHealth(unittest.TestCase):
+    """Tests for ServiceHealth class (live event resilience)."""
+    
+    def test_imports(self):
+        """ServiceHealth should be importable."""
+        from karaoke_engine import ServiceHealth
+    
+    def test_initial_state(self):
+        """ServiceHealth should start unavailable."""
+        from karaoke_engine import ServiceHealth
+        
+        health = ServiceHealth("TestService")
+        self.assertFalse(health.available)
+        self.assertEqual(health.name, "TestService")
+    
+    def test_mark_available(self):
+        """mark_available should set available to True."""
+        from karaoke_engine import ServiceHealth
+        
+        health = ServiceHealth("TestService")
+        health.mark_available("connected")
+        self.assertTrue(health.available)
+    
+    def test_mark_unavailable(self):
+        """mark_unavailable should set available to False."""
+        from karaoke_engine import ServiceHealth
+        
+        health = ServiceHealth("TestService")
+        health.mark_available()
+        health.mark_unavailable("connection lost")
+        self.assertFalse(health.available)
+    
+    def test_get_status(self):
+        """get_status should return status dict."""
+        from karaoke_engine import ServiceHealth
+        
+        health = ServiceHealth("TestService")
+        status = health.get_status()
+        
+        self.assertIn('name', status)
+        self.assertIn('available', status)
+        self.assertIn('error', status)
+        self.assertEqual(status['name'], "TestService")
 
 
 class TestKaraokeEngine(unittest.TestCase):
