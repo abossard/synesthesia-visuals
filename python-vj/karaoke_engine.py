@@ -52,7 +52,6 @@ try:
 except ImportError:
     pass
 
-from pythonosc import udp_client
 import requests
 
 # Optional Spotify support
@@ -2107,12 +2106,10 @@ class OSCSender:
     def send_synesthesia_status(self, running: bool):
         """Send Synesthesia running status."""
         osc.send("/vj/synesthesia/status", [1 if running else 0])
-        self._log_message("/vj/synesthesia/status", [1 if running else 0])
     
     def send_milksyphon_status(self, running: bool):
         """Send ProjectMilkSyphon running status."""
-        self._client.send_message("/vj/milksyphon/status", [1 if running else 0])
-        self._log_message("/vj/milksyphon/status", [1 if running else 0])
+        osc.send("/vj/milksyphon/status", [1 if running else 0])
     
     def send_master_status(self, karaoke_active: bool, synesthesia_running: bool, 
                           milksyphon_running: bool, processing_apps: int):

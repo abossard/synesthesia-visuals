@@ -83,10 +83,10 @@ def render_category_line(name: str, score: float) -> str:
     return f"  [{color}]{name:15s} {bar} {score:.2f}[/]"
 
 def render_osc_message(msg: Tuple[float, str, Any]) -> str:
-    """Render a single OSC message."""
+    """Render a single OSC message with full args."""
     ts, address, args = msg
     time_str = time.strftime("%H:%M:%S", time.localtime(ts))
-    args_str = truncate(str(args), 40)
+    args_str = str(args)  # Show full message content
     color = color_by_osc_channel(address)
     return f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}"
 
