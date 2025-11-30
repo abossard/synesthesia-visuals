@@ -113,6 +113,16 @@ def retry_with_backoff(
     return wrapper
 
 
+def sanitize_cache_filename(artist: str, title: str) -> str:
+    """
+    Create a safe filename from artist and title for cache purposes.
+    Removes special characters and normalizes whitespace.
+    """
+    safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
+    safe = re.sub(r'\s+', '_', safe)
+    return safe
+
+
 class ServiceHealth:
     """
     Tracks service health and manages reconnection attempts.
@@ -1001,9 +1011,7 @@ Respond with ONLY the image prompt text, no JSON or explanation."""
             pass
     
     def _get_cache_path(self, artist: str, title: str) -> Path:
-        safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
-        safe = re.sub(r'\s+', '_', safe)
-        return self._cache_dir / f"{safe}.json"
+        return self._cache_dir / f"{sanitize_cache_filename(artist, title)}.json"
 
 
 # =============================================================================
@@ -1094,6 +1102,11 @@ class SongCategorizer:
         'voice', 'instrumental_feel',
     ]
     
+    # Configuration constants
+    MAX_LYRICS_LENGTH = 2000  # Max characters of lyrics to send to LLM
+    KEYWORD_SCORE_FACTOR = 0.15  # Score per keyword match in basic analysis
+    DEFAULT_CATEGORY_SCORE = 0.1  # Default score for categories without keywords
+    
     def __init__(self, llm: Optional[LLMAnalyzer] = None, cache_dir: Optional[Path] = None):
         """
         Initialize the song categorizer.
@@ -1163,7 +1176,8 @@ class SongCategorizer:
         lyrics_section = ""
         if lyrics:
             # Truncate lyrics if too long
-            lyrics_preview = lyrics[:2000] if len(lyrics) > 2000 else lyrics
+            max_len = self.MAX_LYRICS_LENGTH
+            lyrics_preview = lyrics[:max_len] if len(lyrics) > max_len else lyrics
             lyrics_section = f"\nLyrics:\n{lyrics_preview}\n"
         
         prompt = f"""Analyze this song and rate how strongly it matches each category on a scale of 0.0 to 1.0.
@@ -1258,11 +1272,11 @@ Rate ALL categories even if the score is 0.0. Be nuanced - most songs have multi
         for category in self.CATEGORIES:
             keywords = keyword_map.get(category, [])
             if not keywords:
-                score = 0.1  # Default low score for categories without keywords
+                score = self.DEFAULT_CATEGORY_SCORE
             else:
                 # Count keyword matches
                 matches = sum(1 for kw in keywords if kw in text)
-                score = min(1.0, matches * 0.15)  # Cap at 1.0
+                score = min(1.0, matches * self.KEYWORD_SCORE_FACTOR)  # Cap at 1.0
             
             categories.append(SongCategory(name=category, score=score))
             
@@ -1285,9 +1299,7 @@ Rate ALL categories even if the score is 0.0. Be nuanced - most songs have multi
     
     def _get_cache_path(self, artist: str, title: str) -> Path:
         """Get cache file path for a song."""
-        safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
-        safe = re.sub(r'\s+', '_', safe)
-        return self._cache_dir / f"{safe}.json"
+        return self._cache_dir / f"{sanitize_cache_filename(artist, title)}.json"
 
 
 # =============================================================================
