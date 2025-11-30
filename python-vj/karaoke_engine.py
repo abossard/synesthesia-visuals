@@ -399,11 +399,21 @@ class PipelineTracker:
         if len(self.logs) > self._max_logs:
             self.logs = self.logs[-self._max_logs:]
     
-    def set_image_prompt(self, prompt: str):
-        """Store the generated image prompt."""
+    def set_image_prompt(self, prompt):
+        """Store the generated image prompt (handles dict or string)."""
         self.image_prompt = prompt
         if prompt:
-            self.log(f"Image prompt: {prompt[:60]}...")
+            # Handle dict format (from LLM with structure)
+            if isinstance(prompt, dict):
+                prompt_text = prompt.get('description', str(prompt))
+            elif isinstance(prompt, str):
+                prompt_text = prompt
+            else:
+                prompt_text = str(prompt)
+
+            # Safe truncation
+            preview = prompt_text[:60] + "..." if len(prompt_text) > 60 else prompt_text
+            self.log(f"Image prompt: {preview}")
     
     def get_display_lines(self) -> List[tuple]:
         """

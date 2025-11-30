@@ -23,14 +23,20 @@
  * - '1': Toggle full lyrics
  * - '2': Toggle refrain
  * - '3': Toggle keywords
- * - 'f': Cycle font sizes
+ * - 'f': Cycle fonts (uses system fonts via PFont.list)
+ * - 'g': Cycle font sizes
  * - 'r': Reset/reconnect OSC
+ * - 't': Type a broadcast message (Enter to send to all outputs)
  */
 
 import oscP5.*;
 import netP5.*;
 import codeanticode.syphon.*;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.io.File;
+import processing.core.PConstants;
+import java.awt.Font;
 
 // OSC
 OscP5 osc;
@@ -55,6 +61,17 @@ KeywordsState stateKeywords;
 boolean showFull = true;
 boolean showRefrain = true;
 boolean showKeywords = true;
+
+// Operator overlay + broadcast message
+boolean typingBroadcast = false;  // Capture text input until Enter/Esc
+String broadcastInput = "";
+String broadcastMessage = "";
+PFont hudFont;
+PFont currentFont;
+String[] availableFonts;
+int fontIndex = 0;
+final String SETTINGS_FILE = "karaoke_font_settings.txt";
+final HashMap<String, PFont> fontCache = new HashMap<String, PFont>();
 
 // Visual settings (scaled for HD Ready 1280x720)
 int fontSizeIndex = 1;
@@ -93,7 +110,13 @@ void setup() {
   println("Syphon outputs: KaraokeFullLyrics, KaraokeRefrain, KaraokeKeywords");
   
   // Load fonts (scaled for HD Ready)
-  textFont(createFont("Arial", 48));
+  availableFonts = PFont.list();
+  if (availableFonts == null || availableFonts.length == 0) {
+    availableFonts = new String[] { "Arial", "SansSerif" };
+  }
+  hudFont = createFont("Arial", 16);
+  loadFontSettings();
+  applyFontSelection();
 }
 
 void draw() {
@@ -111,6 +134,9 @@ void draw() {
   // Show preview on main display (composited)
   tint(255, showFull ? 255 : 50);
   image(bufferFull, 0, 0);
+  noTint();
+
+  drawHUD();
   
   // Send each buffer to its own Syphon server
   syphonFull.sendImage(bufferFull);
@@ -123,66 +149,103 @@ void draw() {
 void renderFullLyrics() {
   bufferFull.beginDraw();
   bufferFull.background(0);
-  bufferFull.textAlign(CENTER, CENTER);
-  bufferFull.textFont(createFont("Arial", 48));
+  bufferFull.textAlign(CENTER, TOP);
+  bufferFull.textFont(currentFont);
   
-  if (!showFull || !stateFull.active) {
-    bufferFull.endDraw();
-    return;
-  }
+  boolean drawChannel = showFull && stateFull.active;
   
-  int fontSize = fontSizes[fontSizeIndex];
-  float lineHeight = fontSize * 1.4;
-  
-  // Title/artist at top - dim white
-  bufferFull.textSize(fontSize * 0.6);
-  bufferFull.fill(255, 150 * fadeAmount);
-  bufferFull.text(stateFull.artist + " — " + stateFull.title, bufferFull.width / 2, 60);
-
-  if (!stateFull.hasSyncedLyrics || stateFull.lines.size() == 0) {
-    bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(255, 120 * fadeAmount);
-    bufferFull.text("No synced lyrics", bufferFull.width / 2, bufferFull.height / 2);
-    bufferFull.endDraw();
-    return;
-  }
-
-  int active = stateFull.activeIndex >= 0 ? stateFull.activeIndex : computeActiveLine(stateFull);
-  float centerY = bufferFull.height / 2;
-  
-  // Previous line - dim white
-  if (active > 0) {
-    bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(255, 100 * fadeAmount);
-    bufferFull.text(stateFull.lines.get(active - 1).text, bufferFull.width / 2, centerY - lineHeight * 1.2);
-  }
-
-  // Current line - bright white
-  if (active >= 0 && active < stateFull.lines.size()) {
-    bufferFull.fill(255, 255 * fadeAmount);
-    bufferFull.textSize(fontSize);
-    bufferFull.text(stateFull.lines.get(active).text, bufferFull.width / 2, centerY);
-  }
-
-  // Next line - dim white
-  if (active >= 0 && active < stateFull.lines.size() - 1) {
-    bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(255, 120 * fadeAmount);
-    bufferFull.text(stateFull.lines.get(active + 1).text, bufferFull.width / 2, centerY + lineHeight * 1.2);
-  }
-
-  // Progress bar - white
-  if (stateFull.durationSec > 0) {
-    float progress = stateFull.positionSec / stateFull.durationSec;
-    float barW = bufferFull.width * 0.6;
-    float barX = (bufferFull.width - barW) / 2;
-    bufferFull.noStroke();
-    bufferFull.fill(255, 50 * fadeAmount);
-    bufferFull.rect(barX, bufferFull.height - 50, barW, 4, 2);
+  if (drawChannel) {
+    int fontSize = fontSizes[fontSizeIndex];
+    float lineHeight = fontSize * 1.4;
+    float maxWidth = bufferFull.width * 0.86;
+    
+    // Title/artist at top - dim white
+    bufferFull.textSize(fontSize * 0.6);
     bufferFull.fill(255, 150 * fadeAmount);
-    bufferFull.rect(barX, bufferFull.height - 50, barW * progress, 4, 2);
-  }
+    bufferFull.text(stateFull.artist + " — " + stateFull.title, bufferFull.width / 2, 60);
   
+    if (!stateFull.hasSyncedLyrics || stateFull.lines.size() == 0) {
+      bufferFull.textSize(fontSize * 0.8);
+      bufferFull.fill(255, 120 * fadeAmount);
+      drawWrappedBlock(bufferFull, "No synced lyrics", bufferFull.width / 2, bufferFull.height / 2, maxWidth, fontSize * 0.8, fontSize * 1.0);
+      drawBroadcastMessage(bufferFull);
+      bufferFull.endDraw();
+      return;
+    }
+  
+    int active = stateFull.activeIndex >= 0 ? stateFull.activeIndex : computeActiveLine(stateFull);
+    float centerY = bufferFull.height / 2;
+    float prevFontSize = fontSize * 0.8;
+    float nextFontSize = fontSize * 0.8;
+    float prevLineHeight = prevFontSize * 1.2;
+    float currLineHeight = fontSize * 1.2;
+    float nextLineHeight = nextFontSize * 1.2;
+    float gap = fontSize * 0.35;
+    
+    ArrayList<String> prevLines = new ArrayList<String>();
+    ArrayList<String> currLines = new ArrayList<String>();
+    ArrayList<String> nextLines = new ArrayList<String>();
+    
+    // Previous line - dim white
+    if (active > 0) {
+      bufferFull.textSize(prevFontSize);
+      bufferFull.fill(255, 100 * fadeAmount);
+      prevLines = wrapText(stateFull.lines.get(active - 1).text, bufferFull, maxWidth);
+    }
+  
+    // Current line - bright white
+    if (active >= 0 && active < stateFull.lines.size()) {
+      bufferFull.fill(255, 255 * fadeAmount);
+      bufferFull.textSize(fontSize);
+      currLines = wrapText(stateFull.lines.get(active).text, bufferFull, maxWidth);
+    }
+  
+    // Next line - dim white
+    if (active >= 0 && active < stateFull.lines.size() - 1) {
+      bufferFull.textSize(nextFontSize);
+      bufferFull.fill(255, 120 * fadeAmount);
+      nextLines = wrapText(stateFull.lines.get(active + 1).text, bufferFull, maxWidth);
+    }
+    
+    float prevHeight = prevLines.size() * prevLineHeight;
+    float currHeight = currLines.size() * currLineHeight;
+    float nextHeight = nextLines.size() * nextLineHeight;
+    float totalHeight = prevHeight + currHeight + nextHeight;
+    if (prevLines.size() > 0 && currLines.size() > 0) totalHeight += gap;
+    if (currLines.size() > 0 && nextLines.size() > 0) totalHeight += gap;
+    float startY = centerY - totalHeight / 2;
+
+    float y = startY;
+    if (prevLines.size() > 0) {
+      bufferFull.textSize(prevFontSize);
+      drawWrappedLines(bufferFull, prevLines, bufferFull.width / 2, y, prevLineHeight);
+      y += prevHeight + gap;
+    }
+    if (currLines.size() > 0) {
+      bufferFull.textSize(fontSize);
+      drawWrappedLines(bufferFull, currLines, bufferFull.width / 2, y, currLineHeight);
+      y += currHeight;
+      if (nextLines.size() > 0) y += gap;
+    }
+    if (nextLines.size() > 0) {
+      bufferFull.textSize(nextFontSize);
+      drawWrappedLines(bufferFull, nextLines, bufferFull.width / 2, y, nextLineHeight);
+    }
+  
+    // Progress bar - white
+    if (stateFull.durationSec > 0) {
+      float progress = stateFull.positionSec / stateFull.durationSec;
+      float barW = bufferFull.width * 0.6;
+      float barX = (bufferFull.width - barW) / 2;
+      bufferFull.noStroke();
+      bufferFull.fill(255, 50 * fadeAmount);
+      bufferFull.rect(barX, bufferFull.height - 50, barW, 4, 2);
+      bufferFull.fill(255, 150 * fadeAmount);
+      bufferFull.rect(barX, bufferFull.height - 50, barW * progress, 4, 2);
+    }
+  }
+
+  drawBroadcastMessage(bufferFull);
   bufferFull.endDraw();
 }
 
@@ -191,21 +254,26 @@ void renderFullLyrics() {
 void renderRefrain() {
   bufferRefrain.beginDraw();
   bufferRefrain.background(0);
-  bufferRefrain.textAlign(CENTER, CENTER);
-  bufferRefrain.textFont(createFont("Arial", 60));
+  bufferRefrain.textAlign(CENTER, TOP);
+  bufferRefrain.textFont(currentFont);
 
-  if (!showRefrain || !stateRefrain.active || stateRefrain.currentText.isEmpty()) {
-    bufferRefrain.endDraw();
-    return;
+  boolean drawChannel = showRefrain && stateRefrain.active && !stateRefrain.currentText.isEmpty();
+
+  if (drawChannel) {
+    int fontSize = fontSizes[fontSizeIndex] + 12;  // Larger for refrain
+    float lineHeight = fontSize * 1.25;
+    float maxWidth = bufferRefrain.width * 0.86;
+  
+    // Main text - bright white
+    bufferRefrain.fill(255, 255 * fadeAmount);
+    bufferRefrain.textSize(fontSize);
+    ArrayList<String> lines = wrapText(stateRefrain.currentText, bufferRefrain, maxWidth);
+    float totalHeight = lines.size() * lineHeight;
+    float startY = bufferRefrain.height / 2 - totalHeight / 2;
+    drawWrappedLines(bufferRefrain, lines, bufferRefrain.width / 2, startY, lineHeight);
   }
 
-  int fontSize = fontSizes[fontSizeIndex] + 12;  // Larger for refrain
-
-  // Main text - bright white
-  bufferRefrain.fill(255, 255 * fadeAmount);
-  bufferRefrain.textSize(fontSize);
-  bufferRefrain.text(stateRefrain.currentText, bufferRefrain.width / 2, bufferRefrain.height / 2);
-
+  drawBroadcastMessage(bufferRefrain);
   bufferRefrain.endDraw();
 }
 
@@ -214,22 +282,138 @@ void renderRefrain() {
 void renderKeywords() {
   bufferKeywords.beginDraw();
   bufferKeywords.background(0);
-  bufferKeywords.textAlign(CENTER, CENTER);
-  bufferKeywords.textFont(createFont("Arial Bold", 75));
+  bufferKeywords.textAlign(CENTER, TOP);
+  bufferKeywords.textFont(currentFont);
 
-  if (!showKeywords || !stateKeywords.active || stateKeywords.currentKeywords.isEmpty()) {
-    bufferKeywords.endDraw();
-    return;
+  boolean drawChannel = showKeywords && stateKeywords.active && !stateKeywords.currentKeywords.isEmpty();
+
+  if (drawChannel) {
+    int fontSize = fontSizes[fontSizeIndex] + 24;  // Even larger for keywords
+    float lineHeight = fontSize * 1.25;
+    float maxWidth = bufferKeywords.width * 0.86;
+  
+    // Main text - bright white
+    bufferKeywords.fill(255, 255 * fadeAmount);
+    bufferKeywords.textSize(fontSize);
+    ArrayList<String> lines = wrapText(stateKeywords.currentKeywords, bufferKeywords, maxWidth);
+    float totalHeight = lines.size() * lineHeight;
+    float startY = bufferKeywords.height / 2 - totalHeight / 2;
+    drawWrappedLines(bufferKeywords, lines, bufferKeywords.width / 2, startY, lineHeight);
   }
 
-  int fontSize = fontSizes[fontSizeIndex] + 24;  // Even larger for keywords
-
-  // Main text - bright white
-  bufferKeywords.fill(255, 255 * fadeAmount);
-  bufferKeywords.textSize(fontSize);
-  bufferKeywords.text(stateKeywords.currentKeywords, bufferKeywords.width / 2, bufferKeywords.height / 2);
-
+  drawBroadcastMessage(bufferKeywords);
   bufferKeywords.endDraw();
+}
+
+// ========== SHARED OVERLAYS ==========
+
+void drawBroadcastMessage(PGraphics pg) {
+  if (broadcastMessage == null || broadcastMessage.trim().length() == 0) return;
+  
+  float boxHeight = 110;
+  pg.pushStyle();
+  pg.textAlign(CENTER, TOP);
+  pg.textFont(currentFont);
+  pg.textSize(max(fontSizes[fontSizeIndex], 42));
+  
+  pg.noStroke();
+  pg.fill(0, 190);
+  pg.rect(0, pg.height - boxHeight, pg.width, boxHeight);
+  
+  pg.fill(255, 240);
+  float textY = pg.height - boxHeight + 18;
+  float lineHeight = (pg.textAscent() + pg.textDescent()) * 1.1;
+  ArrayList<String> lines = wrapText(broadcastMessage, pg, pg.width - 60);
+  drawWrappedLines(pg, lines, pg.width / 2, textY, lineHeight);
+  pg.popStyle();
+}
+
+void drawHUD() {
+  pushStyle();
+  textFont(hudFont);
+  textAlign(LEFT, TOP);
+  
+  int baseY = height - 120;
+  noStroke();
+  fill(0, 180);
+  rect(12, baseY - 12, width - 24, 118, 10);
+
+  fill(255);
+  text("Local display only · Controls: [s] all [1] full [2] refrain [3] keywords [f] font [g] size [r] reconnect OSC [t] broadcast (HUD always on)", 20, baseY);
+  text("Status: full " + onOff(showFull) + " · refrain " + onOff(showRefrain) + " · keywords " + onOff(showKeywords) + " · font " + availableFonts[fontIndex] + " @ " + fontSizes[fontSizeIndex], 20, baseY + 18);
+
+  String messageLine;
+  if (typingBroadcast) {
+    String cursor = (frameCount % 30 < 15) ? "_" : "";
+    messageLine = "Typing broadcast → " + broadcastInput + cursor + "  (Enter: send to all outputs, Esc: cancel)";
+  } else if (broadcastMessage != null && broadcastMessage.trim().length() > 0) {
+    messageLine = "Broadcasting to all outputs: \"" + broadcastMessage + "\"  (press 't' then Enter on empty to clear)";
+  } else {
+    messageLine = "Broadcast message: none (press 't' to type and Enter to send everywhere)";
+  }
+  text(messageLine, 20, baseY + 36);
+  
+  popStyle();
+}
+
+ArrayList<String> wrapText(String text, PGraphics pg, float maxWidth) {
+  ArrayList<String> lines = new ArrayList<String>();
+  if (text == null) return lines;
+  
+  String[] paragraphs = split(text, '\n');
+  for (int p = 0; p < paragraphs.length; p++) {
+    String paragraph = paragraphs[p];
+    if (paragraph.trim().length() == 0) {
+      lines.add("");
+      continue;
+    }
+    String[] words = splitTokens(paragraph, " ");
+    String current = "";
+    for (int i = 0; i < words.length; i++) {
+      String word = words[i];
+      // If a single word is longer than the max width, hard-break it
+      if (pg.textWidth(word) > maxWidth) {
+        for (int c = 0; c < word.length(); c++) {
+          String next = current + word.charAt(c);
+          if (pg.textWidth(next) > maxWidth && current.length() > 0) {
+            lines.add(current);
+            current = "" + word.charAt(c);
+          } else {
+            current = next;
+          }
+        }
+        continue;
+      }
+      
+      String candidate = (current.length() == 0) ? word : current + " " + word;
+      if (pg.textWidth(candidate) <= maxWidth) {
+        current = candidate;
+      } else {
+        lines.add(current);
+        current = word;
+      }
+    }
+    if (current.length() > 0) lines.add(current);
+  }
+  
+  if (lines.size() == 0) lines.add("");
+  return lines;
+}
+
+void drawWrappedLines(PGraphics pg, ArrayList<String> lines, float centerX, float startY, float lineHeight) {
+  if (lines == null || lines.size() == 0) return;
+  for (int i = 0; i < lines.size(); i++) {
+    float y = startY + i * lineHeight;
+    pg.text(lines.get(i), centerX, y);
+  }
+}
+
+void drawWrappedBlock(PGraphics pg, String text, float centerX, float centerY, float maxWidth, float textSizeVal, float lineHeight) {
+  pg.textSize(textSizeVal);
+  ArrayList<String> lines = wrapText(text, pg, maxWidth);
+  float totalHeight = lines.size() * lineHeight;
+  float startY = centerY - totalHeight / 2;
+  drawWrappedLines(pg, lines, centerX, startY, lineHeight);
 }
 
 int computeActiveLine(KaraokeState s) {
@@ -243,6 +427,115 @@ int computeActiveLine(KaraokeState s) {
     }
   }
   return active;
+}
+
+String onOff(boolean val) {
+  return val ? "on" : "off";
+}
+
+void applyFontSelection() {
+  if (availableFonts == null || availableFonts.length == 0) {
+    availableFonts = new String[] { "SansSerif" };
+  }
+  fontIndex = constrain(fontIndex, 0, availableFonts.length - 1);
+  fontSizeIndex = constrain(fontSizeIndex, 0, fontSizes.length - 1);
+  String fontName = availableFonts[fontIndex];
+  int size = fontSizes[fontSizeIndex];
+  currentFont = loadFontCached(fontName, size);
+  textFont(currentFont);
+  saveFontSettings();
+  println("Font set to " + fontName + " @ " + size + "px");
+}
+
+PFont loadFontCached(String name, int size) {
+  String key = name + "|" + size;
+  PFont cached = fontCache.get(key);
+  if (cached != null) {
+    return cached;
+  }
+
+  try {
+    PFont created = createFont(name, size, true);
+    fontCache.put(key, created);
+    return created;
+  } catch (Exception primary) {
+    // Fallback chain: SansSerif → Arial → first available font
+    String fallbackName = "SansSerif";
+    if (!fallbackName.equals(name)) {
+      println("Font load failed for " + name + ": " + primary.getMessage());
+      PFont fallbackFont = loadFontCached(fallbackName, size);
+      fontCache.put(key, fallbackFont);
+      return fallbackFont;
+    }
+    
+    // If SansSerif fails, try Arial
+    if (!name.equals("Arial")) {
+      println("SansSerif fallback failed, trying Arial");
+      try {
+        PFont arialFont = createFont("Arial", size, true);
+        fontCache.put(key, arialFont);
+        return arialFont;
+      } catch (Exception arial) {
+        println("Arial fallback also failed: " + arial.getMessage());
+      }
+    }
+    
+    // Last resort: use first available system font
+    println("All fallbacks failed, using first available system font");
+    String[] systemFonts = PFont.list();
+    String lastResort = (systemFonts != null && systemFonts.length > 0) ? systemFonts[0] : "Monospaced";
+    PFont emergencyFont = createFont(lastResort, size, true);
+    fontCache.put(key, emergencyFont);
+    return emergencyFont;
+  }
+}
+
+void cycleFont() {
+  fontIndex = (fontIndex + 1) % availableFonts.length;
+  applyFontSelection();
+}
+
+void cycleFontSize() {
+  fontSizeIndex = (fontSizeIndex + 1) % fontSizes.length;
+  applyFontSelection();
+}
+
+void loadFontSettings() {
+  try {
+    String path = dataPath(SETTINGS_FILE);
+    File f = new File(path);
+    if (!f.exists()) return;
+    String[] lines = loadStrings(path);
+    String savedName = "";
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith("fontName=")) savedName = lines[i].substring("fontName=".length());
+      else if (lines[i].startsWith("fontSizeIndex=")) fontSizeIndex = Integer.parseInt(lines[i].substring("fontSizeIndex=".length()));
+    }
+    if (savedName.length() > 0) {
+      for (int i = 0; i < availableFonts.length; i++) {
+        if (availableFonts[i].equals(savedName)) {
+          fontIndex = i;
+          break;
+        }
+      }
+    }
+  } catch (Exception e) {
+    println("Could not load font settings: " + e.getMessage());
+  }
+}
+
+void saveFontSettings() {
+  try {
+    File parent = new File(dataPath(""));
+    if (!parent.exists()) parent.mkdirs();
+    String[] lines = {
+      "fontName=" + availableFonts[fontIndex],
+      "fontSizeIndex=" + fontSizeIndex
+    };
+    saveStrings(dataPath(SETTINGS_FILE), lines);
+  } catch (Exception e) {
+    println("Could not save font settings: " + e.getMessage());
+  }
 }
 
 // ========== OSC EVENT HANDLER ==========
@@ -328,7 +621,43 @@ void oscEvent(OscMessage msg) {
 // ========== KEYBOARD CONTROLS ==========
 
 void keyPressed() {
-  if (key == 's' || key == 'S') {
+  if (typingBroadcast) {
+    if (key == ENTER || key == RETURN) {
+      broadcastMessage = broadcastInput.trim();
+      typingBroadcast = false;
+      broadcastInput = "";
+      if (broadcastMessage.length() == 0) {
+        println("Broadcast message cleared.");
+      } else {
+        println("Broadcast message set for all outputs: " + broadcastMessage);
+      }
+    }
+    else if (key == ESC) {
+      key = 0;  // prevent Processing from quitting
+      typingBroadcast = false;
+      broadcastInput = "";
+      println("Broadcast entry cancelled.");
+    }
+    else if (key == BACKSPACE || keyCode == DELETE) {
+      if (broadcastInput.length() > 0) {
+        broadcastInput = broadcastInput.substring(0, broadcastInput.length() - 1);
+      }
+    }
+    else if (key == CODED) {
+      return;
+    }
+    else {
+      broadcastInput += key;
+    }
+    return;
+  }
+
+  if (key == 't' || key == 'T') {
+    typingBroadcast = true;
+    broadcastInput = broadcastMessage;
+    println("Type broadcast text, Enter to send to all outputs, Esc to cancel.");
+  }
+  else if (key == 's' || key == 'S') {
     showFull = !showFull;
     showRefrain = showFull;
     showKeywords = showFull;
@@ -347,8 +676,10 @@ void keyPressed() {
     println("Keywords: " + (showKeywords ? "visible" : "hidden"));
   }
   else if (key == 'f' || key == 'F') {
-    fontSizeIndex = (fontSizeIndex + 1) % fontSizes.length;
-    println("Font size: " + fontSizes[fontSizeIndex]);
+    cycleFont();
+  }
+  else if (key == 'g' || key == 'G') {
+    cycleFontSize();
   }
   else if (key == 'r' || key == 'R') {
     osc.stop();

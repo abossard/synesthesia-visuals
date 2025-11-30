@@ -6,7 +6,11 @@
       "Bash(timeout 2 ../.venv/bin/python:*)",
       "Bash(cat:*)",
       "Bash(timeout 5 ../.venv/bin/python:*)",
-      "Bash(timeout 8 ../.venv/bin/python:*)"
+      "Bash(timeout 8 ../.venv/bin/python:*)",
+      "Bash(../.venv/bin/pip install textual)",
+      "Bash(.venv/bin/pip install textual)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(timeout 10 ../.venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []
