@@ -283,17 +283,17 @@ class LaunchpadHUD {
    */
   void showLevelRow(int activeLevel, int queuedLevel, int availableLevels) {
     for (int col = 0; col < 8; col++) {
-      int color = LP_OFF;
+      int ledColor = LP_OFF;
       
       if (col == activeLevel) {
-        color = LP_GREEN;
+        ledColor = LP_GREEN;
       } else if (col == queuedLevel) {
-        color = LP_AMBER;
+        ledColor = LP_AMBER;
       } else if (col < availableLevels) {
-        color = LP_WHITE_DIM;
+        ledColor = LP_WHITE_DIM;
       }
       
-      setPad(col, 7, color);  // Top row = row 7
+      setPad(col, 7, ledColor);  // Top row = row 7
     }
   }
   

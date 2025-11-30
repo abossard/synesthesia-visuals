@@ -25,17 +25,17 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
 - [x] Implement graceful fallback when no Launchpad connected
 - [x] Add `LaunchpadHUD.pde` — LED state buffer + batch send
 
-### 1.3 State Machine Module (`fsm/`)
-- [ ] Create `LevelFSM.pde` — table-driven FSM
+### 1.3 State Machine Module (`fsm/`) ✅
+- [x] Create `LevelFSM.pde` — table-driven FSM
   - `State current`
-  - `void transition(Event e)`
-  - `boolean isExit()`
-- [ ] Define `State` enum: `IDLE, ACTIVE, PEAK, COOLDOWN, EXIT`
-- [ ] Define `Event` enum: `PAD_PRESS, PAD_RELEASE, AUDIO_PEAK, TIMER, ARM_EXIT`
-- [ ] Add transition table loader (hardcoded first, JSON later)
+  - `void trigger(Event e)`
+  - `boolean isExit()`, `isWin()`, `isLose()`
+- [x] Define `State` enum: `IDLE, PLAYING, WIN, LOSE, PAUSED, EXIT`
+- [x] Define `Event` enum: `START, PAD_HIT, PAD_MISS, GOAL_REACHED, TIME_UP, LIVES_EMPTY, PAUSE, RESUME, RESTART, ADVANCE, FORCE_EXIT`
+- [x] Add `loadDefaults()` for common rules; levels add their own win/lose conditions
 
-### 1.4 Level Interface (`levels/`)
-- [ ] Create `Level.pde` interface:
+### 1.4 Level Interface (`levels/`) ✅
+- [x] Create `Level.pde` interface:
   ```java
   interface Level {
     void init(SharedContext ctx);
@@ -43,40 +43,43 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
     void draw(PGraphics g);
     void handlePad(int col, int row, int velocity);
     LevelFSM getFSM();
+    String getName();
     void dispose();
   }
   ```
-- [ ] Create `EmptyLevel.pde` — minimal implementation for testing
+- [x] Create `EmptyLevel.pde` — minimal implementation for testing
 
-### 1.5 Shared Context (`core/`)
-- [ ] Create `SharedContext.pde`:
+### 1.5 Shared Context (`core/`) ✅
+- [x] Create `SharedContext.pde`:
   - `PGraphics framebuffer`
   - `SyphonServer syphon`
-  - `AudioEnvelope audioEnv` (stub)
+  - `AudioEnvelope audioEnv` (for visual reactivity, not FSM)
   - `SketchConfig config`
-- [ ] Create `Inputs.pde` DTO:
+- [x] Create `Inputs.pde` DTO:
   - `float dt`
-  - `float bassLevel`, `midLevel`, `highLevel`
+  - `float bassLevel`, `midLevel`, `highLevel` (visual modulation only)
   - `ArrayList<PadEvent> padEvents`
-- [ ] Create `SketchConfig.pde` — level order, buffer sizes, timing
+- [x] Create `AudioEnvelope.pde` — manual/auto audio levels with smoothing
+- [x] Create `SketchConfig.pde` — level order, buffer sizes, timing
 
-### 1.6 Level Manager (`core/`)
-- [ ] Create `LevelManager.pde`:
+### 1.6 Level Manager (`core/`) ✅
+- [x] Create `LevelManager.pde`:
   - `ArrayList<Level> levels`
   - `int activeIndex`
   - `Level queued`
   - `void queueNext(int id)`
   - `void update(float dt, Inputs inputs)`
   - `void draw(PGraphics g)`
-- [ ] Implement level swap with instant cut (transitions later)
-- [ ] Wire Launchpad top row (71–78) to level selection
+- [x] Implement level swap with instant cut (transitions later)
+- [x] Wire Launchpad top row (71–78) to level selection
 
-### 1.7 Main Sketch Wiring
-- [ ] Initialize all modules in `setup()`
-- [ ] Collect inputs each frame in `draw()`
-- [ ] Call `levelManager.update()` and `levelManager.draw()`
-- [ ] Send framebuffer via `syphon.sendScreen()`
-- [ ] Route `noteOn()`/`noteOff()` to `LaunchpadGrid` → `LevelManager`
+### 1.7 Main Sketch Wiring ✅
+- [x] Initialize all modules in `setup()`
+- [x] Collect inputs each frame in `draw()`
+- [x] Call `levelManager.update()` and `levelManager.draw()`
+- [x] Send framebuffer via `syphon.sendImage()`
+- [x] Route `noteOn()`/`noteOff()` to `LaunchpadGrid` → `LevelManager`
+- [x] Keyboard fallbacks: 1-8=levels, arrows=next/prev, space=beat, R=reset, S=start, P=pause
 
 ---
 

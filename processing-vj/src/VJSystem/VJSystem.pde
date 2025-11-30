@@ -18,12 +18,22 @@ import themidibus.*;
 // CORE COMPONENTS
 // ============================================
 
-SyphonServer syphon;
+// Shared context (framebuffer, syphon, audio, config)
+SharedContext ctx;
+
+// Level management
+LevelManager levelManager;
 
 // MIDI modules
 MidiIO midi;
 LaunchpadGrid grid;
 LaunchpadHUD hud;
+
+// Input collection
+Inputs inputs;
+
+// Timing
+int lastFrameTime;
 
 // ============================================
 // SETTINGS
@@ -39,14 +49,28 @@ void settings() {
 
 void setup() {
   frameRate(60);
+  lastFrameTime = millis();
   
-  // Initialize Syphon output
-  syphon = new SyphonServer(this, "VJSystem");
+  // Initialize shared context (creates framebuffer, syphon, audio, config)
+  ctx = new SharedContext(this);
   
   // Initialize MIDI modules
   midi = new MidiIO(this);
   grid = new LaunchpadGrid(midi);
   hud = new LaunchpadHUD(grid);
+  
+  // Wire MIDI to shared context
+  ctx.setMidi(grid, hud);
+  
+  // Initialize inputs collector
+  inputs = new Inputs();
+  
+  // Initialize level manager
+  levelManager = new LevelManager(ctx);
+  levelManager.setHUD(hud);
+  
+  // Register levels
+  registerLevels();
   
   // Set up MIDI listener
   midi.setListener(new MidiListener() {
@@ -54,17 +78,34 @@ void setup() {
       handleMidiNote(pitch, velocity, isOn);
     }
     void onCC(int channel, int number, int value) {
-      // Handle CC if needed
+      handleMidiCC(number, value);
     }
   });
   
-  // Clear Launchpad LEDs and show initial state
+  // Clear Launchpad LEDs
   hud.clearAll();
-  hud.showLevelRow(0, -1, 8);  // Level 0 active, none queued, 8 available
+  
+  // Start first level
+  levelManager.start();
   
   println("VJSystem initialized");
   println("  Syphon server: VJSystem");
   println("  Launchpad: " + (midi.isConnected() ? midi.getDeviceName() : "not found (keyboard mode)"));
+  println("  Levels: " + levelManager.getLevelCount());
+}
+
+/**
+ * Register all levels with the level manager
+ */
+void registerLevels() {
+  // Add empty placeholder levels for testing
+  // Replace with actual level implementations later
+  levelManager.addLevel(new EmptyLevel());
+  
+  // TODO: Add all 14 levels
+  // levelManager.addLevel(new GravityWellsLevel());
+  // levelManager.addLevel(new JellyBlobsLevel());
+  // etc.
 }
 
 // ============================================
@@ -72,51 +113,54 @@ void setup() {
 // ============================================
 
 void draw() {
-  // Clear background (black = transparent in additive blend)
-  background(0);
+  // Calculate delta time
+  int now = millis();
+  float dt = (now - lastFrameTime) / 1000.0;
+  lastFrameTime = now;
   
-  // TODO: Update and draw active level
-  // levelManager.update(dt, inputs);
-  // levelManager.draw(g);
+  // Collect inputs for this frame
+  inputs.dt = dt;
+  inputs.frameNum = frameCount;
+  ctx.audio.copyTo(inputs);
   
-  // Placeholder visual (remove when levels are implemented)
-  drawPlaceholder();
+  // Update audio envelope
+  ctx.audio.update(dt);
   
-  // Send frame via Syphon
-  syphon.sendScreen();
+  // Update level manager (processes pad events, updates active level)
+  levelManager.update(dt, inputs);
+  
+  // Draw active level to framebuffer
+  levelManager.draw(ctx.framebuffer);
+  
+  // Clear pad events for next frame
+  inputs.clear();
+  
+  // Display framebuffer to window (for performer preview)
+  image(ctx.framebuffer, 0, 0);
+  
+  // Send to Syphon
+  ctx.sendToSyphon();
+  
+  // Debug overlay (first 3 seconds only)
+  if (frameCount < 180) {
+    drawDebugOverlay();
+  }
 }
 
-void drawPlaceholder() {
-  // Simple animated visual to verify output
-  pushMatrix();
-  translate(width/2, height/2);
-  rotate(frameCount * 0.01);
+void drawDebugOverlay() {
+  fill(255);
+  textAlign(LEFT, TOP);
+  textSize(14);
   
-  stroke(255);
-  strokeWeight(2);
-  noFill();
+  Level active = levelManager.getActiveLevel();
+  String levelName = active != null ? active.getName() : "none";
+  String fsmState = active != null ? active.getFSM().getState().toString() : "-";
   
-  for (int i = 0; i < 8; i++) {
-    float angle = TWO_PI / 8 * i;
-    float r = 200 + sin(frameCount * 0.05 + i) * 50;
-    float x = cos(angle) * r;
-    float y = sin(angle) * r;
-    line(0, 0, x, y);
-    ellipse(x, y, 20, 20);
-  }
-  
-  popMatrix();
-  
-  // Show status (debug only, remove for performance)
-  if (frameCount < 180) {
-    fill(255);
-    textAlign(LEFT, TOP);
-    textSize(14);
-    text("VJSystem running", 20, 20);
-    text("Syphon: VJSystem", 20, 40);
-    text("Launchpad: " + (midi.isConnected() ? midi.getDeviceName() : "keyboard mode"), 20, 60);
-    text("FPS: " + nf(frameRate, 0, 1), 20, 80);
-  }
+  text("VJSystem", 20, 20);
+  text("Level: " + levelManager.getActiveIndex() + " - " + levelName, 20, 40);
+  text("State: " + fsmState, 20, 60);
+  text("FPS: " + nf(frameRate, 0, 1), 20, 80);
+  text("Launchpad: " + (midi.isConnected() ? "connected" : "keyboard mode"), 20, 100);
 }
 
 // ============================================
@@ -128,8 +172,7 @@ void handleMidiNote(int pitch, int velocity, boolean isOn) {
   if (grid.isSceneButton(pitch)) {
     int sceneIndex = grid.getSceneIndex(pitch);
     if (isOn) {
-      println("Scene button pressed: " + sceneIndex);
-      // TODO: Handle scene button (arm exit, shift modifier, etc.)
+      levelManager.handleSceneButton(sceneIndex, velocity);
     }
     return;
   }
@@ -139,39 +182,35 @@ void handleMidiNote(int pitch, int velocity, boolean isOn) {
   if (cell != null) {
     int col = (int) cell.x;
     int row = (int) cell.y;
+    int vel = isOn ? velocity : 0;
     
-    if (isOn) {
-      handlePadPress(col, row, velocity);
-    } else {
-      handlePadRelease(col, row);
+    // Add to inputs for level manager to process
+    inputs.addPadEvent(col, row, vel);
+    
+    // Visual feedback for non-top-row pads
+    if (row != 7) {
+      if (isOn) {
+        hud.setPad(col, row, LP_GREEN);
+      } else {
+        hud.clearPad(col, row);
+      }
     }
   }
 }
 
-void handlePadPress(int col, int row, int velocity) {
-  println("Pad pressed: col=" + col + " row=" + row + " vel=" + velocity);
+void handleMidiCC(int number, int value) {
+  // CC messages could be used for audio simulation or parameter control
+  // Map CC to audio bands for manual testing
+  // CC 1 = bass, CC 2 = mid, CC 3 = high
+  float normalized = value / 127.0;
   
-  // Top row (row 7) = level selection
-  if (row == 7) {
-    println("  → Select level " + col);
-    hud.showLevelRow(col, -1, 8);
-    // TODO: levelManager.selectLevel(col);
-    return;
+  if (number == 1) {
+    ctx.audio.setBass(normalized);
+  } else if (number == 2) {
+    ctx.audio.setMid(normalized);
+  } else if (number == 3) {
+    ctx.audio.setHigh(normalized);
   }
-  
-  // Echo LED for other pads
-  hud.setPad(col, row, LP_GREEN);
-  
-  // TODO: Route to LevelManager
-  // levelManager.handlePad(col, row, velocity);
-}
-
-void handlePadRelease(int col, int row) {
-  // Don't clear top row (level indicators)
-  if (row == 7) return;
-  
-  // Clear LED on release
-  hud.clearPad(col, row);
 }
 
 // ============================================
@@ -182,23 +221,58 @@ void keyPressed() {
   // Number keys 1-8 simulate top row pads (level selection)
   if (key >= '1' && key <= '8') {
     int level = key - '1';
-    println("Keyboard: select level " + level);
-    hud.showLevelRow(level, -1, 8);
-    // TODO: levelManager.selectLevel(level);
+    if (level < levelManager.getLevelCount()) {
+      levelManager.switchTo(level);
+    }
   }
   
-  // Space = simulate beat
+  // Arrow keys for next/prev level
+  if (keyCode == RIGHT) {
+    levelManager.nextLevel();
+  }
+  if (keyCode == LEFT) {
+    levelManager.prevLevel();
+  }
+  
+  // Space = simulate beat / audio hit
   if (key == ' ') {
-    println("Keyboard: beat trigger");
-    // TODO: audioEnv.triggerBeat();
+    ctx.audio.hitBass(1.0);
+    ctx.audio.hitMid(0.7);
+    ctx.audio.hitHigh(0.5);
   }
   
-  // R = reset
+  // B/M/H = individual audio band triggers
+  if (key == 'b' || key == 'B') ctx.audio.hitBass(1.0);
+  if (key == 'm' || key == 'M') ctx.audio.hitMid(1.0);
+  if (key == 'h' || key == 'H') ctx.audio.hitHigh(1.0);
+  
+  // R = reset current level
   if (key == 'r' || key == 'R') {
-    println("Keyboard: reset");
-    hud.clearAll();
-    hud.showLevelRow(0, -1, 8);
-    // TODO: levelManager.reset();
+    Level active = levelManager.getActiveLevel();
+    if (active != null) {
+      active.getFSM().trigger(FSMEvent.RESTART);
+    }
+  }
+  
+  // S = start current level
+  if (key == 's' || key == 'S') {
+    Level active = levelManager.getActiveLevel();
+    if (active != null) {
+      active.getFSM().trigger(FSMEvent.START);
+    }
+  }
+  
+  // P = pause/resume
+  if (key == 'p' || key == 'P') {
+    Level active = levelManager.getActiveLevel();
+    if (active != null) {
+      LevelFSM fsm = active.getFSM();
+      if (fsm.isState(State.PAUSED)) {
+        fsm.trigger(FSMEvent.RESUME);
+      } else if (fsm.isPlaying()) {
+        fsm.trigger(FSMEvent.PAUSE);
+      }
+    }
   }
 }
 
@@ -223,6 +297,15 @@ void controllerChange(int channel, int number, int value) {
 // ============================================
 
 void exit() {
-  hud.clearAll();
+  // Dispose all levels
+  if (levelManager != null) {
+    levelManager.dispose();
+  }
+  
+  // Clear Launchpad LEDs
+  if (hud != null) {
+    hud.clearAll();
+  }
+  
   super.exit();
 }
