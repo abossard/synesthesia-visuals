@@ -334,9 +334,10 @@ def extract_keywords_from_lyrics(lyrics: str, max_keywords: int = 20) -> List[st
     words = re.findall(r'\b[a-zA-Z]+\b', lyrics.lower())
     
     # Count occurrences, filtering stop words and short words
+    # Use len > 2 to match karaoke_engine.extract_keywords behavior
     word_counts: Dict[str, int] = {}
     for word in words:
-        if word not in STOP_WORDS and len(word) > 3:
+        if word not in STOP_WORDS and len(word) > 2:
             word_counts[word] = word_counts.get(word, 0) + 1
     
     # Sort by frequency and return top N
@@ -483,9 +484,11 @@ def read_mp3_tags(file_path: Path) -> MP3Metadata:
             key_lower = str(key).lower()
             if 'energy' in key_lower:
                 try:
-                    energy_val = float(re.search(r'(\d+(?:\.\d+)?)', str(value)).group(1))
-                    # Normalize to 0-1 if it's 0-100 scale
-                    metadata.energy = energy_val / 100 if energy_val > 1 else energy_val
+                    match = re.search(r'(\d+(?:\.\d+)?)', str(value))
+                    if match:
+                        energy_val = float(match.group(1))
+                        # Normalize to 0-1 if it's 0-100 scale
+                        metadata.energy = energy_val / 100 if energy_val > 1 else energy_val
                 except (AttributeError, ValueError):
                     pass
             if 'mood' in key_lower:
@@ -511,21 +514,24 @@ def read_mp3_tags(file_path: Path) -> MP3Metadata:
 
 def find_mp3_files(folder: Path, recursive: bool = True) -> List[Path]:
     """
-    ACTION: Find all MP3 files in a folder.
+    ACTION: Find all MP3 files in a folder (case-insensitive).
     
     Side effect: Reads filesystem.
     """
-    pattern = "**/*.mp3" if recursive else "*.mp3"
-    files = list(folder.glob(pattern))
+    # Use rglob for recursive search, case-insensitive matching via suffix check
+    glob_func = folder.rglob if recursive else folder.glob
+    pattern = "*"
     
-    # Also check for .MP3 extension (case insensitive)
-    files.extend(folder.glob(pattern.upper()))
+    # Collect files with .mp3 extension (case insensitive)
+    files = [
+        f for f in glob_func(pattern)
+        if f.is_file() and f.suffix.lower() == '.mp3'
+    ]
     
-    # Deduplicate and sort
-    unique_files = list(set(files))
-    unique_files.sort(key=lambda p: p.name.lower())
+    # Sort by name
+    files.sort(key=lambda p: p.name.lower())
     
-    return unique_files
+    return files
 
 
 def analyze_single_song(

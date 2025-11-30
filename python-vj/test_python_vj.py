@@ -1004,6 +1004,126 @@ class TestBackgroundAnalyzer(unittest.TestCase):
             self.assertEqual(len(songs), 0)  # Empty cache
 
 
+class TestBackgroundAnalyzerIntegration(unittest.TestCase):
+    """Integration tests for BackgroundSongAnalyzer with real MP3 files."""
+    
+    @classmethod
+    def setUpClass(cls):
+        """Create a test MP3 file for integration tests."""
+        cls.test_dir = tempfile.mkdtemp()
+        cls.test_file = cls._create_test_mp3(cls.test_dir)
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up test directory."""
+        import shutil
+        shutil.rmtree(cls.test_dir, ignore_errors=True)
+    
+    @staticmethod
+    def _create_test_mp3(test_dir: str) -> Path:
+        """Create a valid MP3 file with ID3 tags for testing."""
+        from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TBPM, TKEY, USLT
+        
+        # Create valid MP3 frame header (128kbps, 44100Hz, stereo)
+        header = bytes([0xFF, 0xFB, 0x90, 0x00])
+        frame_size = 417
+        frame = header + bytes(frame_size - 4)
+        
+        # Create ~3 seconds of audio
+        mp3_data = frame * 115
+        
+        test_file = Path(test_dir) / "test_integration.mp3"
+        test_file.write_bytes(mp3_data)
+        
+        # Add ID3 tags
+        tags = ID3()
+        tags.add(TIT2(encoding=3, text=["Integration Test Song"]))
+        tags.add(TPE1(encoding=3, text=["Test Artist"]))
+        tags.add(TALB(encoding=3, text=["Test Album"]))
+        tags.add(TCON(encoding=3, text=["Rock"]))
+        tags.add(TDRC(encoding=3, text=["2024"]))
+        tags.add(TBPM(encoding=3, text=["128"]))
+        tags.add(TKEY(encoding=3, text=["C"]))
+        tags.add(USLT(encoding=3, lang="eng", desc="", 
+                      text="[00:00.50]Love love love\n[00:01.50]Heart and soul\n[00:02.50]Love love love"))
+        tags.save(test_file)
+        
+        return test_file
+    
+    def test_read_mp3_tags(self):
+        """read_mp3_tags should extract all ID3 tags from MP3 file."""
+        from background_analyzer import read_mp3_tags
+        
+        metadata = read_mp3_tags(self.test_file)
+        
+        self.assertEqual(metadata.artist, "Test Artist")
+        self.assertEqual(metadata.title, "Integration Test Song")
+        self.assertEqual(metadata.album, "Test Album")
+        self.assertEqual(metadata.genre, "Rock")
+        self.assertEqual(metadata.year, "2024")
+        self.assertEqual(metadata.bpm, 128.0)
+        self.assertEqual(metadata.key, "C")
+        self.assertIn("Love love love", metadata.lyrics_embedded)
+    
+    def test_analyze_file(self):
+        """BackgroundSongAnalyzer.analyze_file should analyze an MP3 file."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            result = analyzer.analyze_file(self.test_file)
+            
+            self.assertEqual(result.metadata.artist, "Test Artist")
+            self.assertEqual(result.metadata.title, "Integration Test Song")
+            self.assertTrue(result.lyrics_found)
+            self.assertEqual(result.lyrics_source, "embedded")
+            self.assertGreater(result.line_count, 0)
+            self.assertIsNotNone(result.categories)
+            
+            # Check computed metrics are in valid range
+            self.assertGreaterEqual(result.computed_energy, 0.0)
+            self.assertLessEqual(result.computed_energy, 1.0)
+            self.assertGreaterEqual(result.computed_danceability, 0.0)
+            self.assertLessEqual(result.computed_danceability, 1.0)
+    
+    def test_analyze_folder(self):
+        """BackgroundSongAnalyzer.analyze_folder should analyze all MP3s in folder."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            results = analyzer.analyze_folder(Path(self.test_dir))
+            
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].metadata.title, "Integration Test Song")
+    
+    def test_cache_persistence(self):
+        """Analyzed songs should be cached and reloaded."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as cache_dir:
+            # First analysis
+            analyzer1 = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            result1 = analyzer1.analyze_file(self.test_file)
+            
+            # Second analysis should use cache
+            analyzer2 = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            result2 = analyzer2.analyze_file(self.test_file)
+            
+            # Both should have same results
+            self.assertEqual(result1.metadata.title, result2.metadata.title)
+            self.assertEqual(result1.line_count, result2.line_count)
+    
+    def test_find_mp3_files(self):
+        """find_mp3_files should find MP3 files in a directory."""
+        from background_analyzer import find_mp3_files
+        
+        files = find_mp3_files(Path(self.test_dir))
+        
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].name, "test_integration.mp3")
+
+
 if __name__ == "__main__":
     # Change to script directory for relative imports
     import os

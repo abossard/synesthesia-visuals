@@ -2194,7 +2194,11 @@ class OSCSender:
     
     def send_computed_metrics(self, energy: float, danceability: float, valence: float):
         """
-        Send computed metrics for a song.
+        Send computed metrics for a song (convenience method).
+        
+        Note: These are the same channels as in send_song_metadata().
+        Use this method for quick updates when you only have the metrics,
+        or use send_song_metadata() when you have the full metadata dict.
         
         These are always 0.0-1.0 range, ideal for direct visualization control.
         
