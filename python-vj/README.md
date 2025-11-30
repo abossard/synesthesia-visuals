@@ -79,32 +79,48 @@ python karaoke_engine.py [options]
 
 ## OSC Protocol
 
-The Karaoke Engine sends OSC messages to Processing:
+The Karaoke Engine sends OSC messages on **3 separate channels** for flexible VJ mixing:
 
-### Track Change
-```
-/karaoke/track [int is_active, string source, string artist, string title, string album, float duration_sec, int has_synced_lyrics]
-```
+### Channel 1: Full Lyrics (`/karaoke/...`)
+Complete lyrics with all lines for karaoke-style display.
 
-### Lyrics Reset (new track)
 ```
-/karaoke/lyrics/reset [string song_id]
-```
-
-### Lyric Lines (sent once per track)
-```
-/karaoke/lyrics/line [int index, float time_sec, string text]
+/karaoke/track          [is_active, source, artist, title, album, duration, has_synced]
+/karaoke/lyrics/reset   [song_id]
+/karaoke/lyrics/line    [index, time_sec, text]
+/karaoke/pos            [position_sec, is_playing]
+/karaoke/line/active    [index]
 ```
 
-### Position Update (10 Hz)
+### Channel 2: Refrain (`/karaoke/refrain/...`)
+Only chorus/refrain lines - detected by repetition in lyrics.
+
 ```
-/karaoke/pos [float position_sec, int is_playing]
+/karaoke/refrain/reset  [song_id]
+/karaoke/refrain/line   [index, time_sec, text]
+/karaoke/refrain/active [index, current_text]
 ```
 
-### Active Line Index
+### Channel 3: Keywords (`/karaoke/keywords/...`)
+Key words extracted from each line (stop words removed).
+
 ```
-/karaoke/line/active [int index]
+/karaoke/keywords/reset  [song_id]
+/karaoke/keywords/line   [index, time_sec, keywords]
+/karaoke/keywords/active [index, current_keywords]
 ```
+
+## Processing Syphon Outputs
+
+The Processing KaraokeOverlay app creates **3 separate Syphon servers**:
+
+| Syphon Server | Content | Usage |
+|---------------|---------|-------|
+| `KaraokeFullLyrics` | Full lyrics with prev/current/next | Main karaoke display |
+| `KaraokeRefrain` | Chorus lines only (magenta) | Highlight choruses |
+| `KaraokeKeywords` | Key words only (cyan) | Bold word highlights |
+
+Select any of these in Magic Music Visuals as separate video sources!
 
 ## Debug Output
 

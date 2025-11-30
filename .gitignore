@@ -22,11 +22,29 @@ node_modules/
 # Build artifacts
 *.log
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Python VJ state files
+karaoke_state.json
+karaoke_state.tmp
+vj_console.log
+
 # Credentials and sensitive data
 *.credentials
 *.secrets
 *_credentials.sh
 *_secrets.sh
+.env
 
 # Local configuration
 local.sh
+
+# Spotify cache
+.cache-*

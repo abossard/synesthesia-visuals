@@ -445,11 +445,6 @@ def main():
     """Main entry point."""
     import os
     
-    # Check if running on macOS
-    if sys.platform != 'darwin':
-        print("This script is designed for macOS only.")
-        sys.exit(1)
-    
     parser = argparse.ArgumentParser(
         description='Verify and configure macOS audio for VJ performances'
     )
@@ -470,6 +465,12 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # Check if running on macOS (after parsing args so --help works everywhere)
+    if sys.platform != 'darwin':
+        print("This script is designed for macOS only.")
+        print("On macOS, it verifies BlackHole and Multi-Output Device configuration.")
+        sys.exit(0)
     
     if args.quiet:
         logger.setLevel(logging.ERROR)
