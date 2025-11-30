@@ -152,6 +152,7 @@ class KaraokeEngine:
         """Get detailed playback info including source-specific data."""
         state = self._playback.get_current_state()
         source = self._playback.current_source
+        extra = self._playback.extra_data
         
         info = {
             'source': source,
@@ -159,9 +160,10 @@ class KaraokeEngine:
             'is_playing': state.is_playing,
             'spotify_connected': False,
             'virtualdj_connected': False,
+            'bpm': extra.get('bpm', 0),
         }
         
-        # Check Spotify status
+        # Check connection status for each monitor
         for monitor in self._playback._monitors:
             if isinstance(monitor, SpotifyMonitor):
                 info['spotify_connected'] = monitor.is_available

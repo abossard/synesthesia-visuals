@@ -45,14 +45,25 @@ logger = logging.getLogger('karaoke')
 
 @dataclass
 class DeckStatus:
-    """Status information for a VirtualDJ deck."""
+    """
+    Status information for a VirtualDJ deck.
+    
+    Attributes:
+        deck: Deck number (1, 2, 3, or 4)
+        title: Track title (empty string if no track loaded)
+        artist: Track artist (empty string if no track loaded)
+        bpm: Track BPM (0.0 if unknown or no track)
+        position: Position in track from 0.0 to 1.0 (may exceed 1.0 briefly at end)
+        elapsed_ms: Elapsed playback time in milliseconds (0 if not playing)
+        length_sec: Total track length in seconds (0.0 if unknown)
+    """
     deck: int
     title: str
     artist: str
-    bpm: float              # track BPM
-    position: float         # 0.0–1.0 position in track
-    elapsed_ms: int         # elapsed time in ms
-    length_sec: float       # full length in seconds
+    bpm: float              # 0.0 if unknown
+    position: float         # 0.0–1.0 (may briefly exceed 1.0 at track end)
+    elapsed_ms: int         # milliseconds elapsed
+    length_sec: float       # total seconds
 
 
 # ---------------------------------------------------------------------------
