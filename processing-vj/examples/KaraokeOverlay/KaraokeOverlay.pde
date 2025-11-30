@@ -1,7 +1,7 @@
 /**
  * Karaoke Overlay - Multi-Channel VJ Lyrics
  * 
- * Displays synced lyrics via OSC from Python Karaoke Engine.
+ * White text on black background for clean VJ compositing.
  * Outputs 3 SEPARATE Syphon channels for Magic Music Visuals:
  *   - KaraokeFullLyrics   : Full lyrics with prev/current/next
  *   - KaraokeRefrain      : Chorus/refrain lines only  
@@ -24,7 +24,6 @@
  * - '2': Toggle refrain
  * - '3': Toggle keywords
  * - 'f': Cycle font sizes
- * - 'c': Cycle color schemes
  * - 'r': Reset/reconnect OSC
  */
 
@@ -60,19 +59,16 @@ boolean showKeywords = true;
 // Visual settings
 int fontSizeIndex = 1;
 int[] fontSizes = {32, 48, 64, 80};
-int colorSchemeIndex = 0;
 
 // Animation
 float fadeAmount = 0;
 float targetFade = 1;
-float pulsePhase = 0;
 
 void settings() {
   size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
 }
 
 void setup() {
-  colorMode(HSB, 360, 100, 100, 100);
   textAlign(CENTER, CENTER);
   
   // Initialize states
@@ -103,7 +99,6 @@ void setup() {
 void draw() {
   // Animation updates
   fadeAmount = lerp(fadeAmount, targetFade, 0.1);
-  pulsePhase += 0.05;
   
   // Clear main display
   background(0);
@@ -127,7 +122,6 @@ void draw() {
 
 void renderFullLyrics() {
   bufferFull.beginDraw();
-  bufferFull.colorMode(HSB, 360, 100, 100, 100);
   bufferFull.background(0);
   bufferFull.textAlign(CENTER, CENTER);
   bufferFull.textFont(createFont("Arial", 64));
@@ -139,17 +133,16 @@ void renderFullLyrics() {
   
   int fontSize = fontSizes[fontSizeIndex];
   float lineHeight = fontSize * 1.4;
-  color[] scheme = getColorScheme(colorSchemeIndex);
   
-  // Title/artist at top
+  // Title/artist at top - dim white
   bufferFull.textSize(fontSize * 0.6);
-  bufferFull.fill(scheme[0], 60 * fadeAmount);
+  bufferFull.fill(255, 150 * fadeAmount);
   bufferFull.text(stateFull.artist + " — " + stateFull.title, width / 2, 60);
   
   if (!stateFull.hasSyncedLyrics || stateFull.lines.size() == 0) {
     bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(scheme[0], 50 * fadeAmount);
-    bufferFull.text("♪ No synced lyrics", width / 2, height / 2);
+    bufferFull.fill(255, 120 * fadeAmount);
+    bufferFull.text("No synced lyrics", width / 2, height / 2);
     bufferFull.endDraw();
     return;
   }
@@ -157,42 +150,36 @@ void renderFullLyrics() {
   int active = stateFull.activeIndex >= 0 ? stateFull.activeIndex : computeActiveLine(stateFull);
   float centerY = height / 2;
   
-  // Previous line
+  // Previous line - dim white
   if (active > 0) {
     bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(scheme[0], 40 * fadeAmount);
+    bufferFull.fill(255, 100 * fadeAmount);
     bufferFull.text(stateFull.lines.get(active - 1).text, width / 2, centerY - lineHeight * 1.2);
   }
   
-  // Current line with glow
+  // Current line - bright white
   if (active >= 0 && active < stateFull.lines.size()) {
-    float pulse = 1 + sin(pulsePhase) * 0.03;
-    for (int i = 3; i > 0; i--) {
-      bufferFull.fill(scheme[2], 15 * fadeAmount);
-      bufferFull.textSize(fontSize * pulse + i * 3);
-      bufferFull.text(stateFull.lines.get(active).text, width / 2, centerY);
-    }
-    bufferFull.fill(scheme[1], 100 * fadeAmount);
-    bufferFull.textSize(fontSize * pulse);
+    bufferFull.fill(255, 255 * fadeAmount);
+    bufferFull.textSize(fontSize);
     bufferFull.text(stateFull.lines.get(active).text, width / 2, centerY);
   }
   
-  // Next lines
+  // Next line - dim white
   if (active >= 0 && active < stateFull.lines.size() - 1) {
     bufferFull.textSize(fontSize * 0.8);
-    bufferFull.fill(scheme[0], 50 * fadeAmount);
+    bufferFull.fill(255, 120 * fadeAmount);
     bufferFull.text(stateFull.lines.get(active + 1).text, width / 2, centerY + lineHeight * 1.2);
   }
   
-  // Progress bar
+  // Progress bar - white
   if (stateFull.durationSec > 0) {
     float progress = stateFull.positionSec / stateFull.durationSec;
     float barW = width * 0.6;
     float barX = (width - barW) / 2;
     bufferFull.noStroke();
-    bufferFull.fill(255, 20 * fadeAmount);
+    bufferFull.fill(255, 50 * fadeAmount);
     bufferFull.rect(barX, height - 50, barW, 4, 2);
-    bufferFull.fill(255, 60 * fadeAmount);
+    bufferFull.fill(255, 150 * fadeAmount);
     bufferFull.rect(barX, height - 50, barW * progress, 4, 2);
   }
   
@@ -203,7 +190,6 @@ void renderFullLyrics() {
 
 void renderRefrain() {
   bufferRefrain.beginDraw();
-  bufferRefrain.colorMode(HSB, 360, 100, 100, 100);
   bufferRefrain.background(0);
   bufferRefrain.textAlign(CENTER, CENTER);
   bufferRefrain.textFont(createFont("Arial", 80));
@@ -214,28 +200,11 @@ void renderRefrain() {
   }
   
   int fontSize = fontSizes[fontSizeIndex] + 16;  // Larger for refrain
-  float pulse = 1 + sin(pulsePhase * 1.5) * 0.05;  // Stronger pulse
   
-  // Refrain gets a special dramatic color
-  color refrainColor = color(320, 80, 100);  // Magenta
-  color glowColor = color(340, 100, 100);
-  
-  // Big glow effect
-  for (int i = 5; i > 0; i--) {
-    bufferRefrain.fill(glowColor, 10 * fadeAmount);
-    bufferRefrain.textSize(fontSize * pulse + i * 5);
-    bufferRefrain.text(stateRefrain.currentText, width / 2, height / 2);
-  }
-  
-  // Main text
-  bufferRefrain.fill(refrainColor, 100 * fadeAmount);
-  bufferRefrain.textSize(fontSize * pulse);
+  // Main text - bright white
+  bufferRefrain.fill(255, 255 * fadeAmount);
+  bufferRefrain.textSize(fontSize);
   bufferRefrain.text(stateRefrain.currentText, width / 2, height / 2);
-  
-  // "REFRAIN" label
-  bufferRefrain.textSize(14);
-  bufferRefrain.fill(refrainColor, 50 * fadeAmount);
-  bufferRefrain.text("♪ REFRAIN ♪", width / 2, height - 60);
   
   bufferRefrain.endDraw();
 }
@@ -244,7 +213,6 @@ void renderRefrain() {
 
 void renderKeywords() {
   bufferKeywords.beginDraw();
-  bufferKeywords.colorMode(HSB, 360, 100, 100, 100);
   bufferKeywords.background(0);
   bufferKeywords.textAlign(CENTER, CENTER);
   bufferKeywords.textFont(createFont("Arial Bold", 100));
@@ -255,31 +223,13 @@ void renderKeywords() {
   }
   
   int fontSize = fontSizes[fontSizeIndex] + 32;  // Even larger for keywords
-  float pulse = 1 + sin(pulsePhase * 2) * 0.08;  // Strong pulse
   
-  // Keywords get bold cyan/white
-  color keyColor = color(180, 60, 100);  // Cyan
-  color glowColor = color(180, 100, 100);
-  
-  // Strong glow
-  for (int i = 6; i > 0; i--) {
-    bufferKeywords.fill(glowColor, 8 * fadeAmount);
-    bufferKeywords.textSize(fontSize * pulse + i * 6);
-    bufferKeywords.text(stateKeywords.currentKeywords, width / 2, height / 2);
-  }
-  
-  // Main text
-  bufferKeywords.fill(keyColor, 100 * fadeAmount);
-  bufferKeywords.textSize(fontSize * pulse);
+  // Main text - bright white
+  bufferKeywords.fill(255, 255 * fadeAmount);
+  bufferKeywords.textSize(fontSize);
   bufferKeywords.text(stateKeywords.currentKeywords, width / 2, height / 2);
   
   bufferKeywords.endDraw();
-}
-
-String formatTime(float seconds) {
-  int mins = (int)(seconds / 60);
-  int secs = (int)(seconds % 60);
-  return nf(mins, 1) + ":" + nf(secs, 2);
 }
 
 int computeActiveLine(KaraokeState s) {
@@ -293,16 +243,6 @@ int computeActiveLine(KaraokeState s) {
     }
   }
   return active;
-}
-
-color[] getColorScheme(int index) {
-  switch (index % 4) {
-    case 0: return new color[]{color(0, 0, 60), color(0, 0, 100), color(180, 50, 100)};
-    case 1: return new color[]{color(300, 30, 60), color(320, 60, 100), color(340, 80, 100)};
-    case 2: return new color[]{color(120, 30, 50), color(120, 70, 100), color(90, 90, 100)};
-    case 3: return new color[]{color(30, 40, 60), color(30, 80, 100), color(45, 100, 100)};
-    default: return new color[]{color(0, 0, 60), color(0, 0, 100), color(180, 50, 100)};
-  }
 }
 
 // ========== OSC EVENT HANDLER ==========
@@ -409,10 +349,6 @@ void keyPressed() {
   else if (key == 'f' || key == 'F') {
     fontSizeIndex = (fontSizeIndex + 1) % fontSizes.length;
     println("Font size: " + fontSizes[fontSizeIndex]);
-  }
-  else if (key == 'c' || key == 'C') {
-    colorSchemeIndex = (colorSchemeIndex + 1) % 4;
-    println("Color scheme: " + colorSchemeIndex);
   }
   else if (key == 'r' || key == 'R') {
     osc.stop();
