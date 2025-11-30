@@ -69,7 +69,28 @@ python vj_console.py
 Settings, lyrics cache, and state files are stored in `python-vj/.cache/`:
 - `settings.json` - Timing offset and user preferences
 - `lyrics/` - Cached lyrics (avoids re-downloading)
+- `llm_cache/` - AI analysis results (refrain detection, keywords)
 - `state.json` - Current karaoke state for debugging
+
+### AI-Powered Lyrics Analysis
+
+The engine uses AI to detect refrain/chorus sections and extract important keywords. It supports:
+
+1. **OpenAI** (if `OPENAI_API_KEY` is set in .env)
+2. **Local Ollama** (auto-detects installed models)
+3. **Basic analysis** (fallback, no LLM needed)
+
+**Recommended Ollama models** (in priority order):
+- `llama3.2` - Best overall for lyrics analysis
+- `mistral` - Lightweight, good for limited resources
+- `deepseek-r1` - Good for poetic/metaphorical language
+
+To use local Ollama:
+```bash
+# Install Ollama from https://ollama.com
+ollama pull llama3.2
+# Engine will auto-detect and use it
+```
 
 ### Karaoke Engine (Standalone)
 

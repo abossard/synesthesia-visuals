@@ -389,6 +389,250 @@ class LyricsFetcher:
 
 
 # =============================================================================
+# LLM ANALYZER - Uses OpenAI or local Ollama for enhanced lyrics analysis
+# =============================================================================
+
+class LLMAnalyzer:
+    """
+    AI-powered lyrics analysis using OpenAI or local Ollama.
+    
+    Fallback priority:
+    1. OpenAI (if OPENAI_API_KEY is set)
+    2. Local Ollama (auto-detects installed models)
+    3. Basic analysis (no LLM)
+    
+    Recommended Ollama models for lyrics analysis (in priority order):
+    - llama3.2: Best overall for nuanced analysis
+    - mistral: Lightweight, good for resource-constrained systems  
+    - deepseek-r1: Good reasoning for poetic/metaphorical language
+    - llama3.1: Reliable fallback
+    - llama2: Widely available
+    """
+    
+    # Models in priority order (best for lyrics analysis first)
+    PREFERRED_MODELS = ['llama3.2', 'llama3.1', 'mistral', 'deepseek-r1', 'llama2', 'phi3', 'gemma2']
+    OLLAMA_URL = "http://localhost:11434"
+    
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self._cache_dir = (cache_dir or Config.APP_DATA_DIR) / "llm_cache"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._openai_client = None
+        self._ollama_model = None
+        self._available = False
+        self._backend = "none"
+        self._init_backend()
+    
+    def _init_backend(self):
+        """Initialize the best available LLM backend."""
+        # Try OpenAI first
+        openai_key = os.environ.get('OPENAI_API_KEY', '')
+        if openai_key:
+            try:
+                import openai
+                self._openai_client = openai.OpenAI(api_key=openai_key)
+                # Test connection
+                self._openai_client.models.list()
+                self._available = True
+                self._backend = "openai"
+                logger.info("LLM: ✓ OpenAI connected")
+                return
+            except Exception as e:
+                logger.debug(f"OpenAI init failed: {e}")
+        
+        # Fall back to local Ollama
+        self._init_ollama()
+    
+    def _init_ollama(self):
+        """Initialize Ollama with auto-detected model."""
+        try:
+            resp = requests.get(f"{self.OLLAMA_URL}/api/tags", timeout=2)
+            if resp.status_code == 200:
+                models = resp.json().get('models', [])
+                available_names = [m.get('name', '').split(':')[0] for m in models]
+                
+                if not available_names:
+                    logger.info("LLM: Ollama running but no models installed")
+                    logger.info("  Install a model: ollama pull llama3.2")
+                    return
+                
+                # Find best available model
+                for preferred in self.PREFERRED_MODELS:
+                    if preferred in available_names:
+                        self._ollama_model = preferred
+                        break
+                
+                if not self._ollama_model:
+                    # Use first available model
+                    self._ollama_model = available_names[0]
+                
+                self._available = True
+                self._backend = "ollama"
+                logger.info(f"LLM: ✓ Ollama using {self._ollama_model} (from {len(available_names)} models)")
+        except requests.RequestException:
+            logger.info("LLM: Ollama not available (using basic analysis)")
+    
+    @property
+    def is_available(self) -> bool:
+        return self._available
+    
+    @property
+    def backend_info(self) -> str:
+        """Return description of active backend."""
+        if self._backend == "openai":
+            return "OpenAI"
+        elif self._backend == "ollama":
+            return f"Ollama ({self._ollama_model})"
+        return "Basic (no LLM)"
+    
+    def analyze_lyrics(self, lyrics: str, artist: str, title: str) -> Dict[str, Any]:
+        """
+        Use LLM to extract refrain lines and important keywords from lyrics.
+        
+        Returns:
+            {
+                'refrain_lines': ['line1', 'line2', ...],  # Chorus/refrain text
+                'keywords': ['word1', 'word2', ...],      # Most impactful words
+                'themes': ['theme1', 'theme2', ...],      # Song themes
+                'cached': bool                             # True if from cache
+            }
+        """
+        # Check cache first
+        cache_file = self._get_cache_path(artist, title)
+        if cache_file.exists():
+            try:
+                data = json.loads(cache_file.read_text())
+                data['cached'] = True
+                return data
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        if not self._available:
+            return self._basic_analysis(lyrics)
+        
+        # Build prompt
+        prompt = f"""Analyze these song lyrics and extract:
+1. REFRAIN: The chorus or refrain lines (text that repeats and is the emotional core)
+2. KEYWORDS: 5-10 most emotionally impactful or important single words
+3. THEMES: 2-3 main themes of the song
+
+Song: "{title}" by {artist}
+
+Lyrics:
+{lyrics[:3000]}
+
+Respond in JSON format:
+{{"refrain_lines": ["line1", "line2"], "keywords": ["word1", "word2"], "themes": ["theme1", "theme2"]}}
+"""
+        
+        try:
+            result = self._call_llm(prompt)
+            if result:
+                # Cache the result
+                self._save_to_cache(cache_file, result)
+                result['cached'] = False
+                return result
+        except Exception as e:
+            logger.debug(f"LLM analysis failed: {e}")
+        
+        return self._basic_analysis(lyrics)
+    
+    def _call_llm(self, prompt: str) -> Optional[Dict[str, Any]]:
+        """Call the active LLM backend."""
+        if self._backend == "openai":
+            return self._call_openai(prompt)
+        elif self._backend == "ollama":
+            return self._call_ollama(prompt)
+        return None
+    
+    def _call_openai(self, prompt: str) -> Optional[Dict[str, Any]]:
+        """Call OpenAI API."""
+        try:
+            response = self._openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+                temperature=0.3
+            )
+            content = response.choices[0].message.content
+            # Extract JSON from response
+            return self._parse_json_response(content)
+        except Exception as e:
+            logger.debug(f"OpenAI error: {e}")
+        return None
+    
+    def _call_ollama(self, prompt: str) -> Optional[Dict[str, Any]]:
+        """Call local Ollama API."""
+        try:
+            resp = requests.post(
+                f"{self.OLLAMA_URL}/api/generate",
+                json={
+                    "model": self._ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3}
+                },
+                timeout=30
+            )
+            if resp.status_code == 200:
+                content = resp.json().get('response', '')
+                return self._parse_json_response(content)
+        except requests.RequestException as e:
+            logger.debug(f"Ollama error: {e}")
+        return None
+    
+    def _parse_json_response(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract JSON from LLM response text."""
+        # Find JSON in response
+        start = text.find('{')
+        end = text.rfind('}')
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start:end+1])
+            except json.JSONDecodeError:
+                pass
+        return None
+    
+    def _basic_analysis(self, lyrics: str) -> Dict[str, Any]:
+        """Fallback analysis without LLM."""
+        lines = [l.strip() for l in lyrics.split('\n') if l.strip()]
+        
+        # Find repeated lines (likely refrain)
+        counts: Dict[str, int] = {}
+        for line in lines:
+            key = re.sub(r'[^\w\s]', '', line.lower())
+            counts[key] = counts.get(key, 0) + 1
+        
+        refrain = [l for l in lines if counts.get(re.sub(r'[^\w\s]', '', l.lower()), 0) >= 2]
+        
+        # Extract keywords
+        all_words = re.findall(r'\b[a-zA-Z]+\b', lyrics.lower())
+        word_counts: Dict[str, int] = {}
+        for w in all_words:
+            if w not in STOP_WORDS and len(w) > 3:
+                word_counts[w] = word_counts.get(w, 0) + 1
+        keywords = sorted(word_counts.keys(), key=lambda x: word_counts[x], reverse=True)[:10]
+        
+        return {
+            'refrain_lines': list(set(refrain))[:5],
+            'keywords': keywords,
+            'themes': [],
+            'cached': False
+        }
+    
+    def _save_to_cache(self, cache_file: Path, data: Dict):
+        """Save result to cache."""
+        try:
+            cache_file.write_text(json.dumps(data, indent=2))
+        except IOError:
+            pass
+    
+    def _get_cache_path(self, artist: str, title: str) -> Path:
+        safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
+        safe = re.sub(r'\s+', '_', safe)
+        return self._cache_dir / f"{safe}.json"
+
+
+# =============================================================================
 # PLAYBACK MONITORS - Each monitors one source
 # =============================================================================
 

@@ -345,6 +345,61 @@ class TestConfig(unittest.TestCase):
         self.assertIn('redirect_uri', creds)
 
 
+class TestLLMAnalyzer(unittest.TestCase):
+    """Tests for LLMAnalyzer class."""
+    
+    def test_imports(self):
+        """LLMAnalyzer should be importable."""
+        from karaoke_engine import LLMAnalyzer
+    
+    def test_instantiation(self):
+        """LLMAnalyzer should instantiate without errors."""
+        from karaoke_engine import LLMAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
+            self.assertIsNotNone(analyzer)
+            # Should have a backend (none, openai, or ollama)
+            self.assertIn(analyzer._backend, ["none", "openai", "ollama"])
+    
+    def test_backend_info(self):
+        """backend_info should return a readable string."""
+        from karaoke_engine import LLMAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
+            info = analyzer.backend_info
+            self.assertIsInstance(info, str)
+            self.assertTrue(len(info) > 0)
+    
+    def test_basic_analysis(self):
+        """Basic analysis should work without LLM."""
+        from karaoke_engine import LLMAnalyzer
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
+            
+            lyrics = """Hello darkness my old friend
+I've come to talk with you again
+Hello darkness my old friend
+Because a vision softly creeping"""
+            
+            result = analyzer._basic_analysis(lyrics)
+            
+            self.assertIn('refrain_lines', result)
+            self.assertIn('keywords', result)
+            self.assertIn('themes', result)
+            # "Hello darkness my old friend" appears twice, should be detected
+            self.assertTrue(len(result['refrain_lines']) > 0)
+    
+    def test_preferred_models(self):
+        """PREFERRED_MODELS should have llama3.2 first."""
+        from karaoke_engine import LLMAnalyzer
+        
+        self.assertEqual(LLMAnalyzer.PREFERRED_MODELS[0], 'llama3.2')
+        self.assertIn('mistral', LLMAnalyzer.PREFERRED_MODELS)
+
+
 if __name__ == "__main__":
     # Change to script directory for relative imports
     import os
