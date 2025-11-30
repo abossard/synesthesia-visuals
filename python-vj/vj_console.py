@@ -6,7 +6,7 @@ Screens (press 1-4 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
-4. All Logs - Complete application logs
+4. All Logs - Complete application logs with filtering
 """
 
 from dotenv import load_dotenv
@@ -14,6 +14,7 @@ load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
+from collections import deque
 import logging
 import subprocess
 import time
@@ -29,6 +30,93 @@ from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 
 logger = logging.getLogger('vj_console')
+
+
+# ============================================================================
+# MEMORY LOG HANDLER - Captures logs for UI display
+# ============================================================================
+
+class MemoryLogHandler(logging.Handler):
+    """
+    Custom logging handler that stores log records in memory.
+    Thread-safe with a deque for efficient append/pop operations.
+    """
+    
+    MAX_LOGS = 2000  # Maximum number of log lines to keep
+    
+    def __init__(self):
+        super().__init__()
+        self._logs: deque = deque(maxlen=self.MAX_LOGS)
+        self.setFormatter(logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%H:%M:%S'
+        ))
+    
+    def emit(self, record: logging.LogRecord) -> None:
+        """Store formatted log record."""
+        try:
+            msg = self.format(record)
+            self._logs.append((record.levelno, msg))
+        except Exception:
+            self.handleError(record)
+    
+    def get_logs(self, filter_level: Optional[int] = None) -> List[str]:
+        """
+        Get logs, optionally filtered by minimum level.
+        
+        Args:
+            filter_level: Minimum log level (e.g., logging.WARNING for warnings+errors)
+        
+        Returns:
+            List of formatted log strings
+        """
+        if filter_level is None:
+            return [msg for _, msg in self._logs]
+        return [msg for level, msg in self._logs if level >= filter_level]
+    
+    def get_error_warning_logs(self) -> List[str]:
+        """Get only WARNING and ERROR level logs."""
+        return self.get_logs(filter_level=logging.WARNING)
+    
+    def clear(self) -> None:
+        """Clear all stored logs."""
+        self._logs.clear()
+
+
+# Global memory handler instance
+_memory_handler: Optional[MemoryLogHandler] = None
+
+
+def setup_log_capture() -> MemoryLogHandler:
+    """
+    Set up logging capture for the VJ Console.
+    Hooks into the root logger to capture all application logs.
+    """
+    global _memory_handler
+    
+    if _memory_handler is not None:
+        return _memory_handler
+    
+    _memory_handler = MemoryLogHandler()
+    _memory_handler.setLevel(logging.DEBUG)
+    
+    # Add handler to root logger to capture everything
+    root_logger = logging.getLogger()
+    root_logger.addHandler(_memory_handler)
+    
+    # Also add to specific loggers used in the app
+    for logger_name in ['karaoke', 'vj_console', 'adapters', 'orchestrators']:
+        log = logging.getLogger(logger_name)
+        if _memory_handler not in log.handlers:
+            log.addHandler(_memory_handler)
+    
+    return _memory_handler
+
+
+def get_memory_handler() -> Optional[MemoryLogHandler]:
+    """Get the global memory log handler."""
+    return _memory_handler
+
 
 # ============================================================================
 # PURE FUNCTIONS (Calculations) - No side effects, same input = same output
@@ -214,8 +302,14 @@ class OSCPanel(ReactivePanel):
 
 
 class LogsPanel(ReactivePanel):
-    """Application logs view."""
+    """
+    Application logs view with filtering.
+    
+    Press 'e' to toggle errors/warnings only filter.
+    Shows up to 2000 log lines captured from all Python loggers.
+    """
     logs = reactive([])
+    errors_only = reactive(False)
 
     def on_mount(self) -> None:
         """Initialize content when mounted."""
@@ -223,17 +317,29 @@ class LogsPanel(ReactivePanel):
 
     def watch_logs(self, data: list) -> None:
         self._safe_render()
+    
+    def watch_errors_only(self, _: bool) -> None:
+        self._safe_render()
 
     def _safe_render(self) -> None:
         """Render only if mounted."""
         if not self.is_mounted:
             return
-        lines = [self.render_section("Application Logs", "═")]
+        
+        filter_label = "[red bold]ERRORS/WARNINGS ONLY[/]" if self.errors_only else "[dim]All Levels[/]"
+        lines = [
+            self.render_section("Application Logs", "═"),
+            f"  Filter: {filter_label}  │  [dim]Press [bold]E[/] to toggle filter[/]\n"
+        ]
         
         if not self.logs:
-            lines.append("[dim](no logs yet)[/dim]")
+            lines.append("[dim](no logs yet - waiting for application activity)[/dim]")
         else:
-            lines.extend(render_log_line(log) for log in reversed(self.logs[-100:]))
+            # Show more logs in full view (up to 500 visible at a time)
+            display_logs = self.logs[-500:]
+            lines.extend(render_log_line(log) for log in reversed(display_logs))
+        
+        self.update("\n".join(lines))
         
         self.update("\n".join(lines))
 
@@ -412,6 +518,7 @@ class VJConsoleApp(App):
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
+        Binding("e", "toggle_log_filter", "Filter Logs"),
     ]
 
     current_tab = reactive("master")
@@ -423,8 +530,11 @@ class VJConsoleApp(App):
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self._find_project_root())
         self.karaoke_engine: Optional[KaraokeEngine] = None
-        self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
+        
+        # Set up log capture before anything else
+        self._log_handler = setup_log_capture()
+        logger.info("VJ Console starting...")
 
     def _find_project_root(self) -> Path:
         for p in [Path(__file__).parent.parent, Path.cwd()]:
@@ -647,6 +757,16 @@ class VJConsoleApp(App):
                 milksyphon_running=self.milksyphon_running, processing_apps=running_apps
             )
             self._last_master_status = current_status
+        
+        # Update logs panel from memory handler
+        try:
+            logs_panel = self.query_one("#logs-panel", LogsPanel)
+            if logs_panel.errors_only:
+                logs_panel.logs = self._log_handler.get_error_warning_logs()
+            else:
+                logs_panel.logs = self._log_handler.get_logs()
+        except Exception:
+            pass
 
     # === Screen switching ===
     
@@ -661,6 +781,15 @@ class VJConsoleApp(App):
     
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
+    
+    def action_toggle_log_filter(self) -> None:
+        """Toggle between all logs and errors/warnings only."""
+        try:
+            logs_panel = self.query_one("#logs-panel", LogsPanel)
+            logs_panel.errors_only = not logs_panel.errors_only
+            logger.info(f"Log filter: {'Errors/Warnings only' if logs_panel.errors_only else 'All levels'}")
+        except Exception:
+            pass
 
     # === App control ===
     

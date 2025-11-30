@@ -2,6 +2,20 @@
 
 Master control center and karaoke engine for VJ performance control.
 
+## Recent Changes
+
+### VirtualDJ Network Control API Integration
+- **Replaced file-based polling** with VirtualDJ's HTTP Network Control API
+- **Real-time data**: BPM, precise position (0-1), elapsed time, masterdeck detection
+- **Dual source support**: Works alongside Spotify (Spotify takes priority when playing)
+- **Auto-reconnect**: Reconnects when VirtualDJ becomes available
+- See [VirtualDJ Setup](#virtualdj-setup) for configuration
+
+### Enhanced Logs Panel
+- **2000 log buffer** captures all Python logger output
+- **Filterable**: Press `E` to show only errors and warnings
+- **Color-coded**: Errors (red), warnings (yellow), info (green)
+
 ## Quick Start
 
 ```bash
@@ -21,6 +35,7 @@ python vj_console.py          # Launch the terminal UI
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
 - **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
 - **📊 Pipeline View**: Colorful terminal UI showing processing steps and logs
+- **📝 Logs Panel**: 2000-line log buffer with error/warning filtering
 
 ## Multi-Screen Terminal UI
 
@@ -51,7 +66,7 @@ Song categorization scores and AI analysis pipeline status.
 ![Song AI Debug](docs/screenshots/03-ai-debug.svg)
 
 #### Screen 4: All Logs
-Complete application logs for debugging and monitoring.
+Complete application logs for debugging and monitoring. Captures all Python logger output with filtering.
 
 ![All Logs](docs/screenshots/04-logs.svg)
 
@@ -66,7 +81,18 @@ Complete application logs for debugging and monitoring.
 | `↓/j` | Navigate down in app list |
 | `Enter` | Start/stop selected Processing app |
 | `+/-` | Adjust lyrics timing (±200ms) |
+| `E` | Toggle log filter (All / Errors+Warnings only) |
 | `Q` | Quit |
+
+### Logs Panel Features
+
+The Logs panel (Screen 4) provides comprehensive application logging:
+
+- **2000 log buffer**: Stores the last 2000 log messages from all application components
+- **All Python loggers captured**: Hooks into the root logger plus karaoke, adapters, and orchestrators
+- **Real-time updates**: Logs refresh every 0.5 seconds with newest entries at top
+- **Filter toggle**: Press `E` to toggle between all logs and errors/warnings only
+- **Color coding**: Errors (red), warnings (yellow), info (green), debug (dim)
 
 ## Architecture
 
