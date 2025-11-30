@@ -2185,6 +2185,11 @@ class KaraokeEngine:
         self._categorization_queue: queue.Queue = queue.Queue(maxsize=5)
         self._categorization_worker: Optional[Thread] = None
         self._categorization_running: bool = False
+        
+        # Background LLM analysis queue
+        self._llm_queue: queue.Queue = queue.Queue(maxsize=5)
+        self._llm_worker: Optional[Thread] = None
+        self._llm_running: bool = False
     
     @property
     def timing_offset_ms(self) -> int:
@@ -2275,6 +2280,96 @@ class KaraokeEngine:
             logger.warning("Categorization queue full, skipping")
             self.pipeline.skip("categorize_song", "Queue full")
     
+    def _start_llm_worker(self):
+        """Start background thread for LLM analysis."""
+        self._llm_running = True
+        self._llm_worker = Thread(
+            target=self._llm_worker_loop,
+            daemon=True,
+            name="LLMWorker"
+        )
+        self._llm_worker.start()
+        logger.info("LLM worker started")
+    
+    def _llm_worker_loop(self):
+        """Background worker that processes LLM analysis requests."""
+        while self._llm_running:
+            try:
+                # Wait for LLM analysis request (timeout to allow clean shutdown)
+                task = self._llm_queue.get(timeout=1.0)
+                
+                if task is None:  # Shutdown signal
+                    break
+                
+                track, lrc = task
+                
+                # Perform LLM analysis (can be slow - API calls)
+                try:
+                    if self._llm.is_available:
+                        self.pipeline.start("llm_analysis", f"Using {self._llm.backend_info}...")
+                        llm_result = self._llm.analyze_lyrics(lrc, track.artist, track.title)
+                        
+                        if llm_result.get('cached'):
+                            self.pipeline.complete("llm_analysis", "Loaded from cache")
+                        else:
+                            themes = llm_result.get('themes', [])
+                            self.pipeline.complete("llm_analysis", f"Themes: {', '.join(themes[:3])}")
+                        
+                        # Generate image prompt
+                        if llm_result.get('image_prompt'):
+                            self.pipeline.start("generate_image_prompt", "Creating visual prompt...")
+                            self.pipeline.set_image_prompt(llm_result['image_prompt'])
+                            self.pipeline.complete("generate_image_prompt", "Generated")
+                        else:
+                            self.pipeline.start("generate_image_prompt", "Generating from metadata...")
+                            prompt = self._llm.generate_image_prompt(
+                                track.artist, track.title,
+                                llm_result.get('keywords', []),
+                                llm_result.get('themes', [])
+                            )
+                            self.pipeline.set_image_prompt(prompt)
+                            self.pipeline.complete("generate_image_prompt", "Generated")
+                        
+                        # Start image generation if we have a prompt
+                        if self.pipeline.image_prompt and self._comfyui.is_available:
+                            self._start_image_generation(track)
+                    else:
+                        self.pipeline.skip("llm_analysis", "No LLM available")
+                        # Generate basic prompt
+                        self.pipeline.start("generate_image_prompt", "Basic prompt...")
+                        prompt = self._llm._basic_image_prompt(
+                            track.artist, track.title,
+                            [line.keywords for line in self._state.lines[:5] if line.keywords],
+                            []
+                        )
+                        self.pipeline.set_image_prompt(prompt)
+                        self.pipeline.complete("generate_image_prompt", "Basic prompt")
+                        
+                except Exception as e:
+                    logger.exception(f"LLM analysis failed: {e}")
+                    self.pipeline.error("llm_analysis", str(e)[:40])
+                    self.pipeline.skip("generate_image_prompt", "LLM failed")
+                
+                self._llm_queue.task_done()
+                
+            except queue.Empty:
+                continue  # Timeout, check if still running
+            except Exception as e:
+                logger.exception(f"LLM worker error: {e}")
+        
+        logger.info("LLM worker stopped")
+    
+    def _queue_llm_analysis(self, track: Track, lrc: str):
+        """Queue an LLM analysis task (non-blocking)."""
+        try:
+            # Try to add task without blocking
+            self._llm_queue.put_nowait((track, lrc))
+            logger.debug("LLM analysis queued")
+        except queue.Full:
+            logger.warning("LLM queue full, skipping")
+            self.pipeline.skip("llm_analysis", "Queue full")
+            self.pipeline.skip("generate_image_prompt", "Queue full")
+    
     @property
     def current_categories(self) -> Optional[SongCategories]:
         """Get the current song's categories."""
@@ -2313,6 +2408,7 @@ class KaraokeEngine:
         """Start engine in background thread."""
         self._stop.clear()
         self._start_categorization_worker()  # Start background categorization
+        self._start_llm_worker()  # Start background LLM analysis
         self._thread = Thread(target=self.run, args=(poll_interval,), daemon=True)
         self._thread.start()
     
@@ -2326,6 +2422,13 @@ class KaraokeEngine:
             self._categorization_queue.put(None)  # Shutdown signal
             if self._categorization_worker:
                 self._categorization_worker.join(timeout=2)
+        
+        # Stop LLM worker
+        if self._llm_running:
+            self._llm_running = False
+            self._llm_queue.put(None)  # Shutdown signal
+            if self._llm_worker:
+                self._llm_worker.join(timeout=2)
         
         # Stop main thread
         if self._thread:
@@ -2411,44 +2514,8 @@ class KaraokeEngine:
             # Step 6: Categorize song (non-blocking, queued)
             self._queue_categorization(track, lrc, has_lyrics=True)
             
-            # Step 7: LLM analysis (if available)
-            if self._llm.is_available:
-                self.pipeline.start("llm_analysis", f"Using {self._llm.backend_info}...")
-                try:
-                    llm_result = self._llm.analyze_lyrics(lrc, track.artist, track.title)
-                    if llm_result.get('cached'):
-                        self.pipeline.complete("llm_analysis", "Loaded from cache")
-                    else:
-                        themes = llm_result.get('themes', [])
-                        self.pipeline.complete("llm_analysis", f"Themes: {', '.join(themes[:3])}")
-                    
-                    # Step 7: Generate image prompt
-                    if llm_result.get('image_prompt'):
-                        self.pipeline.start("generate_image_prompt", "Creating visual prompt...")
-                        self.pipeline.set_image_prompt(llm_result['image_prompt'])
-                        self.pipeline.complete("generate_image_prompt", "Generated")
-                    else:
-                        self.pipeline.start("generate_image_prompt", "Generating from metadata...")
-                        prompt = self._llm.generate_image_prompt(
-                            track.artist, track.title,
-                            llm_result.get('keywords', []),
-                            llm_result.get('themes', [])
-                        )
-                        self.pipeline.set_image_prompt(prompt)
-                        self.pipeline.complete("generate_image_prompt", "Generated")
-                except Exception as e:
-                    self.pipeline.error("llm_analysis", str(e)[:40])
-                    self.pipeline.skip("generate_image_prompt", "LLM failed")
-            else:
-                self.pipeline.skip("llm_analysis", "No LLM available")
-                self.pipeline.start("generate_image_prompt", "Basic prompt...")
-                prompt = self._llm._basic_image_prompt(
-                    track.artist, track.title,
-                    [l.keywords for l in self._state.lines[:5] if l.keywords],
-                    []
-                )
-                self.pipeline.set_image_prompt(prompt)
-                self.pipeline.complete("generate_image_prompt", "Basic prompt")
+            # Step 7: LLM analysis (non-blocking, queued)
+            self._queue_llm_analysis(track, lrc)
             
             logger.info(f"Loaded {len(self._state.lines)} lines ({refrain_count} refrain)")
         else:
@@ -2460,16 +2527,11 @@ class KaraokeEngine:
             # Still try to categorize based on title/artist without lyrics
             self._queue_categorization(track, "", has_lyrics=False)
             
+            # Skip LLM analysis when no lyrics
             self.pipeline.skip("llm_analysis", "No lyrics")
             self.pipeline.skip("generate_image_prompt", "No lyrics")
             self.pipeline.skip("comfyui_generate", "No prompt")
             self._state.lines = []
-        
-        # Step 8a: Generate image with ComfyUI (async in background)
-        if self.pipeline.image_prompt and self._comfyui.is_available:
-            self._start_image_generation(track)
-        elif not self._comfyui.is_available:
-            self.pipeline.skip("comfyui_generate", "ComfyUI not available")
         
         # Check for cached image and send immediately
         cached_image = self._comfyui.get_cached_image(track.artist, track.title)
@@ -2478,6 +2540,8 @@ class KaraokeEngine:
             self._osc.send_image(str(cached_image))
             self._current_image_path = cached_image
             self.pipeline.generated_image_path = str(cached_image)
+        elif not self._comfyui.is_available:
+            self.pipeline.skip("comfyui_generate", "ComfyUI not available")
         
         # Step 9: Send lyrics to Processing (track metadata already sent at start)
         self.pipeline.start("send_osc", "Sending lyrics to Processing...")
