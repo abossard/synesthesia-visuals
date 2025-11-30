@@ -172,6 +172,158 @@ class Settings:
 
 
 # =============================================================================
+# PIPELINE TRACKER - Tracks song processing steps for UI display
+# =============================================================================
+
+@dataclass
+class PipelineStep:
+    """A single step in the song processing pipeline."""
+    name: str
+    status: str = "pending"  # pending, running, done, error
+    message: str = ""
+    timestamp: float = 0.0
+    
+    @property
+    def icon(self) -> str:
+        icons = {
+            "pending": "○",
+            "running": "◐",
+            "done": "✓",
+            "error": "✗",
+            "skipped": "−"
+        }
+        return icons.get(self.status, "?")
+
+
+class PipelineTracker:
+    """
+    Tracks the processing pipeline for the current song.
+    Provides colorful step-by-step status for terminal UI display.
+    """
+    
+    STEPS = [
+        "detect_playback",
+        "fetch_lyrics",
+        "parse_lrc",
+        "analyze_refrain",
+        "extract_keywords",
+        "llm_analysis",
+        "generate_image_prompt",
+        "send_osc"
+    ]
+    
+    STEP_LABELS = {
+        "detect_playback": "🎵 Detect Playback",
+        "fetch_lyrics": "📜 Fetch Lyrics",
+        "parse_lrc": "⏱ Parse LRC Timecodes",
+        "analyze_refrain": "🔁 Detect Refrain",
+        "extract_keywords": "🔑 Extract Keywords",
+        "llm_analysis": "🤖 AI Analysis",
+        "generate_image_prompt": "🎨 Generate Image Prompt",
+        "send_osc": "📡 Send OSC"
+    }
+    
+    def __init__(self):
+        self.steps: Dict[str, PipelineStep] = {}
+        self.current_track = ""
+        self.logs: List[str] = []
+        self.image_prompt = ""
+        self._max_logs = 20
+        self.reset()
+    
+    def reset(self, track_key: str = ""):
+        """Reset pipeline for a new track."""
+        self.current_track = track_key
+        self.image_prompt = ""
+        self.steps = {
+            name: PipelineStep(name=name, status="pending")
+            for name in self.STEPS
+        }
+        if track_key:
+            self.log(f"New track: {track_key}")
+    
+    def start(self, step: str, message: str = ""):
+        """Mark a step as running."""
+        if step in self.steps:
+            self.steps[step].status = "running"
+            self.steps[step].message = message
+            self.steps[step].timestamp = time.time()
+            if message:
+                self.log(f"[{step}] {message}")
+    
+    def complete(self, step: str, message: str = ""):
+        """Mark a step as done."""
+        if step in self.steps:
+            self.steps[step].status = "done"
+            if message:
+                self.steps[step].message = message
+                self.log(f"[{step}] ✓ {message}")
+    
+    def error(self, step: str, message: str = ""):
+        """Mark a step as failed."""
+        if step in self.steps:
+            self.steps[step].status = "error"
+            if message:
+                self.steps[step].message = message
+                self.log(f"[{step}] ✗ {message}")
+    
+    def skip(self, step: str, message: str = ""):
+        """Mark a step as skipped."""
+        if step in self.steps:
+            self.steps[step].status = "skipped"
+            if message:
+                self.steps[step].message = message
+    
+    def log(self, message: str):
+        """Add a log entry with timestamp."""
+        ts = time.strftime("%H:%M:%S")
+        self.logs.append(f"{ts} {message}")
+        if len(self.logs) > self._max_logs:
+            self.logs = self.logs[-self._max_logs:]
+    
+    def set_image_prompt(self, prompt: str):
+        """Store the generated image prompt."""
+        self.image_prompt = prompt
+        if prompt:
+            self.log(f"Image prompt: {prompt[:60]}...")
+    
+    def get_display_lines(self) -> List[tuple]:
+        """
+        Get formatted lines for terminal display.
+        Returns list of (color, text) tuples.
+        """
+        lines = []
+        
+        # Pipeline steps
+        for step_name in self.STEPS:
+            step = self.steps.get(step_name)
+            if not step:
+                continue
+            
+            label = self.STEP_LABELS.get(step_name, step_name)
+            
+            if step.status == "done":
+                color = "green"
+            elif step.status == "running":
+                color = "yellow"
+            elif step.status == "error":
+                color = "red"
+            elif step.status == "skipped":
+                color = "dim"
+            else:
+                color = "dim"
+            
+            msg = f" - {step.message}" if step.message else ""
+            lines.append((color, f"  {step.icon} {label}{msg}"))
+        
+        return lines
+    
+    def get_log_lines(self, max_lines: int = 8) -> List[str]:
+        """Get recent log entries."""
+        return self.logs[-max_lines:]
+
+
+# =============================================================================
 # DOMAIN MODELS - Pure data structures
 # =============================================================================
 
@@ -493,6 +645,7 @@ class LLMAnalyzer:
                 'refrain_lines': ['line1', 'line2', ...],  # Chorus/refrain text
                 'keywords': ['word1', 'word2', ...],      # Most impactful words
                 'themes': ['theme1', 'theme2', ...],      # Song themes
+                'image_prompt': str,                       # AI image generation prompt
                 'cached': bool                             # True if from cache
             }
         """
@@ -509,11 +662,12 @@ class LLMAnalyzer:
         if not self._available:
             return self._basic_analysis(lyrics)
         
-        # Build prompt
+        # Build prompt - now includes image prompt generation
         prompt = f"""Analyze these song lyrics and extract:
 1. REFRAIN: The chorus or refrain lines (text that repeats and is the emotional core)
 2. KEYWORDS: 5-10 most emotionally impactful or important single words
 3. THEMES: 2-3 main themes of the song
+4. IMAGE_PROMPT: A detailed visual prompt (50-100 words) that could generate an image capturing the song's mood, themes, and emotional atmosphere. Include colors, lighting, composition, and symbolic elements. Style: cinematic, abstract, suitable for VJ visuals.
 
 Song: "{title}" by {artist}
 
@@ -521,7 +675,7 @@ Lyrics:
 {lyrics[:3000]}
 
 Respond in JSON format:
-{{"refrain_lines": ["line1", "line2"], "keywords": ["word1", "word2"], "themes": ["theme1", "theme2"]}}
+{{"refrain_lines": ["line1", "line2"], "keywords": ["word1", "word2"], "themes": ["theme1", "theme2"], "image_prompt": "detailed visual description..."}}
 """
         
         try:
@@ -535,6 +689,72 @@ Respond in JSON format:
             logger.debug(f"LLM analysis failed: {e}")
         
         return self._basic_analysis(lyrics)
+    
+    def generate_image_prompt(self, artist: str, title: str, keywords: List[str], themes: List[str]) -> str:
+        """
+        Generate an image prompt for a song based on metadata.
+        Used as fallback when full lyrics aren't available.
+        """
+        cache_file = self._cache_dir / f"imgprompt_{re.sub(r'[^w]', '', f'{artist}_{title}'.lower())}.txt"
+        
+        if cache_file.exists():
+            try:
+                return cache_file.read_text()
+            except IOError:
+                pass
+        
+        if not self._available:
+            return self._basic_image_prompt(artist, title, keywords, themes)
+        
+        prompt = f"""Create a detailed visual prompt (50-100 words) for AI image generation that captures the essence of this song:
+
+Song: "{title}" by {artist}
+Keywords: {', '.join(keywords[:10]) if keywords else 'unknown'}
+Themes: {', '.join(themes[:5]) if themes else 'unknown'}
+
+The image prompt should:
+- Describe colors, lighting, mood, and atmosphere
+- Include symbolic or abstract elements reflecting the song's themes
+- Be suitable for VJ/music visualization use
+- Style: cinematic, abstract, high-contrast, suitable for live visuals
+
+Respond with ONLY the image prompt text, no JSON or explanation."""
+
+        try:
+            if self._backend == "openai":
+                response = self._openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=200,
+                    temperature=0.7
+                )
+                result = response.choices[0].message.content.strip()
+            elif self._backend == "ollama":
+                resp = requests.post(
+                    f"{self.OLLAMA_URL}/api/generate",
+                    json={"model": self._ollama_model, "prompt": prompt, "stream": False},
+                    timeout=30
+                )
+                if resp.status_code == 200:
+                    result = resp.json().get('response', '').strip()
+                else:
+                    result = None
+            else:
+                result = None
+            
+            if result:
+                cache_file.write_text(result)
+                return result
+        except Exception as e:
+            logger.debug(f"Image prompt generation failed: {e}")
+        
+        return self._basic_image_prompt(artist, title, keywords, themes)
+    
+    def _basic_image_prompt(self, artist: str, title: str, keywords: List[str], themes: List[str]) -> str:
+        """Generate a basic image prompt without LLM."""
+        keyword_str = ', '.join(keywords[:5]) if keywords else 'music, rhythm, emotion'
+        theme_str = ', '.join(themes[:3]) if themes else 'energy, movement'
+        return f"Abstract cinematic visualization for '{title}' by {artist}. Themes: {theme_str}. Elements: {keyword_str}. Dark background with vibrant light trails, high contrast, suitable for VJ performance."
     
     def _call_llm(self, prompt: str) -> Optional[Dict[str, Any]]:
         """Call the active LLM backend."""
@@ -630,6 +850,267 @@ Respond in JSON format:
         safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
         safe = re.sub(r'\s+', '_', safe)
         return self._cache_dir / f"{safe}.json"
+
+
+# =============================================================================
+# COMFYUI IMAGE GENERATOR - Generates images using local ComfyUI
+# =============================================================================
+
+class ComfyUIGenerator:
+    """
+    Generates images using local ComfyUI installation.
+    
+    Creates visuals for songs with black backgrounds (for transparency in VJ compositing).
+    Images are cached locally and can be used as overlays in Magic Music Visuals.
+    """
+    
+    COMFYUI_URL = "http://127.0.0.1:8188"
+    
+    # Base prompt suffix for VJ-compatible output (black background for transparency)
+    VJ_PROMPT_SUFFIX = ", pure black background, isolated subject, high contrast, dramatic lighting, suitable for video overlay, no background elements, centered composition, professional quality"
+    
+    # Negative prompt to ensure clean black backgrounds
+    NEGATIVE_PROMPT = "white background, gray background, busy background, cluttered, low contrast, blurry, text, watermark, logo, frame, border"
+    
+    def __init__(self, output_dir: Optional[Path] = None):
+        self._output_dir = output_dir or (Config.APP_DATA_DIR / "generated_images")
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._available = False
+        self._client_id = None
+        self._check_connection()
+    
+    def _check_connection(self):
+        """Check if ComfyUI is running."""
+        try:
+            resp = requests.get(f"{self.COMFYUI_URL}/system_stats", timeout=2)
+            if resp.status_code == 200:
+                self._available = True
+                # Generate a unique client ID for this session
+                import uuid
+                self._client_id = str(uuid.uuid4())
+                logger.info("ComfyUI: ✓ Connected")
+            else:
+                logger.info("ComfyUI: Not responding")
+        except requests.RequestException:
+            logger.info("ComfyUI: Not available (start ComfyUI on port 8188)")
+    
+    @property
+    def is_available(self) -> bool:
+        return self._available
+    
+    def get_vj_prompt(self, base_prompt: str) -> str:
+        """
+        Enhance a prompt for VJ use with black background requirements.
+        """
+        # Clean up the base prompt
+        prompt = base_prompt.strip()
+        if not prompt:
+            return ""
+        
+        # Add VJ-specific requirements
+        return prompt + self.VJ_PROMPT_SUFFIX
+    
+    def generate_image(
+        self,
+        prompt: str,
+        artist: str,
+        title: str,
+        width: int = 1024,
+        height: int = 1024,
+        steps: int = 20,
+        cfg_scale: float = 7.0
+    ) -> Optional[Path]:
+        """
+        Generate an image using ComfyUI.
+        
+        Args:
+            prompt: The image generation prompt (will be enhanced for VJ use)
+            artist: Artist name (for caching)
+            title: Song title (for caching)
+            width: Image width
+            height: Image height
+            steps: Number of diffusion steps
+            cfg_scale: Classifier-free guidance scale
+            
+        Returns:
+            Path to the generated image, or None if generation failed.
+        """
+        if not self._available:
+            return None
+        
+        # Check cache first
+        cache_file = self._get_image_path(artist, title)
+        if cache_file.exists():
+            logger.debug(f"Using cached image: {cache_file}")
+            return cache_file
+        
+        # Enhance prompt for VJ use
+        vj_prompt = self.get_vj_prompt(prompt)
+        
+        # Build ComfyUI workflow
+        workflow = self._build_workflow(vj_prompt, width, height, steps, cfg_scale)
+        
+        try:
+            # Queue the prompt
+            resp = requests.post(
+                f"{self.COMFYUI_URL}/prompt",
+                json={"prompt": workflow, "client_id": self._client_id},
+                timeout=10
+            )
+            
+            if resp.status_code != 200:
+                logger.error(f"ComfyUI queue failed: {resp.status_code}")
+                return None
+            
+            prompt_id = resp.json().get('prompt_id')
+            if not prompt_id:
+                return None
+            
+            # Poll for completion
+            image_path = self._wait_for_image(prompt_id, cache_file)
+            if image_path:
+                logger.info(f"Generated image: {image_path.name}")
+            return image_path
+            
+        except requests.RequestException as e:
+            logger.error(f"ComfyUI error: {e}")
+            return None
+    
+    def _build_workflow(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        steps: int,
+        cfg_scale: float
+    ) -> Dict[str, Any]:
+        """
+        Build a ComfyUI workflow for SDXL image generation.
+        Uses a simple txt2img workflow with black background emphasis.
+        """
+        # Simple SDXL workflow
+        return {
+            "3": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": int(time.time()) % 2147483647,
+                    "steps": steps,
+                    "cfg": cfg_scale,
+                    "sampler_name": "euler",
+                    "scheduler": "normal",
+                    "denoise": 1.0,
+                    "model": ["4", 0],
+                    "positive": ["6", 0],
+                    "negative": ["7", 0],
+                    "latent_image": ["5", 0]
+                }
+            },
+            "4": {
+                "class_type": "CheckpointLoaderSimple",
+                "inputs": {
+                    "ckpt_name": "sd_xl_base_1.0.safetensors"
+                }
+            },
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {
+                    "width": width,
+                    "height": height,
+                    "batch_size": 1
+                }
+            },
+            "6": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": prompt,
+                    "clip": ["4", 1]
+                }
+            },
+            "7": {
+                "class_type": "CLIPTextEncode",
+                "inputs": {
+                    "text": self.NEGATIVE_PROMPT,
+                    "clip": ["4", 1]
+                }
+            },
+            "8": {
+                "class_type": "VAEDecode",
+                "inputs": {
+                    "samples": ["3", 0],
+                    "vae": ["4", 2]
+                }
+            },
+            "9": {
+                "class_type": "SaveImage",
+                "inputs": {
+                    "filename_prefix": "karaoke_vj",
+                    "images": ["8", 0]
+                }
+            }
+        }
+    
+    def _wait_for_image(self, prompt_id: str, output_path: Path, timeout: int = 120) -> Optional[Path]:
+        """Wait for image generation to complete and download result."""
+        start = time.time()
+        
+        while time.time() - start < timeout:
+            try:
+                # Check history for completion
+                resp = requests.get(f"{self.COMFYUI_URL}/history/{prompt_id}", timeout=5)
+                if resp.status_code == 200:
+                    history = resp.json()
+                    if prompt_id in history:
+                        outputs = history[prompt_id].get('outputs', {})
+                        # Find the SaveImage node output
+                        for node_id, node_output in outputs.items():
+                            if 'images' in node_output:
+                                for img_info in node_output['images']:
+                                    filename = img_info.get('filename')
+                                    subfolder = img_info.get('subfolder', '')
+                                    if filename:
+                                        # Download the image
+                                        return self._download_image(filename, subfolder, output_path)
+                
+                time.sleep(2)
+                
+            except requests.RequestException:
+                time.sleep(2)
+        
+        logger.warning("ComfyUI: Image generation timed out")
+        return None
+    
+    def _download_image(self, filename: str, subfolder: str, output_path: Path) -> Optional[Path]:
+        """Download generated image from ComfyUI."""
+        try:
+            params = {"filename": filename}
+            if subfolder:
+                params["subfolder"] = subfolder
+            
+            resp = requests.get(f"{self.COMFYUI_URL}/view", params=params, timeout=30)
+            if resp.status_code == 200:
+                output_path.write_bytes(resp.content)
+                return output_path
+        except requests.RequestException as e:
+            logger.error(f"Failed to download image: {e}")
+        
+        return None
+    
+    def _get_image_path(self, artist: str, title: str) -> Path:
+        """Get cache path for a song's generated image."""
+        safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
+        safe = re.sub(r'\s+', '_', safe)
+        return self._output_dir / f"{safe}.png"
+    
+    def get_cached_image(self, artist: str, title: str) -> Optional[Path]:
+        """Get path to cached image if it exists."""
+        path = self._get_image_path(artist, title)
+        return path if path.exists() else None
+    
+    def get_cached_count(self) -> int:
+        """Return number of cached generated images."""
+        if self._output_dir.exists():
+            return len(list(self._output_dir.glob("*.png")))
+        return 0
 
 
 # =============================================================================
@@ -821,6 +1302,7 @@ class KaraokeEngine:
     - Lyrics fetching and analysis
     - OSC output on 3 channels
     - Adjustable timing offset (positive = lyrics early, negative = late)
+    - Pipeline tracking for UI display
     
     Simple interface: start(), stop(), run(), adjust_timing()
     Uses smart defaults from Config class.
@@ -843,6 +1325,10 @@ class KaraokeEngine:
         self._spotify = SpotifyMonitor()
         self._vdj = VirtualDJMonitor(vdj_path)
         self._settings = Settings()  # Persistent settings (timing offset)
+        self._llm = LLMAnalyzer()    # AI-powered analysis
+        
+        # Pipeline tracking for UI
+        self.pipeline = PipelineTracker()
         
         # State
         self._state = PlaybackState()
@@ -947,24 +1433,93 @@ class KaraokeEngine:
         self._write_state()
     
     def _on_track_change(self):
-        """Handle new track."""
+        """Handle new track with full pipeline tracking."""
         track = self._state.track
-        logger.info(f"Now playing: {track.artist} - {track.title}")
-        print(f"\n  🎵 {track.artist} - {track.title}")
+        track_key = f"{track.artist} - {track.title}"
         
-        # Fetch and analyze lyrics
+        # Reset pipeline for new track
+        self.pipeline.reset(track_key)
+        
+        logger.info(f"Now playing: {track_key}")
+        
+        # Step 1: Detect playback
+        self.pipeline.start("detect_playback", f"{track.source}: {track.artist}")
+        self.pipeline.complete("detect_playback", track.title)
+        
+        # Step 2: Fetch lyrics
+        self.pipeline.start("fetch_lyrics", "Checking cache/LRCLIB...")
         lrc = self._lyrics.fetch(track.artist, track.title, track.album, track.duration_sec)
         
         if lrc:
-            self._state.lines = analyze_lyrics(parse_lrc(lrc))
+            self.pipeline.complete("fetch_lyrics", f"Found synced lyrics")
+            
+            # Step 3: Parse LRC
+            self.pipeline.start("parse_lrc", "Parsing timecodes...")
+            self._state.lines = parse_lrc(lrc)
+            self.pipeline.complete("parse_lrc", f"{len(self._state.lines)} lines")
+            
+            # Step 4: Analyze refrain
+            self.pipeline.start("analyze_refrain", "Detecting repeated lines...")
+            self._state.lines = detect_refrains(self._state.lines)
             refrain_count = len(get_refrain_lines(self._state.lines))
+            self.pipeline.complete("analyze_refrain", f"{refrain_count} refrain lines")
+            
+            # Step 5: Extract keywords
+            self.pipeline.start("extract_keywords", "Filtering stop words...")
+            # Keywords are extracted in detect_refrains, just log
+            self.pipeline.complete("extract_keywords", "Done")
+            
+            # Step 6: LLM analysis (if available)
+            if self._llm.is_available:
+                self.pipeline.start("llm_analysis", f"Using {self._llm.backend_info}...")
+                try:
+                    llm_result = self._llm.analyze_lyrics(lrc, track.artist, track.title)
+                    if llm_result.get('cached'):
+                        self.pipeline.complete("llm_analysis", "Loaded from cache")
+                    else:
+                        themes = llm_result.get('themes', [])
+                        self.pipeline.complete("llm_analysis", f"Themes: {', '.join(themes[:3])}")
+                    
+                    # Step 7: Generate image prompt
+                    if llm_result.get('image_prompt'):
+                        self.pipeline.start("generate_image_prompt", "Creating visual prompt...")
+                        self.pipeline.set_image_prompt(llm_result['image_prompt'])
+                        self.pipeline.complete("generate_image_prompt", "Generated")
+                    else:
+                        self.pipeline.start("generate_image_prompt", "Generating from metadata...")
+                        prompt = self._llm.generate_image_prompt(
+                            track.artist, track.title,
+                            llm_result.get('keywords', []),
+                            llm_result.get('themes', [])
+                        )
+                        self.pipeline.set_image_prompt(prompt)
+                        self.pipeline.complete("generate_image_prompt", "Generated")
+                except Exception as e:
+                    self.pipeline.error("llm_analysis", str(e)[:40])
+                    self.pipeline.skip("generate_image_prompt", "LLM failed")
+            else:
+                self.pipeline.skip("llm_analysis", "No LLM available")
+                self.pipeline.start("generate_image_prompt", "Basic prompt...")
+                prompt = self._llm._basic_image_prompt(
+                    track.artist, track.title,
+                    [l.keywords for l in self._state.lines[:5] if l.keywords],
+                    []
+                )
+                self.pipeline.set_image_prompt(prompt)
+                self.pipeline.complete("generate_image_prompt", "Basic prompt")
+            
             logger.info(f"Loaded {len(self._state.lines)} lines ({refrain_count} refrain)")
-            print(f"     Lyrics: {len(self._state.lines)} lines, {refrain_count} refrain")
         else:
+            self.pipeline.error("fetch_lyrics", "No synced lyrics found")
+            self.pipeline.skip("parse_lrc", "No lyrics")
+            self.pipeline.skip("analyze_refrain", "No lyrics")
+            self.pipeline.skip("extract_keywords", "No lyrics")
+            self.pipeline.skip("llm_analysis", "No lyrics")
+            self.pipeline.skip("generate_image_prompt", "No lyrics")
             self._state.lines = []
-            print("     No synced lyrics available")
         
-        # Send track info
+        # Step 8: Send OSC
+        self.pipeline.start("send_osc", "Sending to Processing...")
         self._osc.send_track(track, len(self._state.lines) > 0)
         
         # Send all lines on all channels
@@ -983,6 +1538,8 @@ class KaraokeEngine:
             if line.is_refrain:
                 self._osc.send_refrain_line(refrain_idx, line.time_sec, line.text)
                 refrain_idx += 1
+        
+        self.pipeline.complete("send_osc", f"Sent {len(self._state.lines)} lines")
     
     def _send_updates(self):
         """Send position and active line updates with timing offset applied."""

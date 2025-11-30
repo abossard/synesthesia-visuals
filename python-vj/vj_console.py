@@ -533,6 +533,9 @@ class VJConsole:
         
         print()
         
+        # Services panel (show detected services)
+        self._draw_services_panel(t)
+        
         # OSC Info Panel
         self._draw_osc_panel(t)
         
@@ -555,47 +558,127 @@ class VJConsole:
         print(t.dim(help_text))
     
     def _draw_osc_panel(self, t):
-        """Draw OSC connection info and current messages."""
-        print(t.bold_yellow("  ═══ OSC Status ═══"))
-        
+        """Draw OSC connection info, pipeline status, and logs."""
         host = KaraokeConfig.DEFAULT_OSC_HOST
         port = KaraokeConfig.DEFAULT_OSC_PORT
         
-        if self.state.karaoke_enabled:
+        if self.state.karaoke_enabled and self.karaoke_engine:
             # Show timing offset
-            offset_ms = self.karaoke_engine.timing_offset_ms if self.karaoke_engine else 0
+            offset_ms = self.karaoke_engine.timing_offset_ms
             offset_str = f"{offset_ms:+d}ms" if offset_ms != 0 else "0ms"
+            print(t.bold_yellow("  ═══ OSC Status ═══"))
             print(t.green(f"    📡 Sending to {host}:{port}  ⏱ Offset: {offset_str}"))
-            print(t.dim(f"    ├─ /karaoke/track"))
-            print(t.dim(f"    ├─ /karaoke/lyrics/..."))
-            print(t.dim(f"    ├─ /karaoke/refrain/..."))
-            print(t.dim(f"    └─ /karaoke/keywords/..."))
             
-            if self.karaoke_engine and hasattr(self.karaoke_engine, '_state'):
-                state = self.karaoke_engine._state
-                if state.active and state.track:
+            state = self.karaoke_engine._state
+            if state.active and state.track:
+                print(t.bold_cyan(f"    🎵 {state.track.artist} - {state.track.title}"))
+                
+                # Show pipeline status
+                pipeline = self.karaoke_engine.pipeline
+                print()
+                print(t.bold_magenta("  ═══ Processing Pipeline ═══"))
+                
+                for color, text in pipeline.get_display_lines():
+                    if color == "green":
+                        print(t.green(text))
+                    elif color == "yellow":
+                        print(t.yellow(text))
+                    elif color == "red":
+                        print(t.red(text))
+                    else:
+                        print(t.dim(text))
+                
+                # Show image prompt if available
+                if pipeline.image_prompt:
                     print()
-                    print(t.bold_cyan(f"    🎵 {state.track.artist} - {state.track.title}"))
-                    pos = state.position_sec
-                    print(t.dim(f"    /karaoke/pos [{pos:.1f}, 1]"))
+                    print(t.bold_cyan("  ═══ Image Prompt ═══"))
+                    # Word wrap the prompt
+                    prompt = pipeline.image_prompt[:200] + "..." if len(pipeline.image_prompt) > 200 else pipeline.image_prompt
+                    print(t.cyan(f"    {prompt}"))
+                
+                # Show recent logs
+                logs = pipeline.get_log_lines(5)
+                if logs:
+                    print()
+                    print(t.bold_yellow("  ═══ Logs ═══"))
+                    for log in logs:
+                        print(t.dim(f"    {log}"))
+                
+                # Show current lyrics info
+                if state.lines:
+                    from karaoke_engine import get_active_line_index
+                    adjusted_pos = state.position_sec + (offset_ms / 1000.0)
+                    idx = get_active_line_index(state.lines, adjusted_pos)
                     
-                    if state.lines:
-                        from karaoke_engine import get_active_line_index
-                        adjusted_pos = pos + (offset_ms / 1000.0)
-                        idx = get_active_line_index(state.lines, adjusted_pos)
-                        print(t.dim(f"    /karaoke/line/active [{idx}]"))
-                        
-                        if 0 <= idx < len(state.lines):
-                            line = state.lines[idx]
-                            if line.keywords:
-                                print(t.yellow(f"    Keywords: {line.keywords}"))
-                            if line.is_refrain:
-                                print(t.magenta(f"    [REFRAIN]"))
-                else:
-                    print(t.dim(f"    (waiting for playback...)"))
+                    if 0 <= idx < len(state.lines):
+                        line = state.lines[idx]
+                        print()
+                        print(t.bold_white(f"    ♪ {line.text}"))
+                        if line.keywords:
+                            print(t.yellow(f"      Keywords: {line.keywords}"))
+                        if line.is_refrain:
+                            print(t.magenta(f"      [REFRAIN]"))
+            else:
+                print(t.dim(f"    (waiting for playback...)"))
         else:
+            print(t.bold_yellow("  ═══ OSC Status ═══"))
             print(t.dim(f"    ○ OSC inactive"))
             print(t.dim(f"    Target: {host}:{port}"))
+        
+        print()
+    
+    def _draw_services_panel(self, t):
+        """Draw detected services status."""
+        print(t.bold_blue("  ═══ Services ═══"))
+        
+        # Check Spotify
+        if KaraokeConfig.has_spotify_credentials():
+            print(t.green("    ✓ Spotify API      Credentials configured"))
+        else:
+            print(t.dim("    ○ Spotify API      Set SPOTIPY_* env vars or .env"))
+        
+        # Check VirtualDJ
+        vdj_path = KaraokeConfig.find_vdj_path()
+        if vdj_path and vdj_path.exists():
+            print(t.green(f"    ✓ VirtualDJ        {vdj_path.name}"))
+        elif vdj_path:
+            print(t.yellow(f"    ◐ VirtualDJ        Monitoring {vdj_path.name}"))
+        else:
+            print(t.dim("    ○ VirtualDJ        Folder not found"))
+        
+        # Check Ollama
+        try:
+            import requests
+            resp = requests.get("http://localhost:11434/api/tags", timeout=1)
+            if resp.status_code == 200:
+                models = resp.json().get('models', [])
+                if models:
+                    names = [m.get('name', '').split(':')[0] for m in models[:3]]
+                    print(t.green(f"    ✓ Ollama LLM       {', '.join(names)}"))
+                else:
+                    print(t.yellow("    ◐ Ollama LLM       Running (no models)"))
+            else:
+                print(t.dim("    ○ Ollama LLM       Not responding"))
+        except:
+            print(t.dim("    ○ Ollama LLM       Not running (ollama serve)"))
+        
+        # Check ComfyUI
+        try:
+            import requests
+            resp = requests.get("http://127.0.0.1:8188/system_stats", timeout=1)
+            if resp.status_code == 200:
+                print(t.green("    ✓ ComfyUI          http://127.0.0.1:8188"))
+            else:
+                print(t.dim("    ○ ComfyUI          Not responding"))
+        except:
+            print(t.dim("    ○ ComfyUI          Not running (port 8188)"))
+        
+        # Check OpenAI
+        import os
+        if os.environ.get('OPENAI_API_KEY'):
+            print(t.green("    ✓ OpenAI API       Key configured"))
+        else:
+            print(t.dim("    ○ OpenAI API       OPENAI_API_KEY not set"))
         
         print()
     
