@@ -27,11 +27,15 @@ import time
 import logging
 import argparse
 import re
+import queue
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 from threading import Thread, Event, Lock
 from functools import wraps
+
+# OSC centralized manager
+from osc_manager import osc
 
 # Load .env file if present
 try:
@@ -1982,7 +1986,7 @@ class VirtualDJMonitor:
 
 class OSCSender:
     """
-    Sends karaoke and VJ control data via OSC.
+    Wrapper around centralized OSC manager for karaoke-specific messages.
     
     Channels:
     - /karaoke/... - Full lyrics
@@ -1993,134 +1997,116 @@ class OSCSender:
     """
     
     def __init__(self, host: str = "127.0.0.1", port: int = 9000):
-        self._client = udp_client.SimpleUDPClient(host, port)
-        self._message_log: List[tuple] = []  # For OSC debug panel
-        self._max_log_entries = 100
-        logger.info(f"OSC: sending to {host}:{port}")
-    
-    def _log_message(self, address: str, args: list):
-        """Log OSC message for debug panel."""
-        self._message_log.append((time.time(), address, args))
-        if len(self._message_log) > self._max_log_entries:
-            self._message_log = self._message_log[-self._max_log_entries:]
+        # Use centralized OSC manager
+        logger.info(f"OSC: using centralized manager {osc.host}:{osc.port}")
     
     def get_recent_messages(self, count: int = 20) -> List[tuple]:
         """Get recent OSC messages for debug display."""
-        return self._message_log[-count:]
+        return osc.get_recent_messages(count)
     
     # === Track info ===
     
     def send_track(self, track: Track, has_lyrics: bool):
         """Send track metadata."""
-        self._client.send_message("/karaoke/track", [
-            1, track.source, track.artist, track.title,
-            track.album, track.duration_sec, 1 if has_lyrics else 0
-        ])
+        osc.send("/karaoke/track", [1, track.source, track.artist, track.title, track.album, track.duration_sec, 1 if has_lyrics else 0])
     
     def send_no_track(self):
         """Send inactive state."""
-        self._client.send_message("/karaoke/track", [0, "", "", "", "", 0.0, 0])
-        self._client.send_message("/karaoke/pos", [0.0, 0])
+        osc.send("/karaoke/track", [0, "", "", "", "", 0.0, 0])
+        osc.send("/karaoke/pos", [0.0, 0])
     
     # === Position ===
     
     def send_position(self, position: float, playing: bool):
         """Send playback position."""
-        self._client.send_message("/karaoke/pos", [position, 1 if playing else 0])
+        osc.send("/karaoke/pos", [position, 1 if playing else 0])
     
     # === Full lyrics channel ===
     
     def send_lyrics_reset(self, song_id: str):
-        self._client.send_message("/karaoke/lyrics/reset", [song_id])
+        osc.send("/karaoke/lyrics/reset", [song_id])
     
     def send_lyric_line(self, index: int, time_sec: float, text: str):
-        self._client.send_message("/karaoke/lyrics/line", [index, time_sec, text])
+        osc.send("/karaoke/lyrics/line", [index, time_sec, text])
     
     def send_active_line(self, index: int):
-        self._client.send_message("/karaoke/line/active", [index])
+        osc.send("/karaoke/line/active", [index])
     
     # === Refrain channel ===
     
     def send_refrain_reset(self, song_id: str):
-        self._client.send_message("/karaoke/refrain/reset", [song_id])
+        osc.send("/karaoke/refrain/reset", [song_id])
     
     def send_refrain_line(self, index: int, time_sec: float, text: str):
-        self._client.send_message("/karaoke/refrain/line", [index, time_sec, text])
+        osc.send("/karaoke/refrain/line", [index, time_sec, text])
     
     def send_refrain_active(self, index: int, text: str):
-        self._client.send_message("/karaoke/refrain/active", [index, text])
+        osc.send("/karaoke/refrain/active", [index, text])
     
     # === Keywords channel ===
     
     def send_keywords_reset(self, song_id: str):
-        self._client.send_message("/karaoke/keywords/reset", [song_id])
+        osc.send("/karaoke/keywords/reset", [song_id])
     
     def send_keywords_line(self, index: int, time_sec: float, keywords: str):
-        self._client.send_message("/karaoke/keywords/line", [index, time_sec, keywords])
+        osc.send("/karaoke/keywords/line", [index, time_sec, keywords])
     
     def send_keywords_active(self, index: int, keywords: str):
-        self._client.send_message("/karaoke/keywords/active", [index, keywords])
+        osc.send("/karaoke/keywords/active", [index, keywords])
     
     # === Image channel ===
     
     def send_image(self, image_path: str):
         """Send image file path to Processing ImageOverlay."""
-        self._client.send_message("/karaoke/image", [image_path])
+        osc.send("/karaoke/image", [image_path])
         logger.debug(f"OSC: /karaoke/image [{image_path}]")
     
     def send_image_clear(self):
         """Clear the displayed image."""
-        self._client.send_message("/karaoke/image/clear", [])
+        osc.send("/karaoke/image/clear", [])
     
     def send_image_opacity(self, opacity: float):
         """Set image opacity (0.0-1.0)."""
-        self._client.send_message("/karaoke/image/opacity", [opacity])
-        self._log_message("/karaoke/image/opacity", [opacity])
+        osc.send("/karaoke/image/opacity", [opacity])
     
     # === Song Categories channel ===
     
     def send_categories(self, categories: 'SongCategories'):
         """Send all song category scores."""
         # Send primary mood
-        self._client.send_message("/karaoke/categories/mood", [categories.primary_mood])
-        self._log_message("/karaoke/categories/mood", [categories.primary_mood])
+        osc.send("/karaoke/categories/mood", [categories.primary_mood])
         
         # Send top categories as individual messages
         for cat in categories.get_top(10):
-            self._client.send_message(f"/karaoke/categories/{cat.name}", [cat.score])
-            self._log_message(f"/karaoke/categories/{cat.name}", [cat.score])
+            osc.send(f"/karaoke/categories/{cat.name}", [cat.score])
         
         # Send all categories as a batch (for apps that prefer single message)
         cat_data = [(c.name, c.score) for c in categories.get_top(10)]
         flat_args = []
         for name, score in cat_data:
             flat_args.extend([name, score])
-        self._client.send_message("/karaoke/categories/all", flat_args)
-        self._log_message("/karaoke/categories/all", flat_args)
+        osc.send("/karaoke/categories/all", flat_args)
     
     def send_category(self, name: str, score: float):
         """Send a single category score."""
-        self._client.send_message(f"/karaoke/categories/{name}", [score])
-        self._log_message(f"/karaoke/categories/{name}", [score])
+        osc.send(f"/karaoke/categories/{name}", [score])
     
     # === VJ App Status channel ===
     
     def send_app_status(self, app_name: str, running: bool):
         """Send app running status (for layer control in Magic etc)."""
-        self._client.send_message("/vj/apps/status", [app_name, 1 if running else 0])
-        self._log_message("/vj/apps/status", [app_name, 1 if running else 0])
+        osc.send("/vj/apps/status", [app_name, 1 if running else 0])
     
     def send_all_apps_status(self, apps: Dict[str, bool]):
         """Send status of all apps at once."""
         flat_args = []
         for name, running in apps.items():
             flat_args.extend([name, 1 if running else 0])
-        self._client.send_message("/vj/apps/all", flat_args)
-        self._log_message("/vj/apps/all", flat_args)
+        osc.send("/vj/apps/all", flat_args)
     
     def send_synesthesia_status(self, running: bool):
         """Send Synesthesia running status."""
-        self._client.send_message("/vj/synesthesia/status", [1 if running else 0])
+        osc.send("/vj/synesthesia/status", [1 if running else 0])
         self._log_message("/vj/synesthesia/status", [1 if running else 0])
     
     def send_milksyphon_status(self, running: bool):
@@ -2131,13 +2117,7 @@ class OSCSender:
     def send_master_status(self, karaoke_active: bool, synesthesia_running: bool, 
                           milksyphon_running: bool, processing_apps: int):
         """Send overall master status."""
-        self._client.send_message("/vj/master/status", [
-            1 if karaoke_active else 0,
-            1 if synesthesia_running else 0,
-            1 if milksyphon_running else 0,
-            processing_apps
-        ])
-        self._log_message("/vj/master/status", [
+        osc.send("/vj/master/status", [
             1 if karaoke_active else 0,
             1 if synesthesia_running else 0,
             1 if milksyphon_running else 0,
@@ -2203,6 +2183,11 @@ class KaraokeEngine:
         self._stop = Event()
         self._thread: Optional[Thread] = None
         self._image_thread: Optional[Thread] = None
+        
+        # Background categorization queue
+        self._categorization_queue: queue.Queue = queue.Queue(maxsize=5)
+        self._categorization_worker: Optional[Thread] = None
+        self._categorization_running: bool = False
     
     @property
     def timing_offset_ms(self) -> int:
@@ -2218,6 +2203,80 @@ class KaraokeEngine:
         new_offset = self._settings.adjust_timing(delta_ms)
         logger.info(f"Timing offset adjusted to {new_offset}ms")
         return new_offset
+    
+    def _start_categorization_worker(self):
+        """Start background thread for song categorization."""
+        self._categorization_running = True
+        self._categorization_worker = Thread(
+            target=self._categorization_worker_loop,
+            daemon=True,
+            name="CategorizationWorker"
+        )
+        self._categorization_worker.start()
+        logger.info("Categorization worker started")
+    
+    def _categorization_worker_loop(self):
+        """Background worker that processes categorization requests."""
+        while self._categorization_running:
+            try:
+                # Wait for categorization request (timeout to allow clean shutdown)
+                task = self._categorization_queue.get(timeout=1.0)
+                
+                if task is None:  # Shutdown signal
+                    break
+                
+                track, lrc, has_lyrics = task
+                
+                # Perform categorization (can be slow - LLM calls)
+                try:
+                    if has_lyrics:
+                        categories = self._categorizer.categorize(
+                            track.artist, track.title, lyrics=lrc, album=track.album
+                        )
+                    else:
+                        categories = self._categorizer.categorize(
+                            track.artist, track.title, album=track.album
+                        )
+                    
+                    # Update state and send OSC (thread-safe)
+                    self._current_categories = categories
+                    self.pipeline.song_categories = categories
+                    
+                    # Format result
+                    top_cats = categories.get_top(3)
+                    cats_str = ", ".join([f"{c.name}:{c.score:.1f}" for c in top_cats])
+                    
+                    if categories.cached:
+                        self.pipeline.complete("categorize_song", f"Cached: {cats_str}")
+                    else:
+                        self.pipeline.complete("categorize_song", f"{cats_str}")
+                    
+                    # Send categories via OSC
+                    self._osc.send_categories(categories)
+                    
+                except Exception as e:
+                    logger.exception(f"Categorization failed: {e}")
+                    self.pipeline.error("categorize_song", str(e)[:40])
+                    self._current_categories = None
+                
+                self._categorization_queue.task_done()
+                
+            except queue.Empty:
+                continue  # Timeout, check if still running
+            except Exception as e:
+                logger.exception(f"Categorization worker error: {e}")
+        
+        logger.info("Categorization worker stopped")
+    
+    def _queue_categorization(self, track: Track, lrc: str, has_lyrics: bool):
+        """Queue a categorization task (non-blocking)."""
+        try:
+            # Try to add task without blocking
+            self._categorization_queue.put_nowait((track, lrc, has_lyrics))
+            self.pipeline.start("categorize_song", "Queued for analysis...")
+        except queue.Full:
+            logger.warning("Categorization queue full, skipping")
+            self.pipeline.skip("categorize_song", "Queue full")
     
     @property
     def current_categories(self) -> Optional[SongCategories]:
@@ -2256,12 +2315,22 @@ class KaraokeEngine:
     def start(self, poll_interval: float = 0.1):
         """Start engine in background thread."""
         self._stop.clear()
+        self._start_categorization_worker()  # Start background categorization
         self._thread = Thread(target=self.run, args=(poll_interval,), daemon=True)
         self._thread.start()
     
     def stop(self):
         """Stop the engine."""
         self._stop.set()
+        
+        # Stop categorization worker
+        if self._categorization_running:
+            self._categorization_running = False
+            self._categorization_queue.put(None)  # Shutdown signal
+            if self._categorization_worker:
+                self._categorization_worker.join(timeout=2)
+        
+        # Stop main thread
         if self._thread:
             self._thread.join(timeout=2)
     
@@ -2342,24 +2411,8 @@ class KaraokeEngine:
             # Keywords are extracted in detect_refrains, just log
             self.pipeline.complete("extract_keywords", "Done")
             
-            # Step 6: Categorize song
-            self.pipeline.start("categorize_song", "Analyzing mood/theme...")
-            try:
-                self._current_categories = self._categorizer.categorize(
-                    track.artist, track.title, lyrics=lrc, album=track.album
-                )
-                self.pipeline.song_categories = self._current_categories
-                top_cats = self._current_categories.get_top(3)
-                cats_str = ", ".join([f"{c.name}:{c.score:.1f}" for c in top_cats])
-                if self._current_categories.cached:
-                    self.pipeline.complete("categorize_song", f"Cached: {cats_str}")
-                else:
-                    self.pipeline.complete("categorize_song", f"{cats_str}")
-                # Send categories via OSC
-                self._osc.send_categories(self._current_categories)
-            except Exception as e:
-                self.pipeline.error("categorize_song", str(e)[:40])
-                self._current_categories = None
+            # Step 6: Categorize song (non-blocking, queued)
+            self._queue_categorization(track, lrc, has_lyrics=True)
             
             # Step 7: LLM analysis (if available)
             if self._llm.is_available:
@@ -2408,19 +2461,7 @@ class KaraokeEngine:
             self.pipeline.skip("extract_keywords", "No lyrics")
             
             # Still try to categorize based on title/artist without lyrics
-            self.pipeline.start("categorize_song", "Analyzing from metadata...")
-            try:
-                self._current_categories = self._categorizer.categorize(
-                    track.artist, track.title, album=track.album
-                )
-                self.pipeline.song_categories = self._current_categories
-                top_cats = self._current_categories.get_top(3)
-                cats_str = ", ".join([f"{c.name}:{c.score:.1f}" for c in top_cats])
-                self.pipeline.complete("categorize_song", f"{cats_str}")
-                self._osc.send_categories(self._current_categories)
-            except Exception as e:
-                self.pipeline.error("categorize_song", str(e)[:40])
-                self._current_categories = None
+            self._queue_categorization(track, "", has_lyrics=False)
             
             self.pipeline.skip("llm_analysis", "No lyrics")
             self.pipeline.skip("generate_image_prompt", "No lyrics")
