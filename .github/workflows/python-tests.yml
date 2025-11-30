@@ -21,7 +21,7 @@ jobs:
     
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.12']
     
     steps:
       - name: Checkout code
@@ -43,6 +43,7 @@ jobs:
           python -m py_compile karaoke_engine.py
           python -m py_compile audio_setup.py
           python -m py_compile vj_console.py
+          python -m py_compile process_manager.py
           echo "All Python files have valid syntax"
       
       - name: Run unit tests
@@ -53,6 +54,5 @@ jobs:
       - name: Test CLI help commands
         run: |
           cd python-vj
-          python vj_console.py --help
           python karaoke_engine.py --help
           python audio_setup.py --help

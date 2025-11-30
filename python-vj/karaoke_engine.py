@@ -856,7 +856,8 @@ Respond in JSON format:
         Generate an image prompt for a song based on metadata.
         Used as fallback when full lyrics aren't available.
         """
-        cache_file = self._cache_dir / f"imgprompt_{re.sub(r'[^\\w]', '', f'{artist}_{title}'.lower())}.txt"
+        safe_name = re.sub(r'[^\w]', '', f'{artist}_{title}'.lower())
+        cache_file = self._cache_dir / f"imgprompt_{safe_name}.txt"
         
         if cache_file.exists():
             try:
