@@ -256,6 +256,14 @@ class ServicesPanel(Static):
             else:
                 lines.append("[dim]○ OpenAI API       OPENAI_API_KEY not set[/]")
 
+            # Synesthesia
+            if status.get('synesthesia_running'):
+                lines.append("[green]✓ Synesthesia      VJ app running[/]")
+            elif status.get('synesthesia_installed'):
+                lines.append("[yellow]○ Synesthesia      Installed (not running)[/]")
+            else:
+                lines.append("[dim]○ Synesthesia      Not installed[/]")
+
             self.update("\n".join(lines))
 
         except Exception as e:
@@ -331,15 +339,15 @@ class VJConsoleApp(App):
         Binding("k,up", "navigate_up", "Up"),
         Binding("j,down", "navigate_down", "Down"),
         Binding("enter", "select", "Select"),
-        Binding("d", "toggle_daemon", "Daemon"),
         Binding("shift+k", "toggle_karaoke", "Karaoke"),
         Binding("plus,equals", "timing_up", "Timing +"),
         Binding("minus,underscore", "timing_down", "Timing -"),
     ]
 
     # Reactive state
-    daemon_mode = reactive(False)
+    daemon_mode = reactive(True)  # Always on for live reliability
     karaoke_enabled = reactive(True)
+    synesthesia_running = reactive(False)
 
     def __init__(self, project_root: Optional[Path] = None):
         super().__init__()
@@ -374,8 +382,9 @@ class VJConsoleApp(App):
         with Container(id="main-container"):
             # Status bar
             with Horizontal(id="status-bar"):
-                yield Static(f"[bold]Daemon:[/] {'[green]● ON[/]' if self.daemon_mode else '[dim]○ OFF[/]'}")
+                yield Static("[bold]Daemon:[/] [green]● ALWAYS ON[/] (auto-restart)")
                 yield Static(f"[bold]Karaoke:[/] {'[green]● ON[/]' if self.karaoke_enabled else '[dim]○ OFF[/]'}")
+                yield Static(f"[bold]Synesthesia:[/] {'[green]● Running[/]' if self.synesthesia_running else '[dim]○ Stopped[/]'}")
 
             # Main content
             with Horizontal(id="content-container"):
@@ -400,11 +409,18 @@ class VJConsoleApp(App):
         apps_widget = self.query_one("#apps-list", ProcessingAppsList)
         apps_widget.apps = self.process_manager.apps
 
+        # Start daemon mode (always on for live reliability)
+        self.process_manager.start_monitoring(daemon_mode=True)
+
         # Start karaoke engine
         self.start_karaoke()
 
+        # Start Synesthesia
+        self.start_synesthesia()
+
         # Start background update worker
         self.set_interval(0.5, self.update_data)
+        self.set_interval(2.0, self.check_synesthesia)
 
         # Update services status
         self.update_services()
@@ -428,6 +444,49 @@ class VJConsoleApp(App):
             self.karaoke_engine.stop()
             self.karaoke_engine = None
         self.karaoke_enabled = False
+
+    def check_synesthesia(self) -> None:
+        """Check if Synesthesia is running."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['pgrep', '-x', 'Synesthesia'],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            self.synesthesia_running = result.returncode == 0
+        except Exception as e:
+            logger.debug(f"Error checking Synesthesia: {e}")
+            self.synesthesia_running = False
+
+    def start_synesthesia(self) -> None:
+        """Start Synesthesia if not already running."""
+        import subprocess
+        from pathlib import Path
+
+        # Check if already running
+        try:
+            result = subprocess.run(['pgrep', '-x', 'Synesthesia'], capture_output=True, timeout=1)
+            if result.returncode == 0:
+                logger.info("Synesthesia already running")
+                self.synesthesia_running = True
+                return
+        except Exception as e:
+            logger.debug(f"pgrep check failed: {e}")
+
+        # Launch Synesthesia
+        synesthesia_path = Path("/Applications/Synesthesia.app")
+        if not synesthesia_path.exists():
+            logger.warning("Synesthesia not found at /Applications/Synesthesia.app")
+            return
+
+        try:
+            subprocess.Popen(['open', '-a', 'Synesthesia'])
+            logger.info("Synesthesia launched")
+            self.synesthesia_running = True
+        except Exception as e:
+            logger.exception(f"Failed to launch Synesthesia: {e}")
 
     def update_data(self) -> None:
         """Update all reactive data (called every 0.5s)."""
@@ -502,7 +561,7 @@ class VJConsoleApp(App):
                 models = resp.json().get('models', [])
                 status['ollama_running'] = True
                 status['ollama_models'] = [m.get('name', '').split(':')[0] for m in models[:3]]
-        except:
+        except Exception:
             pass
 
         # Check ComfyUI
@@ -510,8 +569,12 @@ class VJConsoleApp(App):
             import requests
             resp = requests.get("http://127.0.0.1:8188/system_stats", timeout=1)
             status['comfyui_running'] = resp.status_code == 200
-        except:
+        except Exception:
             pass
+
+        # Check Synesthesia
+        status['synesthesia_installed'] = Path('/Applications/Synesthesia.app').exists()
+        status['synesthesia_running'] = self.synesthesia_running
 
         services.services_status = status
 
@@ -538,14 +601,6 @@ class VJConsoleApp(App):
                 self.process_manager.stop_app(app)
             else:
                 self.process_manager.launch_app(app)
-
-    def action_toggle_daemon(self) -> None:
-        """Toggle daemon mode."""
-        self.daemon_mode = not self.daemon_mode
-        if self.daemon_mode:
-            self.process_manager.start_monitoring(daemon_mode=True)
-        else:
-            self.process_manager.stop_monitoring()
 
     def action_toggle_karaoke(self) -> None:
         """Toggle karaoke engine."""
