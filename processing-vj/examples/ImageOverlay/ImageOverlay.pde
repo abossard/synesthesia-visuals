@@ -53,7 +53,6 @@ boolean showLogs = true;
 
 // Loading state
 boolean isLoading = false;
-Thread loadThread = null;
 
 void settings() {
   size(1920, 1080, P3D);
@@ -90,6 +89,9 @@ void initSyphon() {
 
 void draw() {
   background(0);
+  
+  // Check for completed async image loading
+  checkPendingImage();
   
   // Update fade animation
   updateFade();
@@ -284,42 +286,31 @@ void loadImageAsync(String path) {
   pendingPath = path;
   isLoading = true;
   
-  // Load in background thread to avoid frame drops
-  loadThread = new Thread(new Runnable() {
-    public void run() {
-      try {
-        PImage img = loadImage(pendingPath);
-        
-        if (img == null || img.width <= 0 || img.height <= 0) {
-          log("ERROR: Failed to decode image");
-          isLoading = false;
-          return;
-        }
-        
-        // Success - swap images
-        nextImage = img;
-        currentPath = pendingPath;
-        
-        // Trigger fade in on main thread
-        isLoading = false;
-        log("✓ Loaded: " + new java.io.File(currentPath).getName() + 
-            " (" + img.width + "x" + img.height + ")");
-        
-      } catch (Exception e) {
-        log("ERROR: " + e.getMessage());
-        isLoading = false;
-      }
-    }
-  });
-  loadThread.start();
+  // Use requestImage() for async loading (thread-safe in Processing)
+  // This returns immediately and loads in background
+  nextImage = requestImage(pendingPath);
+  currentPath = pendingPath;
 }
 
-// Called from draw() to apply loaded image
-void applyPendingImage() {
-  if (nextImage != null && !isLoading) {
-    currentImage = nextImage;
-    nextImage = null;
-    startFadeIn();
+// Called from draw() to check if async loading completed
+void checkPendingImage() {
+  if (isLoading && nextImage != null) {
+    // Check if requestImage() has completed loading
+    if (nextImage.width > 0 && nextImage.height > 0) {
+      // Image loaded successfully
+      currentImage = nextImage;
+      nextImage = null;
+      isLoading = false;
+      startFadeIn();
+      log("✓ Loaded: " + new java.io.File(currentPath).getName() + 
+          " (" + currentImage.width + "x" + currentImage.height + ")");
+    } else if (nextImage.width == -1) {
+      // requestImage() returns width=-1 on error
+      log("ERROR: Failed to load image");
+      nextImage = null;
+      isLoading = false;
+    }
+    // else: still loading (width == 0), wait for next frame
   }
 }
 
@@ -391,9 +382,4 @@ void log(String message) {
   }
   
   println(logLine);  // Also print to console
-}
-
-// Apply pending image in draw loop (thread-safe)
-void pre() {
-  applyPendingImage();
 }
