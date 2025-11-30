@@ -109,7 +109,7 @@ class ReactivePanel(Static):
 
 
 class NowPlayingPanel(ReactivePanel):
-    """Current track display."""
+    """Current track display with source info."""
     track_data = reactive({})
 
     def on_mount(self) -> None:
@@ -123,14 +123,36 @@ class NowPlayingPanel(ReactivePanel):
             self.update("[dim]Waiting for playback...[/dim]")
             return
         
-        conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
+        source = data.get('source', 'unknown')
         time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        icon = "🎵" if data.get('source') == "spotify" else "🎧"
+        
+        # Source icons and colors
+        if source == 'spotify':
+            icon = "🎵"
+            source_color = "green"
+            source_name = "Spotify"
+        elif source == 'virtualdj':
+            icon = "🎧"
+            source_color = "cyan"
+            source_name = "VirtualDJ"
+        else:
+            icon = "🎶"
+            source_color = "dim"
+            source_name = source.title()
+        
+        # Connection status for both sources
+        spotify_status = format_status_icon(data.get('spotify_connected', False), "● ON", "○ OFF")
+        vdj_status = format_status_icon(data.get('virtualdj_connected', False), "● ON", "○ OFF")
+        
+        # BPM display for VirtualDJ
+        bpm_str = ""
+        if data.get('bpm'):
+            bpm_str = f"  │  [yellow]{data['bpm']:.1f} BPM[/]"
         
         self.update(
-            f"Spotify: {conn}\n"
+            f"[dim]Sources:[/] Spotify {spotify_status}  VirtualDJ {vdj_status}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]"
+            f"{icon} [{source_color}]{source_name}[/]  │  [dim]{time_str}[/]{bpm_str}"
         )
 
 
@@ -312,7 +334,11 @@ class ServicesPanel(ReactivePanel):
         s = self.services
         lines = [self.render_section("Services", "═")]
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
-        lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
+        
+        # VirtualDJ shows API URL
+        vdj_detail = s.get('vdj_url', 'http://127.0.0.1:8080') if s.get('virtualdj') else "Not connected"
+        lines.append(svc(s.get('virtualdj'), "VirtualDJ API", vdj_detail))
+        
         lines.append(svc(s.get('ollama'), "Ollama LLM", ', '.join(s.get('ollama_models', [])) or "Not running"))
         lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
         lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
@@ -494,13 +520,24 @@ class VJConsoleApp(App):
         except Exception:
             pass
 
-        vdj_path = KaraokeConfig.find_vdj_path()
+        # Get VDJ status from karaoke engine if available
+        vdj_connected = False
+        vdj_url = KaraokeConfig.VDJ_API_URL
+        spotify_connected = False
+        
+        if self.karaoke_engine:
+            try:
+                info = self.karaoke_engine.playback_info
+                vdj_connected = info.get('virtualdj_connected', False)
+                spotify_connected = info.get('spotify_connected', False)
+            except Exception:
+                pass
         
         try:
             self.query_one("#services", ServicesPanel).services = {
-                'spotify': KaraokeConfig.has_spotify_credentials(),
-                'virtualdj': bool(vdj_path),
-                'vdj_file': vdj_path.name if vdj_path else '',
+                'spotify': spotify_connected or KaraokeConfig.has_spotify_credentials(),
+                'virtualdj': vdj_connected,
+                'vdj_url': vdj_url if vdj_connected else '',
                 'ollama': ollama_ok,
                 'ollama_models': [m.get('name', '').split(':')[0] for m in ollama_models[:3]],
                 'comfyui': comfyui_ok,
@@ -516,25 +553,22 @@ class VJConsoleApp(App):
         if not self.karaoke_engine:
             return
             
+        # Get comprehensive playback info
+        info = self.karaoke_engine.playback_info
         state = self.karaoke_engine._state
         
-        # Build track data
+        # Build track data for NowPlaying panel
         track_data = {}
-        if state.has_track:
-            t = state.track
-            is_connected = bool(
-                self.karaoke_engine._spotify and 
-                getattr(self.karaoke_engine._spotify, '_sp', None)
-            )
-            # Determine source from which monitor is active
-            source = 'spotify' if is_connected else 'virtualdj'
+        if info.get('has_track'):
             track_data = {
-                'artist': t.artist, 
-                'title': t.title, 
-                'source': source,
-                'position': state.position, 
-                'duration': t.duration,
-                'connected': is_connected
+                'artist': info.get('artist', ''),
+                'title': info.get('title', ''),
+                'source': info.get('source', 'unknown'),
+                'position': info.get('position', 0),
+                'duration': info.get('duration', 0),
+                'spotify_connected': info.get('spotify_connected', False),
+                'virtualdj_connected': info.get('virtualdj_connected', False),
+                'bpm': info.get('bpm', 0),
             }
         
         # Update now playing panel

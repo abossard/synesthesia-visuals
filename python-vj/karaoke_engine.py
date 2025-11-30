@@ -142,6 +142,41 @@ class KaraokeEngine:
         """Current playback state (for vj_console.py compatibility)."""
         return self._playback.get_current_state()
     
+    @property
+    def current_source(self) -> str:
+        """Current playback source (spotify, virtualdj, etc.)."""
+        return self._playback.current_source
+    
+    @property
+    def playback_info(self) -> dict:
+        """Get detailed playback info including source-specific data."""
+        state = self._playback.get_current_state()
+        source = self._playback.current_source
+        
+        info = {
+            'source': source,
+            'has_track': state.has_track,
+            'is_playing': state.is_playing,
+            'spotify_connected': False,
+            'virtualdj_connected': False,
+        }
+        
+        # Check Spotify status
+        for monitor in self._playback._monitors:
+            if isinstance(monitor, SpotifyMonitor):
+                info['spotify_connected'] = monitor.is_available
+            elif isinstance(monitor, VirtualDJMonitor):
+                info['virtualdj_connected'] = monitor.is_available
+        
+        if state.has_track:
+            info['artist'] = state.track.artist
+            info['title'] = state.track.title
+            info['album'] = state.track.album
+            info['duration'] = state.track.duration
+            info['position'] = state.position
+        
+        return info
+    
     # Backwards compatibility aliases
     @property
     def _state(self):
@@ -246,24 +281,26 @@ class KaraokeEngine:
     
     def _on_track_change(self, track):
         """Handle new track."""
-        logger.info(f"Track: {track.artist} - {track.title}")
+        source = self._playback.current_source
+        logger.info(f"Track ({source}): {track.artist} - {track.title}")
         self._pipeline.reset(track.key)
         self._current_lines = []
         self._last_active_index = -1
         
         # Send track info with source
         self._osc.send_karaoke("track", "info", {
-            "source": self._playback.current_source,
+            "source": source,
             "artist": track.artist,
             "title": track.title,
             "album": track.album,
             "duration": track.duration
         })
         
-        # Fetch and process lyrics
-        self._pipeline.start("detect_playback")
-        self._pipeline.complete("detect_playback")
+        # Update pipeline with source info
+        self._pipeline.start("detect_playback", f"Source: {source}")
+        self._pipeline.complete("detect_playback", f"via {source}")
         
+        # Fetch and process lyrics
         lines = self._lyrics_orchestrator.process_track(track, self._settings.timing_offset_ms)
         
         if lines:

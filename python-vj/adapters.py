@@ -316,8 +316,8 @@ class VirtualDJMonitor:
             if not self._health.available:
                 self._health.mark_available(self._base_url)
             
-            # Track change detection
-            track_key = f"{status.artist}::{status.title}"
+            # Track change detection using null byte separator (unlikely in track names)
+            track_key = f"{status.artist}\x00{status.title}"
             if track_key != self._last_track_key:
                 self._last_track_key = track_key
                 self._start_time = time.time()
