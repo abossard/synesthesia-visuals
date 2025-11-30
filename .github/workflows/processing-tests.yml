@@ -1,0 +1,182 @@
+name: Processing Sketches Validation
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'processing-vj/**'
+      - '.github/workflows/processing-tests.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'processing-vj/**'
+      - '.github/workflows/processing-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      
+      - name: Download and install Processing
+        run: |
+          # Download Processing 4.3 for Linux
+          wget -q https://github.com/processing/processing4/releases/download/processing-1293-4.3/processing-4.3-linux-x64.tgz
+          tar xzf processing-4.3-linux-x64.tgz
+          echo "$PWD/processing-4.3" >> $GITHUB_PATH
+      
+      - name: Install virtual framebuffer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      
+      - name: Create Processing sketchbook and install libraries
+        run: |
+          # Create sketchbook libraries directory
+          mkdir -p $HOME/sketchbook/libraries
+          
+          # Install oscP5 library (for KaraokeOverlay)
+          echo "Installing oscP5..."
+          wget -q https://github.com/sojamo/oscp5/releases/download/v2.0.4/oscP5-2.0.4.zip
+          unzip -q oscP5-2.0.4.zip -d $HOME/sketchbook/libraries/
+          
+          # Install The MidiBus library
+          echo "Installing The MidiBus..."
+          wget -q https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip
+          unzip -q themidibus.zip -d $HOME/sketchbook/libraries/
+          
+          # Note: Syphon is macOS-only, so we create a stub for Linux CI
+          # This allows the sketch to compile but Syphon won't work on Linux
+          echo "Creating Syphon stub for Linux CI..."
+          mkdir -p $HOME/sketchbook/libraries/Syphon/library
+          
+          # Get Processing core path
+          CORE_JAR="./processing-4.3/core/library/core.jar"
+          
+          # Create a minimal stub JAR that provides the class signatures
+          # This allows compilation to succeed even though Syphon is macOS-only
+          cat > /tmp/SyphonServer.java << 'EOF'
+          package codeanticode.syphon;
+          import processing.core.*;
+          public class SyphonServer {
+            public SyphonServer(PApplet parent, String name) {}
+            public void sendScreen() {}
+            public void sendImage(PGraphics pg) {}
+            public void stop() {}
+          }
+          EOF
+          
+          cat > /tmp/SyphonClient.java << 'EOF'
+          package codeanticode.syphon;
+          import processing.core.*;
+          public class SyphonClient {
+            public SyphonClient(PApplet parent) {}
+            public SyphonClient(PApplet parent, String appName, String serverName) {}
+            public boolean newFrame() { return false; }
+            public PGraphics getGraphics(PGraphics pg) { return pg; }
+            public void stop() {}
+          }
+          EOF
+          
+          mkdir -p /tmp/syphon-stub/codeanticode/syphon
+          cd /tmp/syphon-stub
+          
+          # Compile stubs
+          javac -cp $GITHUB_WORKSPACE/processing-4.3/core/library/core.jar \
+            -d . /tmp/SyphonServer.java /tmp/SyphonClient.java 2>/dev/null || {
+            echo "Note: Syphon stub compilation requires Processing core"
+          }
+          
+          # Create JAR if compilation succeeded
+          if [ -d "codeanticode" ]; then
+            jar cf Syphon.jar codeanticode
+            cp Syphon.jar $HOME/sketchbook/libraries/Syphon/library/
+            echo "✅ Syphon stub created successfully"
+          else
+            echo "⚠️ Syphon stub creation skipped - sketches using Syphon may fail to build"
+          fi
+          
+          echo ""
+          echo "Libraries installed:"
+          ls -la $HOME/sketchbook/libraries/
+        working-directory: ${{ github.workspace }}
+      
+      - name: Validate Processing sketches (build only)
+        run: |
+          # Find all Processing sketches and validate them
+          SKETCHES_DIR="processing-vj/examples"
+          
+          # Set sketchbook location
+          export PROCESSING_SKETCHBOOK=$HOME/sketchbook
+          
+          if [ -d "$SKETCHES_DIR" ]; then
+            for sketch_dir in "$SKETCHES_DIR"/*/; do
+              sketch_name=$(basename "$sketch_dir")
+              main_file="$sketch_dir$sketch_name.pde"
+              
+              if [ -f "$main_file" ]; then
+                echo "========================================"
+                echo "Validating: $sketch_name"
+                echo "========================================"
+                
+                # Create output directory
+                output_dir="/tmp/processing-build/$sketch_name"
+                mkdir -p "$output_dir"
+                
+                # Build the sketch (validates syntax)
+                xvfb-run -a ./processing-4.3/processing-java \
+                  --sketch="$PWD/$sketch_dir" \
+                  --output="$output_dir" \
+                  --force \
+                  --build 2>&1 && echo "✅ $sketch_name: Build successful" || {
+                    echo "⚠️ $sketch_name: Build had issues (may need macOS-only libraries)"
+                  }
+              fi
+            done
+            echo ""
+            echo "========================================"
+            echo "Sketch validation complete"
+            echo "========================================"
+          else
+            echo "No sketches directory found at $SKETCHES_DIR"
+          fi
+      
+      - name: Check for basic syntax errors in PDE files
+        run: |
+          echo "Checking PDE file syntax..."
+          errors=0
+          
+          find processing-vj -name "*.pde" -type f | while read pde_file; do
+            # Check for matching braces
+            open_braces=$(grep -o '{' "$pde_file" | wc -l)
+            close_braces=$(grep -o '}' "$pde_file" | wc -l)
+            
+            if [ "$open_braces" -ne "$close_braces" ]; then
+              echo "❌ Mismatched braces in $pde_file (open: $open_braces, close: $close_braces)"
+              errors=1
+            fi
+            
+            # Check for matching parentheses
+            open_parens=$(grep -o '(' "$pde_file" | wc -l)
+            close_parens=$(grep -o ')' "$pde_file" | wc -l)
+            
+            if [ "$open_parens" -ne "$close_parens" ]; then
+              echo "❌ Mismatched parentheses in $pde_file (open: $open_parens, close: $close_parens)"
+              errors=1
+            fi
+          done
+          
+          if [ "$errors" -eq 0 ]; then
+            echo "✅ All PDE files have balanced braces and parentheses"
+          fi

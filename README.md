@@ -9,6 +9,9 @@ A toolkit for VJ performances combining Synesthesia shaders, Processing games, a
 ├── processing-vj/          # Processing games and interactive visuals
 │   ├── examples/           # Example game implementations
 │   └── lib/                # Shared utilities
+├── python-vj/              # Python VJ control and karaoke engine
+│   ├── vj_console.py       # Terminal UI for managing VJ apps
+│   └── karaoke_engine.py   # Lyrics via OSC from Spotify/VirtualDJ
 └── docs/                   # Documentation and guides
 ```
 
@@ -25,6 +28,19 @@ The `processing-vj/` folder contains Processing sketches for interactive visuals
 - [The MidiBus library](http://www.smallbutdigital.com/projects/themidibus/)
 - Launchpad Mini Mk3 (in Programmer mode)
 
+### Python VJ Tools
+The `python-vj/` folder contains the VJ Console and Karaoke Engine:
+
+**VJ Console** - Terminal UI for managing Processing apps with daemon mode (auto-restart on crash)
+**Karaoke Engine** - Monitors Spotify/VirtualDJ, fetches synced lyrics, and sends them via OSC
+
+**Installation:**
+```bash
+cd python-vj
+pip install -r requirements.txt
+python vj_console.py
+```
+
 ### MIDI Controllers
 This project uses:
 - **Akai MIDImix** - VJ/lighting control (faders, knobs)
@@ -37,6 +53,7 @@ This project uses:
 | [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic + BlackHole |
 | [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
 | [Processing Games Guide](docs/processing-games-guide.md) | Creating interactive VJ games in Java |
+| [Python VJ Tools](python-vj/README.md) | VJ Console and Karaoke Engine documentation |
 | [ISF to Synesthesia Migration](docs/isf-to-synesthesia-migration.md) | Converting shaders to SSF format |
 
 ## Controller Roles
