@@ -196,7 +196,8 @@ class Config:
     DEFAULT_STATE_FILE = APP_DATA_DIR / "state.json"
     DEFAULT_SETTINGS_FILE = APP_DATA_DIR / "settings.json"
     DEFAULT_LYRICS_CACHE_DIR = APP_DATA_DIR / "lyrics"
-    
+    SPOTIFY_TOKEN_CACHE = APP_DATA_DIR / "spotify_token.cache"
+
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
     
@@ -222,7 +223,7 @@ class Config:
         return {
             'client_id': os.environ.get('SPOTIPY_CLIENT_ID', ''),
             'client_secret': os.environ.get('SPOTIPY_CLIENT_SECRET', ''),
-            'redirect_uri': os.environ.get('SPOTIPY_REDIRECT_URI', 'http://localhost:8888/callback'),
+            'redirect_uri': os.environ.get('SPOTIPY_REDIRECT_URI', 'http://127.0.0.1:8888/callback'),
         }
     
     @classmethod
@@ -1517,15 +1518,24 @@ class SpotifyMonitor:
         if not SPOTIFY_AVAILABLE:
             logger.info("Spotify: spotipy not installed (pip install spotipy)")
             return
-        
+
         if not Config.has_spotify_credentials():
             logger.info("Spotify: credentials not configured")
-            logger.info("  Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET in .env file")
+            logger.info("  Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env file")
             return
-        
+
         try:
+            # Ensure cache directory exists
+            Config.APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Get credentials from Config and pass them explicitly to SpotifyOAuth
+            creds = Config.get_spotify_credentials()
             self._sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-                scope="user-read-playback-state"
+                client_id=creds['client_id'],
+                client_secret=creds['client_secret'],
+                redirect_uri=creds['redirect_uri'],
+                scope="user-read-playback-state",
+                cache_path=str(Config.SPOTIFY_TOKEN_CACHE)
             ))
             self._sp.current_user()  # Test connection
             self._health.mark_available()

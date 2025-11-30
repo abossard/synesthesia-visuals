@@ -111,6 +111,8 @@ class AppState:
     running: bool = True
     message: str = ""
     message_time: float = 0
+    needs_redraw: bool = True
+    last_draw_time: float = 0
 
 
 class ProcessManager:
@@ -157,11 +159,11 @@ class ProcessManager:
     def discover_apps(self, project_root: Path) -> List[ProcessingApp]:
         """Discover Processing sketches in the project."""
         self.apps = []
-        
-        # Look for .pde files in processing-vj/examples
-        examples_dir = project_root / "processing-vj" / "examples"
+
+        # Look for .pde files in processing-vj/src
+        examples_dir = project_root / "processing-vj" / "src"
         if not examples_dir.exists():
-            logger.warning(f"Examples directory not found: {examples_dir}")
+            logger.warning(f"Source directory not found: {examples_dir}")
             return self.apps
         
         for sketch_dir in examples_dir.iterdir():
@@ -326,6 +328,9 @@ class VJConsole:
         # Build menu with item types
         self._build_menu()
 
+        # Auto-start Spotify monitoring on console startup
+        self.start_karaoke()
+
     def _safe_dim(self, text: str) -> str:
         """Safely apply dim formatting with fallback."""
         if not self.term:
@@ -406,6 +411,7 @@ class VJConsole:
         self.state.message = msg
         self.state.message_type = msg_type
         self.state.message_time = time.time()
+        self.state.needs_redraw = True
     
     def handle_selection(self):
         """Handle menu item selection."""
@@ -472,14 +478,62 @@ class VJConsole:
             
             new_index += direction
             attempts += 1
-    
+
+    def _draw_now_playing(self, t):
+        """Draw current playback status from Spotify/VirtualDJ."""
+        if not self.karaoke_engine:
+            return
+
+        try:
+            state = self.karaoke_engine._state
+
+            # Connection status
+            if self.karaoke_engine._spotify and hasattr(self.karaoke_engine._spotify, '_sp'):
+                if self.karaoke_engine._spotify._sp:
+                    conn_status = t.bold_green("● Connected")
+                else:
+                    conn_status = t.yellow("◐ Connecting...")
+            else:
+                conn_status = self._safe_dim("○ Disconnected")
+
+            print(f"  {t.bold('Spotify:')} {conn_status}")
+
+            # Current track info
+            if state.active and state.track:
+                track = state.track
+
+                # Format playback time
+                mins = int(state.position_sec // 60)
+                secs = int(state.position_sec % 60)
+                dur_mins = int(track.duration_sec // 60)
+                dur_secs = int(track.duration_sec % 60)
+                time_str = f"{mins}:{secs:02d} / {dur_mins}:{dur_secs:02d}"
+
+                # Source icon
+                source_icon = "🎵" if track.source == "spotify" else "🎧"
+
+                # Track info
+                print(f"  {t.bold('Now Playing:')} {t.cyan(track.artist)} {self._safe_dim('—')} {t.white(track.title)}")
+                print(f"  {source_icon} {t.bold_blue(track.source.title())}  {self._safe_dim('│')}  {self._safe_dim(time_str)}")
+            elif state.track:
+                # Track loaded but not playing
+                track = state.track
+                print(f"  {self._safe_dim('Ready:')} {self._safe_dim(f'{track.artist} — {track.title}')}")
+            else:
+                # No track
+                print(f"  {self._safe_dim('Waiting for playback...')}")
+
+        except Exception as e:
+            # Silently fail - don't crash UI on missing attributes
+            logger.debug(f"Error drawing now playing: {e}")
+
     def draw(self):
         """Draw the colorful terminal UI with OSC panel."""
         t = self.term
-        
+
         # Clear screen
         print(t.home + t.clear)
-        
+
         # Header bar
         header = " 🎛  VJ Console - Synesthesia Visuals "
         padding = (t.width - len(header) + 4) // 2
@@ -487,12 +541,16 @@ class VJConsole:
         print(t.white_on_blue(" " * padding + t.bold(header) + " " * (t.width - padding - len(header) + 2)))
         print(t.white_on_blue(" " * t.width))
         print()
-        
+
         # Status indicators
         daemon_icon = t.bold_green("● ON ") if self.state.daemon_mode else self._safe_dim("○ OFF")
         karaoke_icon = t.bold_green("● ON ") if self.state.karaoke_enabled else self._safe_dim("○ OFF")
-        
+
         print(f"  {t.bold('Daemon:')} {daemon_icon}    {t.bold('Karaoke:')} {karaoke_icon}")
+        print()
+
+        # Now Playing info (if karaoke is active)
+        self._draw_now_playing(t)
         print()
         
         # Menu items
@@ -515,7 +573,7 @@ class VJConsole:
             
             # Status indicator
             status = ""
-            status_color = t.dim
+            status_color = self._safe_dim
             
             if isinstance(item, ProcessingApp):
                 if self.process_manager.is_running(item):
@@ -563,9 +621,10 @@ class VJConsole:
         
         # Help footer
         print()
-        print(t.dim("─" * min(t.width, 80)))
+        width = t.width if t and hasattr(t, 'width') else 80
+        print(self._safe_dim("─" * min(width, 80)))
         help_text = "  ↑↓: Navigate   +/-: Timing   Enter: Select   d: Daemon   K: Karaoke   q: Quit"
-        print(t.dim(help_text))
+        print(self._safe_dim(help_text))
     
     def _draw_osc_panel(self, t):
         """Draw OSC connection info, pipeline status, and logs."""
@@ -596,7 +655,7 @@ class VJConsole:
                     elif color == "red":
                         print(t.red(text))
                     else:
-                        print(t.dim(text))
+                        print(self._safe_dim(text))
                 
                 # Show image prompt if available
                 if pipeline.image_prompt:
@@ -612,7 +671,7 @@ class VJConsole:
                     print()
                     print(t.bold_yellow("  ═══ Logs ═══"))
                     for log in logs:
-                        print(t.dim(f"    {log}"))
+                        print(self._safe_dim(f"    {log}"))
                 
                 # Show current lyrics info
                 if state.lines:
@@ -629,11 +688,11 @@ class VJConsole:
                         if line.is_refrain:
                             print(t.magenta(f"      [REFRAIN]"))
             else:
-                print(t.dim(f"    (waiting for playback...)"))
+                print(self._safe_dim("    (waiting for playback...)"))
         else:
             print(t.bold_yellow("  ═══ OSC Status ═══"))
-            print(t.dim(f"    ○ OSC inactive"))
-            print(t.dim(f"    Target: {host}:{port}"))
+            print(self._safe_dim("    ○ OSC inactive"))
+            print(self._safe_dim(f"    Target: {host}:{port}"))
         
         print()
     
@@ -645,8 +704,8 @@ class VJConsole:
         if KaraokeConfig.has_spotify_credentials():
             print(t.green("    ✓ Spotify API      Credentials configured"))
         else:
-            print(t.dim("    ○ Spotify API      Set SPOTIPY_* env vars or .env"))
-        
+            print(self._safe_dim("    ○ Spotify API      Set SPOTIFY_CLIENT_ID/SECRET in .env"))
+
         # Check VirtualDJ
         vdj_path = KaraokeConfig.find_vdj_path()
         if vdj_path and vdj_path.exists():
@@ -654,7 +713,7 @@ class VJConsole:
         elif vdj_path:
             print(t.yellow(f"    ◐ VirtualDJ        Monitoring {vdj_path.name}"))
         else:
-            print(t.dim("    ○ VirtualDJ        Folder not found"))
+            print(self._safe_dim("    ○ VirtualDJ        Folder not found"))
         
         # Check Ollama
         try:
@@ -668,9 +727,9 @@ class VJConsole:
                 else:
                     print(t.yellow("    ◐ Ollama LLM       Running (no models)"))
             else:
-                print(t.dim("    ○ Ollama LLM       Not responding"))
+                print(self._safe_dim("    ○ Ollama LLM       Not responding"))
         except:
-            print(t.dim("    ○ Ollama LLM       Not running (ollama serve)"))
+            print(self._safe_dim("    ○ Ollama LLM       Not running (ollama serve)"))
         
         # Check ComfyUI
         try:
@@ -679,16 +738,16 @@ class VJConsole:
             if resp.status_code == 200:
                 print(t.green("    ✓ ComfyUI          http://127.0.0.1:8188"))
             else:
-                print(t.dim("    ○ ComfyUI          Not responding"))
+                print(self._safe_dim("    ○ ComfyUI          Not responding"))
         except:
-            print(t.dim("    ○ ComfyUI          Not running (port 8188)"))
-        
+            print(self._safe_dim("    ○ ComfyUI          Not running (port 8188)"))
+
         # Check OpenAI
         import os
         if os.environ.get('OPENAI_API_KEY'):
             print(t.green("    ✓ OpenAI API       Key configured"))
         else:
-            print(t.dim("    ○ OpenAI API       OPENAI_API_KEY not set"))
+            print(self._safe_dim("    ○ OpenAI API       OPENAI_API_KEY not set"))
         
         print()
     
@@ -697,46 +756,68 @@ class VJConsole:
         if not self.term:
             print("Error: Terminal not available")
             return
-        
+
         # Find first selectable item
         for i, (_, item, item_type) in enumerate(self.menu_items):
             if item is not None and item_type not in ("header", "disabled"):
                 self.state.selected_index = i
                 break
-        
+
+        # Refresh interval for live data (in seconds)
+        LIVE_REFRESH_INTERVAL = 2.0
+
         try:
             with self.term.fullscreen(), self.term.cbreak(), self.term.hidden_cursor():
                 while self.state.running:
                     try:
-                        self.draw()
-                        
+                        current_time = time.time()
+
+                        # Check if we need to redraw
+                        time_since_draw = current_time - self.state.last_draw_time
+                        should_refresh = time_since_draw >= LIVE_REFRESH_INTERVAL
+
+                        # Draw if needed or if enough time passed for live updates
+                        if self.state.needs_redraw or should_refresh:
+                            self.draw()
+                            self.state.needs_redraw = False
+                            self.state.last_draw_time = current_time
+
                         key = self.term.inkey(timeout=0.5)
-                        
+
                         if key:
                             if key.name == 'KEY_UP' or key == 'k':
                                 self.navigate(-1)
+                                self.state.needs_redraw = True
                             elif key.name == 'KEY_DOWN' or key == 'j':
                                 self.navigate(1)
+                                self.state.needs_redraw = True
                             elif key.name == 'KEY_ENTER' or key == '\n':
                                 self.handle_selection()
+                                self.state.needs_redraw = True
                             elif key == 'd':
                                 self._toggle_daemon()
+                                self.state.needs_redraw = True
                             elif key == 'K':
                                 if self.state.karaoke_enabled:
                                     self.stop_karaoke()
                                 else:
                                     self.start_karaoke()
+                                self.state.needs_redraw = True
                             elif key == 'r':
                                 self._restart_selected()
+                                self.state.needs_redraw = True
                             elif key == '+' or key == '=':
                                 self._adjust_timing(+200)
+                                self.state.needs_redraw = True
                             elif key == '-' or key == '_':
                                 self._adjust_timing(-200)
+                                self.state.needs_redraw = True
                             elif key == 'q' or key.name == 'KEY_ESCAPE':
                                 self.state.running = False
                     except Exception as e:
                         logger.exception("Draw error")
                         self.set_message(f"Error: {e}", "error")
+                        self.state.needs_redraw = True
                         time.sleep(0.5)
         except Exception as e:
             logger.exception("Fatal UI error")
