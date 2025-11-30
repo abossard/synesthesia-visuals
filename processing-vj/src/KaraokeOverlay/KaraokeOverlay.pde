@@ -63,9 +63,9 @@ RefrainState stateRefrain;
 SongInfoState stateSongInfo;
 
 // Visibility toggles
-bool showFull = true;
-bool showRefrain = true;
-bool showSongInfo = true;
+boolean showFull = true;
+boolean showRefrain = true;
+boolean showSongInfo = true;
 
 // Operator overlay + broadcast message
 boolean typingBroadcast = false;  // Capture text input until Enter/Esc
