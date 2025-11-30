@@ -12,6 +12,9 @@ on:
       - 'processing-vj/**'
       - '.github/workflows/processing-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest

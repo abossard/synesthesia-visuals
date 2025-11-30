@@ -12,6 +12,9 @@ on:
       - 'python-vj/**'
       - '.github/workflows/python-tests.yml'
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -50,5 +53,6 @@ jobs:
       - name: Test CLI help commands
         run: |
           cd python-vj
+          python vj_console.py --help
           python karaoke_engine.py --help
           python audio_setup.py --help
