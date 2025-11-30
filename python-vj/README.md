@@ -122,8 +122,32 @@ python main.py --listen 127.0.0.1 --port 8188
 
 **Detection Process:**
 1. Checks `http://127.0.0.1:8188/system_stats` for running ComfyUI
-2. Verifies SDXL checkpoint availability
-3. Queues image generation with VJ-optimized prompts
+2. Queries `/object_info/CheckpointLoaderSimple` to list available models
+3. Loads custom workflows from `python-vj/workflows/` directory
+4. Queues image generation via `/prompt` API endpoint
+
+**Custom Workflows:**
+
+You can use your own ComfyUI workflows:
+
+1. In ComfyUI, enable "Dev Mode Options" in Settings
+2. Click "Save (API Format)" to export workflow as JSON
+3. Place the `.json` file in `python-vj/workflows/`
+
+The engine will:
+- Auto-detect workflows on startup
+- Inject your prompt into CLIPTextEncode nodes
+- Retrieve generated images from SaveImage node output
+
+Example workflow setup:
+```
+python-vj/
+└── workflows/
+    ├── README.md              # Instructions
+    ├── default_sdxl.json      # Default SDXL workflow
+    ├── flux_artistic.json     # Flux model for artistic styles
+    └── fast_lcm.json          # Fast LCM-based generation
+```
 
 **Image Generation Features:**
 - Prompts automatically enhanced with "pure black background, isolated subject"

@@ -862,10 +862,21 @@ Respond with ONLY the image prompt text, no JSON or explanation."""
 
 class ComfyUIGenerator:
     """
-    Generates images using local ComfyUI installation.
+    Generates images using local ComfyUI installation via REST API.
     
     Creates visuals for songs with black backgrounds (for transparency in VJ compositing).
     Images are cached locally and can be used as overlays in Magic Music Visuals.
+    
+    API Usage:
+        - POST /prompt - Queue a workflow with {"prompt": workflow_json, "client_id": uuid}
+        - GET /history/{prompt_id} - Check execution status and get output image info
+        - GET /view?filename=... - Download generated images
+        - GET /object_info - List available nodes
+        
+    Workflow Selection:
+        - Load workflow JSON files from python-vj/workflows/ directory
+        - Each workflow should be exported from ComfyUI in API format (not web format)
+        - To export: In ComfyUI, enable Dev Mode, then Save (API Format)
     """
     
     COMFYUI_URL = "http://127.0.0.1:8188"
@@ -876,15 +887,22 @@ class ComfyUIGenerator:
     # Negative prompt to ensure clean black backgrounds
     NEGATIVE_PROMPT = "white background, gray background, busy background, cluttered, low contrast, blurry, text, watermark, logo, frame, border"
     
+    # Directory for custom workflow files
+    WORKFLOWS_DIR = Path(__file__).parent / "workflows"
+    
     def __init__(self, output_dir: Optional[Path] = None):
         self._output_dir = output_dir or (Config.APP_DATA_DIR / "generated_images")
         self._output_dir.mkdir(parents=True, exist_ok=True)
         self._available = False
         self._client_id = None
+        self._available_models = []
+        self._custom_workflows = {}
+        self._active_workflow = None
         self._check_connection()
+        self._load_custom_workflows()
     
     def _check_connection(self):
-        """Check if ComfyUI is running."""
+        """Check if ComfyUI is running and get available models."""
         try:
             resp = requests.get(f"{self.COMFYUI_URL}/system_stats", timeout=2)
             if resp.status_code == 200:
@@ -892,15 +910,125 @@ class ComfyUIGenerator:
                 # Generate a unique client ID for this session
                 import uuid
                 self._client_id = str(uuid.uuid4())
+                
+                # Get available checkpoint models
+                self._fetch_available_models()
                 logger.info("ComfyUI: ✓ Connected")
             else:
                 logger.info("ComfyUI: Not responding")
         except requests.RequestException:
             logger.info("ComfyUI: Not available (start ComfyUI on port 8188)")
     
+    def _fetch_available_models(self):
+        """Fetch list of available checkpoint models from ComfyUI."""
+        try:
+            resp = requests.get(f"{self.COMFYUI_URL}/object_info/CheckpointLoaderSimple", timeout=5)
+            if resp.status_code == 200:
+                info = resp.json()
+                if 'CheckpointLoaderSimple' in info:
+                    inputs = info['CheckpointLoaderSimple'].get('input', {})
+                    required = inputs.get('required', {})
+                    if 'ckpt_name' in required:
+                        self._available_models = required['ckpt_name'][0]
+                        logger.debug(f"ComfyUI models: {self._available_models}")
+        except Exception as e:
+            logger.debug(f"Could not fetch models: {e}")
+    
+    def _load_custom_workflows(self):
+        """Load custom workflow JSON files from workflows directory."""
+        self.WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Create a sample workflow README
+        readme_path = self.WORKFLOWS_DIR / "README.md"
+        if not readme_path.exists():
+            readme_path.write_text("""# ComfyUI Workflows
+
+Place your workflow JSON files here. Export from ComfyUI using:
+
+1. Enable "Dev Mode Options" in ComfyUI Settings
+2. Click "Save (API Format)" to export the workflow
+
+The JSON file should contain the node graph in API format.
+
+## Usage in VJ Console
+
+The karaoke engine will:
+- Auto-detect workflows in this folder
+- Let you select which workflow to use
+- Substitute the prompt text into CLIPTextEncode nodes
+
+## Naming Convention
+
+- `default_sdxl.json` - Default SDXL workflow
+- `flux_artistic.json` - Flux model for artistic styles
+- `fast_lcm.json` - Fast LCM-based generation
+
+The engine will look for nodes with specific class_types:
+- `CLIPTextEncode` - For prompt injection
+- `CheckpointLoaderSimple` - For model selection
+- `SaveImage` - For output retrieval
+""")
+        
+        # Load all JSON files
+        for wf_path in self.WORKFLOWS_DIR.glob("*.json"):
+            try:
+                with open(wf_path) as f:
+                    workflow = json.load(f)
+                self._custom_workflows[wf_path.stem] = workflow
+                logger.debug(f"Loaded workflow: {wf_path.stem}")
+            except Exception as e:
+                logger.warning(f"Failed to load workflow {wf_path}: {e}")
+        
+        if self._custom_workflows:
+            logger.info(f"ComfyUI: {len(self._custom_workflows)} custom workflow(s) loaded")
+    
     @property
     def is_available(self) -> bool:
         return self._available
+    
+    @property
+    def available_models(self) -> List[str]:
+        """List of available checkpoint models."""
+        return self._available_models if self._available_models else []
+    
+    @property
+    def available_workflows(self) -> List[str]:
+        """List of available custom workflows."""
+        return list(self._custom_workflows.keys())
+    
+    @property
+    def active_workflow(self) -> Optional[str]:
+        """Currently active workflow name."""
+        return self._active_workflow
+    
+    def set_workflow(self, name: str) -> bool:
+        """
+        Set the active workflow by name.
+        
+        Args:
+            name: Workflow name (without .json extension)
+            
+        Returns:
+            True if workflow was found and set, False otherwise.
+        """
+        if name in self._custom_workflows:
+            self._active_workflow = name
+            logger.info(f"ComfyUI: Using workflow '{name}'")
+            return True
+        logger.warning(f"ComfyUI: Workflow '{name}' not found")
+        return False
+    
+    def get_status_info(self) -> Dict[str, Any]:
+        """Get status information for display in UI."""
+        return {
+            'available': self._available,
+            'models': self._available_models[:5] if self._available_models else [],
+            'model_count': len(self._available_models),
+            'workflows': list(self._custom_workflows.keys()),
+            'active_workflow': self._active_workflow,
+            'cached_images': self.get_cached_count(),
+            'url': self.COMFYUI_URL,
+        }
     
     def get_vj_prompt(self, base_prompt: str) -> str:
         """
@@ -989,10 +1117,31 @@ class ComfyUIGenerator:
         cfg_scale: float
     ) -> Dict[str, Any]:
         """
-        Build a ComfyUI workflow for SDXL image generation.
-        Uses a simple txt2img workflow with black background emphasis.
+        Build a ComfyUI workflow for image generation.
+        
+        If a custom workflow is active, it will be used with the prompt injected.
+        Otherwise, falls back to a simple SDXL txt2img workflow.
         """
-        # Simple SDXL workflow
+        import copy
+        
+        # Use custom workflow if one is active
+        if self._active_workflow and self._active_workflow in self._custom_workflows:
+            workflow = copy.deepcopy(self._custom_workflows[self._active_workflow])
+            return self._inject_prompt_into_workflow(workflow, prompt)
+        
+        # Select a model that's actually available
+        model_name = "sd_xl_base_1.0.safetensors"
+        if self._available_models:
+            # Prefer SDXL models
+            for m in self._available_models:
+                if 'sdxl' in m.lower() or 'sd_xl' in m.lower():
+                    model_name = m
+                    break
+            else:
+                # Fall back to first available model
+                model_name = self._available_models[0]
+        
+        # Default SDXL workflow
         return {
             "3": {
                 "class_type": "KSampler",
@@ -1012,7 +1161,7 @@ class ComfyUIGenerator:
             "4": {
                 "class_type": "CheckpointLoaderSimple",
                 "inputs": {
-                    "ckpt_name": "sd_xl_base_1.0.safetensors"
+                    "ckpt_name": model_name
                 }
             },
             "5": {
@@ -1052,6 +1201,39 @@ class ComfyUIGenerator:
                 }
             }
         }
+    
+    def _inject_prompt_into_workflow(self, workflow: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+        """
+        Inject prompt text into a custom workflow.
+        
+        Finds CLIPTextEncode nodes and injects the prompt into the first one
+        (assumed to be the positive prompt).
+        """
+        positive_injected = False
+        negative_injected = False
+        
+        for node_id, node in workflow.items():
+            if not isinstance(node, dict):
+                continue
+                
+            class_type = node.get('class_type', '')
+            inputs = node.get('inputs', {})
+            
+            if class_type == 'CLIPTextEncode' and 'text' in inputs:
+                if not positive_injected:
+                    # First CLIPTextEncode = positive prompt
+                    inputs['text'] = prompt
+                    positive_injected = True
+                elif not negative_injected:
+                    # Second CLIPTextEncode = negative prompt
+                    inputs['text'] = self.NEGATIVE_PROMPT
+                    negative_injected = True
+            
+            # Update KSampler seed for variety
+            if class_type == 'KSampler' and 'seed' in inputs:
+                inputs['seed'] = int(time.time()) % 2147483647
+        
+        return workflow
     
     def _wait_for_image(self, prompt_id: str, output_path: Path, timeout: int = 120) -> Optional[Path]:
         """Wait for image generation to complete and download result."""

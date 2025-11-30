@@ -533,6 +533,47 @@ class TestComfyUIGenerator(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             gen = ComfyUIGenerator(output_dir=Path(tmpdir))
             self.assertEqual(gen.get_cached_count(), 0)
+    
+    def test_available_workflows_list(self):
+        """available_workflows should return list of loaded workflow names."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            workflows = gen.available_workflows
+            self.assertIsInstance(workflows, list)
+    
+    def test_set_workflow(self):
+        """set_workflow() should return False for non-existent workflow."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            result = gen.set_workflow("nonexistent_workflow")
+            self.assertFalse(result)
+    
+    def test_active_workflow_default(self):
+        """active_workflow should be None by default."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            self.assertIsNone(gen.active_workflow)
+    
+    def test_get_status_info(self):
+        """get_status_info() should return complete status dict."""
+        from karaoke_engine import ComfyUIGenerator
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
+            status = gen.get_status_info()
+            
+            self.assertIn('available', status)
+            self.assertIn('models', status)
+            self.assertIn('workflows', status)
+            self.assertIn('active_workflow', status)
+            self.assertIn('cached_images', status)
+            self.assertIn('url', status)
 
 
 if __name__ == "__main__":
