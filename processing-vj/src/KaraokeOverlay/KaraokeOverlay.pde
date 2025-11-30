@@ -139,9 +139,13 @@ void draw() {
   renderRefrain();
   renderSongInfo();
   
-  // Show preview on main display (composited)
+  // Show preview on main display (composited - all three channels)
   tint(255, showFull ? 255 : 50);
   image(bufferFull, 0, 0);
+  tint(255, showRefrain ? 255 : 50);
+  image(bufferRefrain, 0, 0);
+  tint(255, showSongInfo ? 255 : 50);
+  image(bufferSongInfo, 0, 0);
   noTint();
 
   drawHUD();

@@ -387,6 +387,7 @@ class VJConsoleApp(App):
         self.process_manager.discover_apps(self._find_project_root())
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
+        self._last_master_status: Optional[Dict[str, Any]] = None
 
     def _find_project_root(self) -> Path:
         for p in [Path(__file__).parent.parent, Path.cwd()]:
@@ -585,11 +586,19 @@ class VJConsoleApp(App):
         except Exception:
             pass
 
-        # Send OSC status
-        self.karaoke_engine.osc_sender.send_master_status(
-            karaoke_active=True, synesthesia_running=self.synesthesia_running,
-            milksyphon_running=self.milksyphon_running, processing_apps=running_apps
-        )
+        # Send OSC status only when it changes
+        current_status = {
+            'karaoke_active': True,
+            'synesthesia_running': self.synesthesia_running,
+            'milksyphon_running': self.milksyphon_running,
+            'processing_apps': running_apps
+        }
+        if current_status != self._last_master_status:
+            self.karaoke_engine.osc_sender.send_master_status(
+                karaoke_active=True, synesthesia_running=self.synesthesia_running,
+                milksyphon_running=self.milksyphon_running, processing_apps=running_apps
+            )
+            self._last_master_status = current_status
 
     # === Screen switching ===
     
