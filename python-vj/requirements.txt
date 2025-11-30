@@ -21,3 +21,6 @@ psutil>=5.9.0
 
 # LLM support (optional - uses local Ollama by default if no OpenAI key)
 openai>=1.0.0
+
+# Async HTTP client for VirtualDJ Remote API
+aiohttp>=3.9.0

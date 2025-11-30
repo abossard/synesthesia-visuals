@@ -66,7 +66,8 @@ class KaraokeEngine:
         self,
         osc_host: Optional[str] = None,
         osc_port: Optional[int] = None,
-        vdj_path: Optional[str] = None,
+        vdj_url: Optional[str] = None,
+        vdj_password: Optional[str] = None,
         state_file: Optional[str] = None
     ):
         # Settings
@@ -81,7 +82,7 @@ class KaraokeEngine:
         
         # Playback monitors
         spotify = SpotifyMonitor()
-        vdj = VirtualDJMonitor(vdj_path)
+        vdj = VirtualDJMonitor(base_url=vdj_url, password=vdj_password)
         self._playback = PlaybackCoordinator(monitors=[spotify, vdj])
         
         # AI services (all optional)
@@ -363,6 +364,11 @@ def main():
 For full VJ control with terminal UI, use:
     python vj_console.py
 
+VirtualDJ Setup:
+  Enable the "Network Control" plugin (Effects -> Other)
+  Default URL: http://127.0.0.1:8080
+  Or set VDJ_API_URL environment variable
+
 OSC Channels:
   /karaoke/lyrics/*     Full lyrics
   /karaoke/refrain/*    Chorus/refrain only
@@ -371,7 +377,8 @@ OSC Channels:
     )
     parser.add_argument('--osc-host', default=Config.DEFAULT_OSC_HOST)
     parser.add_argument('--osc-port', type=int, default=Config.DEFAULT_OSC_PORT)
-    parser.add_argument('--vdj-path', help='VirtualDJ now_playing.txt path (auto-detected)')
+    parser.add_argument('--vdj-url', help='VirtualDJ Network Control URL (default: http://127.0.0.1:8080)')
+    parser.add_argument('--vdj-password', help='VirtualDJ Network Control password (if configured)')
     parser.add_argument('--state-file', help='State file path')
     parser.add_argument('--poll-interval', type=float, default=0.1)
     parser.add_argument('-v', '--verbose', action='store_true')
@@ -384,7 +391,8 @@ OSC Channels:
     engine = KaraokeEngine(
         osc_host=args.osc_host,
         osc_port=args.osc_port,
-        vdj_path=args.vdj_path,
+        vdj_url=args.vdj_url,
+        vdj_password=args.vdj_password,
         state_file=args.state_file,
     )
     

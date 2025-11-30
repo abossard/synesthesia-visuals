@@ -525,19 +525,49 @@ See [`processing-vj/examples/ImageOverlay/`](../processing-vj/examples/ImageOver
 
 ## VirtualDJ Setup
 
-VirtualDJ can output the current track to a text file:
+The karaoke engine connects to VirtualDJ via the **Network Control** HTTP API plugin.
 
-1. Open VirtualDJ Settings → Interface → Broadcast
-2. Enable "Now Playing" output
-3. Set the file path (default: `~/Documents/VirtualDJ/now_playing.txt`)
+### Enable Network Control Plugin
 
-Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
+1. Open VirtualDJ
+2. Go to **Effects** → **Other** → **Network Control**
+3. Configure the port (default: 8080) and optional password
+4. Enable the plugin
+
+### Configuration
+
+Set environment variables in your `.env` file or shell:
+
+```env
+VDJ_API_URL=http://127.0.0.1:8080    # VirtualDJ Network Control URL
+VDJ_API_PASSWORD=                     # Password (leave empty if not set in VDJ)
+```
+
+Or pass as command-line arguments:
+
+```bash
+python karaoke_engine.py --vdj-url http://127.0.0.1:8080 --vdj-password mypassword
+```
+
+### Features
+
+The Network Control API provides:
+- **Real-time track info**: Artist, title, BPM, duration
+- **Playback position**: Precise elapsed time and position (0.0-1.0)
+- **Masterdeck detection**: Automatically follows the active deck
+
+### Troubleshooting
+
+- **VirtualDJ not detected**: Ensure Network Control plugin is enabled and running
+- **Connection refused**: Check firewall settings, ensure VDJ is running
+- **Wrong deck**: The engine follows the "masterdeck" - ensure the correct deck has focus
 
 ## Dependencies
 
 - **spotipy**: Spotify Web API client
 - **python-osc**: OSC protocol implementation
 - **requests**: HTTP client for LRCLIB API
+- **aiohttp**: Async HTTP client for VirtualDJ Network Control API
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)

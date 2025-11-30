@@ -394,6 +394,72 @@ class TestComfyUIGenerator(unittest.TestCase):
             self.assertIsNone(cached)
 
 
+class TestVirtualDJAPI(unittest.TestCase):
+    """Tests for VirtualDJ Remote API integration."""
+    
+    def test_deck_status_dataclass(self):
+        """DeckStatus should store deck information."""
+        from vdj_api import DeckStatus
+        
+        status = DeckStatus(
+            deck=1,
+            title="Test Song",
+            artist="Test Artist",
+            bpm=128.5,
+            position=0.5,
+            elapsed_ms=60000,
+            length_sec=180.0
+        )
+        
+        self.assertEqual(status.deck, 1)
+        self.assertEqual(status.title, "Test Song")
+        self.assertEqual(status.artist, "Test Artist")
+        self.assertAlmostEqual(status.bpm, 128.5)
+        self.assertAlmostEqual(status.position, 0.5)
+        self.assertEqual(status.elapsed_ms, 60000)
+        self.assertAlmostEqual(status.length_sec, 180.0)
+    
+    def test_client_requires_aiohttp(self):
+        """VirtualDJClient should import without errors."""
+        from vdj_api import VirtualDJClient, AIOHTTP_AVAILABLE
+        
+        # Should have aiohttp available since we installed it
+        self.assertTrue(AIOHTTP_AVAILABLE)
+    
+    def test_watcher_configuration(self):
+        """VirtualDJWatcher should accept configuration options."""
+        from vdj_api import VirtualDJClient, VirtualDJWatcher
+        
+        # Create a mock client
+        client = VirtualDJClient(base_url="http://127.0.0.1:8080")
+        
+        watcher = VirtualDJWatcher(
+            client,
+            decks=(1, 2, 3, 4),
+            poll_interval=1.0,
+            position_interval=5.0,
+        )
+        
+        self.assertEqual(watcher.decks, (1, 2, 3, 4))
+        self.assertAlmostEqual(watcher.poll_interval, 1.0)
+        self.assertAlmostEqual(watcher.position_interval, 5.0)
+        self.assertFalse(watcher.is_running)
+    
+    def test_monitor_unavailable_without_vdj(self):
+        """VirtualDJMonitor should be unavailable when VDJ is not running."""
+        from adapters import VirtualDJMonitor
+        
+        # Connect to a port that's definitely not running VDJ
+        monitor = VirtualDJMonitor(base_url="http://127.0.0.1:59999")
+        
+        # Should not be available
+        self.assertFalse(monitor.is_available)
+        
+        # get_playback should return None gracefully
+        playback = monitor.get_playback()
+        self.assertIsNone(playback)
+
+
 class TestConfig(unittest.TestCase):
     """Tests for application configuration."""
     

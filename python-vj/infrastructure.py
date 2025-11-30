@@ -29,15 +29,9 @@ class Config:
     DEFAULT_OSC_HOST = "127.0.0.1"
     DEFAULT_OSC_PORT = 9000  # Standard OSC port for Processing
     
-    # VirtualDJ paths to search (in order of priority)
-    VDJ_SEARCH_PATHS = [
-        Path.home() / "Library" / "Application Support" / "VirtualDJ" / "History" / "tracklist.txt",  # macOS standard
-        Path.home() / "Documents" / "VirtualDJ" / "History" / "tracklist.txt",
-        Path.home() / "Documents" / "VirtualDJ" / "History" / "now_playing.txt",
-        Path.home() / "Documents" / "VirtualDJ" / "now_playing.txt", 
-        Path.home() / "Music" / "VirtualDJ" / "now_playing.txt",
-        Path("/tmp") / "virtualdj_now_playing.txt",
-    ]
+    # VirtualDJ Network Control API defaults
+    VDJ_API_URL = os.environ.get('VDJ_API_URL', 'http://127.0.0.1:8080')
+    VDJ_API_PASSWORD = os.environ.get('VDJ_API_PASSWORD', '')
     
     # Cache/state locations - stored in application folder
     APP_DATA_DIR = Path(__file__).parent / ".cache"
@@ -53,12 +47,12 @@ class Config:
     COMFYUI_ENABLED = os.environ.get('COMFYUI_ENABLED', '').lower() in ('1', 'true', 'yes', 'on')
     
     @classmethod
-    def find_vdj_path(cls) -> Optional[Path]:
-        """Auto-detect VirtualDJ now_playing.txt path."""
-        for path in cls.VDJ_SEARCH_PATHS:
-            if path.exists():
-                return path
-        return None
+    def get_vdj_config(cls) -> Dict[str, str]:
+        """Get VirtualDJ API configuration."""
+        return {
+            'base_url': cls.VDJ_API_URL,
+            'password': cls.VDJ_API_PASSWORD,
+        }
     
     @classmethod
     def get_spotify_credentials(cls) -> Dict[str, str]:
