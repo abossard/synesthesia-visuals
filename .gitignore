@@ -36,6 +36,7 @@ karaoke_state.json
 karaoke_state.tmp
 vj_console.log
 python-vj/.cache/
+python-vj/test_data/
 
 # Credentials and sensitive data
 *.credentials

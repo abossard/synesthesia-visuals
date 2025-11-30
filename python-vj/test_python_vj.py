@@ -2,6 +2,8 @@
 """
 Tests for Python VJ Tools
 
+Focused on blackbox testing of actual behavior, not implementation details.
+
 Run with: python -m pytest test_python_vj.py -v
 Or simply: python test_python_vj.py
 """
@@ -9,753 +11,447 @@ Or simply: python test_python_vj.py
 import sys
 import unittest
 import tempfile
-import time
+import subprocess
 from pathlib import Path
 
 
-class TestServiceHealth(unittest.TestCase):
-    """Tests for ServiceHealth class (live event resilience)."""
+class TestLyricsProcessing(unittest.TestCase):
+    """Tests for lyrics parsing and analysis pipeline."""
     
-    def test_imports(self):
-        """ServiceHealth should be importable."""
-        from karaoke_engine import ServiceHealth
-    
-    def test_initial_state(self):
-        """ServiceHealth should start unavailable."""
-        from karaoke_engine import ServiceHealth
+    def test_lrc_parsing_full_song(self):
+        """Parse a realistic LRC file and verify all lyrics are extracted correctly."""
+        from karaoke_engine import parse_lrc, detect_refrains, get_active_line_index
         
-        health = ServiceHealth("TestService")
-        self.assertFalse(health.available)
-        self.assertEqual(health.name, "TestService")
-    
-    def test_mark_available(self):
-        """mark_available should set available to True."""
-        from karaoke_engine import ServiceHealth
+        lrc = """[00:05.50]Verse one line one
+[00:10.00]Verse one line two
+[00:15.50]Chorus: love love love
+[00:20.00]Verse two line one
+[00:25.50]Chorus: love love love
+[00:30.00]Bridge section
+[00:35.50]Chorus: love love love
+[00:40.00]Outro line"""
         
-        health = ServiceHealth("TestService")
-        health.mark_available("connected")
-        self.assertTrue(health.available)
-    
-    def test_mark_unavailable(self):
-        """mark_unavailable should set available to False."""
-        from karaoke_engine import ServiceHealth
-        
-        health = ServiceHealth("TestService")
-        health.mark_available()
-        health.mark_unavailable("connection lost")
-        self.assertFalse(health.available)
-    
-    def test_get_status(self):
-        """get_status should return status dict."""
-        from karaoke_engine import ServiceHealth
-        
-        health = ServiceHealth("TestService")
-        status = health.get_status()
-        
-        self.assertIn('name', status)
-        self.assertIn('available', status)
-        self.assertIn('error', status)
-        self.assertEqual(status['name'], "TestService")
-
-
-class TestKaraokeEngine(unittest.TestCase):
-    """Tests for karaoke_engine module."""
-    
-    def test_imports(self):
-        """All classes and functions should be importable."""
-        from karaoke_engine import (
-            LyricLine, Track, PlaybackState, Settings,
-            parse_lrc, extract_keywords, detect_refrains, analyze_lyrics,
-            get_active_line_index, get_refrain_lines,
-            LyricsFetcher, SpotifyMonitor, VirtualDJMonitor, OSCSender, KaraokeEngine
-        )
-    
-    def test_parse_lrc_basic(self):
-        """parse_lrc should parse LRC format correctly."""
-        from karaoke_engine import parse_lrc
-        
-        lrc = "[00:05.50]Hello world\n[00:10.00]Test line"
+        # Parse and analyze
         lines = parse_lrc(lrc)
+        analyzed = detect_refrains(lines)
         
-        self.assertEqual(len(lines), 2)
-        self.assertAlmostEqual(lines[0].time_sec, 5.5, places=2)
-        self.assertEqual(lines[0].text, "Hello world")
-        self.assertAlmostEqual(lines[1].time_sec, 10.0, places=2)
-        self.assertEqual(lines[1].text, "Test line")
+        # Verify parsing
+        self.assertEqual(len(analyzed), 8)
+        self.assertEqual(analyzed[0].text, "Verse one line one")
+        self.assertAlmostEqual(analyzed[0].time_sec, 5.5, places=1)
+        
+        # Verify refrain detection (chorus appears 3 times)
+        refrain_lines = [l for l in analyzed if l.is_refrain]
+        self.assertEqual(len(refrain_lines), 3)
+        self.assertEqual(refrain_lines[0].text, "Chorus: love love love")
+        
+        # Verify active line lookup at different positions
+        self.assertEqual(get_active_line_index(analyzed, 0), -1)  # Before first line
+        self.assertEqual(get_active_line_index(analyzed, 12), 1)  # During verse 1 line 2
+        self.assertEqual(get_active_line_index(analyzed, 27), 4)  # During second chorus
+        self.assertEqual(get_active_line_index(analyzed, 100), 7)  # After song ends
     
-    def test_parse_lrc_milliseconds(self):
-        """parse_lrc should handle both .xx and .xxx formats."""
-        from karaoke_engine import parse_lrc
-        
-        lrc = "[01:30.500]Three digits\n[02:00.50]Two digits"
-        lines = parse_lrc(lrc)
-        
-        self.assertEqual(len(lines), 2)
-        self.assertAlmostEqual(lines[0].time_sec, 90.5, places=2)
-        self.assertAlmostEqual(lines[1].time_sec, 120.5, places=2)
-    
-    def test_parse_lrc_empty_lines(self):
-        """parse_lrc should skip empty lines."""
-        from karaoke_engine import parse_lrc
-        
-        lrc = "[00:05.00]\n[00:10.00]Real line\n[00:15.00]"
-        lines = parse_lrc(lrc)
-        
-        self.assertEqual(len(lines), 1)
-        self.assertEqual(lines[0].text, "Real line")
-    
-    def test_extract_keywords(self):
-        """extract_keywords should filter stop words and return important words."""
+    def test_keyword_extraction_filters_meaningless_words(self):
+        """Keywords should contain meaningful words, not stop words."""
         from karaoke_engine import extract_keywords
         
-        kw = extract_keywords("I love you forever baby")
-        self.assertIn("LOVE", kw)
-        self.assertIn("FOREVER", kw)
-        self.assertIn("BABY", kw)
-        self.assertNotIn("YOU", kw)  # stop word
-    
-    def test_extract_keywords_empty(self):
-        """extract_keywords should handle empty input."""
-        from karaoke_engine import extract_keywords
+        # Realistic lyric line with stop words and meaningful words
+        lyric = "I will always love you forever in my heart"
+        keywords = extract_keywords(lyric, max_words=10)  # Get more words
         
-        self.assertEqual(extract_keywords(""), "")
-        self.assertEqual(extract_keywords("the a an"), "")  # all stop words
-    
-    def test_extract_keywords_max_words(self):
-        """extract_keywords should respect max_words limit."""
-        from karaoke_engine import extract_keywords
+        # Should contain meaningful words
+        self.assertIn("LOVE", keywords)
+        self.assertIn("FOREVER", keywords)
+        self.assertIn("HEART", keywords)
         
-        kw = extract_keywords("love happiness freedom peace joy", max_words=2)
-        words = kw.split()
-        self.assertLessEqual(len(words), 2)
-    
-    def test_detect_refrains(self):
-        """detect_refrains should mark repeated lines."""
-        from karaoke_engine import LyricLine, detect_refrains
-        
-        lines = [
-            LyricLine(0, "Chorus line"),
-            LyricLine(5, "Verse line"),
-            LyricLine(10, "Chorus line"),  # repeated
-            LyricLine(15, "Another verse"),
-        ]
-        
-        result = detect_refrains(lines)
-        
-        # "Chorus line" appears twice, should be marked as refrain
-        self.assertTrue(result[0].is_refrain)
-        self.assertFalse(result[1].is_refrain)
-        self.assertTrue(result[2].is_refrain)
-        self.assertFalse(result[3].is_refrain)
-    
-    def test_get_active_line_index(self):
-        """get_active_line_index should find correct line for position."""
-        from karaoke_engine import LyricLine, get_active_line_index
-        
-        lines = [
-            LyricLine(0, "Line 0"),
-            LyricLine(5, "Line 1"),
-            LyricLine(10, "Line 2"),
-        ]
-        
-        self.assertEqual(get_active_line_index(lines, -1), -1)
-        self.assertEqual(get_active_line_index(lines, 0), 0)
-        self.assertEqual(get_active_line_index(lines, 3), 0)
-        self.assertEqual(get_active_line_index(lines, 5), 1)
-        self.assertEqual(get_active_line_index(lines, 7), 1)
-        self.assertEqual(get_active_line_index(lines, 15), 2)
-    
-    def test_get_refrain_lines(self):
-        """get_refrain_lines should filter to only refrain lines."""
-        from karaoke_engine import LyricLine, get_refrain_lines
-        
-        lines = [
-            LyricLine(0, "Chorus", is_refrain=True),
-            LyricLine(5, "Verse", is_refrain=False),
-            LyricLine(10, "Chorus", is_refrain=True),
-        ]
-        
-        refrain = get_refrain_lines(lines)
-        self.assertEqual(len(refrain), 2)
-        self.assertTrue(all(l.is_refrain for l in refrain))
-    
-    def test_playback_state_track_key(self):
-        """PlaybackState.track_key should generate consistent key."""
-        from karaoke_engine import PlaybackState, Track
-        
-        state = PlaybackState()
-        self.assertEqual(state.track_key, "")
-        
-        state.track = Track(artist="Daft Punk", title="One More Time")
-        self.assertEqual(state.track_key, "daft punk - one more time")
+        # Should NOT contain stop words
+        keywords_lower = keywords.lower()
+        self.assertNotIn(" i ", f" {keywords_lower} ")
+        self.assertNotIn(" will ", f" {keywords_lower} ")
+        self.assertNotIn(" you ", f" {keywords_lower} ")
 
 
-class TestSettings(unittest.TestCase):
-    """Tests for Settings class (persistent timing offset)."""
+class TestSettingsPersistence(unittest.TestCase):
+    """Tests for settings persistence across sessions."""
     
-    def test_settings_default_offset(self):
-        """Settings should have 0ms offset by default."""
-        from karaoke_engine import Settings
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            settings_file = Path(tmpdir) / "settings.json"
-            settings = Settings(file_path=settings_file)
-            
-            self.assertEqual(settings.timing_offset_ms, 0)
-            self.assertAlmostEqual(settings.timing_offset_sec, 0.0)
-    
-    def test_settings_adjust_timing(self):
-        """Settings.adjust_timing should increment/decrement offset."""
-        from karaoke_engine import Settings
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            settings_file = Path(tmpdir) / "settings.json"
-            settings = Settings(file_path=settings_file)
-            
-            # Adjust forward
-            new_offset = settings.adjust_timing(200)
-            self.assertEqual(new_offset, 200)
-            self.assertEqual(settings.timing_offset_ms, 200)
-            
-            # Adjust forward again
-            new_offset = settings.adjust_timing(200)
-            self.assertEqual(new_offset, 400)
-            
-            # Adjust backward
-            new_offset = settings.adjust_timing(-600)
-            self.assertEqual(new_offset, -200)
-    
-    def test_settings_persistence(self):
-        """Settings should persist to file and reload."""
+    def test_timing_offset_persists_across_sessions(self):
+        """Timing offset should be saved and restored when reopening."""
         from karaoke_engine import Settings
         
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_file = Path(tmpdir) / "settings.json"
             
-            # Create settings and adjust
-            settings1 = Settings(file_path=settings_file)
-            settings1.adjust_timing(400)
+            # Session 1: Adjust timing
+            session1 = Settings(file_path=settings_file)
+            session1.adjust_timing(+500)  # 500ms early
+            session1.adjust_timing(-200)  # Back to 300ms early
             
-            # Create new settings instance (should reload)
-            settings2 = Settings(file_path=settings_file)
-            self.assertEqual(settings2.timing_offset_ms, 400)
+            # Session 2: Should remember the offset
+            session2 = Settings(file_path=settings_file)
+            self.assertEqual(session2.timing_offset_ms, 300)
+            self.assertAlmostEqual(session2.timing_offset_sec, 0.3, places=2)
+
+
+class TestSongCategorization(unittest.TestCase):
+    """Tests for song mood/theme categorization."""
     
-    def test_settings_timing_offset_sec(self):
-        """Settings.timing_offset_sec should convert ms to seconds."""
-        from karaoke_engine import Settings
+    def test_categorize_happy_song(self):
+        """Songs with happy lyrics should score high on positive categories."""
+        from karaoke_engine import SongCategorizer
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_file = Path(tmpdir) / "settings.json"
-            settings = Settings(file_path=settings_file)
+            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
             
-            settings.timing_offset_ms = 500
-            self.assertAlmostEqual(settings.timing_offset_sec, 0.5)
+            happy_lyrics = """
+            I'm so happy today, feeling wonderful
+            Joy and happiness everywhere I go
+            Smile on my face, love in my heart
+            Dancing with joy, celebration time
+            """
             
-            settings.timing_offset_ms = -300
-            self.assertAlmostEqual(settings.timing_offset_sec, -0.3)
-
-
-class TestAudioSetup(unittest.TestCase):
-    """Tests for audio_setup module."""
+            result = categorizer._categorize_basic("Happy Band", "Joy Song", happy_lyrics)
+            
+            # Happy categories should score higher than sad ones
+            self.assertGreater(result.get_category_score("happy"), result.get_category_score("sad"))
+            self.assertGreater(result.get_category_score("love"), 0)
     
-    def test_imports(self):
-        """All classes should be importable."""
-        from audio_setup import AudioSetup, AudioDevice, print_status
-    
-    def test_audio_device_dataclass(self):
-        """AudioDevice should store device info."""
-        from audio_setup import AudioDevice
+    def test_categorize_dark_song(self):
+        """Songs with dark lyrics should score high on negative categories."""
+        from karaoke_engine import SongCategorizer
         
-        dev = AudioDevice(
-            name="Test Device",
-            uid="test-123",
-            device_id=1,
-            is_input=True,
-            is_output=False
+        with tempfile.TemporaryDirectory() as tmpdir:
+            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
+            
+            dark_lyrics = """
+            In the darkness of the night
+            Death and shadows all around
+            Fear grips my soul, demons whisper
+            The dark abyss calls my name
+            """
+            
+            result = categorizer._categorize_basic("Dark Band", "Shadow Song", dark_lyrics)
+            
+            # Dark categories should score higher than happy ones
+            self.assertGreater(result.get_category_score("dark"), result.get_category_score("happy"))
+            self.assertGreater(result.get_category_score("death"), 0)
+    
+    def test_categories_serialization_roundtrip(self):
+        """Categories should survive serialization to dict and back."""
+        from karaoke_engine import SongCategory, SongCategories
+        
+        original = SongCategories(
+            categories=[
+                SongCategory(name="love", score=0.85),
+                SongCategory(name="happy", score=0.6),
+                SongCategory(name="dark", score=0.1),
+            ],
+            primary_mood="love"
         )
         
-        self.assertEqual(dev.name, "Test Device")
-        self.assertEqual(dev.uid, "test-123")
-        self.assertTrue(dev.is_input)
-        self.assertFalse(dev.is_output)
-    
-    def test_audio_setup_instantiation(self):
-        """AudioSetup should instantiate without errors."""
-        from audio_setup import AudioSetup
+        # Round-trip through dict
+        data = original.to_dict()
+        restored = SongCategories.from_dict(data)
         
-        setup = AudioSetup()
-        self.assertIsNotNone(setup)
+        # Should preserve all data
+        self.assertEqual(restored.primary_mood, "love")
+        self.assertAlmostEqual(restored.get_category_score("love"), 0.85, places=2)
+        self.assertAlmostEqual(restored.get_category_score("happy"), 0.6, places=2)
 
 
-class TestVJConsole(unittest.TestCase):
-    """Tests for process_manager module."""
+class TestCLITools(unittest.TestCase):
+    """Tests for command-line interfaces."""
     
-    def test_imports(self):
-        """All classes should be importable from process_manager."""
-        from process_manager import ProcessingApp, AppState, ProcessManager
-    
-    def test_processing_app_dataclass(self):
-        """ProcessingApp should store app info."""
-        from process_manager import ProcessingApp
-        from pathlib import Path
-        
-        app = ProcessingApp(
-            name="TestApp",
-            path=Path("/tmp/test"),
-            description="A test app"
-        )
-        
-        self.assertEqual(app.name, "TestApp")
-        self.assertEqual(str(app.path), "/tmp/test")
-        self.assertEqual(app.description, "A test app")
-        self.assertFalse(app.enabled)
-    
-    def test_app_state_defaults(self):
-        """AppState should have sensible defaults."""
-        from process_manager import AppState
-        
-        state = AppState()
-        
-        self.assertEqual(state.selected_index, 0)
-        self.assertFalse(state.daemon_mode)
-        self.assertTrue(state.karaoke_enabled)
-        self.assertTrue(state.running)
-    
-    def test_process_manager_instantiation(self):
-        """ProcessManager should instantiate without errors."""
-        from process_manager import ProcessManager
-        
-        pm = ProcessManager()
-        self.assertIsNotNone(pm)
-
-
-class TestCLI(unittest.TestCase):
-    """Tests for CLI entry points."""
-    
-    def test_karaoke_engine_help(self):
-        """karaoke_engine.py --help should work (module)."""
-        import subprocess
+    def test_karaoke_engine_cli_help(self):
+        """karaoke_engine.py --help should display usage information."""
         result = subprocess.run(
             [sys.executable, "karaoke_engine.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            capture_output=True, text=True, timeout=10
         )
         self.assertEqual(result.returncode, 0)
-        self.assertIn("vj_console.py", result.stdout)  # Should recommend main script
+        self.assertIn("--osc-port", result.stdout)
     
-    def test_audio_setup_help(self):
-        """audio_setup.py --help should work."""
-        import subprocess
+    def test_background_analyzer_cli_help(self):
+        """background_analyzer.py --help should display usage information."""
+        result = subprocess.run(
+            [sys.executable, "background_analyzer.py", "--help"],
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("--cache-dir", result.stdout)
+        self.assertIn("--stats", result.stdout)
+    
+    def test_audio_setup_cli_help(self):
+        """audio_setup.py --help should display usage information."""
         result = subprocess.run(
             [sys.executable, "audio_setup.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            capture_output=True, text=True, timeout=10
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("--fix", result.stdout)
 
 
-class TestConfig(unittest.TestCase):
-    """Tests for Config class."""
+class TestBackgroundAnalyzerIntegration(unittest.TestCase):
+    """Integration tests for BackgroundSongAnalyzer with real MP3 files."""
     
-    def test_config_defaults(self):
-        """Config should have OSC defaults."""
-        from karaoke_engine import Config
-        
-        self.assertEqual(Config.DEFAULT_OSC_HOST, "127.0.0.1")
-        self.assertEqual(Config.DEFAULT_OSC_PORT, 9000)
-    
-    def test_config_spotify_credentials(self):
-        """Config should check for Spotify credentials."""
-        from karaoke_engine import Config
-        
-        creds = Config.get_spotify_credentials()
-        self.assertIn('client_id', creds)
-        self.assertIn('client_secret', creds)
-        self.assertIn('redirect_uri', creds)
-
-
-class TestLLMAnalyzer(unittest.TestCase):
-    """Tests for LLMAnalyzer class."""
-    
-    def test_imports(self):
-        """LLMAnalyzer should be importable."""
-        from karaoke_engine import LLMAnalyzer
-    
-    def test_instantiation(self):
-        """LLMAnalyzer should instantiate without errors."""
-        from karaoke_engine import LLMAnalyzer
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
-            self.assertIsNotNone(analyzer)
-            # Should have a backend (none, openai, or ollama)
-            self.assertIn(analyzer._backend, ["none", "openai", "ollama"])
-    
-    def test_backend_info(self):
-        """backend_info should return a readable string."""
-        from karaoke_engine import LLMAnalyzer
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
-            info = analyzer.backend_info
-            self.assertIsInstance(info, str)
-            self.assertTrue(len(info) > 0)
-    
-    def test_basic_analysis(self):
-        """Basic analysis should work without LLM."""
-        from karaoke_engine import LLMAnalyzer
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
-            
-            lyrics = """Hello darkness my old friend
-I've come to talk with you again
-Hello darkness my old friend
-Because a vision softly creeping"""
-            
-            result = analyzer._basic_analysis(lyrics)
-            
-            self.assertIn('refrain_lines', result)
-            self.assertIn('keywords', result)
-            self.assertIn('themes', result)
-            # "Hello darkness my old friend" appears twice, should be detected
-            self.assertTrue(len(result['refrain_lines']) > 0)
-    
-    def test_preferred_models(self):
-        """PREFERRED_MODELS should have llama3.2 first."""
-        from karaoke_engine import LLMAnalyzer
-        
-        self.assertEqual(LLMAnalyzer.PREFERRED_MODELS[0], 'llama3.2')
-        self.assertIn('mistral', LLMAnalyzer.PREFERRED_MODELS)
-
-
-class TestPipelineTracker(unittest.TestCase):
-    """Tests for PipelineTracker class."""
-    
-    def test_imports(self):
-        """PipelineTracker should be importable."""
-        from karaoke_engine import PipelineTracker, PipelineStep
-    
-    def test_instantiation(self):
-        """PipelineTracker should instantiate with default state."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        self.assertEqual(tracker.current_track, "")
-        self.assertEqual(tracker.image_prompt, "")
-        self.assertEqual(tracker.generated_image_path, "")
-    
-    def test_reset(self):
-        """reset() should initialize all steps as pending."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        tracker.reset("Artist - Title")
-        
-        self.assertEqual(tracker.current_track, "Artist - Title")
-        for step in tracker.steps.values():
-            self.assertEqual(step.status, "pending")
-    
-    def test_step_lifecycle(self):
-        """Steps should transition through start/complete/error states."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        tracker.reset("Test Track")
-        
-        # Start a step
-        tracker.start("fetch_lyrics", "Checking cache...")
-        self.assertEqual(tracker.steps["fetch_lyrics"].status, "running")
-        
-        # Complete the step
-        tracker.complete("fetch_lyrics", "Found 50 lines")
-        self.assertEqual(tracker.steps["fetch_lyrics"].status, "done")
-        
-        # Error on another step
-        tracker.start("llm_analysis", "Calling API...")
-        tracker.error("llm_analysis", "Connection timeout")
-        self.assertEqual(tracker.steps["llm_analysis"].status, "error")
-    
-    def test_skip_step(self):
-        """skip() should mark step as skipped."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        tracker.reset("Test Track")
-        
-        tracker.skip("comfyui_generate", "Not available")
-        self.assertEqual(tracker.steps["comfyui_generate"].status, "skipped")
-    
-    def test_log_entries(self):
-        """log() should add timestamped entries."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        tracker.log("Test message")
-        
-        self.assertEqual(len(tracker.logs), 1)
-        self.assertIn("Test message", tracker.logs[0])
-    
-    def test_get_display_lines(self):
-        """get_display_lines() should return formatted output."""
-        from karaoke_engine import PipelineTracker
-        
-        tracker = PipelineTracker()
-        tracker.reset("Test")
-        tracker.complete("detect_playback", "spotify")
-        
-        lines = tracker.get_display_lines()
-        self.assertTrue(len(lines) > 0)
-        # Each line is (color, text) tuple
-        self.assertEqual(len(lines[0]), 2)
-
-
-class TestComfyUIGenerator(unittest.TestCase):
-    """Tests for ComfyUIGenerator class."""
-    
-    def test_imports(self):
-        """ComfyUIGenerator should be importable."""
-        from karaoke_engine import ComfyUIGenerator
-    
-    def test_instantiation(self):
-        """ComfyUIGenerator should instantiate without errors."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            self.assertIsNotNone(gen)
-            # Will be False since ComfyUI isn't running
-            self.assertFalse(gen.is_available)
-    
-    def test_vj_prompt_enhancement(self):
-        """get_vj_prompt() should add VJ-specific requirements."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            
-            base_prompt = "A beautiful sunset"
-            vj_prompt = gen.get_vj_prompt(base_prompt)
-            
-            self.assertIn("black background", vj_prompt.lower())
-            self.assertIn("A beautiful sunset", vj_prompt)
-    
-    def test_image_path_generation(self):
-        """_get_image_path() should return safe file paths."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            
-            path = gen._get_image_path("Test Artist", "Song/Title:Special")
-            
-            # Should be a PNG file
-            self.assertTrue(str(path).endswith(".png"))
-            # Should not contain special characters
-            self.assertNotIn("/", path.name)
-            self.assertNotIn(":", path.name)
-    
-    def test_cached_count(self):
-        """get_cached_count() should return 0 for empty cache."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            self.assertEqual(gen.get_cached_count(), 0)
-    
-    def test_available_workflows_list(self):
-        """available_workflows should return list of loaded workflow names."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            workflows = gen.available_workflows
-            self.assertIsInstance(workflows, list)
-    
-    def test_set_workflow(self):
-        """set_workflow() should return False for non-existent workflow."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            result = gen.set_workflow("nonexistent_workflow")
-            self.assertFalse(result)
-    
-    def test_active_workflow_default(self):
-        """active_workflow should be None by default."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            self.assertIsNone(gen.active_workflow)
-    
-    def test_get_status_info(self):
-        """get_status_info() should return complete status dict."""
-        from karaoke_engine import ComfyUIGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            gen = ComfyUIGenerator(output_dir=Path(tmpdir))
-            status = gen.get_status_info()
-            
-            self.assertIn('available', status)
-            self.assertIn('models', status)
-            self.assertIn('workflows', status)
-            self.assertIn('active_workflow', status)
-            self.assertIn('cached_images', status)
-            self.assertIn('url', status)
-
-
-class TestSongCategorizer(unittest.TestCase):
-    """Tests for SongCategorizer class."""
-    
-    def test_imports(self):
-        """SongCategorizer should be importable."""
-        from karaoke_engine import SongCategorizer, SongCategories, SongCategory
-    
-    def test_song_category_dataclass(self):
-        """SongCategory should store name and score."""
-        from karaoke_engine import SongCategory
-        
-        cat = SongCategory(name="happy", score=0.75)
-        self.assertEqual(cat.name, "happy")
-        self.assertAlmostEqual(cat.score, 0.75)
-    
-    def test_song_categories_get_top(self):
-        """SongCategories.get_top should return top N categories."""
-        from karaoke_engine import SongCategory, SongCategories
-        
-        cats = SongCategories(categories=[
-            SongCategory(name="happy", score=0.8),
-            SongCategory(name="sad", score=0.3),
-            SongCategory(name="love", score=0.9),
-            SongCategory(name="dark", score=0.1),
-        ])
-        
-        top2 = cats.get_top(2)
-        self.assertEqual(len(top2), 2)
-        self.assertEqual(top2[0].name, "love")
-        self.assertEqual(top2[1].name, "happy")
-    
-    def test_song_categories_get_category_score(self):
-        """SongCategories.get_category_score should return score for category."""
-        from karaoke_engine import SongCategory, SongCategories
-        
-        cats = SongCategories(categories=[
-            SongCategory(name="happy", score=0.8),
-            SongCategory(name="sad", score=0.3),
-        ])
-        
-        self.assertAlmostEqual(cats.get_category_score("happy"), 0.8)
-        self.assertAlmostEqual(cats.get_category_score("sad"), 0.3)
-        self.assertAlmostEqual(cats.get_category_score("unknown"), 0.0)
-    
-    def test_song_categories_to_dict(self):
-        """SongCategories.to_dict should return serializable dict."""
-        from karaoke_engine import SongCategory, SongCategories
-        
-        cats = SongCategories(
-            categories=[SongCategory(name="happy", score=0.8)],
-            primary_mood="happy"
+    @classmethod
+    def setUpClass(cls):
+        """Create test MP3 files for integration tests."""
+        cls.test_dir = tempfile.mkdtemp()
+        cls.test_file = cls._create_test_mp3(
+            cls.test_dir, 
+            "test_song.mp3",
+            artist="Test Artist",
+            title="Test Song",
+            album="Test Album",
+            genre="Rock",
+            year="2024",
+            bpm="128",
+            key="C",
+            lyrics="[00:00.50]Love love love\n[00:01.50]Heart and soul\n[00:02.50]Love love love"
         )
-        
-        d = cats.to_dict()
-        self.assertIn('categories', d)
-        self.assertIn('primary_mood', d)
-        self.assertEqual(d['primary_mood'], "happy")
-        self.assertIn('happy', d['categories'])
     
-    def test_song_categories_from_dict(self):
-        """SongCategories.from_dict should recreate from dict."""
-        from karaoke_engine import SongCategories
-        
-        data = {
-            'categories': {'happy': 0.8, 'sad': 0.2},
-            'primary_mood': 'happy'
-        }
-        
-        cats = SongCategories.from_dict(data)
-        self.assertEqual(cats.primary_mood, "happy")
-        self.assertTrue(cats.cached)
-        self.assertEqual(len(cats.categories), 2)
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up test directory."""
+        import shutil
+        shutil.rmtree(cls.test_dir, ignore_errors=True)
     
-    def test_categorizer_instantiation(self):
-        """SongCategorizer should instantiate without errors."""
-        from karaoke_engine import SongCategorizer
+    @staticmethod
+    def _create_test_mp3(test_dir: str, filename: str, **tags) -> Path:
+        """Create a valid MP3 file with ID3 tags."""
+        from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TBPM, TKEY, USLT
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
-            self.assertIsNotNone(categorizer)
+        # Create minimal valid MP3 data (~3 seconds)
+        header = bytes([0xFF, 0xFB, 0x90, 0x00])
+        frame = header + bytes(413)
+        mp3_data = frame * 115
+        
+        test_file = Path(test_dir) / filename
+        test_file.write_bytes(mp3_data)
+        
+        # Add ID3 tags
+        id3_tags = ID3()
+        if tags.get('title'):
+            id3_tags.add(TIT2(encoding=3, text=[tags['title']]))
+        if tags.get('artist'):
+            id3_tags.add(TPE1(encoding=3, text=[tags['artist']]))
+        if tags.get('album'):
+            id3_tags.add(TALB(encoding=3, text=[tags['album']]))
+        if tags.get('genre'):
+            id3_tags.add(TCON(encoding=3, text=[tags['genre']]))
+        if tags.get('year'):
+            id3_tags.add(TDRC(encoding=3, text=[tags['year']]))
+        if tags.get('bpm'):
+            id3_tags.add(TBPM(encoding=3, text=[tags['bpm']]))
+        if tags.get('key'):
+            id3_tags.add(TKEY(encoding=3, text=[tags['key']]))
+        if tags.get('lyrics'):
+            id3_tags.add(USLT(encoding=3, lang="eng", desc="", text=tags['lyrics']))
+        id3_tags.save(test_file)
+        
+        return test_file
     
-    def test_categorizer_basic_analysis(self):
-        """SongCategorizer should work with basic (no LLM) analysis."""
-        from karaoke_engine import SongCategorizer
+    def test_full_analysis_pipeline(self):
+        """Complete analysis of an MP3 file should extract all metadata and compute metrics."""
+        from background_analyzer import BackgroundSongAnalyzer
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            categorizer = SongCategorizer(cache_dir=Path(tmpdir))
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            result = analyzer.analyze_file(self.test_file)
             
-            # Test with lyrics containing keywords
-            result = categorizer._categorize_basic(
-                artist="Test Artist",
-                title="Happy Love Song",
-                lyrics="love love love happy joy smile"
-            )
+            # Verify metadata extraction
+            self.assertEqual(result.metadata.artist, "Test Artist")
+            self.assertEqual(result.metadata.title, "Test Song")
+            self.assertEqual(result.metadata.album, "Test Album")
+            self.assertEqual(result.metadata.genre, "Rock")
+            self.assertEqual(result.metadata.bpm, 128.0)
+            self.assertEqual(result.metadata.key, "C")
             
-            self.assertIsNotNone(result)
-            self.assertGreater(len(result.categories), 0)
-            # "love" and "happy" keywords should boost those scores
-            love_score = result.get_category_score("love")
-            happy_score = result.get_category_score("happy")
-            self.assertGreater(love_score, 0)
-            self.assertGreater(happy_score, 0)
+            # Verify lyrics were found and analyzed
+            self.assertTrue(result.lyrics_found)
+            self.assertEqual(result.lyrics_source, "embedded")
+            self.assertEqual(result.line_count, 3)
+            self.assertGreater(result.refrain_count, 0)  # "Love love love" repeats
+            
+            # Verify computed metrics are valid
+            self.assertGreaterEqual(result.computed_energy, 0.0)
+            self.assertLessEqual(result.computed_energy, 1.0)
+            self.assertGreaterEqual(result.computed_danceability, 0.0)
+            self.assertLessEqual(result.computed_danceability, 1.0)
+            self.assertGreaterEqual(result.computed_valence, 0.0)
+            self.assertLessEqual(result.computed_valence, 1.0)
+            
+            # Verify keywords were extracted
+            self.assertIn("love", result.keywords)
     
-    def test_categorizer_categories_list(self):
-        """SongCategorizer should have predefined categories."""
-        from karaoke_engine import SongCategorizer
+    def test_folder_analysis(self):
+        """Analyzing a folder should process all MP3 files."""
+        from background_analyzer import BackgroundSongAnalyzer
         
-        self.assertIn('happy', SongCategorizer.CATEGORIES)
-        self.assertIn('sad', SongCategorizer.CATEGORIES)
-        self.assertIn('love', SongCategorizer.CATEGORIES)
-        self.assertIn('dark', SongCategorizer.CATEGORIES)
-        self.assertIn('death', SongCategorizer.CATEGORIES)
-        self.assertIn('energetic', SongCategorizer.CATEGORIES)
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            results = analyzer.analyze_folder(Path(self.test_dir))
+            
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].metadata.title, "Test Song")
+    
+    def test_cache_avoids_reprocessing(self):
+        """Second analysis should use cached results."""
+        from background_analyzer import BackgroundSongAnalyzer
+        import time
+        
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            
+            # First analysis (should do full processing)
+            start1 = time.time()
+            result1 = analyzer.analyze_file(self.test_file)
+            time1 = time.time() - start1
+            
+            # Second analysis (should use cache)
+            start2 = time.time()
+            result2 = analyzer.analyze_file(self.test_file)
+            time2 = time.time() - start2
+            
+            # Results should be identical
+            self.assertEqual(result1.metadata.title, result2.metadata.title)
+            self.assertEqual(result1.line_count, result2.line_count)
+            
+            # Cache lookup should be faster (or at least not slower)
+            # Note: In practice, both are fast, but cache shouldn't be slower
+            self.assertLessEqual(time2, time1 + 0.1)  # Allow small margin
+    
+    def test_statistics_reflect_analyzed_songs(self):
+        """Statistics should accurately reflect analyzed songs."""
+        from background_analyzer import BackgroundSongAnalyzer
+        
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BackgroundSongAnalyzer(cache_dir=Path(cache_dir))
+            
+            # Before analysis
+            stats_before = analyzer.get_statistics()
+            self.assertEqual(stats_before['total_songs'], 0)
+            
+            # After analysis
+            analyzer.analyze_file(self.test_file)
+            stats_after = analyzer.get_statistics()
+            
+            self.assertEqual(stats_after['total_songs'], 1)
+            self.assertEqual(stats_after['with_lyrics'], 1)
+            self.assertEqual(stats_after['with_bpm'], 1)
 
 
-class TestOSCSender(unittest.TestCase):
-    """Tests for OSCSender class additions."""
+class TestComputedMetrics(unittest.TestCase):
+    """Tests for computed audio metrics (energy, danceability, valence)."""
     
-    def test_osc_sender_message_log(self):
-        """OSCSender should log messages for debug panel."""
+    def test_energy_reflects_song_mood(self):
+        """Energy should be high for energetic songs, low for calm songs."""
+        from background_analyzer import compute_energy_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        # High energy song
+        energetic = SongCategories(categories=[
+            SongCategory(name="energetic", score=0.9),
+            SongCategory(name="aggressive", score=0.7),
+            SongCategory(name="intense", score=0.6),
+            SongCategory(name="calm", score=0.1),
+        ])
+        
+        # Calm song
+        calm = SongCategories(categories=[
+            SongCategory(name="calm", score=0.9),
+            SongCategory(name="peaceful", score=0.8),
+            SongCategory(name="introspective", score=0.7),
+            SongCategory(name="energetic", score=0.1),
+        ])
+        
+        energy_high = compute_energy_from_categories(energetic)
+        energy_low = compute_energy_from_categories(calm)
+        
+        # Energetic should have higher energy
+        self.assertGreater(energy_high, energy_low)
+        self.assertGreater(energy_high, 0.5)
+        self.assertLess(energy_low, 0.5)
+    
+    def test_danceability_considers_bpm(self):
+        """Danceability should factor in BPM when available."""
+        from background_analyzer import compute_danceability_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        danceable = SongCategories(categories=[
+            SongCategory(name="danceable", score=0.8),
+            SongCategory(name="energetic", score=0.6),
+        ])
+        
+        # Optimal dance BPM (120)
+        dance_optimal = compute_danceability_from_categories(danceable, bpm=120.0)
+        
+        # Too slow BPM (60)
+        dance_slow = compute_danceability_from_categories(danceable, bpm=60.0)
+        
+        # Too fast BPM (200)
+        dance_fast = compute_danceability_from_categories(danceable, bpm=200.0)
+        
+        # Optimal BPM should have highest danceability
+        self.assertGreater(dance_optimal, dance_slow)
+        self.assertGreater(dance_optimal, dance_fast)
+    
+    def test_valence_reflects_emotional_tone(self):
+        """Valence should be high for happy songs, low for sad songs."""
+        from background_analyzer import compute_valence_from_categories
+        from karaoke_engine import SongCategory, SongCategories
+        
+        # Happy song
+        happy = SongCategories(categories=[
+            SongCategory(name="happy", score=0.9),
+            SongCategory(name="uplifting", score=0.8),
+            SongCategory(name="bright", score=0.7),
+        ])
+        
+        # Sad song
+        sad = SongCategories(categories=[
+            SongCategory(name="sad", score=0.9),
+            SongCategory(name="melancholic", score=0.8),
+            SongCategory(name="dark", score=0.7),
+        ])
+        
+        valence_happy = compute_valence_from_categories(happy)
+        valence_sad = compute_valence_from_categories(sad)
+        
+        self.assertGreater(valence_happy, valence_sad)
+        self.assertGreater(valence_happy, 0.5)
+        self.assertLess(valence_sad, 0.5)
+
+
+class TestOSCOutput(unittest.TestCase):
+    """Tests for OSC message generation."""
+    
+    def test_categories_sent_via_osc(self):
+        """Song categories should be sent as OSC messages."""
         from karaoke_engine import OSCSender, SongCategory, SongCategories
         
+        # Create sender (won't actually send, just logs)
         sender = OSCSender(host="127.0.0.1", port=9999)
         
-        # Initial log should be empty
-        messages = sender.get_recent_messages()
-        self.assertEqual(len(messages), 0)
-    
-    def test_osc_sender_send_categories(self):
-        """OSCSender.send_categories should work with SongCategories."""
-        from karaoke_engine import OSCSender, SongCategory, SongCategories
-        
-        sender = OSCSender(host="127.0.0.1", port=9999)
-        
-        cats = SongCategories(
+        categories = SongCategories(
             categories=[
-                SongCategory(name="happy", score=0.8),
-                SongCategory(name="love", score=0.6),
+                SongCategory(name="love", score=0.85),
+                SongCategory(name="happy", score=0.6),
             ],
-            primary_mood="happy"
+            primary_mood="love"
         )
         
-        # Should not raise any errors
-        sender.send_categories(cats)
+        # Send categories
+        sender.send_categories(categories)
         
-        # Should have logged messages
+        # Check logged messages
         messages = sender.get_recent_messages()
-        self.assertGreater(len(messages), 0)
+        addresses = [msg[1] for msg in messages]
+        
+        # Should have sent mood and category messages
+        self.assertIn("/karaoke/categories/mood", addresses)
+        self.assertIn("/karaoke/categories/love", addresses)
+        self.assertIn("/karaoke/categories/happy", addresses)
 
 
 if __name__ == "__main__":

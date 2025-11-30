@@ -2143,6 +2143,77 @@ class OSCSender:
             1 if milksyphon_running else 0,
             processing_apps
         ])
+    
+    # === Song Metadata channel (from MP3 tags) ===
+    
+    def send_song_metadata(self, metadata: Dict[str, Any]):
+        """
+        Send extended song metadata from MP3 tags.
+        
+        Used by background_analyzer for deeper OSC control.
+        
+        Args:
+            metadata: Dictionary with song metadata including:
+                - bpm: float (BPM from tags)
+                - key: str (musical key, e.g., "Am", "C")
+                - genre: str
+                - year: str
+                - energy: float (0.0-1.0, computed or from tags)
+                - danceability: float (0.0-1.0, computed)
+                - valence: float (0.0-1.0, emotional positivity)
+        """
+        # Individual metadata values
+        if metadata.get('bpm') is not None:
+            self._client.send_message("/song/meta/bpm", [float(metadata['bpm'])])
+            self._log_message("/song/meta/bpm", [float(metadata['bpm'])])
+        
+        if metadata.get('key'):
+            self._client.send_message("/song/meta/key", [str(metadata['key'])])
+            self._log_message("/song/meta/key", [str(metadata['key'])])
+        
+        if metadata.get('genre'):
+            self._client.send_message("/song/meta/genre", [str(metadata['genre'])])
+            self._log_message("/song/meta/genre", [str(metadata['genre'])])
+        
+        if metadata.get('year'):
+            self._client.send_message("/song/meta/year", [str(metadata['year'])])
+            self._log_message("/song/meta/year", [str(metadata['year'])])
+        
+        # Computed metrics (0.0-1.0 range, ideal for visualization control)
+        if 'energy' in metadata:
+            self._client.send_message("/song/meta/energy", [float(metadata['energy'])])
+            self._log_message("/song/meta/energy", [float(metadata['energy'])])
+        
+        if 'danceability' in metadata:
+            self._client.send_message("/song/meta/danceability", [float(metadata['danceability'])])
+            self._log_message("/song/meta/danceability", [float(metadata['danceability'])])
+        
+        if 'valence' in metadata:
+            self._client.send_message("/song/meta/valence", [float(metadata['valence'])])
+            self._log_message("/song/meta/valence", [float(metadata['valence'])])
+    
+    def send_computed_metrics(self, energy: float, danceability: float, valence: float):
+        """
+        Send computed metrics for a song (convenience method).
+        
+        Note: These are the same channels as in send_song_metadata().
+        Use this method for quick updates when you only have the metrics,
+        or use send_song_metadata() when you have the full metadata dict.
+        
+        These are always 0.0-1.0 range, ideal for direct visualization control.
+        
+        Args:
+            energy: How energetic the song is (0=calm, 1=high energy)
+            danceability: How suitable for dancing (0=introspective, 1=danceable)
+            valence: Emotional positivity (0=sad/dark, 1=happy/uplifting)
+        """
+        self._client.send_message("/song/meta/energy", [energy])
+        self._client.send_message("/song/meta/danceability", [danceability])
+        self._client.send_message("/song/meta/valence", [valence])
+        
+        self._log_message("/song/meta/energy", [energy])
+        self._log_message("/song/meta/danceability", [danceability])
+        self._log_message("/song/meta/valence", [valence])
 
 
 # =============================================================================
