@@ -71,7 +71,7 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 # Import karaoke engine module
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig
+from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, Settings
 
 # Import audio setup module (for --audio command)
 try:
@@ -551,7 +551,7 @@ class VJConsole:
         # Help footer
         print()
         print(t.dim("─" * min(t.width, 80)))
-        help_text = "  ↑↓/jk: Navigate   Enter: Select   d: Daemon   K: Karaoke   r: Restart   q: Quit"
+        help_text = "  ↑↓: Navigate   +/-: Timing   Enter: Select   d: Daemon   K: Karaoke   q: Quit"
         print(t.dim(help_text))
     
     def _draw_osc_panel(self, t):
@@ -562,7 +562,10 @@ class VJConsole:
         port = KaraokeConfig.DEFAULT_OSC_PORT
         
         if self.state.karaoke_enabled:
-            print(t.green(f"    📡 Sending to {host}:{port}"))
+            # Show timing offset
+            offset_ms = self.karaoke_engine.timing_offset_ms if self.karaoke_engine else 0
+            offset_str = f"{offset_ms:+d}ms" if offset_ms != 0 else "0ms"
+            print(t.green(f"    📡 Sending to {host}:{port}  ⏱ Offset: {offset_str}"))
             print(t.dim(f"    ├─ /karaoke/track"))
             print(t.dim(f"    ├─ /karaoke/lyrics/..."))
             print(t.dim(f"    ├─ /karaoke/refrain/..."))
@@ -578,7 +581,8 @@ class VJConsole:
                     
                     if state.lines:
                         from karaoke_engine import get_active_line_index
-                        idx = get_active_line_index(state.lines, pos)
+                        adjusted_pos = pos + (offset_ms / 1000.0)
+                        idx = get_active_line_index(state.lines, adjusted_pos)
                         print(t.dim(f"    /karaoke/line/active [{idx}]"))
                         
                         if 0 <= idx < len(state.lines):
@@ -631,6 +635,10 @@ class VJConsole:
                                     self.start_karaoke()
                             elif key == 'r':
                                 self._restart_selected()
+                            elif key == '+' or key == '=':
+                                self._adjust_timing(+200)
+                            elif key == '-' or key == '_':
+                                self._adjust_timing(-200)
                             elif key == 'q' or key.name == 'KEY_ESCAPE':
                                 self.state.running = False
                     except Exception as e:
@@ -665,6 +673,19 @@ class VJConsole:
             time.sleep(0.5)
             self.process_manager.launch_app(item)
             self.set_message(f"🔄 Restarted {item.name}", "success")
+    
+    def _adjust_timing(self, delta_ms: int):
+        """Adjust karaoke timing offset by delta milliseconds."""
+        if self.karaoke_engine:
+            new_offset = self.karaoke_engine.adjust_timing(delta_ms)
+            sign = "+" if new_offset >= 0 else ""
+            self.set_message(f"⏱ Timing: {sign}{new_offset}ms", "info")
+        else:
+            # Adjust settings even without engine running
+            settings = Settings()
+            new_offset = settings.adjust_timing(delta_ms)
+            sign = "+" if new_offset >= 0 else ""
+            self.set_message(f"⏱ Timing: {sign}{new_offset}ms (saved)", "info")
 
 
 # =============================================================================

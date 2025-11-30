@@ -8,6 +8,7 @@ Or simply: python test_python_vj.py
 
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 
 
@@ -17,7 +18,7 @@ class TestKaraokeEngine(unittest.TestCase):
     def test_imports(self):
         """All classes and functions should be importable."""
         from karaoke_engine import (
-            LyricLine, Track, PlaybackState,
+            LyricLine, Track, PlaybackState, Settings,
             parse_lrc, extract_keywords, detect_refrains, analyze_lyrics,
             get_active_line_index, get_refrain_lines,
             LyricsFetcher, SpotifyMonitor, VirtualDJMonitor, OSCSender, KaraokeEngine
@@ -141,6 +142,71 @@ class TestKaraokeEngine(unittest.TestCase):
         
         state.track = Track(artist="Daft Punk", title="One More Time")
         self.assertEqual(state.track_key, "daft punk - one more time")
+
+
+class TestSettings(unittest.TestCase):
+    """Tests for Settings class (persistent timing offset)."""
+    
+    def test_settings_default_offset(self):
+        """Settings should have 0ms offset by default."""
+        from karaoke_engine import Settings
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            settings = Settings(file_path=settings_file)
+            
+            self.assertEqual(settings.timing_offset_ms, 0)
+            self.assertAlmostEqual(settings.timing_offset_sec, 0.0)
+    
+    def test_settings_adjust_timing(self):
+        """Settings.adjust_timing should increment/decrement offset."""
+        from karaoke_engine import Settings
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            settings = Settings(file_path=settings_file)
+            
+            # Adjust forward
+            new_offset = settings.adjust_timing(200)
+            self.assertEqual(new_offset, 200)
+            self.assertEqual(settings.timing_offset_ms, 200)
+            
+            # Adjust forward again
+            new_offset = settings.adjust_timing(200)
+            self.assertEqual(new_offset, 400)
+            
+            # Adjust backward
+            new_offset = settings.adjust_timing(-600)
+            self.assertEqual(new_offset, -200)
+    
+    def test_settings_persistence(self):
+        """Settings should persist to file and reload."""
+        from karaoke_engine import Settings
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            
+            # Create settings and adjust
+            settings1 = Settings(file_path=settings_file)
+            settings1.adjust_timing(400)
+            
+            # Create new settings instance (should reload)
+            settings2 = Settings(file_path=settings_file)
+            self.assertEqual(settings2.timing_offset_ms, 400)
+    
+    def test_settings_timing_offset_sec(self):
+        """Settings.timing_offset_sec should convert ms to seconds."""
+        from karaoke_engine import Settings
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_file = Path(tmpdir) / "settings.json"
+            settings = Settings(file_path=settings_file)
+            
+            settings.timing_offset_ms = 500
+            self.assertAlmostEqual(settings.timing_offset_sec, 0.5)
+            
+            settings.timing_offset_ms = -300
+            self.assertAlmostEqual(settings.timing_offset_sec, -0.3)
 
 
 class TestAudioSetup(unittest.TestCase):

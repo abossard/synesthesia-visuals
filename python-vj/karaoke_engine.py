@@ -81,8 +81,13 @@ class Config:
         Path("/tmp") / "virtualdj_now_playing.txt",
     ]
     
-    # State file location
+    # Cache/state locations
     DEFAULT_STATE_FILE = Path.home() / ".cache" / "karaoke" / "state.json"
+    DEFAULT_SETTINGS_FILE = Path.home() / ".cache" / "karaoke" / "settings.json"
+    DEFAULT_LYRICS_CACHE_DIR = Path.home() / ".cache" / "karaoke" / "lyrics"
+    
+    # Timing adjustment step (200ms per key press)
+    TIMING_STEP_MS = 200
     
     @classmethod
     def find_vdj_path(cls) -> Optional[Path]:
@@ -111,6 +116,56 @@ class Config:
         """Check if Spotify credentials are configured."""
         creds = cls.get_spotify_credentials()
         return bool(creds['client_id'] and creds['client_secret'])
+
+
+# =============================================================================
+# SETTINGS - Persistent user settings (timing offset, etc.)
+# =============================================================================
+
+class Settings:
+    """Persistent settings storage. Handles timing offset and other preferences."""
+    
+    def __init__(self, file_path: Optional[Path] = None):
+        self._file = file_path or Config.DEFAULT_SETTINGS_FILE
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        self._data = self._load()
+    
+    def _load(self) -> Dict[str, Any]:
+        """Load settings from file."""
+        if self._file.exists():
+            try:
+                return json.loads(self._file.read_text())
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {'timing_offset_ms': 0}
+    
+    def _save(self):
+        """Save settings to file."""
+        try:
+            self._file.write_text(json.dumps(self._data, indent=2))
+        except IOError:
+            pass
+    
+    @property
+    def timing_offset_ms(self) -> int:
+        """Get timing offset in milliseconds (positive = lyrics early, negative = late)."""
+        return self._data.get('timing_offset_ms', 0)
+    
+    @timing_offset_ms.setter
+    def timing_offset_ms(self, value: int):
+        """Set timing offset in milliseconds."""
+        self._data['timing_offset_ms'] = value
+        self._save()
+    
+    def adjust_timing(self, delta_ms: int):
+        """Adjust timing offset by delta (e.g., +200 or -200)."""
+        self.timing_offset_ms = self.timing_offset_ms + delta_ms
+        return self.timing_offset_ms
+    
+    @property
+    def timing_offset_sec(self) -> float:
+        """Get timing offset in seconds."""
+        return self.timing_offset_ms / 1000.0
 
 
 # =============================================================================
@@ -253,7 +308,7 @@ class LyricsFetcher:
     BASE_URL = "https://lrclib.net/api"
     
     def __init__(self, cache_dir: Optional[Path] = None):
-        self._cache_dir = cache_dir or Path.home() / ".cache" / "karaoke"
+        self._cache_dir = cache_dir or Config.DEFAULT_LYRICS_CACHE_DIR
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "KaraokeEngine/1.0"
@@ -262,12 +317,14 @@ class LyricsFetcher:
         """
         Fetch synced lyrics for a track.
         Returns LRC format string or None.
+        Uses local cache to avoid re-downloading.
         """
-        # Check cache
+        # Check cache first (persistent across sessions)
         cache_file = self._get_cache_path(artist, title)
         if cache_file.exists():
             try:
                 data = json.loads(cache_file.read_text())
+                logger.debug(f"Using cached lyrics: {artist} - {title}")
                 return data.get('syncedLyrics')
             except (json.JSONDecodeError, IOError):
                 pass
@@ -284,10 +341,13 @@ class LyricsFetcher:
             
             if resp.status_code == 200:
                 data = resp.json()
-                cache_file.write_text(json.dumps(data))
-                logger.info(f"Fetched lyrics: {artist} - {title}")
+                # Store in cache for future use
+                self._save_to_cache(cache_file, data)
+                logger.info(f"Fetched and cached lyrics: {artist} - {title}")
                 return data.get('syncedLyrics')
             elif resp.status_code == 404:
+                # Cache the "not found" result too
+                self._save_to_cache(cache_file, {'not_found': True})
                 logger.debug(f"No lyrics found: {artist} - {title}")
             else:
                 logger.warning(f"LRCLIB error {resp.status_code}")
@@ -297,10 +357,23 @@ class LyricsFetcher:
         
         return None
     
+    def _save_to_cache(self, cache_file: Path, data: Dict):
+        """Save data to cache file."""
+        try:
+            cache_file.write_text(json.dumps(data, indent=2))
+        except IOError:
+            pass
+    
     def _get_cache_path(self, artist: str, title: str) -> Path:
         safe = re.sub(r'[^\w\s-]', '', f"{artist}_{title}".lower())
         safe = re.sub(r'\s+', '_', safe)
         return self._cache_dir / f"{safe}.json"
+    
+    def get_cached_count(self) -> int:
+        """Return number of cached lyrics files."""
+        if self._cache_dir.exists():
+            return len(list(self._cache_dir.glob("*.json")))
+        return 0
 
 
 # =============================================================================
@@ -491,8 +564,9 @@ class KaraokeEngine:
     - Playback monitoring (Spotify, VirtualDJ)
     - Lyrics fetching and analysis
     - OSC output on 3 channels
+    - Adjustable timing offset (positive = lyrics early, negative = late)
     
-    Simple interface: start(), stop(), run()
+    Simple interface: start(), stop(), run(), adjust_timing()
     Uses smart defaults from Config class.
     """
     
@@ -512,6 +586,7 @@ class KaraokeEngine:
         self._lyrics = LyricsFetcher()
         self._spotify = SpotifyMonitor()
         self._vdj = VirtualDJMonitor(vdj_path)
+        self._settings = Settings()  # Persistent settings (timing offset)
         
         # State
         self._state = PlaybackState()
@@ -528,12 +603,30 @@ class KaraokeEngine:
         self._stop = Event()
         self._thread: Optional[Thread] = None
     
+    @property
+    def timing_offset_ms(self) -> int:
+        """Current timing offset in milliseconds."""
+        return self._settings.timing_offset_ms
+    
+    def adjust_timing(self, delta_ms: int) -> int:
+        """
+        Adjust timing offset by delta milliseconds.
+        Positive = lyrics appear earlier, negative = later.
+        Returns new offset value.
+        """
+        new_offset = self._settings.adjust_timing(delta_ms)
+        logger.info(f"Timing offset adjusted to {new_offset}ms")
+        return new_offset
+    
     def run(self, poll_interval: float = 0.1):
         """Run the engine (blocking). Use start() for background."""
         logger.info("Karaoke Engine started")
         print("\n" + "="*50)
         print("  🎤 Karaoke Engine Running")
         print("="*50)
+        offset = self._settings.timing_offset_ms
+        print(f"  Timing offset: {offset:+d}ms")
+        print(f"  Lyrics cached: {self._lyrics.get_cached_count()}")
         print("  Waiting for music playback...")
         print("  Press Ctrl+C to stop\n")
         
@@ -636,11 +729,14 @@ class KaraokeEngine:
                 refrain_idx += 1
     
     def _send_updates(self):
-        """Send position and active line updates."""
+        """Send position and active line updates with timing offset applied."""
         pos = self._state.position_sec
         self._osc.send_position(pos, True)
         
-        active = get_active_line_index(self._state.lines, pos)
+        # Apply timing offset: positive offset = lyrics early (add to position)
+        adjusted_pos = pos + self._settings.timing_offset_sec
+        
+        active = get_active_line_index(self._state.lines, adjusted_pos)
         self._osc.send_active_line(active)
         
         if active >= 0 and active < len(self._state.lines):
