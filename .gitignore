@@ -31,10 +31,11 @@ __pycache__/
 dist/
 build/
 
-# Python VJ state files
+# Python VJ state files and cache
 karaoke_state.json
 karaoke_state.tmp
 vj_console.log
+python-vj/.cache/
 
 # Credentials and sensitive data
 *.credentials

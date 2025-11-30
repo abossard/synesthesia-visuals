@@ -59,9 +59,17 @@ python vj_console.py
 **Controls:**
 - `↑/↓` or `j/k`: Navigate menu
 - `Enter`: Select/toggle option
+- `+/-`: Adjust lyrics timing offset (±200ms per press)
 - `d`: Toggle daemon mode
 - `r`: Restart selected app
 - `q`: Quit
+
+**Data Storage:**
+
+Settings, lyrics cache, and state files are stored in `python-vj/.cache/`:
+- `settings.json` - Timing offset and user preferences
+- `lyrics/` - Cached lyrics (avoids re-downloading)
+- `state.json` - Current karaoke state for debugging
 
 ### Karaoke Engine (Standalone)
 

@@ -81,10 +81,11 @@ class Config:
         Path("/tmp") / "virtualdj_now_playing.txt",
     ]
     
-    # Cache/state locations
-    DEFAULT_STATE_FILE = Path.home() / ".cache" / "karaoke" / "state.json"
-    DEFAULT_SETTINGS_FILE = Path.home() / ".cache" / "karaoke" / "settings.json"
-    DEFAULT_LYRICS_CACHE_DIR = Path.home() / ".cache" / "karaoke" / "lyrics"
+    # Cache/state locations - stored in application folder
+    APP_DATA_DIR = Path(__file__).parent / ".cache"
+    DEFAULT_STATE_FILE = APP_DATA_DIR / "state.json"
+    DEFAULT_SETTINGS_FILE = APP_DATA_DIR / "settings.json"
+    DEFAULT_LYRICS_CACHE_DIR = APP_DATA_DIR / "lyrics"
     
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
