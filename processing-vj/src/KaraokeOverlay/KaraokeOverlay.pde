@@ -62,10 +62,10 @@ KaraokeState stateFull;
 RefrainState stateRefrain;
 SongInfoState stateSongInfo;
 
-// Visibility toggles
-boolean showFull = true;
-boolean showRefrain = true;
-boolean showSongInfo = true;
+// OSC connection monitoring
+long lastOscMessageTime = 0;
+boolean oscConnected = false;
+final long OSC_TIMEOUT_MS = 5000;  // 5 seconds without messages = disconnected
 
 // Operator overlay + broadcast message
 boolean typingBroadcast = false;  // Capture text input until Enter/Esc
@@ -125,6 +125,11 @@ void setup() {
 }
 
 void draw() {
+  // Check OSC connection status
+  if (millis() - lastOscMessageTime > OSC_TIMEOUT_MS) {
+    oscConnected = false;
+  }
+  
   // Animation updates
   fadeAmount = lerp(fadeAmount, targetFade, 0.1);
   
@@ -134,19 +139,31 @@ void draw() {
   // Clear main display
   background(0);
   
+  // Show OSC disconnected warning if no recent messages
+  if (!oscConnected && lastOscMessageTime > 0) {
+    fill(255, 100);
+    textAlign(CENTER, CENTER);
+    textFont(hudFont);
+    textSize(24);
+    text("⚠ OSC Disconnected\nPress 'r' to reconnect", width/2, 100);
+  }
+  
   // Render each channel to its buffer
   renderFullLyrics();
   renderRefrain();
   renderSongInfo();
   
-  // Show preview on main display (composited - all three channels)
-  tint(255, showFull ? 255 : 50);
+  // Show preview on main display with additive blending (black = transparent, white accumulates)
+  blendMode(ADD);
+  
+  // Always draw all three channels
+  tint(255, 255);
   image(bufferFull, 0, 0);
-  tint(255, showRefrain ? 255 : 50);
   image(bufferRefrain, 0, 0);
-  tint(255, showSongInfo ? 255 : 50);
   image(bufferSongInfo, 0, 0);
+  
   noTint();
+  blendMode(BLEND);  // Reset to normal blending
 
   drawHUD();
   
@@ -164,9 +181,7 @@ void renderFullLyrics() {
   bufferFull.textAlign(CENTER, TOP);
   bufferFull.textFont(currentFont);
   
-  boolean drawChannel = showFull && stateFull.active;
-  
-  if (drawChannel) {
+  if (stateFull.active) {
     int fontSize = fontSizes[fontSizeIndex];
     float lineHeight = fontSize * 1.4;
     float maxWidth = bufferFull.width * 0.86;
@@ -269,9 +284,7 @@ void renderRefrain() {
   bufferRefrain.textAlign(CENTER, TOP);
   bufferRefrain.textFont(currentFont);
 
-  boolean drawChannel = showRefrain && stateRefrain.active && !stateRefrain.currentText.isEmpty();
-
-  if (drawChannel) {
+  if (stateRefrain.active && !stateRefrain.currentText.isEmpty()) {
     int fontSize = fontSizes[fontSizeIndex] + 12;  // Larger for refrain
     float lineHeight = fontSize * 1.25;
     float maxWidth = bufferRefrain.width * 0.86;
@@ -297,9 +310,7 @@ void renderSongInfo() {
   bufferSongInfo.textAlign(CENTER, CENTER);
   bufferSongInfo.textFont(currentFont);
 
-  boolean drawChannel = showSongInfo && stateSongInfo.active;
-
-  if (drawChannel) {
+  if (stateSongInfo.active) {
     int fontSize = fontSizes[fontSizeIndex] + 24;  // Large for song info
     float lineHeight = fontSize * 1.25;
     
@@ -351,8 +362,10 @@ void drawHUD() {
   rect(12, baseY - 12, width - 24, 118, 10);
 
   fill(255);
-  text("Local display only · Controls: [s] all [1] full [2] refrain [3] song info [f] font [g] size [r] reconnect OSC [t] broadcast (HUD always on)", 20, baseY);
-  text("Status: full " + onOff(showFull) + " · refrain " + onOff(showRefrain) + " · song info " + onOff(showSongInfo) + " · font " + availableFonts[fontIndex] + " @ " + fontSizes[fontSizeIndex], 20, baseY + 18);
+  text("Local display only · Controls: [f] font [g] size [r] reconnect OSC [t] broadcast (HUD always on)", 20, baseY);
+  
+  String timeSinceMsg = oscConnected ? "" : " (" + ((millis() - lastOscMessageTime) / 1000) + "s)";
+  text("Status: OSC " + (oscConnected ? "connected" : "disconnected" + timeSinceMsg) + " · font " + availableFonts[fontIndex] + " @ " + fontSizes[fontSizeIndex], 20, baseY + 18);
 
   String messageLine;
   if (typingBroadcast) {
@@ -443,6 +456,39 @@ int computeActiveLine(KaraokeState s) {
 
 String onOff(boolean val) {
   return val ? "on" : "off";
+}
+
+// ========== SAFE OSC PARAMETER EXTRACTION ==========
+
+String safeGetString(OscMessage msg, int index, String defaultValue) {
+  try {
+    if (index >= msg.typetag().length()) return defaultValue;
+    String val = msg.get(index).stringValue();
+    return (val != null) ? val : defaultValue;
+  } catch (Exception e) {
+    println("ERROR: Failed to get string at index " + index + ": " + e.getMessage());
+    return defaultValue;
+  }
+}
+
+int safeGetInt(OscMessage msg, int index, int defaultValue) {
+  try {
+    if (index >= msg.typetag().length()) return defaultValue;
+    return msg.get(index).intValue();
+  } catch (Exception e) {
+    println("ERROR: Failed to get int at index " + index + ": " + e.getMessage());
+    return defaultValue;
+  }
+}
+
+float safeGetFloat(OscMessage msg, int index, float defaultValue) {
+  try {
+    if (index >= msg.typetag().length()) return defaultValue;
+    return msg.get(index).floatValue();
+  } catch (Exception e) {
+    println("ERROR: Failed to get float at index " + index + ": " + e.getMessage());
+    return defaultValue;
+  }
 }
 
 void applyFontSelection() {
@@ -553,52 +599,80 @@ void saveFontSettings() {
 // ========== OSC EVENT HANDLER ==========
 
 void oscEvent(OscMessage msg) {
+  // Update connection status
+  lastOscMessageTime = millis();
+  oscConnected = true;
+  
   String addr = msg.addrPattern();
   
   try {
     // === Full lyrics channel ===
     if (addr.equals("/karaoke/track")) {
+      // Validate message format: [active, source, artist, title, album, duration, has_lyrics]
+      if (msg.typetag().length() < 7) {
+        println("ERROR: /karaoke/track message too short (expected 7 args, got " + msg.typetag().length() + ")");
+        return;
+      }
+      
       stateFull.active = msg.get(0).intValue() == 1;
       stateRefrain.active = stateFull.active;
       stateSongInfo.active = stateFull.active;
-      String newArtist = msg.get(2).stringValue();
-      String newTitle = msg.get(3).stringValue();
       
-      // Detect track change and reset song info fade
-      if (!newArtist.equals(stateSongInfo.artist) || !newTitle.equals(stateSongInfo.title)) {
+      // Safe string extraction with null checks
+      String newArtist = safeGetString(msg, 2, "");
+      String newTitle = safeGetString(msg, 3, "");
+      
+      // Detect track change (handle initial empty state and edge cases)
+      boolean hasExistingTrack = stateSongInfo.artist.length() > 0 || stateSongInfo.title.length() > 0;
+      boolean isTrackChange = !newArtist.equals(stateSongInfo.artist) || !newTitle.equals(stateSongInfo.title);
+      boolean isFirstTrack = !hasExistingTrack && (newArtist.length() > 0 || newTitle.length() > 0);
+      
+      if (isTrackChange || isFirstTrack) {
         stateSongInfo.artist = newArtist;
         stateSongInfo.title = newTitle;
         stateSongInfo.textChangeTime = millis();
         stateSongInfo.targetOpacity = 255;
         stateSongInfo.textOpacity = 255;
+        println("Track change detected: " + newArtist + " - " + newTitle);
       }
       
-      stateFull.source = msg.get(1).stringValue();
+      stateFull.source = safeGetString(msg, 1, "unknown");
       stateFull.artist = newArtist;
       stateFull.title = newTitle;
-      stateFull.album = msg.get(4).stringValue();
-      stateFull.durationSec = msg.get(5).floatValue();
-      stateFull.hasSyncedLyrics = msg.get(6).intValue() == 1;
+      stateFull.album = safeGetString(msg, 4, "");
+      stateFull.durationSec = safeGetFloat(msg, 5, 0.0);
+      stateFull.hasSyncedLyrics = safeGetInt(msg, 6, 0) == 1;
       targetFade = stateFull.active ? 1 : 0;
-      if (stateFull.active) println("Track: " + stateFull.artist + " - " + stateFull.title);
+      
+      if (stateFull.active) {
+        println("Track: " + stateFull.artist + " - " + stateFull.title + " (" + (stateFull.hasSyncedLyrics ? "synced lyrics" : "no lyrics") + ")");
+      }
     }
     else if (addr.equals("/karaoke/lyrics/reset")) {
       stateFull.lines.clear();
       stateFull.activeIndex = -1;
     }
     else if (addr.equals("/karaoke/lyrics/line")) {
-      int idx = msg.get(0).intValue();
-      float t = msg.get(1).floatValue();
-      String txt = msg.get(2).stringValue();
+      if (msg.typetag().length() < 3) {
+        println("ERROR: /karaoke/lyrics/line message too short");
+        return;
+      }
+      int idx = safeGetInt(msg, 0, -1);
+      if (idx < 0) return;
+      float t = safeGetFloat(msg, 1, 0.0);
+      String txt = safeGetString(msg, 2, "");
       while (stateFull.lines.size() <= idx) stateFull.lines.add(new LyricLine(0, ""));
       stateFull.lines.set(idx, new LyricLine(t, txt));
     }
     else if (addr.equals("/karaoke/pos")) {
-      stateFull.positionSec = msg.get(0).floatValue();
-      stateFull.isPlaying = msg.get(1).intValue() == 1;
+      if (msg.typetag().length() < 2) return;
+      stateFull.positionSec = safeGetFloat(msg, 0, 0.0);
+      stateFull.isPlaying = safeGetInt(msg, 1, 0) == 1;
     }
     else if (addr.equals("/karaoke/line/active")) {
-      int newIndex = msg.get(0).intValue();
+      if (msg.typetag().length() < 1) return;
+      int newIndex = safeGetInt(msg, 0, -1);
+      if (newIndex < 0) return;
       if (newIndex != stateFull.lastActiveIndex) {
         stateFull.lastActiveIndex = newIndex;
         stateFull.lineChangeTime = millis();
@@ -610,24 +684,32 @@ void oscEvent(OscMessage msg) {
     // === Refrain channel ===
     else if (addr.equals("/karaoke/refrain/reset")) {
       stateRefrain.lines.clear();
+      stateRefrain.currentText = "";
+      stateRefrain.lastText = "";
     }
     else if (addr.equals("/karaoke/refrain/line")) {
-      int idx = msg.get(0).intValue();
-      float t = msg.get(1).floatValue();
-      String txt = msg.get(2).stringValue();
+      if (msg.typetag().length() < 3) {
+        println("ERROR: /karaoke/refrain/line message too short");
+        return;
+      }
+      int idx = safeGetInt(msg, 0, -1);
+      if (idx < 0) return;
+      float t = safeGetFloat(msg, 1, 0.0);
+      String txt = safeGetString(msg, 2, "");
       while (stateRefrain.lines.size() <= idx) stateRefrain.lines.add(new LyricLine(0, ""));
       stateRefrain.lines.set(idx, new LyricLine(t, txt));
     }
     else if (addr.equals("/karaoke/refrain/active")) {
-      stateRefrain.activeIndex = msg.get(0).intValue();
+      if (msg.typetag().length() < 1) return;
+      stateRefrain.activeIndex = safeGetInt(msg, 0, -1);
       if (msg.typetag().length() > 1) {
-        String newText = msg.get(1).stringValue();
-        if (!newText.equals(stateRefrain.lastText)) {
+        String newText = safeGetString(msg, 1, "");
+        if (newText != null && !newText.equals(stateRefrain.lastText)) {
           stateRefrain.lastText = newText;
           stateRefrain.textChangeTime = millis();
           stateRefrain.targetOpacity = 255;
         }
-        stateRefrain.currentText = newText;
+        stateRefrain.currentText = (newText != null) ? newText : "";
       }
     }
     
@@ -713,24 +795,6 @@ void keyPressed() {
     broadcastInput = broadcastMessage;
     println("Type broadcast text, Enter to send to all outputs, Esc to cancel.");
   }
-  else if (key == 's' || key == 'S') {
-    showFull = !showFull;
-    showRefrain = showFull;
-    showSongInfo = showFull;
-    println("All channels: " + (showFull ? "visible" : "hidden"));
-  }
-  else if (key == '1') {
-    showFull = !showFull;
-    println("Full lyrics: " + (showFull ? "visible" : "hidden"));
-  }
-  else if (key == '2') {
-    showRefrain = !showRefrain;
-    println("Refrain: " + (showRefrain ? "visible" : "hidden"));
-  }
-  else if (key == '3') {
-    showSongInfo = !showSongInfo;
-    println("Song info: " + (showSongInfo ? "visible" : "hidden"));
-  }
   else if (key == 'f' || key == 'F') {
     cycleFont();
   }
@@ -738,9 +802,15 @@ void keyPressed() {
     cycleFontSize();
   }
   else if (key == 'r' || key == 'R') {
-    osc.stop();
-    osc = new OscP5(this, OSC_PORT);
-    println("OSC reconnected on port " + OSC_PORT);
+    try {
+      osc.stop();
+      osc = new OscP5(this, OSC_PORT);
+      lastOscMessageTime = millis();  // Reset timeout counter
+      oscConnected = false;  // Wait for first message
+      println("OSC reconnected on port " + OSC_PORT + " - waiting for messages...");
+    } catch (Exception e) {
+      println("ERROR: Failed to reconnect OSC: " + e.getMessage());
+    }
   }
 }
 

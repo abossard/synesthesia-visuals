@@ -2311,6 +2311,10 @@ class KaraokeEngine:
         
         logger.info(f"Now playing: {track_key}")
         
+        # IMMEDIATELY send track metadata to Processing for song info display
+        # Send with has_lyrics=False initially - will update after lyrics are loaded
+        self._osc.send_track(track, False)
+        
         # Step 1: Detect playback
         self.pipeline.start("detect_playback", f"{track.source}: {track.artist}")
         self.pipeline.complete("detect_playback", track.title)
@@ -2437,8 +2441,10 @@ class KaraokeEngine:
             self._current_image_path = cached_image
             self.pipeline.generated_image_path = str(cached_image)
         
-        # Step 9: Send OSC
-        self.pipeline.start("send_osc", "Sending to Processing...")
+        # Step 9: Send lyrics to Processing (track metadata already sent at start)
+        self.pipeline.start("send_osc", "Sending lyrics to Processing...")
+        
+        # Update track info with final has_lyrics status
         self._osc.send_track(track, len(self._state.lines) > 0)
         
         # Send all lines on all channels
