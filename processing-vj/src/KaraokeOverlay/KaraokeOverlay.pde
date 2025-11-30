@@ -723,6 +723,7 @@ void oscEvent(OscMessage msg) {
 void updateTextFades() {
   float fadeDelay = 5000; // 5 seconds before starting fade
   float fadeDuration = 1000; // 1 second fade out
+  float refrainFadeDelay = 2000; // 2 seconds before refrain starts fading (quicker)
   float currentTime = millis();
   
   // Full lyrics fade
@@ -735,10 +736,10 @@ void updateTextFades() {
   }
   stateFull.textOpacity = lerp(stateFull.textOpacity, stateFull.targetOpacity, 0.15);
   
-  // Refrain fade
+  // Refrain fade (faster)
   float refrainElapsed = currentTime - stateRefrain.textChangeTime;
-  if (refrainElapsed > fadeDelay) {
-    float fadeProgress = min(1.0, (refrainElapsed - fadeDelay) / fadeDuration);
+  if (refrainElapsed > refrainFadeDelay) {
+    float fadeProgress = min(1.0, (refrainElapsed - refrainFadeDelay) / fadeDuration);
     stateRefrain.targetOpacity = 255 * (1.0 - fadeProgress);
   } else {
     stateRefrain.targetOpacity = 255;
