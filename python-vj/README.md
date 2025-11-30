@@ -33,6 +33,28 @@ The VJ Console features a tabbed interface with 4 screens. Press number keys to 
 | `3` | **Song AI Debug** | Song categorization details and processing pipeline |
 | `4` | **All Logs** | Complete application logs for debugging |
 
+### Screenshots
+
+#### Screen 1: Master Control
+Main dashboard with app status, Processing apps list, and processing pipeline.
+
+![Master Control](docs/screenshots/01-master-control.svg)
+
+#### Screen 2: OSC View
+Real-time view of all emitted OSC messages for debugging.
+
+![OSC View](docs/screenshots/02-osc-view.svg)
+
+#### Screen 3: Song AI Debug
+Song categorization scores and AI analysis pipeline status.
+
+![Song AI Debug](docs/screenshots/03-ai-debug.svg)
+
+#### Screen 4: All Logs
+Complete application logs for debugging and monitoring.
+
+![All Logs](docs/screenshots/04-logs.svg)
+
 ### Keyboard Shortcuts
 
 | Key | Action |
@@ -500,5 +522,6 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **spotipy**: Spotify Web API client
 - **python-osc**: OSC protocol implementation
 - **requests**: HTTP client for LRCLIB API
-- **blessed**: Terminal UI library
+- **textual**: Modern terminal UI library
 - **psutil**: Process management
+- **openai**: OpenAI API client (optional)
