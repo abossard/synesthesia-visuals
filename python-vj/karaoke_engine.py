@@ -209,6 +209,7 @@ class PipelineTracker:
         "extract_keywords",
         "llm_analysis",
         "generate_image_prompt",
+        "comfyui_generate",
         "send_osc"
     ]
     
@@ -220,6 +221,7 @@ class PipelineTracker:
         "extract_keywords": "🔑 Extract Keywords",
         "llm_analysis": "🤖 AI Analysis",
         "generate_image_prompt": "🎨 Generate Image Prompt",
+        "comfyui_generate": "🖼 ComfyUI Generate Image",
         "send_osc": "📡 Send OSC"
     }
     
@@ -228,6 +230,7 @@ class PipelineTracker:
         self.current_track = ""
         self.logs: List[str] = []
         self.image_prompt = ""
+        self.generated_image_path = ""
         self._max_logs = 20
         self.reset()
     
@@ -235,6 +238,7 @@ class PipelineTracker:
         """Reset pipeline for a new track."""
         self.current_track = track_key
         self.image_prompt = ""
+        self.generated_image_path = ""
         self.steps = {
             name: PipelineStep(name=name, status="pending")
             for name in self.STEPS
@@ -1289,6 +1293,21 @@ class OSCSender:
     
     def send_keywords_active(self, index: int, keywords: str):
         self._client.send_message("/karaoke/keywords/active", [index, keywords])
+    
+    # === Image channel ===
+    
+    def send_image(self, image_path: str):
+        """Send image file path to Processing ImageOverlay."""
+        self._client.send_message("/karaoke/image", [image_path])
+        logger.debug(f"OSC: /karaoke/image [{image_path}]")
+    
+    def send_image_clear(self):
+        """Clear the displayed image."""
+        self._client.send_message("/karaoke/image/clear", [])
+    
+    def send_image_opacity(self, opacity: float):
+        """Set image opacity (0.0-1.0)."""
+        self._client.send_message("/karaoke/image/opacity", [opacity])
 
 
 # =============================================================================
@@ -1326,6 +1345,7 @@ class KaraokeEngine:
         self._vdj = VirtualDJMonitor(vdj_path)
         self._settings = Settings()  # Persistent settings (timing offset)
         self._llm = LLMAnalyzer()    # AI-powered analysis
+        self._comfyui = ComfyUIGenerator()  # Image generation
         
         # Pipeline tracking for UI
         self.pipeline = PipelineTracker()
@@ -1333,6 +1353,7 @@ class KaraokeEngine:
         # State
         self._state = PlaybackState()
         self._last_track_key = ""
+        self._current_image_path: Optional[Path] = None
         
         # State file with smart default
         if state_file:
@@ -1344,6 +1365,7 @@ class KaraokeEngine:
         # Threading
         self._stop = Event()
         self._thread: Optional[Thread] = None
+        self._image_thread: Optional[Thread] = None
     
     @property
     def timing_offset_ms(self) -> int:
@@ -1516,9 +1538,24 @@ class KaraokeEngine:
             self.pipeline.skip("extract_keywords", "No lyrics")
             self.pipeline.skip("llm_analysis", "No lyrics")
             self.pipeline.skip("generate_image_prompt", "No lyrics")
+            self.pipeline.skip("comfyui_generate", "No prompt")
             self._state.lines = []
         
-        # Step 8: Send OSC
+        # Step 8a: Generate image with ComfyUI (async in background)
+        if self.pipeline.image_prompt and self._comfyui.is_available:
+            self._start_image_generation(track)
+        elif not self._comfyui.is_available:
+            self.pipeline.skip("comfyui_generate", "ComfyUI not available")
+        
+        # Check for cached image and send immediately
+        cached_image = self._comfyui.get_cached_image(track.artist, track.title)
+        if cached_image:
+            self.pipeline.complete("comfyui_generate", f"Using cached: {cached_image.name}")
+            self._osc.send_image(str(cached_image))
+            self._current_image_path = cached_image
+            self.pipeline.generated_image_path = str(cached_image)
+        
+        # Step 9: Send OSC
         self.pipeline.start("send_osc", "Sending to Processing...")
         self._osc.send_track(track, len(self._state.lines) > 0)
         
@@ -1574,12 +1611,52 @@ class KaraokeEngine:
                 } if self._state.track else None,
                 'lines_count': len(self._state.lines),
                 'refrain_count': len(get_refrain_lines(self._state.lines)),
+                'image_path': str(self._current_image_path) if self._current_image_path else None,
             }
             tmp = self._state_file.with_suffix('.tmp')
             tmp.write_text(json.dumps(state, indent=2))
             tmp.rename(self._state_file)
         except Exception:
             pass
+    
+    def _start_image_generation(self, track: Track):
+        """Start ComfyUI image generation in background thread."""
+        if self._image_thread and self._image_thread.is_alive():
+            logger.debug("Image generation already in progress")
+            return
+        
+        prompt = self.pipeline.image_prompt
+        if not prompt:
+            return
+        
+        self.pipeline.start("comfyui_generate", "Generating with ComfyUI...")
+        
+        def generate():
+            try:
+                image_path = self._comfyui.generate_image(
+                    prompt=prompt,
+                    artist=track.artist,
+                    title=track.title
+                )
+                
+                if image_path:
+                    self._current_image_path = image_path
+                    self.pipeline.generated_image_path = str(image_path)
+                    self.pipeline.complete("comfyui_generate", f"Generated: {image_path.name}")
+                    self.pipeline.log(f"Image saved: {image_path}")
+                    
+                    # Send the image path via OSC to Processing ImageOverlay
+                    self._osc.send_image(str(image_path))
+                    logger.info(f"Sent image to Processing: {image_path}")
+                else:
+                    self.pipeline.error("comfyui_generate", "Generation failed")
+                    
+            except Exception as e:
+                self.pipeline.error("comfyui_generate", str(e)[:40])
+                logger.error(f"ComfyUI generation error: {e}")
+        
+        self._image_thread = Thread(target=generate, daemon=True)
+        self._image_thread.start()
 
 
 # =============================================================================

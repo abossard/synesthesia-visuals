@@ -130,6 +130,8 @@ python main.py --listen 127.0.0.1 --port 8188
 - Negative prompt excludes busy backgrounds, ensures clean overlays
 - Images cached in `.cache/generated_images/` by song
 - 1024x1024 PNG output, suitable for Syphon input
+- **Sends image path via OSC** to Processing `ImageOverlay` app
+- Image displayed as separate Syphon output `KaraokeImage`
 
 ### OpenAI Setup (Optional)
 
@@ -228,10 +230,30 @@ The Processing KaraokeOverlay app creates **3 separate Syphon servers**:
 | Syphon Server | Content | Usage |
 |---------------|---------|-------|
 | `KaraokeFullLyrics` | Full lyrics with prev/current/next | Main karaoke display |
-| `KaraokeRefrain` | Chorus lines only (magenta) | Highlight choruses |
-| `KaraokeKeywords` | Key words only (cyan) | Bold word highlights |
+| `KaraokeRefrain` | Chorus lines only | Highlight choruses |
+| `KaraokeKeywords` | Key words only | Bold word highlights |
+| `KaraokeImage` | AI-generated song image | Visual backdrop |
 
 Select any of these in Magic Music Visuals as separate video sources!
+
+### ImageOverlay App
+
+The `ImageOverlay` Processing app (`processing-vj/examples/ImageOverlay/`) receives image paths via OSC and displays them:
+
+**OSC Messages:**
+```
+/karaoke/image [path]        - Load and display image at absolute path
+/karaoke/image/clear         - Clear current image (show black)
+/karaoke/image/opacity [f]   - Set image opacity (0.0-1.0)
+/karaoke/image/fade [ms]     - Set fade duration in milliseconds
+```
+
+**Features:**
+- Async image loading (no frame drops)
+- Automatic aspect ratio preservation
+- Fade-in transitions
+- On-screen logging with error messages
+- Keyboard controls: `c` clear, `r` reload, `+/-` opacity, `L` toggle logs
 
 ## Debug Output
 
@@ -258,6 +280,8 @@ The engine writes `karaoke_state.json` with the current state:
 
 See [`processing-vj/examples/KaraokeOverlay/`](../processing-vj/examples/KaraokeOverlay/) for the Processing client that receives OSC messages and renders lyrics.
 
+See [`processing-vj/examples/ImageOverlay/`](../processing-vj/examples/ImageOverlay/) for the Processing client that displays AI-generated images.
+
 ## Architecture
 
 ```
@@ -269,13 +293,16 @@ See [`processing-vj/examples/KaraokeOverlay/`](../processing-vj/examples/Karaoke
         ┌────────────────────┼────────────────────┐
         ▼                    ▼                    ▼
 ┌───────────────┐   ┌────────────────┐   ┌───────────────┐
-│ Processing    │   │ Karaoke Engine │   │ Other VJ      │
-│ Apps          │   │                │   │ Components    │
+│ Processing    │   │ Karaoke Engine │   │ ComfyUI       │
+│ Apps          │   │                │   │ Image Gen     │
 │ (Daemon Mode) │   │ Spotify API    │   │               │
-└───────────────┘   │ VirtualDJ      │   └───────────────┘
-                    │ LRCLIB API     │
-                    └───────┬────────┘
-                            │ OSC
+└───────────────┘   │ VirtualDJ      │   └───────┬───────┘
+                    │ LRCLIB API     │           │
+                    │ Ollama LLM     │           │
+                    └───────┬────────┘           │
+                            │ OSC                │
+        ┌───────────────────┴───────────────────┐│
+        ▼                                       ▼▼
                             ▼
                     ┌───────────────┐
                     │ Processing    │
