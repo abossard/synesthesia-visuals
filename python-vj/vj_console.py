@@ -316,15 +316,25 @@ class VJConsole:
     def __init__(self, project_root: Optional[Path] = None):
         self.term = Terminal() if BLESSED_AVAILABLE else None
         self.project_root = project_root or self._find_project_root()
-        
+
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self.project_root)
-        
+
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self.state = AppState()
-        
+
         # Build menu with item types
         self._build_menu()
+
+    def _safe_dim(self, text: str) -> str:
+        """Safely apply dim formatting with fallback."""
+        if not self.term:
+            return text
+        try:
+            return self.term.dim(text)
+        except (TypeError, AttributeError):
+            # Fallback to normal white if dim is not supported
+            return self.term.white(text) if hasattr(self.term, 'white') else text
     
     def _build_menu(self):
         """Build the menu items list with types."""
@@ -479,8 +489,8 @@ class VJConsole:
         print()
         
         # Status indicators
-        daemon_icon = t.bold_green("● ON ") if self.state.daemon_mode else t.dim("○ OFF")
-        karaoke_icon = t.bold_green("● ON ") if self.state.karaoke_enabled else t.dim("○ OFF")
+        daemon_icon = t.bold_green("● ON ") if self.state.daemon_mode else self._safe_dim("○ OFF")
+        karaoke_icon = t.bold_green("● ON ") if self.state.karaoke_enabled else self._safe_dim("○ OFF")
         
         print(f"  {t.bold('Daemon:')} {daemon_icon}    {t.bold('Karaoke:')} {karaoke_icon}")
         print()
@@ -493,7 +503,7 @@ class VJConsole:
                 continue
             
             if item_type == "disabled":
-                print(t.dim(f"    {label}"))
+                print(self._safe_dim(f"    {label}"))
                 continue
             
             # Selection highlighting

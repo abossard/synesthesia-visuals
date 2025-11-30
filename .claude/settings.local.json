@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(processing-java:*)"
+      "Bash(processing-java:*)",
+      "Bash(../.venv/bin/python:*)",
+      "Bash(timeout 2 ../.venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []

@@ -56,16 +56,16 @@ boolean showFull = true;
 boolean showRefrain = true;
 boolean showKeywords = true;
 
-// Visual settings
+// Visual settings (scaled for HD Ready 1280x720)
 int fontSizeIndex = 1;
-int[] fontSizes = {32, 48, 64, 80};
+int[] fontSizes = {24, 36, 48, 60};
 
 // Animation
 float fadeAmount = 0;
 float targetFade = 1;
 
 void settings() {
-  size(1920, 1080, P3D);  // Full HD, P3D required for Syphon
+  size(1280, 720, P3D);  // HD Ready (1280x720), P3D required for Syphon
 }
 
 void setup() {
@@ -81,9 +81,9 @@ void setup() {
   println("OSC listening on port " + OSC_PORT);
   
   // Create off-screen buffers for each Syphon output
-  bufferFull = createGraphics(1920, 1080, P3D);
-  bufferRefrain = createGraphics(1920, 1080, P3D);
-  bufferKeywords = createGraphics(1920, 1080, P3D);
+  bufferFull = createGraphics(1280, 720, P3D);
+  bufferRefrain = createGraphics(1280, 720, P3D);
+  bufferKeywords = createGraphics(1280, 720, P3D);
   
   // Initialize THREE separate Syphon servers
   syphonFull = new SyphonServer(this, "KaraokeFullLyrics");
@@ -92,8 +92,8 @@ void setup() {
   
   println("Syphon outputs: KaraokeFullLyrics, KaraokeRefrain, KaraokeKeywords");
   
-  // Load fonts
-  textFont(createFont("Arial", 64));
+  // Load fonts (scaled for HD Ready)
+  textFont(createFont("Arial", 48));
 }
 
 void draw() {
@@ -124,7 +124,7 @@ void renderFullLyrics() {
   bufferFull.beginDraw();
   bufferFull.background(0);
   bufferFull.textAlign(CENTER, CENTER);
-  bufferFull.textFont(createFont("Arial", 64));
+  bufferFull.textFont(createFont("Arial", 48));
   
   if (!showFull || !stateFull.active) {
     bufferFull.endDraw();
@@ -137,50 +137,50 @@ void renderFullLyrics() {
   // Title/artist at top - dim white
   bufferFull.textSize(fontSize * 0.6);
   bufferFull.fill(255, 150 * fadeAmount);
-  bufferFull.text(stateFull.artist + " — " + stateFull.title, width / 2, 60);
-  
+  bufferFull.text(stateFull.artist + " — " + stateFull.title, bufferFull.width / 2, 60);
+
   if (!stateFull.hasSyncedLyrics || stateFull.lines.size() == 0) {
     bufferFull.textSize(fontSize * 0.8);
     bufferFull.fill(255, 120 * fadeAmount);
-    bufferFull.text("No synced lyrics", width / 2, height / 2);
+    bufferFull.text("No synced lyrics", bufferFull.width / 2, bufferFull.height / 2);
     bufferFull.endDraw();
     return;
   }
-  
+
   int active = stateFull.activeIndex >= 0 ? stateFull.activeIndex : computeActiveLine(stateFull);
-  float centerY = height / 2;
+  float centerY = bufferFull.height / 2;
   
   // Previous line - dim white
   if (active > 0) {
     bufferFull.textSize(fontSize * 0.8);
     bufferFull.fill(255, 100 * fadeAmount);
-    bufferFull.text(stateFull.lines.get(active - 1).text, width / 2, centerY - lineHeight * 1.2);
+    bufferFull.text(stateFull.lines.get(active - 1).text, bufferFull.width / 2, centerY - lineHeight * 1.2);
   }
-  
+
   // Current line - bright white
   if (active >= 0 && active < stateFull.lines.size()) {
     bufferFull.fill(255, 255 * fadeAmount);
     bufferFull.textSize(fontSize);
-    bufferFull.text(stateFull.lines.get(active).text, width / 2, centerY);
+    bufferFull.text(stateFull.lines.get(active).text, bufferFull.width / 2, centerY);
   }
-  
+
   // Next line - dim white
   if (active >= 0 && active < stateFull.lines.size() - 1) {
     bufferFull.textSize(fontSize * 0.8);
     bufferFull.fill(255, 120 * fadeAmount);
-    bufferFull.text(stateFull.lines.get(active + 1).text, width / 2, centerY + lineHeight * 1.2);
+    bufferFull.text(stateFull.lines.get(active + 1).text, bufferFull.width / 2, centerY + lineHeight * 1.2);
   }
-  
+
   // Progress bar - white
   if (stateFull.durationSec > 0) {
     float progress = stateFull.positionSec / stateFull.durationSec;
-    float barW = width * 0.6;
-    float barX = (width - barW) / 2;
+    float barW = bufferFull.width * 0.6;
+    float barX = (bufferFull.width - barW) / 2;
     bufferFull.noStroke();
     bufferFull.fill(255, 50 * fadeAmount);
-    bufferFull.rect(barX, height - 50, barW, 4, 2);
+    bufferFull.rect(barX, bufferFull.height - 50, barW, 4, 2);
     bufferFull.fill(255, 150 * fadeAmount);
-    bufferFull.rect(barX, height - 50, barW * progress, 4, 2);
+    bufferFull.rect(barX, bufferFull.height - 50, barW * progress, 4, 2);
   }
   
   bufferFull.endDraw();
@@ -192,20 +192,20 @@ void renderRefrain() {
   bufferRefrain.beginDraw();
   bufferRefrain.background(0);
   bufferRefrain.textAlign(CENTER, CENTER);
-  bufferRefrain.textFont(createFont("Arial", 80));
-  
+  bufferRefrain.textFont(createFont("Arial", 60));
+
   if (!showRefrain || !stateRefrain.active || stateRefrain.currentText.isEmpty()) {
     bufferRefrain.endDraw();
     return;
   }
-  
-  int fontSize = fontSizes[fontSizeIndex] + 16;  // Larger for refrain
-  
+
+  int fontSize = fontSizes[fontSizeIndex] + 12;  // Larger for refrain
+
   // Main text - bright white
   bufferRefrain.fill(255, 255 * fadeAmount);
   bufferRefrain.textSize(fontSize);
-  bufferRefrain.text(stateRefrain.currentText, width / 2, height / 2);
-  
+  bufferRefrain.text(stateRefrain.currentText, bufferRefrain.width / 2, bufferRefrain.height / 2);
+
   bufferRefrain.endDraw();
 }
 
@@ -215,20 +215,20 @@ void renderKeywords() {
   bufferKeywords.beginDraw();
   bufferKeywords.background(0);
   bufferKeywords.textAlign(CENTER, CENTER);
-  bufferKeywords.textFont(createFont("Arial Bold", 100));
-  
+  bufferKeywords.textFont(createFont("Arial Bold", 75));
+
   if (!showKeywords || !stateKeywords.active || stateKeywords.currentKeywords.isEmpty()) {
     bufferKeywords.endDraw();
     return;
   }
-  
-  int fontSize = fontSizes[fontSizeIndex] + 32;  // Even larger for keywords
-  
+
+  int fontSize = fontSizes[fontSizeIndex] + 24;  // Even larger for keywords
+
   // Main text - bright white
   bufferKeywords.fill(255, 255 * fadeAmount);
   bufferKeywords.textSize(fontSize);
-  bufferKeywords.text(stateKeywords.currentKeywords, width / 2, height / 2);
-  
+  bufferKeywords.text(stateKeywords.currentKeywords, bufferKeywords.width / 2, bufferKeywords.height / 2);
+
   bufferKeywords.endDraw();
 }
 
