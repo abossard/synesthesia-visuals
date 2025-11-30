@@ -9,6 +9,9 @@ Screens (press 1-4 to switch):
 4. All Logs - Complete application logs
 """
 
+from dotenv import load_dotenv
+load_dotenv(override=True, verbose=True) 
+
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
 import logging
@@ -509,18 +512,20 @@ class VJConsoleApp(App):
         
         # Build track data
         track_data = {}
-        if state.active and state.track:
+        if state.has_track:
             t = state.track
             is_connected = bool(
                 self.karaoke_engine._spotify and 
                 getattr(self.karaoke_engine._spotify, '_sp', None)
             )
+            # Determine source from which monitor is active
+            source = 'spotify' if is_connected else 'virtualdj'
             track_data = {
                 'artist': t.artist, 
                 'title': t.title, 
-                'source': t.source,
-                'position': state.position_sec, 
-                'duration': t.duration_sec,
+                'source': source,
+                'position': state.position, 
+                'duration': t.duration,
                 'connected': is_connected
             }
         
@@ -551,11 +556,12 @@ class VJConsoleApp(App):
             'display_lines': self.karaoke_engine.pipeline.get_display_lines(),
             'image_prompt': self.karaoke_engine.pipeline.image_prompt,
         }
-        if state.lines:
+        lines = self.karaoke_engine.current_lines
+        if lines:
             offset_ms = self.karaoke_engine.timing_offset_ms
-            idx = get_active_line_index(state.lines, state.position_sec + offset_ms / 1000.0)
-            if 0 <= idx < len(state.lines):
-                line = state.lines[idx]
+            idx = get_active_line_index(lines, state.position + offset_ms / 1000.0)
+            if 0 <= idx < len(lines):
+                line = lines[idx]
                 pipeline_data['current_lyric'] = {'text': line.text, 'keywords': line.keywords, 'is_refrain': line.is_refrain}
         
         for panel_id in ["pipeline", "pipeline-full"]:
