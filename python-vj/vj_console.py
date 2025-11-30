@@ -2,11 +2,19 @@
 """
 VJ Console - Textual Edition
 Modern reactive terminal UI for controlling VJ Processing apps and Karaoke Engine.
+
+Master control center for:
+- Starting/stopping Synesthesia and ProjectMilkSyphon
+- Song categorization (mood/theme) based on AI analysis
+- OSC output monitoring for VJ layer control
+- Processing app management
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 import logging
+import subprocess
+import time
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -18,7 +26,7 @@ from rich.text import Text
 
 # Import existing VJ console components
 from vj_console_blessed import ProcessManager, ProcessingApp
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig
+from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories
 
 logger = logging.getLogger('vj_console')
 
@@ -271,6 +279,144 @@ class ServicesPanel(Static):
             self.update(f"[red]Error displaying services[/]\n[dim]{str(e)}[/dim]")
 
 
+class SongCategoriesPanel(Static):
+    """Widget displaying song mood/theme categories."""
+
+    categories_data = reactive({})
+
+    def watch_categories_data(self, data: dict) -> None:
+        """Update display when categories change."""
+        try:
+            lines = []
+            lines.append("[bold yellow]═══ Song Categories ═══[/]\n")
+
+            if not data or not data.get('categories'):
+                lines.append("[dim](waiting for song analysis...)[/dim]")
+                self.update("\n".join(lines))
+                return
+
+            # Primary mood
+            primary = data.get('primary_mood', '')
+            if primary:
+                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{primary.upper()}[/]")
+                lines.append("")
+
+            # Category bars
+            categories = data.get('categories', [])
+            for cat in categories[:10]:  # Top 10
+                name = cat.get('name', '')
+                score = cat.get('score', 0.0)
+                
+                # Create visual bar
+                bar_width = 15
+                filled = int(score * bar_width)
+                bar = "█" * filled + "░" * (bar_width - filled)
+                
+                # Color based on score
+                if score >= 0.7:
+                    color = "green"
+                elif score >= 0.4:
+                    color = "yellow"
+                else:
+                    color = "dim"
+                
+                lines.append(f"  [{color}]{name:15s} {bar} {score:.2f}[/]")
+
+            self.update("\n".join(lines))
+
+        except Exception as e:
+            logger.exception(f"Error updating categories panel: {e}")
+            self.update(f"[red]Error displaying categories[/]\n[dim]{str(e)}[/dim]")
+
+
+class OSCDebugPanel(Static):
+    """Widget displaying recent OSC messages for debugging."""
+
+    osc_messages = reactive([])
+
+    def watch_osc_messages(self, messages: list) -> None:
+        """Update display when OSC messages change."""
+        try:
+            lines = []
+            lines.append("[bold magenta]═══ OSC Debug ═══[/]\n")
+
+            if not messages:
+                lines.append("[dim](no OSC messages yet)[/dim]")
+                self.update("\n".join(lines))
+                return
+
+            # Show recent messages (newest first)
+            for msg in reversed(messages[-15:]):
+                try:
+                    ts, address, args = msg
+                    # Format timestamp
+                    time_str = time.strftime("%H:%M:%S", time.localtime(ts))
+                    # Truncate args if too long
+                    args_str = str(args)
+                    if len(args_str) > 40:
+                        args_str = args_str[:37] + "..."
+                    
+                    # Color by channel
+                    if "/karaoke/categories" in address:
+                        color = "yellow"
+                    elif "/vj/" in address:
+                        color = "cyan"
+                    elif "/karaoke/" in address:
+                        color = "green"
+                    else:
+                        color = "white"
+                    
+                    lines.append(f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}")
+                except (ValueError, TypeError):
+                    continue
+
+            self.update("\n".join(lines))
+
+        except Exception as e:
+            logger.exception(f"Error updating OSC debug panel: {e}")
+            self.update(f"[red]Error displaying OSC messages[/]\n[dim]{str(e)}[/dim]")
+
+
+class MasterControlPanel(Static):
+    """Widget for master control of VJ apps (Synesthesia, ProjectMilkSyphon, etc.)."""
+
+    status_data = reactive({})
+
+    def watch_status_data(self, data: dict) -> None:
+        """Update display when status changes."""
+        try:
+            lines = []
+            lines.append("[bold blue]═══ Master Control ═══[/]\n")
+
+            # Synesthesia
+            syn_running = data.get('synesthesia_running', False)
+            syn_icon = "[green]● RUNNING[/]" if syn_running else "[dim]○ stopped[/]"
+            lines.append(f"  [S] Synesthesia     {syn_icon}")
+
+            # ProjectMilkSyphon
+            pms_running = data.get('milksyphon_running', False)
+            pms_icon = "[green]● RUNNING[/]" if pms_running else "[dim]○ stopped[/]"
+            lines.append(f"  [M] ProjMilkSyphon  {pms_icon}")
+
+            # Processing apps count
+            proc_count = data.get('processing_apps', 0)
+            lines.append(f"  [P] Processing Apps {proc_count} running")
+
+            # Karaoke engine
+            karaoke_active = data.get('karaoke_active', False)
+            kar_icon = "[green]● ACTIVE[/]" if karaoke_active else "[dim]○ inactive[/]"
+            lines.append(f"  [K] Karaoke Engine  {kar_icon}")
+
+            lines.append("")
+            lines.append("[dim]Press letter key to toggle app[/dim]")
+
+            self.update("\n".join(lines))
+
+        except Exception as e:
+            logger.exception(f"Error updating master control panel: {e}")
+            self.update(f"[red]Error displaying master control[/]\n[dim]{str(e)}[/dim]")
+
+
 class VJConsoleApp(App):
     """Modern VJ Console with Textual."""
 
@@ -332,6 +478,26 @@ class VJConsoleApp(App):
         height: auto;
         padding: 1;
     }
+
+    SongCategoriesPanel {
+        height: auto;
+        padding: 1;
+        border: solid yellow;
+    }
+
+    OSCDebugPanel {
+        height: auto;
+        max-height: 15;
+        padding: 1;
+        border: solid magenta;
+        overflow-y: auto;
+    }
+
+    MasterControlPanel {
+        height: auto;
+        padding: 1;
+        border: solid blue;
+    }
     """
 
     BINDINGS = [
@@ -342,12 +508,17 @@ class VJConsoleApp(App):
         Binding("shift+k", "toggle_karaoke", "Karaoke"),
         Binding("plus,equals", "timing_up", "Timing +"),
         Binding("minus,underscore", "timing_down", "Timing -"),
+        Binding("s", "toggle_synesthesia", "Synesthesia"),
+        Binding("m", "toggle_milksyphon", "MilkSyphon"),
+        Binding("o", "toggle_osc_debug", "OSC Debug"),
     ]
 
     # Reactive state
     daemon_mode = reactive(True)  # Always on for live reliability
     karaoke_enabled = reactive(True)
     synesthesia_running = reactive(False)
+    milksyphon_running = reactive(False)
+    show_osc_debug = reactive(True)
 
     def __init__(self, project_root: Optional[Path] = None):
         super().__init__()
@@ -388,22 +559,25 @@ class VJConsoleApp(App):
 
             # Main content
             with Horizontal(id="content-container"):
-                # Left panel - Processing apps and services
+                # Left panel - Processing apps, master control, and services
                 with VerticalScroll(id="left-panel"):
+                    yield MasterControlPanel(id="master-control")
                     yield ProcessingAppsList(id="apps-list")
                     yield ServicesPanel(id="services")
 
-                # Right panel - Now playing and pipeline
+                # Right panel - Now playing, categories, pipeline, and OSC debug
                 with VerticalScroll(id="right-panel"):
                     yield NowPlaying(id="now-playing")
+                    yield SongCategoriesPanel(id="categories")
                     yield PipelineStatus(id="pipeline")
+                    yield OSCDebugPanel(id="osc-debug")
 
         yield Footer()
 
     def on_mount(self) -> None:
         """Initialize after UI is mounted."""
         self.title = "🎛  VJ Console - Synesthesia Visuals"
-        self.sub_title = "Textual Edition"
+        self.sub_title = "Master Control Center"
 
         # Update apps list
         apps_widget = self.query_one("#apps-list", ProcessingAppsList)
@@ -418,9 +592,12 @@ class VJConsoleApp(App):
         # Start Synesthesia
         self.start_synesthesia()
 
+        # Check for ProjectMilkSyphon
+        self.check_milksyphon()
+
         # Start background update worker
         self.set_interval(0.5, self.update_data)
-        self.set_interval(2.0, self.check_synesthesia)
+        self.set_interval(2.0, self.check_apps_status)
 
         # Update services status
         self.update_services()
@@ -444,21 +621,6 @@ class VJConsoleApp(App):
             self.karaoke_engine.stop()
             self.karaoke_engine = None
         self.karaoke_enabled = False
-
-    def check_synesthesia(self) -> None:
-        """Check if Synesthesia is running."""
-        try:
-            import subprocess
-            result = subprocess.run(
-                ['pgrep', '-x', 'Synesthesia'],
-                capture_output=True,
-                text=True,
-                timeout=1
-            )
-            self.synesthesia_running = result.returncode == 0
-        except Exception as e:
-            logger.debug(f"Error checking Synesthesia: {e}")
-            self.synesthesia_running = False
 
     def start_synesthesia(self) -> None:
         """Start Synesthesia if not already running."""
@@ -534,6 +696,143 @@ class VJConsoleApp(App):
 
                 pipeline_widget.pipeline_data = pipeline_data
 
+                # Update song categories panel
+                categories_widget = self.query_one("#categories", SongCategoriesPanel)
+                categories = self.karaoke_engine.current_categories
+                if categories:
+                    cat_data = {
+                        'primary_mood': categories.primary_mood,
+                        'categories': [
+                            {'name': c.name, 'score': c.score}
+                            for c in categories.get_top(10)
+                        ]
+                    }
+                    categories_widget.categories_data = cat_data
+
+                # Update OSC debug panel
+                osc_debug_widget = self.query_one("#osc-debug", OSCDebugPanel)
+                osc_messages = self.karaoke_engine.osc_sender.get_recent_messages(20)
+                osc_debug_widget.osc_messages = osc_messages
+
+        # Update master control panel
+        self.update_master_control()
+
+    def update_master_control(self) -> None:
+        """Update the master control panel status."""
+        master_widget = self.query_one("#master-control", MasterControlPanel)
+        
+        # Count running Processing apps
+        running_apps = sum(1 for app in self.process_manager.apps 
+                         if self.process_manager.is_running(app))
+        
+        master_widget.status_data = {
+            'synesthesia_running': self.synesthesia_running,
+            'milksyphon_running': self.milksyphon_running,
+            'processing_apps': running_apps,
+            'karaoke_active': self.karaoke_enabled and self.karaoke_engine is not None,
+        }
+        
+        # Send master status via OSC
+        if self.karaoke_engine:
+            self.karaoke_engine.osc_sender.send_master_status(
+                karaoke_active=self.karaoke_enabled,
+                synesthesia_running=self.synesthesia_running,
+                milksyphon_running=self.milksyphon_running,
+                processing_apps=running_apps
+            )
+
+    def check_apps_status(self) -> None:
+        """Check status of all managed apps (called every 2s)."""
+        self.check_synesthesia()
+        self.check_milksyphon()
+        self.update_services()
+
+    def check_synesthesia(self) -> None:
+        """Check if Synesthesia is running."""
+        try:
+            result = subprocess.run(
+                ['pgrep', '-x', 'Synesthesia'],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            was_running = self.synesthesia_running
+            self.synesthesia_running = result.returncode == 0
+            
+            # Send status via OSC if changed
+            if was_running != self.synesthesia_running and self.karaoke_engine:
+                self.karaoke_engine.osc_sender.send_synesthesia_status(self.synesthesia_running)
+        except Exception as e:
+            logger.debug(f"Error checking Synesthesia: {e}")
+            self.synesthesia_running = False
+
+    def check_milksyphon(self) -> None:
+        """Check if ProjectMilkSyphon is running."""
+        try:
+            result = subprocess.run(
+                ['pgrep', '-f', 'projectMilkSyphon'],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            was_running = self.milksyphon_running
+            self.milksyphon_running = result.returncode == 0
+            
+            # Send status via OSC if changed
+            if was_running != self.milksyphon_running and self.karaoke_engine:
+                self.karaoke_engine.osc_sender.send_milksyphon_status(self.milksyphon_running)
+        except Exception as e:
+            logger.debug(f"Error checking ProjectMilkSyphon: {e}")
+            self.milksyphon_running = False
+
+    def stop_synesthesia(self) -> None:
+        """Stop Synesthesia."""
+        try:
+            subprocess.run(['pkill', '-x', 'Synesthesia'], timeout=2)
+            logger.info("Synesthesia stopped")
+            self.synesthesia_running = False
+        except Exception as e:
+            logger.exception(f"Failed to stop Synesthesia: {e}")
+
+    def start_milksyphon(self) -> None:
+        """Start ProjectMilkSyphon if not already running."""
+        # Check if already running
+        try:
+            result = subprocess.run(['pgrep', '-f', 'projectMilkSyphon'], capture_output=True, timeout=1)
+            if result.returncode == 0:
+                logger.info("ProjectMilkSyphon already running")
+                self.milksyphon_running = True
+                return
+        except Exception as e:
+            logger.debug(f"pgrep check failed: {e}")
+
+        # Common locations for ProjectMilkSyphon
+        milksyphon_paths = [
+            Path("/Applications/projectMilkSyphon.app"),
+            Path.home() / "Applications" / "projectMilkSyphon.app",
+        ]
+        
+        for path in milksyphon_paths:
+            if path.exists():
+                try:
+                    subprocess.Popen(['open', '-a', str(path)])
+                    logger.info("ProjectMilkSyphon launched")
+                    self.milksyphon_running = True
+                    return
+                except Exception as e:
+                    logger.exception(f"Failed to launch ProjectMilkSyphon: {e}")
+        
+        logger.warning("ProjectMilkSyphon not found")
+
+    def stop_milksyphon(self) -> None:
+        """Stop ProjectMilkSyphon."""
+        try:
+            subprocess.run(['pkill', '-f', 'projectMilkSyphon'], timeout=2)
+            logger.info("ProjectMilkSyphon stopped")
+            self.milksyphon_running = False
+        except Exception as e:
+            logger.exception(f"Failed to stop ProjectMilkSyphon: {e}")
+
     def update_services(self) -> None:
         """Update services status."""
         services = self.query_one("#services", ServicesPanel)
@@ -608,6 +907,26 @@ class VJConsoleApp(App):
             self.stop_karaoke()
         else:
             self.start_karaoke()
+
+    def action_toggle_synesthesia(self) -> None:
+        """Toggle Synesthesia."""
+        if self.synesthesia_running:
+            self.stop_synesthesia()
+        else:
+            self.start_synesthesia()
+
+    def action_toggle_milksyphon(self) -> None:
+        """Toggle ProjectMilkSyphon."""
+        if self.milksyphon_running:
+            self.stop_milksyphon()
+        else:
+            self.start_milksyphon()
+
+    def action_toggle_osc_debug(self) -> None:
+        """Toggle OSC debug panel visibility."""
+        self.show_osc_debug = not self.show_osc_debug
+        osc_panel = self.query_one("#osc-debug", OSCDebugPanel)
+        osc_panel.display = self.show_osc_debug
 
     def action_timing_up(self) -> None:
         """Increase timing offset."""
