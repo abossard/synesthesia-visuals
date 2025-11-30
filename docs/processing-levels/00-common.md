@@ -52,6 +52,10 @@ Light pads that are active; dim pads for available actions.
 ### Starter Code Snippet
 
 ```java
+void settings() {
+  size(1920, 1080, P3D);  // Always use P3D for Syphon + 3D camera/particle effects
+}
+
 // Convert Launchpad note to grid coordinate
 void noteOn(int channel, int pitch, int velocity) {
   int col = (pitch % 10) - 1;
@@ -69,7 +73,7 @@ Keep this mapping consistent across all levels so the Launchpad feels like a sha
 
 ## Quick Build Pipeline
 
-1. Prototype in Processing (P2D/P3D) with minimal dependencies
+1. Prototype in Processing with **P3D renderer** (required for Syphon, enables 3D camera, particles, perspective effects)
 2. Add Syphon output: `SyphonServer server = new SyphonServer(this, "Processing");`
 3. Map Launchpad pads via [The MidiBus](http://www.smallbutdigital.com/themidibus.php); use tap-to-cycle for continuous parameters
 4. Feed Syphon into Magic/Synesthesia; layer ISF shaders for color grading, warps, feedback, kaleidoscope

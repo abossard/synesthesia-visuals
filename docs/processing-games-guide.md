@@ -4,10 +4,13 @@ This guide covers how to create interactive VJ games and visuals using Processin
 
 ## Prerequisites
 
-- [Processing 4.x](https://processing.org/download)
+- [Processing 4.x](https://processing.org/download) — use **Intel/x64 build** on Apple Silicon for Syphon compatibility
 - [The MidiBus library](http://www.smallbutdigital.com/projects/themidibus/)
 - [PixelFlow library](https://diwi.github.io/PixelFlow/) - GPU-accelerated effects (fluid simulation, particles, image processing)
+- [Syphon library](https://github.com/Syphon/Processing) — frame sharing to VJ software
 - Launchpad Mini Mk3 in Programmer mode
+
+> **Renderer:** Always use `P3D` even for 2D-style games. P3D is required for Syphon and enables 3D camera moves, particle depth, perspective zoom/orbit, and GPU shaders.
 
 ## Installing The MidiBus
 
@@ -22,7 +25,7 @@ This guide covers how to create interactive VJ games and visuals using Processin
 
 **All Processing projects are designed for live VJ performance.** The screen output goes via Syphon to visual mixing software where it will be layered, blended, and composited with other sources. Follow these critical guidelines:
 
-### 1. Resolution: Always 1920×1080 (Full HD)
+### 1. Resolution: Always 1920×1080 (Full HD) with P3D
 
 ```java
 void settings() {
@@ -30,6 +33,11 @@ void settings() {
 }
 ```
 
+- **Always use P3D** — even for 2D-style games, P3D enables:
+  - Syphon frame sharing (required)
+  - 3D camera moves (zoom, orbit, perspective shifts)
+  - GPU particle effects and shaders
+  - Depth-based compositing
 - Never use smaller resolutions (800×800, 1280×720, etc.)
 - Full HD ensures crisp output on projectors and screens
 - Aspect ratio 16:9 matches standard displays
@@ -90,7 +98,26 @@ void draw() {
 }
 ```
 
-### 5. Separation of Controller and Visual Logic
+### 5. Dual Output: Window + Syphon
+
+Processing runs in a **normal visible window** that the performer sees, while **Syphon sends the same frame** to VJ mixing software (Magic, Synesthesia, Resolume, etc.):
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Processing Window (performer's screen)             │
+│  ┌───────────────────────────────────────────────┐  │
+│  │                                               │  │
+│  │          Your visual output                   │──┼──► Syphon ──► VJ Software ──► Projector
+│  │                                               │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+- **Processing window:** visible on your monitor for live preview and debugging
+- **Syphon output:** zero-copy GPU share to Magic/Synesthesia for mixing and projection
+- **Both show the same frame** — what you see is what the audience gets
+
+### 6. Separation of Controller and Visual Logic
 
 Keep MIDI/controller handling completely separate from visual output:
 

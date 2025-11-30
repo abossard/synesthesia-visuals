@@ -7,23 +7,23 @@ Iterative plan to build the complete VJ system from [processing-syphon-idea-boar
 ## Phase 1: Core Infrastructure
 
 ### 1.1 Project Setup
-- [ ] Create `processing-vj/src/` directory structure
-- [ ] Set up main sketch file `VJSystem.pde`
-- [ ] Configure `size(1920, 1080, P3D)` for Full HD Syphon output
-- [ ] Add library imports: Syphon, The MidiBus
+- [x] Create `processing-vj/src/` directory structure
+- [x] Set up main sketch file `VJSystem.pde`
+- [x] Configure `size(1920, 1080, P3D)` for Full HD Syphon output
+- [x] Add library imports: Syphon, The MidiBus
 
 ### 1.2 MIDI Module (`midi/`)
-- [ ] Create `MidiIO.pde` — thin wrapper around MidiBus
+- [x] Create `MidiIO.pde` — thin wrapper around MidiBus
   - `void onNote(int channel, int pitch, int velocity)`
   - `void sendLED(int note, int velocity)`
-- [ ] Create `LaunchpadGrid.pde` — note↔cell math
+- [x] Create `LaunchpadGrid.pde` — note↔cell math
   - `PVector noteToCell(int note)` → (col, row) or null
   - `int cellToNote(int col, int row)`
   - `boolean isValidPad(int note)`
   - `boolean isSceneButton(int note)`
   - LED color constants: `LP_OFF`, `LP_RED`, `LP_GREEN`, `LP_BLUE`, etc.
-- [ ] Implement graceful fallback when no Launchpad connected
-- [ ] Add `LaunchpadHUD.pde` — LED state buffer + batch send
+- [x] Implement graceful fallback when no Launchpad connected
+- [x] Add `LaunchpadHUD.pde` — LED state buffer + batch send
 
 ### 1.3 State Machine Module (`fsm/`)
 - [ ] Create `LevelFSM.pde` — table-driven FSM

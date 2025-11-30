@@ -1,6 +1,8 @@
 # Processing → Syphon Visual Idea Board
 
 > **Note:** This document has been split into modular level files for easier navigation and maintenance.
+>
+> **Renderer:** Always use `P3D` — required for Syphon, enables 3D camera, particle effects, perspective zoom/orbit even for 2D-style visuals.
 
 ## Level Documentation
 
