@@ -31,6 +31,8 @@ class Config:
     
     # VirtualDJ paths to search (in order of priority)
     VDJ_SEARCH_PATHS = [
+        Path.home() / "Library" / "Application Support" / "VirtualDJ" / "History" / "tracklist.txt",  # macOS standard
+        Path.home() / "Documents" / "VirtualDJ" / "History" / "tracklist.txt",
         Path.home() / "Documents" / "VirtualDJ" / "History" / "now_playing.txt",
         Path.home() / "Documents" / "VirtualDJ" / "now_playing.txt", 
         Path.home() / "Music" / "VirtualDJ" / "now_playing.txt",

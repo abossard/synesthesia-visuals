@@ -238,17 +238,21 @@ class SpotifyMonitor:
 
 class VirtualDJMonitor:
     """
-    Monitors VirtualDJ now_playing.txt file with graceful file handling.
+    Monitors VirtualDJ tracklist.txt file with smart parsing.
     
     Deep module - simple interface, complex implementation.
     Public interface: get_playback() -> Optional[Dict]
-    Hides: File polling, path detection, timing estimation, error handling
+    Hides: File polling, path detection, tracklist parsing, timing estimation, error handling
+    
+    Supports both formats:
+    - Simple: "Artist - Title" (one line)
+    - Tracklist: Multi-line history with timestamps (reads last entry)
     """
     
     def __init__(self, file_path: Optional[str] = None):
         self._health = ServiceHealth("VirtualDJ")
         self._path = Path(file_path) if file_path else Config.find_vdj_path()
-        self._last_content = ""
+        self._last_track = ""
         self._start_time = 0.0
         
         if self._path:
@@ -269,6 +273,7 @@ class VirtualDJMonitor:
         """
         Get current VirtualDJ track or None.
         Handles file appearing/disappearing gracefully.
+        Supports both single-line and tracklist history formats.
         """
         if not self._path or not self._path.exists():
             if self._path and self._health.available:
@@ -283,13 +288,18 @@ class VirtualDJMonitor:
             if not self._health.available:
                 self._health.mark_available(str(self._path))
             
+            # Extract current track (handles both formats)
+            current_track = self._extract_current_track(content)
+            if not current_track:
+                return None
+            
             # Track change detection
-            if content != self._last_content:
-                self._last_content = content
+            if current_track != self._last_track:
+                self._last_track = current_track
                 self._start_time = time.time()
             
             # Parse "Artist - Title"
-            artist, title = self._parse_track_string(content)
+            artist, title = self._parse_track_string(current_track)
             
             return {
                 'artist': artist,
@@ -305,6 +315,50 @@ class VirtualDJMonitor:
     
     # Private methods - implementation details
     
+    def _extract_current_track(self, content: str) -> Optional[str]:
+        """
+        Extract current track from VirtualDJ file content.
+        
+        Handles two formats:
+        1. Single line: "Artist - Title"
+        2. Tracklist history:
+           VirtualDJ History 2024/11/30
+           ------------------------------
+           22:50 : Bolier, Joe Stone - Keep This Fire Burning
+           
+        For tracklist format, returns the last timestamped entry.
+        """
+        lines = content.strip().split('\n')
+        
+        # Single-line format (legacy)
+        if len(lines) == 1:
+            return lines[0].strip()
+        
+        # Multi-line tracklist format - find last timestamped entry
+        # Format: "HH:MM : Artist - Title"
+        last_track = None
+        for line in reversed(lines):
+            line = line.strip()
+            # Look for timestamp pattern (HH:MM :)
+            if ':' in line and len(line) > 8:
+                parts = line.split(' : ', 1)
+                if len(parts) == 2 and self._is_timestamp(parts[0]):
+                    last_track = parts[1]
+                    break
+        
+        return last_track
+    
+    def _is_timestamp(self, text: str) -> bool:
+        """Check if text looks like a timestamp (HH:MM)."""
+        parts = text.split(':')
+        if len(parts) != 2:
+            return False
+        try:
+            hours, mins = int(parts[0]), int(parts[1])
+            return 0 <= hours <= 23 and 0 <= mins <= 59
+        except ValueError:
+            return False
+    
     def _parse_track_string(self, content: str) -> tuple:
         """Parse 'Artist - Title' format."""
         if " - " in content:
@@ -319,46 +373,124 @@ class VirtualDJMonitor:
 
 class OSCSender:
     """
-    Consolidated OSC sender using builder pattern.
+    Consolidated OSC sender with backward compatibility.
     
-    Instead of 20+ methods, uses:
-        osc.send_karaoke(channel="lyrics", event="line", data={...})
-        osc.send_karaoke(channel="refrain", event="active", data={...})
-        osc.send_karaoke(channel="keywords", event="reset", data={...})
+    Sends FLAT OSC messages (arrays, no nested structures) for easy parsing:
+    - /karaoke/track: [active, source, artist, title, album, duration, has_lyrics]
+    - /karaoke/pos: [position_sec, is_playing]
+    - /karaoke/lyrics/reset: []
+    - /karaoke/lyrics/line: [index, time_sec, text]
+    - /karaoke/line/active: [index]
+    - /karaoke/refrain/reset: []
+    - /karaoke/refrain/line: [index, time_sec, text]
+    - /karaoke/refrain/active: [index, text]
     
-    Benefits:
-    - Simple interface (1 method vs 20+)
-    - Consistent error handling
-    - Easy to extend with new channels
-    - Clear separation of concerns
+    All values are primitives (int, float, string) - no dicts or nested arrays.
     """
     
     def __init__(self, host: str = "127.0.0.1", port: int = 9000):
+        self._current_track_active = False
+        self._current_source = "unknown"
+        self._current_track_info = {}
         logger.info(f"OSC: using centralized manager {osc.host}:{osc.port}")
     
     def send_karaoke(self, channel: str, event: str, data: Any = None):
         """
-        Send karaoke OSC message using consistent naming pattern.
+        Send karaoke OSC message with backward compatibility for Processing.
         
         Args:
-            channel: "lyrics", "refrain", "keywords", "categories", "track", "position", "image"
-            event: "reset", "line", "active", "all", etc.
+            channel: "track", "lyrics", "refrain", "keywords", "position"
+            event: "info", "reset", "line", "active", "update", "none"
             data: dict, list, or primitive value
-        
-        Examples:
-            send_karaoke("lyrics", "reset", {"song_id": "Artist::Title"})
-            send_karaoke("lyrics", "line", {"index": 0, "time": 1.5, "text": "Hello"})
-            send_karaoke("refrain", "active", {"index": 2, "text": "Chorus line"})
-            send_karaoke("track", "info", {"artist": "...", "title": "..."})
-            send_karaoke("position", "update", {"time": 120.5, "playing": True})
         """
-        # Build OSC address
+        # Handle legacy message formats for Processing compatibility
+        if channel == "track" and event == "info":
+            # Store track info for later use
+            self._current_track_active = True
+            self._current_source = data.get("source", "spotify")
+            self._current_track_info = data
+            
+            # Send legacy format: /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
+            osc.send("/karaoke/track", [
+                1,  # active
+                self._current_source,
+                data.get("artist", ""),
+                data.get("title", ""),
+                data.get("album", ""),
+                data.get("duration", 0.0),
+                1  # has_lyrics (will be updated by lyrics/reset if false)
+            ])
+            return
+        
+        elif channel == "track" and event == "none":
+            # Send inactive track
+            self._current_track_active = False
+            osc.send("/karaoke/track", [0, "", "", "", "", 0.0, 0])
+            return
+        
+        elif channel == "lyrics" and event == "reset":
+            has_lyrics = data.get("has_lyrics", True) if isinstance(data, dict) else True
+            # Update track message with has_lyrics flag
+            if self._current_track_active and not has_lyrics:
+                osc.send("/karaoke/track", [
+                    1,
+                    self._current_source,
+                    self._current_track_info.get("artist", ""),
+                    self._current_track_info.get("title", ""),
+                    self._current_track_info.get("album", ""),
+                    self._current_track_info.get("duration", 0.0),
+                    0  # has_lyrics = false
+                ])
+            osc.send("/karaoke/lyrics/reset", [])
+            return
+        
+        elif channel == "lyrics" and event == "line":
+            # Send: [index, time, text]
+            osc.send("/karaoke/lyrics/line", [
+                data.get("index", 0),
+                data.get("time", 0.0),
+                data.get("text", "")
+            ])
+            return
+        
+        elif channel == "position" and event == "update":
+            # Send: [position_sec, is_playing]
+            osc.send("/karaoke/pos", [
+                data.get("time", 0.0),
+                1 if data.get("playing", True) else 0
+            ])
+            return
+        
+        elif channel == "lyrics" and event == "active":
+            # Send: [index]
+            index = data.get("index", -1) if isinstance(data, dict) else data
+            osc.send("/karaoke/line/active", [index])
+            return
+        
+        elif channel == "refrain" and event == "reset":
+            osc.send("/karaoke/refrain/reset", [])
+            return
+        
+        elif channel == "refrain" and event == "line":
+            # Send: [index, time, text]
+            osc.send("/karaoke/refrain/line", [
+                data.get("index", 0),
+                data.get("time", 0.0),
+                data.get("text", "")
+            ])
+            return
+        
+        elif channel == "refrain" and event == "active":
+            # Send: [index, text]
+            osc.send("/karaoke/refrain/active", [
+                data.get("index", -1),
+                data.get("text", "")
+            ])
+            return
+        
+        # Generic fallback for new-style messages
         address = f"/karaoke/{channel}/{event}"
-        
-        # Convert data to OSC arguments
         args = self._prepare_args(data)
-        
-        # Send via centralized manager
         osc.send(address, args)
     
     def send_vj(self, subsystem: str, event: str, data: Any = None):

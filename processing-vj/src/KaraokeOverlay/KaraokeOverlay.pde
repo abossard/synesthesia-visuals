@@ -16,12 +16,14 @@
  * OSC Protocol (sent by karaoke_engine.py):
  *   /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
  *   /karaoke/pos [position, playing]
- *   /karaoke/lyrics/reset [song_id]
+ *   /karaoke/lyrics/reset []
  *   /karaoke/lyrics/line [index, time_sec, text]
  *   /karaoke/line/active [index]
- *   /karaoke/refrain/reset [song_id]
+ *   /karaoke/refrain/reset []
  *   /karaoke/refrain/line [index, time_sec, text]
  *   /karaoke/refrain/active [index, text]
+ * 
+ * All messages use flat arrays (no nested structures) for easy parsing.
  * 
  * Controls:
  * - 's': Toggle show/hide all

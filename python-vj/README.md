@@ -345,26 +345,42 @@ Settings, lyrics cache, and state files are stored in `python-vj/.cache/`:
 
 ## OSC Protocol
 
-The VJ Console sends OSC messages on **multiple channels** for flexible VJ mixing and layer control:
+The VJ Console sends **flat OSC messages** (primitive arrays only, no nested structures) on **multiple channels** for flexible VJ mixing and layer control.
+
+All messages use simple arrays of primitives: `[int, float, string]` - easily parsed in Processing/Max/Pure Data.
 
 ### Channel 1: Full Lyrics (`/karaoke/...`)
 Complete lyrics with all lines for karaoke-style display.
 
 ```
-/karaoke/track          [is_active, source, artist, title, album, duration, has_synced]
-/karaoke/lyrics/reset   [song_id]
-/karaoke/lyrics/line    [index, time_sec, text]
+/karaoke/track          [active, source, artist, title, album, duration, has_lyrics]
+                        active: 1=playing, 0=stopped
+                        source: "spotify" or "virtualdj"
+                        has_lyrics: 1=synced lyrics, 0=no lyrics
+                        
 /karaoke/pos            [position_sec, is_playing]
+                        position_sec: float (seconds)
+                        is_playing: 1=playing, 0=paused
+                        
+/karaoke/lyrics/reset   []
+/karaoke/lyrics/line    [index, time_sec, text]
+                        index: int line number
+                        time_sec: float timestamp
+                        text: string lyric line
+                        
 /karaoke/line/active    [index]
+                        index: int currently playing line
 ```
 
 ### Channel 2: Refrain (`/karaoke/refrain/...`)
 Only chorus/refrain lines - detected by repetition in lyrics.
 
 ```
-/karaoke/refrain/reset  [song_id]
+/karaoke/refrain/reset  []
 /karaoke/refrain/line   [index, time_sec, text]
-/karaoke/refrain/active [index, current_text]
+/karaoke/refrain/active [index, text]
+                        index: int line number in refrain array
+                        text: string current refrain text
 ```
 
 ### Channel 3: Keywords (`/karaoke/keywords/...`)

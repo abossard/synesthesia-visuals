@@ -30,6 +30,10 @@ class PlaybackCoordinator:
     """
     Monitors playback from multiple sources and detects track changes.
     
+    Priority order:
+    1. Spotify (if actively playing)
+    2. VirtualDJ (fallback)
+    
     Interface:
         get_current_state() -> PlaybackState
         has_track_changed() -> bool
@@ -41,28 +45,57 @@ class PlaybackCoordinator:
         self._monitors = monitors
         self._state = PlaybackState()
         self._last_track_key = ""
+        self._current_source = "unknown"
     
     def get_current_state(self) -> PlaybackState:
-        """Poll all monitors and return current playback state."""
+        """
+        Poll all monitors and return current playback state.
+        
+        Priority: Spotify first (if playing), then fallback monitors.
+        This prevents VirtualDJ from overriding active Spotify playback.
+        """
+        # First, check if Spotify is actively playing
+        spotify_playback = None
+        other_monitors = []
+        
         for monitor in self._monitors:
-            playback = monitor.get_playback()
-            if playback:
-                track = Track(
-                    artist=playback['artist'],
-                    title=playback['title'],
-                    album=playback.get('album', ''),
-                    duration=playback.get('duration_ms', 0) / 1000.0
-                )
-                position = playback.get('progress_ms', 0) / 1000.0
-                
-                # Update state immutably
-                self._state = self._state.update(
-                    track=track,
-                    position=position,
-                    is_playing=True,
-                    last_update=time.time()
-                )
-                return self._state
+            # Identify Spotify by class name
+            if monitor.__class__.__name__ == 'SpotifyMonitor':
+                spotify_playback = monitor.get_playback()
+            else:
+                other_monitors.append(monitor)
+        
+        # Use Spotify if it has active playback
+        if spotify_playback:
+            playback = spotify_playback
+            self._current_source = "spotify"
+        else:
+            # Fall back to other monitors (VirtualDJ, etc.)
+            playback = None
+            for monitor in other_monitors:
+                playback = monitor.get_playback()
+                if playback:
+                    self._current_source = monitor.__class__.__name__.replace("Monitor", "").lower()
+                    break
+        
+        # Update state if we have playback
+        if playback:
+            track = Track(
+                artist=playback['artist'],
+                title=playback['title'],
+                album=playback.get('album', ''),
+                duration=playback.get('duration_ms', 0) / 1000.0
+            )
+            position = playback.get('progress_ms', 0) / 1000.0
+            
+            # Update state immutably
+            self._state = self._state.update(
+                track=track,
+                position=position,
+                is_playing=True,
+                last_update=time.time()
+            )
+            return self._state
         
         # No playback detected
         if self._state.has_track:
@@ -81,6 +114,11 @@ class PlaybackCoordinator:
     @property
     def current_track(self) -> Optional[Track]:
         return self._state.track
+    
+    @property
+    def current_source(self) -> str:
+        """Return the name of the current playback source (spotify, virtualdj, etc.)."""
+        return self._current_source
 
 
 # =============================================================================

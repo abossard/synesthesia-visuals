@@ -99,6 +99,7 @@ class KaraokeEngine:
         # Current state
         self._current_lines = []
         self._last_active_index = -1
+        self._last_position_send = 0.0  # Throttle position updates
         self._running = False
     
     @property
@@ -214,12 +215,15 @@ class KaraokeEngine:
             else:
                 self._on_no_track()
         
-        # Send position updates
+        # Send position updates (throttled to every 2 seconds)
         if state.track:
-            self._osc.send_karaoke("position", "update", {
-                "time": state.position,
-                "playing": state.is_playing
-            })
+            current_time = time.time()
+            if current_time - self._last_position_send >= 2.0:
+                self._osc.send_karaoke("position", "update", {
+                    "time": state.position,
+                    "playing": state.is_playing
+                })
+                self._last_position_send = current_time
             
             # Update active line
             if self._current_lines:
@@ -236,8 +240,9 @@ class KaraokeEngine:
         self._current_lines = []
         self._last_active_index = -1
         
-        # Send track info
+        # Send track info with source
         self._osc.send_karaoke("track", "info", {
+            "source": self._playback.current_source,
             "artist": track.artist,
             "title": track.title,
             "album": track.album,
