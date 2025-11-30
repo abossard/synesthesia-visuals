@@ -109,7 +109,13 @@ class NowPlayingPanel(ReactivePanel):
     """Current track display."""
     track_data = reactive({})
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self.update("[dim]Waiting for playback...[/dim]")
+
     def watch_track_data(self, data: dict) -> None:
+        if not self.is_mounted:
+            return
         if not data.get('artist'):
             self.update("[dim]Waiting for playback...[/dim]")
             return
@@ -129,15 +135,25 @@ class CategoriesPanel(ReactivePanel):
     """Song mood/theme categories."""
     categories_data = reactive({})
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_categories_data(self, data: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         lines = [self.render_section("Song Categories", "═")]
         
-        if not data.get('categories'):
+        if not self.categories_data.get('categories'):
             lines.append("[dim](waiting for song analysis...)[/dim]")
         else:
-            if data.get('primary_mood'):
-                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{data['primary_mood'].upper()}[/]\n")
-            lines.extend(render_category_line(c['name'], c['score']) for c in data.get('categories', [])[:10])
+            if self.categories_data.get('primary_mood'):
+                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{self.categories_data['primary_mood'].upper()}[/]\n")
+            lines.extend(render_category_line(c['name'], c['score']) for c in self.categories_data.get('categories', [])[:10])
         
         self.update("\n".join(lines))
 
@@ -147,13 +163,20 @@ class OSCPanel(ReactivePanel):
     messages = reactive([])
     full_view = reactive(False)
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_messages(self, msgs: list) -> None:
-        self._render()
+        self._safe_render()
     
     def watch_full_view(self, _: bool) -> None:
-        self._render()
+        self._safe_render()
 
-    def _render(self) -> None:
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         limit = 50 if self.full_view else 15
         lines = [self.render_section("OSC Debug", "═")]
         
@@ -169,13 +192,23 @@ class LogsPanel(ReactivePanel):
     """Application logs view."""
     logs = reactive([])
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_logs(self, data: list) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         lines = [self.render_section("Application Logs", "═")]
         
-        if not data:
+        if not self.logs:
             lines.append("[dim](no logs yet)[/dim]")
         else:
-            lines.extend(render_log_line(log) for log in reversed(data[-100:]))
+            lines.extend(render_log_line(log) for log in reversed(self.logs[-100:]))
         
         self.update("\n".join(lines))
 
@@ -184,11 +217,21 @@ class MasterControlPanel(ReactivePanel):
     """VJ app control panel."""
     status = reactive({})
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_status(self, data: dict) -> None:
-        syn = format_status_icon(data.get('synesthesia'), "● RUNNING", "○ stopped")
-        pms = format_status_icon(data.get('milksyphon'), "● RUNNING", "○ stopped")
-        kar = format_status_icon(data.get('karaoke'), "● ACTIVE", "○ inactive")
-        proc = data.get('processing_apps', 0)
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        syn = format_status_icon(self.status.get('synesthesia'), "● RUNNING", "○ stopped")
+        pms = format_status_icon(self.status.get('milksyphon'), "● RUNNING", "○ stopped")
+        kar = format_status_icon(self.status.get('karaoke'), "● ACTIVE", "○ inactive")
+        proc = self.status.get('processing_apps', 0)
         
         self.update(
             self.render_section("Master Control", "═") +
@@ -204,20 +247,30 @@ class PipelinePanel(ReactivePanel):
     """Processing pipeline status."""
     pipeline_data = reactive({})
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_pipeline_data(self, data: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         lines = [self.render_section("Processing Pipeline", "═")]
         
-        for color, text in data.get('display_lines', []):
+        for color, text in self.pipeline_data.get('display_lines', []):
             lines.append(f"[{color}]{text}[/]")
         
-        if data.get('image_prompt'):
-            prompt = data['image_prompt']
+        if self.pipeline_data.get('image_prompt'):
+            prompt = self.pipeline_data['image_prompt']
             if isinstance(prompt, dict):
                 prompt = prompt.get('description', str(prompt))
             lines.append(f"\n[bold cyan]Image Prompt:[/]\n[cyan]{truncate(str(prompt), 200)}[/]")
         
-        if data.get('current_lyric'):
-            lyric = data['current_lyric']
+        if self.pipeline_data.get('current_lyric'):
+            lyric = self.pipeline_data['current_lyric']
             lines.append(f"\n[bold white]♪ {lyric.get('text', '')}[/]")
             if lyric.get('keywords'):
                 lines.append(f"[yellow]  Keywords: {lyric['keywords']}[/]")
@@ -231,10 +284,21 @@ class ServicesPanel(ReactivePanel):
     """External services status."""
     services = reactive({})
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_services(self, s: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         def svc(ok, name, detail): 
             return f"[green]✓ {name:14s} {detail}[/]" if ok else f"[dim]○ {name:14s} {detail}[/]"
         
+        s = self.services
         lines = [self.render_section("Services", "═")]
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
         lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
@@ -250,13 +314,20 @@ class AppsListPanel(ReactivePanel):
     apps = reactive([])
     selected = reactive(0)
 
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
     def watch_apps(self, _: list) -> None:
-        self._render()
+        self._safe_render()
     
     def watch_selected(self, _: int) -> None:
-        self._render()
+        self._safe_render()
 
-    def _render(self) -> None:
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
         lines = [self.render_section("Processing Apps", "═")]
         
         if not self.apps:
