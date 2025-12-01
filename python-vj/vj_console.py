@@ -265,8 +265,12 @@ class PipelinePanel(ReactivePanel):
         
         has_content = False
         
-        for color, text in self.pipeline_data.get('display_lines', []):
-            lines.append(f"[{color}]{text}[/]")
+        # Display pipeline steps with status
+        for label, status, color, message in self.pipeline_data.get('display_lines', []):
+            status_text = f"[{color}]{status}[/] {label}"
+            if message:
+                status_text += f": [dim]{message}[/]"
+            lines.append(f"  {status_text}")
             has_content = True
         
         if self.pipeline_data.get('image_prompt'):
@@ -399,12 +403,35 @@ class VJConsoleApp(App):
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
+        self._setup_log_capture()
 
     def _find_project_root(self) -> Path:
         for p in [Path(__file__).parent.parent, Path.cwd()]:
             if (p / "processing-vj").exists():
                 return p
         return Path.cwd()
+    
+    def _setup_log_capture(self) -> None:
+        """Setup logging handler to capture logs to _logs list."""
+        class ListHandler(logging.Handler):
+            def __init__(self, log_list: List[str]):
+                super().__init__()
+                self.log_list = log_list
+                self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    self.log_list.append(msg)
+                    # Keep only last 500 lines
+                    if len(self.log_list) > 500:
+                        self.log_list.pop(0)
+                except Exception:
+                    pass
+        
+        # Add handler to root logger to capture all logs
+        handler = ListHandler(self._logs)
+        logging.getLogger().addHandler(handler)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -613,6 +640,12 @@ class VJConsoleApp(App):
                 milksyphon_running=self.milksyphon_running, processing_apps=running_apps
             )
             self._last_master_status = current_status
+        
+        # Update logs panel
+        try:
+            self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
+        except Exception:
+            pass
 
     # === Screen switching ===
     
