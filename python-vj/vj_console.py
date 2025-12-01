@@ -340,8 +340,6 @@ class LogsPanel(ReactivePanel):
             lines.extend(render_log_line(log) for log in reversed(display_logs))
         
         self.update("\n".join(lines))
-        
-        self.update("\n".join(lines))
 
 
 class MasterControlPanel(ReactivePanel):
