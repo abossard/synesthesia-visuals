@@ -106,7 +106,7 @@ class Settings:
     @property
     def timing_offset_ms(self) -> int:
         """Get timing offset in milliseconds. Negative = show lyrics early."""
-        return self._data.get('timing_offset_ms', -500)  # Default: 500ms early
+        return self._data.get('timing_offset_ms', 0)  # Default: 0ms
     
     @timing_offset_ms.setter
     def timing_offset_ms(self, value: int):
@@ -114,9 +114,16 @@ class Settings:
         self._data['timing_offset_ms'] = value
         self._save()
     
-    def adjust_timing(self, delta_ms: int):
-        """Adjust timing offset by delta."""
-        self.timing_offset_ms = self.timing_offset_ms + delta_ms
+    @property
+    def timing_offset_sec(self) -> float:
+        """Get timing offset in seconds."""
+        return self.timing_offset_ms / 1000.0
+    
+    def adjust_timing(self, delta_ms: int) -> int:
+        """Adjust timing offset by delta. Returns new offset."""
+        new_offset = self.timing_offset_ms + delta_ms
+        self.timing_offset_ms = new_offset
+        return new_offset
     
     @property
     def all_settings(self) -> Dict[str, Any]:
@@ -241,7 +248,8 @@ class PipelineTracker:
         self._track_key = ""
         self._steps: Dict[str, PipelineStep] = {}
         self._logs: List[str] = []
-        self._image_prompt = None
+        self._image_prompt = ""
+        self._generated_image_path = ""
         self.reset()
     
     def reset(self, track_key: str = ""):
@@ -253,7 +261,8 @@ class PipelineTracker:
                 for step in self.STEPS
             }
             self._logs = []
-            self._image_prompt = None
+            self._image_prompt = ""
+            self._generated_image_path = ""
             if track_key:
                 self._logs.append(f"Pipeline reset for: {track_key}")
     
@@ -352,7 +361,30 @@ class PipelineTracker:
             return self._track_key
     
     @property
+    def steps(self) -> Dict[str, PipelineStep]:
+        """Get current steps dict."""
+        with self._lock:
+            return dict(self._steps)
+    
+    @property
+    def logs(self) -> List[str]:
+        """Get log entries."""
+        with self._lock:
+            return list(self._logs)
+    
+    @property
     def image_prompt(self):
         """Get image prompt."""
         with self._lock:
             return self._image_prompt
+    
+    @property
+    def generated_image_path(self) -> str:
+        """Get generated image path."""
+        with self._lock:
+            return self._generated_image_path
+    
+    def set_generated_image_path(self, path: str):
+        """Set generated image path."""
+        with self._lock:
+            self._generated_image_path = path

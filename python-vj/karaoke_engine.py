@@ -21,13 +21,22 @@ from typing import Optional
 
 # Domain and infrastructure
 from domain import (
+    LyricLine, Track, PlaybackState, SongCategory, SongCategories,
+    parse_lrc, extract_keywords, detect_refrains, analyze_lyrics,
     get_active_line_index, get_refrain_lines,
-    SongCategories,  # Export for vj_console.py
 )
-from infrastructure import Config, Settings, PipelineTracker
+from infrastructure import Config, Settings, PipelineTracker, ServiceHealth, PipelineStep
 
-# Re-export for compatibility with vj_console.py
-__all__ = ['KaraokeEngine', 'Config', 'SongCategories', 'get_active_line_index']
+# Re-export for compatibility with vj_console.py and test_python_vj.py
+__all__ = [
+    'KaraokeEngine', 'Config', 'Settings', 'ServiceHealth',
+    'LyricLine', 'Track', 'PlaybackState', 'SongCategory', 'SongCategories',
+    'parse_lrc', 'extract_keywords', 'detect_refrains', 'analyze_lyrics',
+    'get_active_line_index', 'get_refrain_lines',
+    'PipelineTracker', 'PipelineStep',
+    'LLMAnalyzer', 'SongCategorizer', 'ComfyUIGenerator',
+    'LyricsFetcher', 'SpotifyMonitor', 'VirtualDJMonitor', 'OSCSender',
+]
 
 # External adapters
 from adapters import SpotifyMonitor, VirtualDJMonitor, LyricsFetcher, OSCSender
