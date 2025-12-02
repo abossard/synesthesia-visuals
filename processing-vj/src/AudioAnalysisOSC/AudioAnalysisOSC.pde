@@ -527,6 +527,7 @@ void drawSpectrumBars(float x, float y, float w, float h) {
   noStroke();
   int numBars = 48;  // More bars for better resolution
   float barW = w / numBars;
+  float nyquist = detectedSampleRate / 2.0f;
   
   // Use logarithmic frequency mapping for better distribution
   for (int i = 0; i < numBars; i++) {
@@ -536,12 +537,17 @@ void drawSpectrumBars(float x, float y, float w, float h) {
     float logVal = map(i, 0, numBars, logMin, logMax);
     int binIdx = constrain(int(exp(logVal)), 0, FFT_BANDS - 1);
     
+    // Calculate the frequency this bin represents
+    float freq = (float)binIdx / FFT_BANDS * nyquist;
+    
     // Get value from smoothed spectrum
     float val = smoothedSpectrum[binIdx];
     
-    // Apply aggressive scaling per frequency range
-    // Bass is naturally 10-100x louder than highs in most music
-    float boost = map(i, 0, numBars, 3, 50);  // Much more boost for highs
+    // Apply A-weighting inspired boost curve based on frequency
+    // This compensates for both:
+    // 1. Natural bass dominance in music
+    // 2. Human ear sensitivity (Fletcher-Munson curves)
+    float boost = getAWeightingBoost(freq);
     val = constrain(val * boost, 0, 1);
     float barH = val * h;
     
@@ -568,8 +574,30 @@ void drawSpectrumBars(float x, float y, float w, float h) {
   // Label
   fill(150);
   textAlign(LEFT, BOTTOM);
-  text("Spectrum (log scale)", x, y - 6);
+  text("Spectrum (A-weighted)", x, y - 6);
   textAlign(LEFT, TOP);
+}
+
+// Inverse A-weighting: bass loud in music, boost progressively toward highs
+// No boost on bass, exponential increase toward air frequencies
+float getAWeightingBoost(float freq) {
+  if (freq < 60) {
+    return 1;          // Sub-bass: no boost
+  } else if (freq < 250) {
+    return 1;          // Bass: no boost - kicks are loud
+  } else if (freq < 500) {
+    return 2;          // Low-mid: slight
+  } else if (freq < 1000) {
+    return 4;          // Mid: moderate
+  } else if (freq < 2000) {
+    return 6;          // Upper-mid: more
+  } else if (freq < 4000) {
+    return 10;         // High-mid: significant
+  } else if (freq < 8000) {
+    return 20;         // Presence: large
+  } else {
+    return 40;         // Air: massive boost for quiet content
+  }
 }
 
 void drawBeatPanel(float x, float y) {
@@ -664,9 +692,20 @@ void drawLevelBars(float x, float y) {
   
   String[] labels = {"SubBass", "Bass", "LowMid", "Mid", "HighMid", "Presence", "Air", "Overall"};
   float[] values = {subBass, bass, lowMid, mid, highMid, presence, air, overallLevel};
-  // Per-band scaling to compensate for natural bass dominance
-  // Higher frequencies need more boost to be visible
-  float[] scales = {3, 4, 8, 12, 20, 30, 40, 4};  // SubBass to Air + Overall
+  
+  // Moderate compensation to balance visual display while preserving dynamics
+  // Goal: all bands should show activity, but bass kicks/mid snares/high hats
+  // should still have relative musical character (not perfectly flat)
+  float[] scales = {
+    8,     // SubBass: boost weak sub content
+    3,     // Bass: slight boost - already strong in most music
+    4,     // LowMid: moderate boost
+    6,     // Mid: boost - snares/vocals often quieter than bass
+    8,     // HighMid: boost - cymbals need visibility
+    10,    // Presence: more boost for detail
+    15,    // Air: significant boost - very quiet in most sources
+    3      // Overall: slight scaling
+  };
   color[] colors = {
     color(255, 50, 50),    // SubBass - red
     color(255, 100, 50),   // Bass - orange
