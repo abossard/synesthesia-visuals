@@ -34,7 +34,13 @@ from infrastructure import Config, Settings, PipelineTracker, BackoffState
 __all__ = ['KaraokeEngine', 'Config', 'SongCategories', 'get_active_line_index']
 
 # External adapters
-from adapters import SpotifyMonitor, VirtualDJMonitor, LyricsFetcher, OSCSender
+from adapters import (
+    AppleScriptSpotifyMonitor,
+    SpotifyMonitor,
+    VirtualDJMonitor,
+    LyricsFetcher,
+    OSCSender,
+)
 
 # AI services
 from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
@@ -83,10 +89,14 @@ class KaraokeEngine:
         self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
         self._lyrics_fetcher = LyricsFetcher()
         
-        # Playback monitors
-        spotify = SpotifyMonitor()
-        vdj = VirtualDJMonitor(vdj_path)
-        self._playback = PlaybackCoordinator(monitors=[spotify, vdj])
+        # Playback monitors (priority order)
+        monitors = []
+        if Config.SPOTIFY_APPLESCRIPT_ENABLED:
+            monitors.append(AppleScriptSpotifyMonitor())
+        if Config.SPOTIFY_WEBAPI_ENABLED:
+            monitors.append(SpotifyMonitor())
+        monitors.append(VirtualDJMonitor(vdj_path))
+        self._playback = PlaybackCoordinator(monitors=monitors)
         
         # AI services (all optional)
         self._llm = LLMAnalyzer()

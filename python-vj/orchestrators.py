@@ -62,29 +62,13 @@ class PlaybackCoordinator:
         prev_key = self._state.track.key if self._state.track else ""
         error = None
 
-        # First, check if Spotify is actively playing
-        spotify_playback = None
-        other_monitors = []
-        
+        playback = None
+        self._current_source = "idle"
         for monitor in self._monitors:
-            # Identify Spotify by class name
-            if monitor.__class__.__name__ == 'SpotifyMonitor':
-                spotify_playback = monitor.get_playback()
-            else:
-                other_monitors.append(monitor)
-        
-        # Use Spotify if it has active playback
-        if spotify_playback:
-            playback = spotify_playback
-            self._current_source = "spotify"
-        else:
-            # Fall back to other monitors (VirtualDJ, etc.)
-            playback = None
-            for monitor in other_monitors:
-                playback = monitor.get_playback()
-                if playback:
-                    self._current_source = monitor.__class__.__name__.replace("Monitor", "").lower()
-                    break
+            playback = monitor.get_playback()
+            if playback:
+                self._current_source = self._monitor_key(monitor)
+                break
         
         # Update state if we have playback
         if playback:
@@ -136,11 +120,14 @@ class PlaybackCoordinator:
         """Gather monitor ServiceHealth statuses."""
         statuses = {}
         for monitor in self._monitors:
-            name = monitor.__class__.__name__.replace("Monitor", "").lower()
+            name = self._monitor_key(monitor)
             status_fn = getattr(monitor, 'status', None)
             if callable(status_fn):
                 statuses[name] = status_fn()
         return statuses
+
+    def _monitor_key(self, monitor) -> str:
+        return getattr(monitor, 'monitor_key', monitor.__class__.__name__.replace("Monitor", "").lower())
 
 
 # =============================================================================

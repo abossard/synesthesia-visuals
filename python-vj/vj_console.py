@@ -113,7 +113,7 @@ def estimate_position(state: PlaybackState) -> float:
     return state.position + max(0.0, time.time() - state.last_update)
 
 
-def build_track_data(snapshot: PlaybackSnapshot, spotify_connected: bool) -> Dict[str, Any]:
+def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict[str, Any]:
     """Derive track panel data from snapshot."""
     state = snapshot.state
     track = state.track
@@ -121,7 +121,7 @@ def build_track_data(snapshot: PlaybackSnapshot, spotify_connected: bool) -> Dic
         'error': snapshot.error,
         'backoff': snapshot.backoff_seconds,
         'source': snapshot.source,
-        'connected': spotify_connected,
+        'connected': source_available,
     }
     if not track:
         return base
@@ -194,6 +194,12 @@ class NowPlayingPanel(ReactivePanel):
             return
         error = data.get('error')
         backoff = data.get('backoff', 0.0)
+        raw_source_value = data.get('source') or ""
+        source_raw = raw_source_value.lower()
+        if source_raw.startswith("spotify"):
+            source_label = "Spotify"
+        else:
+            source_label = (raw_source_value or "Playback").replace("_", " ").title()
         if not data.get('artist'):
             if error:
                 msg = "[yellow]Playback paused:[/] {error}".format(error=error)
@@ -206,7 +212,7 @@ class NowPlayingPanel(ReactivePanel):
         
         conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
         time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        icon = "🎵" if data.get('source') == "spotify" else "🎧"
+        icon = "🎵" if source_raw.startswith("spotify") else "🎧"
         warning = ""
         if error:
             warning = f"\n[yellow]{error}"
@@ -214,9 +220,9 @@ class NowPlayingPanel(ReactivePanel):
                 warning += f" (retry in {backoff:.1f}s)"
         
         self.update(
-            f"Spotify: {conn}\n"
+            f"{source_label}: {conn}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]{warning}"
+            f"{icon} {source_label}  │  [dim]{time_str}[/]{warning}"
         )
 
 
@@ -654,11 +660,12 @@ class VJConsoleApp(App):
             return
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
-        is_connected = bool(
-            self.karaoke_engine._spotify and 
-            getattr(self.karaoke_engine._spotify, '_sp', None)
-        )
-        track_data = build_track_data(snapshot, is_connected)
+        monitor_status = snapshot.monitor_status or {}
+        if snapshot.source and snapshot.source in monitor_status:
+            source_connected = monitor_status[snapshot.source].get('available', False)
+        else:
+            source_connected = any(status.get('available', False) for status in monitor_status.values())
+        track_data = build_track_data(snapshot, source_connected)
         try:
             self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
         except Exception:
