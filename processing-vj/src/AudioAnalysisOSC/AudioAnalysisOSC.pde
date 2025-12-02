@@ -43,8 +43,6 @@ float pulseDecay = 0.88f;         // How fast pulses fade (0.8-0.95)
 // Runtime state (not persisted)
 boolean showRawSpectrum = false;  // Toggle raw vs smoothed display
 int detectedSampleRate = 48000;   // Default to 48kHz (BlackHole default)
-boolean adaptiveThreshold = true; // Auto-tune beat sensitivity based on energy variance
-float adaptedSensitivity = 1.4f;  // Current adapted beat sensitivity
 
 AudioIn audioIn;
 FFT fft;
@@ -306,6 +304,8 @@ void analyzeAudio() {
   presence = freqBands.getPresence();
   air = freqBands.getAir();
 
+  overallLevel = amplitude.analyze();
+
   // Beat detector now uses spectral flux (onset energy) instead of raw spectrum
   beatDetector.update(spectralFlux);
   
@@ -313,8 +313,8 @@ void analyzeAudio() {
   // - Bass: subBass + bass (20-250Hz) - kick drums, bass synths
   // - Mid: lowMid + mid (250-2000Hz) - snares, vocals, most instruments  
   // - High: highMid + presence + air (2000-20000Hz) - hi-hats, cymbals, sibilance
-  // Note: No scaling here - the adaptive threshold in MultiBandBeatDetector
-  // normalizes each band independently, so scaling would cancel out
+  // Note: No scaling here - the detector compares each band to its own EMA and
+  // requires bass to dominate share + spike strongly before firing.
   float bassForBeat = subBass + bass;
   float midForBeat = lowMid + mid;
   float highForBeat = highMid + presence + air;
@@ -327,7 +327,6 @@ void analyzeAudio() {
   bassHitPulse = bandDetector.getBassPulse();
   midHitPulse = bandDetector.getMidPulse();
   highHitPulse = bandDetector.getHighPulse();
-  overallLevel = amplitude.analyze();
   downsampleSpectrum();
   
   // Debug: print values every 30 frames to verify real numbers
@@ -471,8 +470,6 @@ void drawHud() {
   // Row 2
   fill(180);
   text(String.format("[5/6] Decay: %.2f", pulseDecay), 28, y);
-  fill(adaptiveThreshold ? color(100, 255, 150) : 140);
-  text("[A] Adaptive: " + (adaptiveThreshold ? String.format("ON (%.2f)", adaptedSensitivity) : "off"), 180, y);
   y += 18;
   
   // Row 3
@@ -781,9 +778,6 @@ void keyPressed() {
   } else if (key == 'w' || key == 'W') {
     // Toggle raw spectrum view (not saved - runtime only)
     showRawSpectrum = !showRawSpectrum;
-  } else if (key == 'a' || key == 'A') {
-    // Toggle adaptive threshold (not saved - runtime only)
-    adaptiveThreshold = !adaptiveThreshold;
   } else if (key == '1') {
     // Decrease smoothing
     smoothing = constrain(smoothing - 0.05f, 0, 0.95f);
@@ -932,98 +926,52 @@ class MultiBandBeatDetector {
   float bassPulse, midPulse, highPulse;
   float decay = 0.88f;
   float sensitivity = 1.4f;
-  
-  // Running averages for adaptive thresholds (more efficient than arrays)
+
+  // Simple running averages so we can compare current energy vs recent history
   float bassAvg = 0, midAvg = 0, highAvg = 0;
-  float alpha = 0.05f;  // Running average smoothing for mid/high
-  
-  // Bass-specific: slower EMA to not track kicks too quickly
-  float bassAlpha = 0.01f;  // Even slower average for bass baseline
-  
-  // Bass gating / relative condition
-  float bassMinEnergy = 0.0005f;   // Ignore tiny noise
-  float bassStrongMin = 0.002f;    // Absolute minimum energy for valid bass hit
-  float bassRelThreshold = 0.4f;   // Require +40% spike over baseline (increased from 0.25)
-  
-  // Adaptive threshold: variance tracking for auto-sensitivity
-  float energyVariance = 0;
-  float energyMean = 0;
-  float varianceAlpha = 0.02f;  // Slow adaptation for variance
-  
+  float alpha = 0.1f;
+
+  // Hard gates to ensure only clearly strong bass fires
+  float overallMin = 0.05f;
+  float bassShareMin = 0.35f;
+  float spikeFactorMin = 1.6f;
+  float spikeDeltaMin = 0.015f;
+
   MultiBandBeatDetector(float sensitivity, float decay) {
     this.sensitivity = sensitivity;
     this.decay = decay;
   }
 
   void update(float bassEnergy, float midEnergy, float highEnergy, float overallLevel) {
-    // Gate bass in super-quiet sections to prevent ghost pulses
-    float levelGate = 0.01f;
-    if (overallLevel < levelGate) {
-      bassEnergy = 0;  // Completely disable bass hits during intros/breakdowns
-    }
-    
-    // Running averages for mid/high (fast EMA)
+    bassAvg = lerp(bassEnergy, bassAvg, 1 - alpha);
     midAvg = lerp(midEnergy, midAvg, 1 - alpha);
     highAvg = lerp(highEnergy, highAvg, 1 - alpha);
-    
-    // Bass: use slower EMA for baseline to not track kicks too quickly
-    // This keeps bassAvg lower during continuous bass beds, so kicks stand out
-    bassAvg = lerp(bassEnergy, bassAvg, 1 - bassAlpha);
-    
-    // Track total energy for adaptive threshold
-    float totalEnergy = bassEnergy + midEnergy + highEnergy;
-    float oldMean = energyMean;
-    energyMean = lerp(totalEnergy, energyMean, 1 - varianceAlpha);
-    float diff = totalEnergy - energyMean;
-    energyVariance = lerp(diff * diff, energyVariance, 1 - varianceAlpha);
-    
-    // Adaptive sensitivity: adjust based on signal variance
-    // High variance (dynamic music) = use base sensitivity
-    // Low variance (quiet/steady) = increase sensitivity to catch subtle beats
-    float effectiveSensitivity = sensitivity;
-    if (adaptiveThreshold) {
-      float stdDev = sqrt(max(energyVariance, 0.0001f));
-      float varianceRatio = stdDev / max(energyMean, 0.0001f);  // Coefficient of variation
-      // When variance is low (<0.3), boost sensitivity; when high (>0.6), reduce slightly
-      float sensMultiplier = map(constrain(varianceRatio, 0.1f, 0.8f), 0.1f, 0.8f, 1.3f, 0.9f);
-      effectiveSensitivity = sensitivity * sensMultiplier;
-      adaptedSensitivity = effectiveSensitivity;  // Expose for HUD display
+
+    float total = bassEnergy + midEnergy + highEnergy + 1e-6f;
+    float bassShare = bassEnergy / total;
+
+    boolean bassBeat = false;
+    if (overallLevel > overallMin && bassEnergy > 0) {
+      float spikeFactor = bassAvg > 1e-6f ? bassEnergy / bassAvg : 0;
+      float spikeDelta = bassEnergy - bassAvg;
+      bassBeat =
+        bassShare > bassShareMin &&
+        spikeFactor > spikeFactorMin &&
+        spikeDelta > spikeDeltaMin;
     }
-    // Keep it sane
-    effectiveSensitivity = constrain(effectiveSensitivity, 1.0f, 2.0f);
-    
-    // Thresholds: bass gets more forgiving multiplier since it has continuous beds
-    float bassThr = bassAvg * (effectiveSensitivity * 0.8f);  // 20% more forgiving
-    float midThr = midAvg * effectiveSensitivity;
-    float highThr = highAvg * (effectiveSensitivity * 1.1f);  // Slightly stricter
-    
-    // Relative delta for bass: how much above baseline?
-    float bassDelta = bassEnergy - bassAvg;
-    float bassRel = bassAvg > 0 ? bassDelta / bassAvg : 0;
-    
-    // Bass beat: needs strong absolute energy, above threshold, AND a decent relative spike
-    // This prevents false triggers from noise and tiny bass beds
-    boolean bassBeat = bassEnergy > bassStrongMin    // Strong floor: must be clearly audible
-                    && bassEnergy > bassThr          // Above adaptive threshold
-                    && bassRel > bassRelThreshold;   // Significant spike over baseline
-    
-    // Mid/high beats: simpler absolute threshold (no continuous beds)
-    boolean midBeat = midEnergy > midThr && midAvg > 0.0001f;
-    boolean highBeat = highEnergy > highThr && highAvg > 0.0001f;
-    
-    // Update pulses
+
+    boolean midBeat = midEnergy > midAvg * sensitivity;
+    boolean highBeat = highEnergy > highAvg * sensitivity;
+
     if (bassBeat) bassPulse = 1.0f;
     else bassPulse *= decay;
-    
+
     if (midBeat) midPulse = 1.0f;
     else midPulse *= decay;
-    
+
     if (highBeat) highPulse = 1.0f;
     else highPulse *= decay;
   }
-  
-  float getEnergyVariance() { return energyVariance; }
-  float getEnergyMean() { return energyMean; }
 
   float getBassPulse() { return bassPulse; }
   float getMidPulse() { return midPulse; }
