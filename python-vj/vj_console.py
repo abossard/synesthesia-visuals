@@ -393,12 +393,13 @@ class VJConsoleApp(App):
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
-        Binding("enter,space", "select_app", "Select"),
+        Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
         Binding("l", "midi_learn", "Learn", show=False),
         Binding("r", "midi_rename", "Rename", show=False),
         Binding("d", "midi_delete", "Delete", show=False),
+        Binding("space", "midi_test_toggle", "Toggle", show=False),
     ]
 
     current_tab = reactive("master")
@@ -457,13 +458,6 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.warning(f"MIDI router initialization failed: {e}")
             self.midi_router = None
-    
-    def _on_midi_message_callback(self, msg, direction: str):
-        """Callback for MIDI message logging."""
-        self.midi_messages.append((time.time(), direction, msg))
-        # Keep only last 100 messages
-        if len(self.midi_messages) > 100:
-            self.midi_messages.pop(0)
     
     def _setup_log_capture(self) -> None:
         """Setup logging handler to capture logs to _logs list."""
@@ -826,8 +820,11 @@ class VJConsoleApp(App):
                     self.process_manager.stop_app(app)
                 else:
                     self.process_manager.launch_app(app)
-        elif current_screen == "midi":
-            # Toggle the selected MIDI toggle (for testing)
+    
+    def action_midi_test_toggle(self) -> None:
+        """Test toggle selected MIDI toggle (space key on MIDI screen only)."""
+        current_screen = self.query_one("#screens", TabbedContent).active
+        if current_screen == "midi":
             self._midi_test_toggle()
 
     def action_timing_up(self) -> None:

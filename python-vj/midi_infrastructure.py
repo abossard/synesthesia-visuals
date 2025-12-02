@@ -13,19 +13,9 @@ import time
 
 try:
     import rtmidi
-    from rtmidi.midiconstants import (
-        NOTE_ON, NOTE_OFF, CONTROL_CHANGE, 
-        PROGRAM_CHANGE, PITCH_BEND
-    )
     RTMIDI_AVAILABLE = True
 except ImportError:
     RTMIDI_AVAILABLE = False
-    # Provide dummy constants for type checking
-    NOTE_ON = 0x90
-    NOTE_OFF = 0x80
-    CONTROL_CHANGE = 0xB0
-    PROGRAM_CHANGE = 0xC0
-    PITCH_BEND = 0xE0
 
 from midi_domain import MidiMessage, DeviceConfig, create_midi_bytes
 
