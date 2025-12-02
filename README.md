@@ -50,14 +50,31 @@ This project uses:
 
 ## Documentation
 
+### Essential Guides
+
 | Guide | Description |
 |-------|-------------|
+| **[Processing VJ Guides](docs/processing-guides/README.md)** | **NEW**: Comprehensive guide series for creating interactive, audio-reactive simulations |
 | [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic + BlackHole |
 | [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
 | [MIDI Router](python-vj/MIDI_ROUTER.md) | **Toggle state manager** for Magic Music Visuals with LED feedback |
 | [Processing Games Guide](docs/processing-games-guide.md) | Creating interactive VJ games in Java |
 | [Python VJ Tools](python-vj/README.md) | VJ Console and Karaoke Engine documentation |
 | [ISF to Synesthesia Migration](docs/isf-to-synesthesia-migration.md) | Converting shaders to SSF format |
+
+### Processing VJ Guide Series (NEW)
+
+Master creating **interactive, living, efficient simulations** in Processing for VJ performances:
+
+- **[Overview](docs/processing-guides/00-overview.md)** - System architecture, quick start, performance targets
+- **[Core Concepts](docs/processing-guides/01-core-concepts.md)** - Module lifecycle, coordinate systems, anti-patterns
+- **[Audio Reactivity](docs/processing-guides/02-audio-reactivity.md)** - FFT analysis, beat detection, BPM calculation
+- **[Particle Systems](docs/processing-guides/03-particle-systems.md)** - CPU & GPU particles, PixelFlow (100k+ particles)
+- **[Fluid Simulations](docs/processing-guides/04-fluid-simulations.md)** - Reaction-diffusion, flow fields, GPU fluids
+- **[Code Patterns](docs/processing-guides/08-code-patterns.md)** - Copy-paste ready modules and algorithms
+- **[Resources](docs/processing-guides/09-resources.md)** - Libraries, tools, examples, learning materials
+
+**Features**: Modern 2024 techniques, GPU acceleration, mermaid diagrams, AI-optimized structure
 
 ## Controller Roles
 

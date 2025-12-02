@@ -12,7 +12,7 @@ import time
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from threading import Lock
 
 logger = logging.getLogger('karaoke')
@@ -45,12 +45,18 @@ class Config:
     DEFAULT_SETTINGS_FILE = APP_DATA_DIR / "settings.json"
     DEFAULT_LYRICS_CACHE_DIR = APP_DATA_DIR / "lyrics"
     SPOTIFY_TOKEN_CACHE = APP_DATA_DIR / "spotify_token.cache"
+    SCRIPTS_DIR = Path(__file__).parent / "scripts"
+    DEFAULT_SPOTIFY_APPLESCRIPT = SCRIPTS_DIR / "spotify_track.applescript"
 
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
     
     # Feature flags - ComfyUI is disabled by default (experimental)
     COMFYUI_ENABLED = os.environ.get('COMFYUI_ENABLED', '').lower() in ('1', 'true', 'yes', 'on')
+
+    # Spotify monitor feature flags (AppleScript enabled by default)
+    SPOTIFY_WEBAPI_ENABLED = os.environ.get('SPOTIFY_WEBAPI_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
+    SPOTIFY_APPLESCRIPT_ENABLED = os.environ.get('SPOTIFY_APPLESCRIPT_ENABLED', '1').lower() in ('1', 'true', 'yes', 'on')
     
     @classmethod
     def find_vdj_path(cls) -> Optional[Path]:
@@ -74,6 +80,22 @@ class Config:
         """Check if Spotify credentials are configured."""
         creds = cls.get_spotify_credentials()
         return bool(creds['client_id'] and creds['client_secret'])
+
+    @classmethod
+    def apple_script_config(cls) -> Dict[str, Any]:
+        """Return AppleScript monitor settings (path, timeout, enabled)."""
+        script_override = os.environ.get('SPOTIFY_APPLESCRIPT_PATH', '')
+        script_path = Path(script_override) if script_override else cls.DEFAULT_SPOTIFY_APPLESCRIPT
+        timeout_env = os.environ.get('SPOTIFY_APPLESCRIPT_TIMEOUT', '').strip()
+        try:
+            timeout = float(timeout_env) if timeout_env else 1.5
+        except ValueError:
+            timeout = 1.5
+        return {
+            'enabled': cls.SPOTIFY_APPLESCRIPT_ENABLED,
+            'script_path': script_path,
+            'timeout': timeout,
+        }
 
 
 # =============================================================================
@@ -388,3 +410,58 @@ class PipelineTracker:
         """Set generated image path."""
         with self._lock:
             self._generated_image_path = path
+
+
+# =============================================================================
+# BACKGROUND JOB UTILITIES - Functional backoff helpers
+# =============================================================================
+
+@dataclass(frozen=True)
+class BackoffPolicy:
+    """Configuration for exponential backoff."""
+    base_delay: float = 0.5
+    max_delay: float = 30.0
+    factor: float = 2.0
+
+    def delay_for(self, attempts: int) -> float:
+        """Calculate delay for given attempt count."""
+        return min(self.base_delay * (self.factor ** max(0, attempts)), self.max_delay)
+
+
+@dataclass(frozen=True)
+class BackoffState:
+    """Immutable backoff tracking state."""
+    attempts: int = 0
+    next_allowed: float = 0.0
+    last_error: str = ""
+    policy: BackoffPolicy = field(default_factory=BackoffPolicy)
+
+    def ready(self, now: float) -> bool:
+        """Return True if work may run at the given time."""
+        return now >= self.next_allowed
+
+    def record_failure(self, error: str, now: float) -> 'BackoffState':
+        """Return new state with updated delay after a failure."""
+        delay = self.policy.delay_for(self.attempts)
+        return replace(
+            self,
+            attempts=self.attempts + 1,
+            next_allowed=now + delay,
+            last_error=error,
+        )
+
+    def record_success(self) -> 'BackoffState':
+        """Return reset state after successful work."""
+        return replace(self, attempts=0, next_allowed=0.0, last_error="")
+
+    def time_remaining(self, now: float) -> float:
+        """Seconds until next attempt may run."""
+        return max(0.0, self.next_allowed - now)
+
+    def describe(self, now: float) -> Dict[str, Any]:
+        """Summarize state for UI display."""
+        return {
+            'attempts': self.attempts,
+            'retry_in': round(self.time_remaining(now), 1),
+            'last_error': self.last_error,
+        }

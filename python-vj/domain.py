@@ -7,8 +7,8 @@ and stateless functions following Grokking Simplicity principles.
 """
 
 import re
-from dataclasses import dataclass, replace
-from typing import List, Dict, Optional
+from dataclasses import dataclass, replace, field
+from typing import List, Dict, Optional, Any
 
 
 # =============================================================================
@@ -91,6 +91,18 @@ class PlaybackState:
         if not self.track:
             return ""
         return f"{self.track.artist} - {self.track.title}".lower()
+
+
+@dataclass(frozen=True)
+class PlaybackSnapshot:
+    """Snapshot of playback for UI consumption."""
+    state: PlaybackState
+    source: str = "unknown"
+    updated_at: float = 0.0
+    track_changed: bool = False
+    error: str = ""
+    monitor_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    backoff_seconds: float = 0.0
 
 
 @dataclass(frozen=True)

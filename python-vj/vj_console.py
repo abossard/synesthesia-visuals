@@ -11,7 +11,7 @@ Screens (press 1-5 to switch):
 """
 
 from dotenv import load_dotenv
-load_dotenv(override=True, verbose=True) 
+load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
@@ -29,6 +29,7 @@ from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
+from domain import PlaybackSnapshot, PlaybackState
 from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, MidiStatusPanel, ControllerSelectionModal
 from midi_router import MidiRouter, ConfigManager
 from midi_domain import RouterConfig, DeviceConfig
@@ -63,22 +64,30 @@ def format_bar(value: float, width: int = 15) -> str:
 
 def color_by_score(score: float) -> str:
     """Get color name based on score threshold."""
-    if score >= 0.7: return "green"
-    if score >= 0.4: return "yellow"
+    if score >= 0.7:
+        return "green"
+    if score >= 0.4:
+        return "yellow"
     return "dim"
 
 def color_by_level(text: str) -> str:
     """Get color based on log level in text."""
-    if "ERROR" in text or "EXCEPTION" in text: return "red"
-    if "WARNING" in text: return "yellow"
-    if "INFO" in text: return "green"
+    if "ERROR" in text or "EXCEPTION" in text:
+        return "red"
+    if "WARNING" in text:
+        return "yellow"
+    if "INFO" in text:
+        return "green"
     return "dim"
 
 def color_by_osc_channel(address: str) -> str:
     """Get color based on OSC address channel."""
-    if "/karaoke/categories" in address: return "yellow"
-    if "/vj/" in address: return "cyan"
-    if "/karaoke/" in address: return "green"
+    if "/karaoke/categories" in address:
+        return "yellow"
+    if "/vj/" in address:
+        return "cyan"
+    if "/karaoke/" in address:
+        return "green"
     return "white"
 
 def truncate(text: str, max_len: int, suffix: str = "...") -> str:
@@ -103,6 +112,71 @@ def render_log_line(log: str) -> str:
     """Render a single log line with color."""
     return f"[{color_by_level(log)}]{log}[/]"
 
+
+def estimate_position(state: PlaybackState) -> float:
+    """Estimate real-time playback position from cached state."""
+    if not state.is_playing:
+        return state.position
+    return state.position + max(0.0, time.time() - state.last_update)
+
+
+def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict[str, Any]:
+    """Derive track panel data from snapshot."""
+    state = snapshot.state
+    track = state.track
+    base = {
+        'error': snapshot.error,
+        'backoff': snapshot.backoff_seconds,
+        'source': snapshot.source,
+        'connected': source_available,
+    }
+    if not track:
+        return base
+    return {
+        **base,
+        'artist': track.artist,
+        'title': track.title,
+        'duration': track.duration,
+        'position': estimate_position(state),
+    }
+
+
+def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
+    """Assemble pipeline panel payload."""
+    pipeline_data = {
+        'display_lines': engine.pipeline.get_display_lines(),
+        'image_prompt': engine.pipeline.image_prompt,
+        'error': snapshot.error,
+        'backoff': snapshot.backoff_seconds,
+    }
+    lines = engine.current_lines
+    state = snapshot.state
+    if lines and state.track:
+        offset_ms = engine.timing_offset_ms
+        position = estimate_position(state)
+        idx = get_active_line_index(lines, position + offset_ms / 1000.0)
+        if 0 <= idx < len(lines):
+            line = lines[idx]
+            pipeline_data['current_lyric'] = {
+                'text': line.text,
+                'keywords': line.keywords,
+                'is_refrain': line.is_refrain
+            }
+    return pipeline_data
+
+
+def build_categories_payload(categories) -> Dict[str, Any]:
+    """Format categories for UI panels."""
+    if not categories:
+        return {}
+    return {
+        'primary_mood': categories.primary_mood,
+        'categories': [
+            {'name': cat.name, 'score': cat.score}
+            for cat in categories.get_top(10)
+        ]
+    }
+
 # ============================================================================
 # WIDGETS - Reactive UI components
 # ============================================================================
@@ -125,18 +199,37 @@ class NowPlayingPanel(ReactivePanel):
     def watch_track_data(self, data: dict) -> None:
         if not self.is_mounted:
             return
+        error = data.get('error')
+        backoff = data.get('backoff', 0.0)
+        raw_source_value = data.get('source') or ""
+        source_raw = raw_source_value.lower()
+        if source_raw.startswith("spotify"):
+            source_label = "Spotify"
+        else:
+            source_label = (raw_source_value or "Playback").replace("_", " ").title()
         if not data.get('artist'):
-            self.update("[dim]Waiting for playback...[/dim]")
+            if error:
+                msg = "[yellow]Playback paused:[/] {error}".format(error=error)
+                if backoff:
+                    msg += f" (retry in {backoff:.1f}s)"
+                self.update(msg)
+            else:
+                self.update("[dim]Waiting for playback...[/dim]")
             return
         
         conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
         time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        icon = "🎵" if data.get('source') == "spotify" else "🎧"
+        icon = "🎵" if source_raw.startswith("spotify") else "🎧"
+        warning = ""
+        if error:
+            warning = f"\n[yellow]{error}"
+            if backoff:
+                warning += f" (retry in {backoff:.1f}s)"
         
         self.update(
-            f"Spotify: {conn}\n"
+            f"{source_label}: {conn}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]"
+            f"{icon} {source_label}  │  [dim]{time_str}[/]{warning}"
         )
 
 
@@ -237,9 +330,9 @@ class MasterControlPanel(ReactivePanel):
         """Render only if mounted."""
         if not self.is_mounted:
             return
-        syn = format_status_icon(self.status.get('synesthesia'), "● RUNNING", "○ stopped")
-        pms = format_status_icon(self.status.get('milksyphon'), "● RUNNING", "○ stopped")
-        kar = format_status_icon(self.status.get('karaoke'), "● ACTIVE", "○ inactive")
+        syn = format_status_icon(bool(self.status.get('synesthesia')), "● RUNNING", "○ stopped")
+        pms = format_status_icon(bool(self.status.get('milksyphon')), "● RUNNING", "○ stopped")
+        kar = format_status_icon(bool(self.status.get('karaoke')), "● ACTIVE", "○ inactive")
         proc = self.status.get('processing_apps', 0)
         
         self.update(
@@ -294,6 +387,12 @@ class PipelinePanel(ReactivePanel):
             if lyric.get('is_refrain'):
                 lines.append("[magenta]  [REFRAIN][/]")
             has_content = True
+
+        if self.pipeline_data.get('error'):
+            retry = self.pipeline_data.get('backoff', 0.0)
+            extra = f" (retry in {retry:.1f}s)" if retry else ""
+            lines.append(f"[yellow]Playback warning: {self.pipeline_data['error']}{extra}[/]")
+            has_content = True
         
         if not has_content:
             lines.append("[dim]No active processing...[/]")
@@ -327,6 +426,20 @@ class ServicesPanel(ReactivePanel):
         lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
         lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
         lines.append(svc(s.get('synesthesia'), "Synesthesia", "Running" if s.get('synesthesia') else "Installed" if s.get('synesthesia_installed') else "Not installed"))
+
+        monitors = s.get('playback_monitors') or {}
+        if monitors:
+            lines.append("\n[bold]Playback Sources[/bold]")
+            for name, status in monitors.items():
+                ok = status.get('available', False)
+                detail = "OK" if ok else status.get('error', 'Unavailable')
+                color = "green" if ok else "yellow"
+                mark = "✓" if ok else "△"
+                lines.append(f"  [{color}]{mark}[/] {name.title()}: {detail}")
+        if s.get('playback_error'):
+            retry = s.get('playback_backoff', 0.0)
+            extra = f" (retry in {retry:.1f}s)" if retry else ""
+            lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
         self.update("\n".join(lines))
 
 
@@ -446,6 +559,7 @@ class VJConsoleApp(App):
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
+        self._latest_snapshot: Optional[PlaybackSnapshot] = None
         
         # MIDI Router
         self.midi_router: Optional[MidiRouter] = None
@@ -624,6 +738,9 @@ class VJConsoleApp(App):
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'synesthesia': self.synesthesia_running,
                 'synesthesia_installed': Path('/Applications/Synesthesia.app').exists(),
+                'playback_monitors': (self._latest_snapshot.monitor_status if self._latest_snapshot else {}),
+                'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
+                'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
         except Exception:
             pass
@@ -632,42 +749,20 @@ class VJConsoleApp(App):
         """Update all panels with current data."""
         if not self.karaoke_engine:
             return
-            
-        state = self.karaoke_engine._state
-        
-        # Build track data
-        track_data = {}
-        if state.has_track:
-            t = state.track
-            is_connected = bool(
-                self.karaoke_engine._spotify and 
-                getattr(self.karaoke_engine._spotify, '_sp', None)
-            )
-            # Determine source from which monitor is active
-            source = 'spotify' if is_connected else 'virtualdj'
-            track_data = {
-                'artist': t.artist, 
-                'title': t.title, 
-                'source': source,
-                'position': state.position, 
-                'duration': t.duration,
-                'connected': is_connected
-            }
-        
-        # Update now playing panel
+        snapshot = self.karaoke_engine.get_snapshot()
+        self._latest_snapshot = snapshot
+        monitor_status = snapshot.monitor_status or {}
+        if snapshot.source and snapshot.source in monitor_status:
+            source_connected = monitor_status[snapshot.source].get('available', False)
+        else:
+            source_connected = any(status.get('available', False) for status in monitor_status.values())
+        track_data = build_track_data(snapshot, source_connected)
         try:
             self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
         except Exception:
             pass
 
-        # Build categories data
-        cats = self.karaoke_engine.current_categories
-        cat_data = {}
-        if cats:
-            cat_data = {
-                'primary_mood': cats.primary_mood, 
-                'categories': [{'name': c.name, 'score': c.score} for c in cats.get_top(10)]
-            }
+        cat_data = build_categories_payload(self.karaoke_engine.current_categories)
         
         # Update categories panels
         for panel_id in ["categories", "categories-full"]:
@@ -677,18 +772,7 @@ class VJConsoleApp(App):
                 pass
 
         # Update pipeline
-        pipeline_data = {
-            'display_lines': self.karaoke_engine.pipeline.get_display_lines(),
-            'image_prompt': self.karaoke_engine.pipeline.image_prompt,
-        }
-        lines = self.karaoke_engine.current_lines
-        if lines:
-            offset_ms = self.karaoke_engine.timing_offset_ms
-            idx = get_active_line_index(lines, state.position + offset_ms / 1000.0)
-            if 0 <= idx < len(lines):
-                line = lines[idx]
-                pipeline_data['current_lyric'] = {'text': line.text, 'keywords': line.keywords, 'is_refrain': line.is_refrain}
-        
+        pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
         for panel_id in ["pipeline", "pipeline-full"]:
             try:
                 self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data

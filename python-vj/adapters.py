@@ -9,6 +9,7 @@ Each adapter handles one external service (Spotify, VirtualDJ, LRCLIB, OSC).
 import json
 import time
 import logging
+import subprocess
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -139,6 +140,82 @@ class LyricsFetcher:
 
 
 # =============================================================================
+# APPLESCRIPT SPOTIFY MONITOR - Local desktop playback via osascript
+# =============================================================================
+
+class AppleScriptSpotifyMonitor:
+    """Reads Spotify playback via bundled AppleScript (macOS only)."""
+
+    monitor_key = "spotify_local"
+    monitor_label = "Spotify (AppleScript)"
+
+    def __init__(self, script_path: Optional[Path] = None, timeout: Optional[float] = None):
+        cfg = Config.apple_script_config()
+        self._script_path = Path(script_path) if script_path else cfg['script_path']
+        self._timeout = timeout if timeout is not None else cfg['timeout']
+        self._health = ServiceHealth(self.monitor_label)
+
+    def get_playback(self) -> Optional[Dict[str, Any]]:
+        """Execute AppleScript and convert the JSON payload into playback dict."""
+        if not self._script_path.exists():
+            self._health.mark_unavailable(f"Missing AppleScript: {self._script_path}")
+            return None
+
+        try:
+            result = subprocess.run(
+                ["osascript", str(self._script_path)],
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+                check=False,
+            )
+        except FileNotFoundError:
+            self._health.mark_unavailable("osascript not found (macOS only)")
+            return None
+        except subprocess.TimeoutExpired:
+            self._health.mark_unavailable("AppleScript timeout")
+            return None
+
+        if result.returncode != 0:
+            message = result.stderr.strip() or result.stdout.strip() or f"osascript exit {result.returncode}"
+            self._health.mark_unavailable(message)
+            return None
+
+        raw_output = (result.stdout or "").strip()
+        if not raw_output:
+            self._health.mark_unavailable("Empty AppleScript response")
+            return None
+
+        try:
+            payload = json.loads(raw_output)
+        except json.JSONDecodeError as exc:
+            self._health.mark_unavailable(f"Invalid AppleScript JSON: {exc}")
+            return None
+
+        artist = (payload.get('artist') or '').strip()
+        title = (payload.get('title') or '').strip()
+        if not artist and not title:
+            self._health.mark_unavailable("No Spotify track data")
+            return None
+
+        playback = {
+            'artist': artist,
+            'title': title,
+            'album': payload.get('album', ''),
+            'duration_ms': int(payload.get('duration_ms', 0) or 0),
+            'progress_ms': int(payload.get('progress_ms', 0) or 0),
+            'is_playing': bool(payload.get('is_playing', False)),
+        }
+
+        self._health.mark_available("AppleScript OK")
+        return playback
+
+    @property
+    def status(self) -> Dict[str, Any]:
+        return self._health.get_status()
+
+
+# =============================================================================
 # SPOTIFY MONITOR - Deep module hiding OAuth complexity
 # =============================================================================
 
@@ -151,9 +228,12 @@ class SpotifyMonitor:
     Hides: OAuth flow, token caching, reconnection logic, error handling
     """
     
+    monitor_key = "spotify_api"
+    monitor_label = "Spotify (Web API)"
+
     def __init__(self):
         self._sp = None
-        self._health = ServiceHealth("Spotify")
+        self._health = ServiceHealth(self.monitor_label)
         self._logged_no_credentials = False  # Only log once
         self._init_client()
     
@@ -184,6 +264,7 @@ class SpotifyMonitor:
                     'album': item.get('album', {}).get('name', ''),
                     'duration_ms': item.get('duration_ms', 0),
                     'progress_ms': pb.get('progress_ms', 0),
+                    'is_playing': True,
                 }
             return None
         except Exception as e:
@@ -231,6 +312,11 @@ class SpotifyMonitor:
             logger.debug("Spotify: Attempting reconnection...")
             self._init_client()
 
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Public access to health status for UI use."""
+        return self._health.get_status()
+
 
 # =============================================================================
 # VIRTUALDJ MONITOR - Deep module hiding file polling complexity
@@ -249,8 +335,11 @@ class VirtualDJMonitor:
     - Tracklist: Multi-line history with timestamps (reads last entry)
     """
     
+    monitor_key = "virtualdj"
+    monitor_label = "VirtualDJ"
+
     def __init__(self, file_path: Optional[str] = None):
-        self._health = ServiceHealth("VirtualDJ")
+        self._health = ServiceHealth(self.monitor_label)
         self._path = Path(file_path) if file_path else Config.find_vdj_path()
         self._last_track = ""
         self._start_time = 0.0
@@ -307,6 +396,7 @@ class VirtualDJMonitor:
                 'album': '',
                 'duration_ms': 0,
                 'progress_ms': int((time.time() - self._start_time) * 1000),
+                'is_playing': True,
             }
         except Exception as e:
             self._health.mark_unavailable(str(e))
@@ -365,6 +455,11 @@ class VirtualDJMonitor:
             artist, title = content.split(" - ", 1)
             return artist.strip(), title.strip()
         return "", content.strip()
+
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Public access to health status for UI use."""
+        return self._health.get_status()
 
 
 # =============================================================================
