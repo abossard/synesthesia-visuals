@@ -935,7 +935,14 @@ class MultiBandBeatDetector {
   
   // Running averages for adaptive thresholds (more efficient than arrays)
   float bassAvg = 0, midAvg = 0, highAvg = 0;
-  float alpha = 0.05f;  // Running average smoothing
+  float alpha = 0.05f;  // Running average smoothing for mid/high
+  
+  // Bass-specific: slower EMA to not track kicks too quickly
+  float bassAlpha = 0.02f;  // Slower average for bass baseline
+  
+  // Bass gating / relative condition
+  float bassMinEnergy = 0.0005f;   // Ignore tiny noise
+  float bassRelThreshold = 0.25f;  // Require +25% spike over baseline
   
   // Adaptive threshold: variance tracking for auto-sensitivity
   float energyVariance = 0;
@@ -948,10 +955,13 @@ class MultiBandBeatDetector {
   }
 
   void update(float bassEnergy, float midEnergy, float highEnergy) {
-    // Update running averages (exponential moving average)
-    bassAvg = lerp(bassEnergy, bassAvg, 1 - alpha);
+    // Running averages for mid/high (fast EMA)
     midAvg = lerp(midEnergy, midAvg, 1 - alpha);
     highAvg = lerp(highEnergy, highAvg, 1 - alpha);
+    
+    // Bass: use slower EMA for baseline to not track kicks too quickly
+    // This keeps bassAvg lower during continuous bass beds, so kicks stand out
+    bassAvg = lerp(bassEnergy, bassAvg, 1 - bassAlpha);
     
     // Track total energy for adaptive threshold
     float totalEnergy = bassEnergy + midEnergy + highEnergy;
@@ -972,15 +982,25 @@ class MultiBandBeatDetector {
       effectiveSensitivity = sensitivity * sensMultiplier;
       adaptedSensitivity = effectiveSensitivity;  // Expose for HUD display
     }
+    // Keep it sane
+    effectiveSensitivity = constrain(effectiveSensitivity, 1.0f, 2.0f);
     
-    // Adaptive thresholds based on running average
-    float bassThr = bassAvg * effectiveSensitivity;
+    // Thresholds: bass gets more forgiving multiplier since it has continuous beds
+    float bassThr = bassAvg * (effectiveSensitivity * 0.8f);  // 20% more forgiving
     float midThr = midAvg * effectiveSensitivity;
-    float highThr = highAvg * effectiveSensitivity;
+    float highThr = highAvg * (effectiveSensitivity * 1.1f);  // Slightly stricter
     
-    // Detect beats when current > adaptive threshold
-    // No fixed minimums - let the adaptive threshold handle quiet passages
-    boolean bassBeat = bassEnergy > bassThr && bassAvg > 0.0001f;
+    // Relative delta for bass: how much above baseline?
+    float bassDelta = bassEnergy - bassAvg;
+    float bassRel = bassAvg > 0 ? bassDelta / bassAvg : 0;
+    
+    // Bass beat: needs absolute energy, above threshold, AND a decent relative spike
+    // This prevents false triggers from noise while catching real kicks over bass beds
+    boolean bassBeat = bassEnergy > bassThr 
+                    && bassEnergy > bassMinEnergy 
+                    && bassRel > bassRelThreshold;
+    
+    // Mid/high beats: simpler absolute threshold (no continuous beds)
     boolean midBeat = midEnergy > midThr && midAvg > 0.0001f;
     boolean highBeat = highEnergy > highThr && highAvg > 0.0001f;
     
