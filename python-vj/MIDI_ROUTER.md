@@ -1,10 +1,11 @@
 # MIDI Router
 
-A Python MIDI router that sits between hardware controllers and Magic Music Visuals, providing:
+A Python MIDI router integrated into the VJ Console that sits between hardware controllers (Launchpad, MIDImix) and Magic Music Visuals, providing:
 - **Toggle state management** with LED feedback
 - **Absolute state synchronization** to Magic (prevents toggle ambiguity)
 - **Learn mode** for easy MIDI mapping
 - **Pass-through** for non-enhanced controls
+- **Real-time debug view** of all MIDI traffic
 
 ## Why Use This?
 
@@ -18,32 +19,6 @@ This router solves both problems by acting as a **stateful middleware** that:
 - Sends absolute on/off values to Magic (no ambiguity)
 - Restores state on startup
 
-## Architecture
-
-```
-Controller (Launchpad, MIDImix, etc.)
-        ⇄  Python Router (state + LED feedback)
-                 ↓
-          Virtual MIDI port (IAC "MagicBus")
-                 ↓
-          Magic Music Visuals
-```
-
-The router:
-1. Receives MIDI from your controller
-2. Maintains toggle state in memory and JSON config
-3. Sends LED feedback to controller (velocity = color/brightness)
-4. Sends absolute state to Magic (velocity 127 = ON, 0 = OFF)
-
-## Installation
-
-```bash
-cd python-vj
-pip install -r requirements.txt
-```
-
-Requires `python-rtmidi` for MIDI I/O.
-
 ## Quick Start
 
 ### 1. Create Virtual MIDI Port (macOS)
@@ -54,37 +29,27 @@ Requires `python-rtmidi` for MIDI I/O.
 4. Check **Device is online**
 5. Add a port named `MagicBus`
 
-### 2. Initialize Configuration
+### 2. Launch VJ Console
 
 ```bash
-python midi_router_cli.py init --controller Launchpad --virtual MagicBus
+cd python-vj
+pip install -r requirements.txt
+python vj_console.py
 ```
 
-This creates `~/.midi_router/config.json` with:
-- Controller pattern: "Launchpad" (or your controller name)
-- Virtual output pattern: "MagicBus" (or your IAC port name)
-- Empty toggles list (add via learn mode)
+### 3. Navigate to MIDI Router Screen
 
-### 3. Run the Router
-
-```bash
-python midi_router_cli.py run
-```
-
-Interactive commands:
-- `l` - Enter learn mode (capture next pad press)
-- `s` - Show toggle list
-- `r <note> <name>` - Rename toggle
-- `d <note>` - Delete toggle
-- `q` - Quit
+- Press `5` to switch to the MIDI Router screen
+- The router initializes automatically with default config
 
 ### 4. Learn Your First Toggle
 
-1. Press `l` in the router CLI
-2. Press a pad on your controller (e.g., Launchpad pad 40)
-3. Router captures it and adds to config
-4. Press the same pad again → LED lights up, Magic receives value 127
-5. Press again → LED turns off, Magic receives value 0
+1. Press `l` to enter learn mode
+2. The status will show "🎹 LEARN MODE ACTIVE"
+3. Press a pad on your controller (e.g., Launchpad pad 40)
+4. Router captures it and adds to config
+5. Press the same pad again → LED lights up, Magic receives value 127
+6. Press again → LED turns off, Magic receives value 0
 
 ### 5. Configure Magic
 
@@ -94,6 +59,57 @@ In Magic Music Visuals:
 3. Press the pad you learned (router sends MIDI via MagicBus)
 4. Add a Range modifier: Input 0-127 → Output 0.0-1.0
 5. Use Global to control effects/layers
+
+## VJ Console MIDI Screen Layout
+
+## VJ Console MIDI Screen Layout
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Left Column                │ Right Column                   │
+├────────────────────────────┼────────────────────────────────┤
+│ ═══ MIDI Router ═══        │ ═══ MIDI Toggles ═══           │
+│ ● Router Running           │   Note  40: TwisterOn    ● ON  │
+│ Controller: Launchpad →    │   Note  41: LyricsOn     ○ OFF │
+│            MagicBus        │ ▸ Note  42: StrobeOn     ○ OFF │
+│                            │   Note  43: GlitchOn     ● ON  │
+│ Learn mode: inactive       │                                │
+│                            │ ═══ MIDI Traffic ═══           │
+│ ═══ Actions ═══            │ 14:23:45 → Note On  ch0 #42 val=127│
+│ l     Enter learn mode     │ 14:23:45 → Note On  ch0 #42 val=127│
+│ r     Rename selected      │ 14:23:44 ← Note On  ch0 #42 val=100│
+│ d     Delete selected      │ 14:23:40 → Note On  ch0 #41 val=0  │
+│ k/j   Navigate up/down     │ 14:23:40 → Note On  ch0 #41 val=0  │
+│ space Toggle test          │ 14:23:39 ← Note On  ch0 #41 val=100│
+│                            │                                │
+│ ═══ Configuration ═══      │                                │
+│ Controller: Launchpad      │                                │
+│ Virtual Port: MagicBus     │                                │
+│ Toggles: 4                 │                                │
+│ Config: ~/.midi_router/... │                                │
+└────────────────────────────┴────────────────────────────────┘
+```
+
+### Panel Descriptions
+
+**MIDI Router (top left)**: Current router status and device info  
+**Actions (middle left)**: Available keyboard shortcuts for MIDI management  
+**Configuration (bottom left)**: Router configuration details  
+**MIDI Toggles (top right)**: List of configured toggles with current state  
+**MIDI Traffic (bottom right)**: Real-time log of MIDI messages (← incoming, → outgoing)
+
+## Keyboard Controls (MIDI Screen)
+
+| Key | Action |
+|-----|--------|
+| `l` | Enter learn mode (capture next pad press) |
+| `k` / `↑` | Navigate up in toggle list |
+| `j` / `↓` | Navigate down in toggle list |
+| `space` | Test toggle selected item (simulates button press) |
+| `r` | Rename selected toggle (shows instruction for now) |
+| `d` | Delete selected toggle |
+| `5` | Switch to MIDI screen |
+| `q` | Quit VJ Console |
 
 ## Configuration Format
 
