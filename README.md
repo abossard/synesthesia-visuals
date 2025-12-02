@@ -29,16 +29,18 @@ The `processing-vj/` folder contains Processing sketches for interactive visuals
 - Launchpad Mini Mk3 (in Programmer mode)
 
 ### Python VJ Tools
-The `python-vj/` folder contains the VJ Console and Karaoke Engine:
+The `python-vj/` folder contains professional VJ control tools:
 
-**VJ Console** - Terminal UI for managing Processing apps with daemon mode (auto-restart on crash)
-**Karaoke Engine** - Monitors Spotify/VirtualDJ, fetches synced lyrics, and sends them via OSC
+**VJ Console** - Terminal UI for managing Processing apps with daemon mode (auto-restart on crash)  
+**Karaoke Engine** - Monitors Spotify/VirtualDJ, fetches synced lyrics, and sends them via OSC  
+**MIDI Router** - Stateful MIDI middleware with toggle management and LED feedback for Magic Music Visuals
 
 **Installation:**
 ```bash
 cd python-vj
 pip install -r requirements.txt
-python vj_console.py
+python vj_console.py          # Launch VJ console
+python midi_router_cli.py run # Launch MIDI router
 ```
 
 ### MIDI Controllers
@@ -52,6 +54,7 @@ This project uses:
 |-------|-------------|
 | [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic + BlackHole |
 | [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
+| [MIDI Router](python-vj/MIDI_ROUTER.md) | **Toggle state manager** for Magic Music Visuals with LED feedback |
 | [Processing Games Guide](docs/processing-games-guide.md) | Creating interactive VJ games in Java |
 | [Python VJ Tools](python-vj/README.md) | VJ Console and Karaoke Engine documentation |
 | [ISF to Synesthesia Migration](docs/isf-to-synesthesia-migration.md) | Converting shaders to SSF format |
