@@ -36,6 +36,7 @@ final int SWITCH_PAUSE_MS = 250;               // Brief pause when switching dev
 // Tunable parameters (loaded from config, adjustable in HUD)
 float smoothing = 0.8f;           // 0 = no smoothing, 0.9 = heavy smoothing
 float noiseFloor = 0.0f;          // Start at 0; FFT values are small
+float noiseFloorStep = 0.0005f;   // Step size for [7]/[8] adjustment
 float beatSensitivity = 1.4f;     // Multiplier above average to trigger beat
 float pulseDecay = 0.88f;         // How fast pulses fade (0.8-0.95)
 
@@ -328,6 +329,17 @@ void analyzeAudio() {
   highHitPulse = bandDetector.getHighPulse();
   overallLevel = amplitude.analyze();
   downsampleSpectrum();
+  
+  // Debug: print values every 30 frames to verify real numbers
+  if (frameCounter % 30 == 0) {
+    println("Bands:",
+      "sub", nf(subBass, 0, 4),
+      "bass", nf(bass, 0, 4),
+      "mid", nf(mid, 0, 4),
+      "high", nf(highMid, 0, 4),
+      "overall", nf(overallLevel, 0, 4),
+      "flux", nf(spectralFlux, 0, 4));
+  }
 }
 
 void downsampleSpectrum() {
@@ -464,8 +476,10 @@ void drawHud() {
   y += 18;
   
   // Row 3
+  fill(180);
+  text(String.format("[7/8] NoiseFloor: %.5f", noiseFloor), 28, y);
   fill(120);
-  text("[C] Reload   [R] Rescan", 28, y);
+  text("[C] Reload   [R] Rescan", 250, y);
   y += 30;
   
   // === Device list (compact, scrollable view showing max 5) ===
@@ -693,18 +707,17 @@ void drawLevelBars(float x, float y) {
   String[] labels = {"SubBass", "Bass", "LowMid", "Mid", "HighMid", "Presence", "Air", "Overall"};
   float[] values = {subBass, bass, lowMid, mid, highMid, presence, air, overallLevel};
   
-  // Moderate compensation to balance visual display while preserving dynamics
-  // Goal: all bands should show activity, but bass kicks/mid snares/high hats
-  // should still have relative musical character (not perfectly flat)
+  // Re-tuned for sum-based band values (not averaged)
+  // These are much smaller multipliers since sums are larger than averages
   float[] scales = {
-    8,     // SubBass: boost weak sub content
-    3,     // Bass: slight boost - already strong in most music
-    4,     // LowMid: moderate boost
-    6,     // Mid: boost - snares/vocals often quieter than bass
-    8,     // HighMid: boost - cymbals need visibility
-    10,    // Presence: more boost for detail
-    15,    // Air: significant boost - very quiet in most sources
-    3      // Overall: slight scaling
+    0.8f,   // SubBass: now using sum, scale down
+    0.3f,   // Bass: slight - already strong in most music
+    0.5f,   // LowMid: moderate
+    0.8f,   // Mid: snares/vocals
+    1.2f,   // HighMid: cymbals need visibility
+    1.5f,   // Presence: more boost for detail
+    2.0f,   // Air: boost - very quiet in most sources
+    3.0f    // Overall: uses amplitude.analyze() (unchanged)
   };
   color[] colors = {
     color(255, 50, 50),    // SubBass - red
@@ -799,6 +812,14 @@ void keyPressed() {
     pulseDecay = constrain(pulseDecay + 0.02f, 0.7f, 0.95f);
     if (bandDetector != null) bandDetector.decay = pulseDecay;
     saveCurrentConfig();
+  } else if (key == '7') {
+    // Decrease noise floor
+    noiseFloor = max(0, noiseFloor - noiseFloorStep);
+    saveCurrentConfig();
+  } else if (key == '8') {
+    // Increase noise floor
+    noiseFloor += noiseFloorStep;
+    saveCurrentConfig();
   }
 }
 
@@ -855,7 +876,7 @@ class FrequencyBands {
     for (int i = start; i < end; i++) {
       sum += spectrumRef[i];
     }
-    return sum / max(1, end - start);
+    return sum;  // Use sum, not average - better dynamics
   }
 
   // FIXED: Map against Nyquist frequency (sampleRate/2), not full sampleRate
