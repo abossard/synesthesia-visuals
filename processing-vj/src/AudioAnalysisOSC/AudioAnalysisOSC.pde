@@ -31,15 +31,28 @@ OscP5 osc;
 
 // === Audio analysis configuration ===
 final int FFT_BANDS = 512;
-final float SMOOTHING = 0.35f;
-final float NOISE_FLOOR = 0.0005f;             // Ignore extremely low values
 final int SWITCH_PAUSE_MS = 250;               // Brief pause when switching devices
+
+// Tunable parameters (loaded from config, adjustable in HUD)
+float smoothing = 0.8f;           // 0 = no smoothing, 0.9 = heavy smoothing
+float noiseFloor = 0.0f;          // Start at 0; FFT values are small
+float beatSensitivity = 1.4f;     // Multiplier above average to trigger beat
+float pulseDecay = 0.88f;         // How fast pulses fade (0.8-0.95)
+
+// Runtime state (not persisted)
+boolean showRawSpectrum = false;  // Toggle raw vs smoothed display
+int detectedSampleRate = 44100;   // Will try to detect from audio system
+boolean adaptiveThreshold = true; // Auto-tune beat sensitivity based on energy variance
+float adaptedSensitivity = 1.4f;  // Current adapted beat sensitivity
 
 AudioIn audioIn;
 FFT fft;
 Amplitude amplitude;
 float[] fftSpectrum = new float[FFT_BANDS];
 float[] smoothedSpectrum = new float[FFT_BANDS];
+float[] prevSpectrum = new float[FFT_BANDS];   // For spectral flux calculation
+boolean prevSpectrumInitialized = false;
+float spectralFlux = 0;                         // Current onset energy
 FrequencyBands freqBands;
 BeatDetector beatDetector;
 MultiBandBeatDetector bandDetector;
@@ -61,6 +74,11 @@ float overallLevel;
 float analysisLatencyMs = 0;
 float[] spectrumPayload;
 
+// === Throttling ===
+int frameCounter = 0;
+int hudThrottleFrames = 2;       // Draw HUD every N frames
+int spectrumOscThrottleFrames = 3;  // Send spectrum OSC every N frames
+
 // === UI ===
 PFont hudFont;
 
@@ -75,9 +93,9 @@ void setup() {
   hudFont = createFont("IBM Plex Mono", 16, true);
   textFont(hudFont);
   osc = new OscP5(this, 0);  // no inbound port needed
-  freqBands = new FrequencyBands(FFT_BANDS);
-  beatDetector = new BeatDetector(FFT_BANDS);
-  bandDetector = new MultiBandBeatDetector();
+  freqBands = new FrequencyBands(FFT_BANDS, detectedSampleRate);
+  beatDetector = new BeatDetector();
+  bandDetector = new MultiBandBeatDetector(beatSensitivity, pulseDecay);
   autoBpm = new AutoBPM();
   reloadDevices();
 }
@@ -91,6 +109,20 @@ void applyConfig() {
   spectrumBins = max(4, config.spectrumBins);
   spectrumPayload = new float[spectrumBins];
   oscTarget = new NetAddress(config.oscHost, config.oscPort);
+  
+  // Apply tuning parameters from config
+  smoothing = config.smoothing;
+  noiseFloor = config.noiseFloor;
+  beatSensitivity = config.beatSensitivity;
+  pulseDecay = config.pulseDecay;
+  detectedSampleRate = config.sampleRate;
+  
+  // Update components if they exist
+  if (freqBands != null) freqBands.setSampleRate(detectedSampleRate);
+  if (bandDetector != null) {
+    bandDetector.sensitivity = beatSensitivity;
+    bandDetector.decay = pulseDecay;
+  }
 }
 
 void reloadConfig() {
@@ -99,6 +131,7 @@ void reloadConfig() {
 }
 
 void draw() {
+  frameCounter++;
   background(0);
   long analysisStart = System.nanoTime();
 
@@ -114,7 +147,11 @@ void draw() {
   }
 
   analysisLatencyMs = (System.nanoTime() - analysisStart) / 1_000_000.0f;
-  drawHud();
+  
+  // HUD throttling: only redraw every N frames for performance
+  if (frameCounter % hudThrottleFrames == 0) {
+    drawHud();
+  }
 }
 
 // === Audio device management ===
@@ -211,12 +248,25 @@ void initAudio() {
     Sound s = new Sound(this);
     s.inputDevice(currentDeviceIndex);
     
+    // Try to detect sample rate from Sound object
+    // Processing Sound library uses 44100 by default, but we can check
+    // Note: Processing Sound doesn't expose sample rate directly,
+    // so we use the config value or default 44100
+    if (config != null && config.sampleRate > 0) {
+      detectedSampleRate = config.sampleRate;
+    }
+    if (freqBands != null) freqBands.setSampleRate(detectedSampleRate);
+    
     audioIn = new AudioIn(this);
     audioIn.start();
     fft = new FFT(this, FFT_BANDS);
     fft.input(audioIn);
     amplitude = new Amplitude(this);
     amplitude.input(audioIn);
+    
+    // Reset spectral flux state on device change
+    prevSpectrumInitialized = false;
+    java.util.Arrays.fill(prevSpectrum, 0);
   } catch (Exception e) {
     println("Failed to init audio input: " + e.getMessage());
     audioIn = null;
@@ -228,10 +278,24 @@ void initAudio() {
 void analyzeAudio() {
   if (fft == null || amplitude == null) return;
   fft.analyze(fftSpectrum);
+  
+  // Apply noise floor and smoothing (fixed: smoothed = old*S + new*(1-S))
   for (int i = 0; i < FFT_BANDS; i++) {
-    float raw = max(fftSpectrum[i] - NOISE_FLOOR, 0);
-    smoothedSpectrum[i] = lerp(smoothedSpectrum[i], raw, 1.0f - SMOOTHING);
+    float raw = max(fftSpectrum[i] - noiseFloor, 0);
+    smoothedSpectrum[i] = lerp(raw, smoothedSpectrum[i], smoothing);
   }
+  
+  // Compute spectral flux (positive changes only) for beat detection
+  spectralFlux = 0;
+  if (prevSpectrumInitialized) {
+    for (int i = 0; i < FFT_BANDS; i++) {
+      float diff = smoothedSpectrum[i] - prevSpectrum[i];
+      if (diff > 0) spectralFlux += diff;
+    }
+  } else {
+    prevSpectrumInitialized = true;
+  }
+  arrayCopy(smoothedSpectrum, prevSpectrum);
 
   freqBands.update(smoothedSpectrum);
   subBass = freqBands.getSubBass();
@@ -242,7 +306,8 @@ void analyzeAudio() {
   presence = freqBands.getPresence();
   air = freqBands.getAir();
 
-  beatDetector.update(smoothedSpectrum);
+  // Beat detector now uses spectral flux (onset energy) instead of raw spectrum
+  beatDetector.update(spectralFlux);
   bandDetector.update(bass, mid, presence);
   if (beatDetector.isBeat()) {
     autoBpm.recordBeat();
@@ -257,19 +322,27 @@ void analyzeAudio() {
 
 void downsampleSpectrum() {
   int binsPerGroup = max(1, FFT_BANDS / spectrumBins);
+  float[] sourceSpectrum = showRawSpectrum ? fftSpectrum : smoothedSpectrum;
+  
   for (int i = 0; i < spectrumBins; i++) {
     float sum = 0;
     for (int j = 0; j < binsPerGroup; j++) {
       int idx = i * binsPerGroup + j;
-      sum += smoothedSpectrum[idx];
+      if (idx < FFT_BANDS) sum += sourceSpectrum[idx];
     }
-    spectrumPayload[i] = sum / binsPerGroup;
+    float avg = sum / binsPerGroup;
+    
+    // Apply frequency compensation: boost higher frequencies progressively
+    // to counteract natural bass dominance in music
+    float weight = 1.0f + (float)i / spectrumBins * 0.5f;
+    spectrumPayload[i] = avg * weight;
   }
 }
 
 // === OSC ===
 
 void sendOsc() {
+  // Levels and beats are sent every frame for responsiveness
   OscMessage levels = new OscMessage("/audio/levels");
   levels.add(subBass);
   levels.add(bass);
@@ -294,11 +367,14 @@ void sendOsc() {
   bpmMsg.add(autoBpm.getConfidence());
   sendToTarget(bpmMsg);
 
-  OscMessage spectrum = new OscMessage("/audio/spectrum");
-  for (int i = 0; i < spectrumBins; i++) {
-    spectrum.add(spectrumPayload[i]);
+  // Spectrum is throttled - sent every N frames to reduce network load
+  if (frameCounter % spectrumOscThrottleFrames == 0) {
+    OscMessage spectrum = new OscMessage("/audio/spectrum");
+    for (int i = 0; i < spectrumBins; i++) {
+      spectrum.add(spectrumPayload[i]);
+    }
+    sendToTarget(spectrum);
   }
-  sendToTarget(spectrum);
 }
 
 void sendToTarget(OscMessage msg) {
@@ -319,44 +395,105 @@ String oscSummary() {
 void drawHud() {
   fill(255);
   textAlign(LEFT, TOP);
-  float y = 24;
+  float y = 16;
+  
+  // === Header row ===
   text("AudioAnalysisOSC", 24, y);
-  y += 26;
+  fill(120);
+  text("OSC → " + oscSummary(), 200, y);
+  y += 22;
+  
+  // === Current device ===
   String deviceName = (currentDeviceIndex >= 0 && currentDeviceIndex < devices.length)
     ? devices[currentDeviceIndex]
     : "(no device)";
   if (switchInProgress) {
+    fill(200, 200, 0);
     deviceName = "Switching → " + devices[pendingDeviceIndex];
+  } else {
+    fill(0, 200, 0);
   }
   text("Input: " + deviceName, 24, y);
   y += 20;
+  
+  // === Stats row ===
+  fill(180);
   String bpmStr = autoBpm.getBpm() > 0 ? String.format("%.1f", autoBpm.getBpm()) : "---";
-  text(String.format("Level: %.3f  |  BPM: %s  |  Analyzer: %.2f ms", overallLevel, bpmStr, analysisLatencyMs), 24, y);
-  y += 30;
-
-  text("Devices (Up/Down to select, Enter to activate, R to rescan):", 24, y);
+  text(String.format("Level: %.3f  |  BPM: %s  |  %.1f ms  |  %d Hz  |  HUD:%d Spec:%d", 
+    overallLevel, bpmStr, analysisLatencyMs, detectedSampleRate, 
+    hudThrottleFrames, spectrumOscThrottleFrames), 24, y);
+  y += 26;
+  
+  // === Tuning panel (prominent, always visible) ===
+  fill(20);
+  stroke(60);
+  rect(20, y - 4, 500, 88, 4);
+  noStroke();
+  
+  y += 4;
+  fill(255, 220, 100);
+  text("TUNING (auto-saves)", 28, y);
   y += 20;
-  for (int i = 0; i < devices.length; i++) {
+  
+  // Row 1
+  fill(showRawSpectrum ? color(255, 200, 100) : 140);
+  text("[W] Raw: " + (showRawSpectrum ? "ON" : "off"), 28, y);
+  fill(180);
+  text(String.format("[1/2] Smooth: %.2f", smoothing), 150, y);
+  text(String.format("[3/4] Sens: %.1f", beatSensitivity), 300, y);
+  y += 18;
+  
+  // Row 2
+  fill(180);
+  text(String.format("[5/6] Decay: %.2f", pulseDecay), 28, y);
+  fill(adaptiveThreshold ? color(100, 255, 150) : 140);
+  text("[A] Adaptive: " + (adaptiveThreshold ? String.format("ON (%.2f)", adaptedSensitivity) : "off"), 180, y);
+  y += 18;
+  
+  // Row 3
+  fill(120);
+  text("[C] Reload   [R] Rescan", 28, y);
+  y += 30;
+  
+  // === Device list (compact, scrollable view showing max 5) ===
+  fill(100);
+  text("Devices [↑/↓ Enter]:", 24, y);
+  y += 16;
+  
+  // Show only nearby devices (selected ± 2)
+  int maxVisible = 5;
+  int startIdx = max(0, selectedDeviceIndex - 2);
+  int endIdx = min(devices.length, startIdx + maxVisible);
+  if (endIdx - startIdx < maxVisible && startIdx > 0) {
+    startIdx = max(0, endIdx - maxVisible);
+  }
+  
+  for (int i = startIdx; i < endIdx; i++) {
     String prefix = "  ";
     if (i == currentDeviceIndex && !switchInProgress) {
-      fill(0, 200, 0);  // active device = green
+      fill(0, 200, 0);
       prefix = "> ";
     } else if (switchInProgress && i == pendingDeviceIndex) {
-      fill(200, 200, 0);  // switching to = yellow
+      fill(200, 200, 0);
       prefix = "* ";
     } else if (i == selectedDeviceIndex) {
-      fill(100, 150, 255);  // selected but not active = blue
+      fill(100, 150, 255);
       prefix = "[ ";
     } else {
-      fill(180);
+      fill(120);
     }
-    text(prefix + devices[i], 24, y);
-    y += 18;
+    // Truncate long device names
+    String dname = devices[i];
+    if (dname.length() > 35) dname = dname.substring(0, 32) + "...";
+    text(prefix + dname, 24, y);
+    y += 16;
   }
-
-  y += 12;
-  fill(120);
-  text("OSC → " + oscSummary() + " (/audio/*)", 24, y);
+  
+  // Show scroll indicator if more devices
+  if (devices.length > maxVisible) {
+    fill(80);
+    text(String.format("(%d/%d devices)", selectedDeviceIndex + 1, devices.length), 24, y);
+  }
   
   // === Audio level visualization (right side) ===
   drawLevelBars(width - 200, 24);
@@ -572,7 +709,64 @@ void keyPressed() {
     reloadDevices();
   } else if (key == 'c' || key == 'C') {
     reloadConfig();
+  } else if (key == 'w' || key == 'W') {
+    // Toggle raw spectrum view (not saved - runtime only)
+    showRawSpectrum = !showRawSpectrum;
+  } else if (key == 'a' || key == 'A') {
+    // Toggle adaptive threshold (not saved - runtime only)
+    adaptiveThreshold = !adaptiveThreshold;
+  } else if (key == '1') {
+    // Decrease smoothing
+    smoothing = constrain(smoothing - 0.05f, 0, 0.95f);
+    saveCurrentConfig();
+  } else if (key == '2') {
+    // Increase smoothing
+    smoothing = constrain(smoothing + 0.05f, 0, 0.95f);
+    saveCurrentConfig();
+  } else if (key == '3') {
+    // Decrease beat sensitivity
+    beatSensitivity = constrain(beatSensitivity - 0.1f, 1.0f, 3.0f);
+    if (bandDetector != null) bandDetector.sensitivity = beatSensitivity;
+    saveCurrentConfig();
+  } else if (key == '4') {
+    // Increase beat sensitivity
+    beatSensitivity = constrain(beatSensitivity + 0.1f, 1.0f, 3.0f);
+    if (bandDetector != null) bandDetector.sensitivity = beatSensitivity;
+    saveCurrentConfig();
+  } else if (key == '5') {
+    // Decrease pulse decay (faster fade)
+    pulseDecay = constrain(pulseDecay - 0.02f, 0.7f, 0.95f);
+    if (bandDetector != null) bandDetector.decay = pulseDecay;
+    saveCurrentConfig();
+  } else if (key == '6') {
+    // Increase pulse decay (slower fade)
+    pulseDecay = constrain(pulseDecay + 0.02f, 0.7f, 0.95f);
+    if (bandDetector != null) bandDetector.decay = pulseDecay;
+    saveCurrentConfig();
   }
+}
+
+void saveCurrentConfig() {
+  config.smoothing = smoothing;
+  config.noiseFloor = noiseFloor;
+  config.beatSensitivity = beatSensitivity;
+  config.pulseDecay = pulseDecay;
+  config.sampleRate = detectedSampleRate;
+  
+  JSONObject json = new JSONObject();
+  json.setString("window_title", config.windowTitle);
+  json.setString("osc_host", config.oscHost);
+  json.setInt("osc_port", config.oscPort);
+  json.setInt("spectrum_bins", config.spectrumBins);
+  json.setInt("frame_rate", config.frameRate);
+  json.setFloat("smoothing", config.smoothing);
+  json.setFloat("noise_floor", config.noiseFloor);
+  json.setFloat("beat_sensitivity", config.beatSensitivity);
+  json.setFloat("pulse_decay", config.pulseDecay);
+  json.setInt("sample_rate", config.sampleRate);
+  
+  saveJSONObject(json, "data/audio_analysis_config.json");
+  println("Config saved!");
 }
 
 // === Helper classes ===
@@ -582,8 +776,13 @@ class FrequencyBands {
   int sampleRate = 44100;
   float[] spectrumRef;
 
-  FrequencyBands(int fftSize) {
+  FrequencyBands(int fftSize, int sampleRate) {
     this.fftSize = fftSize;
+    this.sampleRate = sampleRate;
+  }
+  
+  void setSampleRate(int sr) {
+    this.sampleRate = sr;
   }
 
   void update(float[] spectrum) {
@@ -603,8 +802,12 @@ class FrequencyBands {
     return sum / max(1, end - start);
   }
 
+  // FIXED: Map against Nyquist frequency (sampleRate/2), not full sampleRate
+  // FFT bins cover 0 to Nyquist, so freq 20kHz at 44.1kHz = bin near end
   int freqToBin(float freq) {
-    return int(freq * fftSize / (float)sampleRate);
+    float nyquist = sampleRate / 2.0f;
+    float norm = freq / nyquist;  // 0..1 range
+    return int(constrain(norm * (fftSize - 1), 0, fftSize - 1));
   }
 
   float getSubBass() { return range(20, 60); }
@@ -618,30 +821,29 @@ class FrequencyBands {
 
 class BeatDetector {
   float[] history;
-  int size = 43;
+  int size = 43;          // ~0.7s at 60fps
   int index = 0;
-  float threshold = 1.35f;
+  float thresholdFactor = 1.4f;
   boolean beat;
   float pulse;
 
-  BeatDetector(int fftSize) {
+  BeatDetector() {
     history = new float[size];
   }
 
-  void update(float[] spectrum) {
-    float energy = 0;
-    for (float v : spectrum) {
-      energy += v * v;
-    }
+  // Now takes scalar onset energy (spectral flux) instead of spectrum array
+  void update(float onsetEnergy) {
     float avg = 0;
     for (float h : history) avg += h;
     avg /= size;
-    beat = energy > avg * threshold;
-    history[index] = energy;
+    
+    // Beat when onset energy exceeds average by threshold factor
+    beat = onsetEnergy > avg * thresholdFactor && onsetEnergy > 0.001f;
+    
+    history[index] = onsetEnergy;
     index = (index + 1) % size;
-    if (beat) {
-      pulse = 1;
-    }
+    
+    if (beat) pulse = 1;
     pulse *= 0.92f;
   }
 
@@ -651,48 +853,73 @@ class BeatDetector {
 
 class MultiBandBeatDetector {
   float bassPulse, midPulse, highPulse;
-  float decay = 0.85f;
+  float decay = 0.88f;
+  float sensitivity = 1.4f;
   
-  // History for adaptive thresholds
-  float[] bassHistory = new float[30];
-  float[] midHistory = new float[30];
-  float[] highHistory = new float[30];
-  int histIdx = 0;
-  float sensitivity = 1.4f;  // multiplier above average to trigger
+  // Running averages for adaptive thresholds (more efficient than arrays)
+  float bassAvg = 0, midAvg = 0, highAvg = 0;
+  float alpha = 0.05f;  // Running average smoothing
+  
+  // Adaptive threshold: variance tracking for auto-sensitivity
+  float energyVariance = 0;
+  float energyMean = 0;
+  float varianceAlpha = 0.02f;  // Slow adaptation for variance
+  
+  MultiBandBeatDetector(float sensitivity, float decay) {
+    this.sensitivity = sensitivity;
+    this.decay = decay;
+  }
 
   void update(float bassEnergy, float midEnergy, float highEnergy) {
-    // Store in history
-    bassHistory[histIdx] = bassEnergy;
-    midHistory[histIdx] = midEnergy;
-    highHistory[histIdx] = highEnergy;
-    histIdx = (histIdx + 1) % 30;
+    // Update running averages (exponential moving average)
+    bassAvg = lerp(bassEnergy, bassAvg, 1 - alpha);
+    midAvg = lerp(midEnergy, midAvg, 1 - alpha);
+    highAvg = lerp(highEnergy, highAvg, 1 - alpha);
     
-    // Calculate adaptive thresholds
-    float bassAvg = arrayAvg(bassHistory);
-    float midAvg = arrayAvg(midHistory);
-    float highAvg = arrayAvg(highHistory);
+    // Track total energy for adaptive threshold
+    float totalEnergy = bassEnergy + midEnergy + highEnergy;
+    float oldMean = energyMean;
+    energyMean = lerp(totalEnergy, energyMean, 1 - varianceAlpha);
+    float diff = totalEnergy - energyMean;
+    energyVariance = lerp(diff * diff, energyVariance, 1 - varianceAlpha);
     
-    // Detect beats when current > average * sensitivity
-    boolean bassBeat = bassEnergy > bassAvg * sensitivity && bassEnergy > 0.005;
-    boolean midBeat = midEnergy > midAvg * sensitivity && midEnergy > 0.003;
-    boolean highBeat = highEnergy > highAvg * sensitivity && highEnergy > 0.002;
+    // Adaptive sensitivity: adjust based on signal variance
+    // High variance (dynamic music) = use base sensitivity
+    // Low variance (quiet/steady) = increase sensitivity to catch subtle beats
+    float effectiveSensitivity = sensitivity;
+    if (adaptiveThreshold) {
+      float stdDev = sqrt(max(energyVariance, 0.0001f));
+      float varianceRatio = stdDev / max(energyMean, 0.0001f);  // Coefficient of variation
+      // When variance is low (<0.3), boost sensitivity; when high (>0.6), reduce slightly
+      float sensMultiplier = map(constrain(varianceRatio, 0.1f, 0.8f), 0.1f, 0.8f, 1.3f, 0.9f);
+      effectiveSensitivity = sensitivity * sensMultiplier;
+      adaptedSensitivity = effectiveSensitivity;  // Expose for HUD display
+    }
+    
+    // Adaptive thresholds based on running average
+    float bassThr = bassAvg * effectiveSensitivity;
+    float midThr = midAvg * effectiveSensitivity;
+    float highThr = highAvg * effectiveSensitivity;
+    
+    // Detect beats when current > adaptive threshold
+    // No fixed minimums - let the adaptive threshold handle quiet passages
+    boolean bassBeat = bassEnergy > bassThr && bassAvg > 0.0001f;
+    boolean midBeat = midEnergy > midThr && midAvg > 0.0001f;
+    boolean highBeat = highEnergy > highThr && highAvg > 0.0001f;
     
     // Update pulses
-    if (bassBeat) bassPulse = 1.0;
+    if (bassBeat) bassPulse = 1.0f;
     else bassPulse *= decay;
     
-    if (midBeat) midPulse = 1.0;
+    if (midBeat) midPulse = 1.0f;
     else midPulse *= decay;
     
-    if (highBeat) highPulse = 1.0;
+    if (highBeat) highPulse = 1.0f;
     else highPulse *= decay;
   }
   
-  float arrayAvg(float[] arr) {
-    float sum = 0;
-    for (float v : arr) sum += v;
-    return sum / arr.length;
-  }
+  float getEnergyVariance() { return energyVariance; }
+  float getEnergyMean() { return energyMean; }
 
   float getBassPulse() { return bassPulse; }
   float getMidPulse() { return midPulse; }
@@ -704,14 +931,21 @@ class AutoBPM {
   float bpm = 0;  // Start at 0 (unknown)
   float confidence = 0;
   long lastBeatTime = 0;
-  int minIntervalMs = 250;  // Max 240 BPM
-  int maxIntervalMs = 1500; // Min 40 BPM
+  int minIntervalMs = 250;   // Max 240 BPM
+  int maxIntervalMs = 2000;  // Min 30 BPM (extended range)
 
   void recordBeat() {
     long now = millis();
     
     // Debounce: ignore beats too close together
     if (now - lastBeatTime < minIntervalMs) {
+      return;
+    }
+    
+    // Also filter out obviously bogus intervals (too long)
+    if (lastBeatTime > 0 && now - lastBeatTime > maxIntervalMs) {
+      // Gap too large - don't use for BPM but update lastBeatTime
+      lastBeatTime = now;
       return;
     }
     lastBeatTime = now;
@@ -723,8 +957,8 @@ class AutoBPM {
       beatTimes.remove(0);
     }
     
-    // Limit size
-    if (beatTimes.size() > 16) {
+    // Limit size to 12 for tighter average
+    if (beatTimes.size() > 12) {
       beatTimes.remove(0);
     }
     
@@ -732,12 +966,12 @@ class AutoBPM {
     if (beatTimes.size() >= 4) {
       float avgInterval = medianInterval();
       if (avgInterval >= minIntervalMs && avgInterval <= maxIntervalMs) {
-        float newBpm = 60000.0f / avgInterval;
-        // Smooth BPM changes
+        float newBpm = constrain(60000.0f / avgInterval, 60, 200);
+        // Increased smoothing for stability (0.6 keeps more of old value)
         if (bpm == 0) {
           bpm = newBpm;
         } else {
-          bpm = lerp(bpm, newBpm, 0.3f);
+          bpm = lerp(newBpm, bpm, 0.6f);
         }
         confidence = calcConfidence();
       }
@@ -791,6 +1025,13 @@ class AnalyzerConfig {
   int oscPort = 16666;
   int spectrumBins = 32;
   int frameRate = 90;
+  
+  // Tuning parameters (can be adjusted in HUD and saved)
+  float smoothing = 0.8f;
+  float noiseFloor = 0.0f;
+  float beatSensitivity = 1.4f;
+  float pulseDecay = 0.88f;
+  int sampleRate = 44100;
 }
 
 AnalyzerConfig loadAnalyzerConfig(String fileName) {
@@ -813,6 +1054,22 @@ AnalyzerConfig loadAnalyzerConfig(String fileName) {
     }
     if (json.hasKey("frame_rate")) {
       cfg.frameRate = max(30, json.getInt("frame_rate"));
+    }
+    // Tuning parameters
+    if (json.hasKey("smoothing")) {
+      cfg.smoothing = constrain(json.getFloat("smoothing"), 0, 0.95f);
+    }
+    if (json.hasKey("noise_floor")) {
+      cfg.noiseFloor = max(0, json.getFloat("noise_floor"));
+    }
+    if (json.hasKey("beat_sensitivity")) {
+      cfg.beatSensitivity = constrain(json.getFloat("beat_sensitivity"), 1.0f, 3.0f);
+    }
+    if (json.hasKey("pulse_decay")) {
+      cfg.pulseDecay = constrain(json.getFloat("pulse_decay"), 0.7f, 0.95f);
+    }
+    if (json.hasKey("sample_rate")) {
+      cfg.sampleRate = max(22050, json.getInt("sample_rate"));
     }
   } catch (Exception e) {
     println("Config load error (" + fileName + "): " + e.getMessage());
