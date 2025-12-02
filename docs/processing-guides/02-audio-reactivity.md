@@ -414,6 +414,161 @@ class AutoBPM {
 
 ---
 
+## Optimal Frequency Bands for Visual Control
+
+### Scientific Frequency Ranges
+
+Professional audio engineers and visual artists use these frequency bands based on human hearing and musical instrument ranges:
+
+```mermaid
+graph TD
+    A[Audio Spectrum<br/>20 Hz - 20 kHz] --> B[Sub-Bass<br/>20-60 Hz]
+    A --> C[Bass<br/>60-250 Hz]
+    A --> D[Low-Mid<br/>250-500 Hz]
+    A --> E[Midrange<br/>500-2000 Hz]
+    A --> F[High-Mid<br/>2000-4000 Hz]
+    A --> G[Presence<br/>4000-6000 Hz]
+    A --> H[Air/Brilliance<br/>6000-20000 Hz]
+    
+    B --> B1[Felt more<br/>than heard]
+    C --> C1[Kick drum<br/>Bass guitar]
+    D --> D1[Body/Warmth<br/>Low vocals]
+    E --> E1[Most instruments<br/>Vocal fundamentals]
+    F --> F1[Clarity<br/>Snare attack]
+    G --> G1[Intelligibility<br/>Consonants]
+    H --> H1[Shimmer<br/>Cymbals]
+    
+    style B fill:#8B0000
+    style C fill:#FF4500
+    style D fill:#FFA500
+    style E fill:#FFD700
+    style F fill:#90EE90
+    style G fill:#4169E1
+    style H fill:#9370DB
+```
+
+### Frequency Band Specifications
+
+| Band | Hz Range | Musical Elements | Visual Mapping | FFT Bins* |
+|------|----------|------------------|----------------|-----------|
+| **Sub-Bass** | 20-60 Hz | Felt bass, rumble | Shake, pulse, camera shake | 0-2 |
+| **Bass** | 60-250 Hz | Kick drum, bass guitar, low synths | Size, impact, position shifts | 3-10 |
+| **Low-Mid** | 250-500 Hz | Snare body, low vocals, guitar body | Warmth, color saturation | 11-21 |
+| **Midrange** | 500-2000 Hz | Vocals, guitars, most instruments | Hue shift, shape morphing | 22-85 |
+| **High-Mid** | 2000-4000 Hz | Snare attack, vocal clarity, hi-hat | Detail, brightness, accents | 86-170 |
+| **Presence** | 4000-6000 Hz | Vocal consonants, cymbal attack | Flicker, edge definition | 171-256 |
+| **Air** | 6000-20000 Hz | Shimmer, air, overtones | Sparkle, glow, particles | 257-512 |
+
+*Assuming 44.1kHz sample rate, 512 FFT bins
+
+### Precise FFT Bin Calculation
+
+```java
+class PreciseFrequencyBands {
+  FFT fft;
+  int sampleRate = 44100;  // Standard audio sample rate
+  int fftSize = 512;
+  
+  // Calculate FFT bin from frequency (Hz)
+  int freqToBin(float freqHz) {
+    return (int)(freqHz * fftSize / sampleRate);
+  }
+  
+  // Calculate frequency from FFT bin
+  float binToFreq(int bin) {
+    return (float)bin * sampleRate / fftSize;
+  }
+  
+  // Get energy in specific frequency range (Hz)
+  float getEnergyInRange(float minHz, float maxHz) {
+    int startBin = freqToBin(minHz);
+    int endBin = freqToBin(maxHz);
+    
+    float energy = 0;
+    int count = 0;
+    
+    for (int i = startBin; i <= min(endBin, fft.spectrum.length - 1); i++) {
+      energy += fft.spectrum[i];
+      count++;
+    }
+    
+    return count > 0 ? energy / count : 0;
+  }
+  
+  // Precise frequency bands (based on professional audio standards)
+  float getSubBass()   { return getEnergyInRange(20, 60); }    // Felt bass
+  float getBass()      { return getEnergyInRange(60, 250); }   // Kick, bass
+  float getLowMid()    { return getEnergyInRange(250, 500); }  // Body, warmth
+  float getMidrange()  { return getEnergyInRange(500, 2000); } // Vocals, instruments
+  float getHighMid()   { return getEnergyInRange(2000, 4000); }// Clarity, attack
+  float getPresence()  { return getEnergyInRange(4000, 6000); }// Intelligibility
+  float getAir()       { return getEnergyInRange(6000, 20000); }// Shimmer, sparkle
+  
+  // Musical element detection
+  float getKickDrum()   { return getEnergyInRange(40, 100); }   // Kick fundamental
+  float getSnareDrum()  { return getEnergyInRange(150, 250) +   // Snare body
+                                 getEnergyInRange(1000, 4000); } // Snare attack
+  float getHiHat()      { return getEnergyInRange(6000, 12000); }// Hi-hat
+  float getVocals()     { return getEnergyInRange(250, 4000); }  // Vocal range
+  float getCymbals()    { return getEnergyInRange(4000, 16000); }// Cymbal shimmer
+}
+```
+
+### Logarithmic Band Distribution
+
+Human hearing is **logarithmic**, so logarithmic band spacing feels more natural:
+
+```java
+class LogarithmicBands {
+  FFT fft;
+  int numBands = 8;
+  float minFreq = 20;
+  float maxFreq = 20000;
+  
+  float[] getBands() {
+    float[] bands = new float[numBands];
+    
+    for (int i = 0; i < numBands; i++) {
+      // Logarithmic frequency spacing
+      float lowFreq = minFreq * pow(maxFreq / minFreq, (float)i / numBands);
+      float highFreq = minFreq * pow(maxFreq / minFreq, (float)(i + 1) / numBands);
+      
+      bands[i] = getEnergyInRange(lowFreq, highFreq);
+    }
+    
+    return bands;
+  }
+  
+  float getEnergyInRange(float minHz, float maxHz) {
+    int startBin = freqToBin(minHz);
+    int endBin = freqToBin(maxHz);
+    
+    float energy = 0;
+    int count = 0;
+    
+    for (int i = startBin; i <= min(endBin, fft.spectrum.length - 1); i++) {
+      energy += fft.spectrum[i];
+      count++;
+    }
+    
+    return count > 0 ? energy / count : 0;
+  }
+  
+  int freqToBin(float freqHz) {
+    return (int)(freqHz * fft.spectrum.length / 44100.0f);
+  }
+}
+
+// Result: Logarithmic bands distribute more naturally
+// Band 0: 20-40 Hz
+// Band 1: 40-80 Hz
+// Band 2: 80-160 Hz
+// ... exponential spacing ...
+// Band 7: 10000-20000 Hz
+```
+
+---
+
 ## Audio-to-Visual Mapping
 
 ### Common Mapping Patterns
@@ -439,6 +594,158 @@ flashIntensity *= 0.95f;  // Decay
 // BPM → Animation Speed
 float animSpeed = bpm / 120.0f;  // Relative to 120 BPM
 rotation += animSpeed * dt * TWO_PI;
+```
+
+### Professional Frequency-to-Visual Mapping Table
+
+Based on research and best practices from audio-visual artists:
+
+| Frequency Band | Visual Parameter | Formula | Reasoning |
+|----------------|------------------|---------|-----------|
+| **Sub-Bass (20-60 Hz)** | Camera shake | `shake = subBass × 5` | Physical "felt" frequencies create impact |
+| **Bass (60-250 Hz)** | Size/Scale | `size = base × (1 + bass × 0.5)` | Low energy = powerful, visible motion |
+| **Bass (60-250 Hz)** | Position offset | `offset = bass × 50` | Kick drums push/pull visuals |
+| **Low-Mid (250-500 Hz)** | Saturation | `sat = 60 + lowMid × 40` | Body and warmth affect color richness |
+| **Midrange (500-2000 Hz)** | Hue shift | `hue += mid × dt × 60` | Musical content drives color cycling |
+| **Midrange (500-2000 Hz)** | Shape morph | `morph = sin(mid × TWO_PI)` | Vocals/instruments = organic deformation |
+| **High-Mid (2000-4000 Hz)** | Brightness | `bright = 70 + highMid × 30` | Attack and clarity = visibility |
+| **High-Mid (2000-4000 Hz)** | Detail level | `detail = (int)(highMid × 5)` | More detail when prominent |
+| **Presence (4000-6000 Hz)** | Edge glow | `glow = presence × 100` | Consonants and attack = definition |
+| **Air (6000-20000 Hz)** | Particle spawn | `count = (int)(air × 50)` | Shimmer = sparkle effects |
+| **Air (6000-20000 Hz)** | Opacity | `alpha = air × 255` | High freq = subtle transparency |
+
+### Complete Visual Mapping Module
+
+```java
+class AudioVisualMapper {
+  PreciseFrequencyBands freqBands;
+  
+  // Visual state (updated per frame)
+  float visualSize;
+  float visualHue;
+  float visualSaturation;
+  float visualBrightness;
+  float cameraShake;
+  float particleSpawnRate;
+  int detailLevel;
+  
+  // Accumul ators
+  float hueAccumulator = 0;
+  
+  AudioVisualMapper(PreciseFrequencyBands bands) {
+    this.freqBands = bands;
+  }
+  
+  void update(float dt) {
+    // Get frequency bands
+    float subBass = freqBands.getSubBass();
+    float bass = freqBands.getBass();
+    float lowMid = freqBands.getLowMid();
+    float mid = freqBands.getMidrange();
+    float highMid = freqBands.getHighMid();
+    float presence = freqBands.getPresence();
+    float air = freqBands.getAir();
+    
+    // Map to visual parameters
+    
+    // Sub-bass → Camera shake (felt impact)
+    cameraShake = subBass * 5.0f;
+    
+    // Bass → Size (powerful, visible)
+    visualSize = 100 * (1.0f + bass * 0.5f);
+    
+    // Low-mid → Saturation (warmth, body)
+    visualSaturation = 60 + lowMid * 40;
+    
+    // Midrange → Hue (musical content)
+    hueAccumulator += mid * dt * 60;  // Degrees per second
+    visualHue = hueAccumulator % 360;
+    
+    // High-mid → Brightness (clarity, attack)
+    visualBrightness = 70 + highMid * 30;
+    
+    // Presence → Detail level
+    detailLevel = (int)(presence * 5);
+    
+    // Air → Particle spawn rate (sparkle)
+    particleSpawnRate = air * 50;
+  }
+  
+  // Public API for visuals
+  float getSize() { return visualSize; }
+  float getHue() { return visualHue; }
+  float getSaturation() { return visualSaturation; }
+  float getBrightness() { return visualBrightness; }
+  float getCameraShake() { return cameraShake; }
+  float getParticleSpawnRate() { return particleSpawnRate; }
+  int getDetailLevel() { return detailLevel; }
+  
+  // Musical element-specific mappings
+  float getKickImpact() {
+    return freqBands.getKickDrum() * 2.0f;  // Amplify kick
+  }
+  
+  float getSnareFlash() {
+    return freqBands.getSnareDrum() * 1.5f;
+  }
+  
+  float getHiHatShimmer() {
+    return freqBands.getHiHat();
+  }
+}
+
+// Usage
+AudioVisualMapper mapper = new AudioVisualMapper(freqBands);
+
+void draw() {
+  mapper.update(1.0f / frameRate);
+  
+  // Apply visual parameters
+  colorMode(HSB, 360, 100, 100);
+  fill(mapper.getHue(), mapper.getSaturation(), mapper.getBrightness());
+  
+  float size = mapper.getSize();
+  ellipse(width/2, height/2, size, size);
+  
+  // Camera shake from sub-bass
+  float shake = mapper.getCameraShake();
+  translate(random(-shake, shake), random(-shake, shake));
+  
+  // Spawn particles based on air frequencies
+  if (random(1) < mapper.getParticleSpawnRate() / 60.0f) {
+    spawnParticle();
+  }
+}
+```
+
+### Color Mapping Formulas
+
+```java
+// Frequency to color (rainbow spectrum)
+color frequencyToColor(float freqHz) {
+  colorMode(HSB, 360, 100, 100);
+  
+  // Map frequency to hue logarithmically
+  float hue = map(log(freqHz), log(20), log(20000), 0, 360);
+  
+  return color(hue, 80, 90);
+}
+
+// Band to intuitive color
+color bandToColor(int bandIndex) {
+  color[] palette = {
+    color(0, 80, 60),      // Band 0 (Sub-bass): Dark red
+    color(15, 90, 70),     // Band 1 (Bass): Orange-red
+    color(45, 95, 85),     // Band 2 (Low-mid): Orange
+    color(60, 100, 95),    // Band 3 (Mid): Yellow
+    color(120, 85, 90),    // Band 4 (High-mid): Green
+    color(200, 90, 85),    // Band 5 (Presence): Blue
+    color(260, 85, 80),    // Band 6 (Air): Purple
+    color(300, 70, 75)     // Band 7 (Ultra-high): Magenta
+  };
+  
+  return palette[bandIndex % palette.length];
+}
 ```
 
 ### Threshold-Based Triggering

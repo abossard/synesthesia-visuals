@@ -8,9 +8,11 @@ Comprehensive guide series for creating **interactive, living, efficient simulat
 |-------|-------|-------|
 | **[00-overview.md](00-overview.md)** | Overview & Setup | Start here - system architecture, quick start template |
 | **[01-core-concepts.md](01-core-concepts.md)** | Core Architecture | Module lifecycle, coordinate systems, frame budgets |
-| **[02-audio-reactivity.md](02-audio-reactivity.md)** | Audio Analysis | FFT, beat detection, BPM calculation, audio mapping |
+| **[02-audio-reactivity.md](02-audio-reactivity.md)** | Audio Analysis | FFT, beat detection, BPM, optimal frequency mapping (20Hz-20kHz) |
+| **[05-design-philosophy.md](05-design-philosophy.md)** | Design Principles | Grokking Simplicity, deep modules, pure functions |
 | **[03-particle-systems.md](03-particle-systems.md)** | Particle Systems | CPU and GPU particles, forces, PixelFlow integration |
 | **[04-fluid-simulations.md](04-fluid-simulations.md)** | Fluid Dynamics | Reaction-diffusion, flow fields, smoke/fire effects |
+| **[06-interactivity.md](06-interactivity.md)** | Interactivity | MIDI/Launchpad, OSC network sync, Syphon output |
 | **[08-code-patterns.md](08-code-patterns.md)** | Code Reference | Copy-paste ready modules, formulas, design patterns |
 | **[09-resources.md](09-resources.md)** | Resources | Libraries, tools, examples, learning materials |
 
@@ -72,14 +74,19 @@ brew install blackhole-2ch
 ### For Beginners
 1. [00-overview.md](00-overview.md) - Understand the system
 2. [01-core-concepts.md](01-core-concepts.md) - Learn architecture
-3. [03-particle-systems.md](03-particle-systems.md) - Build first visuals
-4. [02-audio-reactivity.md](02-audio-reactivity.md) - Add audio response
-5. [08-code-patterns.md](08-code-patterns.md) - Expand with reusable modules
+3. [05-design-philosophy.md](05-design-philosophy.md) - Understand design principles
+4. [02-audio-reactivity.md](02-audio-reactivity.md) - Add audio response with optimal frequency mapping
+5. [03-particle-systems.md](03-particle-systems.md) - Build first visuals
+6. [06-interactivity.md](06-interactivity.md) - Add MIDI/OSC control
+7. [08-code-patterns.md](08-code-patterns.md) - Expand with reusable modules
 
 ### For Experienced Developers
 Jump directly to:
+- [02-audio-reactivity.md](02-audio-reactivity.md) - Detailed frequency analysis (20Hz-20kHz mapping)
 - [03-particle-systems.md](03-particle-systems.md) - GPU acceleration with PixelFlow
 - [04-fluid-simulations.md](04-fluid-simulations.md) - Reaction-diffusion and fluids
+- [05-design-philosophy.md](05-design-philosophy.md) - Advanced architecture patterns
+- [06-interactivity.md](06-interactivity.md) - OSC network synchronization
 - [08-code-patterns.md](08-code-patterns.md) - Production-ready code modules
 
 ### For AI Agents

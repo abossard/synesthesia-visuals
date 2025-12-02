@@ -17,30 +17,27 @@ This guide is split into focused modules, each addressing a specific domain:
 
 ### Core Foundations
 1. **[01-core-concepts.md](01-core-concepts.md)** - Architecture, project setup, lifecycle management
-2. **[02-audio-reactivity.md](02-audio-reactivity.md)** - FFT analysis, beat detection, frequency mapping
+2. **[02-audio-reactivity.md](02-audio-reactivity.md)** - FFT analysis, beat detection, frequency mapping, optimal Hz ranges
+3. **[05-design-philosophy.md](05-design-philosophy.md)** - Grokking Simplicity, deep modules, pure functions
 
 ### Visual Systems
-3. **[03-particle-systems.md](03-particle-systems.md)** - From basic particles to GPU-accelerated swarms
-4. **[04-fluid-simulations.md](04-fluid-simulations.md)** - Reaction-diffusion, flow fields, PixelFlow integration
-5. **[05-3d-rendering.md](05-3d-rendering.md)** - P3D optimization, camera systems, lighting
-
-### Integration & Performance
-6. **[06-interactivity.md](06-interactivity.md)** - MIDI/Launchpad, OSC, Syphon output
-7. **[07-performance-optimization.md](07-performance-optimization.md)** - Profiling, GPU acceleration, LOD strategies
+4. **[03-particle-systems.md](03-particle-systems.md)** - From basic particles to GPU-accelerated swarms
+5. **[04-fluid-simulations.md](04-fluid-simulations.md)** - Reaction-diffusion, flow fields, PixelFlow integration
+6. **[06-interactivity.md](06-interactivity.md)** - MIDI/Launchpad, OSC synchronization, Syphon output
 
 ### Reference
-8. **[08-code-patterns.md](08-code-patterns.md)** - Common algorithms, formulas, reusable modules
-9. **[09-resources.md](09-resources.md)** - Libraries, tools, external resources, examples
+7. **[08-code-patterns.md](08-code-patterns.md)** - Common algorithms, formulas, reusable modules
+8. **[09-resources.md](09-resources.md)** - Libraries, tools, external resources, examples
 
 ## Reading Order
 
 ### For Beginners
-Start with: `01 → 02 → 06 → 03 → 05`
+Start with: `01 → 05 → 02 → 06 → 03`
 
-This path covers fundamentals, audio basics, hardware integration, and simple visuals before advanced topics.
+This path covers fundamentals, design philosophy, audio basics, hardware integration, and simple visuals before advanced topics.
 
 ### For Experienced Developers
-Jump directly to domain-specific guides (03-05) or optimization (07).
+Jump directly to domain-specific guides (02-04, 06) or design patterns (05, 08).
 
 ### For AI Agents
 Each guide is structured with:
