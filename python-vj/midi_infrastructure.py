@@ -74,6 +74,49 @@ def list_available_ports() -> Tuple[List[str], List[str]]:
         return ([], [])
 
 
+def list_controllers() -> List[str]:
+    """
+    List available MIDI controllers (devices with both input and output).
+    
+    Returns:
+        List of controller names that have both input and output ports
+    """
+    input_ports, output_ports = list_available_ports()
+    
+    # Find devices that have both input and output
+    controllers = []
+    input_set = set(input_ports)
+    output_set = set(output_ports)
+    
+    # Common controller names appear in both lists
+    for port in input_set:
+        if port in output_set:
+            controllers.append(port)
+    
+    return sorted(controllers)
+
+
+def list_virtual_ports() -> List[str]:
+    """
+    List available virtual MIDI ports (for output to software like Magic).
+    
+    Returns:
+        List of virtual port names (output ports only)
+    """
+    _, output_ports = list_available_ports()
+    
+    # Filter for virtual/software ports (typically contain IAC, Bus, etc.)
+    virtual_keywords = ['iac', 'bus', 'virtual', 'magic', 'loopback']
+    virtual_ports = []
+    
+    for port in output_ports:
+        port_lower = port.lower()
+        if any(keyword in port_lower for keyword in virtual_keywords):
+            virtual_ports.append(port)
+    
+    return sorted(virtual_ports)
+
+
 # =============================================================================
 # MIDI PORT WRAPPERS
 # =============================================================================

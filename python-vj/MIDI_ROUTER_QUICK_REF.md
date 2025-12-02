@@ -27,12 +27,19 @@ python vj_console.py
 
 ### 3. Press `5` for MIDI Screen
 
-### 4. Learn a Toggle
+### 4. Select Your Controller (if needed)
+1. Press `c` on MIDI screen
+2. Modal shows all connected MIDI controllers
+3. Use ↑↓ to navigate, Enter to select
+4. Router restarts with new controller
+5. Selection persists in config
+
+### 5. Learn a Toggle
 1. Press `l` (learn mode activates - yellow status)
 2. Press any pad on your Launchpad
-3. Toggle captured! Press same pad → LED lights up
+2. Press same pad → LED lights up
 
-### 5. Use in Magic
+### 6. Use in Magic
 - Create Global parameter
 - MIDI Learn → press the pad
 - Add Range modifier (0-127 → 0.0-1.0)
@@ -47,11 +54,16 @@ Left Side:                    Right Side:
 │ Launchpad → MagicBus  │   │ ▸ 41: LyricsOn   ○ OFF │
 └───────────────────────┘   └────────────────────────┘
 ┌─ Actions ─────────────┐   ┌─ MIDI Traffic ─────────┐
-│ l   Learn mode        │   │ 14:23:45 → Note #42=127│
-│ k/j Navigate          │   │ 14:23:44 ← Note #42=100│
-│ d   Delete toggle     │   │ 14:23:40 → Note #41=0  │
-│ space Test toggle     │   │ (real-time MIDI log)   │
-└───────────────────────┘   └────────────────────────┘
+│ c   Select controller │   │ 14:23:45 → Note #42=127│
+│ l   Learn mode        │   │ 14:23:44 ← Note #42=100│
+│ k/j Navigate          │   │ 14:23:40 → Note #41=0  │
+│ d   Delete toggle     │   │ (real-time MIDI log)   │
+│ space Test toggle     │   └────────────────────────┘
+└───────────────────────┘   ┌─ Configuration ────────┐
+                            │ Controller: Launchpad  │
+                            │ Virtual Port: MagicBus │
+                            │ Toggles: 2             │
+                            └────────────────────────┘
 ```
 
 ## Keyboard Controls (MIDI Screen)
@@ -59,6 +71,7 @@ Left Side:                    Right Side:
 | Key | Action |
 |-----|--------|
 | `5` | Go to MIDI screen |
+| `c` | **Select MIDI controller** (new!) |
 | `l` | Learn mode (capture next pad) |
 | `k` / `↑` | Navigate up |
 | `j` / `↓` | Navigate down |
@@ -72,10 +85,21 @@ Left Side:                    Right Side:
 
 ## Troubleshooting
 
+**Multiple controllers connected?**
+- Press `c` on MIDI screen to see all available controllers
+- Select the one you want to use
+- Router will remember your choice
+
 **No MIDI devices found?**
 - Check USB connection
 - Check IAC Driver is enabled
 - Run `python midi_router_cli.py list` to see devices
+- Press `c` to refresh controller list
+
+**Wrong controller selected?**
+- Press `c` to open controller selection
+- Choose the correct controller from the list
+- Config auto-saves with your selection
 
 **LEDs don't light?**
 - Put Launchpad in Programmer mode (Session + orange button)

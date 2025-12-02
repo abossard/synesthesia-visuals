@@ -6,9 +6,13 @@ Reactive UI panels for MIDI router functionality within VJ Console.
 """
 
 from typing import List, Dict, Optional
-from textual.widgets import Static
+from textual.widgets import Static, Button, Label, ListView, ListItem
+from textual.containers import Container, Vertical, Horizontal
 from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.binding import Binding
 from midi_domain import MidiMessage
+from midi_infrastructure import list_controllers
 
 
 # =============================================================================
@@ -158,6 +162,7 @@ class MidiActionsPanel(Static):
         lines.append("\n[bold]═══ Actions ═══[/]\n")
         
         # Key bindings
+        lines.append("[cyan]c[/]     Select MIDI controller")
         lines.append("[cyan]l[/]     Enter learn mode (capture next pad)")
         lines.append("[cyan]r[/]     Rename selected toggle")
         lines.append("[cyan]d[/]     Delete selected toggle")
@@ -230,3 +235,87 @@ class MidiStatusPanel(Static):
                 lines.append(f"\n[red]Error:[/] {self.config_info['error']}")
         
         self.update("\n".join(lines))
+
+
+# =============================================================================
+# CONTROLLER SELECTION MODAL
+# =============================================================================
+
+class ControllerSelectionModal(ModalScreen):
+    """Modal screen for selecting MIDI controller."""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+        Binding("enter", "select", "Select", show=False),
+    ]
+    
+    def __init__(self, controllers: List[str], current_controller: Optional[str] = None):
+        """
+        Initialize controller selection modal.
+        
+        Args:
+            controllers: List of available controller names
+            current_controller: Currently selected controller (if any)
+        """
+        super().__init__()
+        self.controllers = controllers
+        self.current_controller = current_controller
+        self.selected_index = 0
+        
+        # Find current controller index
+        if current_controller and current_controller in controllers:
+            self.selected_index = controllers.index(current_controller)
+    
+    def compose(self) -> ComposeResult:
+        """Create child widgets."""
+        with Vertical(id="controller-modal"):
+            yield Label("[bold cyan]Select MIDI Controller[/]")
+            yield Label("[dim]Use ↑↓ to navigate, Enter to select, Esc to cancel[/]\n")
+            
+            if not self.controllers:
+                yield Label("[red]No MIDI controllers found![/]")
+                yield Label("[dim]Make sure a MIDI controller is connected and drivers are installed.[/]")
+            else:
+                # Create list items
+                list_view = ListView()
+                for i, controller in enumerate(self.controllers):
+                    selected = (i == self.selected_index)
+                    prefix = "▸ " if selected else "  "
+                    label_str = f"{prefix}{controller}"
+                    
+                    if selected:
+                        item = ListItem(Label(f"[black on cyan]{label_str}[/]"))
+                    else:
+                        item = ListItem(Label(label_str))
+                    
+                    list_view.append(item)
+                
+                yield list_view
+            
+            with Horizontal(id="modal-buttons"):
+                yield Button("Select", variant="primary", id="select-btn")
+                yield Button("Cancel", variant="default", id="cancel-btn")
+    
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "select-btn":
+            self.action_select()
+        elif event.button.id == "cancel-btn":
+            self.action_dismiss()
+    
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        """Handle list navigation."""
+        if event.item:
+            self.selected_index = event.list_view.index
+    
+    def action_select(self) -> None:
+        """Select current controller and dismiss."""
+        if self.controllers and 0 <= self.selected_index < len(self.controllers):
+            selected = self.controllers[self.selected_index]
+            self.dismiss(selected)
+        else:
+            self.dismiss(None)
+    
+    def action_dismiss(self) -> None:
+        """Cancel and dismiss."""
+        self.dismiss(None)

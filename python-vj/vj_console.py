@@ -29,9 +29,10 @@ from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
-from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, MidiStatusPanel
+from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, MidiStatusPanel, ControllerSelectionModal
 from midi_router import MidiRouter, ConfigManager
 from midi_domain import RouterConfig, DeviceConfig
+from midi_infrastructure import list_controllers
 
 logger = logging.getLogger('vj_console')
 
@@ -380,6 +381,36 @@ class VJConsoleApp(App):
     .full-height { height: 1fr; overflow-y: auto; }
     #left-col { width: 40%; }
     #right-col { width: 60%; }
+    
+    /* Controller selection modal */
+    #controller-modal {
+        width: 80;
+        height: auto;
+        background: $surface;
+        border: thick $primary;
+        padding: 2;
+    }
+    
+    #modal-buttons {
+        align: center middle;
+        height: auto;
+        padding-top: 1;
+    }
+    
+    #modal-buttons Button {
+        margin: 0 1;
+    }
+    
+    ListView {
+        height: auto;
+        max-height: 15;
+        border: solid $accent;
+        padding: 1;
+    }
+    
+    ListItem {
+        height: 1;
+    }
     """
 
     BINDINGS = [
@@ -397,6 +428,7 @@ class VJConsoleApp(App):
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
         Binding("l", "midi_learn", "Learn", show=False),
+        Binding("c", "midi_select_controller", "Controller", show=False),
         Binding("r", "midi_rename", "Rename", show=False),
         Binding("d", "midi_delete", "Delete", show=False),
         Binding("space", "midi_test_toggle", "Toggle", show=False),
@@ -735,9 +767,17 @@ class VJConsoleApp(App):
             status_panel = self.query_one("#midi-status", MidiStatusPanel)
             if self.midi_router.config:
                 config_path = Path.home() / '.midi_router' / 'config.json'
+                
+                # Show actual port name if available, otherwise pattern
+                controller_name = self.midi_router.config.controller.input_port
+                if not controller_name:
+                    controller_name = f"{self.midi_router.config.controller.name_pattern} (pattern)"
+                
+                virtual_name = self.midi_router.config.virtual_output.name_pattern
+                
                 status_panel.config_info = {
-                    'controller': self.midi_router.config.controller.name_pattern,
-                    'virtual_port': self.midi_router.config.virtual_output.name_pattern,
+                    'controller': controller_name,
+                    'virtual_port': virtual_name,
                     'toggle_count': len(self.midi_router.config.toggles),
                     'config_file': str(config_path),
                 }
@@ -882,6 +922,94 @@ class VJConsoleApp(App):
             # Adjust selection if needed
             if self.midi_selected_toggle >= len(toggles) - 1:
                 self.midi_selected_toggle = max(0, len(toggles) - 2)
+    
+    async def action_midi_select_controller(self) -> None:
+        """Show controller selection dialog."""
+        if not self.midi_router:
+            logger.warning("MIDI router not available")
+            return
+        
+        # Get list of available controllers
+        controllers = list_controllers()
+        
+        # Get current controller from config
+        current_controller = None
+        if self.midi_router.config:
+            # Try to get the actual port name being used
+            current_controller = self.midi_router.config.controller.input_port
+            if not current_controller:
+                # Fall back to pattern
+                from midi_infrastructure import find_port_by_pattern, list_available_ports
+                input_ports, _ = list_available_ports()
+                current_controller = find_port_by_pattern(
+                    input_ports, 
+                    self.midi_router.config.controller.name_pattern
+                )
+        
+        # Show modal
+        result = await self.push_screen(ControllerSelectionModal(controllers, current_controller), wait_for_dismiss=True)
+        
+        if result:
+            # Update config with selected controller
+            logger.info(f"Selected controller: {result}")
+            self._update_midi_controller(result)
+    
+    def _update_midi_controller(self, controller_name: str) -> None:
+        """
+        Update MIDI router to use selected controller.
+        
+        Args:
+            controller_name: Full name of the controller port
+        """
+        if not self.midi_router:
+            return
+        
+        try:
+            # Stop current router
+            if self.midi_router.is_running:
+                self.midi_router.stop()
+            
+            # Update config with explicit port name
+            old_config = self.midi_router.config
+            if not old_config:
+                # Create new config
+                config = RouterConfig(
+                    controller=DeviceConfig(
+                        name_pattern="",  # Will use explicit port
+                        input_port=controller_name,
+                        output_port=controller_name
+                    ),
+                    virtual_output=DeviceConfig(name_pattern="MagicBus"),
+                    toggles={}
+                )
+            else:
+                # Update existing config
+                config = RouterConfig(
+                    controller=DeviceConfig(
+                        name_pattern="",  # Clear pattern, use explicit port
+                        input_port=controller_name,
+                        output_port=controller_name
+                    ),
+                    virtual_output=old_config.virtual_output,
+                    toggles=old_config.toggles
+                )
+            
+            # Save config
+            config_path = Path.home() / '.midi_router' / 'config.json'
+            config_manager = ConfigManager(config_path)
+            config_manager.save(config)
+            
+            # Restart router with new config
+            if self.midi_router.start(config):
+                logger.info(f"MIDI router restarted with controller: {controller_name}")
+                self._log(f"MIDI: Switched to controller: {controller_name}")
+            else:
+                logger.error(f"Failed to start MIDI router with controller: {controller_name}")
+                self._log(f"MIDI: Failed to switch controller")
+        
+        except Exception as e:
+            logger.error(f"Error updating MIDI controller: {e}")
+            self._log(f"MIDI: Error switching controller: {e}")
     
     def _midi_test_toggle(self) -> None:
         """Test toggle selected MIDI toggle (for testing without hardware)."""
