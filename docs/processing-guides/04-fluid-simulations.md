@@ -31,9 +31,10 @@ class FlowField {
   }
   
   void generate() {
+    float angleScale = TWO_PI * 2;  // Scale factor for angle variation
     for (int x = 0; x < cols; x++) {
       for (int y = 0; y < rows; y++) {
-        float angle = noise(x * noiseScale, y * noiseScale, zOffset) * TWO_PI * 2;
+        float angle = noise(x * noiseScale, y * noiseScale, zOffset) * angleScale;
         field[x][y] = PVector.fromAngle(angle);
       }
     }

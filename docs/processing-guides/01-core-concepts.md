@@ -101,7 +101,8 @@ PVector calculateGravity(PVector pos, PVector attractorPos, float mass) {
   PVector dir = PVector.sub(attractorPos, pos);
   float dist = dir.mag();
   dir.normalize();
-  float force = mass / (dist * dist + 1.0f);  // Softening
+  float softeningConstant = 1.0f;  // Prevents division by zero and extreme forces at close range
+  float force = mass / (dist * dist + softeningConstant);
   return dir.mult(force);
 }
 

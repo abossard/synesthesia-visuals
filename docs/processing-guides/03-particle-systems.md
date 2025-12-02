@@ -593,6 +593,7 @@ void reset(float x, float y) {
 class SpatialHash {
   HashMap<Integer, ArrayList<Particle>> grid;
   float cellSize;
+  static final int GRID_WIDTH = 10000;  // Max grid cells in X direction
   
   SpatialHash(float cellSize) {
     this.cellSize = cellSize;
@@ -602,7 +603,7 @@ class SpatialHash {
   int hash(float x, float y) {
     int ix = (int)(x / cellSize);
     int iy = (int)(y / cellSize);
-    return ix + iy * 10000;  // Assuming grid < 10000 wide
+    return ix + iy * GRID_WIDTH;  // Column-major hash
   }
   
   void clear() {

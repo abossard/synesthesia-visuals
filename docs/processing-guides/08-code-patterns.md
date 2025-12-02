@@ -525,6 +525,7 @@ if (p.isDead()) {
 class SpatialHash<T> {
   HashMap<Integer, ArrayList<T>> grid = new HashMap<>();
   float cellSize;
+  static final int GRID_WIDTH = 10000;  // Max grid cells in X direction
   
   SpatialHash(float cellSize) {
     this.cellSize = cellSize;
@@ -533,7 +534,7 @@ class SpatialHash<T> {
   int hash(float x, float y) {
     int ix = (int)(x / cellSize);
     int iy = (int)(y / cellSize);
-    return ix + iy * 10000;
+    return ix + iy * GRID_WIDTH;  // Column-major hash
   }
   
   void clear() {
