@@ -837,3 +837,312 @@ class AudioAnalyzerWatchdog:
                 self.restart_analyzer()
             else:
                 logger.error(f"Max restart attempts ({self.max_restart_attempts}) reached")
+
+
+# =============================================================================
+# LATENCY BENCHMARK - Performance testing
+# =============================================================================
+
+@dataclass
+class LatencyBenchmark:
+    """Results from latency benchmark test."""
+    total_frames: int = 0
+    duration_sec: float = 0.0
+    avg_fps: float = 0.0
+    
+    # Per-component timings (microseconds)
+    fft_time_us: float = 0.0
+    band_extraction_time_us: float = 0.0
+    aubio_time_us: float = 0.0
+    osc_send_time_us: float = 0.0
+    total_processing_time_us: float = 0.0
+    
+    # Latency metrics
+    min_latency_ms: float = 0.0
+    max_latency_ms: float = 0.0
+    avg_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+    p99_latency_ms: float = 0.0
+    
+    # Queue metrics
+    queue_drops: int = 0
+    max_queue_size: int = 0
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for display."""
+        return asdict(self)
+
+
+class LatencyTester:
+    """
+    Benchmarks audio analyzer performance and measures latencies.
+    
+    Measures:
+    - Processing FPS (frames/second)
+    - Per-component timing (FFT, band extraction, aubio, OSC)
+    - End-to-end latency (audio callback -> OSC send)
+    - Queue performance (drops, max size)
+    """
+    
+    def __init__(self, analyzer: AudioAnalyzer):
+        self.analyzer = analyzer
+        self.running = False
+        
+        # Timing data
+        self.frame_latencies: List[float] = []
+        self.fft_times: List[float] = []
+        self.band_times: List[float] = []
+        self.aubio_times: List[float] = []
+        self.osc_times: List[float] = []
+        
+        # Queue metrics
+        self.queue_drops = 0
+        self.queue_sizes: List[int] = []
+        
+        # Test parameters
+        self.test_duration = 10.0  # seconds
+        self.start_time = 0.0
+    
+    def _measure_component(self, func: Callable, *args) -> Tuple[Any, float]:
+        """
+        Measure execution time of a component.
+        
+        Returns:
+            (result, time_microseconds)
+        """
+        start = time.perf_counter()
+        result = func(*args)
+        elapsed = (time.perf_counter() - start) * 1_000_000  # Convert to microseconds
+        return result, elapsed
+    
+    def run_benchmark(self, duration_sec: float = 10.0) -> LatencyBenchmark:
+        """
+        Run latency benchmark for specified duration.
+        
+        Args:
+            duration_sec: How long to run the test
+            
+        Returns:
+            LatencyBenchmark with results
+        """
+        if not self.analyzer.running:
+            logger.error("Analyzer must be running to benchmark")
+            return LatencyBenchmark()
+        
+        logger.info(f"Starting {duration_sec}s latency benchmark...")
+        
+        # Reset measurements
+        self.frame_latencies.clear()
+        self.fft_times.clear()
+        self.band_times.clear()
+        self.aubio_times.clear()
+        self.osc_times.clear()
+        self.queue_drops = 0
+        self.queue_sizes.clear()
+        
+        self.test_duration = duration_sec
+        self.start_time = time.monotonic()
+        self.running = True
+        
+        # Replace analyzer's _process_frame with instrumented version
+        original_process_frame = self.analyzer._process_frame
+        
+        def instrumented_process_frame(block: np.ndarray):
+            """Instrumented version that measures timings."""
+            frame_start = time.perf_counter()
+            
+            # Convert to mono (timing tracked separately)
+            mono = block.mean(axis=1).astype(np.float32)
+            if len(mono) < self.analyzer.config.fft_size:
+                padded = np.zeros(self.analyzer.config.fft_size, dtype=np.float32)
+                padded[:len(mono)] = mono
+                mono = padded
+            
+            # Measure FFT
+            fft_start = time.perf_counter()
+            windowed = mono * self.analyzer.hann_window
+            spectrum = np.fft.rfft(windowed)
+            magnitude = np.abs(spectrum)
+            fft_time = (time.perf_counter() - fft_start) * 1_000_000
+            self.fft_times.append(fft_time)
+            
+            # Measure band extraction
+            band_start = time.perf_counter()
+            raw_bands = [
+                extract_band_energy(magnitude, self.analyzer.freqs, fmin, fmax)
+                for fmin, fmax in self.analyzer.config.bands
+            ]
+            for i, raw_val in enumerate(raw_bands):
+                self.analyzer.smoothed_bands[i] = smooth_value(
+                    self.analyzer.smoothed_bands[i],
+                    compress_value(raw_val, self.analyzer.config.compression_k),
+                    self.analyzer.config.smoothing_factor
+                )
+            band_time = (time.perf_counter() - band_start) * 1_000_000
+            self.band_times.append(band_time)
+            
+            # Continue with original processing (RMS, centroid, etc.)
+            rms = calculate_rms(mono)
+            self.analyzer.smoothed_rms = smooth_value(
+                self.analyzer.smoothed_rms,
+                compress_value(rms * 10, self.analyzer.config.compression_k),
+                self.analyzer.config.smoothing_factor
+            )
+            
+            centroid = calculate_spectral_centroid(magnitude, self.analyzer.freqs)
+            centroid_norm = centroid / (self.analyzer.config.sample_rate / 2.0)
+            
+            flux = calculate_spectral_flux(magnitude, self.analyzer.prev_magnitude)
+            self.analyzer.prev_magnitude = magnitude.copy()
+            
+            total_energy = sum(raw_bands)
+            self.analyzer.energy_history.append(total_energy)
+            
+            # Measure Aubio (if available)
+            aubio_time = 0.0
+            is_onset = False
+            bpm = 0.0
+            tempo_conf = 0.0
+            pitch_hz = 0.0
+            pitch_conf = 0.0
+            
+            if self.analyzer.onset and self.analyzer.tempo and self.analyzer.pitch:
+                aubio_start = time.perf_counter()
+                try:
+                    is_onset = bool(self.analyzer.onset(mono))
+                    
+                    if is_onset:
+                        current_time = time.monotonic()
+                        if self.analyzer.last_beat_time > 0:
+                            interval = current_time - self.analyzer.last_beat_time
+                            self.analyzer.beat_times.append(interval)
+                        self.analyzer.last_beat_time = current_time
+                    
+                    tempo_result = self.analyzer.tempo(mono)
+                    if tempo_result:
+                        tempo_conf = float(tempo_result)
+                    bpm = float(self.analyzer.tempo.get_bpm())
+                    
+                    pitch_hz = float(self.analyzer.pitch(mono)[0])
+                    pitch_conf = float(self.analyzer.pitch.get_confidence())
+                    
+                    if pitch_conf < 0.6:
+                        pitch_hz = 0.0
+                        
+                    aubio_time = (time.perf_counter() - aubio_start) * 1_000_000
+                except Exception:
+                    pass
+                
+                self.aubio_times.append(aubio_time)
+            
+            # BPM estimation
+            custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
+                list(self.analyzer.beat_times),
+                self.analyzer.config.bpm_min,
+                self.analyzer.config.bpm_max
+            )
+            if custom_bpm > 0:
+                bpm = custom_bpm
+            
+            # Build-up/drop detection
+            window_frames = len(self.analyzer.energy_history)
+            is_buildup, is_drop, energy_trend = detect_buildup_drop(
+                self.analyzer.energy_history,
+                window_frames,
+                self.analyzer.config.buildup_threshold,
+                self.analyzer.config.drop_threshold
+            )
+            
+            spectrum_down = downsample_spectrum(magnitude, self.analyzer.config.spectrum_bins)
+            
+            # Store latest features
+            beat_int = 1 if is_onset else 0
+            self.analyzer.latest_features = {
+                'beat': beat_int,
+                'bpm': float(bpm),
+                'bpm_confidence': float(bpm_confidence),
+                'buildup': is_buildup,
+                'drop': is_drop,
+                'pitch_hz': float(pitch_hz),
+                'pitch_conf': float(pitch_conf),
+            }
+            
+            # Measure OSC send time
+            osc_time = 0.0
+            if self.analyzer.osc_callback:
+                osc_start = time.perf_counter()
+                try:
+                    self.analyzer.osc_callback('/audio/levels', self.analyzer.smoothed_bands + [self.analyzer.smoothed_rms])
+                    self.analyzer.osc_callback('/audio/spectrum', spectrum_down.tolist())
+                    self.analyzer.osc_callback('/audio/beat', [beat_int, float(flux)])
+                    self.analyzer.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
+                    self.analyzer.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
+                    
+                    buildup_int = 1 if is_buildup else 0
+                    drop_int = 1 if is_drop else 0
+                    self.analyzer.osc_callback('/audio/structure', [
+                        buildup_int, drop_int, float(energy_trend), float(centroid_norm)
+                    ])
+                    
+                    osc_time = (time.perf_counter() - osc_start) * 1_000_000
+                except Exception:
+                    pass
+                
+                self.osc_times.append(osc_time)
+            
+            # Total frame latency
+            frame_latency = (time.perf_counter() - frame_start) * 1000  # milliseconds
+            self.frame_latencies.append(frame_latency)
+            
+            # Track queue size
+            self.queue_sizes.append(self.analyzer.audio_queue.qsize())
+            
+            self.analyzer.frames_processed += 1
+        
+        # Monkey-patch the method
+        self.analyzer._process_frame = instrumented_process_frame
+        
+        # Wait for test duration
+        time.sleep(duration_sec)
+        
+        # Restore original method
+        self.analyzer._process_frame = original_process_frame
+        self.running = False
+        
+        # Calculate results
+        actual_duration = time.monotonic() - self.start_time
+        total_frames = len(self.frame_latencies)
+        
+        if total_frames == 0:
+            logger.warning("No frames processed during benchmark")
+            return LatencyBenchmark()
+        
+        # Calculate statistics
+        latencies_sorted = sorted(self.frame_latencies)
+        p95_idx = int(len(latencies_sorted) * 0.95)
+        p99_idx = int(len(latencies_sorted) * 0.99)
+        
+        results = LatencyBenchmark(
+            total_frames=total_frames,
+            duration_sec=actual_duration,
+            avg_fps=total_frames / actual_duration if actual_duration > 0 else 0,
+            
+            fft_time_us=np.mean(self.fft_times) if self.fft_times else 0,
+            band_extraction_time_us=np.mean(self.band_times) if self.band_times else 0,
+            aubio_time_us=np.mean(self.aubio_times) if self.aubio_times else 0,
+            osc_send_time_us=np.mean(self.osc_times) if self.osc_times else 0,
+            total_processing_time_us=np.mean(self.frame_latencies) * 1000 if self.frame_latencies else 0,
+            
+            min_latency_ms=min(latencies_sorted) if latencies_sorted else 0,
+            max_latency_ms=max(latencies_sorted) if latencies_sorted else 0,
+            avg_latency_ms=np.mean(latencies_sorted) if latencies_sorted else 0,
+            p95_latency_ms=latencies_sorted[p95_idx] if p95_idx < len(latencies_sorted) else 0,
+            p99_latency_ms=latencies_sorted[p99_idx] if p99_idx < len(latencies_sorted) else 0,
+            
+            queue_drops=self.queue_drops,
+            max_queue_size=max(self.queue_sizes) if self.queue_sizes else 0,
+        )
+        
+        logger.info(f"Benchmark complete: {results.avg_fps:.1f} fps, {results.avg_latency_ms:.2f}ms avg latency")
+        
+        return results

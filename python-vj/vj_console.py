@@ -31,7 +31,7 @@ from domain import PlaybackSnapshot, PlaybackState
 try:
     from audio_analyzer import (
         AudioConfig, DeviceConfig, DeviceManager, 
-        AudioAnalyzer, AudioAnalyzerWatchdog
+        AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
     )
     AUDIO_ANALYZER_AVAILABLE = True
 except ImportError as e:
@@ -617,6 +617,65 @@ class AudioStatsPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class AudioBenchmarkPanel(ReactivePanel):
+    """Audio latency benchmark results."""
+    benchmark = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_benchmark(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Latency Benchmark", "═")]
+        
+        if not self.benchmark:
+            lines.append("[dim]Press [B] to run 10-second benchmark test[/dim]")
+        else:
+            # Overall stats
+            lines.append(f"[bold cyan]Test Duration:[/] {self.benchmark.get('duration_sec', 0):.1f}s")
+            lines.append(f"[bold cyan]Frames Processed:[/] {self.benchmark.get('total_frames', 0)}")
+            lines.append(f"[bold cyan]Average FPS:[/] [green]{self.benchmark.get('avg_fps', 0):.1f}[/]\n")
+            
+            # Latency percentiles
+            lines.append("[bold]Latency Percentiles (ms)[/]")
+            lines.append(f"  Min:     {self.benchmark.get('min_latency_ms', 0):.2f}")
+            lines.append(f"  Average: {self.benchmark.get('avg_latency_ms', 0):.2f}")
+            lines.append(f"  P95:     {self.benchmark.get('p95_latency_ms', 0):.2f}")
+            lines.append(f"  P99:     {self.benchmark.get('p99_latency_ms', 0):.2f}")
+            lines.append(f"  Max:     {self.benchmark.get('max_latency_ms', 0):.2f}\n")
+            
+            # Component timing breakdown
+            lines.append("[bold]Component Timing (µs)[/]")
+            lines.append(f"  FFT:            {self.benchmark.get('fft_time_us', 0):.1f}")
+            lines.append(f"  Band Extract:   {self.benchmark.get('band_extraction_time_us', 0):.1f}")
+            lines.append(f"  Aubio:          {self.benchmark.get('aubio_time_us', 0):.1f}")
+            lines.append(f"  OSC Send:       {self.benchmark.get('osc_send_time_us', 0):.1f}")
+            lines.append(f"  [bold]Total:          {self.benchmark.get('total_processing_time_us', 0):.1f}[/]\n")
+            
+            # Queue stats
+            lines.append("[bold]Queue Metrics[/]")
+            lines.append(f"  Max Size: {self.benchmark.get('max_queue_size', 0)}")
+            lines.append(f"  Drops:    {self.benchmark.get('queue_drops', 0)}")
+            
+            # Interpretation
+            avg_lat = self.benchmark.get('avg_latency_ms', 0)
+            if avg_lat < 15:
+                lines.append("\n[green]✓ Excellent latency (<15ms)[/]")
+            elif avg_lat < 30:
+                lines.append("\n[yellow]△ Good latency (15-30ms)[/]")
+            else:
+                lines.append("\n[red]✗ High latency (>30ms)[/]")
+        
+        self.update("\n".join(lines))
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -644,6 +703,7 @@ class VJConsoleApp(App):
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
+        Binding("b", "run_audio_benchmark", "Benchmark"),
         Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
@@ -670,6 +730,9 @@ class VJConsoleApp(App):
         self.audio_device_manager: Optional['DeviceManager'] = None
         self.audio_running = False
         self.audio_osc_counts: Dict[str, int] = {}  # Track OSC message counts
+        
+        # Track current screen for conditional updates
+        self._current_screen = "master"
         
         self._setup_log_capture()
 
@@ -741,6 +804,7 @@ class VJConsoleApp(App):
                         with VerticalScroll(id="left-col"):
                             yield AudioAnalysisPanel(id="audio-analysis", classes="panel")
                             yield AudioDevicePanel(id="audio-device", classes="panel")
+                            yield AudioBenchmarkPanel(id="audio-benchmark", classes="panel")
                         with VerticalScroll(id="right-col"):
                             yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
 
@@ -935,62 +999,101 @@ class VJConsoleApp(App):
             pass
 
     def _update_data(self) -> None:
-        """Update all panels with current data."""
+        """Update all panels with current data (only update visible screens)."""
         if not self.karaoke_engine:
             return
+        
+        # Always update snapshot (needed for OSC)
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
-        monitor_status = snapshot.monitor_status or {}
-        if snapshot.source and snapshot.source in monitor_status:
-            source_connected = monitor_status[snapshot.source].get('available', False)
-        else:
-            source_connected = any(status.get('available', False) for status in monitor_status.values())
-        track_data = build_track_data(snapshot, source_connected)
-        try:
-            self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-        except Exception:
-            pass
-
-        cat_data = build_categories_payload(self.karaoke_engine.current_categories)
         
-        # Update categories panels
-        for panel_id in ["categories", "categories-full"]:
+        # Only update UI panels for visible screens (optimization)
+        screen = self._current_screen
+        
+        if screen == "master":
+            # Update master screen panels only
+            monitor_status = snapshot.monitor_status or {}
+            if snapshot.source and snapshot.source in monitor_status:
+                source_connected = monitor_status[snapshot.source].get('available', False)
+            else:
+                source_connected = any(status.get('available', False) for status in monitor_status.values())
+            track_data = build_track_data(snapshot, source_connected)
+            
             try:
-                self.query_one(f"#{panel_id}", CategoriesPanel).categories_data = cat_data
+                self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
             except Exception:
                 pass
-
-        # Update pipeline
-        pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
-        for panel_id in ["pipeline", "pipeline-full"]:
+            
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
-                self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data
+                self.query_one("#categories", CategoriesPanel).categories_data = cat_data
             except Exception:
                 pass
-
-        # Update OSC panels
-        osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
-        for panel_id in ["osc-mini", "osc-full"]:
+            
+            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
-                panel = self.query_one(f"#{panel_id}", OSCPanel)
-                panel.full_view = panel_id == "osc-full"
+                self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
+            
+            # Mini OSC panel on master screen
+            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+            try:
+                panel = self.query_one("#osc-mini", OSCPanel)
+                panel.full_view = False
                 panel.messages = osc_msgs
             except Exception:
                 pass
-
-        # Update master control
+            
+            # Master control status
+            running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+            try:
+                self.query_one("#master-ctrl", MasterControlPanel).status = {
+                    'synesthesia': self.synesthesia_running,
+                    'milksyphon': self.milksyphon_running,
+                    'processing_apps': running_apps,
+                    'karaoke': self.karaoke_engine is not None,
+                }
+            except Exception:
+                pass
+        
+        elif screen == "osc":
+            # Update OSC view only
+            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+            try:
+                panel = self.query_one("#osc-full", OSCPanel)
+                panel.full_view = True
+                panel.messages = osc_msgs
+            except Exception:
+                pass
+        
+        elif screen == "ai":
+            # Update AI debug screen only
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
+            try:
+                self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
+            
+            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
+            try:
+                self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
+        
+        elif screen == "logs":
+            # Update logs panel only
+            try:
+                self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
+            except Exception:
+                pass
+        
+        elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
+            # Update audio panels only
+            self._update_audio_panels()
+        
+        # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        try:
-            self.query_one("#master-ctrl", MasterControlPanel).status = {
-                'synesthesia': self.synesthesia_running,
-                'milksyphon': self.milksyphon_running,
-                'processing_apps': running_apps,
-                'karaoke': self.karaoke_engine is not None,
-            }
-        except Exception:
-            pass
-
-        # Send OSC status only when it changes
         current_status = {
             'karaoke_active': True,
             'synesthesia_running': self.synesthesia_running,
@@ -1003,35 +1106,40 @@ class VJConsoleApp(App):
                 milksyphon_running=self.milksyphon_running, processing_apps=running_apps
             )
             self._last_master_status = current_status
-        
-        # Update logs panel
-        try:
-            self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-        except Exception:
-            pass
-        
-        # Update audio panels if available
-        if AUDIO_ANALYZER_AVAILABLE:
-            self._update_audio_panels()
 
     # === Screen switching ===
     
+    def _switch_screen(self, screen_name: str):
+        """Switch screen and manage OSC logging (performance optimization)."""
+        from osc_manager import osc
+        
+        # Disable OSC logging when leaving OSC screen
+        if self._current_screen == "osc" and screen_name != "osc":
+            osc.disable_logging()
+        
+        # Enable OSC logging when entering OSC screen
+        if screen_name == "osc" and self._current_screen != "osc":
+            osc.enable_logging()
+        
+        self._current_screen = screen_name
+        self.query_one("#screens", TabbedContent).active = screen_name
+    
     def action_screen_master(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "master"
+        self._switch_screen("master")
     
     def action_screen_osc(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "osc"
+        self._switch_screen("osc")
     
     def action_screen_ai(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "ai"
+        self._switch_screen("ai")
     
     def action_screen_logs(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "logs"
+        self._switch_screen("logs")
     
     def action_screen_audio(self) -> None:
         """Switch to audio analysis screen."""
         if AUDIO_ANALYZER_AVAILABLE:
-            self.query_one("#screens", TabbedContent).active = "audio"
+            self._switch_screen("audio")
 
     # === App control ===
     
@@ -1089,6 +1197,33 @@ class VJConsoleApp(App):
     def action_timing_down(self) -> None:
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
+    
+    def action_run_audio_benchmark(self) -> None:
+        """Run 10-second audio latency benchmark."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer or not self.audio_running:
+            logger.warning("Audio analyzer must be running to benchmark")
+            return
+        
+        try:
+            logger.info("Starting 10-second latency benchmark...")
+            
+            # Run benchmark in background thread to not block UI
+            def run_benchmark():
+                tester = LatencyTester(self.audio_analyzer)
+                results = tester.run_benchmark(duration_sec=10.0)
+                
+                # Update benchmark panel
+                try:
+                    self.query_one("#audio-benchmark", AudioBenchmarkPanel).benchmark = results.to_dict()
+                except Exception as e:
+                    logger.error(f"Failed to update benchmark panel: {e}")
+            
+            import threading
+            benchmark_thread = threading.Thread(target=run_benchmark, daemon=True)
+            benchmark_thread.start()
+            
+        except Exception as e:
+            logger.exception(f"Benchmark failed: {e}")
 
     def on_unmount(self) -> None:
         """Cleanup when app is closing."""
