@@ -72,7 +72,9 @@ def list_available_ports() -> Tuple[List[str], List[str]]:
         input_ports = midi_in.get_ports()
         output_ports = midi_out.get_ports()
         
-        # Clean up
+        # Clean up (explicit close before del)
+        midi_in.close_port()
+        midi_out.close_port()
         del midi_in
         del midi_out
         

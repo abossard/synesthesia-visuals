@@ -7,7 +7,7 @@ and stateless functions following Grokking Simplicity principles.
 """
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Any, Literal
+from typing import Dict, Optional, Any, Literal, List, Tuple
 from enum import IntEnum
 
 
@@ -192,7 +192,7 @@ def parse_midi_message(status: int, data1: int, data2: int) -> MidiMessage:
     )
 
 
-def create_midi_bytes(msg: MidiMessage) -> tuple[int, int, int]:
+def create_midi_bytes(msg: MidiMessage) -> Tuple[int, int, int]:
     """
     Convert MidiMessage to raw MIDI bytes. Pure function.
     
@@ -217,7 +217,7 @@ def should_enhance_message(msg: MidiMessage, config: RouterConfig) -> bool:
     return msg.is_note_on and config.has_toggle(msg.note_or_cc)
 
 
-def process_toggle(msg: MidiMessage, config: RouterConfig) -> tuple[RouterConfig, MidiMessage, MidiMessage]:
+def process_toggle(msg: MidiMessage, config: RouterConfig) -> Tuple[RouterConfig, MidiMessage, MidiMessage]:
     """
     Process a toggle button press. Pure function.
     
@@ -259,7 +259,7 @@ def process_toggle(msg: MidiMessage, config: RouterConfig) -> tuple[RouterConfig
     return (new_config, led_message, output_message)
 
 
-def create_state_sync_messages(config: RouterConfig, channel: int = 0) -> list[tuple[MidiMessage, MidiMessage]]:
+def create_state_sync_messages(config: RouterConfig, channel: int = 0) -> List[Tuple[MidiMessage, MidiMessage]]:
     """
     Create messages to sync all toggle states on startup. Pure function.
     

@@ -9,7 +9,7 @@ Follows dependency injection pattern for testability.
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Tuple
 from threading import Lock
 
 from midi_domain import (
@@ -418,7 +418,7 @@ class MidiRouter:
             logger.info(f"Removed toggle {note_or_cc}")
             return True
     
-    def get_toggle_list(self) -> list[tuple[int, str, bool]]:
+    def get_toggle_list(self) -> List[Tuple[int, str, bool]]:
         """
         Get list of all toggles.
         
