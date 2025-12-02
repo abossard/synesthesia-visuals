@@ -17,14 +17,18 @@ All services are optional and will auto-reconnect if they become available.
 import time
 import logging
 import argparse
+from dataclasses import replace
+from threading import Lock
 from typing import Optional
 
 # Domain and infrastructure
 from domain import (
     get_active_line_index, get_refrain_lines,
     SongCategories,  # Export for vj_console.py
+    PlaybackSnapshot,
+    PlaybackState,
 )
-from infrastructure import Config, Settings, PipelineTracker
+from infrastructure import Config, Settings, PipelineTracker, BackoffState
 
 # Re-export for compatibility with vj_console.py
 __all__ = ['KaraokeEngine', 'Config', 'SongCategories', 'get_active_line_index']
@@ -99,6 +103,10 @@ class KaraokeEngine:
         self._current_lines = []
         self._last_active_index = -1
         self._running = False
+        self._last_track_key = ""
+        self._snapshot_lock = Lock()
+        self._snapshot = PlaybackSnapshot(state=PlaybackState())
+        self._backoff = BackoffState()
     
     @property
     def timing_offset_ms(self) -> int:
@@ -139,7 +147,7 @@ class KaraokeEngine:
     @property
     def current_state(self):
         """Current playback state (for vj_console.py compatibility)."""
-        return self._playback.get_current_state()
+        return self.get_snapshot().state
     
     # Backwards compatibility aliases
     @property
@@ -159,6 +167,15 @@ class KaraokeEngine:
     def current_lines(self):
         """Current lyrics lines (for vj_console.py)."""
         return self._current_lines
+
+    def get_snapshot(self) -> PlaybackSnapshot:
+        """Get latest playback snapshot."""
+        with self._snapshot_lock:
+            return self._snapshot
+
+    def _set_snapshot(self, snapshot: PlaybackSnapshot) -> None:
+        with self._snapshot_lock:
+            self._snapshot = snapshot
     
     def start(self, poll_interval: float = 2.0):
         """Start in background thread. Polls every 2 seconds."""
@@ -197,13 +214,14 @@ class KaraokeEngine:
         while self._running:
             try:
                 current_time = time.time()
+                snapshot = self._refresh_snapshot()
                 
                 # Fast: Check lyrics every 100ms
-                self._check_lyrics()
+                self._check_lyrics(snapshot)
                 
                 # Slow: Update position every poll_interval (2s)
                 if current_time - last_position_update >= poll_interval:
-                    self._send_position_update()
+                    self._send_position_update(snapshot)
                     last_position_update = current_time
                 
                 time.sleep(lyrics_check_interval)
@@ -213,35 +231,79 @@ class KaraokeEngine:
                 logger.error(f"Loop error: {e}")
                 time.sleep(1)
     
-    def _check_lyrics(self):
+    def _check_lyrics(self, snapshot: PlaybackSnapshot):
         """Fast check for lyric changes (100ms precision)."""
-        # Get current playback state
-        state = self._playback.get_current_state()
+        state = snapshot.state
+        self._handle_track_change(state.track)
         
-        # Check for track change
-        if self._playback.has_track_changed():
-            if state.track:
-                self._on_track_change(state.track)
-            else:
-                self._on_no_track()
-        
-        # Update active line (apply timing offset for early display)
         if state.track and self._current_lines:
             offset_sec = self._settings.timing_offset_ms / 1000.0
-            active_index = get_active_line_index(self._current_lines, state.position + offset_sec)
+            position = self._effective_position(state)
+            active_index = get_active_line_index(self._current_lines, position + offset_sec)
             if active_index != self._last_active_index:
                 self._last_active_index = active_index
                 if active_index >= 0:
                     self._send_active_line(active_index)
     
-    def _send_position_update(self):
+    def _send_position_update(self, snapshot: PlaybackSnapshot):
         """Send position update (less frequent to reduce OSC traffic)."""
-        state = self._playback.get_current_state()
+        state = snapshot.state
         if state.track:
             self._osc.send_karaoke("position", "update", {
-                "time": state.position,
+                "time": self._effective_position(state),
                 "playing": state.is_playing
             })
+
+    def _effective_position(self, state: PlaybackState) -> float:
+        """Estimate live position from latest state."""
+        if not state.is_playing:
+            return state.position
+        return state.position + max(0.0, time.time() - state.last_update)
+
+    def _handle_track_change(self, track):
+        track_key = track.key if track else ""
+        if track_key == self._last_track_key:
+            return
+        self._last_track_key = track_key
+        if track:
+            self._on_track_change(track)
+        else:
+            self._on_no_track()
+
+    def _refresh_snapshot(self, force: bool = False) -> PlaybackSnapshot:
+        """Poll playback with exponential backoff and return snapshot."""
+        now = time.time()
+        snapshot = self.get_snapshot()
+        if not force and not self._backoff.ready(now):
+            pending = self._backoff.time_remaining(now)
+            updated = replace(snapshot, backoff_seconds=pending, error=self._backoff.last_error)
+            self._set_snapshot(updated)
+            return updated
+        sample = self._playback.poll()
+        error = self._select_error(sample)
+        if error:
+            self._backoff = self._backoff.record_failure(error, now)
+        else:
+            self._backoff = self._backoff.record_success()
+        updated = PlaybackSnapshot(
+            state=sample.state,
+            source=sample.source,
+            track_changed=sample.track_changed,
+            updated_at=now,
+            error=error or "",
+            monitor_status=sample.monitor_status,
+            backoff_seconds=self._backoff.time_remaining(now)
+        )
+        self._set_snapshot(updated)
+        return updated
+
+    def _select_error(self, sample) -> str:
+        if sample.error:
+            return sample.error
+        for name, status in sample.monitor_status.items():
+            if not status.get('available', True):
+                return status.get('error') or f"{name} unavailable"
+        return ""
     
     def _on_track_change(self, track):
         """Handle new track."""

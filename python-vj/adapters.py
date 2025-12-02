@@ -231,6 +231,11 @@ class SpotifyMonitor:
             logger.debug("Spotify: Attempting reconnection...")
             self._init_client()
 
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Public access to health status for UI use."""
+        return self._health.get_status()
+
 
 # =============================================================================
 # VIRTUALDJ MONITOR - Deep module hiding file polling complexity
@@ -365,6 +370,11 @@ class VirtualDJMonitor:
             artist, title = content.split(" - ", 1)
             return artist.strip(), title.strip()
         return "", content.strip()
+
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Public access to health status for UI use."""
+        return self._health.get_status()
 
 
 # =============================================================================
