@@ -6,7 +6,7 @@ Screens (press 1-4 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
-4. All Logs - Complete application logs with filtering
+4. All Logs - Complete application logs
 """
 
 from dotenv import load_dotenv
@@ -14,7 +14,6 @@ load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
-from collections import deque
 import logging
 import subprocess
 import time
@@ -30,93 +29,6 @@ from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 
 logger = logging.getLogger('vj_console')
-
-
-# ============================================================================
-# MEMORY LOG HANDLER - Captures logs for UI display
-# ============================================================================
-
-class MemoryLogHandler(logging.Handler):
-    """
-    Custom logging handler that stores log records in memory.
-    Thread-safe with a deque for efficient append/pop operations.
-    """
-    
-    MAX_LOGS = 2000  # Maximum number of log lines to keep
-    
-    def __init__(self):
-        super().__init__()
-        self._logs: deque = deque(maxlen=self.MAX_LOGS)
-        self.setFormatter(logging.Formatter(
-            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-            datefmt='%H:%M:%S'
-        ))
-    
-    def emit(self, record: logging.LogRecord) -> None:
-        """Store formatted log record."""
-        try:
-            msg = self.format(record)
-            self._logs.append((record.levelno, msg))
-        except Exception:
-            self.handleError(record)
-    
-    def get_logs(self, filter_level: Optional[int] = None) -> List[str]:
-        """
-        Get logs, optionally filtered by minimum level.
-        
-        Args:
-            filter_level: Minimum log level (e.g., logging.WARNING for warnings+errors)
-        
-        Returns:
-            List of formatted log strings
-        """
-        if filter_level is None:
-            return [msg for _, msg in self._logs]
-        return [msg for level, msg in self._logs if level >= filter_level]
-    
-    def get_error_warning_logs(self) -> List[str]:
-        """Get only WARNING and ERROR level logs."""
-        return self.get_logs(filter_level=logging.WARNING)
-    
-    def clear(self) -> None:
-        """Clear all stored logs."""
-        self._logs.clear()
-
-
-# Global memory handler instance
-_memory_handler: Optional[MemoryLogHandler] = None
-
-
-def setup_log_capture() -> MemoryLogHandler:
-    """
-    Set up logging capture for the VJ Console.
-    Hooks into the root logger to capture all application logs.
-    """
-    global _memory_handler
-    
-    if _memory_handler is not None:
-        return _memory_handler
-    
-    _memory_handler = MemoryLogHandler()
-    _memory_handler.setLevel(logging.DEBUG)
-    
-    # Add handler to root logger to capture everything
-    root_logger = logging.getLogger()
-    root_logger.addHandler(_memory_handler)
-    
-    # Also add to specific loggers used in the app
-    for logger_name in ['karaoke', 'vj_console', 'adapters', 'orchestrators']:
-        log = logging.getLogger(logger_name)
-        if _memory_handler not in log.handlers:
-            log.addHandler(_memory_handler)
-    
-    return _memory_handler
-
-
-def get_memory_handler() -> Optional[MemoryLogHandler]:
-    """Get the global memory log handler."""
-    return _memory_handler
-
 
 # ============================================================================
 # PURE FUNCTIONS (Calculations) - No side effects, same input = same output
@@ -197,7 +109,7 @@ class ReactivePanel(Static):
 
 
 class NowPlayingPanel(ReactivePanel):
-    """Current track display with source info."""
+    """Current track display."""
     track_data = reactive({})
 
     def on_mount(self) -> None:
@@ -211,36 +123,14 @@ class NowPlayingPanel(ReactivePanel):
             self.update("[dim]Waiting for playback...[/dim]")
             return
         
-        source = data.get('source', 'unknown')
+        conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
         time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        
-        # Source icons and colors
-        if source == 'spotify':
-            icon = "🎵"
-            source_color = "green"
-            source_name = "Spotify"
-        elif source == 'virtualdj':
-            icon = "🎧"
-            source_color = "cyan"
-            source_name = "VirtualDJ"
-        else:
-            icon = "🎶"
-            source_color = "dim"
-            source_name = source.title()
-        
-        # Connection status for both sources
-        spotify_status = format_status_icon(data.get('spotify_connected', False), "● ON", "○ OFF")
-        vdj_status = format_status_icon(data.get('virtualdj_connected', False), "● ON", "○ OFF")
-        
-        # BPM display for VirtualDJ
-        bpm_str = ""
-        if data.get('bpm'):
-            bpm_str = f"  │  [yellow]{data['bpm']:.1f} BPM[/]"
+        icon = "🎵" if data.get('source') == "spotify" else "🎧"
         
         self.update(
-            f"[dim]Sources:[/] Spotify {spotify_status}  VirtualDJ {vdj_status}\n"
+            f"Spotify: {conn}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} [{source_color}]{source_name}[/]  │  [dim]{time_str}[/]{bpm_str}"
+            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]"
         )
 
 
@@ -302,14 +192,8 @@ class OSCPanel(ReactivePanel):
 
 
 class LogsPanel(ReactivePanel):
-    """
-    Application logs view with filtering.
-    
-    Press 'e' to toggle errors/warnings only filter.
-    Shows up to 2000 log lines captured from all Python loggers.
-    """
+    """Application logs view."""
     logs = reactive([])
-    errors_only = reactive(False)
 
     def on_mount(self) -> None:
         """Initialize content when mounted."""
@@ -317,27 +201,17 @@ class LogsPanel(ReactivePanel):
 
     def watch_logs(self, data: list) -> None:
         self._safe_render()
-    
-    def watch_errors_only(self, _: bool) -> None:
-        self._safe_render()
 
     def _safe_render(self) -> None:
         """Render only if mounted."""
         if not self.is_mounted:
             return
-        
-        filter_label = "[red bold]ERRORS/WARNINGS ONLY[/]" if self.errors_only else "[dim]All Levels[/]"
-        lines = [
-            self.render_section("Application Logs", "═"),
-            f"  Filter: {filter_label}  │  [dim]Press [bold]E[/] to toggle filter[/]\n"
-        ]
+        lines = [self.render_section("Application Logs", "═")]
         
         if not self.logs:
-            lines.append("[dim](no logs yet - waiting for application activity)[/dim]")
+            lines.append("[dim](no logs yet)[/dim]")
         else:
-            # Show more logs in full view (up to 500 visible at a time)
-            display_logs = self.logs[-500:]
-            lines.extend(render_log_line(log) for log in reversed(display_logs))
+            lines.extend(render_log_line(log) for log in reversed(self.logs[-100:]))
         
         self.update("\n".join(lines))
 
@@ -391,8 +265,12 @@ class PipelinePanel(ReactivePanel):
         
         has_content = False
         
-        for color, text in self.pipeline_data.get('display_lines', []):
-            lines.append(f"[{color}]{text}[/]")
+        # Display pipeline steps with status
+        for label, status, color, message in self.pipeline_data.get('display_lines', []):
+            status_text = f"[{color}]{status}[/] {label}"
+            if message:
+                status_text += f": [dim]{message}[/]"
+            lines.append(f"  {status_text}")
             has_content = True
         
         if self.pipeline_data.get('image_prompt'):
@@ -438,11 +316,7 @@ class ServicesPanel(ReactivePanel):
         s = self.services
         lines = [self.render_section("Services", "═")]
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
-        
-        # VirtualDJ shows API URL
-        vdj_detail = s.get('vdj_url', 'http://127.0.0.1:8080') if s.get('virtualdj') else "Not connected"
-        lines.append(svc(s.get('virtualdj'), "VirtualDJ API", vdj_detail))
-        
+        lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
         lines.append(svc(s.get('ollama'), "Ollama LLM", ', '.join(s.get('ollama_models', [])) or "Not running"))
         lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
         lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
@@ -516,7 +390,6 @@ class VJConsoleApp(App):
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
-        Binding("e", "toggle_log_filter", "Filter Logs"),
     ]
 
     current_tab = reactive("master")
@@ -528,17 +401,37 @@ class VJConsoleApp(App):
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self._find_project_root())
         self.karaoke_engine: Optional[KaraokeEngine] = None
+        self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
-        
-        # Set up log capture before anything else
-        self._log_handler = setup_log_capture()
-        logger.info("VJ Console starting...")
+        self._setup_log_capture()
 
     def _find_project_root(self) -> Path:
         for p in [Path(__file__).parent.parent, Path.cwd()]:
             if (p / "processing-vj").exists():
                 return p
         return Path.cwd()
+    
+    def _setup_log_capture(self) -> None:
+        """Setup logging handler to capture logs to _logs list."""
+        class ListHandler(logging.Handler):
+            def __init__(self, log_list: List[str]):
+                super().__init__()
+                self.log_list = log_list
+                self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    self.log_list.append(msg)
+                    # Keep only last 500 lines
+                    if len(self.log_list) > 500:
+                        self.log_list.pop(0)
+                except Exception:
+                    pass
+        
+        # Add handler to root logger to capture all logs
+        handler = ListHandler(self._logs)
+        logging.getLogger().addHandler(handler)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -628,24 +521,13 @@ class VJConsoleApp(App):
         except Exception:
             pass
 
-        # Get VDJ status from karaoke engine if available
-        vdj_connected = False
-        vdj_url = KaraokeConfig.VDJ_API_URL
-        spotify_connected = False
-        
-        if self.karaoke_engine:
-            try:
-                info = self.karaoke_engine.playback_info
-                vdj_connected = info.get('virtualdj_connected', False)
-                spotify_connected = info.get('spotify_connected', False)
-            except Exception:
-                pass
+        vdj_path = KaraokeConfig.find_vdj_path()
         
         try:
             self.query_one("#services", ServicesPanel).services = {
-                'spotify': spotify_connected or KaraokeConfig.has_spotify_credentials(),
-                'virtualdj': vdj_connected,
-                'vdj_url': vdj_url if vdj_connected else '',
+                'spotify': KaraokeConfig.has_spotify_credentials(),
+                'virtualdj': bool(vdj_path),
+                'vdj_file': vdj_path.name if vdj_path else '',
                 'ollama': ollama_ok,
                 'ollama_models': [m.get('name', '').split(':')[0] for m in ollama_models[:3]],
                 'comfyui': comfyui_ok,
@@ -661,22 +543,25 @@ class VJConsoleApp(App):
         if not self.karaoke_engine:
             return
             
-        # Get comprehensive playback info
-        info = self.karaoke_engine.playback_info
         state = self.karaoke_engine._state
         
-        # Build track data for NowPlaying panel
+        # Build track data
         track_data = {}
-        if info.get('has_track'):
+        if state.has_track:
+            t = state.track
+            is_connected = bool(
+                self.karaoke_engine._spotify and 
+                getattr(self.karaoke_engine._spotify, '_sp', None)
+            )
+            # Determine source from which monitor is active
+            source = 'spotify' if is_connected else 'virtualdj'
             track_data = {
-                'artist': info.get('artist', ''),
-                'title': info.get('title', ''),
-                'source': info.get('source', 'unknown'),
-                'position': info.get('position', 0),
-                'duration': info.get('duration', 0),
-                'spotify_connected': info.get('spotify_connected', False),
-                'virtualdj_connected': info.get('virtualdj_connected', False),
-                'bpm': info.get('bpm', 0),
+                'artist': t.artist, 
+                'title': t.title, 
+                'source': source,
+                'position': state.position, 
+                'duration': t.duration,
+                'connected': is_connected
             }
         
         # Update now playing panel
@@ -756,13 +641,9 @@ class VJConsoleApp(App):
             )
             self._last_master_status = current_status
         
-        # Update logs panel from memory handler
+        # Update logs panel
         try:
-            logs_panel = self.query_one("#logs-panel", LogsPanel)
-            if logs_panel.errors_only:
-                logs_panel.logs = self._log_handler.get_error_warning_logs()
-            else:
-                logs_panel.logs = self._log_handler.get_logs()
+            self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
         except Exception:
             pass
 
@@ -779,15 +660,6 @@ class VJConsoleApp(App):
     
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
-    
-    def action_toggle_log_filter(self) -> None:
-        """Toggle between all logs and errors/warnings only."""
-        try:
-            logs_panel = self.query_one("#logs-panel", LogsPanel)
-            logs_panel.errors_only = not logs_panel.errors_only
-            logger.info(f"Log filter: {'Errors/Warnings only' if logs_panel.errors_only else 'All levels'}")
-        except Exception:
-            pass
 
     # === App control ===
     

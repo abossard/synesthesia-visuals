@@ -10,7 +10,7 @@ Splits the monolithic KaraokeEngine into specialized coordinators:
 
 import time
 import logging
-from queue import Queue, Full
+from queue import Queue, Full, Empty
 from threading import Thread, Event
 from typing import Optional, List
 
@@ -258,8 +258,9 @@ class AIOrchestrator:
         """Queue categorization task."""
         try:
             self._cat_queue.put_nowait((track, lrc_text))
+            logger.info(f"Queued categorization: {track.artist} - {track.title}")
         except Full:
-            logger.debug("Categorization queue full, skipping")
+            logger.warning("Categorization queue full, skipping")
     
     # Private worker loops
     
@@ -300,9 +301,11 @@ class AIOrchestrator:
     
     def _cat_worker_loop(self):
         """Background worker for song categorization."""
+        logger.info("Categorization worker started")
         while not self._stop_event.is_set():
             try:
                 track, lrc_text = self._cat_queue.get(timeout=1)
+                logger.info(f"Processing categorization: {track.artist} - {track.title}")
                 
                 if self._categorizer.is_available:
                     self._pipeline.start("categorize_song")
@@ -310,17 +313,22 @@ class AIOrchestrator:
                     if categories:
                         self._current_categories = categories  # Store for vj_console.py
                         self._pipeline.complete("categorize_song", f"{len(categories.get_top(5))} categories")
+                        logger.info(f"Categories: {categories.primary_mood}, {len(categories.get_top(5))} moods")
                         
                         # Send categories via OSC
                         for cat in categories.get_top(10):
                             self._osc.send_karaoke("categories", cat.name, cat.score)
                     else:
-                        self._pipeline.skip("categorize_song", "Categorizer unavailable")
+                        logger.warning("Categorization returned None")
+                        self._pipeline.skip("categorize_song", "Categorization failed")
                 else:
+                    logger.warning(f"Categorizer not available (backend: {self._categorizer._llm.backend_info if self._categorizer._llm else 'none'})")
                     self._pipeline.skip("categorize_song", "Categorizer unavailable")
                 
+            except Empty:
+                continue
             except Exception as e:
-                logger.debug(f"Categorization worker error: {e}")
+                logger.error(f"Categorization worker error: {e}", exc_info=True)
                 time.sleep(0.1)
     
     def _generate_image(self, track: Track, prompt: str):

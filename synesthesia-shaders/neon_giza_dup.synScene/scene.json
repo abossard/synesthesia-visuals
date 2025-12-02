@@ -1,0 +1,177 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 
+			[
+				0.7,
+				0.7
+			],
+			"DESCRIPTION" : "Audio response strength (X: bass level, Y: bass hits)",
+			"MAX" : 
+			[
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0
+			],
+			"NAME" : "bass_mix",
+			"PARAMS" : 0.1,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 2,
+			"DESCRIPTION" : "Audio response curve (higher = more intense reaction)",
+			"MAX" : 6,
+			"MIN" : 0,
+			"NAME" : "bass_pow",
+			"PARAMS" : 0.1,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Media opacity – fade media fx in or out",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "media_opacity",
+			"PARAMS" : 0.2,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Plays your media straight-ahead or circularly warped centered on the pyramid.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_mode",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 
+			[
+				1,
+				1
+			],
+			"DESCRIPTION" : "Scale media's XY to stretch the media into different shapes.",
+			"MAX" : 
+			[
+				5,
+				5
+			],
+			"MIN" : 
+			[
+				0,
+				0
+			],
+			"NAME" : "scale_media",
+			"PARAMS" : 0.2,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Frame blending amount (0 = sharp, 1 = heavy trails)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "motion_blur",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Visual"
+		},
+		{
+			"DEFAULT" : 
+			[
+				5,
+				0
+			],
+			"DESCRIPTION" : "Camera movement speed (X: linear time, Y: bass time)",
+			"MAX" : 
+			[
+				9,
+				3
+			],
+			"MIN" : 
+			[
+				-9,
+				-3
+			],
+			"NAME" : "travel_speed",
+			"TYPE" : "xy",
+			"UI_GROUP" : "Visual"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Intensity of spectrum bars at horizon (0 = hidden, 1 = full)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bar_visibility",
+			"PARAMS" : 0.2,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Visual"
+		},
+		{
+			"DEFAULT" : 0.125,
+			"DESCRIPTION" : "Vertical position of spectrum bars on horizon",
+			"MAX" : 0.25,
+			"MIN" : 0,
+			"NAME" : "bar_height",
+			"PARAMS" : 0.2,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Visual"
+		},
+		{
+			"DEFAULT" : 0.725,
+			"DESCRIPTION" : "Overall color scheme rotation (shifts entire palette hue)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "hue_offset",
+			"PARAMS" : 0.2,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Visual"
+		}
+	],
+	"CREDIT" : "mrange",
+	"DESCRIPTION" : "Dive into an infinite neon tunnel as you travel toward the legendary Pyramid of Giza, reimagined in a synthwave dimension. Glowing purple and pink arcs spiral through space, pulsing with audio-reactive energy. The scene responds dynamically to bass frequencies, transforming every beat into a hypnotic journey through this retro-futuristic desert dreamscape.",
+	"GPU" : 3,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "neon_giza_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "mirror"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "pass0",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : 
+	[
+		"mrange",
+		"synthwave",
+		"pyramid",
+		"giza",
+		"neon",
+		"raymarching",
+		"audio-reactive",
+		"purple",
+		"infinite",
+		"hypnotic",
+		"bass-reactive"
+	],
+	"TITLE" : "Neon giza_dup",
+	"WIDTH" : 1920
+}
