@@ -318,7 +318,7 @@ void analyzeAudio() {
   float bassForBeat = subBass + bass;
   float midForBeat = lowMid + mid;
   float highForBeat = highMid + presence + air;
-  bandDetector.update(bassForBeat, midForBeat, highForBeat);
+  bandDetector.update(bassForBeat, midForBeat, highForBeat, overallLevel);
   
   if (beatDetector.isBeat()) {
     autoBpm.recordBeat();
@@ -938,11 +938,12 @@ class MultiBandBeatDetector {
   float alpha = 0.05f;  // Running average smoothing for mid/high
   
   // Bass-specific: slower EMA to not track kicks too quickly
-  float bassAlpha = 0.02f;  // Slower average for bass baseline
+  float bassAlpha = 0.01f;  // Even slower average for bass baseline
   
   // Bass gating / relative condition
   float bassMinEnergy = 0.0005f;   // Ignore tiny noise
-  float bassRelThreshold = 0.25f;  // Require +25% spike over baseline
+  float bassStrongMin = 0.002f;    // Absolute minimum energy for valid bass hit
+  float bassRelThreshold = 0.4f;   // Require +40% spike over baseline (increased from 0.25)
   
   // Adaptive threshold: variance tracking for auto-sensitivity
   float energyVariance = 0;
@@ -954,7 +955,13 @@ class MultiBandBeatDetector {
     this.decay = decay;
   }
 
-  void update(float bassEnergy, float midEnergy, float highEnergy) {
+  void update(float bassEnergy, float midEnergy, float highEnergy, float overallLevel) {
+    // Gate bass in super-quiet sections to prevent ghost pulses
+    float levelGate = 0.01f;
+    if (overallLevel < levelGate) {
+      bassEnergy = 0;  // Completely disable bass hits during intros/breakdowns
+    }
+    
     // Running averages for mid/high (fast EMA)
     midAvg = lerp(midEnergy, midAvg, 1 - alpha);
     highAvg = lerp(highEnergy, highAvg, 1 - alpha);
@@ -994,11 +1001,11 @@ class MultiBandBeatDetector {
     float bassDelta = bassEnergy - bassAvg;
     float bassRel = bassAvg > 0 ? bassDelta / bassAvg : 0;
     
-    // Bass beat: needs absolute energy, above threshold, AND a decent relative spike
-    // This prevents false triggers from noise while catching real kicks over bass beds
-    boolean bassBeat = bassEnergy > bassThr 
-                    && bassEnergy > bassMinEnergy 
-                    && bassRel > bassRelThreshold;
+    // Bass beat: needs strong absolute energy, above threshold, AND a decent relative spike
+    // This prevents false triggers from noise and tiny bass beds
+    boolean bassBeat = bassEnergy > bassStrongMin    // Strong floor: must be clearly audible
+                    && bassEnergy > bassThr          // Above adaptive threshold
+                    && bassRel > bassRelThreshold;   // Significant spike over baseline
     
     // Mid/high beats: simpler absolute threshold (no continuous beds)
     boolean midBeat = midEnergy > midThr && midAvg > 0.0001f;
