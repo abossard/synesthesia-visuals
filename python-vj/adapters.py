@@ -233,138 +233,114 @@ class SpotifyMonitor:
 
 
 # =============================================================================
-# VIRTUALDJ MONITOR - Deep module hiding file polling complexity
+# VIRTUALDJ MONITOR - Deep module using VirtualDJ Remote API
 # =============================================================================
 
 class VirtualDJMonitor:
     """
-    Monitors VirtualDJ tracklist.txt file with smart parsing.
+    Monitors VirtualDJ via the Network Control HTTP API.
     
     Deep module - simple interface, complex implementation.
     Public interface: get_playback() -> Optional[Dict]
-    Hides: File polling, path detection, tracklist parsing, timing estimation, error handling
+    Hides: HTTP API communication, masterdeck detection, error handling
     
-    Supports both formats:
-    - Simple: "Artist - Title" (one line)
-    - Tracklist: Multi-line history with timestamps (reads last entry)
+    VirtualDJ Setup:
+        - Enable the "Network Control" plugin (Effects -> Other)
+        - Configure port (default 8080) and optional password
+        - Or set VDJ_API_URL and VDJ_API_PASSWORD environment variables
     """
     
-    def __init__(self, file_path: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, password: Optional[str] = None):
         self._health = ServiceHealth("VirtualDJ")
-        self._path = Path(file_path) if file_path else Config.find_vdj_path()
-        self._last_track = ""
-        self._start_time = 0.0
         
-        if self._path:
-            if self._path.exists():
-                self._health.mark_available(str(self._path))
-                logger.info(f"VirtualDJ: ✓ found {self._path}")
+        # Use provided URL/password or get from config
+        vdj_config = Config.get_vdj_config()
+        self._base_url = base_url or vdj_config['base_url']
+        self._password = password or vdj_config['password'] or None
+        
+        self._last_track_key = ""
+        self._start_time = 0.0
+        self._client = None
+        self._decks = (1, 2)  # Monitor decks 1 and 2
+        
+        # Initialize client and check connection
+        self._init_client()
+    
+    def _init_client(self):
+        """Initialize the VirtualDJ client."""
+        from vdj_api import VirtualDJClient
+        try:
+            self._client = VirtualDJClient(
+                base_url=self._base_url,
+                password=self._password
+            )
+            if self._client.is_connected():
+                self._health.mark_available(self._base_url)
+                logger.info(f"VirtualDJ: ✓ connected to {self._base_url}")
             else:
-                logger.info(f"VirtualDJ: monitoring {self._path} (file not yet created)")
-        else:
-            logger.info("VirtualDJ: folder not found (will use Spotify only)")
+                logger.info(f"VirtualDJ: not running at {self._base_url}")
+        except Exception as e:
+            logger.debug(f"VirtualDJ: connection failed: {e}")
+            self._client = None
     
     @property
     def is_available(self) -> bool:
-        """Check if VirtualDJ file is accessible."""
+        """Check if VirtualDJ is accessible."""
         return self._health.available
     
     def get_playback(self) -> Optional[Dict[str, Any]]:
         """
         Get current VirtualDJ track or None.
-        Handles file appearing/disappearing gracefully.
-        Supports both single-line and tracklist history formats.
+        Uses the Network Control API to get masterdeck info.
         """
-        if not self._path or not self._path.exists():
-            if self._path and self._health.available:
-                self._health.mark_unavailable("File removed")
-            return None
+        if self._client is None:
+            # Try to reconnect if enough time has passed
+            if self._health.should_retry:
+                self._init_client()
+            if self._client is None:
+                return None
         
         try:
-            content = self._path.read_text().strip()
-            if not content:
+            # Find the masterdeck
+            master = self._client.get_masterdeck(self._decks)
+            if master is None:
+                return None
+            
+            # Get status for that deck
+            status = self._client.get_deck_status(master)
+            if status is None:
+                if self._health.available:
+                    self._health.mark_unavailable("No response")
                 return None
             
             if not self._health.available:
-                self._health.mark_available(str(self._path))
+                self._health.mark_available(self._base_url)
             
-            # Extract current track (handles both formats)
-            current_track = self._extract_current_track(content)
-            if not current_track:
-                return None
-            
-            # Track change detection
-            if current_track != self._last_track:
-                self._last_track = current_track
+            # Track change detection using null byte separator (unlikely in track names)
+            track_key = f"{status.artist}\x00{status.title}"
+            if track_key != self._last_track_key:
+                self._last_track_key = track_key
                 self._start_time = time.time()
             
-            # Parse "Artist - Title"
-            artist, title = self._parse_track_string(current_track)
+            # Calculate progress - prefer API elapsed time, fallback to local tracking
+            if status.elapsed_ms > 0:
+                progress_ms = status.elapsed_ms
+            else:
+                progress_ms = int((time.time() - self._start_time) * 1000)
             
             return {
-                'artist': artist,
-                'title': title,
+                'artist': status.artist,
+                'title': status.title,
                 'album': '',
-                'duration_ms': 0,
-                'progress_ms': int((time.time() - self._start_time) * 1000),
+                'duration_ms': int(status.length_sec * 1000),
+                'progress_ms': progress_ms,
+                'bpm': status.bpm,
+                'position': status.position,  # 0.0-1.0 position in track
             }
         except Exception as e:
             self._health.mark_unavailable(str(e))
             logger.debug(f"VirtualDJ error: {e}")
             return None
-    
-    # Private methods - implementation details
-    
-    def _extract_current_track(self, content: str) -> Optional[str]:
-        """
-        Extract current track from VirtualDJ file content.
-        
-        Handles two formats:
-        1. Single line: "Artist - Title"
-        2. Tracklist history:
-           VirtualDJ History 2024/11/30
-           ------------------------------
-           22:50 : Bolier, Joe Stone - Keep This Fire Burning
-           
-        For tracklist format, returns the last timestamped entry.
-        """
-        lines = content.strip().split('\n')
-        
-        # Single-line format (legacy)
-        if len(lines) == 1:
-            return lines[0].strip()
-        
-        # Multi-line tracklist format - find last timestamped entry
-        # Format: "HH:MM : Artist - Title"
-        last_track = None
-        for line in reversed(lines):
-            line = line.strip()
-            # Look for timestamp pattern (HH:MM :)
-            if ':' in line and len(line) > 8:
-                parts = line.split(' : ', 1)
-                if len(parts) == 2 and self._is_timestamp(parts[0]):
-                    last_track = parts[1]
-                    break
-        
-        return last_track
-    
-    def _is_timestamp(self, text: str) -> bool:
-        """Check if text looks like a timestamp (HH:MM)."""
-        parts = text.split(':')
-        if len(parts) != 2:
-            return False
-        try:
-            hours, mins = int(parts[0]), int(parts[1])
-            return 0 <= hours <= 23 and 0 <= mins <= 59
-        except ValueError:
-            return False
-    
-    def _parse_track_string(self, content: str) -> tuple:
-        """Parse 'Artist - Title' format."""
-        if " - " in content:
-            artist, title = content.split(" - ", 1)
-            return artist.strip(), title.strip()
-        return "", content.strip()
 
 
 # =============================================================================

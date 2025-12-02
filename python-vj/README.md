@@ -2,6 +2,20 @@
 
 Master control center and karaoke engine for VJ performance control.
 
+## Recent Changes
+
+### VirtualDJ Network Control API Integration
+- **Replaced file-based polling** with VirtualDJ's HTTP Network Control API
+- **Real-time data**: BPM, precise position (0-1), elapsed time, masterdeck detection
+- **Dual source support**: Works alongside Spotify (Spotify takes priority when playing)
+- **Auto-reconnect**: Reconnects when VirtualDJ becomes available
+- See [VirtualDJ Setup](#virtualdj-setup) for configuration
+
+### Enhanced Logs Panel
+- **2000 log buffer** captures all Python logger output
+- **Filterable**: Press `E` to show only errors and warnings
+- **Color-coded**: Errors (red), warnings (yellow), info (green)
+
 ## Quick Start
 
 ```bash
@@ -21,6 +35,7 @@ python vj_console.py          # Launch the terminal UI
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
 - **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
 - **📊 Pipeline View**: Colorful terminal UI showing processing steps and logs
+- **📝 Logs Panel**: 2000-line log buffer with error/warning filtering
 
 ## Multi-Screen Terminal UI
 
@@ -51,7 +66,7 @@ Song categorization scores and AI analysis pipeline status.
 ![Song AI Debug](docs/screenshots/03-ai-debug.svg)
 
 #### Screen 4: All Logs
-Complete application logs for debugging and monitoring.
+Complete application logs for debugging and monitoring. Captures all Python logger output with filtering.
 
 ![All Logs](docs/screenshots/04-logs.svg)
 
@@ -66,7 +81,18 @@ Complete application logs for debugging and monitoring.
 | `↓/j` | Navigate down in app list |
 | `Enter` | Start/stop selected Processing app |
 | `+/-` | Adjust lyrics timing (±200ms) |
+| `E` | Toggle log filter (All / Errors+Warnings only) |
 | `Q` | Quit |
+
+### Logs Panel Features
+
+The Logs panel (Screen 4) provides comprehensive application logging:
+
+- **2000 log buffer**: Stores the last 2000 log messages from all application components
+- **All Python loggers captured**: Hooks into the root logger plus karaoke, adapters, and orchestrators
+- **Real-time updates**: Logs refresh every 0.5 seconds with newest entries at top
+- **Filter toggle**: Press `E` to toggle between all logs and errors/warnings only
+- **Color coding**: Errors (red), warnings (yellow), info (green), debug (dim)
 
 ## Architecture
 
@@ -525,19 +551,48 @@ See [`processing-vj/examples/ImageOverlay/`](../processing-vj/examples/ImageOver
 
 ## VirtualDJ Setup
 
-VirtualDJ can output the current track to a text file:
+The karaoke engine connects to VirtualDJ via the **Network Control** HTTP API plugin.
 
-1. Open VirtualDJ Settings → Interface → Broadcast
-2. Enable "Now Playing" output
-3. Set the file path (default: `~/Documents/VirtualDJ/now_playing.txt`)
+### Enable Network Control Plugin
 
-Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
+1. Open VirtualDJ
+2. Go to **Effects** → **Other** → **Network Control**
+3. Configure the port (default: 8080) and optional password
+4. Enable the plugin
+
+### Configuration
+
+Set environment variables in your `.env` file or shell:
+
+```env
+VDJ_API_URL=http://127.0.0.1:8080    # VirtualDJ Network Control URL
+VDJ_API_PASSWORD=                     # Password (leave empty if not set in VDJ)
+```
+
+Or pass as command-line arguments:
+
+```bash
+python karaoke_engine.py --vdj-url http://127.0.0.1:8080 --vdj-password mypassword
+```
+
+### Features
+
+The Network Control API provides:
+- **Real-time track info**: Artist, title, BPM, duration
+- **Playback position**: Precise elapsed time and position (0.0-1.0)
+- **Masterdeck detection**: Automatically follows the active deck
+
+### Troubleshooting
+
+- **VirtualDJ not detected**: Ensure Network Control plugin is enabled and running
+- **Connection refused**: Check firewall settings, ensure VDJ is running
+- **Wrong deck**: The engine follows the "masterdeck" - ensure the correct deck has focus
 
 ## Dependencies
 
 - **spotipy**: Spotify Web API client
 - **python-osc**: OSC protocol implementation
-- **requests**: HTTP client for LRCLIB API
+- **requests**: HTTP client (LRCLIB, VirtualDJ API, Ollama, ComfyUI)
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)

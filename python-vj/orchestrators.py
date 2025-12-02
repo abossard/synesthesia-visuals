@@ -46,6 +46,7 @@ class PlaybackCoordinator:
         self._state = PlaybackState()
         self._last_track_key = ""
         self._current_source = "unknown"
+        self._extra_data = {}  # Store source-specific data like BPM
     
     def get_current_state(self) -> PlaybackState:
         """
@@ -88,6 +89,12 @@ class PlaybackCoordinator:
             )
             position = playback.get('progress_ms', 0) / 1000.0
             
+            # Store extra data (BPM, position ratio, etc.)
+            self._extra_data = {
+                'bpm': playback.get('bpm', 0),
+                'position_ratio': playback.get('position', 0),  # 0.0-1.0 position
+            }
+            
             # Update state immutably
             self._state = self._state.update(
                 track=track,
@@ -98,6 +105,7 @@ class PlaybackCoordinator:
             return self._state
         
         # No playback detected
+        self._extra_data = {}
         if self._state.has_track:
             self._state = self._state.update(is_playing=False)
         
@@ -119,6 +127,11 @@ class PlaybackCoordinator:
     def current_source(self) -> str:
         """Return the name of the current playback source (spotify, virtualdj, etc.)."""
         return self._current_source
+    
+    @property
+    def extra_data(self) -> dict:
+        """Return source-specific extra data (BPM, position ratio, etc.)."""
+        return self._extra_data
 
 
 # =============================================================================
