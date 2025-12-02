@@ -2,11 +2,12 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-4 to switch):
+Screens (press 1-5 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
+5. VirtualDJ Debug - VDJ state, history, and diagnostics
 """
 
 from dotenv import load_dotenv
@@ -360,6 +361,93 @@ class AppsListPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class VirtualDJPanel(ReactivePanel):
+    """VirtualDJ debug and state view."""
+    vdj_data = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_vdj_data(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("VirtualDJ Debug", "═")]
+        
+        # Connection status
+        connected = self.vdj_data.get('connected', False)
+        conn_icon = format_status_icon(connected, "● Connected", "○ Disconnected")
+        api_url = self.vdj_data.get('api_url', 'http://127.0.0.1:8080')
+        lines.append(f"API: {conn_icon} {api_url}\n")
+        
+        if not connected:
+            lines.append("[dim]VirtualDJ Network Control not available.[/]")
+            lines.append("[dim]Enable plugin in VirtualDJ: Effects → Other → Network Control[/]")
+        else:
+            # Current track info
+            current = self.vdj_data.get('current_track', {})
+            if current.get('artist') and current.get('title'):
+                lines.append("[bold cyan]Current Track:[/]")
+                lines.append(f"  Artist: [cyan]{current.get('artist', 'N/A')}[/]")
+                lines.append(f"  Title:  {current.get('title', 'N/A')}")
+                lines.append(f"  Deck:   {current.get('deck', 'N/A')}")
+                lines.append(f"  BPM:    [yellow]{current.get('bpm', 0):.1f}[/]")
+                
+                # Playback position
+                pos = current.get('position', 0.0)
+                elapsed = current.get('elapsed_sec', 0)
+                length = current.get('length_sec', 0)
+                bar = format_bar(pos, width=30)
+                lines.append(f"  Pos:    [{bar}] {format_time(elapsed)} / {format_time(length)}")
+                lines.append("")
+            else:
+                lines.append("[dim]No track currently playing[/]\n")
+            
+            # Deck states
+            deck_states = self.vdj_data.get('deck_states', {})
+            if deck_states:
+                lines.append("[bold]Deck States:[/]")
+                for deck_num in sorted(deck_states.keys()):
+                    state = deck_states[deck_num]
+                    is_master = state.get('is_master', False)
+                    master_mark = " [yellow]★ MASTER[/]" if is_master else ""
+                    lines.append(f"  Deck {deck_num}:{master_mark}")
+                    if state.get('title'):
+                        lines.append(f"    {state.get('artist', '')} - {state.get('title', '')}")
+                        lines.append(f"    BPM: {state.get('bpm', 0):.1f}  │  Pos: {state.get('position', 0)*100:.1f}%")
+                    else:
+                        lines.append(f"    [dim](no track loaded)[/]")
+                lines.append("")
+            
+            # Track history
+            history = self.vdj_data.get('history', [])
+            if history:
+                lines.append("[bold]Recent History:[/]")
+                for i, track in enumerate(history[:5]):  # Show last 5 tracks
+                    timestamp = track.get('timestamp', '')
+                    lines.append(f"  {i+1}. {track.get('artist', 'Unknown')} - {track.get('title', 'Unknown')}")
+                    if timestamp:
+                        lines.append(f"     [dim]{timestamp}[/]")
+                lines.append("")
+            
+            # Debug info
+            debug = self.vdj_data.get('debug_info', {})
+            if debug:
+                lines.append("[bold]Debug Info:[/]")
+                lines.append(f"  Last update: [dim]{debug.get('last_update', 'N/A')}[/]")
+                lines.append(f"  Poll count:  [dim]{debug.get('poll_count', 0)}[/]")
+                lines.append(f"  Errors:      [dim]{debug.get('error_count', 0)}[/]")
+                if debug.get('last_error'):
+                    lines.append(f"  Last error:  [red]{debug.get('last_error')}[/]")
+        
+        self.update("\n".join(lines))
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -383,6 +471,7 @@ class VJConsoleApp(App):
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
+        Binding("5", "screen_vdj", "VDJ Debug"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("k,up", "nav_up", "Up"),
@@ -403,6 +492,14 @@ class VJConsoleApp(App):
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
+        
+        # VirtualDJ debug tracking
+        self._vdj_history: List[Dict[str, Any]] = []
+        self._vdj_poll_count = 0
+        self._vdj_error_count = 0
+        self._vdj_last_error = ""
+        self._vdj_deck_cache: Dict[int, Dict[str, Any]] = {}
+        
         self._setup_log_capture()
 
     def _find_project_root(self) -> Path:
@@ -465,12 +562,16 @@ class VJConsoleApp(App):
             # Tab 4: All Logs
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
+            
+            # Tab 5: VirtualDJ Debug
+            with TabPane("5️⃣ VirtualDJ Debug", id="vdj"):
+                yield VirtualDJPanel(id="vdj-panel", classes="panel full-height")
 
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-4 to switch screens"
+        self.sub_title = "Press 1-5 to switch screens"
         
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
@@ -646,6 +747,107 @@ class VJConsoleApp(App):
             self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
         except Exception:
             pass
+        
+        # Update VirtualDJ debug panel
+        self._update_vdj_debug()
+    
+    def _update_vdj_debug(self) -> None:
+        """Collect and update VirtualDJ debug information."""
+        if not self.karaoke_engine:
+            return
+        
+        # Find VirtualDJ monitor
+        vdj_monitor = None
+        for monitor in self.karaoke_engine._monitors:
+            if monitor.__class__.__name__ == 'VirtualDJMonitor':
+                vdj_monitor = monitor
+                break
+        
+        if not vdj_monitor:
+            return
+        
+        self._vdj_poll_count += 1
+        
+        vdj_data = {
+            'connected': vdj_monitor.is_available,
+            'api_url': getattr(vdj_monitor, '_base_url', 'http://127.0.0.1:8080'),
+            'current_track': {},
+            'deck_states': {},
+            'history': self._vdj_history.copy(),
+            'debug_info': {
+                'last_update': time.strftime('%H:%M:%S'),
+                'poll_count': self._vdj_poll_count,
+                'error_count': self._vdj_error_count,
+                'last_error': self._vdj_last_error,
+            }
+        }
+        
+        if vdj_monitor.is_available and hasattr(vdj_monitor, '_client') and vdj_monitor._client:
+            try:
+                from vdj_api import VirtualDJClient
+                client: VirtualDJClient = vdj_monitor._client
+                
+                # Get current masterdeck
+                master = client.get_masterdeck(vdj_monitor._decks)
+                
+                # Get status for all monitored decks
+                for deck_num in vdj_monitor._decks:
+                    try:
+                        status = client.get_deck_status(deck_num)
+                        if status:
+                            deck_state = {
+                                'artist': status.artist,
+                                'title': status.title,
+                                'bpm': status.bpm,
+                                'position': status.position,
+                                'elapsed_sec': status.elapsed_ms / 1000.0,
+                                'length_sec': status.length_sec,
+                                'is_master': (deck_num == master)
+                            }
+                            self._vdj_deck_cache[deck_num] = deck_state
+                            vdj_data['deck_states'][deck_num] = deck_state
+                            
+                            # If this is the master deck, add to current_track
+                            if deck_num == master and status.artist and status.title:
+                                vdj_data['current_track'] = {
+                                    'deck': deck_num,
+                                    'artist': status.artist,
+                                    'title': status.title,
+                                    'bpm': status.bpm,
+                                    'position': status.position,
+                                    'elapsed_sec': status.elapsed_ms / 1000.0,
+                                    'length_sec': status.length_sec,
+                                }
+                                
+                                # Add to history if track changed
+                                track_key = f"{status.artist}::{status.title}"
+                                if not self._vdj_history or self._vdj_history[0].get('key') != track_key:
+                                    self._vdj_history.insert(0, {
+                                        'key': track_key,
+                                        'artist': status.artist,
+                                        'title': status.title,
+                                        'deck': deck_num,
+                                        'bpm': status.bpm,
+                                        'timestamp': time.strftime('%H:%M:%S')
+                                    })
+                                    # Keep only last 20 tracks
+                                    self._vdj_history = self._vdj_history[:20]
+                    except Exception as e:
+                        logger.debug(f"Error getting deck {deck_num} status: {e}")
+                        # Use cached state if available
+                        if deck_num in self._vdj_deck_cache:
+                            vdj_data['deck_states'][deck_num] = self._vdj_deck_cache[deck_num]
+                
+            except Exception as e:
+                self._vdj_error_count += 1
+                self._vdj_last_error = str(e)
+                logger.debug(f"VDJ debug error: {e}")
+        
+        # Update panel
+        try:
+            self.query_one("#vdj-panel", VirtualDJPanel).vdj_data = vdj_data
+        except Exception:
+            pass
 
     # === Screen switching ===
     
@@ -660,6 +862,9 @@ class VJConsoleApp(App):
     
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
+    
+    def action_screen_vdj(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "vdj"
 
     # === App control ===
     
