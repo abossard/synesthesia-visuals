@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""
+Tests for MIDI Router
+
+Run with: python -m pytest test_midi_router.py -v
+Or simply: python test_midi_router.py
+"""
+
+import sys
+import unittest
+import tempfile
+import json
+from pathlib import Path
+
+# Test imports
+from midi_domain import (
+    MidiMessage, ToggleConfig, DeviceConfig, RouterConfig,
+    MidiMessageType, parse_midi_message, create_midi_bytes,
+    should_enhance_message, process_toggle, create_state_sync_messages,
+    config_to_dict, config_from_dict
+)
+
+
+class TestMidiMessage(unittest.TestCase):
+    """Tests for MidiMessage dataclass."""
+    
+    def test_note_on_detection(self):
+        """is_note_on should detect note on messages."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=60,
+            velocity_or_value=100
+        )
+        self.assertTrue(msg.is_note_on)
+        self.assertFalse(msg.is_note_off)
+    
+    def test_note_on_zero_velocity(self):
+        """Note on with velocity 0 is treated as note off."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=60,
+            velocity_or_value=0
+        )
+        self.assertFalse(msg.is_note_on)
+        self.assertTrue(msg.is_note_off)
+    
+    def test_note_off_detection(self):
+        """is_note_off should detect note off messages."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_OFF,
+            channel=0,
+            note_or_cc=60,
+            velocity_or_value=0
+        )
+        self.assertTrue(msg.is_note_off)
+        self.assertFalse(msg.is_note_on)
+    
+    def test_control_change_detection(self):
+        """is_control_change should detect CC messages."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.CONTROL_CHANGE,
+            channel=0,
+            note_or_cc=7,
+            velocity_or_value=64
+        )
+        self.assertTrue(msg.is_control_change)
+        self.assertFalse(msg.is_note_on)
+        self.assertFalse(msg.is_note_off)
+    
+    def test_string_representation(self):
+        """__str__ should provide human-readable output."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=1,
+            note_or_cc=60,
+            velocity_or_value=100
+        )
+        s = str(msg)
+        self.assertIn("Note On", s)
+        self.assertIn("ch1", s)
+        self.assertIn("60", s)
+        self.assertIn("100", s)
+
+
+class TestToggleConfig(unittest.TestCase):
+    """Tests for ToggleConfig dataclass."""
+    
+    def test_with_state(self):
+        """with_state should create new instance with updated state."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test", state=False)
+        new_toggle = toggle.with_state(True)
+        
+        # Original unchanged
+        self.assertFalse(toggle.state)
+        # New instance updated
+        self.assertTrue(new_toggle.state)
+        # Other fields preserved
+        self.assertEqual(new_toggle.note_or_cc, 40)
+        self.assertEqual(new_toggle.name, "Test")
+    
+    def test_toggle(self):
+        """toggle should flip state."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test", state=False)
+        
+        new_toggle = toggle.toggle()
+        self.assertTrue(new_toggle.state)
+        
+        newer_toggle = new_toggle.toggle()
+        self.assertFalse(newer_toggle.state)
+    
+    def test_key_property(self):
+        """key should return unique identifier."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test", message_type='note')
+        self.assertEqual(toggle.key, "note_40")
+        
+        toggle_cc = ToggleConfig(note_or_cc=7, name="Test", message_type='cc')
+        self.assertEqual(toggle_cc.key, "cc_7")
+    
+    def test_current_led_velocity(self):
+        """current_led_velocity should return velocity for current state."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="Test",
+            state=False,
+            led_on_velocity=127,
+            led_off_velocity=0
+        )
+        
+        self.assertEqual(toggle.current_led_velocity, 0)
+        
+        toggle_on = toggle.with_state(True)
+        self.assertEqual(toggle_on.current_led_velocity, 127)
+    
+    def test_current_output_velocity(self):
+        """current_output_velocity should return velocity for output."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="Test",
+            state=False,
+            output_on_velocity=127,
+            output_off_velocity=0
+        )
+        
+        self.assertEqual(toggle.current_output_velocity, 0)
+        
+        toggle_on = toggle.with_state(True)
+        self.assertEqual(toggle_on.current_output_velocity, 127)
+
+
+class TestRouterConfig(unittest.TestCase):
+    """Tests for RouterConfig dataclass."""
+    
+    def test_with_toggle(self):
+        """with_toggle should add/update toggle."""
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={}
+        )
+        
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        new_config = config.with_toggle(toggle)
+        
+        self.assertEqual(len(new_config.toggles), 1)
+        self.assertIn(40, new_config.toggles)
+    
+    def test_get_toggle(self):
+        """get_toggle should retrieve toggle by note."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        retrieved = config.get_toggle(40)
+        self.assertEqual(retrieved, toggle)
+        
+        self.assertIsNone(config.get_toggle(99))
+    
+    def test_has_toggle(self):
+        """has_toggle should check toggle existence."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        self.assertTrue(config.has_toggle(40))
+        self.assertFalse(config.has_toggle(99))
+
+
+class TestMidiParsing(unittest.TestCase):
+    """Tests for MIDI message parsing."""
+    
+    def test_parse_note_on(self):
+        """parse_midi_message should parse note on."""
+        msg = parse_midi_message(0x90, 60, 100)  # Note on, ch 0, note 60, vel 100
+        
+        self.assertEqual(msg.message_type, MidiMessageType.NOTE_ON)
+        self.assertEqual(msg.channel, 0)
+        self.assertEqual(msg.note_or_cc, 60)
+        self.assertEqual(msg.velocity_or_value, 100)
+    
+    def test_parse_note_off(self):
+        """parse_midi_message should parse note off."""
+        msg = parse_midi_message(0x80, 60, 0)  # Note off, ch 0, note 60
+        
+        self.assertEqual(msg.message_type, MidiMessageType.NOTE_OFF)
+        self.assertEqual(msg.channel, 0)
+        self.assertEqual(msg.note_or_cc, 60)
+    
+    def test_parse_control_change(self):
+        """parse_midi_message should parse CC."""
+        msg = parse_midi_message(0xB0, 7, 64)  # CC, ch 0, CC 7, value 64
+        
+        self.assertEqual(msg.message_type, MidiMessageType.CONTROL_CHANGE)
+        self.assertEqual(msg.channel, 0)
+        self.assertEqual(msg.note_or_cc, 7)
+        self.assertEqual(msg.velocity_or_value, 64)
+    
+    def test_parse_with_channel(self):
+        """parse_midi_message should extract channel."""
+        msg = parse_midi_message(0x93, 60, 100)  # Note on, ch 3
+        
+        self.assertEqual(msg.message_type, MidiMessageType.NOTE_ON)
+        self.assertEqual(msg.channel, 3)
+    
+    def test_create_midi_bytes(self):
+        """create_midi_bytes should convert back to bytes."""
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=3,
+            note_or_cc=60,
+            velocity_or_value=100
+        )
+        
+        status, data1, data2 = create_midi_bytes(msg)
+        
+        self.assertEqual(status, 0x93)  # NOTE_ON | channel 3
+        self.assertEqual(data1, 60)
+        self.assertEqual(data2, 100)
+    
+    def test_roundtrip(self):
+        """Parse and create should roundtrip."""
+        original = parse_midi_message(0x93, 60, 100)
+        status, data1, data2 = create_midi_bytes(original)
+        roundtrip = parse_midi_message(status, data1, data2)
+        
+        self.assertEqual(original, roundtrip)
+
+
+class TestToggleLogic(unittest.TestCase):
+    """Tests for toggle processing logic."""
+    
+    def test_should_enhance_message_note_on(self):
+        """should_enhance_message should detect toggle note on."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=40,
+            velocity_or_value=100
+        )
+        
+        self.assertTrue(should_enhance_message(msg, config))
+    
+    def test_should_enhance_message_note_off(self):
+        """should_enhance_message should ignore note off."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_OFF,
+            channel=0,
+            note_or_cc=40,
+            velocity_or_value=0
+        )
+        
+        self.assertFalse(should_enhance_message(msg, config))
+    
+    def test_should_enhance_message_unknown_note(self):
+        """should_enhance_message should ignore unconfigured notes."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test")
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=99,
+            velocity_or_value=100
+        )
+        
+        self.assertFalse(should_enhance_message(msg, config))
+    
+    def test_process_toggle_off_to_on(self):
+        """process_toggle should flip state OFF -> ON."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="Test",
+            state=False,
+            led_on_velocity=127,
+            led_off_velocity=0,
+            output_on_velocity=127,
+            output_off_velocity=0
+        )
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=40,
+            velocity_or_value=100
+        )
+        
+        new_config, led_msg, output_msg = process_toggle(msg, config)
+        
+        # Config updated
+        new_toggle = new_config.get_toggle(40)
+        self.assertTrue(new_toggle.state)
+        
+        # LED message has ON velocity
+        self.assertEqual(led_msg.velocity_or_value, 127)
+        
+        # Output message has ON velocity
+        self.assertEqual(output_msg.velocity_or_value, 127)
+    
+    def test_process_toggle_on_to_off(self):
+        """process_toggle should flip state ON -> OFF."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="Test",
+            state=True,
+            led_on_velocity=127,
+            led_off_velocity=0,
+            output_on_velocity=127,
+            output_off_velocity=0
+        )
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=40,
+            velocity_or_value=100
+        )
+        
+        new_config, led_msg, output_msg = process_toggle(msg, config)
+        
+        # Config updated
+        new_toggle = new_config.get_toggle(40)
+        self.assertFalse(new_toggle.state)
+        
+        # LED message has OFF velocity
+        self.assertEqual(led_msg.velocity_or_value, 0)
+        
+        # Output message has OFF velocity
+        self.assertEqual(output_msg.velocity_or_value, 0)
+    
+    def test_process_toggle_immutable(self):
+        """process_toggle should not mutate original config."""
+        toggle = ToggleConfig(note_or_cc=40, name="Test", state=False)
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        msg = MidiMessage(
+            message_type=MidiMessageType.NOTE_ON,
+            channel=0,
+            note_or_cc=40,
+            velocity_or_value=100
+        )
+        
+        new_config, _, _ = process_toggle(msg, config)
+        
+        # Original config unchanged
+        original_toggle = config.get_toggle(40)
+        self.assertFalse(original_toggle.state)
+        
+        # New config updated
+        new_toggle = new_config.get_toggle(40)
+        self.assertTrue(new_toggle.state)
+
+
+class TestStateSyncMessages(unittest.TestCase):
+    """Tests for state sync message generation."""
+    
+    def test_create_state_sync_messages_empty(self):
+        """create_state_sync_messages should handle empty toggles."""
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={}
+        )
+        
+        messages = create_state_sync_messages(config)
+        self.assertEqual(len(messages), 0)
+    
+    def test_create_state_sync_messages_single(self):
+        """create_state_sync_messages should create message pair."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="Test",
+            state=True,
+            led_on_velocity=127,
+            output_on_velocity=127
+        )
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={40: toggle}
+        )
+        
+        messages = create_state_sync_messages(config)
+        
+        self.assertEqual(len(messages), 1)
+        led_msg, output_msg = messages[0]
+        
+        # LED message
+        self.assertEqual(led_msg.note_or_cc, 40)
+        self.assertEqual(led_msg.velocity_or_value, 127)
+        
+        # Output message
+        self.assertEqual(output_msg.note_or_cc, 40)
+        self.assertEqual(output_msg.velocity_or_value, 127)
+    
+    def test_create_state_sync_messages_multiple(self):
+        """create_state_sync_messages should handle multiple toggles."""
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Test"),
+            virtual_output=DeviceConfig(name_pattern="Virtual"),
+            toggles={
+                40: ToggleConfig(note_or_cc=40, name="T1", state=False),
+                41: ToggleConfig(note_or_cc=41, name="T2", state=True),
+                42: ToggleConfig(note_or_cc=42, name="T3", state=False),
+            }
+        )
+        
+        messages = create_state_sync_messages(config)
+        
+        self.assertEqual(len(messages), 3)
+
+
+class TestConfigSerialization(unittest.TestCase):
+    """Tests for config serialization."""
+    
+    def test_config_to_dict(self):
+        """config_to_dict should create serializable dict."""
+        toggle = ToggleConfig(
+            note_or_cc=40,
+            name="TwisterOn",
+            state=True,
+            message_type='note',
+            led_on_velocity=127,
+            led_off_velocity=0,
+            output_on_velocity=127,
+            output_off_velocity=0
+        )
+        config = RouterConfig(
+            controller=DeviceConfig(name_pattern="Launchpad"),
+            virtual_output=DeviceConfig(name_pattern="MagicBus"),
+            toggles={40: toggle}
+        )
+        
+        data = config_to_dict(config)
+        
+        self.assertIn('controller', data)
+        self.assertIn('virtual_output', data)
+        self.assertIn('toggles', data)
+        self.assertEqual(data['controller']['name_pattern'], "Launchpad")
+        self.assertIn('40', data['toggles'])
+        self.assertEqual(data['toggles']['40']['name'], "TwisterOn")
+        self.assertTrue(data['toggles']['40']['state'])
+    
+    def test_config_from_dict(self):
+        """config_from_dict should recreate config."""
+        data = {
+            "controller": {
+                "name_pattern": "Launchpad",
+                "input_port": None,
+                "output_port": None
+            },
+            "virtual_output": {
+                "name_pattern": "MagicBus",
+                "input_port": None,
+                "output_port": None
+            },
+            "toggles": {
+                "40": {
+                    "name": "TwisterOn",
+                    "state": True,
+                    "message_type": "note",
+                    "led_on_velocity": 127,
+                    "led_off_velocity": 0,
+                    "output_on_velocity": 127,
+                    "output_off_velocity": 0
+                }
+            }
+        }
+        
+        config = config_from_dict(data)
+        
+        self.assertEqual(config.controller.name_pattern, "Launchpad")
+        self.assertEqual(config.virtual_output.name_pattern, "MagicBus")
+        self.assertEqual(len(config.toggles), 1)
+        
+        toggle = config.get_toggle(40)
+        self.assertIsNotNone(toggle)
+        self.assertEqual(toggle.name, "TwisterOn")
+        self.assertTrue(toggle.state)
+    
+    def test_roundtrip_serialization(self):
+        """Config should roundtrip through dict."""
+        original = RouterConfig(
+            controller=DeviceConfig(name_pattern="Launchpad"),
+            virtual_output=DeviceConfig(name_pattern="MagicBus"),
+            toggles={
+                40: ToggleConfig(note_or_cc=40, name="T1", state=False),
+                41: ToggleConfig(note_or_cc=41, name="T2", state=True),
+            }
+        )
+        
+        data = config_to_dict(original)
+        roundtrip = config_from_dict(data)
+        
+        self.assertEqual(roundtrip.controller.name_pattern, original.controller.name_pattern)
+        self.assertEqual(len(roundtrip.toggles), len(original.toggles))
+        
+        for note in original.toggles:
+            orig_toggle = original.get_toggle(note)
+            new_toggle = roundtrip.get_toggle(note)
+            self.assertEqual(orig_toggle.name, new_toggle.name)
+            self.assertEqual(orig_toggle.state, new_toggle.state)
+
+
+class TestConfigManager(unittest.TestCase):
+    """Tests for ConfigManager class."""
+    
+    def test_save_and_load(self):
+        """ConfigManager should save and load config."""
+        from midi_router import ConfigManager
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test_config.json"
+            manager = ConfigManager(config_path)
+            
+            # Create config
+            config = RouterConfig(
+                controller=DeviceConfig(name_pattern="Launchpad"),
+                virtual_output=DeviceConfig(name_pattern="MagicBus"),
+                toggles={
+                    40: ToggleConfig(note_or_cc=40, name="Test", state=True)
+                }
+            )
+            
+            # Save
+            manager.save(config)
+            
+            # Load
+            loaded = manager.load()
+            
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.controller.name_pattern, "Launchpad")
+            self.assertEqual(len(loaded.toggles), 1)
+            
+            toggle = loaded.get_toggle(40)
+            self.assertEqual(toggle.name, "Test")
+            self.assertTrue(toggle.state)
+    
+    def test_load_nonexistent(self):
+        """ConfigManager.load should return None for nonexistent file."""
+        from midi_router import ConfigManager
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "nonexistent.json"
+            manager = ConfigManager(config_path)
+            
+            loaded = manager.load()
+            self.assertIsNone(loaded)
+
+
+if __name__ == "__main__":
+    # Run tests
+    unittest.main(verbosity=2)
