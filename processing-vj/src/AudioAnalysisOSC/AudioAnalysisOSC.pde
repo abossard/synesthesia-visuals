@@ -41,7 +41,7 @@ float pulseDecay = 0.88f;         // How fast pulses fade (0.8-0.95)
 
 // Runtime state (not persisted)
 boolean showRawSpectrum = false;  // Toggle raw vs smoothed display
-int detectedSampleRate = 44100;   // Will try to detect from audio system
+int detectedSampleRate = 48000;   // Default to 48kHz (BlackHole default)
 boolean adaptiveThreshold = true; // Auto-tune beat sensitivity based on energy variance
 float adaptedSensitivity = 1.4f;  // Current adapted beat sensitivity
 
@@ -76,8 +76,9 @@ float[] spectrumPayload;
 
 // === Throttling ===
 int frameCounter = 0;
-int hudThrottleFrames = 2;       // Draw HUD every N frames
+int hudThrottleFrames = 2;       // Draw HUD every N frames (unused now)
 int spectrumOscThrottleFrames = 3;  // Send spectrum OSC every N frames
+int bpmOscThrottleFrames = 45;      // Send BPM OSC every N frames (~2/sec at 90fps)
 
 // === UI ===
 PFont hudFont;
@@ -148,10 +149,8 @@ void draw() {
 
   analysisLatencyMs = (System.nanoTime() - analysisStart) / 1_000_000.0f;
   
-  // HUD throttling: only redraw every N frames for performance
-  if (frameCounter % hudThrottleFrames == 0) {
-    drawHud();
-  }
+  // Draw HUD every frame (no throttling - was causing flicker)
+  drawHud();
 }
 
 // === Audio device management ===
@@ -308,7 +307,18 @@ void analyzeAudio() {
 
   // Beat detector now uses spectral flux (onset energy) instead of raw spectrum
   beatDetector.update(spectralFlux);
-  bandDetector.update(bass, mid, presence);
+  
+  // Multi-band beat detection with better frequency separation:
+  // - Bass: subBass + bass (20-250Hz) - kick drums, bass synths
+  // - Mid: lowMid + mid (250-2000Hz) - snares, vocals, most instruments  
+  // - High: highMid + presence + air (2000-20000Hz) - hi-hats, cymbals, sibilance
+  // Note: No scaling here - the adaptive threshold in MultiBandBeatDetector
+  // normalizes each band independently, so scaling would cancel out
+  float bassForBeat = subBass + bass;
+  float midForBeat = lowMid + mid;
+  float highForBeat = highMid + presence + air;
+  bandDetector.update(bassForBeat, midForBeat, highForBeat);
+  
   if (beatDetector.isBeat()) {
     autoBpm.recordBeat();
   }
@@ -362,10 +372,13 @@ void sendOsc() {
   beats.add(highHitPulse);
   sendToTarget(beats);
 
-  OscMessage bpmMsg = new OscMessage("/audio/bpm");
-  bpmMsg.add(autoBpm.getBpm());
-  bpmMsg.add(autoBpm.getConfidence());
-  sendToTarget(bpmMsg);
+  // BPM is throttled - only changes slowly, no need every frame
+  if (frameCounter % bpmOscThrottleFrames == 0) {
+    OscMessage bpmMsg = new OscMessage("/audio/bpm");
+    bpmMsg.add(autoBpm.getBpm());
+    bpmMsg.add(autoBpm.getConfidence());
+    sendToTarget(bpmMsg);
+  }
 
   // Spectrum is throttled - sent every N frames to reduce network load
   if (frameCounter % spectrumOscThrottleFrames == 0) {
@@ -526,8 +539,9 @@ void drawSpectrumBars(float x, float y, float w, float h) {
     // Get value from smoothed spectrum
     float val = smoothedSpectrum[binIdx];
     
-    // Apply different scaling per frequency range (bass needs less boost)
-    float boost = map(i, 0, numBars, 3, 12);  // Less boost for bass, more for highs
+    // Apply aggressive scaling per frequency range
+    // Bass is naturally 10-100x louder than highs in most music
+    float boost = map(i, 0, numBars, 3, 50);  // Much more boost for highs
     val = constrain(val * boost, 0, 1);
     float barH = val * h;
     
@@ -650,6 +664,9 @@ void drawLevelBars(float x, float y) {
   
   String[] labels = {"SubBass", "Bass", "LowMid", "Mid", "HighMid", "Presence", "Air", "Overall"};
   float[] values = {subBass, bass, lowMid, mid, highMid, presence, air, overallLevel};
+  // Per-band scaling to compensate for natural bass dominance
+  // Higher frequencies need more boost to be visible
+  float[] scales = {3, 4, 8, 12, 20, 30, 40, 4};  // SubBass to Air + Overall
   color[] colors = {
     color(255, 50, 50),    // SubBass - red
     color(255, 100, 50),   // Bass - orange
@@ -674,8 +691,8 @@ void drawLevelBars(float x, float y) {
     noStroke();
     rect(x + 65, ly, barWidth, barHeight);
     
-    // Level bar (scaled, values are typically 0-0.5 range)
-    float level = constrain(values[i] * 4, 0, 1);  // scale up for visibility
+    // Level bar with per-band scaling for visibility
+    float level = constrain(values[i] * scales[i], 0, 1);
     if (level > 0.01) {
       fill(colors[i]);
       rect(x + 65, ly, barWidth * level, barHeight);
@@ -1031,7 +1048,7 @@ class AnalyzerConfig {
   float noiseFloor = 0.0f;
   float beatSensitivity = 1.4f;
   float pulseDecay = 0.88f;
-  int sampleRate = 44100;
+  int sampleRate = 48000;  // Default to 48kHz (BlackHole default)
 }
 
 AnalyzerConfig loadAnalyzerConfig(String fileName) {

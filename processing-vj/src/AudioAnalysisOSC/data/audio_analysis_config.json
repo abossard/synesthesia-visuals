@@ -4,7 +4,7 @@
   "pulse_decay": 0.699999988079071,
   "sample_rate": 44100,
   "spectrum_bins": 48,
-  "beat_sensitivity": 1.2000000476837158,
+  "beat_sensitivity": 1.5000001192092896,
   "window_title": "AudioAnalysisOSC",
   "smoothing": 0.6999999284744263,
   "frame_rate": 90,
