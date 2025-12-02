@@ -1,0 +1,7 @@
+{
+  "window_title": "AudioAnalysisOSC",
+  "osc_host": "127.0.0.1",
+  "osc_port": 16666,
+  "spectrum_bins": 48,
+  "frame_rate": 90
+}
