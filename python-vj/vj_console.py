@@ -16,6 +16,7 @@ from typing import Optional, List, Dict, Tuple, Any
 import logging
 import subprocess
 import time
+import threading
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
@@ -35,8 +36,11 @@ try:
     )
     AUDIO_ANALYZER_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Audio analyzer not available: {e}")
     AUDIO_ANALYZER_AVAILABLE = False
+    # Logger might not be initialized yet at module level, so use print as fallback
+    import sys
+    print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
+    print("Install dependencies: pip install sounddevice numpy aubio", file=sys.stderr)
 
 load_dotenv(override=True, verbose=True)
 
@@ -1218,7 +1222,6 @@ class VJConsoleApp(App):
                 except Exception as e:
                     logger.error(f"Failed to update benchmark panel: {e}")
             
-            import threading
             benchmark_thread = threading.Thread(target=run_benchmark, daemon=True)
             benchmark_thread.start()
             

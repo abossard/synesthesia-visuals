@@ -36,8 +36,10 @@ import sounddevice as sd
 try:
     import aubio
     AUBIO_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     AUBIO_AVAILABLE = False
+    logger.warning(f"Aubio not available - beat/tempo/pitch detection disabled: {e}")
+    logger.info("Install aubio with: pip install aubio")
 
 logger = logging.getLogger('audio_analyzer')
 
