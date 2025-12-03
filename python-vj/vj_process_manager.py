@@ -109,6 +109,16 @@ class ProcessManagerWorker(Worker):
                 script=str(script_dir / "vj_virtualdj_worker.py"),
                 enabled=True
             ),
+            "lyrics_fetcher": ManagedWorker(
+                name="lyrics_fetcher",
+                script=str(script_dir / "vj_lyrics_worker.py"),
+                enabled=True
+            ),
+            "osc_debugger": ManagedWorker(
+                name="osc_debugger",
+                script=str(script_dir / "vj_osc_debugger.py"),
+                enabled=False  # Disabled by default (debugging tool)
+            ),
         }
     
     def on_start(self):
