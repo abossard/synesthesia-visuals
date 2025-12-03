@@ -1,0 +1,12 @@
+{
+  "noise_floor": 0.0005,
+  "osc_host": "127.0.0.1",
+  "pulse_decay": 0.88,
+  "sample_rate": 48000,
+  "spectrum_bins": 48,
+  "beat_sensitivity": 1.4,
+  "window_title": "AudioAnalysisOSC",
+  "smoothing": 0.4,
+  "frame_rate": 90,
+  "osc_port": 16666
+}
