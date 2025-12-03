@@ -38,7 +38,7 @@ def serve_rep(endpoint: str, handler: Callable[[Envelope], Envelope], stop_event
         socket.close()
 
 
-def start_pub(endpoint: str):
+def start_pub(endpoint: str) -> zmq.Socket:
     context = ZmqContextSingleton.get_context()
     socket = context.socket(zmq.PUB)
     socket.linger = 0
@@ -46,14 +46,14 @@ def start_pub(endpoint: str):
     return socket
 
 
-def publish(socket, envelope: Envelope) -> None:
+def publish(socket: zmq.Socket, envelope: Envelope) -> None:
     socket.send_multipart([
         envelope.worker.encode(),
         json_dumps(envelope.to_dict()).encode(),
     ])
 
 
-def subscribe(endpoint: str, topic: bytes = b""):
+def subscribe(endpoint: str, topic: bytes = b"") -> zmq.Socket:
     context = ZmqContextSingleton.get_context()
     socket = context.socket(zmq.SUB)
     socket.linger = 0
@@ -62,7 +62,7 @@ def subscribe(endpoint: str, topic: bytes = b""):
     return socket
 
 
-def recv_envelope(socket, timeout_ms: int = 1000) -> Optional[Envelope]:
+def recv_envelope(socket: zmq.Socket, timeout_ms: int = 1000) -> Optional[Envelope]:
     poller = zmq.Poller()
     poller.register(socket, zmq.POLLIN)
     events = dict(poller.poll(timeout=timeout_ms))
