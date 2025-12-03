@@ -137,7 +137,8 @@ def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict
         'error': snapshot.error,
         'backoff': snapshot.backoff_seconds,
         'source': snapshot.source,
-        'connected': source_available,
+        # If we have live track data, the monitor clearly responded, so treat it as connected
+        'connected': source_available or bool(state.track),
     }
     if not track:
         return base

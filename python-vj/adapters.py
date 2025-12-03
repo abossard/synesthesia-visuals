@@ -154,6 +154,7 @@ class AppleScriptSpotifyMonitor:
         self._script_path = Path(script_path) if script_path else cfg['script_path']
         self._timeout = timeout if timeout is not None else cfg['timeout']
         self._health = ServiceHealth(self.monitor_label)
+        self._notified_online = False
 
     def get_playback(self) -> Optional[Dict[str, Any]]:
         """Execute AppleScript and convert the JSON payload into playback dict."""
@@ -208,6 +209,12 @@ class AppleScriptSpotifyMonitor:
         }
 
         self._health.mark_available("AppleScript OK")
+        if not self._notified_online:
+            logger.info(
+                "Spotify (AppleScript): Desktop app detected via AppleScript. Keep Spotify running and online; "
+                "Web API fallback stays idle until AppleScript fails."
+            )
+            self._notified_online = True
         return playback
 
     @property
@@ -235,7 +242,8 @@ class SpotifyMonitor:
         self._sp = None
         self._health = ServiceHealth(self.monitor_label)
         self._logged_no_credentials = False  # Only log once
-        self._init_client()
+        # Lazy initialization: only attempt Web API connection if this monitor is actually polled
+        # (e.g., AppleScript failed or has been disabled).
     
     @property
     def is_available(self) -> bool:
