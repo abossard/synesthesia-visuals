@@ -15,6 +15,8 @@ def test_worker_coordinator_integration():
     print("Testing VJ Console + WorkerCoordinator Integration")
     print("=" * 60)
     
+    workers = []  # Initialize outside try block for later use
+    
     # Test 1: Import vj_console
     print("\n[1/5] Testing vj_console import...")
     try:

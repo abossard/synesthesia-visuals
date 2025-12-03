@@ -1449,12 +1449,14 @@ class VJConsoleApp(App):
         logger.info("Starting all workers...")
         
         # List of workers to start (exclude process_manager itself)
+        # Note: audio_analyzer requires audio hardware and is disabled by default
+        # Note: osc_debugger is a debugging tool and is disabled by default
         workers_to_start = [
             'spotify_monitor',
             'virtualdj_monitor', 
             'lyrics_fetcher',
-            # 'audio_analyzer',  # Commented out by default, requires audio hardware
-            # 'osc_debugger',    # Commented out by default, debugging tool
+            # 'audio_analyzer',  # Requires audio hardware - enable if available
+            # 'osc_debugger',    # Debugging tool - enable when needed
         ]
         
         for worker_name in workers_to_start:
