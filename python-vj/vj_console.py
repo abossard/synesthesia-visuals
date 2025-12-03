@@ -25,16 +25,11 @@ from textual.reactive import reactive
 from textual.binding import Binding
 
 from process_manager import ProcessManager
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
-from domain import PlaybackSnapshot, PlaybackState
+from karaoke_engine import Config as KaraokeConfig  # Only for config utilities
+from domain import get_active_line_index
 
-# VJ Bus support
-try:
-    from vj_bus.client import VJBusClient
-    VJ_BUS_AVAILABLE = True
-except ImportError:
-    VJ_BUS_AVAILABLE = False
-    VJBusClient = None
+# VJ Bus - Required for pure worker architecture
+from vj_bus.client import VJBusClient
 
 # Audio analysis (imported conditionally to handle missing dependencies)
 try:
@@ -439,13 +434,19 @@ class ServicesPanel(ReactivePanel):
         s = self.services
         lines = [self.render_section("Services", "═")]
 
-        # VJ Bus worker mode indicator
-        if s.get('vj_bus_mode'):
-            workers = s.get('vj_bus_workers', [])
-            lines.append(f"[green]✓ VJ Bus Mode   {len(workers)} workers[/]")
+        # VJ Bus worker mode indicator (always shown)
+        workers = s.get('vj_bus_workers', [])
+        connected = s.get('vj_bus_connected', False)
+
+        if connected and workers:
+            lines.append(f"[green]✓ VJ Bus Mode   {len(workers)} workers connected[/]")
             for worker in workers:
                 lines.append(f"    [cyan]•[/] {worker}")
-            lines.append("")  # Spacing
+        else:
+            lines.append(f"[yellow]⚠ VJ Bus Mode   Waiting for workers...[/]")
+            lines.append(f"    [dim]Run: python dev/start_all_workers.py[/]")
+
+        lines.append("")  # Spacing
 
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
         lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
@@ -809,14 +810,12 @@ class VJConsoleApp(App):
         super().__init__()
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self._find_project_root())
-        self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
-        self._latest_snapshot: Optional[PlaybackSnapshot] = None
 
-        # VJ Bus client and worker mode
-        self.vj_bus_client: Optional[VJBusClient] = None
-        self.using_workers = False
+        # VJ Bus client - Pure worker architecture
+        self.vj_bus_client: VJBusClient = VJBusClient()
+        self.workers_connected = False
         self._worker_telemetry = {
             'virtualdj_state': None,
             'spotify_state': None,
@@ -946,23 +945,15 @@ class VJConsoleApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "🎛 VJ Console"
+        self.title = "🎛 VJ Console - VJ Bus Mode"
         self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
 
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
 
-        # Try VJ Bus workers first, fall back to direct engine
-        if VJ_BUS_AVAILABLE:
-            if self._try_vjbus_workers():
-                logger.info("✓ Using VJ Bus workers")
-            else:
-                logger.info("Workers not available, using direct KaraokeEngine")
-                self._start_karaoke()
-        else:
-            logger.info("VJ Bus not available, using direct KaraokeEngine")
-            self._start_karaoke()
+        # Connect to VJ Bus workers (required)
+        self._connect_to_workers()
 
         # Initialize audio analyzer if available
         if AUDIO_ANALYZER_AVAILABLE:
@@ -971,6 +962,7 @@ class VJConsoleApp(App):
         # Background updates
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
+        self.set_interval(5.0, self._reconnect_workers)  # Periodic reconnection attempt
 
     # === Actions (impure, side effects) ===
 
@@ -1164,27 +1156,19 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.error(f"Error updating audio panels: {e}")
     
-    def _start_karaoke(self) -> None:
+    def _connect_to_workers(self) -> None:
+        """Connect to VJ Bus workers (required for operation)."""
         try:
-            self.karaoke_engine = KaraokeEngine()
-            self.karaoke_engine.start()
-        except Exception as e:
-            logger.exception(f"Karaoke start error: {e}")
-
-    def _try_vjbus_workers(self) -> bool:
-        """Try to connect to VJ Bus workers. Returns True if successful."""
-        try:
-            # Create client
-            self.vj_bus_client = VJBusClient()
-
             # Discover workers
             self._discovered_workers = self.vj_bus_client.discover_workers()
 
             if not self._discovered_workers:
-                logger.info("No VJ Bus workers found")
-                return False
+                logger.warning("⚠️  No VJ Bus workers found - waiting for workers to start")
+                logger.warning("   Start workers with: python dev/start_all_workers.py")
+                self.workers_connected = False
+                return
 
-            logger.info(f"Discovered {len(self._discovered_workers)} workers:")
+            logger.info(f"✓ Discovered {len(self._discovered_workers)} workers:")
             for worker in self._discovered_workers:
                 logger.info(f"  - {worker.name}")
 
@@ -1199,18 +1183,18 @@ class VJConsoleApp(App):
             # Start telemetry receiver
             self.vj_bus_client.start()
 
-            self.using_workers = True
-            return True
+            self.workers_connected = True
+            logger.info("✓ VJ Bus client started")
 
         except Exception as e:
-            logger.error(f"Failed to initialize VJ Bus: {e}")
-            if self.vj_bus_client:
-                try:
-                    self.vj_bus_client.stop()
-                except:
-                    pass
-                self.vj_bus_client = None
-            return False
+            logger.error(f"Failed to connect to VJ Bus workers: {e}")
+            self.workers_connected = False
+
+    def _reconnect_workers(self) -> None:
+        """Periodically attempt to reconnect to workers if disconnected."""
+        if not self.workers_connected:
+            logger.debug("Attempting to reconnect to workers...")
+            self._connect_to_workers()
 
     # === VJ Bus telemetry callbacks ===
 
@@ -1299,18 +1283,11 @@ class VJConsoleApp(App):
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'synesthesia': self.synesthesia_running,
                 'synesthesia_installed': Path('/Applications/Synesthesia.app').exists(),
-                'playback_monitors': (self._latest_snapshot.monitor_status if self._latest_snapshot else {}),
-                'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
-                'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
+                # VJ Bus worker information
+                'vj_bus_mode': True,  # Always in VJ Bus mode
+                'vj_bus_connected': self.workers_connected,
+                'vj_bus_workers': [w.name for w in self._discovered_workers],
             }
-
-            # Add worker information if using VJ Bus
-            if self.using_workers:
-                services_data['vj_bus_mode'] = True
-                services_data['vj_bus_workers'] = [w.name for w in self._discovered_workers]
-            else:
-                services_data['vj_bus_mode'] = False
-                services_data['vj_bus_workers'] = []
 
             self.query_one("#services", ServicesPanel).services = services_data
         except Exception:
@@ -1376,118 +1353,9 @@ class VJConsoleApp(App):
             self._update_audio_panels()
 
     def _update_data(self) -> None:
-        """Update all panels with current data (only update visible screens)."""
-        # Handle both worker mode and direct engine mode
-        if self.using_workers:
-            self._update_data_from_workers()
-            return
-
-        if not self.karaoke_engine:
-            return
-        
-        # Always update snapshot (needed for OSC)
-        snapshot = self.karaoke_engine.get_snapshot()
-        self._latest_snapshot = snapshot
-        
-        # Only update UI panels for visible screens (optimization)
-        screen = self._current_screen
-        
-        if screen == "master":
-            # Update master screen panels only
-            monitor_status = snapshot.monitor_status or {}
-            if snapshot.source and snapshot.source in monitor_status:
-                source_connected = monitor_status[snapshot.source].get('available', False)
-            else:
-                source_connected = any(status.get('available', False) for status in monitor_status.values())
-            track_data = build_track_data(snapshot, source_connected)
-            
-            try:
-                self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-            except Exception:
-                pass
-            
-            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
-            try:
-                self.query_one("#categories", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
-            
-            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
-            try:
-                self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
-            
-            # Mini OSC panel on master screen
-            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
-            try:
-                panel = self.query_one("#osc-mini", OSCPanel)
-                panel.full_view = False
-                panel.messages = osc_msgs
-            except Exception:
-                pass
-            
-            # Master control status
-            running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-            try:
-                self.query_one("#master-ctrl", MasterControlPanel).status = {
-                    'synesthesia': self.synesthesia_running,
-                    'milksyphon': self.milksyphon_running,
-                    'processing_apps': running_apps,
-                    'karaoke': self.karaoke_engine is not None,
-                }
-            except Exception:
-                pass
-        
-        elif screen == "osc":
-            # Update OSC view only
-            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
-            try:
-                panel = self.query_one("#osc-full", OSCPanel)
-                panel.full_view = True
-                panel.messages = osc_msgs
-            except Exception:
-                pass
-        
-        elif screen == "ai":
-            # Update AI debug screen only
-            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
-            try:
-                self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
-            
-            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
-            try:
-                self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
-        
-        elif screen == "logs":
-            # Update logs panel only
-            try:
-                self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-            except Exception:
-                pass
-        
-        elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
-            # Update audio panels only
-            self._update_audio_panels()
-        
-        # Send OSC status only when it changes (always, regardless of screen)
-        running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        current_status = {
-            'karaoke_active': True,
-            'synesthesia_running': self.synesthesia_running,
-            'milksyphon_running': self.milksyphon_running,
-            'processing_apps': running_apps
-        }
-        if current_status != self._last_master_status:
-            self.karaoke_engine.osc_sender.send_master_status(
-                karaoke_active=True, synesthesia_running=self.synesthesia_running,
-                milksyphon_running=self.milksyphon_running, processing_apps=running_apps
-            )
-            self._last_master_status = current_status
+        """Update all panels with current data from worker telemetry."""
+        # Pure worker mode - all data from telemetry
+        self._update_data_from_workers()
 
     # === Screen switching ===
     
@@ -1627,17 +1495,13 @@ class VJConsoleApp(App):
 
     def on_unmount(self) -> None:
         """Cleanup when app is closing."""
-        # Stop VJBusClient if using workers
+        # Stop VJBusClient
         if self.vj_bus_client:
             try:
                 self.vj_bus_client.stop()
                 logger.info("VJ Bus client stopped")
             except Exception as e:
                 logger.error(f"Error stopping VJ Bus client: {e}")
-
-        # Stop karaoke engine if using direct mode
-        if self.karaoke_engine:
-            self.karaoke_engine.stop()
 
         self.process_manager.cleanup()
 
