@@ -1095,8 +1095,8 @@ class VJConsoleApp(App):
                     # Keep only last 500 lines
                     if len(self.log_list) > 500:
                         self.log_list.pop(0)
-                except Exception:
-                    # Prevent logging errors from crashing the app - silently ignore formatting failures
+                except (TypeError, ValueError, AttributeError):
+                    # Prevent logging formatting errors from crashing the app
                     pass
         
         # Add handler to root logger to capture all logs
@@ -1565,8 +1565,8 @@ class VJConsoleApp(App):
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             return result.returncode == 0
-        except Exception:
-            # Subprocess errors (timeout, FileNotFoundError, etc.) indicate failure
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
+            # Expected subprocess failures: timeout, command not found, or permission denied
             return False
 
     def _check_apps(self) -> None:
@@ -1589,8 +1589,11 @@ class VJConsoleApp(App):
                 ollama_models = ollama_resp.json().get('models', [])
             
             comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
+        except (ImportError, AttributeError):
+            # requests library not available - continue with defaults
+            pass
         except Exception:
-            # Network errors, timeouts, or service unavailable are expected - silently continue with defaults
+            # Network errors (ConnectionError, Timeout, etc.) or service unavailable - continue with defaults
             pass
 
         vdj_path = KaraokeConfig.find_vdj_path()
