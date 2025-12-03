@@ -29,6 +29,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Header, Footer, Static, TabbedContent, TabPane
 from textual.reactive import reactive
 from textual.binding import Binding
+from textual.css.query import NoMatches
 
 from process_manager import ProcessManager, VJProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
@@ -1374,7 +1375,8 @@ class VJConsoleApp(App):
             return
         try:
             panel = self.query_one("#audio-features", AudioFeaturePanel)
-        except Exception:
+        except NoMatches:
+            # Widget not yet mounted - early return
             return
         rows = []
         for key, label in self.audio_feature_labels.items():
@@ -1519,8 +1521,9 @@ class VJConsoleApp(App):
             # Update panels
             try:
                 self.query_one("#audio-analysis", AudioAnalysisPanel).features = features
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Audio analysis panel not found, skipping update")
             
             # Device info
             device_info = {
@@ -1530,8 +1533,9 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#audio-device", AudioDevicePanel).device_info = device_info
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Audio device panel not found, skipping update")
             
             # Statistics (including OSC counts)
             stats_data = {
@@ -1541,8 +1545,9 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#audio-stats", AudioStatsPanel).stats = stats_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Audio stats panel not found, skipping update")
                 
         except Exception as e:
             logger.error(f"Error updating audio panels: {e}")
@@ -1560,6 +1565,7 @@ class VJConsoleApp(App):
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             return result.returncode == 0
         except Exception:
+            # Subprocess errors (timeout, not found, etc.) - return False
             return False
 
     def _check_apps(self) -> None:
@@ -1583,6 +1589,7 @@ class VJConsoleApp(App):
             
             comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
         except Exception:
+            # Network errors or services not running - safe to ignore
             pass
 
         vdj_path = KaraokeConfig.find_vdj_path()
@@ -1602,8 +1609,9 @@ class VJConsoleApp(App):
                 'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
                 'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
-        except Exception:
-            pass
+        except NoMatches:
+            # Widget not yet mounted - safe to skip
+            logger.debug("Services panel not found, skipping update")
 
     def _update_data(self) -> None:
         """Update all panels with current data (only update visible screens)."""
@@ -1622,12 +1630,14 @@ class VJConsoleApp(App):
         if screen == "overview":
             try:
                 self.query_one("#worker-status", WorkerStatusPanel).workers = worker_status
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Worker status panel not found, skipping update")
             try:
                 self.query_one("#worker-highlights", WorkerHighlightsPanel).highlights = worker_highlights
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Worker highlights panel not found, skipping update")
 
         elif screen == "master":
             # Update master screen panels only
@@ -1640,20 +1650,23 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Now playing panel not found, skipping update")
             
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
                 self.query_one("#categories", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Categories panel not found, skipping update")
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Pipeline panel not found, skipping update")
             
             # Mini OSC panel on master screen
             osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
@@ -1661,8 +1674,9 @@ class VJConsoleApp(App):
                 panel = self.query_one("#osc-mini", OSCPanel)
                 panel.full_view = False
                 panel.messages = osc_msgs
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("OSC mini panel not found, skipping update")
             
             # Master control status
             running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
@@ -1673,8 +1687,9 @@ class VJConsoleApp(App):
                     'processing_apps': running_apps,
                     'karaoke': self.karaoke_engine is not None,
                 }
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Master control panel not found, skipping update")
         
         elif screen == "osc":
             # Update OSC view only
@@ -1683,29 +1698,33 @@ class VJConsoleApp(App):
                 panel = self.query_one("#osc-full", OSCPanel)
                 panel.full_view = True
                 panel.messages = osc_msgs
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("OSC full panel not found, skipping update")
         
         elif screen == "ai":
             # Update AI debug screen only
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
                 self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Categories full panel not found, skipping update")
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Pipeline full panel not found, skipping update")
         
         elif screen == "logs":
             # Update logs panel only
             try:
                 self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted - safe to skip
+                logger.debug("Logs panel not found, skipping update")
         
         elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
             # Update audio panels only
@@ -1714,14 +1733,16 @@ class VJConsoleApp(App):
         elif screen == "lyrics":
             try:
                 self.query_one("#lyrics-panel", LyricsWorkerPanel).analysis = lyrics_analysis
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted or screen not active - safe to skip
+                logger.debug("Lyrics panel not found, skipping update")
 
         elif screen == "debugger":
             try:
                 self.query_one("#osc-capture", OSCCapturePanel).captures = worker_captures
-            except Exception:
-                pass
+            except NoMatches:
+                # Widget not yet mounted or screen not active - safe to skip
+                logger.debug("OSC capture panel not found, skipping update")
         
         # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
