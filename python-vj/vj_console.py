@@ -1582,18 +1582,19 @@ class VJConsoleApp(App):
         
         try:
             import requests
-            # Single request to Ollama - reuse response
-            ollama_resp = requests.get("http://localhost:11434/api/tags", timeout=1)
-            if ollama_resp.status_code == 200:
-                ollama_ok = True
-                ollama_models = ollama_resp.json().get('models', [])
-            
-            comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
-        except (ImportError, AttributeError):
+            try:
+                # Single request to Ollama - reuse response
+                ollama_resp = requests.get("http://localhost:11434/api/tags", timeout=1)
+                if ollama_resp.status_code == 200:
+                    ollama_ok = True
+                    ollama_models = ollama_resp.json().get('models', [])
+                
+                comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
+            except requests.RequestException:
+                # Network errors (ConnectionError, Timeout, etc.) or service unavailable - continue with defaults
+                pass
+        except ImportError:
             # requests library not available - continue with defaults
-            pass
-        except Exception:
-            # Network errors (ConnectionError, Timeout, etc.) or service unavailable - continue with defaults
             pass
 
         vdj_path = KaraokeConfig.find_vdj_path()
