@@ -95,6 +95,8 @@ Independent process workers:
 - **process_manager_daemon.py**: Supervises all workers
 - **audio_analyzer_worker.py**: Real-time audio analysis
 - **spotify_monitor_worker.py**: AppleScript Spotify monitoring
+- **virtualdj_monitor_worker.py**: VirtualDJ playback monitoring via file watching
+- **lyrics_fetcher_worker.py**: Lyrics fetching and AI analysis (LLM)
 - **osc_debugger_worker.py**: OSC message capture
 - **log_aggregator_worker.py**: Centralized logging
 - **example_worker.py**: Reference implementation
@@ -246,9 +248,11 @@ tail -f ~/Library/Logs/vj-process-manager.log
 | process_manager | 5000 | 5099 |
 | audio_analyzer | 5001 | 5002 |
 | spotify_monitor | 5021 | 5022 |
+| virtualdj_monitor | 5031 | 5032 |
+| lyrics_fetcher | 5033 | 5034 |
 | osc_debugger | 5041 | 5042 |
-| log_aggregator | 5061 | 5062 |
 | example_worker | 5051 | 5052 |
+| log_aggregator | 5061 | 5062 |
 
 ## Troubleshooting
 
