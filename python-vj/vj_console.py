@@ -1065,8 +1065,8 @@ class VJConsoleApp(App):
             }
         else:
             self.audio_feature_flags = {}
-        self.audio_feature_labels = {}
-        self.audio_feature_bindings = {}
+            self.audio_feature_labels = {}
+            self.audio_feature_bindings = {}
         self._audio_osc_callback = None
 
         # Track current screen for conditional updates
@@ -1096,6 +1096,7 @@ class VJConsoleApp(App):
                     if len(self.log_list) > 500:
                         self.log_list.pop(0)
                 except Exception:
+                    # Logging handlers must never raise exceptions
                     pass
         
         # Add handler to root logger to capture all logs
@@ -1376,7 +1377,10 @@ class VJConsoleApp(App):
         try:
             panel = self.query_one("#audio-features", AudioFeaturePanel)
         except NoMatches:
-            # Widget not yet mounted - early return
+            logger.debug("Audio features panel not found in DOM (screen may be initializing)")
+            return
+        except Exception as e:
+            logger.debug("Failed to query audio features panel: %s", e)
             return
         rows = []
         for key, label in self.audio_feature_labels.items():
@@ -1522,8 +1526,9 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#audio-analysis", AudioAnalysisPanel).features = features
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Audio analysis panel not found, skipping update")
+                logger.debug("Audio analysis panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio analysis panel: %s", e)
             
             # Device info
             device_info = {
@@ -1534,8 +1539,9 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#audio-device", AudioDevicePanel).device_info = device_info
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Audio device panel not found, skipping update")
+                logger.debug("Audio device panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio device panel: %s", e)
             
             # Statistics (including OSC counts)
             stats_data = {
@@ -1546,8 +1552,9 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#audio-stats", AudioStatsPanel).stats = stats_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Audio stats panel not found, skipping update")
+                logger.debug("Audio stats panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio stats panel: %s", e)
                 
         except Exception as e:
             logger.error(f"Error updating audio panels: {e}")
@@ -1564,8 +1571,8 @@ class VJConsoleApp(App):
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             return result.returncode == 0
-        except Exception:
-            # Subprocess errors (timeout, not found, etc.) - return False
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            # Process check failed or timed out - process is not running
             return False
 
     def _check_apps(self) -> None:
@@ -1588,9 +1595,12 @@ class VJConsoleApp(App):
                 ollama_models = ollama_resp.json().get('models', [])
             
             comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
-        except Exception:
-            # Network errors or services not running - safe to ignore
+        except ImportError:
+            # requests module not available
             pass
+        except Exception as e:
+            # Service is unavailable, timed out, or other network error
+            logger.debug("Error checking external services: %s", e)
 
         vdj_path = KaraokeConfig.find_vdj_path()
         
@@ -1610,8 +1620,9 @@ class VJConsoleApp(App):
                 'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
         except NoMatches:
-            # Widget not yet mounted - safe to skip
-            logger.debug("Services panel not found, skipping update")
+            logger.debug("Services panel not found in DOM (screen may be initializing)")
+        except Exception as e:
+            logger.debug("Failed to update services panel: %s", e)
 
     def _update_data(self) -> None:
         """Update all panels with current data (only update visible screens)."""
@@ -1631,13 +1642,16 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#worker-status", WorkerStatusPanel).workers = worker_status
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Worker status panel not found, skipping update")
+                logger.debug("Worker status panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update worker status panel: %s", e)
+            
             try:
                 self.query_one("#worker-highlights", WorkerHighlightsPanel).highlights = worker_highlights
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Worker highlights panel not found, skipping update")
+                logger.debug("Worker highlights panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update worker highlights panel: %s", e)
 
         elif screen == "master":
             # Update master screen panels only
@@ -1651,22 +1665,25 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Now playing panel not found, skipping update")
+                logger.debug("Now playing panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update now playing panel: %s", e)
             
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
                 self.query_one("#categories", CategoriesPanel).categories_data = cat_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Categories panel not found, skipping update")
+                logger.debug("Categories panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update categories panel: %s", e)
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Pipeline panel not found, skipping update")
+                logger.debug("Pipeline panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update pipeline panel: %s", e)
             
             # Mini OSC panel on master screen
             osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
@@ -1675,8 +1692,9 @@ class VJConsoleApp(App):
                 panel.full_view = False
                 panel.messages = osc_msgs
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("OSC mini panel not found, skipping update")
+                logger.debug("OSC mini panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update OSC mini panel: %s", e)
             
             # Master control status
             running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
@@ -1688,8 +1706,9 @@ class VJConsoleApp(App):
                     'karaoke': self.karaoke_engine is not None,
                 }
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Master control panel not found, skipping update")
+                logger.debug("Master control panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update master control panel: %s", e)
         
         elif screen == "osc":
             # Update OSC view only
@@ -1699,8 +1718,9 @@ class VJConsoleApp(App):
                 panel.full_view = True
                 panel.messages = osc_msgs
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("OSC full panel not found, skipping update")
+                logger.debug("OSC full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update OSC full panel: %s", e)
         
         elif screen == "ai":
             # Update AI debug screen only
@@ -1708,23 +1728,26 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Categories full panel not found, skipping update")
+                logger.debug("Categories full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update categories full panel: %s", e)
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Pipeline full panel not found, skipping update")
+                logger.debug("Pipeline full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update pipeline full panel: %s", e)
         
         elif screen == "logs":
             # Update logs panel only
             try:
                 self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
             except NoMatches:
-                # Widget not yet mounted - safe to skip
-                logger.debug("Logs panel not found, skipping update")
+                logger.debug("Logs panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update logs panel: %s", e)
         
         elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
             # Update audio panels only
@@ -1734,15 +1757,15 @@ class VJConsoleApp(App):
             try:
                 self.query_one("#lyrics-panel", LyricsWorkerPanel).analysis = lyrics_analysis
             except NoMatches:
-                # Widget not yet mounted or screen not active - safe to skip
-                logger.debug("Lyrics panel not found, skipping update")
+                logger.debug("Lyrics panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update lyrics panel: %s", e)
 
         elif screen == "debugger":
             try:
                 self.query_one("#osc-capture", OSCCapturePanel).captures = worker_captures
-            except NoMatches:
-                # Widget not yet mounted or screen not active - safe to skip
-                logger.debug("OSC capture panel not found, skipping update")
+            except Exception:
+                pass
         
         # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
