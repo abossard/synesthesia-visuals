@@ -2,11 +2,12 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-4 to switch):
+Screens (press 1-5 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
+5. Audio Analysis - Real-time audio analysis and OSC emission
 """
 
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ from typing import Optional, List, Dict, Tuple, Any
 import logging
 import subprocess
 import time
+import threading
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
@@ -25,6 +27,20 @@ from textual.binding import Binding
 from process_manager import ProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
+
+# Audio analysis (imported conditionally to handle missing dependencies)
+try:
+    from audio_analyzer import (
+        AudioConfig, DeviceConfig, DeviceManager, 
+        AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
+    )
+    AUDIO_ANALYZER_AVAILABLE = True
+except ImportError as e:
+    AUDIO_ANALYZER_AVAILABLE = False
+    # Logger might not be initialized yet at module level, so use print as fallback
+    import sys
+    print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
+    print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
 
 load_dotenv(override=True, verbose=True)
 
@@ -121,7 +137,8 @@ def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict
         'error': snapshot.error,
         'backoff': snapshot.backoff_seconds,
         'source': snapshot.source,
-        'connected': source_available,
+        # If we have live track data, the monitor clearly responded, so treat it as connected
+        'connected': source_available or bool(state.track),
     }
     if not track:
         return base
@@ -472,6 +489,260 @@ class AppsListPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class AudioAnalysisPanel(ReactivePanel):
+    """Live audio analysis visualization."""
+    features = reactive({})
+    GUIDE_NOTES = {
+        'sub_bass': "Rumble / shake",
+        'bass': "Main pulse",
+        'low_mid': "Body / warmth",
+        'mid': "Vocals / melody",
+        'high_mid': "Clarity",
+        'presence': "Definition",
+        'air': "Sparkle",
+    }
+
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
+    def watch_features(self, data: dict) -> None:
+        self._safe_render()
+
+    def _format_pulse(self, label: str, address: str, value: float, threshold: float, color: str) -> str:
+        bar = format_bar(value, 12)
+        hot = value >= threshold
+        marker = f"[{color}]⚡[/]" if hot else "[dim]·[/]"
+        return f"  {marker} {label:8s} {bar} {value:.2f}  ({address})"
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Audio Analysis", "═")]
+        
+        if not self.features:
+            lines.append("[dim](audio analyzer not running)[/dim]")
+        else:
+            bands = self.features.get('bands', {})
+            bass_val = self.features.get('bass_level', 0.0)
+            mid_val = self.features.get('mid_level', 0.0)
+            high_val = self.features.get('high_level', 0.0)
+            lines.append("[bold]Guide Pulse Stack[/]")
+            lines.append(self._format_pulse("Bass", "/audio/levels[1]", bass_val, 0.55, "red"))
+            lines.append(self._format_pulse("Mids", "/audio/levels[3]", mid_val, 0.45, "cyan"))
+            lines.append(self._format_pulse("Highs", "/audio/levels[6]", high_val, 0.40, "magenta"))
+
+            overall = self.features.get('overall', 0.0)
+            lines.append(f"\n[bold cyan]Overall Energy[/] /audio/levels[7]  {format_bar(overall, 20)} {overall:.2f}")
+
+            beat = self.features.get('beat', 0)
+            beat_str = "[green]● synced[/]" if beat else "[dim]○ idle[/]"
+            bpm = self.features.get('bpm', 0.0)
+            bpm_conf = self.features.get('bpm_confidence', 0.0)
+            pitch_hz = self.features.get('pitch_hz', 0.0)
+            pitch_conf = self.features.get('pitch_conf', 0.0)
+            lines.append("\n[bold]Core Triggers[/]")
+            lines.append(f"  {beat_str}  /audio/beat[0]   BPM {bpm:.1f} (conf {bpm_conf:.2f})")
+            lines.append(f"  Pitch {pitch_hz:.1f} Hz (conf {pitch_conf:.2f})  /audio/pitch")
+
+            buildup = self.features.get('buildup', False)
+            drop = self.features.get('drop', False)
+            energy_trend = self.features.get('energy_trend', 0.0)
+            brightness = self.features.get('brightness', 0.0)
+            lines.append("\n[bold]Structure Signals[/]")
+            build_label = "[yellow]↗ BUILD-UP[/]" if buildup else "[dim]↗ build-up[/]"
+            drop_label = "[red]↓ DROP[/]" if drop else "[dim]↓ drop[/]"
+            lines.append(f"  {build_label}  /audio/structure[0]  energy {energy_trend:+.2f}")
+            lines.append(f"  {drop_label}  /audio/structure[1]  brightness {brightness:.2f}")
+
+            if bands:
+                lines.append("\n[bold]Frequency Layers (OSC Guide)[/]")
+                for name, value in bands.items():
+                    bar = format_bar(value, 18)
+                    note = self.GUIDE_NOTES.get(name, "")
+                    note_str = f"  {note}" if note else ""
+                    lines.append(f"  {name:10s} {bar} {value:.2f}{note_str}")
+        
+        self.update("\n".join(lines))
+
+
+class AudioDevicePanel(ReactivePanel):
+    """Audio device selection and status."""
+    device_info = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_device_info(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Audio Device", "═")]
+        
+        if not self.device_info:
+            lines.append("[dim](audio analyzer not available)[/dim]")
+        else:
+            current = self.device_info.get('current_device', 'Unknown')
+            available = self.device_info.get('available_devices', [])
+            
+            lines.append(f"[bold cyan]Current Device:[/] {current}")
+            lines.append(f"[bold]Available Devices:[/]")
+            
+            for dev in available[:10]:  # Show first 10
+                name = dev.get('name', 'Unknown')
+                idx = dev.get('index', -1)
+                lines.append(f"  [{idx}] {name}")
+            
+            if len(available) > 10:
+                lines.append(f"  [dim]... and {len(available) - 10} more[/]")
+        
+        self.update("\n".join(lines))
+
+
+class AudioStatsPanel(ReactivePanel):
+    """OSC statistics for audio analyzer."""
+    stats = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_stats(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("OSC Statistics", "═")]
+        
+        if not self.stats:
+            lines.append("[dim](no statistics available)[/dim]")
+        else:
+            # Analyzer stats
+            running = self.stats.get('running', False)
+            audio_alive = self.stats.get('audio_alive', False)
+            fps = self.stats.get('fps', 0.0)
+            frames = self.stats.get('frames_processed', 0)
+            
+            status = "[green]● RUNNING[/]" if running else "[dim]○ STOPPED[/]"
+            audio_status = "[green]✓[/]" if audio_alive else "[red]✗[/]"
+            
+            lines.append(f"[bold]Analyzer:[/] {status}")
+            lines.append(f"[bold]Audio Input:[/] {audio_status}")
+            lines.append(f"[bold]Processing:[/] {fps:.1f} fps ({frames} frames)")
+            
+            # OSC message counts
+            osc_counts = self.stats.get('osc_counts', {})
+            if osc_counts:
+                lines.append("\n[bold]OSC Messages Sent:[/]")
+                for address, count in sorted(osc_counts.items()):
+                    lines.append(f"  {address:20s} {count:6d}")
+        
+        self.update("\n".join(lines))
+
+
+class AudioBenchmarkPanel(ReactivePanel):
+    """Audio latency benchmark results."""
+    benchmark = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_benchmark(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Latency Benchmark", "═")]
+        
+        if not self.benchmark:
+            lines.append("[dim]Press [B] to run 10-second benchmark test[/dim]")
+        else:
+            # Overall stats
+            lines.append(f"[bold cyan]Test Duration:[/] {self.benchmark.get('duration_sec', 0):.1f}s")
+            lines.append(f"[bold cyan]Frames Processed:[/] {self.benchmark.get('total_frames', 0)}")
+            lines.append(f"[bold cyan]Average FPS:[/] [green]{self.benchmark.get('avg_fps', 0):.1f}[/]\n")
+            
+            # Latency percentiles
+            lines.append("[bold]Latency Percentiles (ms)[/]")
+            lines.append(f"  Min:     {self.benchmark.get('min_latency_ms', 0):.2f}")
+            lines.append(f"  Average: {self.benchmark.get('avg_latency_ms', 0):.2f}")
+            lines.append(f"  P95:     {self.benchmark.get('p95_latency_ms', 0):.2f}")
+            lines.append(f"  P99:     {self.benchmark.get('p99_latency_ms', 0):.2f}")
+            lines.append(f"  Max:     {self.benchmark.get('max_latency_ms', 0):.2f}\n")
+            
+            # Component timing breakdown
+            lines.append("[bold]Component Timing (µs)[/]")
+            lines.append(f"  FFT:            {self.benchmark.get('fft_time_us', 0):.1f}")
+            lines.append(f"  Band Extract:   {self.benchmark.get('band_extraction_time_us', 0):.1f}")
+            lines.append(f"  Essentia:       {self.benchmark.get('essentia_time_us', 0):.1f}")
+            lines.append(f"  OSC Send:       {self.benchmark.get('osc_send_time_us', 0):.1f}")
+            lines.append(f"  [bold]Total:          {self.benchmark.get('total_processing_time_us', 0):.1f}[/]\n")
+            
+            # Queue stats
+            lines.append("[bold]Queue Metrics[/]")
+            lines.append(f"  Max Size: {self.benchmark.get('max_queue_size', 0)}")
+            lines.append(f"  Drops:    {self.benchmark.get('queue_drops', 0)}")
+            
+            # Interpretation
+            avg_lat = self.benchmark.get('avg_latency_ms', 0)
+            if avg_lat < 15:
+                lines.append("\n[green]✓ Excellent latency (<15ms)[/]")
+            elif avg_lat < 30:
+                lines.append("\n[yellow]△ Good latency (15-30ms)[/]")
+            else:
+                lines.append("\n[red]✗ High latency (>30ms)[/]")
+        
+        self.update("\n".join(lines))
+
+
+class AudioFeaturePanel(ReactivePanel):
+    """Display and control audio analyzer feature toggles."""
+    feature_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_feature_data(self, data: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Audio Feature Toggles", "═")]
+        flags = self.feature_data.get('flags') or []
+        if not flags:
+            lines.append("[dim](feature flags unavailable)[/dim]")
+        else:
+            lines.append("[bold]Press listed keys to toggle (auto restarts analyzer)[/bold]\n")
+            for entry in flags:
+                key = entry.get('key', '?')
+                label = entry.get('label', entry.get('name', ''))
+                enabled = entry.get('enabled', False)
+                state = "ON" if enabled else "off"
+                color = "green" if enabled else "dim"
+                lines.append(f"  [{key.upper()}] {label:22s} [{color}]{state}[/]")
+            running = self.feature_data.get('running', False)
+            if running:
+                lines.append("\n[dim]Analyzer restarts automatically after changes[/dim]")
+            else:
+                lines.append("\n[dim]Analyzer stopped - toggles apply on next start[/dim]")
+        self.update("\n".join(lines))
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -495,8 +766,17 @@ class VJConsoleApp(App):
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
+        Binding("5", "screen_audio", "Audio"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
+        Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
+        Binding("b", "run_audio_benchmark", "Benchmark"),
+        Binding("e", "toggle_audio_essentia", "Essentia DSP"),
+        Binding("p", "toggle_audio_pitch", "Pitch"),
+        Binding("o", "toggle_audio_bpm", "Beat/BPM"),
+        Binding("t", "toggle_audio_structure", "Structure"),
+        Binding("y", "toggle_audio_spectrum", "Spectrum"),
+        Binding("l", "toggle_audio_logging", "Analyzer Log"),
         Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
@@ -516,6 +796,49 @@ class VJConsoleApp(App):
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
+        
+        # Audio analyzer (always send OSC when active)
+        self.audio_analyzer: Optional['AudioAnalyzer'] = None
+        self.audio_watchdog: Optional['AudioAnalyzerWatchdog'] = None
+        self.audio_device_manager: Optional['DeviceManager'] = None
+        self.audio_running = False
+        self.audio_osc_counts: Dict[str, int] = {}  # Track OSC message counts
+        if AUDIO_ANALYZER_AVAILABLE:
+            defaults = AudioConfig()
+            self.audio_feature_flags = {
+                'enable_essentia': defaults.enable_essentia,
+                'enable_pitch': defaults.enable_pitch,
+                'enable_bpm': defaults.enable_bpm,
+                'enable_structure': defaults.enable_structure,
+                'enable_spectrum': defaults.enable_spectrum,
+                'enable_logging': defaults.enable_logging,
+                'log_level': defaults.log_level,
+            }
+            self.audio_feature_labels = {
+                'enable_essentia': "Essentia DSP",
+                'enable_pitch': "Pitch Detection",
+                'enable_bpm': "Beat/BPM",
+                'enable_structure': "Structure Detector",
+                'enable_spectrum': "Spectrum OSC",
+                'enable_logging': "Analyzer Logging",
+            }
+            self.audio_feature_bindings = {
+                'enable_essentia': 'E',
+                'enable_pitch': 'P',
+                'enable_bpm': 'O',
+                'enable_structure': 'T',
+                'enable_spectrum': 'Y',
+                'enable_logging': 'L',
+            }
+        else:
+            self.audio_feature_flags = {}
+            self.audio_feature_labels = {}
+            self.audio_feature_bindings = {}
+        self._audio_osc_callback = None
+        
+        # Track current screen for conditional updates
+        self._current_screen = "master"
+        
         self._setup_log_capture()
 
     def _find_project_root(self) -> Path:
@@ -579,22 +902,228 @@ class VJConsoleApp(App):
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
 
+            # Tab 5: Audio Analysis
+            if AUDIO_ANALYZER_AVAILABLE:
+                with TabPane("5️⃣ Audio Analysis", id="audio"):
+                    with Horizontal():
+                        with VerticalScroll(id="left-col"):
+                            yield AudioAnalysisPanel(id="audio-analysis", classes="panel")
+                            yield AudioDevicePanel(id="audio-device", classes="panel")
+                            yield AudioFeaturePanel(id="audio-features", classes="panel")
+                            yield AudioBenchmarkPanel(id="audio-benchmark", classes="panel")
+                        with VerticalScroll(id="right-col"):
+                            yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
+
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-4 to switch screens"
+        self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
         
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
         self._start_karaoke()
         
+        # Initialize audio analyzer if available
+        if AUDIO_ANALYZER_AVAILABLE:
+            self._init_audio_analyzer()
+        
         # Background updates
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
 
     # === Actions (impure, side effects) ===
+
+    def _build_audio_config(self) -> AudioConfig:
+        flags = self.audio_feature_flags
+        return AudioConfig(
+            enable_essentia=flags.get('enable_essentia', True),
+            enable_pitch=flags.get('enable_pitch', True),
+            enable_bpm=flags.get('enable_bpm', True),
+            enable_structure=flags.get('enable_structure', True),
+            enable_spectrum=flags.get('enable_spectrum', True),
+            enable_logging=flags.get('enable_logging', True),
+            log_level=flags.get('log_level', logging.INFO),
+        )
+
+    def _update_audio_feature_panel(self) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE:
+            return
+        try:
+            panel = self.query_one("#audio-features", AudioFeaturePanel)
+        except Exception:
+            return
+        rows = []
+        for key, label in self.audio_feature_labels.items():
+            rows.append({
+                'name': key,
+                'label': label,
+                'key': self.audio_feature_bindings.get(key, '?'),
+                'enabled': self.audio_feature_flags.get(key, False),
+            })
+        panel.feature_data = {
+            'flags': rows,
+            'running': self.audio_running,
+        }
+
+    def _recreate_audio_analyzer(self) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE:
+            self._update_audio_feature_panel()
+            return
+        was_running = self.audio_running and self.audio_analyzer is not None
+        if self.audio_analyzer:
+            try:
+                self.audio_analyzer.stop()
+            except Exception as exc:
+                logger.exception(f"Error stopping audio analyzer during reconfigure: {exc}")
+            finally:
+                self.audio_running = False
+        self.audio_analyzer = None
+        self.audio_watchdog = None
+        self._init_audio_analyzer()
+        if was_running:
+            self._start_audio_analyzer()
+        self._update_audio_feature_panel()
+
+    def _toggle_audio_feature(self, key: str) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE or key not in self.audio_feature_flags:
+            logger.warning("Audio feature toggle unavailable: %s", key)
+            return
+        self.audio_feature_flags[key] = not self.audio_feature_flags[key]
+        state = "enabled" if self.audio_feature_flags[key] else "disabled"
+        logger.info("Audio feature %s %s", key, state)
+        self._recreate_audio_analyzer()
+    
+    def _init_audio_analyzer(self) -> None:
+        """Initialize audio analyzer (called on mount)."""
+        try:
+            from osc_manager import osc
+            
+            self.audio_device_manager = DeviceManager()
+            audio_config = self._build_audio_config()
+            
+            # OSC callback that always sends (not conditional on screen)
+            def audio_osc_callback(address: str, args: List):
+                """Send OSC and track statistics."""
+                osc.send(address, args)
+                # Track counts for statistics display
+                self.audio_osc_counts[address] = self.audio_osc_counts.get(address, 0) + 1
+            
+            self.audio_analyzer = AudioAnalyzer(
+                config=audio_config,
+                device_manager=self.audio_device_manager,
+                osc_callback=audio_osc_callback
+            )
+            
+            self.audio_watchdog = AudioAnalyzerWatchdog(self.audio_analyzer)
+            
+            logger.info("Audio analyzer initialized")
+            self._update_audio_feature_panel()
+            
+        except Exception as e:
+            logger.exception(f"Audio analyzer initialization failed: {e}")
+    
+    def _start_audio_analyzer(self) -> None:
+        """Start the audio analyzer."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            logger.warning("Audio analyzer not available")
+            return
+        
+        try:
+            if not self.audio_running:
+                self.audio_analyzer.start()
+                self.audio_running = True
+                logger.info("Audio analyzer started")
+                self._update_audio_feature_panel()
+        except Exception as e:
+            logger.exception(f"Failed to start audio analyzer: {e}")
+    
+    def _stop_audio_analyzer(self) -> None:
+        """Stop the audio analyzer."""
+        if self.audio_analyzer and self.audio_running:
+            try:
+                self.audio_analyzer.stop()
+                self.audio_running = False
+                logger.info("Audio analyzer stopped")
+                self._update_audio_feature_panel()
+            except Exception as e:
+                logger.exception(f"Failed to stop audio analyzer: {e}")
+    
+    def _update_audio_panels(self) -> None:
+        """Update audio analysis panels (only when screen is active)."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            return
+        
+        try:
+            # Get current stats
+            stats = self.audio_analyzer.get_stats()
+
+            if self.audio_running and not stats.get('running', False):
+                logger.warning("Audio analyzer thread stopped unexpectedly; rebuilding analyzer")
+                self._recreate_audio_analyzer()
+                return
+            
+            # Update watchdog only when analyzer should be running
+            if self.audio_watchdog and self.audio_running:
+                self.audio_watchdog.update()
+            
+            # Extract current features from analyzer state
+            latest = self.audio_analyzer.latest_features
+            def _avg_band(indices: List[int]) -> float:
+                values = [self.audio_analyzer.smoothed_bands[i] for i in indices if i < len(self.audio_analyzer.smoothed_bands)]
+                return sum(values) / len(values) if values else 0.0
+
+            features = {
+                'bands': {
+                    name: self.audio_analyzer.smoothed_bands[i]
+                    for i, name in enumerate(self.audio_analyzer.config.band_names)
+                },
+                'overall': self.audio_analyzer.smoothed_rms,
+                'beat': latest.get('beat', 0),
+                'bpm': latest.get('bpm', 0.0),
+                'bpm_confidence': latest.get('bpm_confidence', 0.0),
+                'buildup': latest.get('buildup', False),
+                'drop': latest.get('drop', False),
+                'bass_level': latest.get('bass_level', self.audio_analyzer.smoothed_bands[1] if len(self.audio_analyzer.smoothed_bands) > 1 else self.audio_analyzer.smoothed_rms),
+                'mid_level': latest.get('mid_level', _avg_band([2, 3, 4])),
+                'high_level': latest.get('high_level', _avg_band([5, 6])),
+                'energy_trend': latest.get('energy_trend', 0.0),
+                'brightness': latest.get('brightness', 0.0),
+                'pitch_hz': latest.get('pitch_hz', 0.0),
+                'pitch_conf': latest.get('pitch_conf', 0.0),
+            }
+            
+            # Update panels
+            try:
+                self.query_one("#audio-analysis", AudioAnalysisPanel).features = features
+            except Exception:
+                pass
+            
+            # Device info
+            device_info = {
+                'current_device': stats.get('device_name', 'Unknown'),
+                'available_devices': self.audio_device_manager.list_devices() if self.audio_device_manager else [],
+            }
+            
+            try:
+                self.query_one("#audio-device", AudioDevicePanel).device_info = device_info
+            except Exception:
+                pass
+            
+            # Statistics (including OSC counts)
+            stats_data = {
+                **stats,
+                'osc_counts': self.audio_osc_counts.copy(),
+            }
+            
+            try:
+                self.query_one("#audio-stats", AudioStatsPanel).stats = stats_data
+            except Exception:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Error updating audio panels: {e}")
     
     def _start_karaoke(self) -> None:
         try:
@@ -655,62 +1184,101 @@ class VJConsoleApp(App):
             pass
 
     def _update_data(self) -> None:
-        """Update all panels with current data."""
+        """Update all panels with current data (only update visible screens)."""
         if not self.karaoke_engine:
             return
+        
+        # Always update snapshot (needed for OSC)
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
-        monitor_status = snapshot.monitor_status or {}
-        if snapshot.source and snapshot.source in monitor_status:
-            source_connected = monitor_status[snapshot.source].get('available', False)
-        else:
-            source_connected = any(status.get('available', False) for status in monitor_status.values())
-        track_data = build_track_data(snapshot, source_connected)
-        try:
-            self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-        except Exception:
-            pass
-
-        cat_data = build_categories_payload(self.karaoke_engine.current_categories)
         
-        # Update categories panels
-        for panel_id in ["categories", "categories-full"]:
+        # Only update UI panels for visible screens (optimization)
+        screen = self._current_screen
+        
+        if screen == "master":
+            # Update master screen panels only
+            monitor_status = snapshot.monitor_status or {}
+            if snapshot.source and snapshot.source in monitor_status:
+                source_connected = monitor_status[snapshot.source].get('available', False)
+            else:
+                source_connected = any(status.get('available', False) for status in monitor_status.values())
+            track_data = build_track_data(snapshot, source_connected)
+            
             try:
-                self.query_one(f"#{panel_id}", CategoriesPanel).categories_data = cat_data
+                self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
             except Exception:
                 pass
-
-        # Update pipeline
-        pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
-        for panel_id in ["pipeline", "pipeline-full"]:
+            
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
-                self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data
+                self.query_one("#categories", CategoriesPanel).categories_data = cat_data
             except Exception:
                 pass
-
-        # Update OSC panels
-        osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
-        for panel_id in ["osc-mini", "osc-full"]:
+            
+            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
-                panel = self.query_one(f"#{panel_id}", OSCPanel)
-                panel.full_view = panel_id == "osc-full"
+                self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
+            
+            # Mini OSC panel on master screen
+            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+            try:
+                panel = self.query_one("#osc-mini", OSCPanel)
+                panel.full_view = False
                 panel.messages = osc_msgs
             except Exception:
                 pass
-
-        # Update master control
+            
+            # Master control status
+            running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+            try:
+                self.query_one("#master-ctrl", MasterControlPanel).status = {
+                    'synesthesia': self.synesthesia_running,
+                    'milksyphon': self.milksyphon_running,
+                    'processing_apps': running_apps,
+                    'karaoke': self.karaoke_engine is not None,
+                }
+            except Exception:
+                pass
+        
+        elif screen == "osc":
+            # Update OSC view only
+            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+            try:
+                panel = self.query_one("#osc-full", OSCPanel)
+                panel.full_view = True
+                panel.messages = osc_msgs
+            except Exception:
+                pass
+        
+        elif screen == "ai":
+            # Update AI debug screen only
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
+            try:
+                self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
+            
+            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
+            try:
+                self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
+        
+        elif screen == "logs":
+            # Update logs panel only
+            try:
+                self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
+            except Exception:
+                pass
+        
+        elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
+            # Update audio panels only
+            self._update_audio_panels()
+        
+        # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        try:
-            self.query_one("#master-ctrl", MasterControlPanel).status = {
-                'synesthesia': self.synesthesia_running,
-                'milksyphon': self.milksyphon_running,
-                'processing_apps': running_apps,
-                'karaoke': self.karaoke_engine is not None,
-            }
-        except Exception:
-            pass
-
-        # Send OSC status only when it changes
         current_status = {
             'karaoke_active': True,
             'synesthesia_running': self.synesthesia_running,
@@ -723,28 +1291,72 @@ class VJConsoleApp(App):
                 milksyphon_running=self.milksyphon_running, processing_apps=running_apps
             )
             self._last_master_status = current_status
-        
-        # Update logs panel
-        try:
-            self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-        except Exception:
-            pass
 
     # === Screen switching ===
     
+    def _switch_screen(self, screen_name: str):
+        """Switch screen and manage OSC logging (performance optimization)."""
+        from osc_manager import osc
+        
+        # Disable OSC logging when leaving OSC screen
+        if self._current_screen == "osc" and screen_name != "osc":
+            osc.disable_logging()
+        
+        # Enable OSC logging when entering OSC screen
+        if screen_name == "osc" and self._current_screen != "osc":
+            osc.enable_logging()
+        
+        self._current_screen = screen_name
+        self.query_one("#screens", TabbedContent).active = screen_name
+    
     def action_screen_master(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "master"
+        self._switch_screen("master")
     
     def action_screen_osc(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "osc"
+        self._switch_screen("osc")
     
     def action_screen_ai(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "ai"
+        self._switch_screen("ai")
     
     def action_screen_logs(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "logs"
+        self._switch_screen("logs")
+    
+    def action_screen_audio(self) -> None:
+        """Switch to audio analysis screen."""
+        if AUDIO_ANALYZER_AVAILABLE:
+            self._switch_screen("audio")
 
     # === App control ===
+    
+    def action_toggle_audio_analyzer(self) -> None:
+        """Toggle audio analyzer on/off."""
+        if not AUDIO_ANALYZER_AVAILABLE:
+            logger.warning("Audio analyzer not available (missing dependencies)")
+            return
+        
+        if self.audio_running:
+            self._stop_audio_analyzer()
+        else:
+            self._start_audio_analyzer()
+        self._update_audio_feature_panel()
+
+    def action_toggle_audio_essentia(self) -> None:
+        self._toggle_audio_feature('enable_essentia')
+
+    def action_toggle_audio_pitch(self) -> None:
+        self._toggle_audio_feature('enable_pitch')
+
+    def action_toggle_audio_bpm(self) -> None:
+        self._toggle_audio_feature('enable_bpm')
+
+    def action_toggle_audio_structure(self) -> None:
+        self._toggle_audio_feature('enable_structure')
+
+    def action_toggle_audio_spectrum(self) -> None:
+        self._toggle_audio_feature('enable_spectrum')
+
+    def action_toggle_audio_logging(self) -> None:
+        self._toggle_audio_feature('enable_logging')
     
     def action_toggle_synesthesia(self) -> None:
         if self.synesthesia_running:
@@ -789,11 +1401,42 @@ class VJConsoleApp(App):
     def action_timing_down(self) -> None:
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
+    
+    def action_run_audio_benchmark(self) -> None:
+        """Run 10-second audio latency benchmark."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer or not self.audio_running:
+            logger.warning("Audio analyzer must be running to benchmark")
+            return
+        
+        try:
+            logger.info("Starting 10-second latency benchmark...")
+            
+            # Run benchmark in background thread to not block UI
+            def run_benchmark():
+                tester = LatencyTester(self.audio_analyzer)
+                results = tester.run_benchmark(duration_sec=10.0)
+                
+                # Update benchmark panel
+                try:
+                    self.query_one("#audio-benchmark", AudioBenchmarkPanel).benchmark = results.to_dict()
+                except Exception as e:
+                    logger.error(f"Failed to update benchmark panel: {e}")
+            
+            benchmark_thread = threading.Thread(target=run_benchmark, daemon=True)
+            benchmark_thread.start()
+            
+        except Exception as e:
+            logger.exception(f"Benchmark failed: {e}")
 
     def on_unmount(self) -> None:
+        """Cleanup when app is closing."""
         if self.karaoke_engine:
             self.karaoke_engine.stop()
         self.process_manager.cleanup()
+        
+        # Stop audio analyzer
+        if AUDIO_ANALYZER_AVAILABLE and self.audio_running:
+            self._stop_audio_analyzer()
 
 
 def main():

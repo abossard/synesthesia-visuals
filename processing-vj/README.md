@@ -32,7 +32,7 @@ See [VJ Output Design Principles](../docs/processing-games-guide.md#vj-output-de
 
 ## Folder Structure
 
-```
+```text
 processing-vj/
 ├── examples/           # Example game implementations
 │   ├── BuildupRelease/ # VJ overlay for song buildups and drops
@@ -47,9 +47,11 @@ processing-vj/
 ## Examples
 
 ### BuildupRelease
+
 A VJ overlay effect for song buildups and drops. Press pads on the Launchpad to gradually cover the screen with panels. Press multiple pads quickly (within 200ms) to trigger a dramatic crack/shatter release effect that reveals the full screen - perfect for syncing with music drops.
 
 **Controls:**
+
 - Press pads to add coverage panels
 - Press 3+ pads quickly to trigger release
 - Scene buttons (right column) trigger release
@@ -59,19 +61,40 @@ A VJ overlay effect for song buildups and drops. Press pads on the Launchpad to 
 **Syphon Output:** "BuildupRelease" at 1920x1080
 
 ### KaraokeOverlay
+
 A lyrics overlay that receives synced lyrics via OSC from the Python Karaoke Engine. Displays previous/current/next lyric lines with smooth animations.
 
 **Requirements:**
+
 - oscP5 library (Sketch → Import Library → Add Library → oscP5)
 - Python Karaoke Engine running (`python-vj/karaoke_engine.py`)
 
 **Controls:**
+
 - 's': Toggle show/hide overlay
 - 'f': Cycle font sizes
 - 'c': Cycle color schemes
 - 'r': Reconnect OSC
 
 **Syphon Output:** "KaraokeOverlay" at 1920x1080
+
+### OscAudioVisualizer
+
+Neon HUD that visualizes the OSC stream from [python-vj/audio_analyzer.py](../python-vj/audio_analyzer.py): orbital band arcs, flux-driven beat bursts, and a spectrum river ready for mixing.
+
+**Requirements:**
+
+- oscP5 + netP5 libraries
+- Syphon library (for downstream routing)
+- `audio_analyzer.py` running with `--osc-host 127.0.0.1 --osc-port 9000` (defaults already match)
+
+**Controls:**
+
+- 'h': Toggle HUD overlays (pure visual vs. status readout)
+- 'c': Reload `data/osc_visualizer_config.json` (port, smoothing, Syphon name)
+- 'r': Force OSC reconnection
+
+**Syphon Output:** Configurable (default "AudioOSCVisualizer") at 1280x720
 
 ## Quick Start
 
@@ -89,6 +112,7 @@ A lyrics overlay that receives synced lyrics via OSC from the Python Karaoke Eng
 ## Creating New Games
 
 See [Processing Games Guide](../docs/processing-games-guide.md) for:
+
 - MIDI setup and pad handling
 - LED color control
 - Example game implementations
@@ -96,7 +120,7 @@ See [Processing Games Guide](../docs/processing-games-guide.md) for:
 
 ## Launchpad Note Grid
 
-```
+```text
 Row 8: 81 82 83 84 85 86 87 88
 Row 7: 71 72 73 74 75 76 77 78
 Row 6: 61 62 63 64 65 66 67 68
@@ -110,6 +134,7 @@ Row 1: 11 12 13 14 15 16 17 18
 ## Integration with MIDImix
 
 Games can also receive input from Akai MIDImix faders/knobs to control:
+
 - Game speed
 - Visual intensity
 - Color parameters
