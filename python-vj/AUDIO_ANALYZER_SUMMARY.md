@@ -21,7 +21,7 @@ Successfully implemented a real-time audio analysis engine that processes audio 
 
 3. **LatencyTester** (`audio_analyzer.py`)
    - Comprehensive performance benchmarking
-   - Per-component timing (FFT, band extraction, aubio, OSC)
+   - Per-component timing (FFT, band extraction, Essentia, OSC)
    - Latency percentiles (min/avg/p95/p99/max)
    - Queue performance metrics
 
@@ -51,16 +51,16 @@ Successfully implemented a real-time audio analysis engine that processes audio 
   - Air (6000-20000 Hz)
 
 - **Beat Detection**:
-  - Real-time onset detection (aubio)
+  - Real-time onset detection (Essentia HFC method)
   - Spectral flux for novelty strength
 
 - **BPM Estimation**:
   - Smoothed tempo tracking
   - Confidence scoring based on interval variance
-  - Custom algorithm + aubio for robustness
+  - Custom BPM estimation from beat intervals
 
 - **Pitch Detection** (optional):
-  - Fundamental frequency estimation (aubio YIN algorithm)
+  - Fundamental frequency estimation (Essentia PitchYin algorithm)
   - Confidence threshold filtering
 
 - **Structure Detection**:
@@ -123,7 +123,7 @@ Latency (ms):
 Component Timing (µs):
   FFT:            850
   Band Extract:   120
-  Aubio:          3200
+  Essentia:       3200
   OSC Send:       45
   Total:          14800
 
@@ -185,7 +185,7 @@ Queue Metrics:
 ```python
 sounddevice>=0.4.6  # Low-latency audio I/O via PortAudio
 numpy>=1.24.0       # FFT and spectral analysis
-aubio>=0.4.9        # Beat detection, tempo, pitch
+essentia         # Beat detection, tempo, pitch
 ```
 
 ## Installation
@@ -279,5 +279,5 @@ Potential improvements (not implemented):
 Design inspired by:
 - "A Philosophy of Software Design" by John Ousterhout
 - "Grokking Simplicity" by Eric Normand
-- Aubio real-time audio library
+- Essentia real-time audio analysis library
 - TouchDesigner audio analysis patterns

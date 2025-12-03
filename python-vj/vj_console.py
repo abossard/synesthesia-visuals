@@ -40,7 +40,7 @@ except ImportError as e:
     # Logger might not be initialized yet at module level, so use print as fallback
     import sys
     print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
-    print("Install dependencies: pip install sounddevice numpy aubio", file=sys.stderr)
+    print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
 
 load_dotenv(override=True, verbose=True)
 
@@ -659,7 +659,7 @@ class AudioBenchmarkPanel(ReactivePanel):
             lines.append("[bold]Component Timing (µs)[/]")
             lines.append(f"  FFT:            {self.benchmark.get('fft_time_us', 0):.1f}")
             lines.append(f"  Band Extract:   {self.benchmark.get('band_extraction_time_us', 0):.1f}")
-            lines.append(f"  Aubio:          {self.benchmark.get('aubio_time_us', 0):.1f}")
+            lines.append(f"  Essentia:       {self.benchmark.get('essentia_time_us', 0):.1f}")
             lines.append(f"  OSC Send:       {self.benchmark.get('osc_send_time_us', 0):.1f}")
             lines.append(f"  [bold]Total:          {self.benchmark.get('total_processing_time_us', 0):.1f}[/]\n")
             

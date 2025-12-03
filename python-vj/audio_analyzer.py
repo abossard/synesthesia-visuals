@@ -34,12 +34,12 @@ import numpy as np
 import sounddevice as sd
 
 try:
-    import aubio
-    AUBIO_AVAILABLE = True
+    import essentia.standard as es
+    ESSENTIA_AVAILABLE = True
 except ImportError as e:
-    AUBIO_AVAILABLE = False
-    logger.warning(f"Aubio not available - beat/tempo/pitch detection disabled: {e}")
-    logger.info("Install aubio with: pip install aubio")
+    ESSENTIA_AVAILABLE = False
+    logger.warning(f"Essentia not available - beat/tempo/pitch detection disabled: {e}")
+    logger.info("Install essentia with: pip install essentia")
 
 logger = logging.getLogger('audio_analyzer')
 
@@ -461,23 +461,37 @@ class AudioAnalyzer(threading.Thread):
         frames_per_window = int(config.energy_window_sec * config.sample_rate / config.block_size)
         self.energy_history = deque(maxlen=frames_per_window)
         
-        # Aubio objects (if available)
-        self.onset = None
-        self.tempo = None
-        self.pitch = None
+        # Essentia objects (if available)
+        self.onset_detection = None
+        self.pitch_yin = None
+        self.beat_tracker = None
+        self.centroid_algo = None
+        self.flux_algo = None
         
-        if AUBIO_AVAILABLE:
+        if ESSENTIA_AVAILABLE:
             try:
-                self.onset = aubio.onset("default", config.fft_size, config.block_size, config.sample_rate)
-                self.tempo = aubio.tempo("default", config.fft_size, config.block_size, config.sample_rate)
-                self.pitch = aubio.pitch("yin", config.fft_size, config.block_size, config.sample_rate)
-                self.pitch.set_unit("Hz")
-                self.pitch.set_silence(-40)
-                logger.info("Aubio initialized for beat/tempo/pitch detection")
+                # Standard mode algorithms (frame-by-frame processing)
+                self.onset_detection = es.OnsetDetection(method='hfc')  # High Frequency Content method
+                self.pitch_yin = es.PitchYin(
+                    frameSize=config.fft_size,
+                    sampleRate=config.sample_rate,
+                    minFrequency=20,
+                    maxFrequency=2000,
+                    tolerance=0.15
+                )
+                # Centroid for brightness
+                self.centroid_algo = es.Centroid()
+                # Flux for novelty detection
+                self.flux_algo = es.Flux()
+                
+                # BPM tracking - use simpler custom approach since BeatTrackerDegara needs longer buffers
+                # We'll use onset detection + interval estimation instead
+                
+                logger.info("Essentia initialized for beat/tempo/pitch detection")
             except Exception as e:
-                logger.warning(f"Aubio initialization failed: {e}")
+                logger.warning(f"Essentia initialization failed: {e}")
         else:
-            logger.warning("Aubio not available - beat/tempo/pitch detection disabled")
+            logger.warning("Essentia not available - beat/tempo/pitch detection disabled")
         
         # Control flags
         self.running = False
@@ -608,25 +622,48 @@ class AudioAnalyzer(threading.Thread):
         centroid = calculate_spectral_centroid(magnitude, self.freqs)
         centroid_norm = centroid / (self.config.sample_rate / 2.0)
         
+        # Use Essentia for centroid if available (more accurate)
+        if self.centroid_algo:
+            try:
+                essentia_centroid = float(self.centroid_algo(magnitude))
+                centroid_norm = essentia_centroid / (self.config.sample_rate / 2.0)
+            except Exception:
+                pass  # Fall back to numpy calculation
+        
         flux = calculate_spectral_flux(magnitude, self.prev_magnitude)
+        
+        # Use Essentia for flux if available
+        if self.flux_algo:
+            try:
+                essentia_flux = float(self.flux_algo(magnitude, self.prev_magnitude))
+                flux = essentia_flux
+            except Exception:
+                pass  # Fall back to numpy calculation
+        
         self.prev_magnitude = magnitude.copy()
         
         # Track energy for build-up/drop detection
         total_energy = sum(raw_bands)
         self.energy_history.append(total_energy)
         
-        # --- Aubio features (if available) ---
+        # --- Essentia features (if available) ---
         
         is_onset = False
         bpm = 0.0
         tempo_conf = 0.0
         pitch_hz = 0.0
         pitch_conf = 0.0
+        onset_strength = 0.0
         
-        if self.onset and self.tempo and self.pitch:
+        if self.onset_detection and self.pitch_yin:
             try:
-                # Onset detection
-                is_onset = bool(self.onset(mono))
+                # Onset detection using HFC method
+                # OnsetDetection expects magnitude and phase
+                onset_strength = float(self.onset_detection(magnitude, np.angle(spectrum)))
+                
+                # Threshold for onset detection (tune based on testing)
+                onset_threshold = 0.3
+                is_onset = onset_strength > onset_threshold
                 
                 # Track beat times for custom BPM estimation
                 if is_onset:
@@ -636,21 +673,17 @@ class AudioAnalyzer(threading.Thread):
                         self.beat_times.append(interval)
                     self.last_beat_time = current_time
                 
-                # Aubio tempo
-                tempo_result = self.tempo(mono)
-                if tempo_result:
-                    tempo_conf = float(tempo_result)
-                bpm = float(self.tempo.get_bpm())
+                # Pitch detection with PitchYin
+                pitch_hz, pitch_conf = self.pitch_yin(mono)
+                pitch_hz = float(pitch_hz)
+                pitch_conf = float(pitch_conf)
                 
-                # Pitch detection
-                pitch_hz = float(self.pitch(mono)[0])
-                pitch_conf = float(self.pitch.get_confidence())
-                
+                # Filter low-confidence pitches
                 if pitch_conf < 0.6:
                     pitch_hz = 0.0
                     
             except Exception as e:
-                logger.error(f"Aubio processing error: {e}")
+                logger.error(f"Essentia processing error: {e}")
         
         # Custom BPM estimation from beat intervals
         custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
@@ -659,9 +692,8 @@ class AudioAnalyzer(threading.Thread):
             self.config.bpm_max
         )
         
-        # Use custom BPM if available, otherwise use aubio BPM
-        if custom_bpm > 0:
-            bpm = custom_bpm
+        # Use custom BPM from interval analysis
+        bpm = custom_bpm
         
         # Build-up/drop detection
         window_frames = len(self.energy_history)
@@ -855,7 +887,7 @@ class LatencyBenchmark:
     # Per-component timings (microseconds)
     fft_time_us: float = 0.0
     band_extraction_time_us: float = 0.0
-    aubio_time_us: float = 0.0
+    essentia_time_us: float = 0.0
     osc_send_time_us: float = 0.0
     total_processing_time_us: float = 0.0
     
@@ -881,7 +913,7 @@ class LatencyTester:
     
     Measures:
     - Processing FPS (frames/second)
-    - Per-component timing (FFT, band extraction, aubio, OSC)
+    - Per-component timing (FFT, band extraction, essentia, OSC)
     - End-to-end latency (audio callback -> OSC send)
     - Queue performance (drops, max size)
     """
@@ -894,7 +926,7 @@ class LatencyTester:
         self.frame_latencies: List[float] = []
         self.fft_times: List[float] = []
         self.band_times: List[float] = []
-        self.aubio_times: List[float] = []
+        self.essentia_times: List[float] = []
         self.osc_times: List[float] = []
         
         # Queue metrics
@@ -937,7 +969,7 @@ class LatencyTester:
         self.frame_latencies.clear()
         self.fft_times.clear()
         self.band_times.clear()
-        self.aubio_times.clear()
+        self.essentia_times.clear()
         self.osc_times.clear()
         self.queue_drops = 0
         self.queue_sizes.clear()
@@ -1000,18 +1032,22 @@ class LatencyTester:
             total_energy = sum(raw_bands)
             self.analyzer.energy_history.append(total_energy)
             
-            # Measure Aubio (if available)
-            aubio_time = 0.0
+            # Measure Essentia (if available)
+            essentia_time = 0.0
             is_onset = False
             bpm = 0.0
             tempo_conf = 0.0
             pitch_hz = 0.0
             pitch_conf = 0.0
+            onset_strength = 0.0
             
-            if self.analyzer.onset and self.analyzer.tempo and self.analyzer.pitch:
-                aubio_start = time.perf_counter()
+            if self.analyzer.onset_detection and self.analyzer.pitch_yin:
+                essentia_start = time.perf_counter()
                 try:
-                    is_onset = bool(self.analyzer.onset(mono))
+                    # Onset detection
+                    onset_strength = float(self.analyzer.onset_detection(magnitude, np.angle(spectrum)))
+                    onset_threshold = 0.3
+                    is_onset = onset_strength > onset_threshold
                     
                     if is_onset:
                         current_time = time.monotonic()
@@ -1020,22 +1056,19 @@ class LatencyTester:
                             self.analyzer.beat_times.append(interval)
                         self.analyzer.last_beat_time = current_time
                     
-                    tempo_result = self.analyzer.tempo(mono)
-                    if tempo_result:
-                        tempo_conf = float(tempo_result)
-                    bpm = float(self.analyzer.tempo.get_bpm())
-                    
-                    pitch_hz = float(self.analyzer.pitch(mono)[0])
-                    pitch_conf = float(self.analyzer.pitch.get_confidence())
+                    # Pitch detection
+                    pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
+                    pitch_hz = float(pitch_hz)
+                    pitch_conf = float(pitch_conf)
                     
                     if pitch_conf < 0.6:
                         pitch_hz = 0.0
                         
-                    aubio_time = (time.perf_counter() - aubio_start) * 1_000_000
+                    essentia_time = (time.perf_counter() - essentia_start) * 1_000_000
                 except Exception:
                     pass
                 
-                self.aubio_times.append(aubio_time)
+                self.essentia_times.append(essentia_time)
             
             # BPM estimation
             custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
@@ -1131,7 +1164,7 @@ class LatencyTester:
             
             fft_time_us=np.mean(self.fft_times) if self.fft_times else 0,
             band_extraction_time_us=np.mean(self.band_times) if self.band_times else 0,
-            aubio_time_us=np.mean(self.aubio_times) if self.aubio_times else 0,
+            essentia_time_us=np.mean(self.essentia_times) if self.essentia_times else 0,
             osc_send_time_us=np.mean(self.osc_times) if self.osc_times else 0,
             total_processing_time_us=np.mean(self.frame_latencies) * 1000 if self.frame_latencies else 0,
             

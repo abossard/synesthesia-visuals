@@ -547,7 +547,7 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **openai**: OpenAI API client (optional)
 - **sounddevice**: Real-time audio I/O (for audio analyzer)
 - **numpy**: FFT and spectral analysis (for audio analyzer)
-- **aubio**: Beat detection, tempo, pitch estimation (for audio analyzer)
+- **essentia**: Beat detection, tempo, pitch estimation (for audio analyzer)
 
 ## Audio Analysis Engine
 

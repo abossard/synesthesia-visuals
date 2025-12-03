@@ -25,4 +25,4 @@ openai>=1.0.0
 # Audio analysis and real-time DSP
 sounddevice>=0.4.6  # Low-latency audio I/O via PortAudio
 numpy>=1.24.0       # FFT and spectral analysis
-aubio>=0.4.9        # Beat detection, tempo, and pitch estimation
+essentia            # Beat detection, tempo, and pitch estimation
