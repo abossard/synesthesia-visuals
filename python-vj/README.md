@@ -74,6 +74,10 @@ Complete application logs for debugging and monitoring.
 
 ## Architecture
 
+For a resilient, multi-process target architecture with OSC/ZeroMQ IPC and reconnection strategies, see [docs/target_architecture.md](docs/target_architecture.md).
+
+The shared `vj_bus` package in this repo provides the concrete message schemas and IPC helpers described in that document, including ZeroMQ command/event flows and OSC telemetry helpers with integration tests under `tests/test_vj_bus.py`.
+
 ```mermaid
 flowchart TB
     subgraph Input["🎵 Audio Sources"]

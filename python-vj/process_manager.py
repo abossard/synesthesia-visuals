@@ -8,6 +8,8 @@ This module contains the core process management classes used by the VJ Console:
 - ProcessManager: Manages Processing app processes with auto-restart
 """
 
+import json
+import multiprocessing
 import os
 import sys
 import time
@@ -17,7 +19,12 @@ import shutil
 from pathlib import Path
 from threading import Thread, Event
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import Callable, List, Optional, Dict
+
+from vj_bus import EnvelopeBuilder
+from vj_bus.utils import find_free_port, generate_instance_id, now_ts
+from vj_bus.worker import WorkerNode
+from vj_bus.zmq_helpers import publish, start_pub
 
 # Load .env file if present
 try:
@@ -60,6 +67,31 @@ class AppState:
     message_time: float = 0
     needs_redraw: bool = True
     last_draw_time: float = 0
+
+
+@dataclass
+class WorkerSpec:
+    """Specification for a managed worker process."""
+
+    name: str
+    telemetry_port: int
+    command_endpoint: str
+    event_endpoint: str
+    entrypoint: Callable[["WorkerSpec", int, str], None]
+    schema: str = "vj.v1"
+    generation: int = 0
+
+
+@dataclass
+class ManagedWorker:
+    spec: WorkerSpec
+    process: Optional[multiprocessing.Process]
+    instance_id: str
+    generation: int
+
+
+def _spawn_worker_process(spec: WorkerSpec, generation: int, instance_id: str) -> None:
+    spec.entrypoint(spec, generation, instance_id)
 
 
 class ProcessManager:
@@ -249,3 +281,124 @@ class ProcessManager:
         for app in self.apps:
             if self.is_running(app):
                 self.stop_app(app)
+
+
+class VJProcessManager:
+    """Supervisor for vj_bus workers with registry + restart."""
+
+    def __init__(
+        self,
+        registry_path: Path | None = None,
+        pub_endpoint: str | None = None,
+        schema: str = "vj.v1",
+    ) -> None:
+        self.registry_path = registry_path or Path("/tmp/python-vj/process_registry.json")
+        self.pub_endpoint = pub_endpoint or f"tcp://127.0.0.1:{find_free_port()}"
+        self.schema = schema
+        self._builder = EnvelopeBuilder(schema=schema, worker="process_manager")
+        self._pub_socket = start_pub(self.pub_endpoint)
+        self._workers: Dict[str, ManagedWorker] = {}
+        self._stop = Event()
+        self._monitor = Thread(target=self._monitor_loop, daemon=True)
+
+    # Worker spec helpers
+    def make_worker_spec(
+        self,
+        name: str,
+        telemetry_port: Optional[int] = None,
+        command_port: Optional[int] = None,
+        event_port: Optional[int] = None,
+        entrypoint: Optional[Callable[[WorkerSpec, int, str], None]] = None,
+    ) -> WorkerSpec:
+        telemetry = telemetry_port or find_free_port()
+        command = command_port or find_free_port()
+        event = event_port or find_free_port()
+        return WorkerSpec(
+            name=name,
+            telemetry_port=telemetry,
+            command_endpoint=f"tcp://127.0.0.1:{command}",
+            event_endpoint=f"tcp://127.0.0.1:{event}",
+            entrypoint=entrypoint or VJProcessManager._default_entrypoint,
+        )
+
+    @staticmethod
+    def _default_entrypoint(spec: WorkerSpec, generation: int, instance_id: str) -> None:
+        node = WorkerNode(
+            name=spec.name,
+            telemetry_port=spec.telemetry_port,
+            command_endpoint=spec.command_endpoint,
+            event_endpoint=spec.event_endpoint,
+            schema=spec.schema,
+            heartbeat_interval=1.0,
+            generation=generation,
+            instance_id=instance_id,
+        )
+        node.start()
+        node.run_forever()
+
+    def add_worker(self, spec: WorkerSpec) -> None:
+        instance_id = generate_instance_id()
+        self._workers[spec.name] = ManagedWorker(
+            spec=spec, process=None, instance_id=instance_id, generation=spec.generation
+        )
+
+    def start(self) -> None:
+        for managed in list(self._workers.values()):
+            self._launch(managed)
+        if not self._monitor.is_alive():
+            self._monitor.start()
+
+    def _launch(self, managed: ManagedWorker) -> None:
+        if managed.process and managed.process.is_alive():
+            return
+        managed.process = multiprocessing.Process(
+            target=_spawn_worker_process,
+            args=(managed.spec, managed.generation, managed.instance_id),
+            daemon=True,
+        )
+        managed.process.start()
+        self._write_registry()
+        env = self._builder.event(
+            level="info",
+            message="register",
+            details={"worker": managed.spec.name, "instance_id": managed.instance_id, "generation": managed.generation},
+        )
+        publish(self._pub_socket, env)
+
+    def _monitor_loop(self) -> None:
+        while not self._stop.wait(0.5):
+            for name, managed in list(self._workers.items()):
+                if managed.process and managed.process.is_alive():
+                    continue
+                managed.generation += 1
+                managed.instance_id = generate_instance_id()
+                self._launch(managed)
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._monitor.is_alive():
+            self._monitor.join(timeout=2)
+        for managed in self._workers.values():
+            if managed.process and managed.process.is_alive():
+                managed.process.terminate()
+                managed.process.join(timeout=2)
+        self._write_registry()
+        self._pub_socket.close(0)
+
+    def registry_snapshot(self) -> Dict[str, Dict[str, str | int]]:
+        return {
+            name: {
+                "instance_id": managed.instance_id,
+                "generation": managed.generation,
+                "telemetry": managed.spec.telemetry_port,
+                "command": managed.spec.command_endpoint,
+                "events": managed.spec.event_endpoint,
+                "started_at": now_ts(),
+            }
+            for name, managed in self._workers.items()
+        }
+
+    def _write_registry(self) -> None:
+        data = {"schema": self.schema, "workers": self.registry_snapshot()}
+        self.registry_path.parent.mkdir(parents=True, exist_ok=True)
+        self.registry_path.write_text(json.dumps(data, indent=2))
