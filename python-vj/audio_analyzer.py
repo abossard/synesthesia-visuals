@@ -90,6 +90,16 @@ class AudioConfig:
     buildup_threshold: float = 0.3  # Energy increase rate
     drop_threshold: float = 0.5     # Energy jump after low period
 
+    # Performance toggles
+    enable_essentia: bool = True
+    enable_pitch: bool = True
+    enable_bpm: bool = True
+    enable_structure: bool = True
+    enable_spectrum: bool = True
+    enable_logging: bool = True
+    log_level: int = logging.INFO
+    ui_publish_hz: float = 30.0
+
 
 @dataclass
 class DeviceConfig:
@@ -438,6 +448,12 @@ class AudioAnalyzer(threading.Thread):
         self.config = config
         self.device_manager = device_manager
         self.osc_callback = osc_callback
+
+        if not config.enable_logging:
+            logger.setLevel(logging.ERROR)
+            logger.propagate = False
+        else:
+            logger.setLevel(config.log_level)
         
         # Audio I/O state
         self.audio_queue = queue.Queue(maxsize=64)
@@ -467,18 +483,20 @@ class AudioAnalyzer(threading.Thread):
         self.beat_tracker = None
         self.centroid_algo = None
         self.flux_algo = None
+        self.enable_essentia = config.enable_essentia and ESSENTIA_AVAILABLE
         
-        if ESSENTIA_AVAILABLE:
+        if self.enable_essentia:
             try:
                 # Standard mode algorithms (frame-by-frame processing)
                 self.onset_detection = es.OnsetDetection(method='hfc')  # High Frequency Content method
-                self.pitch_yin = es.PitchYin(
-                    frameSize=config.fft_size,
-                    sampleRate=config.sample_rate,
-                    minFrequency=20,
-                    maxFrequency=2000,
-                    tolerance=0.15
-                )
+                if config.enable_pitch:
+                    self.pitch_yin = es.PitchYin(
+                        frameSize=config.fft_size,
+                        sampleRate=config.sample_rate,
+                        minFrequency=20,
+                        maxFrequency=2000,
+                        tolerance=0.15
+                    )
                 # Centroid for brightness
                 self.centroid_algo = es.Centroid()
                 # Flux for novelty detection
@@ -490,6 +508,8 @@ class AudioAnalyzer(threading.Thread):
                 logger.info("Essentia initialized for beat/tempo/pitch detection")
             except Exception as e:
                 logger.warning(f"Essentia initialization failed: {e}")
+        elif ESSENTIA_AVAILABLE:
+            logger.info("Essentia disabled via config - advanced features skipped")
         else:
             logger.warning("Essentia not available - beat/tempo/pitch detection disabled")
         
@@ -511,6 +531,11 @@ class AudioAnalyzer(threading.Thread):
             'pitch_hz': 0.0,
             'pitch_conf': 0.0,
         }
+        self.ui_publish_interval = 1.0 / config.ui_publish_hz if config.ui_publish_hz > 0 else 0.0
+        self.last_ui_publish = 0.0
+        self.flux_avg = 0.0
+        self.flux_peak = 0.0
+        self.last_flux_onset = 0.0
     
     def _audio_callback(self, indata: np.ndarray, frames: int, 
                        time_info: dict, status: sd.CallbackFlags):
@@ -644,18 +669,18 @@ class AudioAnalyzer(threading.Thread):
         
         # Track energy for build-up/drop detection
         total_energy = sum(raw_bands)
-        self.energy_history.append(total_energy)
+        if self.config.enable_structure:
+            self.energy_history.append(total_energy)
         
         # --- Essentia features (if available) ---
         
         is_onset = False
         bpm = 0.0
-        tempo_conf = 0.0
         pitch_hz = 0.0
         pitch_conf = 0.0
         onset_strength = 0.0
         
-        if self.onset_detection and self.pitch_yin:
+        if self.onset_detection and self.config.enable_bpm:
             try:
                 # Onset detection using HFC method
                 # OnsetDetection expects magnitude and phase
@@ -672,52 +697,92 @@ class AudioAnalyzer(threading.Thread):
                         interval = current_time - self.last_beat_time
                         self.beat_times.append(interval)
                     self.last_beat_time = current_time
-                
-                # Pitch detection with PitchYin
-                pitch_hz, pitch_conf = self.pitch_yin(mono)
-                pitch_hz = float(pitch_hz)
-                pitch_conf = float(pitch_conf)
-                
-                # Filter low-confidence pitches
-                if pitch_conf < 0.6:
-                    pitch_hz = 0.0
                     
             except Exception as e:
                 logger.error(f"Essentia processing error: {e}")
+        elif self.config.enable_bpm:
+            # Flux-based fallback onset detection
+            self.flux_avg = 0.9 * self.flux_avg + 0.1 * flux
+            self.flux_peak = max(self.flux_peak * 0.95, flux)
+            adaptive_threshold = self.flux_avg + (self.flux_peak - self.flux_avg) * 0.5
+            now = time.monotonic()
+            if (
+                flux > adaptive_threshold
+                and flux > 0.001
+                and (now - self.last_flux_onset) > 0.12
+            ):
+                is_onset = True
+                self.last_flux_onset = now
+                if self.last_beat_time > 0:
+                    interval = now - self.last_beat_time
+                    self.beat_times.append(interval)
+                self.last_beat_time = now
         
-        # Custom BPM estimation from beat intervals
-        custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
-            list(self.beat_times),
-            self.config.bpm_min,
-            self.config.bpm_max
-        )
+        # Pitch detection with PitchYin (optional)
+        if self.pitch_yin and self.config.enable_pitch:
+            try:
+                pitch_hz, pitch_conf = self.pitch_yin(mono)
+                pitch_hz = float(pitch_hz)
+                pitch_conf = float(pitch_conf)
+                if pitch_conf < 0.6:
+                    pitch_hz = 0.0
+            except Exception as e:
+                logger.error(f"Pitch detection error: {e}")
+                pitch_hz = 0.0
+                pitch_conf = 0.0
         
-        # Use custom BPM from interval analysis
-        bpm = custom_bpm
+        bpm_confidence = 0.0
+        if self.config.enable_bpm:
+            custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
+                list(self.beat_times),
+                self.config.bpm_min,
+                self.config.bpm_max
+            )
+            bpm = custom_bpm
         
         # Build-up/drop detection
-        window_frames = len(self.energy_history)
-        is_buildup, is_drop, energy_trend = detect_buildup_drop(
-            self.energy_history,
-            window_frames,
-            self.config.buildup_threshold,
-            self.config.drop_threshold
-        )
+        if self.config.enable_structure and self.energy_history:
+            window_frames = len(self.energy_history)
+            is_buildup, is_drop, energy_trend = detect_buildup_drop(
+                self.energy_history,
+                window_frames,
+                self.config.buildup_threshold,
+                self.config.drop_threshold
+            )
+        else:
+            is_buildup = False
+            is_drop = False
+            energy_trend = 0.0
         
-        # Downsample spectrum for OSC
-        spectrum_down = downsample_spectrum(magnitude, self.config.spectrum_bins)
+        # Downsample spectrum for OSC when needed
+        spectrum_down: List[float] = []
+        if self.config.enable_spectrum:
+            spectrum_down = downsample_spectrum(magnitude, self.config.spectrum_bins).tolist()
+
+        def _avg_band(indices: List[int]) -> float:
+            values = [self.smoothed_bands[i] for i in indices if i < len(self.smoothed_bands)]
+            return float(sum(values) / len(values)) if values else 0.0
+
+        bass_level = self.smoothed_bands[1] if len(self.smoothed_bands) > 1 else self.smoothed_rms
+        mid_level = _avg_band([2, 3, 4])
+        high_level = _avg_band([5, 6])
         
         # --- Store latest features for UI ---
         beat_int = 1 if is_onset else 0
-        self.latest_features = {
-            'beat': beat_int,
-            'bpm': float(bpm),
-            'bpm_confidence': float(bpm_confidence),
-            'buildup': is_buildup,
-            'drop': is_drop,
-            'pitch_hz': float(pitch_hz),
-            'pitch_conf': float(pitch_conf),
-        }
+        self._publish_ui_state(
+            beat_int=beat_int,
+            bpm=float(bpm),
+            bpm_confidence=float(bpm_confidence),
+            is_buildup=is_buildup,
+            is_drop=is_drop,
+            pitch_hz=float(pitch_hz),
+            pitch_conf=float(pitch_conf),
+            energy_trend=float(energy_trend),
+            brightness=float(centroid_norm),
+            bass_level=float(bass_level),
+            mid_level=float(mid_level),
+            high_level=float(high_level),
+        )
         
         # --- Send OSC messages (always, when analyzer is active) ---
         
@@ -726,29 +791,64 @@ class AudioAnalyzer(threading.Thread):
                 # Levels (per-band + overall RMS)
                 self.osc_callback('/audio/levels', self.smoothed_bands + [self.smoothed_rms])
                 
-                # Spectrum
-                self.osc_callback('/audio/spectrum', spectrum_down.tolist())
+                if spectrum_down:
+                    self.osc_callback('/audio/spectrum', spectrum_down)
                 
-                # Beat
-                self.osc_callback('/audio/beat', [beat_int, float(flux)])
+                if self.config.enable_bpm:
+                    self.osc_callback('/audio/beat', [beat_int, float(flux)])
+                    self.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
                 
-                # BPM
-                self.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
+                if self.config.enable_pitch:
+                    self.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
                 
-                # Pitch
-                self.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
-                
-                # Structure (build-up/drop)
-                buildup_int = 1 if is_buildup else 0
-                drop_int = 1 if is_drop else 0
-                self.osc_callback('/audio/structure', [
-                    buildup_int, drop_int, float(energy_trend), float(centroid_norm)
-                ])
+                if self.config.enable_structure:
+                    buildup_int = 1 if is_buildup else 0
+                    drop_int = 1 if is_drop else 0
+                    self.osc_callback('/audio/structure', [
+                        buildup_int, drop_int, float(energy_trend), float(centroid_norm)
+                    ])
                 
             except Exception as e:
                 logger.error(f"OSC send error: {e}")
         
         self.frames_processed += 1
+
+    def _publish_ui_state(
+        self,
+        *,
+        beat_int: int,
+        bpm: float,
+        bpm_confidence: float,
+        is_buildup: bool,
+        is_drop: bool,
+        pitch_hz: float,
+        pitch_conf: float,
+        energy_trend: float = 0.0,
+        brightness: float = 0.0,
+        bass_level: float = 0.0,
+        mid_level: float = 0.0,
+        high_level: float = 0.0,
+    ):
+        """Throttle UI state updates so rendering is decoupled from DSP rate."""
+        if self.ui_publish_interval > 0:
+            now = time.monotonic()
+            if (now - self.last_ui_publish) < self.ui_publish_interval:
+                return
+            self.last_ui_publish = now
+        self.latest_features = {
+            'beat': beat_int,
+            'bpm': bpm,
+            'bpm_confidence': bpm_confidence,
+            'buildup': is_buildup,
+            'drop': is_drop,
+            'pitch_hz': pitch_hz,
+            'pitch_conf': pitch_conf,
+            'energy_trend': energy_trend,
+            'brightness': brightness,
+            'bass_level': bass_level,
+            'mid_level': mid_level,
+            'high_level': high_level,
+        }
     
     def run(self):
         """Main analyzer thread loop."""
@@ -1030,21 +1130,21 @@ class LatencyTester:
             self.analyzer.prev_magnitude = magnitude.copy()
             
             total_energy = sum(raw_bands)
-            self.analyzer.energy_history.append(total_energy)
+            if self.analyzer.config.enable_structure:
+                self.analyzer.energy_history.append(total_energy)
             
             # Measure Essentia (if available)
             essentia_time = 0.0
             is_onset = False
             bpm = 0.0
-            tempo_conf = 0.0
             pitch_hz = 0.0
             pitch_conf = 0.0
             onset_strength = 0.0
+            config = self.analyzer.config
             
-            if self.analyzer.onset_detection and self.analyzer.pitch_yin:
+            if self.analyzer.onset_detection and config.enable_bpm:
                 essentia_start = time.perf_counter()
                 try:
-                    # Onset detection
                     onset_strength = float(self.analyzer.onset_detection(magnitude, np.angle(spectrum)))
                     onset_threshold = 0.3
                     is_onset = onset_strength > onset_threshold
@@ -1056,51 +1156,99 @@ class LatencyTester:
                             self.analyzer.beat_times.append(interval)
                         self.analyzer.last_beat_time = current_time
                     
-                    # Pitch detection
-                    pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
-                    pitch_hz = float(pitch_hz)
-                    pitch_conf = float(pitch_conf)
+                    if self.analyzer.pitch_yin and config.enable_pitch:
+                        pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
+                        pitch_hz = float(pitch_hz)
+                        pitch_conf = float(pitch_conf)
+                        if pitch_conf < 0.6:
+                            pitch_hz = 0.0
+                            pitch_conf = 0.0
                     
-                    if pitch_conf < 0.6:
-                        pitch_hz = 0.0
-                        
                     essentia_time = (time.perf_counter() - essentia_start) * 1_000_000
                 except Exception:
                     pass
                 
                 self.essentia_times.append(essentia_time)
+            elif config.enable_bpm:
+                # Flux fallback for onset timing
+                self.analyzer.flux_avg = 0.9 * self.analyzer.flux_avg + 0.1 * flux
+                self.analyzer.flux_peak = max(self.analyzer.flux_peak * 0.95, flux)
+                adaptive_threshold = self.analyzer.flux_avg + (self.analyzer.flux_peak - self.analyzer.flux_avg) * 0.5
+                now = time.monotonic()
+                if (
+                    flux > adaptive_threshold
+                    and flux > 0.001
+                    and (now - self.analyzer.last_flux_onset) > 0.12
+                ):
+                    is_onset = True
+                    self.analyzer.last_flux_onset = now
+                    if self.analyzer.last_beat_time > 0:
+                        interval = now - self.analyzer.last_beat_time
+                        self.analyzer.beat_times.append(interval)
+                    self.analyzer.last_beat_time = now
             
-            # BPM estimation
-            custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
-                list(self.analyzer.beat_times),
-                self.analyzer.config.bpm_min,
-                self.analyzer.config.bpm_max
-            )
-            if custom_bpm > 0:
+            if self.analyzer.pitch_yin and config.enable_pitch and not (self.analyzer.onset_detection and config.enable_bpm):
+                try:
+                    pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
+                    pitch_hz = float(pitch_hz)
+                    pitch_conf = float(pitch_conf)
+                    if pitch_conf < 0.6:
+                        pitch_hz = 0.0
+                        pitch_conf = 0.0
+                except Exception:
+                    pitch_hz = 0.0
+                    pitch_conf = 0.0
+            
+            bpm_confidence = 0.0
+            if config.enable_bpm:
+                custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
+                    list(self.analyzer.beat_times),
+                    config.bpm_min,
+                    config.bpm_max
+                )
                 bpm = custom_bpm
             
-            # Build-up/drop detection
-            window_frames = len(self.analyzer.energy_history)
-            is_buildup, is_drop, energy_trend = detect_buildup_drop(
-                self.analyzer.energy_history,
-                window_frames,
-                self.analyzer.config.buildup_threshold,
-                self.analyzer.config.drop_threshold
-            )
+            if config.enable_structure and self.analyzer.energy_history:
+                window_frames = len(self.analyzer.energy_history)
+                is_buildup, is_drop, energy_trend = detect_buildup_drop(
+                    self.analyzer.energy_history,
+                    window_frames,
+                    config.buildup_threshold,
+                    config.drop_threshold
+                )
+            else:
+                is_buildup = False
+                is_drop = False
+                energy_trend = 0.0
             
-            spectrum_down = downsample_spectrum(magnitude, self.analyzer.config.spectrum_bins)
+            spectrum_down: List[float] = []
+            if config.enable_spectrum:
+                spectrum_down = downsample_spectrum(magnitude, config.spectrum_bins).tolist()
             
-            # Store latest features
             beat_int = 1 if is_onset else 0
-            self.analyzer.latest_features = {
-                'beat': beat_int,
-                'bpm': float(bpm),
-                'bpm_confidence': float(bpm_confidence),
-                'buildup': is_buildup,
-                'drop': is_drop,
-                'pitch_hz': float(pitch_hz),
-                'pitch_conf': float(pitch_conf),
-            }
+
+            def _avg_band(indices: List[int]) -> float:
+                values = [self.analyzer.smoothed_bands[i] for i in indices if i < len(self.analyzer.smoothed_bands)]
+                return float(sum(values) / len(values)) if values else 0.0
+
+            bass_level = self.analyzer.smoothed_bands[1] if len(self.analyzer.smoothed_bands) > 1 else self.analyzer.smoothed_rms
+            mid_level = _avg_band([2, 3, 4])
+            high_level = _avg_band([5, 6])
+
+            self.analyzer._publish_ui_state(
+                beat_int=beat_int,
+                bpm=float(bpm),
+                bpm_confidence=float(bpm_confidence),
+                is_buildup=is_buildup,
+                is_drop=is_drop,
+                pitch_hz=float(pitch_hz),
+                pitch_conf=float(pitch_conf),
+                energy_trend=float(energy_trend),
+                brightness=float(centroid_norm),
+                bass_level=float(bass_level),
+                mid_level=float(mid_level),
+                high_level=float(high_level),
+            )
             
             # Measure OSC send time
             osc_time = 0.0
@@ -1108,16 +1256,19 @@ class LatencyTester:
                 osc_start = time.perf_counter()
                 try:
                     self.analyzer.osc_callback('/audio/levels', self.analyzer.smoothed_bands + [self.analyzer.smoothed_rms])
-                    self.analyzer.osc_callback('/audio/spectrum', spectrum_down.tolist())
-                    self.analyzer.osc_callback('/audio/beat', [beat_int, float(flux)])
-                    self.analyzer.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
-                    self.analyzer.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
-                    
-                    buildup_int = 1 if is_buildup else 0
-                    drop_int = 1 if is_drop else 0
-                    self.analyzer.osc_callback('/audio/structure', [
-                        buildup_int, drop_int, float(energy_trend), float(centroid_norm)
-                    ])
+                    if spectrum_down:
+                        self.analyzer.osc_callback('/audio/spectrum', spectrum_down)
+                    if config.enable_bpm:
+                        self.analyzer.osc_callback('/audio/beat', [beat_int, float(flux)])
+                        self.analyzer.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
+                    if config.enable_pitch:
+                        self.analyzer.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
+                    if config.enable_structure:
+                        buildup_int = 1 if is_buildup else 0
+                        drop_int = 1 if is_drop else 0
+                        self.analyzer.osc_callback('/audio/structure', [
+                            buildup_int, drop_int, float(energy_trend), float(centroid_norm)
+                        ])
                     
                     osc_time = (time.perf_counter() - osc_start) * 1_000_000
                 except Exception:

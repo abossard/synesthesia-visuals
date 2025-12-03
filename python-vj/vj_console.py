@@ -491,6 +491,15 @@ class AppsListPanel(ReactivePanel):
 class AudioAnalysisPanel(ReactivePanel):
     """Live audio analysis visualization."""
     features = reactive({})
+    GUIDE_NOTES = {
+        'sub_bass': "Rumble / shake",
+        'bass': "Main pulse",
+        'low_mid': "Body / warmth",
+        'mid': "Vocals / melody",
+        'high_mid': "Clarity",
+        'presence': "Definition",
+        'air': "Sparkle",
+    }
 
     def on_mount(self) -> None:
         """Initialize content when mounted."""
@@ -498,6 +507,12 @@ class AudioAnalysisPanel(ReactivePanel):
 
     def watch_features(self, data: dict) -> None:
         self._safe_render()
+
+    def _format_pulse(self, label: str, address: str, value: float, threshold: float, color: str) -> str:
+        bar = format_bar(value, 12)
+        hot = value >= threshold
+        marker = f"[{color}]⚡[/]" if hot else "[dim]·[/]"
+        return f"  {marker} {label:8s} {bar} {value:.2f}  ({address})"
 
     def _safe_render(self) -> None:
         """Render only if mounted."""
@@ -509,32 +524,45 @@ class AudioAnalysisPanel(ReactivePanel):
         if not self.features:
             lines.append("[dim](audio analyzer not running)[/dim]")
         else:
-            # Band levels with bars
             bands = self.features.get('bands', {})
-            if bands:
-                lines.append("[bold]Frequency Bands[/]")
-                for name, value in bands.items():
-                    bar = format_bar(value, 20)
-                    lines.append(f"  {name:10s} {bar} {value:.2f}")
-            
-            # Overall level
+            bass_val = self.features.get('bass_level', 0.0)
+            mid_val = self.features.get('mid_level', 0.0)
+            high_val = self.features.get('high_level', 0.0)
+            lines.append("[bold]Guide Pulse Stack[/]")
+            lines.append(self._format_pulse("Bass", "/audio/levels[1]", bass_val, 0.55, "red"))
+            lines.append(self._format_pulse("Mids", "/audio/levels[3]", mid_val, 0.45, "cyan"))
+            lines.append(self._format_pulse("Highs", "/audio/levels[6]", high_val, 0.40, "magenta"))
+
             overall = self.features.get('overall', 0.0)
-            lines.append(f"\n[bold cyan]Overall RMS:[/] {format_bar(overall, 20)} {overall:.2f}")
-            
-            # Beat info
+            lines.append(f"\n[bold cyan]Overall Energy[/] /audio/levels[7]  {format_bar(overall, 20)} {overall:.2f}")
+
             beat = self.features.get('beat', 0)
-            beat_str = "[green]● BEAT[/]" if beat else "[dim]○[/]"
+            beat_str = "[green]● synced[/]" if beat else "[dim]○ idle[/]"
             bpm = self.features.get('bpm', 0.0)
             bpm_conf = self.features.get('bpm_confidence', 0.0)
-            lines.append(f"\n[bold]Beat:[/] {beat_str}  BPM: {bpm:.1f} (conf: {bpm_conf:.2f})")
-            
-            # Structure
+            pitch_hz = self.features.get('pitch_hz', 0.0)
+            pitch_conf = self.features.get('pitch_conf', 0.0)
+            lines.append("\n[bold]Core Triggers[/]")
+            lines.append(f"  {beat_str}  /audio/beat[0]   BPM {bpm:.1f} (conf {bpm_conf:.2f})")
+            lines.append(f"  Pitch {pitch_hz:.1f} Hz (conf {pitch_conf:.2f})  /audio/pitch")
+
             buildup = self.features.get('buildup', False)
             drop = self.features.get('drop', False)
-            if buildup:
-                lines.append("[yellow]↗ BUILD-UP DETECTED[/]")
-            if drop:
-                lines.append("[red]↓ DROP DETECTED[/]")
+            energy_trend = self.features.get('energy_trend', 0.0)
+            brightness = self.features.get('brightness', 0.0)
+            lines.append("\n[bold]Structure Signals[/]")
+            build_label = "[yellow]↗ BUILD-UP[/]" if buildup else "[dim]↗ build-up[/]"
+            drop_label = "[red]↓ DROP[/]" if drop else "[dim]↓ drop[/]"
+            lines.append(f"  {build_label}  /audio/structure[0]  energy {energy_trend:+.2f}")
+            lines.append(f"  {drop_label}  /audio/structure[1]  brightness {brightness:.2f}")
+
+            if bands:
+                lines.append("\n[bold]Frequency Layers (OSC Guide)[/]")
+                for name, value in bands.items():
+                    bar = format_bar(value, 18)
+                    note = self.GUIDE_NOTES.get(name, "")
+                    note_str = f"  {note}" if note else ""
+                    lines.append(f"  {name:10s} {bar} {value:.2f}{note_str}")
         
         self.update("\n".join(lines))
 
@@ -680,6 +708,40 @@ class AudioBenchmarkPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class AudioFeaturePanel(ReactivePanel):
+    """Display and control audio analyzer feature toggles."""
+    feature_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_feature_data(self, data: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Audio Feature Toggles", "═")]
+        flags = self.feature_data.get('flags') or []
+        if not flags:
+            lines.append("[dim](feature flags unavailable)[/dim]")
+        else:
+            lines.append("[bold]Press listed keys to toggle (auto restarts analyzer)[/bold]\n")
+            for entry in flags:
+                key = entry.get('key', '?')
+                label = entry.get('label', entry.get('name', ''))
+                enabled = entry.get('enabled', False)
+                state = "ON" if enabled else "off"
+                color = "green" if enabled else "dim"
+                lines.append(f"  [{key.upper()}] {label:22s} [{color}]{state}[/]")
+            running = self.feature_data.get('running', False)
+            if running:
+                lines.append("\n[dim]Analyzer restarts automatically after changes[/dim]")
+            else:
+                lines.append("\n[dim]Analyzer stopped - toggles apply on next start[/dim]")
+        self.update("\n".join(lines))
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -708,6 +770,12 @@ class VJConsoleApp(App):
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
         Binding("b", "run_audio_benchmark", "Benchmark"),
+        Binding("e", "toggle_audio_essentia", "Essentia DSP"),
+        Binding("p", "toggle_audio_pitch", "Pitch"),
+        Binding("o", "toggle_audio_bpm", "Beat/BPM"),
+        Binding("t", "toggle_audio_structure", "Structure"),
+        Binding("y", "toggle_audio_spectrum", "Spectrum"),
+        Binding("l", "toggle_audio_logging", "Analyzer Log"),
         Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
@@ -734,6 +802,38 @@ class VJConsoleApp(App):
         self.audio_device_manager: Optional['DeviceManager'] = None
         self.audio_running = False
         self.audio_osc_counts: Dict[str, int] = {}  # Track OSC message counts
+        if AUDIO_ANALYZER_AVAILABLE:
+            defaults = AudioConfig()
+            self.audio_feature_flags = {
+                'enable_essentia': defaults.enable_essentia,
+                'enable_pitch': defaults.enable_pitch,
+                'enable_bpm': defaults.enable_bpm,
+                'enable_structure': defaults.enable_structure,
+                'enable_spectrum': defaults.enable_spectrum,
+                'enable_logging': defaults.enable_logging,
+                'log_level': defaults.log_level,
+            }
+            self.audio_feature_labels = {
+                'enable_essentia': "Essentia DSP",
+                'enable_pitch': "Pitch Detection",
+                'enable_bpm': "Beat/BPM",
+                'enable_structure': "Structure Detector",
+                'enable_spectrum': "Spectrum OSC",
+                'enable_logging': "Analyzer Logging",
+            }
+            self.audio_feature_bindings = {
+                'enable_essentia': 'E',
+                'enable_pitch': 'P',
+                'enable_bpm': 'O',
+                'enable_structure': 'T',
+                'enable_spectrum': 'Y',
+                'enable_logging': 'L',
+            }
+        else:
+            self.audio_feature_flags = {}
+            self.audio_feature_labels = {}
+            self.audio_feature_bindings = {}
+        self._audio_osc_callback = None
         
         # Track current screen for conditional updates
         self._current_screen = "master"
@@ -808,6 +908,7 @@ class VJConsoleApp(App):
                         with VerticalScroll(id="left-col"):
                             yield AudioAnalysisPanel(id="audio-analysis", classes="panel")
                             yield AudioDevicePanel(id="audio-device", classes="panel")
+                            yield AudioFeaturePanel(id="audio-features", classes="panel")
                             yield AudioBenchmarkPanel(id="audio-benchmark", classes="panel")
                         with VerticalScroll(id="right-col"):
                             yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
@@ -832,6 +933,66 @@ class VJConsoleApp(App):
         self.set_interval(2.0, self._check_apps)
 
     # === Actions (impure, side effects) ===
+
+    def _build_audio_config(self) -> AudioConfig:
+        flags = self.audio_feature_flags
+        return AudioConfig(
+            enable_essentia=flags.get('enable_essentia', True),
+            enable_pitch=flags.get('enable_pitch', True),
+            enable_bpm=flags.get('enable_bpm', True),
+            enable_structure=flags.get('enable_structure', True),
+            enable_spectrum=flags.get('enable_spectrum', True),
+            enable_logging=flags.get('enable_logging', True),
+            log_level=flags.get('log_level', logging.INFO),
+        )
+
+    def _update_audio_feature_panel(self) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE:
+            return
+        try:
+            panel = self.query_one("#audio-features", AudioFeaturePanel)
+        except Exception:
+            return
+        rows = []
+        for key, label in self.audio_feature_labels.items():
+            rows.append({
+                'name': key,
+                'label': label,
+                'key': self.audio_feature_bindings.get(key, '?'),
+                'enabled': self.audio_feature_flags.get(key, False),
+            })
+        panel.feature_data = {
+            'flags': rows,
+            'running': self.audio_running,
+        }
+
+    def _recreate_audio_analyzer(self) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE:
+            self._update_audio_feature_panel()
+            return
+        was_running = self.audio_running and self.audio_analyzer is not None
+        if self.audio_analyzer:
+            try:
+                self.audio_analyzer.stop()
+            except Exception as exc:
+                logger.exception(f"Error stopping audio analyzer during reconfigure: {exc}")
+            finally:
+                self.audio_running = False
+        self.audio_analyzer = None
+        self.audio_watchdog = None
+        self._init_audio_analyzer()
+        if was_running:
+            self._start_audio_analyzer()
+        self._update_audio_feature_panel()
+
+    def _toggle_audio_feature(self, key: str) -> None:
+        if not AUDIO_ANALYZER_AVAILABLE or key not in self.audio_feature_flags:
+            logger.warning("Audio feature toggle unavailable: %s", key)
+            return
+        self.audio_feature_flags[key] = not self.audio_feature_flags[key]
+        state = "enabled" if self.audio_feature_flags[key] else "disabled"
+        logger.info("Audio feature %s %s", key, state)
+        self._recreate_audio_analyzer()
     
     def _init_audio_analyzer(self) -> None:
         """Initialize audio analyzer (called on mount)."""
@@ -839,7 +1000,7 @@ class VJConsoleApp(App):
             from osc_manager import osc
             
             self.audio_device_manager = DeviceManager()
-            audio_config = AudioConfig()
+            audio_config = self._build_audio_config()
             
             # OSC callback that always sends (not conditional on screen)
             def audio_osc_callback(address: str, args: List):
@@ -857,6 +1018,7 @@ class VJConsoleApp(App):
             self.audio_watchdog = AudioAnalyzerWatchdog(self.audio_analyzer)
             
             logger.info("Audio analyzer initialized")
+            self._update_audio_feature_panel()
             
         except Exception as e:
             logger.exception(f"Audio analyzer initialization failed: {e}")
@@ -872,6 +1034,7 @@ class VJConsoleApp(App):
                 self.audio_analyzer.start()
                 self.audio_running = True
                 logger.info("Audio analyzer started")
+                self._update_audio_feature_panel()
         except Exception as e:
             logger.exception(f"Failed to start audio analyzer: {e}")
     
@@ -882,6 +1045,7 @@ class VJConsoleApp(App):
                 self.audio_analyzer.stop()
                 self.audio_running = False
                 logger.info("Audio analyzer stopped")
+                self._update_audio_feature_panel()
             except Exception as e:
                 logger.exception(f"Failed to stop audio analyzer: {e}")
     
@@ -900,6 +1064,10 @@ class VJConsoleApp(App):
             
             # Extract current features from analyzer state
             latest = self.audio_analyzer.latest_features
+            def _avg_band(indices: List[int]) -> float:
+                values = [self.audio_analyzer.smoothed_bands[i] for i in indices if i < len(self.audio_analyzer.smoothed_bands)]
+                return sum(values) / len(values) if values else 0.0
+
             features = {
                 'bands': {
                     name: self.audio_analyzer.smoothed_bands[i]
@@ -911,6 +1079,13 @@ class VJConsoleApp(App):
                 'bpm_confidence': latest.get('bpm_confidence', 0.0),
                 'buildup': latest.get('buildup', False),
                 'drop': latest.get('drop', False),
+                'bass_level': latest.get('bass_level', self.audio_analyzer.smoothed_bands[1] if len(self.audio_analyzer.smoothed_bands) > 1 else self.audio_analyzer.smoothed_rms),
+                'mid_level': latest.get('mid_level', _avg_band([2, 3, 4])),
+                'high_level': latest.get('high_level', _avg_band([5, 6])),
+                'energy_trend': latest.get('energy_trend', 0.0),
+                'brightness': latest.get('brightness', 0.0),
+                'pitch_hz': latest.get('pitch_hz', 0.0),
+                'pitch_conf': latest.get('pitch_conf', 0.0),
             }
             
             # Update panels
@@ -1157,6 +1332,25 @@ class VJConsoleApp(App):
             self._stop_audio_analyzer()
         else:
             self._start_audio_analyzer()
+        self._update_audio_feature_panel()
+
+    def action_toggle_audio_essentia(self) -> None:
+        self._toggle_audio_feature('enable_essentia')
+
+    def action_toggle_audio_pitch(self) -> None:
+        self._toggle_audio_feature('enable_pitch')
+
+    def action_toggle_audio_bpm(self) -> None:
+        self._toggle_audio_feature('enable_bpm')
+
+    def action_toggle_audio_structure(self) -> None:
+        self._toggle_audio_feature('enable_structure')
+
+    def action_toggle_audio_spectrum(self) -> None:
+        self._toggle_audio_feature('enable_spectrum')
+
+    def action_toggle_audio_logging(self) -> None:
+        self._toggle_audio_feature('enable_logging')
     
     def action_toggle_synesthesia(self) -> None:
         if self.synesthesia_running:
