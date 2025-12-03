@@ -8,7 +8,7 @@ debugging and for exercising the vj_bus IPC flows.
 import threading
 import time
 from collections import deque
-from typing import Any, Deque, Dict, List, Tuple
+from typing import Any, Deque, List, Tuple
 
 from pythonosc import dispatcher as osc_dispatcher
 from pythonosc import osc_server
