@@ -2,12 +2,18 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-5 to switch):
+Screens (press 0-9 to switch):
+0. Overview - Key metrics from all workers and services
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
 5. Audio Analysis - Real-time audio analysis and OSC emission
+6. Spotify Worker - Spotify API monitor details
+7. VirtualDJ Worker - VirtualDJ file watcher details
+8. Lyrics Worker - Lyrics fetcher with LLM analysis
+9. Audio Worker - Audio analyzer worker details
+🔧. Process Manager - Worker supervisor status
 """
 
 from dotenv import load_dotenv
@@ -517,6 +523,281 @@ class WorkersPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class WorkerOverviewPanel(ReactivePanel):
+    """Compact overview of all workers for overview screen."""
+    workers_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_workers_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Workers Overview", "═")]
+        
+        workers = self.workers_data.get('workers', [])
+        if not workers:
+            lines.append("[dim]No workers discovered[/dim]")
+        else:
+            for worker in workers:
+                name = worker.get('name', 'unknown')
+                connected = worker.get('connected', False)
+                state = worker.get('state', {})
+                
+                # Format status
+                if connected and state.get('running'):
+                    status = "[green]● RUNNING[/]"
+                elif connected:
+                    status = "[yellow]● IDLE[/]"
+                else:
+                    status = "[dim]○ disconnected[/]"
+                
+                # Get key info
+                info = ""
+                if name == 'audio_analyzer' and state.get('fps'):
+                    info = f"  {state['fps']:.1f} fps"
+                elif name == 'spotify_monitor' and state.get('track'):
+                    info = f"  {state['track'][:30]}"
+                elif name == 'lyrics_fetcher' and state.get('lyrics_count'):
+                    info = f"  {state['lyrics_count']} lyrics"
+                
+                lines.append(f"  {name:20s} {status}{info}")
+        
+        self.update("\n".join(lines))
+
+
+class SpotifyWorkerPanel(ReactivePanel):
+    """Detailed Spotify monitor worker status."""
+    worker_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_worker_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Spotify Monitor Worker", "═")]
+        
+        state = self.worker_data.get('state', {})
+        connected = self.worker_data.get('connected', False)
+        
+        if not connected:
+            lines.append("[dim]Worker not connected[/dim]")
+        else:
+            lines.append(f"Status: {format_status_icon(state.get('running', False), '● RUNNING', '○ stopped')}")
+            lines.append(f"Poll interval: {state.get('poll_interval', 2.0)}s")
+            lines.append("")
+            
+            # Current track
+            lines.append("[bold]Current Track:[/]")
+            if state.get('track'):
+                lines.append(f"  Artist: {state.get('artist', 'Unknown')}")
+                lines.append(f"  Title:  {state.get('track', 'Unknown')}")
+                lines.append(f"  Album:  {state.get('album', 'Unknown')}")
+                pos = state.get('position', 0)
+                dur = state.get('duration', 0)
+                lines.append(f"  Time:   {format_duration(pos, dur)}")
+            else:
+                lines.append("  [dim]No track playing[/dim]")
+            
+            lines.append("")
+            lines.append(f"Last update: {state.get('last_update', 'never')}")
+            lines.append(f"API calls: {state.get('api_calls', 0)}")
+        
+        self.update("\n".join(lines))
+
+
+class VirtualDJWorkerPanel(ReactivePanel):
+    """Detailed VirtualDJ monitor worker status."""
+    worker_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_worker_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("VirtualDJ Monitor Worker", "═")]
+        
+        state = self.worker_data.get('state', {})
+        connected = self.worker_data.get('connected', False)
+        
+        if not connected:
+            lines.append("[dim]Worker not connected[/dim]")
+        else:
+            lines.append(f"Status: {format_status_icon(state.get('running', False), '● RUNNING', '○ stopped')}")
+            lines.append(f"Watch file: {state.get('watch_file', 'not set')}")
+            lines.append(f"Poll interval: {state.get('poll_interval', 1.0)}s")
+            lines.append("")
+            
+            # Current track
+            lines.append("[bold]Current Track:[/]")
+            if state.get('track'):
+                lines.append(f"  {state.get('track', 'Unknown')}")
+                pos = state.get('position', 0)
+                lines.append(f"  Position: {format_time(pos)}")
+            else:
+                lines.append("  [dim]No track detected[/dim]")
+            
+            lines.append("")
+            lines.append(f"File checks: {state.get('file_checks', 0)}")
+            lines.append(f"Last change: {state.get('last_change', 'never')}")
+        
+        self.update("\n".join(lines))
+
+
+class LyricsWorkerPanel(ReactivePanel):
+    """Detailed lyrics fetcher worker status."""
+    worker_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_worker_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Lyrics Fetcher Worker", "═")]
+        
+        state = self.worker_data.get('state', {})
+        connected = self.worker_data.get('connected', False)
+        
+        if not connected:
+            lines.append("[dim]Worker not connected[/dim]")
+        else:
+            lines.append(f"Status: {format_status_icon(state.get('running', False), '● RUNNING', '○ stopped')}")
+            lines.append(f"LLM enabled: {format_status_icon(state.get('llm_enabled', False), '✓ Yes', '✗ No')}")
+            lines.append("")
+            
+            # Current lyrics
+            lines.append("[bold]Current Song:[/]")
+            if state.get('current_artist'):
+                lines.append(f"  Artist: {state.get('current_artist')}")
+                lines.append(f"  Title:  {state.get('current_title')}")
+                lines.append(f"  Lyrics: {state.get('lyrics_count', 0)} lines")
+                
+                if state.get('categories'):
+                    lines.append(f"  Vibe:   {state['categories'].get('vibe', 'unknown')}")
+                    lines.append(f"  Tempo:  {state['categories'].get('tempo', 'unknown')}")
+            else:
+                lines.append("  [dim]No lyrics loaded[/dim]")
+            
+            lines.append("")
+            lines.append(f"Total fetches: {state.get('total_fetches', 0)}")
+            lines.append(f"Cache hits: {state.get('cache_hits', 0)}")
+            lines.append(f"LLM calls: {state.get('llm_calls', 0)}")
+        
+        self.update("\n".join(lines))
+
+
+class AudioWorkerPanel(ReactivePanel):
+    """Detailed audio analyzer worker status."""
+    worker_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_worker_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Audio Analyzer Worker", "═")]
+        
+        state = self.worker_data.get('state', {})
+        connected = self.worker_data.get('connected', False)
+        
+        if not connected:
+            lines.append("[dim]Worker not connected[/dim]")
+        else:
+            lines.append(f"Status: {format_status_icon(state.get('running', False), '● RUNNING', '○ stopped')}")
+            lines.append(f"Device: {state.get('device', 'not set')}")
+            lines.append(f"Sample rate: {state.get('sample_rate', 0)} Hz")
+            lines.append("")
+            
+            # Performance
+            lines.append("[bold]Performance:[/]")
+            lines.append(f"  FPS: {state.get('fps', 0):.1f}")
+            lines.append(f"  Frames: {state.get('frames_processed', 0)}")
+            
+            lines.append("")
+            lines.append("[bold]Features Enabled:[/]")
+            lines.append(f"  Essentia: {format_status_icon(state.get('enable_essentia', False), '✓', '✗')}")
+            lines.append(f"  Pitch:    {format_status_icon(state.get('enable_pitch', False), '✓', '✗')}")
+            lines.append(f"  BPM:      {format_status_icon(state.get('enable_bpm', False), '✓', '✗')}")
+            lines.append(f"  Spectrum: {format_status_icon(state.get('enable_spectrum', False), '✓', '✗')}")
+            
+            # Current levels
+            if state.get('levels'):
+                lines.append("")
+                lines.append("[bold]Current Levels:[/]")
+                levels = state['levels']
+                lines.append(f"  Bass: {format_bar(levels.get('bass', 0))}")
+                lines.append(f"  Mid:  {format_bar(levels.get('mid', 0))}")
+                lines.append(f"  High: {format_bar(levels.get('high', 0))}")
+        
+        self.update("\n".join(lines))
+
+
+class ProcessManagerPanel(ReactivePanel):
+    """Detailed process manager status."""
+    worker_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_worker_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Process Manager", "═")]
+        
+        state = self.worker_data.get('state', {})
+        connected = self.worker_data.get('connected', False)
+        
+        if not connected:
+            lines.append("[dim]Worker not connected[/dim]")
+        else:
+            lines.append(f"Status: {format_status_icon(True, '● ACTIVE', '○ inactive')}")
+            lines.append("")
+            
+            # Managed workers
+            lines.append("[bold]Managed Workers:[/]")
+            managed = state.get('managed_workers', {})
+            if not managed:
+                lines.append("  [dim]No workers managed[/dim]")
+            else:
+                for name, info in managed.items():
+                    alive = info.get('alive', False)
+                    pid = info.get('pid', 0)
+                    restarts = info.get('restart_count', 0)
+                    
+                    status = "[green]✓ alive[/]" if alive else "[red]✗ dead[/]"
+                    restart_info = f" (restarts: {restarts})" if restarts > 0 else ""
+                    
+                    lines.append(f"  {name:20s} {status}  PID:{pid}{restart_info}")
+            
+            lines.append("")
+            lines.append(f"Total restarts: {state.get('total_restarts', 0)}")
+            lines.append(f"Uptime: {state.get('uptime', 'unknown')}")
+        
+        self.update("\n".join(lines))
+
+
 class AppsListPanel(ReactivePanel):
     """Processing apps list."""
     apps = reactive([])
@@ -826,11 +1107,16 @@ class VJConsoleApp(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
+        Binding("0", "screen_overview", "Overview"),
         Binding("1", "screen_master", "Master"),
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
         Binding("5", "screen_audio", "Audio"),
+        Binding("6", "screen_worker_spotify", "Spotify"),
+        Binding("7", "screen_worker_vdj", "VDJ"),
+        Binding("8", "screen_worker_lyrics", "Lyrics"),
+        Binding("9", "screen_worker_audio", "Audio W"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("w", "start_all_workers", "Start All Workers"),
@@ -942,6 +1228,18 @@ class VJConsoleApp(App):
         yield Header(show_clock=True)
         
         with TabbedContent(id="screens"):
+            # Tab 0: Overview (NEW - shows all key metrics)
+            with TabPane("0️⃣ Overview", id="overview"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield WorkerOverviewPanel(id="workers-overview", classes="panel")
+                        yield NowPlayingPanel(id="now-playing-overview", classes="panel")
+                        yield ServicesPanel(id="services-overview", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield CategoriesPanel(id="categories-overview", classes="panel")
+                        yield PipelinePanel(id="pipeline-overview", classes="panel")
+                        yield OSCPanel(id="osc-overview", classes="panel")
+            
             # Tab 1: Master Control
             with TabPane("1️⃣ Master Control", id="master"):
                 with Horizontal():
@@ -983,12 +1281,40 @@ class VJConsoleApp(App):
                             yield AudioBenchmarkPanel(id="audio-benchmark", classes="panel")
                         with VerticalScroll(id="right-col"):
                             yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
+            
+            # Tab 6-9: Worker Details (NEW)
+            with TabPane("6️⃣ Spotify Worker", id="worker-spotify"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield SpotifyWorkerPanel(id="spotify-worker-detail", classes="panel full-height")
+                    with VerticalScroll(id="right-col"):
+                        yield NowPlayingPanel(id="now-playing-spotify", classes="panel")
+            
+            with TabPane("7️⃣ VirtualDJ Worker", id="worker-vdj"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield VirtualDJWorkerPanel(id="vdj-worker-detail", classes="panel full-height")
+                    with VerticalScroll(id="right-col"):
+                        yield NowPlayingPanel(id="now-playing-vdj", classes="panel")
+            
+            with TabPane("8️⃣ Lyrics Worker", id="worker-lyrics"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield LyricsWorkerPanel(id="lyrics-worker-detail", classes="panel full-height")
+                    with VerticalScroll(id="right-col"):
+                        yield CategoriesPanel(id="categories-lyrics", classes="panel")
+            
+            with TabPane("9️⃣ Audio Worker", id="worker-audio"):
+                yield AudioWorkerPanel(id="audio-worker-detail", classes="panel full-height")
+            
+            with TabPane("🔧 Process Manager", id="worker-pm"):
+                yield ProcessManagerPanel(id="pm-detail", classes="panel full-height")
 
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
+        self.sub_title = "Press 0-9 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 0-8 to switch screens"
         
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
@@ -1341,6 +1667,67 @@ class VJConsoleApp(App):
             except Exception:
                 pass
         
+        elif screen == "overview":
+            # Update overview screen (all key metrics)
+            snapshot = self._latest_snapshot
+            monitor_status = snapshot.monitor_status or {}
+            if snapshot.source and snapshot.source in monitor_status:
+                source_connected = monitor_status[snapshot.source].get('available', False)
+            else:
+                source_connected = any(status.get('available', False) for status in monitor_status.values())
+            track_data = build_track_data(snapshot, source_connected)
+            
+            try:
+                self.query_one("#now-playing-overview", NowPlayingPanel).track_data = track_data
+            except Exception:
+                pass
+            
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
+            try:
+                self.query_one("#categories-overview", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
+            
+            pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
+            try:
+                self.query_one("#pipeline-overview", PipelinePanel).pipeline_data = pipeline_data
+            except Exception:
+                pass
+            
+            osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(20)
+            try:
+                panel = self.query_one("#osc-overview", OSCPanel)
+                panel.full_view = False
+                panel.messages = osc_msgs
+            except Exception:
+                pass
+            
+            # Workers overview
+            try:
+                workers_list = []
+                for worker in self.worker_coordinator.get_all_workers():
+                    workers_list.append({
+                        'name': worker.name,
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    })
+                self.query_one("#workers-overview", WorkerOverviewPanel).workers_data = {
+                    'workers': workers_list
+                }
+            except Exception:
+                pass
+            
+            # Services status
+            running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+            try:
+                self.query_one("#services-overview", ServicesPanel).status = {
+                    'synesthesia': self.synesthesia_running,
+                    'milksyphon': self.milksyphon_running,
+                    'processing_apps': running_apps,
+                }
+            except Exception:
+                pass
+        
         elif screen == "ai":
             # Update AI debug screen only
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
@@ -1366,6 +1753,85 @@ class VJConsoleApp(App):
             # Update audio panels only
             self._update_audio_panels()
         
+        elif screen == "worker-spotify":
+            # Update Spotify worker detail screen
+            worker = self._get_worker_by_name('spotify_monitor')
+            if worker:
+                try:
+                    self.query_one("#spotify-worker-detail", SpotifyWorkerPanel).worker_data = {
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    }
+                except Exception:
+                    pass
+            
+            # Also show current track
+            track_data = build_track_data(self._latest_snapshot, True)
+            try:
+                self.query_one("#now-playing-spotify", NowPlayingPanel).track_data = track_data
+            except Exception:
+                pass
+        
+        elif screen == "worker-vdj":
+            # Update VirtualDJ worker detail screen
+            worker = self._get_worker_by_name('virtualdj_monitor')
+            if worker:
+                try:
+                    self.query_one("#vdj-worker-detail", VirtualDJWorkerPanel).worker_data = {
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    }
+                except Exception:
+                    pass
+            
+            track_data = build_track_data(self._latest_snapshot, True)
+            try:
+                self.query_one("#now-playing-vdj", NowPlayingPanel).track_data = track_data
+            except Exception:
+                pass
+        
+        elif screen == "worker-lyrics":
+            # Update Lyrics worker detail screen
+            worker = self._get_worker_by_name('lyrics_fetcher')
+            if worker:
+                try:
+                    self.query_one("#lyrics-worker-detail", LyricsWorkerPanel).worker_data = {
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    }
+                except Exception:
+                    pass
+            
+            cat_data = build_categories_payload(self.karaoke_engine.current_categories)
+            try:
+                self.query_one("#categories-lyrics", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
+        
+        elif screen == "worker-audio":
+            # Update Audio worker detail screen
+            worker = self._get_worker_by_name('audio_analyzer')
+            if worker:
+                try:
+                    self.query_one("#audio-worker-detail", AudioWorkerPanel).worker_data = {
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    }
+                except Exception:
+                    pass
+        
+        elif screen == "worker-pm":
+            # Update Process Manager detail screen
+            worker = self._get_worker_by_name('process_manager')
+            if worker:
+                try:
+                    self.query_one("#pm-detail", ProcessManagerPanel).worker_data = {
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    }
+                except Exception:
+                    pass
+        
         # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
         current_status = {
@@ -1380,6 +1846,13 @@ class VJConsoleApp(App):
                 milksyphon_running=self.milksyphon_running, processing_apps=running_apps
             )
             self._last_master_status = current_status
+    
+    def _get_worker_by_name(self, name: str):
+        """Get worker by name from coordinator."""
+        for worker in self.worker_coordinator.get_all_workers():
+            if worker.name == name:
+                return worker
+        return None
 
     # === Screen switching ===
     
@@ -1398,6 +1871,10 @@ class VJConsoleApp(App):
         self._current_screen = screen_name
         self.query_one("#screens", TabbedContent).active = screen_name
     
+    def action_screen_overview(self) -> None:
+        """Switch to overview screen."""
+        self._switch_screen("overview")
+    
     def action_screen_master(self) -> None:
         self._switch_screen("master")
     
@@ -1414,6 +1891,26 @@ class VJConsoleApp(App):
         """Switch to audio analysis screen."""
         if AUDIO_ANALYZER_AVAILABLE:
             self._switch_screen("audio")
+    
+    def action_screen_worker_spotify(self) -> None:
+        """Switch to Spotify worker detail screen."""
+        self._switch_screen("worker-spotify")
+    
+    def action_screen_worker_vdj(self) -> None:
+        """Switch to VirtualDJ worker detail screen."""
+        self._switch_screen("worker-vdj")
+    
+    def action_screen_worker_lyrics(self) -> None:
+        """Switch to Lyrics worker detail screen."""
+        self._switch_screen("worker-lyrics")
+    
+    def action_screen_worker_audio(self) -> None:
+        """Switch to Audio worker detail screen."""
+        self._switch_screen("worker-audio")
+    
+    def action_screen_worker_pm(self) -> None:
+        """Switch to Process Manager detail screen."""
+        self._switch_screen("worker-pm")
 
     # === App control ===
     
