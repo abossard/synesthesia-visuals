@@ -34,7 +34,6 @@ from process_manager import ProcessManager, VJProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
 from vj_bus import TuiClient
-from vj_bus.utils import find_free_port
 from lyrics_worker import LyricsFetcherWorker
 from osc_debugger_worker import OSCDebuggerWorker
 
