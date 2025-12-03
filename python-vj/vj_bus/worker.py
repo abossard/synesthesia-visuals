@@ -101,7 +101,7 @@ class WorkerNode:
 
     @property
     def started_at(self) -> str:
-        return now_ts()
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._started_at))
 
     def run_forever(self) -> None:
         """Block the current thread, keeping the worker alive until stop() is called."""
