@@ -31,17 +31,34 @@ from typing import List, Tuple, Optional, Dict, Any, Callable
 from collections import deque
 
 import numpy as np
-import sounddevice as sd
 
+# Try to import sounddevice (needs PortAudio library)
+try:
+    import sounddevice as sd
+    SOUNDDEVICE_AVAILABLE = True
+except (ImportError, OSError) as e:
+    SOUNDDEVICE_AVAILABLE = False
+    sd = None
+    # logger not initialized yet, will log later
+
+# Try to import essentia
 try:
     import essentia.standard as es
     ESSENTIA_AVAILABLE = True
 except ImportError as e:
     ESSENTIA_AVAILABLE = False
-    logger.warning(f"Essentia not available - beat/tempo/pitch detection disabled: {e}")
-    logger.info("Install essentia with: pip install essentia")
+    es = None
+    # logger not initialized yet, will log later
 
 logger = logging.getLogger('audio_analyzer')
+
+# Log library availability after logger is initialized
+if not SOUNDDEVICE_AVAILABLE:
+    logger.warning("sounddevice not available - audio input disabled")
+    logger.info("Install PortAudio library and sounddevice with: pip install sounddevice")
+if not ESSENTIA_AVAILABLE:
+    logger.warning("Essentia not available - beat/tempo/pitch detection disabled")
+    logger.info("Install essentia with: pip install essentia")
 
 
 # =============================================================================
@@ -213,10 +230,16 @@ def estimate_bpm_from_intervals(intervals: List[float],
     if len(intervals) < 2:
         return 0.0, 0.0
     
-    # Filter outliers
+    # Filter outliers (only if there's variance)
     mean_interval = np.mean(intervals)
     std_interval = np.std(intervals)
-    filtered = [i for i in intervals if abs(i - mean_interval) < 2 * std_interval]
+    
+    if std_interval > 0:
+        # Filter out outliers beyond 2 standard deviations
+        filtered = [i for i in intervals if abs(i - mean_interval) < 2 * std_interval]
+    else:
+        # All intervals are identical - use all of them
+        filtered = intervals
     
     if not filtered:
         return 0.0, 0.0
@@ -355,6 +378,9 @@ class DeviceManager:
         Returns:
             List of device info dicts
         """
+        if not SOUNDDEVICE_AVAILABLE or sd is None:
+            return []
+        
         devices = []
         try:
             device_list = sd.query_devices()
@@ -394,6 +420,9 @@ class DeviceManager:
         Returns:
             Device index or None for system default
         """
+        if not SOUNDDEVICE_AVAILABLE or sd is None:
+            return None
+        
         # Use configured device if set
         if self.config.device_index is not None:
             # Verify device still exists
@@ -419,6 +448,10 @@ class DeviceManager:
     
     def set_device(self, device_index: int):
         """Set and save device selection."""
+        if not SOUNDDEVICE_AVAILABLE or sd is None:
+            logger.error("Cannot set device: sounddevice not available")
+            return
+        
         try:
             dev = sd.query_devices(device_index)
             self.config.device_index = device_index
@@ -458,7 +491,7 @@ class AudioAnalyzer(threading.Thread):
         
         # Audio I/O state
         self.audio_queue = queue.Queue(maxsize=64)
-        self.stream: Optional[sd.InputStream] = None
+        self.stream: Optional[Any] = None  # sd.InputStream when available
         self.last_audio_time = time.monotonic()
         self.active_channels = config.channels
         
@@ -542,7 +575,7 @@ class AudioAnalyzer(threading.Thread):
         self.last_flux_onset = 0.0
     
     def _audio_callback(self, indata: np.ndarray, frames: int, 
-                       time_info: dict, status: sd.CallbackFlags):
+                       time_info: dict, status: Any):
         """
         Audio input callback (runs in PortAudio thread).
         
@@ -563,6 +596,9 @@ class AudioAnalyzer(threading.Thread):
     
     def start_stream(self):
         """Start audio input stream."""
+        if not SOUNDDEVICE_AVAILABLE or sd is None:
+            raise RuntimeError("Cannot start audio stream: sounddevice not available")
+        
         device_idx = self.device_manager.get_device_index()
         channels_to_try = [self.config.channels]
         if self.config.channels > 1:
