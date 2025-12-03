@@ -1057,9 +1057,14 @@ class VJConsoleApp(App):
         try:
             # Get current stats
             stats = self.audio_analyzer.get_stats()
+
+            if self.audio_running and not stats.get('running', False):
+                logger.warning("Audio analyzer thread stopped unexpectedly; rebuilding analyzer")
+                self._recreate_audio_analyzer()
+                return
             
-            # Update watchdog
-            if self.audio_watchdog:
+            # Update watchdog only when analyzer should be running
+            if self.audio_watchdog and self.audio_running:
                 self.audio_watchdog.update()
             
             # Extract current features from analyzer state

@@ -79,6 +79,7 @@ class AudioConfig:
     spectrum_bins: int = 32  # Downsampled spectrum size for OSC
     smoothing_factor: float = 0.3  # EMA smoothing (0=no smooth, 1=no change)
     compression_k: float = 4.0  # Tanh compression for visualization
+    band_peak_decay: float = 0.995  # Decay rate for adaptive band normalization
     
     # BPM estimation
     bpm_history_size: int = 16  # Number of beat intervals to track
@@ -459,6 +460,7 @@ class AudioAnalyzer(threading.Thread):
         self.audio_queue = queue.Queue(maxsize=64)
         self.stream: Optional[sd.InputStream] = None
         self.last_audio_time = time.monotonic()
+        self.active_channels = config.channels
         
         # Analysis state
         self.hann_window = np.hanning(config.fft_size).astype(np.float32)
@@ -468,6 +470,8 @@ class AudioAnalyzer(threading.Thread):
         # Smoothed features
         self.smoothed_bands = [0.0] * len(config.bands)
         self.smoothed_rms = 0.0
+        self.band_peaks = [1e-3] * len(config.bands)
+        self.rms_peak = 1e-3
         
         # Beat/BPM tracking
         self.beat_times = deque(maxlen=config.bpm_history_size)
@@ -560,31 +564,59 @@ class AudioAnalyzer(threading.Thread):
     def start_stream(self):
         """Start audio input stream."""
         device_idx = self.device_manager.get_device_index()
-        
-        try:
-            self.stream = sd.InputStream(
-                samplerate=self.config.sample_rate,
-                blocksize=self.config.block_size,
-                channels=self.config.channels,
-                dtype='float32',
-                device=device_idx,
-                callback=self._audio_callback,
-            )
-            self.stream.start()
-            
-            # Log device info
-            if device_idx is not None:
-                dev = sd.query_devices(device_idx)
-                logger.info(f"Audio stream started: {dev['name']} @ {self.config.sample_rate}Hz")
-            else:
-                logger.info(f"Audio stream started: system default @ {self.config.sample_rate}Hz")
-            
-            self.error_count = 0
-            
-        except Exception as e:
-            logger.error(f"Failed to start audio stream: {e}")
-            self.error_count += 1
-            raise
+        channels_to_try = [self.config.channels]
+        if self.config.channels > 1:
+            channels_to_try.append(1)
+
+        last_error: Optional[Exception] = None
+        for attempt, channels in enumerate(channels_to_try):
+            try:
+                self.stream = sd.InputStream(
+                    samplerate=self.config.sample_rate,
+                    blocksize=self.config.block_size,
+                    channels=channels,
+                    dtype='float32',
+                    device=device_idx,
+                    callback=self._audio_callback,
+                )
+                self.stream.start()
+                self.active_channels = channels
+
+                if device_idx is not None:
+                    dev = sd.query_devices(device_idx)
+                    dev_name = dev['name']
+                else:
+                    dev_name = 'system default'
+                logger.info(
+                    "Audio stream started: %s @ %dHz (%sch)",
+                    dev_name,
+                    self.config.sample_rate,
+                    channels,
+                )
+                self.error_count = 0
+                return
+            except Exception as e:
+                last_error = e
+                logger.error(
+                    "Failed to start audio stream (%sch attempt %d/%d): %s",
+                    channels,
+                    attempt + 1,
+                    len(channels_to_try),
+                    e,
+                )
+                if self.stream:
+                    try:
+                        self.stream.close()
+                    except Exception:
+                        pass
+                    finally:
+                        self.stream = None
+                if attempt == 0 and len(channels_to_try) > 1:
+                    logger.info("Retrying audio stream with mono input (1 channel)")
+        self.error_count += 1
+        if last_error:
+            raise last_error
+        raise RuntimeError("Audio stream failed to start for unknown reasons")
     
     def stop_stream(self):
         """Stop audio input stream."""
@@ -627,19 +659,32 @@ class AudioAnalyzer(threading.Thread):
             for fmin, fmax in self.config.bands
         ]
         
-        # Smooth and compress bands
+        # Smooth and compress bands using adaptive peak normalization
+        peak_decay = self.config.band_peak_decay
+        eps = 1e-9
         for i, raw_val in enumerate(raw_bands):
+            peak = self.band_peaks[i]
+            peak = max(raw_val, peak * peak_decay)
+            peak = max(peak, eps)
+            self.band_peaks[i] = peak
+            normalized = raw_val / peak
+            compressed = compress_value(normalized, self.config.compression_k)
             self.smoothed_bands[i] = smooth_value(
                 self.smoothed_bands[i],
-                compress_value(raw_val, self.config.compression_k),
+                compressed,
                 self.config.smoothing_factor
             )
         
         # Overall RMS
         rms = calculate_rms(mono)
+        if rms > self.rms_peak:
+            self.rms_peak = rms
+        else:
+            self.rms_peak = max(self.rms_peak * peak_decay, eps)
+        rms_normalized = rms / (self.rms_peak + eps)
         self.smoothed_rms = smooth_value(
             self.smoothed_rms,
-            compress_value(rms * 10, self.config.compression_k),
+            compress_value(rms_normalized, self.config.compression_k),
             self.config.smoothing_factor
         )
         
