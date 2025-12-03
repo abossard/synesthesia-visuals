@@ -27,6 +27,7 @@ from textual.binding import Binding
 from process_manager import ProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
+from worker_coordinator import WorkerCoordinator
 
 # Audio analysis (imported conditionally to handle missing dependencies)
 try:
@@ -347,11 +348,13 @@ class MasterControlPanel(ReactivePanel):
         
         self.update(
             self.render_section("Master Control", "═") +
+            f"  [W] Start All Workers\n"
+            f"  [R] Restart Workers\n"
             f"  [S] Synesthesia     {syn}\n"
             f"  [M] ProjMilkSyphon  {pms}\n"
             f"  [P] Processing Apps {proc} running\n"
             f"  [K] Karaoke Engine  {kar}\n\n"
-            "[dim]Press letter key to toggle app[/dim]"
+            "[dim]Press letter key to toggle/control[/dim]"
         )
 
 
@@ -450,6 +453,47 @@ class ServicesPanel(ReactivePanel):
             retry = s.get('playback_backoff', 0.0)
             extra = f" (retry in {retry:.1f}s)" if retry else ""
             lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
+        self.update("\n".join(lines))
+
+
+class WorkersPanel(ReactivePanel):
+    """Multi-process workers status."""
+    workers_data = reactive({})
+
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+
+    def watch_workers_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Workers (Multi-Process)", "═")]
+        
+        workers = self.workers_data.get('workers', [])
+        if not workers:
+            lines.append("[dim]No workers discovered yet...[/dim]")
+        else:
+            for worker in workers:
+                name = worker.get('name', 'unknown')
+                connected = worker.get('connected', False)
+                state = worker.get('state', {})
+                
+                status_icon = "✓" if connected else "○"
+                color = "green" if connected else "dim"
+                
+                # Show relevant state info
+                info = ""
+                if state.get('running'):
+                    info = " [running]"
+                elif state.get('status'):
+                    info = f" [{state.get('status')}]"
+                
+                lines.append(f"  [{color}]{status_icon}[/] {name:20s}{info}")
+        
         self.update("\n".join(lines))
 
 
@@ -769,6 +813,8 @@ class VJConsoleApp(App):
         Binding("5", "screen_audio", "Audio"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
+        Binding("w", "start_all_workers", "Start All Workers"),
+        Binding("r", "restart_all_workers", "Restart Workers"),
         Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
         Binding("b", "run_audio_benchmark", "Benchmark"),
         Binding("e", "toggle_audio_essentia", "Essentia DSP"),
@@ -796,6 +842,9 @@ class VJConsoleApp(App):
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
+        
+        # Worker coordinator for multi-process architecture
+        self.worker_coordinator = WorkerCoordinator()
         
         # Audio analyzer (always send OSC when active)
         self.audio_analyzer: Optional['AudioAnalyzer'] = None
@@ -878,6 +927,7 @@ class VJConsoleApp(App):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield MasterControlPanel(id="master-ctrl", classes="panel")
+                        yield WorkersPanel(id="workers", classes="panel")
                         yield AppsListPanel(id="apps", classes="panel")
                         yield ServicesPanel(id="services", classes="panel")
                     with VerticalScroll(id="right-col"):
@@ -924,6 +974,10 @@ class VJConsoleApp(App):
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
         self._start_karaoke()
+        
+        # Start worker coordinator
+        self.worker_coordinator.start()
+        logger.info("Worker coordinator started")
         
         # Initialize audio analyzer if available
         if AUDIO_ANALYZER_AVAILABLE:
@@ -1230,6 +1284,21 @@ class VJConsoleApp(App):
             except Exception:
                 pass
             
+            # Workers panel update
+            try:
+                workers_list = []
+                for worker in self.worker_coordinator.get_all_workers():
+                    workers_list.append({
+                        'name': worker.name,
+                        'connected': worker.connected,
+                        'state': worker.last_state,
+                    })
+                self.query_one("#workers", WorkersPanel).workers_data = {
+                    'workers': workers_list
+                }
+            except Exception:
+                pass
+            
             # Master control status
             running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
             try:
@@ -1375,6 +1444,52 @@ class VJConsoleApp(App):
                     break
         self._check_apps()
 
+    def action_start_all_workers(self) -> None:
+        """Start all workers via process manager."""
+        logger.info("Starting all workers...")
+        
+        # List of workers to start (exclude process_manager itself)
+        workers_to_start = [
+            'spotify_monitor',
+            'virtualdj_monitor', 
+            'lyrics_fetcher',
+            # 'audio_analyzer',  # Commented out by default, requires audio hardware
+            # 'osc_debugger',    # Commented out by default, debugging tool
+        ]
+        
+        for worker_name in workers_to_start:
+            try:
+                success = self.worker_coordinator.start_worker(worker_name)
+                if success:
+                    logger.info(f"Started worker: {worker_name}")
+                else:
+                    logger.warning(f"Failed to start worker: {worker_name}")
+            except Exception as e:
+                logger.error(f"Error starting {worker_name}: {e}")
+        
+        # Give workers time to start
+        time.sleep(1)
+        self.worker_coordinator.discover_workers()
+        logger.info("Worker startup sequence complete")
+
+    def action_restart_all_workers(self) -> None:
+        """Restart all workers via process manager."""
+        logger.info("Restarting all workers...")
+        
+        workers = self.worker_coordinator.get_all_workers()
+        for worker in workers:
+            if worker.name != 'process_manager':  # Don't restart the process manager itself
+                try:
+                    success = self.worker_coordinator.restart_worker(worker.name)
+                    if success:
+                        logger.info(f"Restarted worker: {worker.name}")
+                    else:
+                        logger.warning(f"Failed to restart worker: {worker.name}")
+                except Exception as e:
+                    logger.error(f"Error restarting {worker.name}: {e}")
+        
+        logger.info("Worker restart sequence complete")
+
     def action_nav_up(self) -> None:
         panel = self.query_one("#apps", AppsListPanel)
         if panel.selected > 0:
@@ -1433,6 +1548,11 @@ class VJConsoleApp(App):
         if self.karaoke_engine:
             self.karaoke_engine.stop()
         self.process_manager.cleanup()
+        
+        # Stop worker coordinator
+        if self.worker_coordinator:
+            self.worker_coordinator.stop()
+            logger.info("Worker coordinator stopped")
         
         # Stop audio analyzer
         if AUDIO_ANALYZER_AVAILABLE and self.audio_running:
