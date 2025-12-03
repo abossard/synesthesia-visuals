@@ -2,7 +2,7 @@ import json
 import multiprocessing
 import time
 from pathlib import Path
-from typing import Dict
+from typing import TypedDict
 
 import pytest
 
@@ -14,7 +14,14 @@ from vj_bus.osc_helpers import osc_send_raw
 from vj_bus.utils import find_free_port
 
 
-def _worker_process(name: str, ports: Dict[str, int | str], generation: int) -> None:
+class WorkerPorts(TypedDict):
+    """Type definition for worker port configuration."""
+    telemetry: int
+    command: str
+    events: str
+
+
+def _worker_process(name: str, ports: WorkerPorts, generation: int) -> None:
     node = WorkerNode(
         name=name,
         telemetry_port=ports["telemetry"],
@@ -29,7 +36,7 @@ def _worker_process(name: str, ports: Dict[str, int | str], generation: int) -> 
     node.run_forever()
 
 
-def _spawn_worker_process(name: str, ports: Dict[str, int | str], generation: int = 0) -> multiprocessing.Process:
+def _spawn_worker_process(name: str, ports: WorkerPorts, generation: int = 0) -> multiprocessing.Process:
     proc = multiprocessing.Process(target=_worker_process, args=(name, ports, generation))
     proc.start()
     return proc
