@@ -2,7 +2,7 @@ import json
 import multiprocessing
 import time
 from pathlib import Path
-from typing import Dict, TypedDict
+from typing import TypedDict
 
 import pytest
 
