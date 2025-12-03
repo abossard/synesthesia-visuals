@@ -28,6 +28,14 @@ from process_manager import ProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
 
+# VJ Bus support
+try:
+    from vj_bus.client import VJBusClient
+    VJ_BUS_AVAILABLE = True
+except ImportError:
+    VJ_BUS_AVAILABLE = False
+    VJBusClient = None
+
 # Audio analysis (imported conditionally to handle missing dependencies)
 try:
     from audio_analyzer import (
@@ -430,6 +438,15 @@ class ServicesPanel(ReactivePanel):
         
         s = self.services
         lines = [self.render_section("Services", "═")]
+
+        # VJ Bus worker mode indicator
+        if s.get('vj_bus_mode'):
+            workers = s.get('vj_bus_workers', [])
+            lines.append(f"[green]✓ VJ Bus Mode   {len(workers)} workers[/]")
+            for worker in workers:
+                lines.append(f"    [cyan]•[/] {worker}")
+            lines.append("")  # Spacing
+
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
         lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
         lines.append(svc(s.get('ollama'), "Ollama LLM", ', '.join(s.get('ollama_models', [])) or "Not running"))
@@ -796,6 +813,18 @@ class VJConsoleApp(App):
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
+
+        # VJ Bus client and worker mode
+        self.vj_bus_client: Optional[VJBusClient] = None
+        self.using_workers = False
+        self._worker_telemetry = {
+            'virtualdj_state': None,
+            'spotify_state': None,
+            'lyrics_data': None,
+            'categories_data': None,
+            'audio_features': None,
+        }
+        self._discovered_workers = []
         
         # Audio analyzer (always send OSC when active)
         self.audio_analyzer: Optional['AudioAnalyzer'] = None
@@ -919,16 +948,26 @@ class VJConsoleApp(App):
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
-        
+
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
-        self._start_karaoke()
-        
+
+        # Try VJ Bus workers first, fall back to direct engine
+        if VJ_BUS_AVAILABLE:
+            if self._try_vjbus_workers():
+                logger.info("✓ Using VJ Bus workers")
+            else:
+                logger.info("Workers not available, using direct KaraokeEngine")
+                self._start_karaoke()
+        else:
+            logger.info("VJ Bus not available, using direct KaraokeEngine")
+            self._start_karaoke()
+
         # Initialize audio analyzer if available
         if AUDIO_ANALYZER_AVAILABLE:
             self._init_audio_analyzer()
-        
+
         # Background updates
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
@@ -1132,6 +1171,90 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
 
+    def _try_vjbus_workers(self) -> bool:
+        """Try to connect to VJ Bus workers. Returns True if successful."""
+        try:
+            # Create client
+            self.vj_bus_client = VJBusClient()
+
+            # Discover workers
+            self._discovered_workers = self.vj_bus_client.discover_workers()
+
+            if not self._discovered_workers:
+                logger.info("No VJ Bus workers found")
+                return False
+
+            logger.info(f"Discovered {len(self._discovered_workers)} workers:")
+            for worker in self._discovered_workers:
+                logger.info(f"  - {worker.name}")
+
+            # Subscribe to telemetry
+            self.vj_bus_client.subscribe("virtualdj.state", self._on_virtualdj_telemetry)
+            self.vj_bus_client.subscribe("spotify.state", self._on_spotify_telemetry)
+            self.vj_bus_client.subscribe("lyrics.fetched", self._on_lyrics_telemetry)
+            self.vj_bus_client.subscribe("lyrics.analyzed", self._on_lyrics_analyzed)
+            self.vj_bus_client.subscribe("song.categorized", self._on_song_categorized)
+            self.vj_bus_client.subscribe("audio.features", self._on_audio_features_telemetry)
+
+            # Start telemetry receiver
+            self.vj_bus_client.start()
+
+            self.using_workers = True
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to initialize VJ Bus: {e}")
+            if self.vj_bus_client:
+                try:
+                    self.vj_bus_client.stop()
+                except:
+                    pass
+                self.vj_bus_client = None
+            return False
+
+    # === VJ Bus telemetry callbacks ===
+
+    def _on_virtualdj_telemetry(self, msg):
+        """Handle VirtualDJ state telemetry."""
+        self._worker_telemetry['virtualdj_state'] = msg.payload
+
+    def _on_spotify_telemetry(self, msg):
+        """Handle Spotify state telemetry."""
+        self._worker_telemetry['spotify_state'] = msg.payload
+
+    def _on_lyrics_telemetry(self, msg):
+        """Handle lyrics fetched telemetry."""
+        data = msg.payload
+        self._worker_telemetry['lyrics_data'] = {
+            'artist': data.get('artist'),
+            'title': data.get('title'),
+            'lrc_text': data.get('lrc_text'),
+            'line_count': data.get('line_count'),
+            'has_lyrics': data.get('has_lyrics', False),
+        }
+
+    def _on_lyrics_analyzed(self, msg):
+        """Handle lyrics analysis telemetry."""
+        data = msg.payload
+        if self._worker_telemetry['lyrics_data']:
+            self._worker_telemetry['lyrics_data'].update({
+                'keywords': data.get('keywords', []),
+                'themes': data.get('themes', []),
+                'refrain_lines': data.get('refrain_lines', []),
+            })
+
+    def _on_song_categorized(self, msg):
+        """Handle song categorization telemetry."""
+        data = msg.payload
+        self._worker_telemetry['categories_data'] = {
+            'categories': data.get('categories', {}),
+            'primary_mood': data.get('primary_mood', ''),
+        }
+
+    def _on_audio_features_telemetry(self, msg):
+        """Handle audio features telemetry from worker."""
+        self._worker_telemetry['audio_features'] = msg.payload
+
     def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
         """Run a subprocess, return True if successful."""
         try:
@@ -1166,7 +1289,7 @@ class VJConsoleApp(App):
         vdj_path = KaraokeConfig.find_vdj_path()
         
         try:
-            self.query_one("#services", ServicesPanel).services = {
+            services_data = {
                 'spotify': KaraokeConfig.has_spotify_credentials(),
                 'virtualdj': bool(vdj_path),
                 'vdj_file': vdj_path.name if vdj_path else '',
@@ -1180,11 +1303,85 @@ class VJConsoleApp(App):
                 'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
                 'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
+
+            # Add worker information if using VJ Bus
+            if self.using_workers:
+                services_data['vj_bus_mode'] = True
+                services_data['vj_bus_workers'] = [w.name for w in self._discovered_workers]
+            else:
+                services_data['vj_bus_mode'] = False
+                services_data['vj_bus_workers'] = []
+
+            self.query_one("#services", ServicesPanel).services = services_data
         except Exception:
             pass
 
+    def _update_data_from_workers(self) -> None:
+        """Update panels using worker telemetry data."""
+        screen = self._current_screen
+
+        if screen == "master":
+            # Build track data from worker telemetry
+            vdj_state = self._worker_telemetry.get('virtualdj_state')
+            spotify_state = self._worker_telemetry.get('spotify_state')
+
+            # Use whichever source has data
+            source_state = vdj_state or spotify_state
+            if source_state:
+                track = source_state.get('track', {})
+                track_data = {
+                    'artist': track.get('artist', 'Unknown'),
+                    'title': track.get('title', 'Unknown'),
+                    'duration': track.get('duration', 0),
+                    'position': source_state.get('position', 0),
+                    'source': 'VirtualDJ' if vdj_state else 'Spotify',
+                    'connected': True,
+                    'error': '',
+                    'backoff': 0,
+                }
+
+                try:
+                    self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
+                except Exception:
+                    pass
+
+            # Categories from worker
+            cat_data = self._worker_telemetry.get('categories_data', {})
+            if cat_data:
+                try:
+                    self.query_one("#categories", CategoriesPanel).categories_data = cat_data
+                except Exception:
+                    pass
+
+            # Show worker status
+            running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+            try:
+                self.query_one("#master-ctrl", MasterControlPanel).status = {
+                    'synesthesia': self.synesthesia_running,
+                    'milksyphon': self.milksyphon_running,
+                    'processing_apps': running_apps,
+                    'karaoke': True,  # Workers are running
+                }
+            except Exception:
+                pass
+
+        elif screen == "logs":
+            try:
+                self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
+            except Exception:
+                pass
+
+        elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
+            # Audio panels still updated from direct analyzer
+            self._update_audio_panels()
+
     def _update_data(self) -> None:
         """Update all panels with current data (only update visible screens)."""
+        # Handle both worker mode and direct engine mode
+        if self.using_workers:
+            self._update_data_from_workers()
+            return
+
         if not self.karaoke_engine:
             return
         
@@ -1430,10 +1627,20 @@ class VJConsoleApp(App):
 
     def on_unmount(self) -> None:
         """Cleanup when app is closing."""
+        # Stop VJBusClient if using workers
+        if self.vj_bus_client:
+            try:
+                self.vj_bus_client.stop()
+                logger.info("VJ Bus client stopped")
+            except Exception as e:
+                logger.error(f"Error stopping VJ Bus client: {e}")
+
+        # Stop karaoke engine if using direct mode
         if self.karaoke_engine:
             self.karaoke_engine.stop()
+
         self.process_manager.cleanup()
-        
+
         # Stop audio analyzer
         if AUDIO_ANALYZER_AVAILABLE and self.audio_running:
             self._stop_audio_analyzer()
