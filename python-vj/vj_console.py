@@ -1065,8 +1065,8 @@ class VJConsoleApp(App):
             }
         else:
             self.audio_feature_flags = {}
-        self.audio_feature_labels = {}
-        self.audio_feature_bindings = {}
+            self.audio_feature_labels = {}
+            self.audio_feature_bindings = {}
         self._audio_osc_callback = None
 
         # Track current screen for conditional updates
