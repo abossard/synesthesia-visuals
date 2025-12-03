@@ -170,6 +170,17 @@ class Worker(ABC):
         """
         pass
     
+    def on_loop(self):
+        """
+        Optional hook called in main loop for worker-specific tasks.
+        
+        Subclasses can override this to perform periodic work
+        (e.g., polling external services, processing queues).
+        
+        Called every loop iteration (~20 times per second).
+        """
+        pass
+    
     def _run_loop(self):
         """
         Main worker loop.
@@ -206,6 +217,12 @@ class Worker(ABC):
                     # Remove dead client
                     self._clients.remove(client)
                     client.close()
+            
+            # Call worker-specific loop hook
+            try:
+                self.on_loop()
+            except Exception as e:
+                logger.error(f"Error in worker loop: {e}")
             
             # Small sleep to prevent busy waiting
             time.sleep(0.05)
