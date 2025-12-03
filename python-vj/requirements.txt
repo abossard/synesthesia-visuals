@@ -26,3 +26,7 @@ openai>=1.0.0
 sounddevice>=0.4.6  # Low-latency audio I/O via PortAudio
 numpy>=1.24.0       # FFT and spectral analysis
 essentia            # Beat detection, tempo, and pitch estimation
+
+# VJ Bus IPC (multi-process architecture)
+pyzmq>=25.0.0       # ZeroMQ for reliable IPC
+pydantic>=2.0.0     # Message schema validation
