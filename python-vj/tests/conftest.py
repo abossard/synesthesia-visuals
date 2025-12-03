@@ -2,7 +2,9 @@ import multiprocessing
 import sys
 from pathlib import Path
 
-# Set multiprocessing start method to 'spawn' to avoid fork() issues with threads
+# Set multiprocessing start method to 'spawn' to prevent fork safety issues.
+# The 'fork' method can cause deadlocks when forking multi-threaded processes,
+# particularly in CI environments and when running tests that use ZMQ/threading.
 try:
     multiprocessing.set_start_method('spawn', force=True)
 except RuntimeError:
