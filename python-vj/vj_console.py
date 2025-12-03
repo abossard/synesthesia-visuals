@@ -42,6 +42,26 @@ except ImportError as e:
     import sys
     print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
     print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
+    
+    # Create dummy classes for type hints when audio analyzer is not available
+    class AudioConfig:
+        """Dummy AudioConfig for when audio_analyzer is not available."""
+        pass
+    class DeviceConfig:
+        """Dummy DeviceConfig for when audio_analyzer is not available."""
+        pass
+    class DeviceManager:
+        """Dummy DeviceManager for when audio_analyzer is not available."""
+        pass
+    class AudioAnalyzer:
+        """Dummy AudioAnalyzer for when audio_analyzer is not available."""
+        pass
+    class AudioAnalyzerWatchdog:
+        """Dummy AudioAnalyzerWatchdog for when audio_analyzer is not available."""
+        pass
+    class LatencyTester:
+        """Dummy LatencyTester for when audio_analyzer is not available."""
+        pass
 
 load_dotenv(override=True, verbose=True)
 
