@@ -2,12 +2,13 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-5 to switch):
+Screens (press 1-6 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
 5. MIDI Router - Toggle management and MIDI traffic debug
+6. Audio Analysis - Real-time audio analysis and OSC emission
 """
 
 from dotenv import load_dotenv
@@ -34,6 +35,20 @@ from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, Mid
 from midi_router import MidiRouter, ConfigManager
 from midi_domain import RouterConfig, DeviceConfig
 from midi_infrastructure import list_controllers
+
+# Audio analysis (imported conditionally to handle missing dependencies)
+try:
+    from audio_analyzer import (
+        AudioConfig, DeviceConfig as AudioDeviceConfig, DeviceManager, 
+        AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
+    )
+    AUDIO_ANALYZER_AVAILABLE = True
+except ImportError as e:
+    AUDIO_ANALYZER_AVAILABLE = False
+    # Logger might not be initialized yet at module level, so use print as fallback
+    import sys
+    print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
+    print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
 
 logger = logging.getLogger('vj_console')
 

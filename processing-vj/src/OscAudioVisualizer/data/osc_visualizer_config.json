@@ -1,0 +1,10 @@
+{
+  "oscHost": "127.0.0.1",
+  "oscPort": 9000,
+  "syphonName": "AudioOSCVisualizer",
+  "frameRate": 60,
+  "spectrumSmoothing": 0.75,
+  "particleDrag": 0.93,
+  "maxParticles": 800,
+  "oscTimeoutMs": 1500
+}

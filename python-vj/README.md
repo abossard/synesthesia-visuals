@@ -15,8 +15,9 @@ python vj_console.py          # Launch the terminal UI
 - **🎛️ Master Control**: Start/stop Synesthesia, ProjectMilkSyphon, and Processing apps
 - **🎤 Karaoke Engine**: Monitors Spotify/VirtualDJ, fetches synced lyrics, sends via OSC
 - **🎹 MIDI Router**: Stateful MIDI middleware with toggle state management and LED feedback
+- **🎧 Audio Analysis**: Real-time audio analysis with beat detection, BPM, spectral features
 - **🏷️ Song Categorization**: AI-powered mood/theme analysis (dark, happy, love, death, etc.)
-- **📡 6 OSC Channels**: Lyrics, refrain, keywords, categories, images, and app status
+- **📡 6+ OSC Channels**: Lyrics, refrain, keywords, categories, images, audio features, and app status
 - **🤖 AI Analysis**: OpenAI or local Ollama for refrain detection and image prompts
 - **🎨 ComfyUI Integration**: Generates song-matched visuals with black backgrounds
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
@@ -25,7 +26,7 @@ python vj_console.py          # Launch the terminal UI
 
 ## Multi-Screen Terminal UI
 
-The VJ Console features a tabbed interface with 5 screens. Press number keys to switch:
+The VJ Console features a tabbed interface with 6 screens. Press number keys to switch:
 
 | Key | Screen | Description |
 |-----|--------|-------------|
@@ -34,6 +35,7 @@ The VJ Console features a tabbed interface with 5 screens. Press number keys to 
 | `3` | **Song AI Debug** | Song categorization details and processing pipeline |
 | `4` | **All Logs** | Complete application logs for debugging |
 | `5` | **MIDI Router** | Toggle management, controller selection, and MIDI traffic debug |
+| `6` | **Audio Analysis** | Real-time audio analysis with live frequency bands, beat detection, BPM |
 
 ### Screenshots
 
@@ -61,10 +63,12 @@ Complete application logs for debugging and monitoring.
 
 | Key | Action |
 |-----|--------|
-| `1-5` | Switch screens |
+| `1-6` | Switch screens |
 | `S` | Toggle Synesthesia |
 | `M` | Toggle ProjectMilkSyphon |
 | `K` | Toggle Karaoke Engine |
+| `A` | Toggle Audio Analyzer |
+| `B` | Run 10-second latency benchmark |
 | `↑/k` | Navigate up in app list |
 | `↓/j` | Navigate down in app list |
 | `Enter` | Start/stop selected Processing app |
@@ -596,3 +600,91 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)
+- **sounddevice**: Real-time audio I/O (for audio analyzer)
+- **numpy**: FFT and spectral analysis (for audio analyzer)
+- **essentia**: Beat detection, tempo, pitch estimation (for audio analyzer)
+
+## Audio Analysis Engine
+
+The VJ Console includes a real-time audio analyzer that processes audio input and emits features via OSC at ~60 fps.
+
+### Features
+
+- **Frequency Bands**: 7 bands (sub-bass, bass, low-mid, mid, high-mid, presence, air)
+- **Beat Detection**: Real-time onset detection with confidence
+- **BPM Estimation**: Smoothed tempo tracking with confidence scoring
+- **Spectral Features**: Brightness (centroid), novelty (flux)
+- **Pitch Detection**: Fundamental frequency estimation (optional)
+- **Build-up/Drop Detection**: Automatic detection of energy ramps and drops for EDM/Techno/House
+- **Device Selection**: Auto-detect BlackHole or select any input device
+- **Self-Healing**: Watchdog pattern automatically restarts on audio failures
+
+### Setup
+
+1. **Install BlackHole** (recommended for system audio capture):
+   ```bash
+   brew install blackhole-2ch
+   ```
+
+2. **Create Multi-Output Device** (macOS):
+   - Open Audio MIDI Setup
+   - Click `+` → Create Multi-Output Device
+   - Check both your speakers and BlackHole
+   - Set as system default output
+
+3. **Start Audio Analyzer** in VJ Console:
+   - Press `A` to toggle audio analyzer on/off
+   - Press `5` to view live analysis screen
+
+### OSC Output Schema
+
+The analyzer emits 6 OSC addresses optimized for low latency:
+
+```
+/audio/levels [sub_bass, bass, low_mid, mid, high_mid, presence, air, overall_rms]
+  - 8 floats (0-1 range, compressed with tanh)
+  - Sent at ~60 fps
+
+/audio/spectrum [bin0, bin1, ..., bin31]
+  - 32 floats (normalized magnitude spectrum)
+  - Downsampled from full FFT for efficiency
+
+/audio/beat [is_onset, spectral_flux]
+  - int (1 if beat detected, 0 otherwise)
+  - float (novelty strength 0-1)
+
+/audio/bpm [bpm, confidence]
+  - float (estimated BPM 60-180)
+  - float (confidence 0-1 based on interval variance)
+
+/audio/pitch [frequency_hz, confidence]
+  - float (fundamental frequency in Hz, 0 if no pitch)
+  - float (pitch confidence 0-1)
+
+/audio/structure [is_buildup, is_drop, energy_trend, brightness_trend]
+  - int (1 if build-up detected)
+  - int (1 if drop detected)
+  - float (energy slope -1 to +1)
+  - float (normalized spectral centroid 0-1)
+```
+
+### Performance
+
+- **Latency**: ~10-30ms end-to-end (512 sample block at 44.1kHz)
+- **Throughput**: 60+ messages/second with no UI slowdown
+- **OSC Logging**: Automatically disabled when OSC view is hidden (performance optimization)
+- **Thread-Safe**: Audio analysis runs in dedicated thread, never blocks UI or OSC emission
+
+### Configuration
+
+Audio device selection is persisted to `~/.vj_audio_config.json`:
+
+```json
+{
+  "device_index": 1,
+  "device_name": "BlackHole 2ch",
+  "auto_select_blackhole": true
+}
+```
+
+Edit this file or use the Audio Analysis screen to change devices.
