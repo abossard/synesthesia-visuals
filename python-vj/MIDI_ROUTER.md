@@ -62,7 +62,11 @@ In Magic Music Visuals:
 
 ## VJ Console MIDI Screen Layout
 
-## VJ Console MIDI Screen Layout
+Press `5` in the VJ Console to access the MIDI Router screen.
+
+[SCREENSHOT_PLACEHOLDER: Main MIDI Router Screen - docs/screenshots/midi-screen-overview.png]
+
+### ASCII Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -95,13 +99,31 @@ In Magic Music Visuals:
 **MIDI Router (top left)**: Current router status and device info  
 **Actions (middle left)**: Available keyboard shortcuts for MIDI management  
 **Configuration (bottom left)**: Router configuration details  
-**MIDI Toggles (top right)**: List of configured toggles with current state  
-**MIDI Traffic (bottom right)**: Real-time log of MIDI messages (← incoming, → outgoing)
+**MIDI Toggles (top right)**: List of configured toggles with current state (● ON, ○ OFF, ▸ selected)  
+**MIDI Traffic (bottom right)**: Real-time log of MIDI messages (← incoming from controller, → outgoing to Magic)
+
+## Controller Selection
+
+Press `c` on the MIDI screen to select which MIDI controller to use.
+
+[SCREENSHOT_PLACEHOLDER: Controller Selection Modal - docs/screenshots/controller-selection.png]
+
+**Features:**
+- Auto-detects all connected MIDI controllers
+- Shows both input and output ports
+- Selection persists in config file
+- Router automatically restarts with new controller
+
+**Navigation:**
+- ↑↓ or k/j to navigate
+- Enter to select
+- Esc to cancel
 
 ## Keyboard Controls (MIDI Screen)
 
 | Key | Action |
 |-----|--------|
+| `c` | **Select MIDI controller** (new feature!) |
 | `l` | Enter learn mode (capture next pad press) |
 | `k` / `↑` | Navigate up in toggle list |
 | `j` / `↓` | Navigate down in toggle list |
@@ -110,6 +132,21 @@ In Magic Music Visuals:
 | `d` | Delete selected toggle |
 | `5` | Switch to MIDI screen |
 | `q` | Quit VJ Console |
+
+## Learn Mode
+
+Press `l` to enter learn mode, then press any pad on your controller.
+
+[SCREENSHOT_PLACEHOLDER: Learn Mode Active - docs/screenshots/learn-mode-active.png]
+
+The router will:
+1. Capture the note/CC from the controller
+2. Add it to the config with a default name
+3. Set initial state to OFF
+4. Turn off the LED on the controller
+5. Save the config to disk
+
+Now you can press the pad to toggle it ON/OFF.
 
 ## Configuration Format
 
@@ -187,6 +224,9 @@ Magic doesn't toggle internally - it just mirrors Python's state.
 
 Result: **No ambiguity**. Python, Magic, and controller LEDs all agree on state.
 
+[SCREENSHOT_PLACEHOLDER: Toggle States - docs/screenshots/toggle-states.png]
+*Example showing toggles with different states (● ON, ○ OFF)*
+
 ## Use Cases
 
 ### 1. Simple Feature Toggle
@@ -235,6 +275,43 @@ Result: **No ambiguity**. Python, Magic, and controller LEDs all agree on state.
 ## OSC Broadcasting (VJ Bus Integration)
 
 The MIDI router automatically broadcasts toggle state changes via OSC to integrate with the VJ bus architecture.
+
+[SCREENSHOT_PLACEHOLDER: MIDI Traffic Log - docs/screenshots/midi-traffic.png]
+*Real-time MIDI traffic log showing incoming (←) and outgoing (→) messages*
+
+### Architecture Diagram
+
+```
+┌─────────────┐
+│  Launchpad  │  (Hardware MIDI Controller)
+│  MIDImix    │
+└──────┬──────┘
+       │ USB/MIDI
+       ▼
+┌──────────────────────────────────────────┐
+│  Python MIDI Router (VJ Console)         │
+│  ┌────────────────────────────────────┐  │
+│  │ • Toggle State Manager             │  │
+│  │ • LED Feedback Logic               │  │
+│  │ • Config Persistence               │  │
+│  └────────────────────────────────────┘  │
+└───┬──────────────────────────┬───────────┘
+    │                          │
+    │ MIDI                     │ OSC
+    │ (absolute state)         │ (broadcasts)
+    ▼                          ▼
+┌─────────────┐      ┌──────────────────┐
+│ IAC Driver  │      │  127.0.0.1:9000  │
+│  MagicBus   │      │  (VJ Bus)        │
+└──────┬──────┘      └────────┬─────────┘
+       │                      │
+       ▼                      ▼
+┌─────────────┐      ┌──────────────────┐
+│   Magic     │      │  Processing      │
+│  Visuals    │      │  Synesthesia     │
+│             │      │  Audio Analyzer  │
+└─────────────┘      └──────────────────┘
+```
 
 ### OSC Addresses
 
