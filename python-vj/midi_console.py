@@ -6,6 +6,7 @@ Reactive UI panels for MIDI router functionality within VJ Console.
 """
 
 from typing import List, Dict, Optional
+from textual.app import ComposeResult
 from textual.widgets import Static, Button, Label, ListView, ListItem
 from textual.containers import Container, Vertical, Horizontal
 from textual.reactive import reactive
