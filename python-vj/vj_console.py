@@ -26,7 +26,7 @@ from textual.binding import Binding
 
 from process_manager import ProcessManager
 from karaoke_engine import Config as KaraokeConfig  # Only for config utilities
-from domain import get_active_line_index
+from domain import get_active_line_index, PlaybackState, PlaybackSnapshot, Track
 
 # VJ Bus - Required for pure worker architecture
 from vj_bus.client import VJBusClient
@@ -154,28 +154,8 @@ def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict
     }
 
 
-def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
-    """Assemble pipeline panel payload."""
-    pipeline_data = {
-        'display_lines': engine.pipeline.get_display_lines(),
-        'image_prompt': engine.pipeline.image_prompt,
-        'error': snapshot.error,
-        'backoff': snapshot.backoff_seconds,
-    }
-    lines = engine.current_lines
-    state = snapshot.state
-    if lines and state.track:
-        offset_ms = engine.timing_offset_ms
-        position = estimate_position(state)
-        idx = get_active_line_index(lines, position + offset_ms / 1000.0)
-        if 0 <= idx < len(lines):
-            line = lines[idx]
-            pipeline_data['current_lyric'] = {
-                'text': line.text,
-                'keywords': line.keywords,
-                'is_refrain': line.is_refrain
-            }
-    return pipeline_data
+# Legacy function - removed in pure VJ Bus architecture
+# Pipeline data now comes from worker telemetry
 
 
 def build_categories_payload(categories) -> Dict[str, Any]:
@@ -1000,6 +980,13 @@ class VJConsoleApp(App):
             'audio_features': None,
         }
         self._discovered_workers = []
+
+        # Worker auto-start and auto-healing
+        self._worker_processes: Dict[str, subprocess.Popen] = {}
+        self._worker_restart_counts: Dict[str, int] = {}
+        self._worker_last_seen: Dict[str, float] = {}
+        self._auto_start_workers = True  # Enable auto-start by default
+        self._auto_heal_workers = True  # Enable auto-healing by default
         
         # Audio analyzer (always send OSC when active)
         self.audio_analyzer: Optional['AudioAnalyzer'] = None
@@ -1131,12 +1118,16 @@ class VJConsoleApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "🎛 VJ Console - VJ Bus Mode"
+        self.title = "🎛 VJ Console - VJ Bus Mode (Auto-Healing)"
         self.sub_title = "Press 0-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 0, 1-2, 4-5 to switch screens"
 
         # Initialize
         self.query_one("#apps-overview", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
+
+        # Auto-start workers if enabled
+        if self._auto_start_workers:
+            self._auto_start_all_workers()
 
         # Connect to VJ Bus workers (required)
         self._connect_to_workers()
@@ -1149,6 +1140,7 @@ class VJConsoleApp(App):
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
         self.set_interval(5.0, self._reconnect_workers)  # Periodic reconnection attempt
+        self.set_interval(10.0, self._health_check_workers)  # Auto-healing check
 
     # === Actions (impure, side effects) ===
 
@@ -1381,6 +1373,181 @@ class VJConsoleApp(App):
         if not self.workers_connected:
             logger.debug("Attempting to reconnect to workers...")
             self._connect_to_workers()
+
+    def _auto_start_all_workers(self) -> None:
+        """
+        Auto-start workers via process manager orchestrator.
+
+        This ensures the process manager daemon is running and instructs it
+        to start all workers. The process manager handles health monitoring
+        and auto-healing.
+        """
+        logger.info("🚀 Starting process manager orchestrator...")
+
+        project_root = Path(__file__).parent
+        pm_script = project_root / "workers" / "process_manager_daemon.py"
+
+        # Check if process manager is already running
+        pm_running = False
+        try:
+            discovered = self.vj_bus_client.discover_workers()
+            for worker in discovered:
+                if worker.name == "process_manager":
+                    pm_running = True
+                    logger.info("✓ Process manager already running")
+                    break
+        except Exception as e:
+            logger.debug(f"Error checking for process manager: {e}")
+
+        # Start process manager if not running
+        if not pm_running:
+            if not pm_script.exists():
+                logger.error(f"❌ Process manager script not found: {pm_script}")
+                logger.warning("⚠️  Falling back to direct worker start...")
+                self._fallback_start_workers()
+                return
+
+            try:
+                logger.info("  Starting process manager daemon...")
+                proc = subprocess.Popen(
+                    [sys.executable, str(pm_script)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                    cwd=str(project_root)
+                )
+                self._worker_processes["process_manager"] = proc
+                logger.info(f"  ✓ Process manager started (PID: {proc.pid})")
+
+                # Wait for process manager to initialize
+                time.sleep(2)
+            except Exception as e:
+                logger.error(f"  ✗ Failed to start process manager: {e}")
+                logger.warning("⚠️  Falling back to direct worker start...")
+                self._fallback_start_workers()
+                return
+
+        # Instruct process manager to start workers
+        logger.info("📡 Requesting process manager to start all workers...")
+
+        workers_to_start = [
+            "spotify_monitor",
+            "virtualdj_monitor",
+            "lyrics_fetcher",
+            "osc_debugger",
+            "log_aggregator",
+        ]
+
+        # Send start commands to process manager
+        for worker_name in workers_to_start:
+            try:
+                logger.info(f"  Requesting start: {worker_name}...")
+                response = self.vj_bus_client.send_command(
+                    "process_manager",
+                    "start_worker",
+                    {"worker": worker_name},
+                    timeout=5.0
+                )
+
+                if response and response.status == "ok":
+                    logger.info(f"  ✓ {worker_name} started")
+                else:
+                    error = response.error if response else "No response"
+                    logger.warning(f"  ⚠️  {worker_name}: {error}")
+            except Exception as e:
+                logger.error(f"  ✗ Failed to start {worker_name}: {e}")
+
+        logger.info("✓ Worker startup requests complete")
+
+    def _fallback_start_workers(self) -> None:
+        """Fallback: Start workers directly if process manager unavailable."""
+        logger.info("🔄 Starting workers directly (fallback mode)...")
+
+        workers_to_start = [
+            ("spotify_monitor", "workers/spotify_monitor_worker.py"),
+            ("virtualdj_monitor", "workers/virtualdj_monitor_worker.py"),
+            ("lyrics_fetcher", "workers/lyrics_fetcher_worker.py"),
+            ("osc_debugger", "workers/osc_debugger_worker.py"),
+            ("log_aggregator", "workers/log_aggregator_worker.py"),
+        ]
+
+        project_root = Path(__file__).parent
+
+        for name, script_path in workers_to_start:
+            full_path = project_root / script_path
+            if not full_path.exists():
+                logger.warning(f"⚠️  Worker script not found: {script_path}")
+                continue
+
+            try:
+                logger.info(f"  Starting {name}...")
+                proc = subprocess.Popen(
+                    [sys.executable, str(full_path)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                    cwd=str(project_root)
+                )
+                self._worker_processes[name] = proc
+                self._worker_restart_counts[name] = 0
+                self._worker_last_seen[name] = time.time()
+                time.sleep(0.5)
+                logger.info(f"  ✓ {name} started (PID: {proc.pid})")
+            except Exception as e:
+                logger.error(f"  ✗ Failed to start {name}: {e}")
+
+        logger.info(f"✓ Started {len(self._worker_processes)} workers in fallback mode")
+
+    def _health_check_workers(self) -> None:
+        """
+        Health check for process manager daemon.
+
+        The process manager itself handles worker auto-healing.
+        This just monitors the process manager and restarts it if needed.
+        """
+        if not self._auto_heal_workers:
+            return
+
+        # Check if process manager is still running
+        if "process_manager" in self._worker_processes:
+            proc = self._worker_processes["process_manager"]
+            if proc and proc.poll() is not None:
+                # Process manager crashed!
+                exit_code = proc.returncode
+                logger.error(f"❌ Process manager crashed (exit code: {exit_code})")
+
+                restart_count = self._worker_restart_counts.get("process_manager", 0)
+
+                if restart_count < 3:  # Max 3 restarts for PM
+                    backoff = min(2 ** restart_count, 10)
+                    logger.info(f"🔄 Restarting process manager in {backoff}s...")
+
+                    time.sleep(backoff)
+
+                    # Restart process manager
+                    project_root = Path(__file__).parent
+                    pm_script = project_root / "workers" / "process_manager_daemon.py"
+
+                    try:
+                        new_proc = subprocess.Popen(
+                            [sys.executable, str(pm_script)],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            start_new_session=True,
+                            cwd=str(project_root)
+                        )
+                        self._worker_processes["process_manager"] = new_proc
+                        self._worker_restart_counts["process_manager"] = restart_count + 1
+                        logger.info(f"✓ Process manager restarted (PID: {new_proc.pid})")
+
+                        # Re-request worker starts
+                        time.sleep(2)
+                        self._reconnect_workers()
+                    except Exception as e:
+                        logger.error(f"✗ Failed to restart process manager: {e}")
+                else:
+                    logger.error(f"❌ Process manager exceeded restart limit")
+                    del self._worker_processes["process_manager"]
 
     # === VJ Bus telemetry callbacks ===
 
@@ -1711,12 +1878,12 @@ class VJConsoleApp(App):
                 self.process_manager.launch_app(app)
 
     def action_timing_up(self) -> None:
-        if self.karaoke_engine:
-            self.karaoke_engine.adjust_timing(+200)
+        # Timing adjustment moved to worker architecture
+        logger.info("Timing +200ms (not yet implemented in worker mode)")
 
     def action_timing_down(self) -> None:
-        if self.karaoke_engine:
-            self.karaoke_engine.adjust_timing(-200)
+        # Timing adjustment moved to worker architecture
+        logger.info("Timing -200ms (not yet implemented in worker mode)")
     
     def action_run_audio_benchmark(self) -> None:
         """Run 10-second audio latency benchmark."""
@@ -1746,6 +1913,28 @@ class VJConsoleApp(App):
 
     def on_unmount(self) -> None:
         """Cleanup when app is closing."""
+        # Stop all managed workers gracefully
+        logger.info("🛑 Stopping all managed workers...")
+        for name, proc in self._worker_processes.items():
+            if proc and proc.poll() is None:
+                try:
+                    logger.info(f"  Stopping {name}...")
+                    proc.terminate()
+                except Exception as e:
+                    logger.error(f"  Error terminating {name}: {e}")
+
+        # Give workers time to shut down gracefully
+        time.sleep(2)
+
+        # Force kill any remaining workers
+        for name, proc in self._worker_processes.items():
+            if proc and proc.poll() is None:
+                try:
+                    logger.warning(f"  Force killing {name}...")
+                    proc.kill()
+                except Exception as e:
+                    logger.error(f"  Error killing {name}: {e}")
+
         # Stop VJBusClient
         if self.vj_bus_client:
             try:
@@ -1759,6 +1948,8 @@ class VJConsoleApp(App):
         # Stop audio analyzer
         if AUDIO_ANALYZER_AVAILABLE and self.audio_running:
             self._stop_audio_analyzer()
+
+        logger.info("✓ Cleanup complete")
 
 
 def main():

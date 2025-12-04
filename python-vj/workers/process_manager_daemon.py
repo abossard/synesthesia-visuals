@@ -67,8 +67,10 @@ class ProcessManagerDaemon(WorkerBase):
         ("audio_analyzer", "workers/audio_analyzer_worker.py"),
         ("example_worker", "workers/example_worker.py"),
         ("virtualdj_monitor", "workers/virtualdj_monitor_worker.py"),
+        ("spotify_monitor", "workers/spotify_monitor_worker.py"),
         ("lyrics_fetcher", "workers/lyrics_fetcher_worker.py"),
-        # Will add more as we implement them
+        ("osc_debugger", "workers/osc_debugger_worker.py"),
+        ("log_aggregator", "workers/log_aggregator_worker.py"),
     ]
 
     def __init__(self):
