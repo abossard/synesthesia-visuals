@@ -2,31 +2,41 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-5 to switch):
+Screens (press 0-7 to switch):
+0. Overview - Worker health, highlights, and combined status
 1. Master Control - Main dashboard with all controls
-2. OSC View - Full OSC message debug view  
+2. OSC View - Full OSC message debug view
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
 5. Audio Analysis - Real-time audio analysis and OSC emission
+6. Lyrics Worker - Latest LLM + basic analysis results
+7. OSC Debugger - Captured OSC traffic summaries
 """
 
-from dotenv import load_dotenv
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+import atexit
+import os
 import logging
 import subprocess
 import time
 import threading
+from pathlib import Path
+from typing import Optional, List, Dict, Tuple, Any
+
+from dotenv import load_dotenv
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Header, Footer, Static, TabbedContent, TabPane
 from textual.reactive import reactive
 from textual.binding import Binding
+from textual.css.query import NoMatches
 
-from process_manager import ProcessManager
+from process_manager import ProcessManager, VJProcessManager
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
+from vj_bus import TuiClient
+from lyrics_worker import LyricsFetcherWorker
+from osc_debugger_worker import OSCDebuggerWorker
 
 # Audio analysis (imported conditionally to handle missing dependencies)
 try:
@@ -186,6 +196,79 @@ def build_categories_payload(categories) -> Dict[str, Any]:
             for cat in categories.get_top(10)
         ]
     }
+
+
+class WorkerBusAdapter:
+    """Lightweight bridge from the TUI to vj_bus worker telemetry/events."""
+
+    def __init__(self) -> None:
+        self.client = TuiClient(schema="vj.v1")
+        self.heartbeats: Dict[str, Dict[str, float]] = {}
+        self.events: Dict[str, str] = {}
+        self._telemetry_handlers: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def register_telemetry(self, worker: str, stream: str, callback) -> None:  # noqa: ANN001
+        """Register a telemetry callback prior to starting listeners."""
+        self._telemetry_handlers.setdefault(worker, {})[stream] = callback
+
+    def start(self, worker_endpoints: List[Dict[str, Any]], registry_path: str | None = None) -> None:
+        endpoints = worker_endpoints
+        if registry_path:
+            registry = self.client.load_registry(registry_path)
+            endpoints = [
+                {"name": name, "telemetry": meta.get("telemetry"), "events": meta.get("events")}
+                for name, meta in registry.items()
+            ] or worker_endpoints
+
+        for worker in endpoints:
+            name = worker.get("name")
+            events = worker.get("events")
+            telemetry = worker.get("telemetry")
+            if not name or not events:
+                continue
+
+            self.client.on_event(name, lambda env, n=name: self._handle_event(n, env))
+            for stream, cb in self._telemetry_handlers.get(name, {}).items():
+                self.client.on_telemetry(name, stream)(cb)
+            self.client.subscribe_events(events, worker_filter=name)
+
+            if telemetry:
+                self.client.start_osc_listener(telemetry)
+
+    def _handle_event(self, worker: str, env) -> None:  # noqa: ANN001
+        if env.type == "heartbeat":
+            with self._lock:
+                self.heartbeats[worker] = {
+                    "uptime": env.payload.uptime_sec,
+                    "seen": time.time(),
+                }
+        elif env.type == "event":
+            with self._lock:
+                self.events[worker] = env.payload.message
+
+    def stop(self) -> None:
+        self.client.stop()
+
+    def snapshot(self) -> Dict[str, Dict[str, Any]]:
+        """Return a thread-safe snapshot of worker heartbeats/events."""
+        with self._lock:
+            return {
+                "heartbeats": {k: v.copy() for k, v in self.heartbeats.items()},
+                "events": self.events.copy(),
+            }
+
+
+def _format_uptime(seconds: float | None) -> str:
+    if seconds is None:
+        return "n/a"
+    mins, secs = divmod(int(seconds), 60)
+    hours, mins = divmod(mins, 60)
+    if hours:
+        return f"{hours:d}h {mins:02d}m {secs:02d}s"
+    if mins:
+        return f"{mins:d}m {secs:02d}s"
+    return f"{secs:d}s"
 
 # ============================================================================
 # WIDGETS - Reactive UI components
@@ -450,6 +533,143 @@ class ServicesPanel(ReactivePanel):
             retry = s.get('playback_backoff', 0.0)
             extra = f" (retry in {retry:.1f}s)" if retry else ""
             lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
+        self.update("\n".join(lines))
+
+
+class WorkerStatusPanel(ReactivePanel):
+    """Summarize worker heartbeats and last events."""
+
+    workers = reactive([])
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_workers(self, _: list) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Worker Status", "═")]
+        if not self.workers:
+            lines.append("[dim](no worker telemetry yet)[/dim]")
+        else:
+            now = time.time()
+            for worker in self.workers:
+                name = worker.get('name', 'worker')
+                seen = worker.get('seen') or 0.0
+                uptime = worker.get('uptime')
+                last_event = worker.get('event') or "(none)"
+                latency = now - seen if seen else None
+                healthy = latency is not None and latency < 5.0
+                stale = latency is not None and 5.0 <= latency < 15.0
+                icon = "[green]● ONLINE[/]" if healthy else "[yellow]△ STALE[/]" if stale else "[red]○ OFFLINE[/]"
+                lines.append(f"[bold]{name}[/]: {icon}  uptime {_format_uptime(uptime)}")
+                lines.append(f"  [dim]last event:[/] {last_event}")
+        self.update("\n".join(lines))
+
+
+class WorkerHighlightsPanel(ReactivePanel):
+    """Compact overview of latest worker payloads."""
+
+    highlights = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_highlights(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Worker Highlights", "═")]
+        lyr = self.highlights.get('lyrics') or {}
+        if lyr:
+            lines.append("[bold cyan]Lyrics Analysis[/]")
+            artist = lyr.get('artist', 'Unknown')
+            title = lyr.get('title', 'Unknown')
+            lines.append(f"  {artist} — {title}")
+            if lyr.get('keywords'):
+                lines.append(f"  Keywords: {', '.join(lyr['keywords'])}")
+            if lyr.get('themes'):
+                lines.append(f"  Themes: {', '.join(lyr['themes'])}")
+        else:
+            lines.append("[dim](no lyrics analysis yet)[/dim]")
+
+        osc = self.highlights.get('osc_debugger') or {}
+        if osc:
+            lines.append("\n[bold magenta]OSC Debugger[/]")
+            lines.append(f"  Captured: {osc.get('count', 0)} messages")
+            if osc.get('last_address'):
+                args = osc.get('last_args', [])
+                lines.append(f"  Last: [cyan]{osc['last_address']}[/] {args}")
+        else:
+            lines.append("\n[dim](no OSC captures yet)[/dim]")
+        self.update("\n".join(lines))
+
+
+class LyricsWorkerPanel(ReactivePanel):
+    """Detailed lyrics worker output."""
+
+    analysis = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_analysis(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Lyrics Worker", "═")]
+        if not self.analysis:
+            lines.append("[dim](no analysis received yet)[/dim]")
+            self.update("\n".join(lines))
+            return
+        lines.append(f"[bold]Track:[/] {self.analysis.get('artist', 'Unknown')} — {self.analysis.get('title', '')}")
+        if self.analysis.get('keywords'):
+            lines.append(f"Keywords: {', '.join(self.analysis['keywords'])}")
+        if self.analysis.get('themes'):
+            lines.append(f"Themes: {', '.join(self.analysis['themes'])}")
+        if self.analysis.get('refrain_lines'):
+            lines.append("\n[bold]Refrain Preview[/]")
+            for line in self.analysis['refrain_lines'][:3]:
+                lines.append(f"  [cyan]{line}[/]")
+        if self.analysis.get('cached'):
+            lines.append("\n[dim]served from cache[/dim]")
+        self.update("\n".join(lines))
+
+
+class OSCCapturePanel(ReactivePanel):
+    """Render OSC debugger telemetry."""
+
+    captures = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_captures(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("OSC Debugger", "═")]
+        if not self.captures:
+            lines.append("[dim](no captures yet)[/dim]")
+            self.update("\n".join(lines))
+            return
+        lines.append(f"Captured messages: {self.captures.get('count', 0)}")
+        if self.captures.get('last'):
+            last = self.captures['last']
+            lines.append(f"Last message: [cyan]{last.get('address', '')}[/] {last.get('args', [])}")
+        if self.captures.get('recent'):
+            lines.append("\n[bold]Recent[/]")
+            for msg in reversed(self.captures['recent'][-10:]):
+                lines.append(f"  [dim]{time.strftime('%H:%M:%S', time.localtime(msg.get('ts', time.time())))}[/] "
+                             f"[cyan]{msg.get('address', '')}[/] {msg.get('args', [])}")
         self.update("\n".join(lines))
 
 
@@ -761,12 +981,15 @@ class VJConsoleApp(App):
     """
 
     BINDINGS = [
+        Binding("0", "screen_overview", "Overview"),
         Binding("q", "quit", "Quit"),
         Binding("1", "screen_master", "Master"),
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
         Binding("5", "screen_audio", "Audio"),
+        Binding("6", "screen_lyrics", "Lyrics"),
+        Binding("7", "screen_debugger", "OSC Debugger"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
@@ -796,6 +1019,16 @@ class VJConsoleApp(App):
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
+        self.worker_bus = WorkerBusAdapter()
+        self.worker_endpoints: List[Dict[str, Any]] = []
+        self.worker_state: Dict[str, Dict[str, Any]] = {}
+        self._worker_lock = threading.Lock()
+        self.registry_path = Path(
+            os.environ.get("VJ_REGISTRY_PATH", "/tmp/python-vj/process_registry.json")
+        )
+        self.worker_supervisor = self._build_worker_supervisor()
+        self._register_worker_handlers()
+        atexit.register(self._cleanup_ipc)
         
         # Audio analyzer (always send OSC when active)
         self.audio_analyzer: Optional['AudioAnalyzer'] = None
@@ -835,9 +1068,9 @@ class VJConsoleApp(App):
             self.audio_feature_labels = {}
             self.audio_feature_bindings = {}
         self._audio_osc_callback = None
-        
+
         # Track current screen for conditional updates
-        self._current_screen = "master"
+        self._current_screen = "overview"
         
         self._setup_log_capture()
 
@@ -863,16 +1096,197 @@ class VJConsoleApp(App):
                     if len(self.log_list) > 500:
                         self.log_list.pop(0)
                 except Exception:
+                    # Logging handlers must never raise exceptions
                     pass
         
         # Add handler to root logger to capture all logs
         handler = ListHandler(self._logs)
         logging.getLogger().addHandler(handler)
+        logging.getLogger().setLevel(logging.INFO)
+
+    def _build_worker_supervisor(self) -> VJProcessManager:
+        """Provision the vj_bus worker supervisor and worker specs."""
+        base = int(os.environ.get("VJ_BUS_BASE_PORT", 7500))
+        manager = VJProcessManager(registry_path=self.registry_path)
+
+        lyrics_spec = manager.make_worker_spec(
+            name="lyrics_fetcher",
+            telemetry_port=int(os.environ.get("VJ_LYRICS_TELEMETRY", base + 2)),
+            command_port=int(os.environ.get("VJ_LYRICS_COMMAND", base + 102)),
+            event_port=int(os.environ.get("VJ_LYRICS_EVENTS", base + 202)),
+            entrypoint=lambda spec, generation, instance_id: self._run_lyrics_worker(
+                spec, generation, instance_id
+            ),
+        )
+        manager.add_worker(lyrics_spec)
+
+        osc_capture_port = int(os.environ.get("VJ_OSCDBG_CAPTURE", base + 12))
+        osc_spec = manager.make_worker_spec(
+            name="osc_debugger",
+            telemetry_port=int(os.environ.get("VJ_OSCDBG_TELEMETRY", base + 3)),
+            command_port=int(os.environ.get("VJ_OSCDBG_COMMAND", base + 103)),
+            event_port=int(os.environ.get("VJ_OSCDBG_EVENTS", base + 203)),
+            entrypoint=lambda spec, generation, instance_id: self._run_osc_debugger_worker(
+                spec, generation, instance_id, osc_capture_port
+            ),
+        )
+        manager.add_worker(osc_spec)
+        return manager
+
+    def _register_worker_handlers(self) -> None:
+        """Wire telemetry callbacks before the bus subscribes."""
+
+        def _on_lyrics(env) -> None:  # noqa: ANN001
+            data = env.payload.data or {}
+            with self._worker_lock:
+                info = self.worker_state.setdefault("lyrics_fetcher", {})
+                info["analysis"] = data
+                info["updated"] = time.time()
+
+        def _on_osc_debug(env) -> None:  # noqa: ANN001
+            payload = env.payload.data or {}
+            entry = {
+                "address": payload.get("address", ""),
+                "args": payload.get("args", []),
+                "ts": time.time(),
+            }
+            with self._worker_lock:
+                info = self.worker_state.setdefault("osc_debugger", {})
+                recent = info.setdefault("recent", [])
+                recent.append(entry)
+                if len(recent) > 50:
+                    recent.pop(0)
+                info["count"] = payload.get("count", len(recent))
+                info["last"] = entry
+
+        def _on_osc_buffer(env) -> None:  # noqa: ANN001
+            payload = env.payload.data or {}
+            with self._worker_lock:
+                info = self.worker_state.setdefault("osc_debugger", {})
+                info["buffer"] = payload.get("messages", [])
+
+        self.worker_bus.register_telemetry("lyrics_fetcher", "lyrics_analysis", _on_lyrics)
+        self.worker_bus.register_telemetry("osc_debugger", "osc_debug", _on_osc_debug)
+        self.worker_bus.register_telemetry("osc_debugger", "osc_buffer", _on_osc_buffer)
+
+    def _run_lyrics_worker(
+        self, spec, generation: int, instance_id: str
+    ) -> None:  # noqa: ANN001
+        enable_llm = os.environ.get("VJ_LYRICS_LLM", "").lower() in ("1", "true", "yes")
+        worker = LyricsFetcherWorker(
+            telemetry_port=spec.telemetry_port,
+            command_endpoint=spec.command_endpoint,
+            event_endpoint=spec.event_endpoint,
+            schema=spec.schema,
+            heartbeat_interval=1.0,
+            enable_llm=enable_llm,
+            generation=generation,
+            instance_id=instance_id,
+        )
+        worker.start()
+        worker.node.run_forever()
+
+    def _run_osc_debugger_worker(
+        self, spec, generation: int, instance_id: str, capture_port: int
+    ) -> None:  # noqa: ANN001
+        worker = OSCDebuggerWorker(
+            capture_port=capture_port,
+            telemetry_port=spec.telemetry_port,
+            command_endpoint=spec.command_endpoint,
+            event_endpoint=spec.event_endpoint,
+            schema=spec.schema,
+            generation=generation,
+            instance_id=instance_id,
+        )
+        worker.start()
+        worker.node.run_forever()
+
+    def _start_managed_workers(self) -> None:
+        """Start vj_bus workers and subscribe the TUI to their telemetry."""
+        if not self.worker_supervisor:
+            return
+        self.worker_supervisor.start()
+        snapshot = self.worker_supervisor.registry_snapshot()
+        self.worker_endpoints = [
+            {"name": name, "telemetry": meta["telemetry"], "events": meta["events"]}
+            for name, meta in snapshot.items()
+        ]
+        self.worker_bus.start(self.worker_endpoints, registry_path=str(self.registry_path))
+
+    def _cleanup_ipc(self) -> None:
+        """Stop worker bus + supervisor (atexit + unmount)."""
+        try:
+            self.worker_bus.stop()
+        finally:
+            if self.worker_supervisor:
+                self.worker_supervisor.stop()
+
+    def _worker_snapshot(self) -> Dict[str, Any]:
+        """Thread-safe snapshot of worker bus state + cached telemetry."""
+        bus = self.worker_bus.snapshot()
+        with self._worker_lock:
+            state: Dict[str, Dict[str, Any]] = {}
+            for name, data in self.worker_state.items():
+                state[name] = {}
+                for key, value in data.items():
+                    if isinstance(value, list):
+                        state[name][key] = list(value)
+                    else:
+                        state[name][key] = value
+        return {"bus": bus, "state": state}
+
+    def _build_worker_panel_data(self) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """Assemble data for worker-related panels."""
+        snapshot = self._worker_snapshot()
+        bus = snapshot["bus"]
+        state = snapshot["state"]
+
+        workers: List[Dict[str, Any]] = []
+        all_workers = set(bus.get("heartbeats", {}).keys()) | set(bus.get("events", {}).keys()) | set(state.keys())
+        for name in sorted(all_workers):
+            hb = bus.get("heartbeats", {}).get(name, {})
+            workers.append(
+                {
+                    "name": name,
+                    "uptime": hb.get("uptime"),
+                    "seen": hb.get("seen"),
+                    "event": bus.get("events", {}).get(name, ""),
+                }
+            )
+
+        highlights: Dict[str, Any] = {}
+        lyrics_state = state.get("lyrics_fetcher", {})
+        if lyrics_state.get("analysis"):
+            highlights["lyrics"] = lyrics_state.get("analysis", {})
+
+        osc_state = state.get("osc_debugger", {})
+        if osc_state:
+            last_msg = osc_state.get("last", {})
+            highlights["osc_debugger"] = {
+                "count": osc_state.get("count", 0),
+                "last_address": last_msg.get("address"),
+                "last_args": last_msg.get("args", []),
+            }
+        captures = {
+            "count": osc_state.get("count", 0),
+            "last": osc_state.get("last"),
+            "recent": osc_state.get("recent", []),
+        }
+        lyrics_analysis = lyrics_state.get("analysis", {})
+        return workers, highlights, captures, lyrics_analysis
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        
+
         with TabbedContent(id="screens"):
+            # Tab 0: Overview (worker-driven)
+            with TabPane("0️⃣ Overview", id="overview"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield WorkerStatusPanel(id="worker-status", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield WorkerHighlightsPanel(id="worker-highlights", classes="panel full-height")
+
             # Tab 1: Master Control
             with TabPane("1️⃣ Master Control", id="master"):
                 with Horizontal():
@@ -914,13 +1328,23 @@ class VJConsoleApp(App):
                         with VerticalScroll(id="right-col"):
                             yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
 
+            # Tab 6: Lyrics Worker
+            with TabPane("6️⃣ Lyrics Worker", id="lyrics"):
+                yield LyricsWorkerPanel(id="lyrics-panel", classes="panel full-height")
+
+            # Tab 7: OSC Debugger Worker
+            with TabPane("7️⃣ OSC Debugger", id="debugger"):
+                yield OSCCapturePanel(id="osc-capture", classes="panel full-height")
+
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
-        
+        base = "Press 0-7 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 0-4 to switch screens"
+        self.sub_title = base
+
         # Initialize
+        self._start_managed_workers()
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
         self._start_karaoke()
@@ -952,7 +1376,11 @@ class VJConsoleApp(App):
             return
         try:
             panel = self.query_one("#audio-features", AudioFeaturePanel)
-        except Exception:
+        except NoMatches:
+            logger.debug("Audio features panel not found in DOM (screen may be initializing)")
+            return
+        except Exception as e:
+            logger.debug("Failed to query audio features panel: %s", e)
             return
         rows = []
         for key, label in self.audio_feature_labels.items():
@@ -1097,8 +1525,10 @@ class VJConsoleApp(App):
             # Update panels
             try:
                 self.query_one("#audio-analysis", AudioAnalysisPanel).features = features
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Audio analysis panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio analysis panel: %s", e)
             
             # Device info
             device_info = {
@@ -1108,8 +1538,10 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#audio-device", AudioDevicePanel).device_info = device_info
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Audio device panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio device panel: %s", e)
             
             # Statistics (including OSC counts)
             stats_data = {
@@ -1119,8 +1551,10 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#audio-stats", AudioStatsPanel).stats = stats_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Audio stats panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update audio stats panel: %s", e)
                 
         except Exception as e:
             logger.error(f"Error updating audio panels: {e}")
@@ -1137,7 +1571,8 @@ class VJConsoleApp(App):
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)
             return result.returncode == 0
-        except Exception:
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            # Process check failed or timed out - process is not running
             return False
 
     def _check_apps(self) -> None:
@@ -1160,8 +1595,12 @@ class VJConsoleApp(App):
                 ollama_models = ollama_resp.json().get('models', [])
             
             comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
-        except Exception:
+        except ImportError:
+            # requests module not available
             pass
+        except Exception as e:
+            # Service is unavailable, timed out, or other network error
+            logger.debug("Error checking external services: %s", e)
 
         vdj_path = KaraokeConfig.find_vdj_path()
         
@@ -1180,22 +1619,41 @@ class VJConsoleApp(App):
                 'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
                 'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
-        except Exception:
-            pass
+        except NoMatches:
+            logger.debug("Services panel not found in DOM (screen may be initializing)")
+        except Exception as e:
+            logger.debug("Failed to update services panel: %s", e)
 
     def _update_data(self) -> None:
         """Update all panels with current data (only update visible screens)."""
         if not self.karaoke_engine:
             return
-        
+
         # Always update snapshot (needed for OSC)
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
-        
+
+        worker_status, worker_highlights, worker_captures, lyrics_analysis = self._build_worker_panel_data()
+
         # Only update UI panels for visible screens (optimization)
         screen = self._current_screen
-        
-        if screen == "master":
+
+        if screen == "overview":
+            try:
+                self.query_one("#worker-status", WorkerStatusPanel).workers = worker_status
+            except NoMatches:
+                logger.debug("Worker status panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update worker status panel: %s", e)
+            
+            try:
+                self.query_one("#worker-highlights", WorkerHighlightsPanel).highlights = worker_highlights
+            except NoMatches:
+                logger.debug("Worker highlights panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update worker highlights panel: %s", e)
+
+        elif screen == "master":
             # Update master screen panels only
             monitor_status = snapshot.monitor_status or {}
             if snapshot.source and snapshot.source in monitor_status:
@@ -1206,20 +1664,26 @@ class VJConsoleApp(App):
             
             try:
                 self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Now playing panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update now playing panel: %s", e)
             
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
                 self.query_one("#categories", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Categories panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update categories panel: %s", e)
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Pipeline panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update pipeline panel: %s", e)
             
             # Mini OSC panel on master screen
             osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
@@ -1227,8 +1691,10 @@ class VJConsoleApp(App):
                 panel = self.query_one("#osc-mini", OSCPanel)
                 panel.full_view = False
                 panel.messages = osc_msgs
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("OSC mini panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update OSC mini panel: %s", e)
             
             # Master control status
             running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
@@ -1239,8 +1705,10 @@ class VJConsoleApp(App):
                     'processing_apps': running_apps,
                     'karaoke': self.karaoke_engine is not None,
                 }
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Master control panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update master control panel: %s", e)
         
         elif screen == "osc":
             # Update OSC view only
@@ -1249,33 +1717,55 @@ class VJConsoleApp(App):
                 panel = self.query_one("#osc-full", OSCPanel)
                 panel.full_view = True
                 panel.messages = osc_msgs
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("OSC full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update OSC full panel: %s", e)
         
         elif screen == "ai":
             # Update AI debug screen only
             cat_data = build_categories_payload(self.karaoke_engine.current_categories)
             try:
                 self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Categories full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update categories full panel: %s", e)
             
             pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
             try:
                 self.query_one("#pipeline-full", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Pipeline full panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update pipeline full panel: %s", e)
         
         elif screen == "logs":
             # Update logs panel only
             try:
                 self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-            except Exception:
-                pass
+            except NoMatches:
+                logger.debug("Logs panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update logs panel: %s", e)
         
         elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
             # Update audio panels only
             self._update_audio_panels()
+
+        elif screen == "lyrics":
+            try:
+                self.query_one("#lyrics-panel", LyricsWorkerPanel).analysis = lyrics_analysis
+            except NoMatches:
+                logger.debug("Lyrics panel not found in DOM (screen may be initializing)")
+            except Exception as e:
+                logger.debug("Failed to update lyrics panel: %s", e)
+
+        elif screen == "debugger":
+            try:
+                self.query_one("#osc-capture", OSCCapturePanel).captures = worker_captures
+            except Exception:
+                pass
         
         # Send OSC status only when it changes (always, regardless of screen)
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
@@ -1311,10 +1801,13 @@ class VJConsoleApp(App):
     
     def action_screen_master(self) -> None:
         self._switch_screen("master")
-    
+
+    def action_screen_overview(self) -> None:
+        self._switch_screen("overview")
+
     def action_screen_osc(self) -> None:
         self._switch_screen("osc")
-    
+
     def action_screen_ai(self) -> None:
         self._switch_screen("ai")
     
@@ -1325,6 +1818,12 @@ class VJConsoleApp(App):
         """Switch to audio analysis screen."""
         if AUDIO_ANALYZER_AVAILABLE:
             self._switch_screen("audio")
+
+    def action_screen_lyrics(self) -> None:
+        self._switch_screen("lyrics")
+
+    def action_screen_debugger(self) -> None:
+        self._switch_screen("debugger")
 
     # === App control ===
     
@@ -1433,7 +1932,8 @@ class VJConsoleApp(App):
         if self.karaoke_engine:
             self.karaoke_engine.stop()
         self.process_manager.cleanup()
-        
+        self._cleanup_ipc()
+
         # Stop audio analyzer
         if AUDIO_ANALYZER_AVAILABLE and self.audio_running:
             self._stop_audio_analyzer()

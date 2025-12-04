@@ -18,7 +18,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         python-version: ['3.12']
@@ -26,33 +26,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r python-vj/requirements.txt
-      
-      - name: Syntax check all Python files
+          pip install --upgrade -r python-vj/requirements.txt
+
+      - name: Run blackbox and integration tests
+        working-directory: python-vj
+        env:
+          PYTHONPATH: .
         run: |
-          cd python-vj
-          python -m py_compile karaoke_engine.py
-          python -m py_compile audio_setup.py
-          python -m py_compile vj_console.py
-          python -m py_compile process_manager.py
-          echo "All Python files have valid syntax"
-      
-      - name: Run unit tests
-        run: |
-          cd python-vj
-          python test_python_vj.py -v
-      
-      - name: Test CLI help commands
-        run: |
-          cd python-vj
-          python karaoke_engine.py --help
-          python audio_setup.py --help
+          pytest -q tests

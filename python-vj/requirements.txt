@@ -9,12 +9,16 @@ spotipy>=2.23.0
 
 # OSC communication
 python-osc>=1.8.3
+pyzmq>=25.1.0
 
 # Lyrics fetching
 requests>=2.31.0
 
 # Terminal UI
 textual>=0.50.0    # Modern reactive terminal UI (vj_console.py)
+
+# Testing
+pytest>=7.4
 
 # Process management
 psutil>=5.9.0
