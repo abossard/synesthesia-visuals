@@ -494,6 +494,157 @@ class AppsListPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class AudioAnalyzerStatusPanel(ReactivePanel):
+    """Audio analyzer status and controls."""
+    status = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_status(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Audio Analyzer", "═")]
+        
+        if not AUDIO_ANALYZER_AVAILABLE:
+            lines.append("[yellow]Audio analyzer not available[/]")
+            lines.append("[dim]Install: pip install sounddevice numpy essentia[/]")
+        else:
+            running = self.status.get('running', False)
+            audio_alive = self.status.get('audio_alive', False)
+            
+            status_icon = format_status_icon(running, "● RUNNING", "○ stopped")
+            audio_icon = format_status_icon(audio_alive, "● ACTIVE", "○ no signal")
+            
+            lines.append(f"  Status:        {status_icon}")
+            lines.append(f"  Audio Input:   {audio_icon}")
+            lines.append(f"  Device:        {self.status.get('device_name', 'default')}")
+            lines.append(f"  Frames/sec:    {self.status.get('fps', 0):.1f}")
+            lines.append(f"  Errors:        {self.status.get('error_count', 0)}")
+            lines.append("")
+            lines.append("[dim]Use [ ] to change audio device[/]")
+        
+        self.update("\n".join(lines))
+
+
+class AudioFeaturesPanel(ReactivePanel):
+    """Audio features visualization."""
+    features = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_features(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Audio Features", "═")]
+        
+        if not self.features:
+            lines.append("[dim](waiting for audio...)[/dim]")
+        else:
+            # Beat and BPM
+            beat = self.features.get('beat', 0)
+            beat_icon = "◉" if beat else "○"
+            bpm = self.features.get('bpm', 0)
+            bpm_conf = self.features.get('bpm_confidence', 0)
+            
+            lines.append(f"  Beat:          {beat_icon} [{'green' if beat else 'dim'}]{beat_icon}[/]")
+            lines.append(f"  BPM:           {bpm:.1f} [dim](conf: {bpm_conf:.2f})[/]")
+            
+            # Energy levels
+            bass = self.features.get('bass_level', 0)
+            mid = self.features.get('mid_level', 0)
+            high = self.features.get('high_level', 0)
+            
+            lines.append("")
+            lines.append(f"  Bass:          {format_bar(bass)} {bass:.2f}")
+            lines.append(f"  Mids:          {format_bar(mid)} {mid:.2f}")
+            lines.append(f"  Highs:         {format_bar(high)} {high:.2f}")
+            
+            # Spectral features
+            brightness = self.features.get('brightness', 0)
+            lines.append(f"  Brightness:    {format_bar(brightness)} {brightness:.2f}")
+            
+            # Structure detection
+            buildup = self.features.get('buildup', False)
+            drop = self.features.get('drop', False)
+            trend = self.features.get('energy_trend', 0)
+            
+            lines.append("")
+            if buildup:
+                lines.append("  [yellow]▲ BUILD-UP DETECTED[/]")
+            if drop:
+                lines.append("  [red]▼ DROP DETECTED[/]")
+            if not buildup and not drop:
+                lines.append(f"  Energy Trend:  {'↗' if trend > 0 else '↘'} {trend:.3f}")
+            
+            # Pitch (if available)
+            pitch_hz = self.features.get('pitch_hz', 0)
+            pitch_conf = self.features.get('pitch_conf', 0)
+            if pitch_hz > 0:
+                lines.append(f"  Pitch:         {pitch_hz:.1f} Hz [dim](conf: {pitch_conf:.2f})[/]")
+        
+        self.update("\n".join(lines))
+
+
+class AudioDevicesPanel(ReactivePanel):
+    """Available audio input devices."""
+    devices = reactive([])
+    selected_index = reactive(0)
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_devices(self, data: list) -> None:
+        self._safe_render()
+    
+    def watch_selected_index(self, idx: int) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Audio Devices", "═")]
+        
+        if not AUDIO_ANALYZER_AVAILABLE:
+            lines.append("[dim]Audio analyzer not available[/]")
+        elif not self.devices:
+            lines.append("[dim](no devices found)[/dim]")
+        else:
+            for dev in self.devices:
+                idx = dev.get('index', -1)
+                name = dev.get('name', 'Unknown')
+                channels = dev.get('channels', 0)
+                sample_rate = dev.get('sample_rate', 0)
+                
+                is_selected = idx == self.selected_index
+                prefix = " ▸ " if is_selected else "   "
+                
+                line = f"{prefix}{name} ({channels}ch @ {sample_rate}Hz)"
+                
+                if is_selected:
+                    lines.append(f"[black on cyan]{line}[/]")
+                else:
+                    lines.append(line)
+        
+        self.update("\n".join(lines))
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -547,7 +698,8 @@ class VJConsoleApp(App):
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
-        Binding("5", "screen_midi", "MIDI"),
+        Binding("5", "screen_audio", "Audio"),
+        Binding("6", "screen_midi", "MIDI"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("k,up", "nav_up", "Up"),
@@ -555,6 +707,8 @@ class VJConsoleApp(App):
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
+        Binding("left_square_bracket", "audio_device_prev", "Prev Device", show=False),
+        Binding("right_square_bracket", "audio_device_next", "Next Device", show=False),
         Binding("l", "midi_learn", "Learn", show=False),
         Binding("c", "midi_select_controller", "Controller", show=False),
         Binding("r", "midi_rename", "Rename", show=False),
@@ -566,6 +720,7 @@ class VJConsoleApp(App):
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
     midi_selected_toggle = reactive(0)
+    audio_selected_device = reactive(0)
 
     def __init__(self):
         super().__init__()
@@ -580,6 +735,12 @@ class VJConsoleApp(App):
         self.midi_router: Optional[MidiRouter] = None
         self.midi_messages: List[Tuple[float, str, Any]] = []  # (timestamp, direction, message)
         self._setup_midi_router()
+        
+        # Audio Analyzer
+        self.audio_analyzer: Optional[Any] = None  # AudioAnalyzer when available
+        self.audio_device_manager: Optional[Any] = None  # DeviceManager when available
+        self.audio_watchdog: Optional[Any] = None  # AudioAnalyzerWatchdog when available
+        self._setup_audio_analyzer()
         
         self._setup_log_capture()
 
@@ -619,6 +780,51 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.warning(f"MIDI router initialization failed: {e}")
             self.midi_router = None
+    
+    def _setup_audio_analyzer(self) -> None:
+        """Initialize audio analyzer."""
+        if not AUDIO_ANALYZER_AVAILABLE:
+            logger.warning("Audio analyzer not available - skipping initialization")
+            return
+        
+        try:
+            # Create device manager
+            self.audio_device_manager = DeviceManager()
+            
+            # Create audio config
+            audio_config = AudioConfig(
+                sample_rate=44100,
+                block_size=512,
+                enable_logging=True,
+                log_level=logging.INFO,
+            )
+            
+            # Create OSC callback that integrates with karaoke engine
+            def osc_callback(address: str, args: List):
+                """Send audio features via OSC."""
+                try:
+                    if self.karaoke_engine and self.karaoke_engine.osc_sender:
+                        self.karaoke_engine.osc_sender.send(address, args)
+                except Exception as e:
+                    logger.debug(f"OSC send error: {e}")
+            
+            # Create analyzer
+            self.audio_analyzer = AudioAnalyzer(
+                audio_config,
+                self.audio_device_manager,
+                osc_callback=osc_callback
+            )
+            
+            # Create watchdog for self-healing
+            self.audio_watchdog = AudioAnalyzerWatchdog(self.audio_analyzer)
+            
+            logger.info("Audio analyzer initialized")
+            
+        except Exception as e:
+            logger.exception(f"Audio analyzer initialization failed: {e}")
+            self.audio_analyzer = None
+            self.audio_device_manager = None
+            self.audio_watchdog = None
     
     def _setup_log_capture(self) -> None:
         """Setup logging handler to capture logs to _logs list."""
@@ -675,8 +881,17 @@ class VJConsoleApp(App):
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
             
-            # Tab 5: MIDI Router
-            with TabPane("5️⃣ MIDI Router", id="midi"):
+            # Tab 5: Audio Analyzer
+            with TabPane("5️⃣ Audio Analyzer", id="audio"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield AudioAnalyzerStatusPanel(id="audio-status", classes="panel")
+                        yield AudioDevicesPanel(id="audio-devices", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield AudioFeaturesPanel(id="audio-features", classes="panel full-height")
+            
+            # Tab 6: MIDI Router
+            with TabPane("6️⃣ MIDI Router", id="midi"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield MidiActionsPanel(id="midi-actions", classes="panel")
@@ -689,12 +904,13 @@ class VJConsoleApp(App):
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-5 to switch screens"
+        self.sub_title = "Press 1-6 to switch screens"
         
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
         self._start_karaoke()
+        self._start_audio_analyzer()
         
         # Background updates
         self.set_interval(0.5, self._update_data)
@@ -708,6 +924,43 @@ class VJConsoleApp(App):
             self.karaoke_engine.start()
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
+    
+    def _start_audio_analyzer(self) -> None:
+        """Start the audio analyzer thread."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            return
+        
+        try:
+            # Start analyzer thread
+            self.audio_analyzer.start()
+            logger.info("Audio analyzer started")
+            
+            # Update devices list
+            self._update_audio_devices()
+            
+        except Exception as e:
+            logger.exception(f"Audio analyzer start error: {e}")
+    
+    def _update_audio_devices(self) -> None:
+        """Update available audio devices list."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_device_manager:
+            return
+        
+        try:
+            devices = self.audio_device_manager.list_devices()
+            current_device_index = self.audio_device_manager.get_device_index()
+            
+            # Update panel
+            try:
+                panel = self.query_one("#audio-devices", AudioDevicesPanel)
+                panel.devices = devices
+                if current_device_index is not None:
+                    panel.selected_index = current_device_index
+                    self.audio_selected_device = current_device_index
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug(f"Failed to update audio devices: {e}")
 
     def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
         """Run a subprocess, return True if successful."""
@@ -838,7 +1091,43 @@ class VJConsoleApp(App):
         
         # Update MIDI panels
         self._update_midi_panels()
+        
+        # Update audio analyzer panels
+        self._update_audio_panels()
 
+    def _update_audio_panels(self) -> None:
+        """Update audio analyzer panels."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            return
+        
+        try:
+            # Update watchdog for self-healing
+            if self.audio_watchdog:
+                self.audio_watchdog.update()
+            
+            # Get analyzer stats
+            stats = self.audio_analyzer.get_stats()
+            
+            # Update status panel
+            try:
+                status_panel = self.query_one("#audio-status", AudioAnalyzerStatusPanel)
+                status_panel.status = stats
+            except Exception:
+                pass
+            
+            # Get latest features
+            features = self.audio_analyzer.latest_features.copy()
+            
+            # Update features panel
+            try:
+                features_panel = self.query_one("#audio-features", AudioFeaturesPanel)
+                features_panel.features = features
+            except Exception:
+                pass
+            
+        except Exception as e:
+            logger.debug(f"Failed to update audio panels: {e}")
+    
     def _update_midi_panels(self) -> None:
         """Update MIDI router panels."""
         if not self.midi_router:
@@ -902,6 +1191,9 @@ class VJConsoleApp(App):
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
     
+    def action_screen_audio(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "audio"
+    
     def action_screen_midi(self) -> None:
         self.query_one("#screens", TabbedContent).active = "midi"
 
@@ -923,6 +1215,101 @@ class VJConsoleApp(App):
                     subprocess.Popen(['open', '-a', str(p)])
                     break
         self._check_apps()
+    
+    def action_audio_device_prev(self) -> None:
+        """Switch to previous audio device ([ key)."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_device_manager:
+            return
+        
+        try:
+            devices = self.audio_device_manager.list_devices()
+            if not devices:
+                return
+            
+            # Get current device index
+            current_idx = self.audio_selected_device
+            
+            # Find current device in list
+            current_pos = -1
+            for i, dev in enumerate(devices):
+                if dev.get('index') == current_idx:
+                    current_pos = i
+                    break
+            
+            # Select previous device (wrap around)
+            if current_pos >= 0:
+                new_pos = (current_pos - 1) % len(devices)
+            else:
+                new_pos = len(devices) - 1
+            
+            new_device_idx = devices[new_pos].get('index')
+            self._switch_audio_device(new_device_idx)
+            
+        except Exception as e:
+            logger.error(f"Failed to switch to previous audio device: {e}")
+    
+    def action_audio_device_next(self) -> None:
+        """Switch to next audio device (] key)."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_device_manager:
+            return
+        
+        try:
+            devices = self.audio_device_manager.list_devices()
+            if not devices:
+                return
+            
+            # Get current device index
+            current_idx = self.audio_selected_device
+            
+            # Find current device in list
+            current_pos = -1
+            for i, dev in enumerate(devices):
+                if dev.get('index') == current_idx:
+                    current_pos = i
+                    break
+            
+            # Select next device (wrap around)
+            if current_pos >= 0:
+                new_pos = (current_pos + 1) % len(devices)
+            else:
+                new_pos = 0
+            
+            new_device_idx = devices[new_pos].get('index')
+            self._switch_audio_device(new_device_idx)
+            
+        except Exception as e:
+            logger.error(f"Failed to switch to next audio device: {e}")
+    
+    def _switch_audio_device(self, device_index: int):
+        """
+        Switch audio analyzer to a different device.
+        
+        Args:
+            device_index: Index of the device to switch to
+        """
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer or not self.audio_device_manager:
+            return
+        
+        try:
+            # Set device in device manager
+            self.audio_device_manager.set_device(device_index)
+            
+            # Restart audio analyzer with new device
+            if self.audio_analyzer.running:
+                self.audio_analyzer.stop_stream()
+                time.sleep(0.2)  # Brief pause for cleanup
+                self.audio_analyzer.start_stream()
+            
+            # Update selected device
+            self.audio_selected_device = device_index
+            
+            # Update devices panel
+            self._update_audio_devices()
+            
+            logger.info(f"Switched to audio device: {device_index}")
+            
+        except Exception as e:
+            logger.error(f"Failed to switch audio device: {e}")
 
     def action_nav_up(self) -> None:
         current_screen = self.query_one("#screens", TabbedContent).active
@@ -1133,6 +1520,8 @@ class VJConsoleApp(App):
             self.karaoke_engine.stop()
         if self.midi_router:
             self.midi_router.stop()
+        if self.audio_analyzer and AUDIO_ANALYZER_AVAILABLE:
+            self.audio_analyzer.stop()
         self.process_manager.cleanup()
 
 
