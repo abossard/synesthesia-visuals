@@ -71,6 +71,7 @@ class ProcessManagerDaemon(WorkerBase):
         ("lyrics_fetcher", "workers/lyrics_fetcher_worker.py"),
         ("osc_debugger", "workers/osc_debugger_worker.py"),
         ("log_aggregator", "workers/log_aggregator_worker.py"),
+        ("midi_router", "workers/midi_router_worker.py"),
     ]
 
     def __init__(self):

@@ -1436,6 +1436,7 @@ class VJConsoleApp(App):
             "lyrics_fetcher",
             "osc_debugger",
             "log_aggregator",
+            "midi_router",
         ]
 
         # Send start commands to process manager
@@ -1469,6 +1470,7 @@ class VJConsoleApp(App):
             ("lyrics_fetcher", "workers/lyrics_fetcher_worker.py"),
             ("osc_debugger", "workers/osc_debugger_worker.py"),
             ("log_aggregator", "workers/log_aggregator_worker.py"),
+            ("midi_router", "workers/midi_router_worker.py"),
         ]
 
         project_root = Path(__file__).parent
