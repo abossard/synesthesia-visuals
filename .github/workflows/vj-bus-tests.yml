@@ -1,0 +1,284 @@
+name: VJ Bus Tests
+
+on:
+  push:
+    branches: [ main, master, 'claude/**' ]
+    paths:
+      - 'python-vj/**'
+      - '.github/workflows/vj-bus-tests.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'python-vj/**'
+
+jobs:
+  test:
+    name: Run VJ Bus Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      working-directory: python-vj
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov pytest-timeout
+        pip install pyzmq>=25.0.0 pydantic>=2.0.0
+
+    - name: Run unit tests
+      working-directory: python-vj
+      run: |
+        pytest tests/unit/ -v --tb=short --timeout=10
+
+    - name: Run integration tests
+      working-directory: python-vj
+      run: |
+        pytest tests/integration/ -v --tb=short --timeout=30
+
+    - name: Run all tests with coverage
+      working-directory: python-vj
+      run: |
+        pytest tests/ -v --cov=vj_bus --cov-report=term-missing --cov-report=xml --timeout=30
+
+    - name: Upload coverage reports
+      if: matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./python-vj/coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  blackbox-test:
+    name: Blackbox Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      working-directory: python-vj
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-timeout
+        pip install pyzmq>=25.0.0 pydantic>=2.0.0
+
+    - name: Test worker startup and shutdown
+      working-directory: python-vj
+      timeout-minutes: 2
+      run: |
+        # Test example worker can start
+        python workers/example_worker.py &
+        WORKER_PID=$!
+        sleep 3
+
+        # Check if worker is running
+        if ! ps -p $WORKER_PID > /dev/null; then
+          echo "ERROR: Worker failed to start"
+          exit 1
+        fi
+
+        # Check registry was created
+        if [ ! -f ~/.vj/registry.json ]; then
+          echo "ERROR: Registry not created"
+          kill $WORKER_PID 2>/dev/null || true
+          exit 1
+        fi
+
+        # Clean shutdown
+        kill -TERM $WORKER_PID
+        sleep 2
+
+        # Verify process stopped
+        if ps -p $WORKER_PID > /dev/null 2>&1; then
+          echo "ERROR: Worker didn't stop cleanly"
+          kill -9 $WORKER_PID 2>/dev/null || true
+          exit 1
+        fi
+
+        echo "✓ Worker startup/shutdown test passed"
+
+    - name: Test worker discovery
+      working-directory: python-vj
+      timeout-minutes: 2
+      run: |
+        # Start two workers
+        python workers/example_worker.py &
+        WORKER1=$!
+        sleep 2
+
+        # Test discovery with Python
+        python -c "
+        from vj_bus.client import VJBusClient
+        import sys
+
+        client = VJBusClient()
+        workers = client.discover_workers()
+
+        if not workers:
+            print('ERROR: No workers discovered')
+            sys.exit(1)
+
+        if len(workers) < 1:
+            print(f'ERROR: Expected at least 1 worker, found {len(workers)}')
+            sys.exit(1)
+
+        print(f'✓ Discovered {len(workers)} worker(s)')
+        for w in workers:
+            print(f'  - {w.name} (ports: {w.command_port}/{w.telemetry_port})')
+        "
+
+        EXIT_CODE=$?
+
+        # Cleanup
+        kill -TERM $WORKER1 2>/dev/null || true
+        sleep 1
+
+        exit $EXIT_CODE
+
+    - name: Test worker command/response
+      working-directory: python-vj
+      timeout-minutes: 2
+      run: |
+        # Start worker
+        python workers/example_worker.py &
+        WORKER_PID=$!
+        sleep 3
+
+        # Test command sending
+        python -c "
+        from vj_bus.client import VJBusClient
+        import sys
+
+        client = VJBusClient()
+
+        try:
+            # Send get_state command
+            response = client.send_command('example_worker', 'get_state', {})
+
+            if not response:
+                print('ERROR: No response from worker')
+                sys.exit(1)
+
+            payload = response.payload
+            if payload.get('status') != 'running':
+                print(f'ERROR: Unexpected status: {payload.get(\"status\")}')
+                sys.exit(1)
+
+            print('✓ Worker command/response test passed')
+            print(f'  Status: {payload.get(\"status\")}')
+            print(f'  Uptime: {payload.get(\"uptime_sec\", 0):.1f}s')
+
+        except Exception as e:
+            print(f'ERROR: {e}')
+            sys.exit(1)
+        "
+
+        EXIT_CODE=$?
+
+        # Cleanup
+        kill -TERM $WORKER_PID 2>/dev/null || true
+        sleep 1
+
+        exit $EXIT_CODE
+
+    - name: Test worker telemetry
+      working-directory: python-vj
+      timeout-minutes: 2
+      run: |
+        # Start worker
+        python workers/example_worker.py &
+        WORKER_PID=$!
+        sleep 3
+
+        # Test telemetry reception
+        python -c "
+        from vj_bus.client import VJBusClient
+        import time
+        import sys
+
+        received = []
+
+        def on_telemetry(msg):
+            received.append(msg)
+
+        client = VJBusClient()
+        client.subscribe('example.counter', on_telemetry)
+        client.start()
+
+        # Wait for telemetry
+        time.sleep(2)
+
+        client.stop()
+
+        if not received:
+            print('ERROR: No telemetry received')
+            sys.exit(1)
+
+        print(f'✓ Worker telemetry test passed')
+        print(f'  Received {len(received)} telemetry messages')
+        "
+
+        EXIT_CODE=$?
+
+        # Cleanup
+        kill -TERM $WORKER_PID 2>/dev/null || true
+        sleep 1
+
+        exit $EXIT_CODE
+
+    - name: Cleanup test artifacts
+      if: always()
+      run: |
+        rm -rf ~/.vj/
+        pkill -f "example_worker.py" || true
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8
+
+    - name: Lint VJ Bus code
+      working-directory: python-vj
+      run: |
+        # Check syntax errors and undefined names
+        flake8 vj_bus/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+        # Check complexity and style (warnings only)
+        flake8 vj_bus/ --count --exit-zero --max-complexity=15 --max-line-length=127 --statistics || true
+
+    - name: Check worker syntax
+      working-directory: python-vj
+      run: |
+        python -m py_compile workers/*.py
+        echo "✓ All workers have valid syntax"
