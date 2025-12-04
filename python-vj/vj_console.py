@@ -319,12 +319,187 @@ class LogsPanel(ReactivePanel):
         if not self.is_mounted:
             return
         lines = [self.render_section("Application Logs", "═")]
-        
+
         if not self.logs:
             lines.append("[dim](no logs yet)[/dim]")
         else:
             lines.extend(render_log_line(log) for log in reversed(self.logs[-100:]))
-        
+
+        self.update("\n".join(lines))
+
+
+class WorkerOverviewPanel(ReactivePanel):
+    """Overview of all VJ Bus workers."""
+    workers = reactive([])
+    connected = reactive(False)
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_workers(self, _: list) -> None:
+        self._safe_render()
+
+    def watch_connected(self, _: bool) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("VJ Bus Workers", "═")]
+
+        if not self.connected or not self.workers:
+            lines.append("[yellow]⚠ No workers connected[/]")
+            lines.append("[dim]Start workers: python dev/start_all_workers.py[/]")
+        else:
+            lines.append(f"[green]✓ {len(self.workers)} workers connected[/]\n")
+            for worker in self.workers:
+                lines.append(f"  [cyan]●[/] {worker.name}")
+                lines.append(f"    [dim]Ports: {worker.command_port}/{worker.telemetry_port}[/]")
+
+        self.update("\n".join(lines))
+
+
+class PlaybackStatePanel(ReactivePanel):
+    """Detailed playback state from workers."""
+    playback_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_playback_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Playback State", "═")]
+
+        data = self.playback_data
+        if not data:
+            lines.append("[dim]Waiting for playback data from workers...[/]")
+        else:
+            source = data.get('source', 'Unknown')
+            is_playing = data.get('is_playing', False)
+            track = data.get('track', {})
+
+            status = "[green]▶ Playing[/]" if is_playing else "[yellow]⏸ Paused[/]"
+            lines.append(f"Source: [cyan]{source}[/]")
+            lines.append(f"Status: {status}\n")
+
+            if track:
+                lines.append(f"[bold]Track:[/]")
+                lines.append(f"  Artist: [cyan]{track.get('artist', 'Unknown')}[/]")
+                lines.append(f"  Title:  {track.get('title', 'Unknown')}")
+                lines.append(f"  Album:  [dim]{track.get('album', 'N/A')}[/]")
+                lines.append(f"  Duration: [dim]{format_time(track.get('duration', 0))}[/]\n")
+
+                position = data.get('position', 0)
+                duration = track.get('duration', 0)
+                if duration > 0:
+                    progress = position / duration
+                    bar_width = 30
+                    filled = int(progress * bar_width)
+                    bar = "█" * filled + "░" * (bar_width - filled)
+                    lines.append(f"  {bar}")
+                    lines.append(f"  {format_time(position)} / {format_time(duration)}")
+
+        self.update("\n".join(lines))
+
+
+class LyricsStatusPanel(ReactivePanel):
+    """Lyrics fetcher worker status."""
+    lyrics_data = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_lyrics_data(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Lyrics Status", "═")]
+
+        data = self.lyrics_data
+        if not data:
+            lines.append("[dim]Waiting for lyrics worker data...[/]")
+        else:
+            artist = data.get('artist', 'Unknown')
+            title = data.get('title', 'Unknown')
+            has_lyrics = data.get('has_lyrics', False)
+            line_count = data.get('line_count', 0)
+
+            lines.append(f"[bold]Current Track:[/]")
+            lines.append(f"  {artist} - {title}\n")
+
+            if has_lyrics:
+                lines.append(f"[green]✓ Lyrics Available[/]")
+                lines.append(f"  Lines: {line_count}")
+
+                keywords = data.get('keywords', [])
+                if keywords:
+                    lines.append(f"\n[bold]Keywords:[/]")
+                    lines.append(f"  {', '.join(keywords[:8])}")
+
+                themes = data.get('themes', [])
+                if themes:
+                    lines.append(f"\n[bold]Themes:[/]")
+                    lines.append(f"  {', '.join(themes)}")
+            else:
+                lines.append("[yellow]○ No lyrics found[/]")
+
+        self.update("\n".join(lines))
+
+
+class QuickMetricsPanel(ReactivePanel):
+    """Quick overview metrics from all workers."""
+    metrics = reactive({})
+
+    def on_mount(self) -> None:
+        self._safe_render()
+
+    def watch_metrics(self, _: dict) -> None:
+        self._safe_render()
+
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        lines = [self.render_section("Quick Metrics", "═")]
+
+        m = self.metrics
+
+        # Playback
+        playback = m.get('playback', {})
+        if playback:
+            source = playback.get('source', 'None')
+            status = "▶" if playback.get('is_playing') else "⏸"
+            lines.append(f"[cyan]Playback:[/] {status} {source}")
+
+        # Lyrics
+        lyrics = m.get('lyrics', {})
+        if lyrics and lyrics.get('has_lyrics'):
+            lines.append(f"[green]Lyrics:[/] ✓ {lyrics.get('line_count', 0)} lines")
+        else:
+            lines.append(f"[dim]Lyrics:[/] waiting...")
+
+        # Categories
+        categories = m.get('categories', {})
+        if categories:
+            mood = categories.get('primary_mood', '')
+            lines.append(f"[yellow]Mood:[/] {mood}")
+
+        # Audio (if available)
+        audio = m.get('audio', {})
+        if audio:
+            bpm = audio.get('bpm', 0)
+            beat = audio.get('beat', 0)
+            beat_icon = "●" if beat else "○"
+            lines.append(f"[magenta]Audio:[/] {beat_icon} {bpm:.0f} BPM")
+
+        if not m:
+            lines.append("[dim]Waiting for worker data...[/]")
+
         self.update("\n".join(lines))
 
 
@@ -780,11 +955,12 @@ class VJConsoleApp(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("1", "screen_master", "Master"),
-        Binding("2", "screen_osc", "OSC"),
-        Binding("3", "screen_ai", "AI Debug"),
-        Binding("4", "screen_logs", "Logs"),
-        Binding("5", "screen_audio", "Audio"),
+        Binding("0", "screen_overview", "Overview"),
+        Binding("1", "screen_playback", "Playback"),
+        Binding("2", "screen_lyrics", "Lyrics/AI"),
+        Binding("3", "screen_audio", "Audio"),
+        Binding("4", "screen_osc", "OSC"),
+        Binding("5", "screen_logs", "Logs"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
@@ -802,7 +978,7 @@ class VJConsoleApp(App):
         Binding("minus", "timing_down", "-Timing"),
     ]
 
-    current_tab = reactive("master")
+    current_tab = reactive("overview")
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
 
@@ -865,7 +1041,7 @@ class VJConsoleApp(App):
         self._audio_osc_callback = None
         
         # Track current screen for conditional updates
-        self._current_screen = "master"
+        self._current_screen = "overview"
         
         self._setup_log_capture()
 
@@ -899,40 +1075,42 @@ class VJConsoleApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        
+
         with TabbedContent(id="screens"):
-            # Tab 1: Master Control
-            with TabPane("1️⃣ Master Control", id="master"):
+            # Tab 0: Overview - Quick view of all workers
+            with TabPane("0️⃣ Overview", id="overview"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
-                        yield MasterControlPanel(id="master-ctrl", classes="panel")
-                        yield AppsListPanel(id="apps", classes="panel")
-                        yield ServicesPanel(id="services", classes="panel")
+                        yield WorkerOverviewPanel(id="worker-overview", classes="panel")
+                        yield ServicesPanel(id="services-overview", classes="panel")
+                        yield AppsListPanel(id="apps-overview", classes="panel")
                     with VerticalScroll(id="right-col"):
-                        yield NowPlayingPanel(id="now-playing", classes="panel")
-                        yield CategoriesPanel(id="categories", classes="panel")
-                        yield PipelinePanel(id="pipeline", classes="panel")
-                        yield OSCPanel(id="osc-mini", classes="panel")
+                        yield QuickMetricsPanel(id="quick-metrics", classes="panel")
+                        yield NowPlayingPanel(id="now-playing-overview", classes="panel")
+                        yield CategoriesPanel(id="categories-overview", classes="panel")
 
-            # Tab 2: OSC View
-            with TabPane("2️⃣ OSC View", id="osc"):
-                yield OSCPanel(id="osc-full", classes="panel full-height")
-
-            # Tab 3: Song AI Debug  
-            with TabPane("3️⃣ Song AI Debug", id="ai"):
+            # Tab 1: Playback - VirtualDJ/Spotify worker details
+            with TabPane("1️⃣ Playback", id="playback"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
-                        yield CategoriesPanel(id="categories-full", classes="panel full-height")
+                        yield PlaybackStatePanel(id="playback-state", classes="panel")
+                        yield NowPlayingPanel(id="now-playing", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield MasterControlPanel(id="master-ctrl", classes="panel")
+                        yield ServicesPanel(id="services", classes="panel")
+
+            # Tab 2: Lyrics & AI - Lyrics fetcher and categorization
+            with TabPane("2️⃣ Lyrics & AI", id="lyrics"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield LyricsStatusPanel(id="lyrics-status", classes="panel")
+                        yield CategoriesPanel(id="categories-full", classes="panel")
                     with VerticalScroll(id="right-col"):
                         yield PipelinePanel(id="pipeline-full", classes="panel full-height")
 
-            # Tab 4: All Logs
-            with TabPane("4️⃣ All Logs", id="logs"):
-                yield LogsPanel(id="logs-panel", classes="panel full-height")
-
-            # Tab 5: Audio Analysis
+            # Tab 3: Audio - Audio analyzer worker
             if AUDIO_ANALYZER_AVAILABLE:
-                with TabPane("5️⃣ Audio Analysis", id="audio"):
+                with TabPane("3️⃣ Audio", id="audio"):
                     with Horizontal():
                         with VerticalScroll(id="left-col"):
                             yield AudioAnalysisPanel(id="audio-analysis", classes="panel")
@@ -942,14 +1120,22 @@ class VJConsoleApp(App):
                         with VerticalScroll(id="right-col"):
                             yield AudioStatsPanel(id="audio-stats", classes="panel full-height")
 
+            # Tab 4: OSC - OSC message debug
+            with TabPane("4️⃣ OSC", id="osc"):
+                yield OSCPanel(id="osc-full", classes="panel full-height")
+
+            # Tab 5: Logs - Application logs
+            with TabPane("5️⃣ Logs", id="logs"):
+                yield LogsPanel(id="logs-panel", classes="panel full-height")
+
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console - VJ Bus Mode"
-        self.sub_title = "Press 1-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 1-4 to switch screens"
+        self.sub_title = "Press 0-5 to switch screens" if AUDIO_ANALYZER_AVAILABLE else "Press 0, 1-2, 4-5 to switch screens"
 
         # Initialize
-        self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
+        self.query_one("#apps-overview", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
 
         # Connect to VJ Bus workers (required)
@@ -1289,7 +1475,16 @@ class VJConsoleApp(App):
                 'vj_bus_workers': [w.name for w in self._discovered_workers],
             }
 
-            self.query_one("#services", ServicesPanel).services = services_data
+            # Update services panel (exists in both overview and playback screens)
+            try:
+                self.query_one("#services", ServicesPanel).services = services_data
+            except Exception:
+                pass
+
+            try:
+                self.query_one("#services-overview", ServicesPanel).services = services_data
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1297,48 +1492,101 @@ class VJConsoleApp(App):
         """Update panels using worker telemetry data."""
         screen = self._current_screen
 
-        if screen == "master":
-            # Build track data from worker telemetry
-            vdj_state = self._worker_telemetry.get('virtualdj_state')
-            spotify_state = self._worker_telemetry.get('spotify_state')
+        # Build common data from worker telemetry
+        vdj_state = self._worker_telemetry.get('virtualdj_state')
+        spotify_state = self._worker_telemetry.get('spotify_state')
+        source_state = vdj_state or spotify_state
 
-            # Use whichever source has data
-            source_state = vdj_state or spotify_state
-            if source_state:
-                track = source_state.get('track', {})
-                track_data = {
-                    'artist': track.get('artist', 'Unknown'),
-                    'title': track.get('title', 'Unknown'),
-                    'duration': track.get('duration', 0),
-                    'position': source_state.get('position', 0),
-                    'source': 'VirtualDJ' if vdj_state else 'Spotify',
-                    'connected': True,
-                    'error': '',
-                    'backoff': 0,
+        track_data = {}
+        if source_state:
+            track = source_state.get('track', {})
+            track_data = {
+                'artist': track.get('artist', 'Unknown'),
+                'title': track.get('title', 'Unknown'),
+                'duration': track.get('duration', 0),
+                'position': source_state.get('position', 0),
+                'source': 'VirtualDJ' if vdj_state else 'Spotify',
+                'connected': True,
+                'error': '',
+                'backoff': 0,
+            }
+
+        cat_data = self._worker_telemetry.get('categories_data', {})
+        lyrics_data = self._worker_telemetry.get('lyrics_data', {})
+        audio_features = self._worker_telemetry.get('audio_features', {})
+
+        # Update screen-specific panels
+        if screen == "overview":
+            # Overview screen: worker status + quick metrics
+            try:
+                self.query_one("#worker-overview", WorkerOverviewPanel).workers = self._discovered_workers
+                self.query_one("#worker-overview", WorkerOverviewPanel).connected = self.workers_connected
+            except Exception:
+                pass
+
+            # Quick metrics
+            try:
+                metrics = {
+                    'playback': source_state if source_state else {},
+                    'lyrics': lyrics_data,
+                    'categories': cat_data,
+                    'audio': audio_features,
                 }
+                self.query_one("#quick-metrics", QuickMetricsPanel).metrics = metrics
+            except Exception:
+                pass
 
-                try:
-                    self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
-                except Exception:
-                    pass
+            # Now playing overview
+            try:
+                self.query_one("#now-playing-overview", NowPlayingPanel).track_data = track_data
+            except Exception:
+                pass
 
-            # Categories from worker
-            cat_data = self._worker_telemetry.get('categories_data', {})
-            if cat_data:
-                try:
-                    self.query_one("#categories", CategoriesPanel).categories_data = cat_data
-                except Exception:
-                    pass
+            # Categories overview
+            try:
+                self.query_one("#categories-overview", CategoriesPanel).categories_data = cat_data
+            except Exception:
+                pass
 
-            # Show worker status
+        elif screen == "playback":
+            # Playback screen: detailed playback state
+            try:
+                playback_data = {
+                    'source': 'VirtualDJ' if vdj_state else 'Spotify' if spotify_state else 'None',
+                    'is_playing': source_state.get('is_playing', False) if source_state else False,
+                    'track': source_state.get('track', {}) if source_state else {},
+                    'position': source_state.get('position', 0) if source_state else 0,
+                }
+                self.query_one("#playback-state", PlaybackStatePanel).playback_data = playback_data
+            except Exception:
+                pass
+
+            try:
+                self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
+            except Exception:
+                pass
+
+            # Master control
             running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
             try:
                 self.query_one("#master-ctrl", MasterControlPanel).status = {
                     'synesthesia': self.synesthesia_running,
                     'milksyphon': self.milksyphon_running,
                     'processing_apps': running_apps,
-                    'karaoke': True,  # Workers are running
+                    'karaoke': self.workers_connected,
                 }
+            except Exception:
+                pass
+
+        elif screen == "lyrics":
+            # Lyrics/AI screen: lyrics worker data
+            try:
+                self.query_one("#lyrics-status", LyricsStatusPanel).lyrics_data = lyrics_data
+            except Exception:
+                pass
+
+            try:
+                self.query_one("#categories-full", CategoriesPanel).categories_data = cat_data
             except Exception:
                 pass
 
@@ -1349,7 +1597,7 @@ class VJConsoleApp(App):
                 pass
 
         elif screen == "audio" and AUDIO_ANALYZER_AVAILABLE:
-            # Audio panels still updated from direct analyzer
+            # Audio panels updated from direct analyzer
             self._update_audio_panels()
 
     def _update_data(self) -> None:
@@ -1374,22 +1622,25 @@ class VJConsoleApp(App):
         self._current_screen = screen_name
         self.query_one("#screens", TabbedContent).active = screen_name
     
-    def action_screen_master(self) -> None:
-        self._switch_screen("master")
-    
-    def action_screen_osc(self) -> None:
-        self._switch_screen("osc")
-    
-    def action_screen_ai(self) -> None:
-        self._switch_screen("ai")
-    
-    def action_screen_logs(self) -> None:
-        self._switch_screen("logs")
-    
+    def action_screen_overview(self) -> None:
+        self._switch_screen("overview")
+
+    def action_screen_playback(self) -> None:
+        self._switch_screen("playback")
+
+    def action_screen_lyrics(self) -> None:
+        self._switch_screen("lyrics")
+
     def action_screen_audio(self) -> None:
         """Switch to audio analysis screen."""
         if AUDIO_ANALYZER_AVAILABLE:
             self._switch_screen("audio")
+
+    def action_screen_osc(self) -> None:
+        self._switch_screen("osc")
+
+    def action_screen_logs(self) -> None:
+        self._switch_screen("logs")
 
     # === App control ===
     
