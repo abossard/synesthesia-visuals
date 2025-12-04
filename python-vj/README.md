@@ -14,6 +14,7 @@ python vj_console.py          # Launch the terminal UI
 
 - **🎛️ Master Control**: Start/stop Synesthesia, ProjectMilkSyphon, and Processing apps
 - **🎤 Karaoke Engine**: Monitors Spotify/VirtualDJ, fetches synced lyrics, sends via OSC
+- **🎹 MIDI Router**: Stateful MIDI middleware with toggle state management and LED feedback
 - **🎧 Audio Analysis**: Real-time audio analysis with beat detection, BPM, spectral features
 - **🏷️ Song Categorization**: AI-powered mood/theme analysis (dark, happy, love, death, etc.)
 - **📡 6+ OSC Channels**: Lyrics, refrain, keywords, categories, images, audio features, and app status
@@ -25,7 +26,7 @@ python vj_console.py          # Launch the terminal UI
 
 ## Multi-Screen Terminal UI
 
-The VJ Console features a tabbed interface with 5 screens. Press number keys to switch:
+The VJ Console features a tabbed interface with 6 screens. Press number keys to switch:
 
 | Key | Screen | Description |
 |-----|--------|-------------|
@@ -33,7 +34,8 @@ The VJ Console features a tabbed interface with 5 screens. Press number keys to 
 | `2` | **OSC View** | Full-screen OSC message debug view with all emitted messages |
 | `3` | **Song AI Debug** | Song categorization details and processing pipeline |
 | `4` | **All Logs** | Complete application logs for debugging |
-| `5` | **Audio Analysis** | Real-time audio analysis with live frequency bands, beat detection, BPM |
+| `5` | **MIDI Router** | Toggle management, controller selection, and MIDI traffic debug |
+| `6` | **Audio Analysis** | Real-time audio analysis with live frequency bands, beat detection, BPM |
 
 ### Screenshots
 
@@ -61,6 +63,7 @@ Complete application logs for debugging and monitoring.
 
 | Key | Action |
 |-----|--------|
+| `1-6` | Switch screens |
 | `S` | Toggle Synesthesia |
 | `M` | Toggle ProjectMilkSyphon |
 | `K` | Toggle Karaoke Engine |
@@ -71,6 +74,58 @@ Complete application logs for debugging and monitoring.
 | `Enter` | Start/stop selected Processing app |
 | `+/-` | Adjust lyrics timing (±200ms) |
 | `Q` | Quit |
+
+**MIDI Screen (5) Controls:**
+| Key | Action |
+|-----|--------|
+| `C` | Select MIDI controller |
+| `L` | Enter learn mode (capture toggle) |
+| `D` | Delete selected toggle |
+| `Space` | Test toggle (simulate button press) |
+
+## MIDI Router
+
+The MIDI router sits between your MIDI controller and Magic Music Visuals, providing:
+- ✅ **Toggle State Management** - Python owns the state, LEDs stay in sync
+- ✅ **LED Feedback** - Controller shows which toggles are ON/OFF
+- ✅ **Absolute Values** - Magic receives absolute state (no toggle confusion)
+- ✅ **State Persistence** - Restores toggle states on restart
+- ✅ **Universal Controller Support** - Works with any MIDI controller
+
+### Quick Setup
+
+**1. Verify Setup**
+```bash
+cd python-vj
+python verify_midi_setup.py
+```
+
+This checks:
+- Python version (3.8+)
+- Required packages (python-rtmidi, textual, etc.)
+- Connected MIDI controllers
+- Virtual MIDI ports (for Magic connection)
+- Config file location
+
+**2. Follow Setup Instructions**
+
+The script provides platform-specific instructions for any missing prerequisites.
+
+**macOS - Setup Virtual MIDI:**
+1. Open **Audio MIDI Setup** → Window → Show MIDI Studio
+2. Double-click **IAC Driver** → Check "Device is online"
+3. Add port named **MagicBus** (or any name)
+
+**3. Launch VJ Console**
+```bash
+python vj_console.py
+```
+Press `5` for MIDI screen, then `C` to select your controller.
+
+### Documentation
+
+- [MIDI Router Quick Reference](MIDI_ROUTER_QUICK_REF.md) - Essential commands and workflow
+- [Full MIDI Router Guide](MIDI_ROUTER.md) - Complete documentation
 
 ## Architecture
 

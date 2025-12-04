@@ -84,6 +84,37 @@ class PlaybackState:
     @property
     def has_track(self) -> bool:
         return self.track is not None
+    
+    @property
+    def track_key(self) -> str:
+        """Generate a normalized track key for caching."""
+        if not self.track:
+            return ""
+        return f"{self.track.artist} - {self.track.title}".lower()
+
+
+@dataclass(frozen=True)
+class PlaybackSnapshot:
+    """Snapshot of playback for UI consumption."""
+    state: PlaybackState
+    source: str = "unknown"
+    updated_at: float = 0.0
+    track_changed: bool = False
+    error: str = ""
+    monitor_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    backoff_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class PlaybackSnapshot:
+    """Snapshot of playback for UI consumption."""
+    state: PlaybackState
+    source: str = "unknown"
+    updated_at: float = 0.0
+    track_changed: bool = False
+    error: str = ""
+    monitor_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    backoff_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -154,7 +185,7 @@ def parse_lrc(lrc_text: str) -> List[LyricLine]:
     """
     Parse LRC format lyrics into LyricLine objects. Pure function.
     
-    LRC Format: [mm:ss.xx]Lyric text
+    LRC Format: [mm:ss.xx] or [mm:ss.xxx]Lyric text
     Returns list of LyricLine instances (immutable).
     """
     lines = []
@@ -163,8 +194,16 @@ def parse_lrc(lrc_text: str) -> List[LyricLine]:
     for line in lrc_text.split('\n'):
         match = re.search(pattern, line)
         if match:
-            minutes, seconds, centiseconds, text = match.groups()
-            time_sec = int(minutes) * 60 + int(seconds) + int(centiseconds) / 100.0
+            minutes, seconds, centiseconds_str, text = match.groups()
+            # Handle both .xx (centiseconds) and .xxx (milliseconds) formats
+            if len(centiseconds_str) == 3:
+                # .xxx format (milliseconds)
+                fraction = int(centiseconds_str) / 1000.0
+            else:
+                # .xx format (centiseconds)
+                fraction = int(centiseconds_str) / 100.0
+            
+            time_sec = int(minutes) * 60 + int(seconds) + fraction
             text = text.strip()
             if text:
                 lines.append(LyricLine(time_sec=time_sec, text=text))
