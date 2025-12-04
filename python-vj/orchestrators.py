@@ -10,9 +10,10 @@ Splits the monolithic KaraokeEngine into specialized coordinators:
 
 import time
 import logging
+from dataclasses import dataclass
 from queue import Queue, Full, Empty
 from threading import Thread, Event
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from domain import Track, PlaybackState, parse_lrc, analyze_lyrics
 from infrastructure import PipelineTracker
@@ -26,6 +27,16 @@ logger = logging.getLogger('karaoke')
 # PLAYBACK COORDINATOR - Monitors sources, detects track changes
 # =============================================================================
 
+
+@dataclass(frozen=True)
+class PlaybackSample:
+    """Result of a playback poll."""
+    state: PlaybackState
+    source: str
+    track_changed: bool
+    monitor_status: Dict[str, Dict[str, Any]]
+    error: Optional[str] = None
+
 class PlaybackCoordinator:
     """
     Monitors playback from multiple sources and detects track changes.
@@ -35,8 +46,8 @@ class PlaybackCoordinator:
     2. VirtualDJ (fallback)
     
     Interface:
+        poll() -> PlaybackSample
         get_current_state() -> PlaybackState
-        has_track_changed() -> bool
     
     Dependency Injection: Accepts list of monitors (Spotify, VirtualDJ, etc.)
     """
@@ -44,40 +55,21 @@ class PlaybackCoordinator:
     def __init__(self, monitors: List):
         self._monitors = monitors
         self._state = PlaybackState()
-        self._last_track_key = ""
         self._current_source = "unknown"
         self._extra_data = {}  # Store source-specific data like BPM
     
-    def get_current_state(self) -> PlaybackState:
-        """
-        Poll all monitors and return current playback state.
-        
-        Priority: Spotify first (if playing), then fallback monitors.
-        This prevents VirtualDJ from overriding active Spotify playback.
-        """
-        # First, check if Spotify is actively playing
-        spotify_playback = None
-        other_monitors = []
-        
+    def poll(self) -> PlaybackSample:
+        """Poll monitors respecting priority order and return sample."""
+        prev_key = self._state.track.key if self._state.track else ""
+        error = None
+
+        playback = None
+        self._current_source = "idle"
         for monitor in self._monitors:
-            # Identify Spotify by class name
-            if monitor.__class__.__name__ == 'SpotifyMonitor':
-                spotify_playback = monitor.get_playback()
-            else:
-                other_monitors.append(monitor)
-        
-        # Use Spotify if it has active playback
-        if spotify_playback:
-            playback = spotify_playback
-            self._current_source = "spotify"
-        else:
-            # Fall back to other monitors (VirtualDJ, etc.)
-            playback = None
-            for monitor in other_monitors:
-                playback = monitor.get_playback()
-                if playback:
-                    self._current_source = monitor.__class__.__name__.replace("Monitor", "").lower()
-                    break
+            playback = monitor.get_playback()
+            if playback:
+                self._current_source = self._monitor_key(monitor)
+                break
         
         # Update state if we have playback
         if playback:
@@ -102,22 +94,25 @@ class PlaybackCoordinator:
                 is_playing=True,
                 last_update=time.time()
             )
-            return self._state
+        else:
+            # No playback detected
+            if self._state.has_track:
+                self._state = self._state.update(is_playing=False)
+            self._current_source = "idle"
         
-        # No playback detected
-        self._extra_data = {}
-        if self._state.has_track:
-            self._state = self._state.update(is_playing=False)
-        
-        return self._state
-    
-    def has_track_changed(self) -> bool:
-        """Check if track changed since last call."""
         current_key = self._state.track.key if self._state.track else ""
-        if current_key != self._last_track_key:
-            self._last_track_key = current_key
-            return current_key != ""
-        return False
+        track_changed = current_key != prev_key
+        return PlaybackSample(
+            state=self._state,
+            source=self._current_source,
+            track_changed=track_changed,
+            monitor_status=self._collect_status(),
+            error=error
+        )
+
+    def get_current_state(self) -> PlaybackState:
+        """Return last known playback state without polling."""
+        return self._state
     
     @property
     def current_track(self) -> Optional[Track]:
@@ -132,6 +127,19 @@ class PlaybackCoordinator:
     def extra_data(self) -> dict:
         """Return source-specific extra data (BPM, position ratio, etc.)."""
         return self._extra_data
+
+    def _collect_status(self) -> Dict[str, Dict[str, Any]]:
+        """Gather monitor ServiceHealth statuses."""
+        statuses = {}
+        for monitor in self._monitors:
+            name = self._monitor_key(monitor)
+            status_fn = getattr(monitor, 'status', None)
+            if callable(status_fn):
+                statuses[name] = status_fn()
+        return statuses
+
+    def _monitor_key(self, monitor) -> str:
+        return getattr(monitor, 'monitor_key', monitor.__class__.__name__.replace("Monitor", "").lower())
 
 
 # =============================================================================

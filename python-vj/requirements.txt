@@ -21,3 +21,11 @@ psutil>=5.9.0
 
 # LLM support (optional - uses local Ollama by default if no OpenAI key)
 openai>=1.0.0
+
+# MIDI I/O for MIDI router
+python-rtmidi>=1.5.0
+
+# Audio analysis and real-time DSP
+sounddevice>=0.4.6  # Low-latency audio I/O via PortAudio
+numpy>=1.24.0       # FFT and spectral analysis
+essentia            # Beat detection, tempo, and pitch estimation

@@ -2,16 +2,17 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-5 to switch):
+Screens (press 1-6 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
-5. VirtualDJ Debug - VDJ state, history, and diagnostics
+5. MIDI Router - Toggle management and MIDI traffic debug
+6. Audio Analysis - Real-time audio analysis and OSC emission
 """
 
 from dotenv import load_dotenv
-load_dotenv(override=True, verbose=True) 
+load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
@@ -21,13 +22,33 @@ import time
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
-from textual.widgets import Header, Footer, Static, TabbedContent, TabPane
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input
 from textual.reactive import reactive
 from textual.binding import Binding
+from textual.screen import ModalScreen
 from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
+from domain import PlaybackSnapshot, PlaybackState
+from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, MidiStatusPanel, ControllerSelectionModal
+from midi_router import MidiRouter, ConfigManager
+from midi_domain import RouterConfig, DeviceConfig
+from midi_infrastructure import list_controllers
+
+# Audio analysis (imported conditionally to handle missing dependencies)
+try:
+    from audio_analyzer import (
+        AudioConfig, DeviceConfig as AudioDeviceConfig, DeviceManager, 
+        AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
+    )
+    AUDIO_ANALYZER_AVAILABLE = True
+except ImportError as e:
+    AUDIO_ANALYZER_AVAILABLE = False
+    # Logger might not be initialized yet at module level, so use print as fallback
+    import sys
+    print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
+    print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
 
 logger = logging.getLogger('vj_console')
 
@@ -58,22 +79,30 @@ def format_bar(value: float, width: int = 15) -> str:
 
 def color_by_score(score: float) -> str:
     """Get color name based on score threshold."""
-    if score >= 0.7: return "green"
-    if score >= 0.4: return "yellow"
+    if score >= 0.7:
+        return "green"
+    if score >= 0.4:
+        return "yellow"
     return "dim"
 
 def color_by_level(text: str) -> str:
     """Get color based on log level in text."""
-    if "ERROR" in text or "EXCEPTION" in text: return "red"
-    if "WARNING" in text: return "yellow"
-    if "INFO" in text: return "green"
+    if "ERROR" in text or "EXCEPTION" in text:
+        return "red"
+    if "WARNING" in text:
+        return "yellow"
+    if "INFO" in text:
+        return "green"
     return "dim"
 
 def color_by_osc_channel(address: str) -> str:
     """Get color based on OSC address channel."""
-    if "/karaoke/categories" in address: return "yellow"
-    if "/vj/" in address: return "cyan"
-    if "/karaoke/" in address: return "green"
+    if "/karaoke/categories" in address:
+        return "yellow"
+    if "/vj/" in address:
+        return "cyan"
+    if "/karaoke/" in address:
+        return "green"
     return "white"
 
 def truncate(text: str, max_len: int, suffix: str = "...") -> str:
@@ -98,6 +127,71 @@ def render_log_line(log: str) -> str:
     """Render a single log line with color."""
     return f"[{color_by_level(log)}]{log}[/]"
 
+
+def estimate_position(state: PlaybackState) -> float:
+    """Estimate real-time playback position from cached state."""
+    if not state.is_playing:
+        return state.position
+    return state.position + max(0.0, time.time() - state.last_update)
+
+
+def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict[str, Any]:
+    """Derive track panel data from snapshot."""
+    state = snapshot.state
+    track = state.track
+    base = {
+        'error': snapshot.error,
+        'backoff': snapshot.backoff_seconds,
+        'source': snapshot.source,
+        'connected': source_available,
+    }
+    if not track:
+        return base
+    return {
+        **base,
+        'artist': track.artist,
+        'title': track.title,
+        'duration': track.duration,
+        'position': estimate_position(state),
+    }
+
+
+def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
+    """Assemble pipeline panel payload."""
+    pipeline_data = {
+        'display_lines': engine.pipeline.get_display_lines(),
+        'image_prompt': engine.pipeline.image_prompt,
+        'error': snapshot.error,
+        'backoff': snapshot.backoff_seconds,
+    }
+    lines = engine.current_lines
+    state = snapshot.state
+    if lines and state.track:
+        offset_ms = engine.timing_offset_ms
+        position = estimate_position(state)
+        idx = get_active_line_index(lines, position + offset_ms / 1000.0)
+        if 0 <= idx < len(lines):
+            line = lines[idx]
+            pipeline_data['current_lyric'] = {
+                'text': line.text,
+                'keywords': line.keywords,
+                'is_refrain': line.is_refrain
+            }
+    return pipeline_data
+
+
+def build_categories_payload(categories) -> Dict[str, Any]:
+    """Format categories for UI panels."""
+    if not categories:
+        return {}
+    return {
+        'primary_mood': categories.primary_mood,
+        'categories': [
+            {'name': cat.name, 'score': cat.score}
+            for cat in categories.get_top(10)
+        ]
+    }
+
 # ============================================================================
 # WIDGETS - Reactive UI components
 # ============================================================================
@@ -120,18 +214,37 @@ class NowPlayingPanel(ReactivePanel):
     def watch_track_data(self, data: dict) -> None:
         if not self.is_mounted:
             return
+        error = data.get('error')
+        backoff = data.get('backoff', 0.0)
+        raw_source_value = data.get('source') or ""
+        source_raw = raw_source_value.lower()
+        if source_raw.startswith("spotify"):
+            source_label = "Spotify"
+        else:
+            source_label = (raw_source_value or "Playback").replace("_", " ").title()
         if not data.get('artist'):
-            self.update("[dim]Waiting for playback...[/dim]")
+            if error:
+                msg = "[yellow]Playback paused:[/] {error}".format(error=error)
+                if backoff:
+                    msg += f" (retry in {backoff:.1f}s)"
+                self.update(msg)
+            else:
+                self.update("[dim]Waiting for playback...[/dim]")
             return
         
         conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
         time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        icon = "🎵" if data.get('source') == "spotify" else "🎧"
+        icon = "🎵" if source_raw.startswith("spotify") else "🎧"
+        warning = ""
+        if error:
+            warning = f"\n[yellow]{error}"
+            if backoff:
+                warning += f" (retry in {backoff:.1f}s)"
         
         self.update(
-            f"Spotify: {conn}\n"
+            f"{source_label}: {conn}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {data.get('source', '').title()}  │  [dim]{time_str}[/]"
+            f"{icon} {source_label}  │  [dim]{time_str}[/]{warning}"
         )
 
 
@@ -232,9 +345,9 @@ class MasterControlPanel(ReactivePanel):
         """Render only if mounted."""
         if not self.is_mounted:
             return
-        syn = format_status_icon(self.status.get('synesthesia'), "● RUNNING", "○ stopped")
-        pms = format_status_icon(self.status.get('milksyphon'), "● RUNNING", "○ stopped")
-        kar = format_status_icon(self.status.get('karaoke'), "● ACTIVE", "○ inactive")
+        syn = format_status_icon(bool(self.status.get('synesthesia')), "● RUNNING", "○ stopped")
+        pms = format_status_icon(bool(self.status.get('milksyphon')), "● RUNNING", "○ stopped")
+        kar = format_status_icon(bool(self.status.get('karaoke')), "● ACTIVE", "○ inactive")
         proc = self.status.get('processing_apps', 0)
         
         self.update(
@@ -289,6 +402,12 @@ class PipelinePanel(ReactivePanel):
             if lyric.get('is_refrain'):
                 lines.append("[magenta]  [REFRAIN][/]")
             has_content = True
+
+        if self.pipeline_data.get('error'):
+            retry = self.pipeline_data.get('backoff', 0.0)
+            extra = f" (retry in {retry:.1f}s)" if retry else ""
+            lines.append(f"[yellow]Playback warning: {self.pipeline_data['error']}{extra}[/]")
+            has_content = True
         
         if not has_content:
             lines.append("[dim]No active processing...[/]")
@@ -322,6 +441,20 @@ class ServicesPanel(ReactivePanel):
         lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
         lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
         lines.append(svc(s.get('synesthesia'), "Synesthesia", "Running" if s.get('synesthesia') else "Installed" if s.get('synesthesia_installed') else "Not installed"))
+
+        monitors = s.get('playback_monitors') or {}
+        if monitors:
+            lines.append("\n[bold]Playback Sources[/bold]")
+            for name, status in monitors.items():
+                ok = status.get('available', False)
+                detail = "OK" if ok else status.get('error', 'Unavailable')
+                color = "green" if ok else "yellow"
+                mark = "✓" if ok else "△"
+                lines.append(f"  [{color}]{mark}[/] {name.title()}: {detail}")
+        if s.get('playback_error'):
+            retry = s.get('playback_backoff', 0.0)
+            extra = f" (retry in {retry:.1f}s)" if retry else ""
+            lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
         self.update("\n".join(lines))
 
 
@@ -361,93 +494,6 @@ class AppsListPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
-class VirtualDJPanel(ReactivePanel):
-    """VirtualDJ debug and state view."""
-    vdj_data = reactive({})
-    
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-    
-    def watch_vdj_data(self, data: dict) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        
-        lines = [self.render_section("VirtualDJ Debug", "═")]
-        
-        # Connection status
-        connected = self.vdj_data.get('connected', False)
-        conn_icon = format_status_icon(connected, "● Connected", "○ Disconnected")
-        api_url = self.vdj_data.get('api_url', 'http://127.0.0.1:8080')
-        lines.append(f"API: {conn_icon} {api_url}\n")
-        
-        if not connected:
-            lines.append("[dim]VirtualDJ Network Control not available.[/]")
-            lines.append("[dim]Enable plugin in VirtualDJ: Effects → Other → Network Control[/]")
-        else:
-            # Current track info
-            current = self.vdj_data.get('current_track', {})
-            if current.get('artist') and current.get('title'):
-                lines.append("[bold cyan]Current Track:[/]")
-                lines.append(f"  Artist: [cyan]{current.get('artist', 'N/A')}[/]")
-                lines.append(f"  Title:  {current.get('title', 'N/A')}")
-                lines.append(f"  Deck:   {current.get('deck', 'N/A')}")
-                lines.append(f"  BPM:    [yellow]{current.get('bpm', 0):.1f}[/]")
-                
-                # Playback position
-                pos = current.get('position', 0.0)
-                elapsed = current.get('elapsed_sec', 0)
-                length = current.get('length_sec', 0)
-                bar = format_bar(pos, width=30)
-                lines.append(f"  Pos:    [{bar}] {format_time(elapsed)} / {format_time(length)}")
-                lines.append("")
-            else:
-                lines.append("[dim]No track currently playing[/]\n")
-            
-            # Deck states
-            deck_states = self.vdj_data.get('deck_states', {})
-            if deck_states:
-                lines.append("[bold]Deck States:[/]")
-                for deck_num in sorted(deck_states.keys()):
-                    state = deck_states[deck_num]
-                    is_master = state.get('is_master', False)
-                    master_mark = " [yellow]★ MASTER[/]" if is_master else ""
-                    lines.append(f"  Deck {deck_num}:{master_mark}")
-                    if state.get('title'):
-                        lines.append(f"    {state.get('artist', '')} - {state.get('title', '')}")
-                        lines.append(f"    BPM: {state.get('bpm', 0):.1f}  │  Pos: {state.get('position', 0)*100:.1f}%")
-                    else:
-                        lines.append(f"    [dim](no track loaded)[/]")
-                lines.append("")
-            
-            # Track history
-            history = self.vdj_data.get('history', [])
-            if history:
-                lines.append("[bold]Recent History:[/]")
-                for i, track in enumerate(history[:5]):  # Show last 5 tracks
-                    timestamp = track.get('timestamp', '')
-                    lines.append(f"  {i+1}. {track.get('artist', 'Unknown')} - {track.get('title', 'Unknown')}")
-                    if timestamp:
-                        lines.append(f"     [dim]{timestamp}[/]")
-                lines.append("")
-            
-            # Debug info
-            debug = self.vdj_data.get('debug_info', {})
-            if debug:
-                lines.append("[bold]Debug Info:[/]")
-                lines.append(f"  Last update: [dim]{debug.get('last_update', 'N/A')}[/]")
-                lines.append(f"  Poll count:  [dim]{debug.get('poll_count', 0)}[/]")
-                lines.append(f"  Errors:      [dim]{debug.get('error_count', 0)}[/]")
-                if debug.get('last_error'):
-                    lines.append(f"  Last error:  [red]{debug.get('last_error')}[/]")
-        
-        self.update("\n".join(lines))
-
-
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -463,6 +509,36 @@ class VJConsoleApp(App):
     .full-height { height: 1fr; overflow-y: auto; }
     #left-col { width: 40%; }
     #right-col { width: 60%; }
+    
+    /* Controller selection modal */
+    #controller-modal {
+        width: 80;
+        height: auto;
+        background: $surface;
+        border: thick $primary;
+        padding: 2;
+    }
+    
+    #modal-buttons {
+        align: center middle;
+        height: auto;
+        padding-top: 1;
+    }
+    
+    #modal-buttons Button {
+        margin: 0 1;
+    }
+    
+    ListView {
+        height: auto;
+        max-height: 15;
+        border: solid $accent;
+        padding: 1;
+    }
+    
+    ListItem {
+        height: 1;
+    }
     """
 
     BINDINGS = [
@@ -471,7 +547,7 @@ class VJConsoleApp(App):
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_ai", "AI Debug"),
         Binding("4", "screen_logs", "Logs"),
-        Binding("5", "screen_vdj", "VDJ Debug"),
+        Binding("5", "screen_midi", "MIDI"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
         Binding("k,up", "nav_up", "Up"),
@@ -479,11 +555,17 @@ class VJConsoleApp(App):
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
+        Binding("l", "midi_learn", "Learn", show=False),
+        Binding("c", "midi_select_controller", "Controller", show=False),
+        Binding("r", "midi_rename", "Rename", show=False),
+        Binding("d", "midi_delete", "Delete", show=False),
+        Binding("space", "midi_test_toggle", "Toggle", show=False),
     ]
 
     current_tab = reactive("master")
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
+    midi_selected_toggle = reactive(0)
 
     def __init__(self):
         super().__init__()
@@ -492,13 +574,12 @@ class VJConsoleApp(App):
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
+        self._latest_snapshot: Optional[PlaybackSnapshot] = None
         
-        # VirtualDJ debug tracking
-        self._vdj_history: List[Dict[str, Any]] = []
-        self._vdj_poll_count = 0
-        self._vdj_error_count = 0
-        self._vdj_last_error = ""
-        self._vdj_deck_cache: Dict[int, Dict[str, Any]] = {}
+        # MIDI Router
+        self.midi_router: Optional[MidiRouter] = None
+        self.midi_messages: List[Tuple[float, str, Any]] = []  # (timestamp, direction, message)
+        self._setup_midi_router()
         
         self._setup_log_capture()
 
@@ -507,6 +588,37 @@ class VJConsoleApp(App):
             if (p / "processing-vj").exists():
                 return p
         return Path.cwd()
+    
+    def _setup_midi_router(self) -> None:
+        """Initialize MIDI router."""
+        try:
+            # Try to load existing config or create default
+            config_path = Path.home() / '.midi_router' / 'config.json'
+            config_manager = ConfigManager(config_path)
+            
+            config = config_manager.load()
+            if not config:
+                # Create default config
+                logger.info("Creating default MIDI router config")
+                config = RouterConfig(
+                    controller=DeviceConfig(name_pattern="Launchpad"),
+                    virtual_output=DeviceConfig(name_pattern="MagicBus"),
+                    toggles={}
+                )
+                config_manager.save(config)
+            
+            # Create router
+            self.midi_router = MidiRouter(config_manager)
+            
+            # Try to start (will fail gracefully if no MIDI devices)
+            if self.midi_router.start(config):
+                logger.info("MIDI router started successfully")
+            else:
+                logger.warning("MIDI router failed to start (no devices?)")
+                
+        except Exception as e:
+            logger.warning(f"MIDI router initialization failed: {e}")
+            self.midi_router = None
     
     def _setup_log_capture(self) -> None:
         """Setup logging handler to capture logs to _logs list."""
@@ -563,9 +675,15 @@ class VJConsoleApp(App):
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
             
-            # Tab 5: VirtualDJ Debug
-            with TabPane("5️⃣ VirtualDJ Debug", id="vdj"):
-                yield VirtualDJPanel(id="vdj-panel", classes="panel full-height")
+            # Tab 5: MIDI Router
+            with TabPane("5️⃣ MIDI Router", id="midi"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield MidiActionsPanel(id="midi-actions", classes="panel")
+                        yield MidiStatusPanel(id="midi-status", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield MidiTogglesPanel(id="midi-toggles", classes="panel")
+                        yield MidiDebugPanel(id="midi-debug", classes="panel full-height")
 
         yield Footer()
 
@@ -635,6 +753,9 @@ class VJConsoleApp(App):
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'synesthesia': self.synesthesia_running,
                 'synesthesia_installed': Path('/Applications/Synesthesia.app').exists(),
+                'playback_monitors': (self._latest_snapshot.monitor_status if self._latest_snapshot else {}),
+                'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
+                'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
             }
         except Exception:
             pass
@@ -643,42 +764,20 @@ class VJConsoleApp(App):
         """Update all panels with current data."""
         if not self.karaoke_engine:
             return
-            
-        state = self.karaoke_engine._state
-        
-        # Build track data
-        track_data = {}
-        if state.has_track:
-            t = state.track
-            is_connected = bool(
-                self.karaoke_engine._spotify and 
-                getattr(self.karaoke_engine._spotify, '_sp', None)
-            )
-            # Determine source from which monitor is active
-            source = 'spotify' if is_connected else 'virtualdj'
-            track_data = {
-                'artist': t.artist, 
-                'title': t.title, 
-                'source': source,
-                'position': state.position, 
-                'duration': t.duration,
-                'connected': is_connected
-            }
-        
-        # Update now playing panel
+        snapshot = self.karaoke_engine.get_snapshot()
+        self._latest_snapshot = snapshot
+        monitor_status = snapshot.monitor_status or {}
+        if snapshot.source and snapshot.source in monitor_status:
+            source_connected = monitor_status[snapshot.source].get('available', False)
+        else:
+            source_connected = any(status.get('available', False) for status in monitor_status.values())
+        track_data = build_track_data(snapshot, source_connected)
         try:
             self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
         except Exception:
             pass
 
-        # Build categories data
-        cats = self.karaoke_engine.current_categories
-        cat_data = {}
-        if cats:
-            cat_data = {
-                'primary_mood': cats.primary_mood, 
-                'categories': [{'name': c.name, 'score': c.score} for c in cats.get_top(10)]
-            }
+        cat_data = build_categories_payload(self.karaoke_engine.current_categories)
         
         # Update categories panels
         for panel_id in ["categories", "categories-full"]:
@@ -688,18 +787,7 @@ class VJConsoleApp(App):
                 pass
 
         # Update pipeline
-        pipeline_data = {
-            'display_lines': self.karaoke_engine.pipeline.get_display_lines(),
-            'image_prompt': self.karaoke_engine.pipeline.image_prompt,
-        }
-        lines = self.karaoke_engine.current_lines
-        if lines:
-            offset_ms = self.karaoke_engine.timing_offset_ms
-            idx = get_active_line_index(lines, state.position + offset_ms / 1000.0)
-            if 0 <= idx < len(lines):
-                line = lines[idx]
-                pipeline_data['current_lyric'] = {'text': line.text, 'keywords': line.keywords, 'is_refrain': line.is_refrain}
-        
+        pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
         for panel_id in ["pipeline", "pipeline-full"]:
             try:
                 self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data
@@ -748,106 +836,57 @@ class VJConsoleApp(App):
         except Exception:
             pass
         
-        # Update VirtualDJ debug panel
-        self._update_vdj_debug()
-    
-    def _update_vdj_debug(self) -> None:
-        """Collect and update VirtualDJ debug information."""
-        if not self.karaoke_engine:
+        # Update MIDI panels
+        self._update_midi_panels()
+
+    def _update_midi_panels(self) -> None:
+        """Update MIDI router panels."""
+        if not self.midi_router:
             return
         
-        # Find VirtualDJ monitor
-        vdj_monitor = None
-        for monitor in self.karaoke_engine._monitors:
-            if monitor.__class__.__name__ == 'VirtualDJMonitor':
-                vdj_monitor = monitor
-                break
-        
-        if not vdj_monitor:
-            return
-        
-        self._vdj_poll_count += 1
-        
-        vdj_data = {
-            'connected': vdj_monitor.is_available,
-            'api_url': getattr(vdj_monitor, '_base_url', 'http://127.0.0.1:8080'),
-            'current_track': {},
-            'deck_states': {},
-            'history': self._vdj_history.copy(),
-            'debug_info': {
-                'last_update': time.strftime('%H:%M:%S'),
-                'poll_count': self._vdj_poll_count,
-                'error_count': self._vdj_error_count,
-                'last_error': self._vdj_last_error,
-            }
-        }
-        
-        if vdj_monitor.is_available and hasattr(vdj_monitor, '_client') and vdj_monitor._client:
-            try:
-                from vdj_api import VirtualDJClient
-                client: VirtualDJClient = vdj_monitor._client
-                
-                # Get current masterdeck
-                master = client.get_masterdeck(vdj_monitor._decks)
-                
-                # Get status for all monitored decks
-                for deck_num in vdj_monitor._decks:
-                    try:
-                        status = client.get_deck_status(deck_num)
-                        if status:
-                            deck_state = {
-                                'artist': status.artist,
-                                'title': status.title,
-                                'bpm': status.bpm,
-                                'position': status.position,
-                                'elapsed_sec': status.elapsed_ms / 1000.0,
-                                'length_sec': status.length_sec,
-                                'is_master': (deck_num == master)
-                            }
-                            self._vdj_deck_cache[deck_num] = deck_state
-                            vdj_data['deck_states'][deck_num] = deck_state
-                            
-                            # If this is the master deck, add to current_track
-                            if deck_num == master and status.artist and status.title:
-                                vdj_data['current_track'] = {
-                                    'deck': deck_num,
-                                    'artist': status.artist,
-                                    'title': status.title,
-                                    'bpm': status.bpm,
-                                    'position': status.position,
-                                    'elapsed_sec': status.elapsed_ms / 1000.0,
-                                    'length_sec': status.length_sec,
-                                }
-                                
-                                # Add to history if track changed
-                                track_key = f"{status.artist}::{status.title}"
-                                if not self._vdj_history or self._vdj_history[0].get('key') != track_key:
-                                    self._vdj_history.insert(0, {
-                                        'key': track_key,
-                                        'artist': status.artist,
-                                        'title': status.title,
-                                        'deck': deck_num,
-                                        'bpm': status.bpm,
-                                        'timestamp': time.strftime('%H:%M:%S')
-                                    })
-                                    # Keep only last 20 tracks
-                                    self._vdj_history = self._vdj_history[:20]
-                    except Exception as e:
-                        logger.debug(f"Error getting deck {deck_num} status: {e}")
-                        # Use cached state if available
-                        if deck_num in self._vdj_deck_cache:
-                            vdj_data['deck_states'][deck_num] = self._vdj_deck_cache[deck_num]
-                
-            except Exception as e:
-                self._vdj_error_count += 1
-                self._vdj_last_error = str(e)
-                logger.debug(f"VDJ debug error: {e}")
-        
-        # Update panel
         try:
-            self.query_one("#vdj-panel", VirtualDJPanel).vdj_data = vdj_data
-        except Exception:
-            pass
+            # Update toggles list
+            toggles = self.midi_router.get_toggle_list()
+            toggles_panel = self.query_one("#midi-toggles", MidiTogglesPanel)
+            toggles_panel.toggles = toggles
+            toggles_panel.selected = self.midi_selected_toggle
+            
+            # Update actions panel
+            actions_panel = self.query_one("#midi-actions", MidiActionsPanel)
+            actions_panel.learn_mode = self.midi_router.is_learn_mode
+            actions_panel.router_running = self.midi_router.is_running
+            
+            # Build device info
+            if self.midi_router.config:
+                controller = self.midi_router.config.controller.name_pattern
+                virtual = self.midi_router.config.virtual_output.name_pattern
+                actions_panel.device_info = f"Controller: {controller} → {virtual}"
+            
+            # Update status panel
+            status_panel = self.query_one("#midi-status", MidiStatusPanel)
+            if self.midi_router.config:
+                config_path = Path.home() / '.midi_router' / 'config.json'
+                
+                # Show actual port name if available, otherwise pattern
+                controller_name = self.midi_router.config.controller.input_port
+                if not controller_name:
+                    controller_name = f"{self.midi_router.config.controller.name_pattern} (pattern)"
+                
+                virtual_name = self.midi_router.config.virtual_output.name_pattern
+                
+                status_panel.config_info = {
+                    'controller': controller_name,
+                    'virtual_port': virtual_name,
+                    'toggle_count': len(self.midi_router.config.toggles),
+                    'config_file': str(config_path),
+                }
+            
+            # Update debug panel
+            debug_panel = self.query_one("#midi-debug", MidiDebugPanel)
+            debug_panel.messages = self.midi_messages.copy()
+            
+        except Exception as e:
+            logger.debug(f"Failed to update MIDI panels: {e}")
 
     # === Screen switching ===
     
@@ -863,8 +902,8 @@ class VJConsoleApp(App):
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
     
-    def action_screen_vdj(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "vdj"
+    def action_screen_midi(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "midi"
 
     # === App control ===
     
@@ -886,23 +925,46 @@ class VJConsoleApp(App):
         self._check_apps()
 
     def action_nav_up(self) -> None:
-        panel = self.query_one("#apps", AppsListPanel)
-        if panel.selected > 0:
-            panel.selected -= 1
+        current_screen = self.query_one("#screens", TabbedContent).active
+        
+        if current_screen == "master":
+            panel = self.query_one("#apps", AppsListPanel)
+            if panel.selected > 0:
+                panel.selected -= 1
+        elif current_screen == "midi":
+            if self.midi_router and self.midi_selected_toggle > 0:
+                self.midi_selected_toggle -= 1
 
     def action_nav_down(self) -> None:
-        panel = self.query_one("#apps", AppsListPanel)
-        if panel.selected < len(self.process_manager.apps) - 1:
-            panel.selected += 1
+        current_screen = self.query_one("#screens", TabbedContent).active
+        
+        if current_screen == "master":
+            panel = self.query_one("#apps", AppsListPanel)
+            if panel.selected < len(self.process_manager.apps) - 1:
+                panel.selected += 1
+        elif current_screen == "midi":
+            if self.midi_router:
+                toggles = self.midi_router.get_toggle_list()
+                if self.midi_selected_toggle < len(toggles) - 1:
+                    self.midi_selected_toggle += 1
 
     def action_select_app(self) -> None:
-        panel = self.query_one("#apps", AppsListPanel)
-        if 0 <= panel.selected < len(self.process_manager.apps):
-            app = self.process_manager.apps[panel.selected]
-            if self.process_manager.is_running(app):
-                self.process_manager.stop_app(app)
-            else:
-                self.process_manager.launch_app(app)
+        current_screen = self.query_one("#screens", TabbedContent).active
+        
+        if current_screen == "master":
+            panel = self.query_one("#apps", AppsListPanel)
+            if 0 <= panel.selected < len(self.process_manager.apps):
+                app = self.process_manager.apps[panel.selected]
+                if self.process_manager.is_running(app):
+                    self.process_manager.stop_app(app)
+                else:
+                    self.process_manager.launch_app(app)
+    
+    def action_midi_test_toggle(self) -> None:
+        """Test toggle selected MIDI toggle (space key on MIDI screen only)."""
+        current_screen = self.query_one("#screens", TabbedContent).active
+        if current_screen == "midi":
+            self._midi_test_toggle()
 
     def action_timing_up(self) -> None:
         if self.karaoke_engine:
@@ -911,10 +973,166 @@ class VJConsoleApp(App):
     def action_timing_down(self) -> None:
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
+    
+    # === MIDI Router Actions ===
+    
+    def action_midi_learn(self) -> None:
+        """Enter MIDI learn mode."""
+        if not self.midi_router:
+            logger.warning("MIDI router not available")
+            return
+        
+        def on_learned(note: int, name: str):
+            logger.info(f"Learned toggle: {name} (note {note})")
+            self._log(f"MIDI: Learned toggle {name} (note {note})")
+        
+        self.midi_router.enter_learn_mode(callback=on_learned)
+        logger.info("Entered MIDI learn mode - press a pad")
+    
+    def action_midi_rename(self) -> None:
+        """Rename selected MIDI toggle."""
+        if not self.midi_router:
+            return
+        
+        toggles = self.midi_router.get_toggle_list()
+        if not toggles or self.midi_selected_toggle >= len(toggles):
+            return
+        
+        note, old_name, _ = toggles[self.midi_selected_toggle]
+        
+        # For now, just log - in future could show input dialog
+        logger.info(f"Rename toggle {note} ({old_name}) - use CLI for now")
+        self._log(f"MIDI: To rename, use CLI: r {note} <new_name>")
+    
+    def action_midi_delete(self) -> None:
+        """Delete selected MIDI toggle."""
+        if not self.midi_router:
+            return
+        
+        toggles = self.midi_router.get_toggle_list()
+        if not toggles or self.midi_selected_toggle >= len(toggles):
+            return
+        
+        note, name, _ = toggles[self.midi_selected_toggle]
+        
+        if self.midi_router.remove_toggle(note):
+            logger.info(f"Deleted toggle {name} (note {note})")
+            self._log(f"MIDI: Deleted toggle {name}")
+            # Adjust selection if needed
+            if self.midi_selected_toggle >= len(toggles) - 1:
+                self.midi_selected_toggle = max(0, len(toggles) - 2)
+    
+    async def action_midi_select_controller(self) -> None:
+        """Show controller selection dialog."""
+        if not self.midi_router:
+            logger.warning("MIDI router not available")
+            return
+        
+        # Get list of available controllers
+        controllers = list_controllers()
+        
+        # Get current controller from config
+        current_controller = None
+        if self.midi_router.config:
+            # Try to get the actual port name being used
+            current_controller = self.midi_router.config.controller.input_port
+            if not current_controller:
+                # Fall back to pattern
+                from midi_infrastructure import find_port_by_pattern, list_available_ports
+                input_ports, _ = list_available_ports()
+                current_controller = find_port_by_pattern(
+                    input_ports, 
+                    self.midi_router.config.controller.name_pattern
+                )
+        
+        # Show modal
+        result = await self.push_screen(ControllerSelectionModal(controllers, current_controller), wait_for_dismiss=True)
+        
+        if result:
+            # Update config with selected controller
+            logger.info(f"Selected controller: {result}")
+            self._update_midi_controller(result)
+    
+    def _update_midi_controller(self, controller_name: str) -> None:
+        """
+        Update MIDI router to use selected controller.
+        
+        Args:
+            controller_name: Full name of the controller port
+        """
+        if not self.midi_router:
+            return
+        
+        try:
+            # Stop current router
+            if self.midi_router.is_running:
+                self.midi_router.stop()
+            
+            # Update config with explicit port name
+            old_config = self.midi_router.config
+            if not old_config:
+                # Create new config
+                config = RouterConfig(
+                    controller=DeviceConfig(
+                        name_pattern="",  # Will use explicit port
+                        input_port=controller_name,
+                        output_port=controller_name
+                    ),
+                    virtual_output=DeviceConfig(name_pattern="MagicBus"),
+                    toggles={}
+                )
+            else:
+                # Update existing config
+                config = RouterConfig(
+                    controller=DeviceConfig(
+                        name_pattern="",  # Clear pattern, use explicit port
+                        input_port=controller_name,
+                        output_port=controller_name
+                    ),
+                    virtual_output=old_config.virtual_output,
+                    toggles=old_config.toggles
+                )
+            
+            # Save config
+            config_path = Path.home() / '.midi_router' / 'config.json'
+            config_manager = ConfigManager(config_path)
+            config_manager.save(config)
+            
+            # Restart router with new config
+            if self.midi_router.start(config):
+                logger.info(f"MIDI router restarted with controller: {controller_name}")
+                self._log(f"MIDI: Switched to controller: {controller_name}")
+            else:
+                logger.error(f"Failed to start MIDI router with controller: {controller_name}")
+                self._log(f"MIDI: Failed to switch controller")
+        
+        except Exception as e:
+            logger.error(f"Error updating MIDI controller: {e}")
+            self._log(f"MIDI: Error switching controller: {e}")
+    
+    def _midi_test_toggle(self) -> None:
+        """Test toggle selected MIDI toggle (for testing without hardware)."""
+        if not self.midi_router:
+            return
+        
+        toggles = self.midi_router.get_toggle_list()
+        if not toggles or self.midi_selected_toggle >= len(toggles):
+            return
+        
+        note, name, state = toggles[self.midi_selected_toggle]
+        logger.info(f"Test toggle {name}: {state} → {not state}")
+    
+    def _log(self, message: str):
+        """Add a message to logs."""
+        self._logs.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - vj_console - INFO - {message}")
+        if len(self._logs) > 500:
+            self._logs.pop(0)
 
     def on_unmount(self) -> None:
         if self.karaoke_engine:
             self.karaoke_engine.stop()
+        if self.midi_router:
+            self.midi_router.stop()
         self.process_manager.cleanup()
 
 
