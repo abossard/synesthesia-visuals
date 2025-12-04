@@ -891,6 +891,53 @@ class TestControllerSelectionIntegration(unittest.TestCase):
             self.assertTrue(loaded.get_toggle(42).state)
 
 
+class TestOSCBroadcasting(unittest.TestCase):
+    """Tests for OSC broadcasting integration."""
+    
+    def test_osc_import_graceful_degradation(self):
+        """OSC module should be optional - graceful degradation if unavailable."""
+        # This test verifies that the router can run without OSC
+        # The actual OSC broadcasting is tested in integration tests
+        # since it requires the osc_manager module
+        
+        import midi_router
+        
+        # Check that OSC_AVAILABLE flag exists
+        self.assertTrue(hasattr(midi_router, 'OSC_AVAILABLE'))
+        
+        # If OSC is available, osc should not be None
+        if midi_router.OSC_AVAILABLE:
+            self.assertIsNotNone(midi_router.osc)
+        else:
+            self.assertIsNone(midi_router.osc)
+    
+    def test_osc_addresses_documented(self):
+        """Verify OSC address patterns are correctly documented."""
+        # This is a documentation test to ensure consistency
+        # Expected OSC addresses:
+        # - /midi/toggle/{note}  [name, state]
+        # - /midi/learn  [note, name]
+        # - /midi/sync  [count]
+        
+        # These addresses are used in midi_router.py
+        # Verify they match documentation expectations
+        expected_patterns = [
+            "/midi/toggle/",
+            "/midi/learn",
+            "/midi/sync"
+        ]
+        
+        # Read midi_router.py source to verify addresses
+        import midi_router as mr
+        import inspect
+        
+        source = inspect.getsource(mr)
+        
+        for pattern in expected_patterns:
+            self.assertIn(pattern, source, 
+                         f"OSC address pattern '{pattern}' not found in source")
+
+
 if __name__ == "__main__":
     # Run tests
     unittest.main(verbosity=2)

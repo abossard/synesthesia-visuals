@@ -232,6 +232,82 @@ Result: **No ambiguity**. Python, Magic, and controller LEDs all agree on state.
 - Magic receives: pad 11 = 127, all others = 0
 - Use Globals to control which scene is visible
 
+## OSC Broadcasting (VJ Bus Integration)
+
+The MIDI router automatically broadcasts toggle state changes via OSC to integrate with the VJ bus architecture.
+
+### OSC Addresses
+
+**Toggle State Changes:**
+```
+/midi/toggle/{note}  [name, state]
+```
+- **note**: MIDI note number (e.g., 40)
+- **name**: Toggle name string (e.g., "TwisterOn")
+- **state**: Float 0.0 (OFF) or 1.0 (ON)
+
+**Example:**
+```
+/midi/toggle/40  ["TwisterOn", 1.0]   # Toggle ON
+/midi/toggle/40  ["TwisterOn", 0.0]   # Toggle OFF
+```
+
+**Learn Mode:**
+```
+/midi/learn  [note, name]
+```
+Sent when a new toggle is learned.
+
+**Startup Sync:**
+```
+/midi/sync  [count]
+```
+Sent on router startup, followed by all toggle states.
+
+### Use Cases
+
+**1. Processing Sketches**
+React to MIDI controller state in Processing:
+```java
+import oscP5.*;
+OscP5 oscP5;
+
+void setup() {
+  oscP5 = new OscP5(this, 9000);
+}
+
+void oscEvent(OscMessage msg) {
+  if (msg.checkAddrPattern("/midi/toggle/40")) {
+    String name = msg.get(0).stringValue();  // "TwisterOn"
+    float state = msg.get(1).floatValue();   // 1.0 or 0.0
+    
+    if (state > 0.5) {
+      // Trigger particle burst
+    }
+  }
+}
+```
+
+**2. Synesthesia Shaders**
+Use MIDI state to control shader parameters via OSC receiver.
+
+**3. Audio Analyzer Coordination**
+Log MIDI state changes alongside audio analysis for synchronized visuals.
+
+**4. Multi-App Sync**
+- Magic receives MIDI directly for immediate control
+- Other VJ apps receive OSC for coordinated effects
+- Single controller controls entire visual pipeline
+
+### OSC Configuration
+
+**Default:** OSC messages sent to `127.0.0.1:9000`
+
+To change OSC target, edit `python-vj/osc_manager.py`:
+```python
+osc = OSCManager(host="192.168.1.100", port=9001)
+```
+
 ## Pass-Through Mode
 
 Any MIDI message that's **not** a configured toggle is forwarded unchanged:

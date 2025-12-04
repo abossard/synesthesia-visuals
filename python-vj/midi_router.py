@@ -4,6 +4,11 @@ MIDI Router Orchestrator
 
 Coordinates MIDI device management, toggle state, and message routing.
 Follows dependency injection pattern for testability.
+
+OSC Integration:
+- Broadcasts toggle state changes to VJ bus
+- Sends /midi/toggle/{note} messages with [name, state]
+- Enables other VJ components to react to MIDI controller state
 """
 
 import json
@@ -18,6 +23,13 @@ from midi_domain import (
     create_state_sync_messages, config_to_dict, config_from_dict
 )
 from midi_infrastructure import MidiDeviceManager
+
+try:
+    from osc_manager import osc
+    OSC_AVAILABLE = True
+except ImportError:
+    OSC_AVAILABLE = False
+    osc = None
 
 logger = logging.getLogger('midi_router')
 
@@ -226,6 +238,18 @@ class MidiRouter:
             self._device_manager.send_to_output(1, output_msg)
         
         logger.info(f"Synced {len(messages)} toggles")
+        
+        # Broadcast all toggle states via OSC
+        if OSC_AVAILABLE and osc:
+            # Send sync message with count
+            osc.send("/midi/sync", len(self._config.toggles))
+            
+            # Send each toggle state
+            for note, toggle in self._config.toggles.items():
+                state_value = 1.0 if toggle.state else 0.0
+                osc.send(f"/midi/toggle/{note}", [toggle.name, state_value])
+            
+            logger.info(f"Broadcast {len(self._config.toggles)} toggle states via OSC")
     
     def _on_midi_message(self, msg: MidiMessage):
         """
@@ -273,11 +297,16 @@ class MidiRouter:
             # Update config
             self._config = new_config
             
-            # Log state change
+            # Get toggle for logging and OSC
             toggle = new_config.get_toggle(msg.note_or_cc)
             if toggle:
                 state_str = "ON" if toggle.state else "OFF"
                 logger.info(f"Toggle {toggle.name} (note {toggle.note_or_cc}): {state_str}")
+                
+                # Broadcast state change via OSC
+                if OSC_AVAILABLE and osc:
+                    state_value = 1.0 if toggle.state else 0.0
+                    osc.send(f"/midi/toggle/{toggle.note_or_cc}", [toggle.name, state_value])
         
         # Send LED feedback to controller
         self._device_manager.send_to_output(0, led_msg)
@@ -319,6 +348,11 @@ class MidiRouter:
             velocity_or_value=0
         )
         self._device_manager.send_to_output(0, led_msg)
+        
+        # Broadcast new toggle via OSC
+        if OSC_AVAILABLE and osc:
+            osc.send(f"/midi/toggle/{new_toggle.note_or_cc}", [new_toggle.name, 0.0])
+            osc.send("/midi/learn", [new_toggle.note_or_cc, new_toggle.name])
         
         # Notify callback
         if self._learn_callback:

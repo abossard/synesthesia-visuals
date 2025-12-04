@@ -125,11 +125,34 @@ Left Side:                    Right Side:
 - State management
 - Config persistence
 - Dependency injection
+- OSC broadcasting (VJ bus integration)
 
 **UI** (midi_console.py)
 - Reactive Textual panels
 - Real-time updates
 - Integrated into vj_console.py
+
+## OSC Broadcasting (VJ Bus)
+
+Toggle state changes are automatically broadcast via OSC to `127.0.0.1:9000`:
+
+```
+/midi/toggle/{note}  [name, state]    # Toggle change
+/midi/learn  [note, name]             # New toggle learned
+/midi/sync  [count]                   # Startup sync
+```
+
+**Example:**
+```
+/midi/toggle/40  ["TwisterOn", 1.0]   # Pad 40 turned ON
+/midi/toggle/40  ["TwisterOn", 0.0]   # Pad 40 turned OFF
+```
+
+**Use this to:**
+- React to MIDI state in Processing sketches
+- Sync Synesthesia shaders with controller state
+- Coordinate multiple VJ apps with one controller
+- Log MIDI events in audio analyzer
 
 ## Tests
 
@@ -138,11 +161,13 @@ Run tests:
 python test_midi_router.py
 ```
 
-33 tests covering:
+45 tests covering:
 - MIDI message parsing
 - Toggle state logic
 - Config serialization
 - State sync messages
+- Controller selection
+- Config persistence with explicit ports
 
 ## Design Philosophy
 
