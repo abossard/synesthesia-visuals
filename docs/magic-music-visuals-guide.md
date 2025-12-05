@@ -516,6 +516,156 @@ You can copy this configuration directly into your Magic project and adjust any 
 
 ---
 
+### 7. Advanced Concepts: Frequency Modifiers and AudioToImage
+
+#### 7.1 Frequency Modifier Concept
+
+**Question: Would a frequency modifier make sense?**
+
+A frequency modifier that shifts all bands up or down (like a pitch shifter) could be useful in specific scenarios, but it's **generally not recommended** as a primary tool for VJ performance for these reasons:
+
+**When it might be useful:**
+- **Live remixing**: If you're performing with tracks that vary wildly in key/pitch, shifting frequency bands could help normalize the visual response
+- **Creative effects**: During a breakdown or special moment, shifting frequencies up could make everything respond to mids instead of bass, creating an unusual visual shift
+- **Genre switching**: Moving from bass-heavy dubstep to vocal-focused pop mid-set
+
+**Why it's typically not needed:**
+- **Musical context**: Most EDM/Techno stays within consistent frequency ranges—kicks are always 40-120 Hz, regardless of the song's musical key
+- **Complexity**: Adding another variable makes the setup harder to predict during live performance
+- **Better alternatives**: The `Multi` sensitivity control already provides a simpler way to adjust overall responsiveness
+
+**If you want to implement it:**
+Create a global `FreqShift` that acts as a multiplier on frequency range expressions:
+```
+Bass_Shifted – Source 0 / Feature Freq. Range (40 * FreqShift)–(120 * FreqShift) Hz
+```
+Set `FreqShift` to:
+- 1.0 = normal
+- 0.8 = shift down (more bass-focused)
+- 1.2 = shift up (more mid-focused)
+
+However, for most live performances, **stick with the standard frequency ranges** and use `Multi` for sensitivity adjustments.
+
+---
+
+#### 7.2 AudioToImage Module Guide
+
+**What is AudioToImage?**
+
+AudioToImage is a special Magic module that converts audio frequency spectrum data into a visual texture/image. Unlike globals (which give you scalar values 0-1), AudioToImage creates a **2D image representation** of your audio spectrum that you can use as a texture source.
+
+**When to use AudioToImage vs. Globals:**
+
+| Feature | Globals (Recommended) | AudioToImage |
+|---------|----------------------|--------------|
+| **Use Case** | Control parameters (scale, rotation, color, intensity) | Create visual representations of spectrum |
+| **Complexity** | Simple - single values | Advanced - 2D texture data |
+| **Performance** | Very efficient | Moderate GPU overhead |
+| **Flexibility** | Any parameter on any module | Image/texture inputs only |
+| **Learning Curve** | Easy | Moderate to steep |
+| **Live Control** | Excellent - predictable | Harder to predict/control |
+
+**Use AudioToImage when:**
+1. You want the **spectrum itself to be visible** (like a classic audio visualizer bars/waveform)
+2. You need to **texture-map audio data** onto 3D geometry or shaders
+3. You're creating **audio-reactive displacement maps** for ISF shaders
+4. You want **per-frequency visual control** rather than broad bands
+
+**Use Globals when:**
+- You want to control **module parameters** (opacity, scale, rotation, color, effects)
+- You need **predictable, smooth audio reactivity**
+- You're performing **live** and need instant understanding of what's happening
+- You want to combine multiple frequency bands into custom expressions
+
+**How to use AudioToImage:**
+
+1. **Add the Module**:
+   - Right-click in Editor → Add → Special → AudioToImage
+
+2. **Configure Audio Input**:
+   - Set **Source** to your audio input (usually Source 0)
+   - Choose **Analysis Type**:
+     - Spectrum: Shows frequency distribution (typical choice)
+     - Waveform: Shows time-domain waveform
+     - Level: Shows overall amplitude
+
+3. **Set Output Dimensions**:
+   - Width: Number of frequency bins (e.g., 256 or 512)
+   - Height: Temporal dimension (how many frames of history)
+   - Higher values = more detail, more GPU load
+
+4. **Use as Texture Source**:
+   ```
+   AudioToImage → ISF Shader (as texture input)
+   AudioToImage → Displace module (as displacement map)
+   AudioToImage → Mix/Composite (visual spectrum overlay)
+   ```
+
+5. **Typical Pattern for Spectrum Visualizer**:
+   ```
+   AudioToImage (Spectrum, 512x1) 
+     → Scale (stretch vertically) 
+     → ColorHSB (colorize by frequency)
+     → Mix over background
+   ```
+
+**Example Use Cases:**
+
+**Classic Spectrum Bars:**
+```
+AudioToImage (Spectrum, 64x1)
+  → Scale (1.0, 100.0) — stretch vertically
+  → Tile (8x1) — create separation between bars
+  → ColorGradient — color by frequency
+  → Add over video
+```
+
+**Displacement Effect:**
+```
+VideoFile
+  → ISF: Displacement
+      ├─ Displacement Map: AudioToImage (Spectrum, 256x1)
+      └─ Amount: [Bass] * 50.0
+```
+
+**Audio-Reactive Texture:**
+```
+AudioToImage (Spectrum, 512x64) — 64 frames of history
+  → Rotate 90° — make time horizontal
+  → FeedbackDelay — create trails
+  → ColorHSB — cycle hue over time
+```
+
+**Can AudioToImage make globals simpler?**
+
+**No** - AudioToImage actually makes things more complex. It's a specialized tool for specific visual effects. For controlling parameters (which is what globals excel at), AudioToImage adds unnecessary complexity.
+
+**Can AudioToImage provide something globals can't?**
+
+**Yes**:
+1. **Spatial frequency data**: See individual frequency bins, not just broad bands
+2. **Temporal visualization**: Show audio history over time (spectrogram)
+3. **Texture-based effects**: Use audio as a displacement map, bump map, or pattern generator
+4. **Visual spectrum display**: Show the actual spectrum to the audience
+
+**Best Practice:**
+
+Use **globals for control**, **AudioToImage for visualization**:
+- Globals drive your effect parameters (scale, rotation, intensity, color)
+- AudioToImage creates spectrum visualizers or audio-reactive textures
+- Combine both: Use globals to modulate AudioToImage's output opacity, scale, or color
+
+**Recommendation for live performance:**
+
+Start with the global setup documented above. Only add AudioToImage if you specifically need:
+- Visible spectrum bars/waveforms
+- Audio-driven displacement/distortion effects
+- Spectrogram-style visuals
+
+The global-based approach is simpler, more performant, and easier to control live. AudioToImage is a powerful specialized tool, but not a replacement for the foundational global setup.
+
+---
+
 ## ISF Shader Integration
 
 ISF (Interactive Shader Format) is a standardized GLSL shader format with JSON metadata. Magic supports ISF natively.
