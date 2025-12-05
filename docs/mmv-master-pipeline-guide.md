@@ -1,667 +1,654 @@
 # Magic Music Visuals: Master Pipeline Guide
 
-A complete, production-ready pipeline for live VJ performance using Magic Music Visuals (MMV). This guide provides a coherent, copy-paste-ready setup with precise naming, expressions, and detailed diagrams.
+A complete, production-ready pipeline for live VJ performance using Magic Music Visuals (MMV). This guide provides a coherent, copy-paste-ready setup with precise naming, expressions, and detailed diagrams featuring the **SongStyle** adaptation system.
 
 ## Table of Contents
 
-1. [High-Level Pipeline Overview](#high-level-pipeline-overview)
-2. [MIDImix Controller Mapping](#midimix-controller-mapping)
-3. [Audio Analysis Globals](#audio-analysis-globals)
-4. [Energy and Beat Globals](#energy-and-beat-globals)
-5. [Buildup and Drop Controls](#buildup-and-drop-controls)
-6. [Generator Bank System](#generator-bank-system)
-7. [Scene Structures](#scene-structures)
-8. [Karaoke Integration](#karaoke-integration)
-9. [Main Scene Assembly](#main-scene-assembly)
-10. [Quick Reference](#quick-reference)
+1. [Audio, MIDI, and Syphon Setup](#audio-midi-and-syphon-setup)
+2. [Global Controls](#global-controls)
+3. [Core Audio Bands and Energy](#core-audio-bands-and-energy)
+4. [Kick Detection and Beat Tracking](#kick-detection-and-beat-tracking)
+5. [Generator Bank System](#generator-bank-system)
+6. [Scene Structures](#scene-structures)
+7. [Main Scene Assembly](#main-scene-assembly)
+8. [Operating the Pipeline](#operating-the-pipeline)
+9. [Quick Reference](#quick-reference)
 
 ---
 
-## High-Level Pipeline Overview
+## Audio, MIDI, and Syphon Setup
 
-This pipeline uses a modular bus architecture for clean signal flow and audio-reactive control:
+### Audio Input
 
-**Components:**
-- **2 generator buses**: `GEN_BUS_A`, `GEN_BUS_B` (crossfaded by buildup/drop)
-- **1 mask bus**: `MASK_BUS` (applies masks and karaoke text overlay)
-- **1 FX bus**: `FX_BUS` (global distortion, warp, color processing)
-- **Karaoke input**: Via Syphon from external app
-- **MIDI controller**: Akai MIDImix for all manual controls
-- **Globals**: Audio bands, energy, buildup, drop, bus selection, randomization
+**Use a loopback device** (e.g., BlackHole / Soundflower) to route your DJ/DAW master output to Magic.
+
+**Configuration:**
+1. Install BlackHole (2ch or 16ch)
+2. Create a Multi-Output Device in Audio MIDI Setup (speakers + BlackHole)
+3. Set system output to Multi-Output Device
+4. In Magic:
+   - Open **Input Sources**
+   - Set **Source 0** to the loopback device
+   - Use **mono** or **left channel** for all audio features
+
+**Assumption:** All audio-driven globals use **Source 0** unless stated otherwise.
+
+### MIDI (Akai MIDImix)
+
+1. Connect MIDImix via USB
+2. Enable it as MIDI input in Magic
+3. Use **MIDI Learn** on each MIDI-driven global
+4. Keep CC/Note layout stable between projects for consistency
+
+### Syphon Karaoke Input
+
+1. Enable Syphon output in your karaoke/text app
+2. In **MASK_BUS** scene:
+   - Add a **SyphonClient** module
+   - Select the karaoke source
+   - Optionally add **LumaKey** to remove black background
 
 ```mermaid
 flowchart TD
-    subgraph INPUT["Audio & MIDI Input"]
-        AUDIO["Audio In<br/>(BlackHole)"]
-        MIDI["MIDImix<br/>MIDI Controller"]
+    subgraph INPUTS["System Inputs"]
+        AUDIO_SYS["DJ/DAW<br/>Audio Output"]
+        MIDI_HW["Akai MIDImix<br/>(USB)"]
+        KARAOKE_APP["Karaoke App<br/>(Syphon Output)"]
     end
     
-    subgraph ANALYSIS["Audio Analysis"]
-        AUDIO --> BANDS["Frequency Bands<br/>Bass, LowMid, Highs"]
-        AUDIO --> ENERGY["Energy Tracking<br/>EnergyFast, EnergySlow"]
-        AUDIO --> KICK["Kick Detection<br/>KickRaw, KickEnv, KickPulse"]
-        AUDIO --> BEAT["Beat Counter<br/>Beat4"]
+    subgraph ROUTING["Audio/MIDI Routing"]
+        AUDIO_SYS --> MULTIOUT["Multi-Output Device<br/>(Speakers + BlackHole)"]
+        MULTIOUT --> SPEAKERS["Speakers"]
+        MULTIOUT --> BLACKHOLE["BlackHole<br/>Loopback"]
+        MIDI_HW --> MIDI_IN["Magic MIDI Input"]
     end
     
-    subgraph CONTROL["Manual Controls"]
-        MIDI --> MULTI["Multi<br/>(Sensitivity)"]
-        MIDI --> BUILDUP["Buildup"]
-        MIDI --> DROP_BTN["Drop Button"]
-        MIDI --> MASTER_INT["MasterIntensity"]
-        MIDI --> BLACKOUT["Blackout"]
+    subgraph MAGIC["Magic Music Visuals"]
+        BLACKHOLE --> SRC0["Source 0<br/>(Audio Analysis)"]
+        MIDI_IN --> MIDI_LEARN["MIDI Learn<br/>(Global Controls)"]
+        KARAOKE_APP --> SYPHON_CLIENT["SyphonClient<br/>(MASK_BUS)"]
     end
     
-    subgraph GLOBALS["Global Expressions"]
-        BANDS --> GLOBAL_EX["Expression Engine"]
-        ENERGY --> GLOBAL_EX
-        KICK --> GLOBAL_EX
-        BEAT --> GLOBAL_EX
-        MULTI --> GLOBAL_EX
-        BUILDUP --> GLOBAL_EX
-        DROP_BTN --> GLOBAL_EX
-        MASTER_INT --> GLOBAL_EX
-    end
-    
-    subgraph GENERATORS["Generator Buses"]
-        GLOBAL_EX --> GENA["GEN_BUS_A<br/>(Intro/Verse)"]
-        GLOBAL_EX --> GENB["GEN_BUS_B<br/>(Buildup/Drop)"]
-        GENA --> GENMIX["GenBankMix<br/>(A/B Crossfade)"]
-        GENB --> GENMIX
-        GENMIX --> GENOUT["GEN_OUT"]
-    end
-    
-    subgraph MASKING["Mask & Karaoke"]
-        GENOUT --> MASK_IN["MASK_BUS<br/>SceneInput"]
-        KARAOKE["Karaoke<br/>(Syphon)"] --> MASK_IN
-        MASK_IN --> MASK_OUT["MASK_OUT"]
-    end
-    
-    subgraph FX["Effects Processing"]
-        MASK_OUT --> FX_IN["FX_BUS<br/>SceneInput"]
-        FX_IN --> FX_PROC["Warp + Color<br/>Processing"]
-        FX_PROC --> FX_OUT["FX_OUT"]
-    end
-    
-    subgraph OUTPUT["Master Output"]
-        FX_OUT --> MASTER_MIX["Master Mix<br/>(Intensity × Blackout)"]
-        BLACKOUT --> MASTER_MIX
-        MASTER_MIX --> SCREEN["Screen Output"]
-    end
-    
-    style INPUT fill:#e1f5ff
-    style ANALYSIS fill:#fff3e0
-    style CONTROL fill:#f3e5f5
-    style GLOBALS fill:#e8f5e9
-    style GENERATORS fill:#fff9c4
-    style MASKING fill:#fce4ec
-    style FX fill:#e0f2f1
-    style OUTPUT fill:#f1f8e9
-```
-
-**Conceptual Signal Flow:**
-
-```
-Audio → Bands + Energy + Kick + Beat4
-           ↓
-MIDImix → Multi, Buildup, Drop, Master
-           ↓
-      Globals/Expressions
-           ↓
-    ┌──────────────┐
-    │  GEN_BUS_A   │ (Intro/Verse shaders)
-    └──────────────┘
-           ↓
-    ┌──────────────┐
-    │  GEN_BUS_B   │ (Buildup/Drop shaders)
-    └──────────────┘
-           ↓
-   Mix(A,B) with GenBankMix → GEN_OUT
-           ↓
-    ┌──────────────┐
-    │  MASK_BUS    │ (GEN_OUT + Karaoke text)
-    └──────────────┘
-           ↓
-    ┌──────────────┐
-    │   FX_BUS     │ (Warp, color processing)
-    └──────────────┘
-           ↓
-  Master control → Screen
+    style INPUTS fill:#e1f5ff
+    style ROUTING fill:#fff3e0
+    style MAGIC fill:#e8f5e9
 ```
 
 ---
 
-## MIDImix Controller Mapping
+## Global Controls
 
-The Akai MIDImix provides 8 strips with faders, knobs, and buttons, plus a master fader. This section defines the **exact** CC numbers and roles for each control.
+All expressions use `clamp(value, min, max)` for range limiting.
 
-### Strip 8: Global Master Controls
+**Note:** In modifier chains, `x` refers to the incoming value at that stage.
 
-**Purpose**: Overall sensitivity, buildup, randomization, and master intensity.
+### Meta Controls
 
-| Control | CC# | Global Name | Range | Purpose |
-|---------|-----|-------------|-------|---------|
-| Knob 1 | 24 | `Multi` | 0.3–2.0 | Audio sensitivity multiplier |
-| Knob 2 | 25 | `Buildup` | 0.0–1.0 | Manual buildup level |
-| Knob 3 | 26 | `RandGlobalAmt` | 0.0–1.0 | Global randomization amount |
-| Fader | 27 | `MasterIntensity` | 0.0–1.0 | Master effect intensity |
-| Button A (lower) | Note 27 | `Drop` | 0/1 toggle | Drop trigger |
-| Button B (upper) | Note 43 | `Blackout` | 0/1 toggle | Emergency blackout |
+#### Multi (Global Audio Sensitivity)
 
-### Strip 1: Generator Bank Controls
-
-**Purpose**: Generator bus selection, density, randomization.
-
-| Control | CC# | Global Name | Range | Purpose |
-|---------|-----|-------------|-------|---------|
-| Knob 1 | 16 | `GenBankManual` | 0.0–1.0 | Manual A/B crossfade |
-| Knob 2 | 17 | `GenLayerDensity` | 0.0–1.0 | Layer visibility density |
-| Knob 3 | 18 | `GenRandAmt` | 0.0–1.0 | Generator randomization amount |
-| Fader | 19 | `GenIntensityManual` | 0.0–1.0 | Generator intensity control |
-| Button A | Note 1 | `GenRandomize` | Bang | Randomize gen indices |
-| Button B | Note 17 | `GenRandLock` | 0/1 toggle | Lock randomization |
-
-### Strip 2: Mask Bus Controls
-
-**Purpose**: Mask strength, karaoke opacity, randomization.
-
-| Control | CC# | Global Name | Range | Purpose |
-|---------|-----|-------------|-------|---------|
-| Knob 1 | 20 | `MaskAmountManual` | 0.0–1.0 | Mask strength control |
-| Knob 2 | 21 | `KaraokeOpacityManual` | 0.0–1.0 | Karaoke text opacity |
-| Knob 3 | 22 | `MaskRandAmt` | 0.0–1.0 | Mask randomization amount |
-| Fader | 23 | `MaskBusMix` | 0.0–1.0 | Mask bus mix level |
-| Button A | Note 2 | `MaskRandomize` | Bang | Randomize mask index |
-| Button B | Note 18 | `MaskRandLock` | 0/1 toggle | Lock mask randomization |
-
-### Strip 3: FX Bus Controls
-
-**Purpose**: Effects processing (warp, color shift).
-
-| Control | CC# | Global Name | Range | Purpose |
-|---------|-----|-------------|-------|---------|
-| Knob 1 | 28 | `FXAmountManual` | 0.0–1.0 | FX intensity control |
-| Knob 2 | 29 | `FXWarpManual` | 0.0–1.0 | Warp/distortion amount |
-| Knob 3 | 30 | `FXColorShiftManual` | 0.0–1.0 | Color shift amount |
-| Fader | 31 | `FXBusMix` | 0.0–1.0 | FX bus mix level |
-| Button A | Note 3 | `FXRandomize` | Bang | Randomize FX selection |
-| Button B | Note 19 | `FXRandLock` | 0/1 toggle | Lock FX randomization |
-
-### Strips 4–7: Reserved for Expansion
-
-These strips are available for:
-- Camera controls (position, zoom, rotation)
-- Color palette selection
-- Special effect triggers
-- Scene-specific parameters
-
----
-
-## Audio Analysis Globals
-
-All audio analysis uses **Source 0** (main stereo audio input, typically BlackHole).
-
-**Note**: In all expressions below, `x` refers to the incoming value at that stage of the modifier chain.
-
-### Multi (Overall Sensitivity)
-
-**Multi** – Source: MIDI CC #24 (Strip 8 / Knob 1)
+**Multi** – Source: MIDImix Strip 8 / Knob 1
 
 Modifiers:
-1. **Expression**: `0.3 + x * 1.7`
+1. **Smooth**: `0.3`
+2. **Expression**: `Multi = 0.3 + x * 1.7`
 
-**Result**: Knob position [0,1] → Multi range [0.3, 2.0]
+**Result:** Knob position [0,1] → Multi range [0.3, 2.0]
 
-**Purpose**: Global sensitivity multiplier for all audio bands.
+**Purpose:** Global audio sensitivity multiplier for all frequency bands.
 
 ```mermaid
 flowchart TD
-    MIDI_IN["MIDI CC #24<br/>(Strip 8 Knob 1)"] --> EXPR["Expression:<br/>0.3 + x * 1.7"]
-    EXPR --> MULTI["Multi<br/>(Range: 0.3–2.0)"]
+    MIDI_M["MIDI Strip 8 Knob 1<br/>(CC #24)"] --> SMOOTH_M["Smooth: 0.3"]
+    SMOOTH_M --> EXPR_M["Expression:<br/>Multi = 0.3 + x * 1.7"]
+    EXPR_M --> MULTI["Multi<br/>(Range: 0.3–2.0)"]
     
-    style MIDI_IN fill:#e3f2fd
-    style EXPR fill:#fff3e0
+    style MIDI_M fill:#e3f2fd
+    style SMOOTH_M fill:#fff3e0
+    style EXPR_M fill:#fff9c4
     style MULTI fill:#e8f5e9
 ```
 
 ---
 
-### Frequency Bands
+#### SongStyle (Track Personality / Adaptation)
 
-#### Bass
-
-**Bass** – Source 0 / Feature: Freq. Range 20–120 Hz
-
-Modifiers:
-1. **Smooth**: `0.15`
-2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
-
-**Purpose**: Kick drum and sub-bass detection.
-
-```mermaid
-flowchart TD
-    AUDIO["Audio Source 0<br/>(20–120 Hz)"] --> SMOOTH1["Smooth: 0.15"]
-    SMOOTH1 --> EXPR1["Expression:<br/>min(max(x * Multi * 2.0, 0), 1)"]
-    EXPR1 --> BASS["Bass<br/>(Range: 0–1)"]
-    
-    MULTI2["Multi"] -.-> EXPR1
-    
-    style AUDIO fill:#e3f2fd
-    style SMOOTH1 fill:#fff3e0
-    style EXPR1 fill:#fff9c4
-    style BASS fill:#e8f5e9
-    style MULTI2 fill:#f3e5f5
-```
-
-#### LowMid
-
-**LowMid** – Source 0 / Feature: Freq. Range 120–350 Hz
-
-Modifiers:
-1. **Smooth**: `0.15`
-2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
-
-**Purpose**: Body of drums and low synth tones.
-
-#### Highs
-
-**Highs** – Source 0 / Feature: Freq. Range 2000–6000 Hz
-
-Modifiers:
-1. **Smooth**: `0.15`
-2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
-
-**Purpose**: Brightness, hi-hats, cymbals, detail.
-
-**Optional Additional Bands**:
-- **VoiceMid** (350–2000 Hz) – Vocals and lead synth presence
-- **VeryHigh** (6000–20000 Hz) – Air, sparkle, fine detail
-
----
-
-### MasterIntensity
-
-**MasterIntensity** – Source: MIDI CC #27 (Strip 8 / Fader)
+**SongStyle** – Source: MIDImix Strip 7 / Knob 1
 
 Modifiers:
 1. **Smooth**: `0.3`
+2. **Expression**: `SongStyle = clamp(x, 0, 1)`
 
-**Purpose**: Master control for overall effect intensity.
+**Interpretation:**
+- **0.0** → Bass-focused, slower kick response, less randomization
+- **1.0** → Highs/mids-focused, faster kick response, more randomization
+
+**Purpose:** Global track adaptation knob that affects energy mixing, kick envelope speed, and randomization strength.
 
 ```mermaid
 flowchart TD
-    MIDI_FADER["MIDI CC #27<br/>(Strip 8 Fader)"] --> SMOOTH_M["Smooth: 0.3"]
-    SMOOTH_M --> MASTER_INT["MasterIntensity<br/>(Range: 0–1)"]
+    MIDI_SS["MIDI Strip 7 Knob 1<br/>(Choose free knob)"] --> SMOOTH_SS["Smooth: 0.3"]
+    SMOOTH_SS --> EXPR_SS["Expression:<br/>SongStyle = clamp(x, 0, 1)"]
+    EXPR_SS --> SONGSTYLE["SongStyle<br/>(Range: 0–1)"]
     
-    style MIDI_FADER fill:#e3f2fd
-    style SMOOTH_M fill:#fff3e0
-    style MASTER_INT fill:#e8f5e9
+    SONGSTYLE -.-> EFFECTS["Affects:"]
+    EFFECTS -.-> EFF1["EnergyFast mixing"]
+    EFFECTS -.-> EFF2["KickEnvFinal speed"]
+    EFFECTS -.-> EFF3["Randomization strength"]
+    
+    style MIDI_SS fill:#e3f2fd
+    style SMOOTH_SS fill:#fff3e0
+    style EXPR_SS fill:#fff9c4
+    style SONGSTYLE fill:#e8f5e9
+    style EFFECTS fill:#fce4ec
+    style EFF1 fill:#f3e5f5
+    style EFF2 fill:#f3e5f5
+    style EFF3 fill:#f3e5f5
 ```
 
 ---
 
-## Energy and Beat Globals
+#### Buildup
 
-### Energy Tracking
-
-#### EnergyFast (Instant Intensity)
-
-**EnergyFast** – Source: Expression-only (no audio source)
+**Buildup** – Source: MIDImix Strip 8 / Knob 2
 
 Modifiers:
-1. **Expression**: `Bass * 0.5 + LowMid * 0.3 + Highs * 0.2`
-2. **Smooth**: `0.4`
-3. **Expression**: `min(max(x, 0), 1)`
+1. **Smooth**: `0.5`
+2. **Expression**: `Buildup = clamp(x, 0, 1)`
 
-**Purpose**: Real-time "how loud is it right now" indicator.
+**Purpose:** Manual control for building tension before a drop.
 
 ```mermaid
 flowchart TD
-    BASS_IN["Bass"] --> EXPR_E1["Expression:<br/>Bass * 0.5 + LowMid * 0.3 + Highs * 0.2"]
-    LOWMID_IN["LowMid"] --> EXPR_E1
-    HIGHS_IN["Highs"] --> EXPR_E1
+    MIDI_B["MIDI Strip 8 Knob 2<br/>(CC #25)"] --> SMOOTH_B["Smooth: 0.5"]
+    SMOOTH_B --> EXPR_B["Expression:<br/>Buildup = clamp(x, 0, 1)"]
+    EXPR_B --> BUILDUP["Buildup<br/>(Range: 0–1)"]
     
-    EXPR_E1 --> SMOOTH_E1["Smooth: 0.4"]
-    SMOOTH_E1 --> EXPR_E2["Expression:<br/>min(max(x, 0), 1)"]
-    EXPR_E2 --> ENERGY_FAST["EnergyFast<br/>(Range: 0–1)"]
+    style MIDI_B fill:#e3f2fd
+    style SMOOTH_B fill:#fff3e0
+    style EXPR_B fill:#fff9c4
+    style BUILDUP fill:#e8f5e9
+```
+
+---
+
+#### Drop (Latched Drop State)
+
+**Drop** – Source: MIDImix Strip 8 / Button A (lower)
+
+Modifiers:
+1. **Trigger (Integer)**: Threshold `0.5`
+2. **Wrap**: `2.0`
+
+**Result:** Toggles between 0 and 1 on each button press.
+
+**Purpose:** Activate "drop" mode for maximum intensity.
+
+```mermaid
+flowchart TD
+    MIDI_D["MIDI Strip 8 Button A<br/>(Note 27)"] --> TRIG_D["Trigger (Integer):<br/>Threshold 0.5"]
+    TRIG_D --> WRAP_D["Wrap: 2.0"]
+    WRAP_D --> DROP["Drop<br/>(Values: 0, 1)"]
+    
+    style MIDI_D fill:#e3f2fd
+    style TRIG_D fill:#fff3e0
+    style WRAP_D fill:#fff3e0
+    style DROP fill:#e8f5e9
+```
+
+---
+
+#### DropPulse (One-Shot Edge)
+
+**DropPulse** – Source: same button as Drop (MIDImix Strip 8 / Button A)
+
+Modifiers:
+1. **Threshold**: `0.5`
+
+**Result:** Spike at press (0→1 only while button is pressed).
+
+**Purpose:** Trigger randomization on drop.
+
+---
+
+#### Blackout
+
+**Blackout** – Source: MIDImix Strip 8 / Button B (upper)
+
+Modifiers:
+1. **Trigger (Integer)**: Threshold `0.5`
+2. **Wrap**: `2.0`
+
+**Result:** Toggles between 0 (normal) and 1 (blackout).
+
+**Purpose:** Emergency "kill all visuals" button.
+
+---
+
+#### MasterIntensity
+
+**MasterIntensity** – Source: MIDImix Strip 8 / Fader
+
+Modifiers:
+1. **Smooth**: `0.3`
+2. **Expression**: `MasterIntensity = clamp(x, 0, 1)`
+
+**Purpose:** Master control for overall output intensity.
+
+---
+
+#### RandGlobalAmt (Global Random Strength)
+
+**RandGlobalAmt** – Source: MIDImix Strip 8 / Knob 3
+
+Modifiers:
+1. **Smooth**: `0.3`
+2. **Expression**: `RandGlobalAmt = clamp(x, 0, 1)`
+
+**Purpose:** Global randomization amount affecting all randomized parameters.
+
+---
+
+## Core Audio Bands and Energy
+
+### Frequency Bands
+
+All bands use **Source 0** with the specified frequency range.
+
+#### Bass
+
+**Bass** – Source: Source 0 / Freq. Range 20–120 Hz
+
+Modifiers:
+1. **Smooth**: `0.15`
+2. **Expression**: `Bass = clamp(x * Multi * 2.0, 0, 1)`
+
+**Purpose:** Kick drum and sub-bass detection.
+
+```mermaid
+flowchart TD
+    AUDIO_B["Source 0<br/>(20–120 Hz)"] --> SMOOTH_B1["Smooth: 0.15"]
+    SMOOTH_B1 --> EXPR_B1["Expression:<br/>Bass = clamp(x * Multi * 2.0, 0, 1)"]
+    MULTI_B["Multi"] -.-> EXPR_B1
+    EXPR_B1 --> BASS["Bass<br/>(Range: 0–1)"]
+    
+    style AUDIO_B fill:#e3f2fd
+    style SMOOTH_B1 fill:#fff3e0
+    style EXPR_B1 fill:#fff9c4
+    style MULTI_B fill:#f3e5f5
+    style BASS fill:#e8f5e9
+```
+
+---
+
+#### LowMid
+
+**LowMid** – Source: Source 0 / Freq. Range 120–350 Hz
+
+Modifiers:
+1. **Smooth**: `0.15`
+2. **Expression**: `LowMid = clamp(x * Multi * 2.0, 0, 1)`
+
+**Purpose:** Drum body and low synth tones.
+
+---
+
+#### Highs
+
+**Highs** – Source: Source 0 / Freq. Range 2000–6000 Hz
+
+Modifiers:
+1. **Smooth**: `0.15`
+2. **Expression**: `Highs = clamp(x * Multi * 2.0, 0, 1)`
+
+**Purpose:** Hi-hats, cymbals, brightness, detail.
+
+**Optional:** Add **VoiceMid** (350–2000 Hz) and **VeryHigh** (6000–20000 Hz) using the same pattern.
+
+---
+
+### Energy Tracking
+
+#### EnergyFast (SongStyle-Aware Band Mix)
+
+**EnergyFast** – Source: none (Expression-only)
+
+Modifiers:
+1. **Expression**:
+```
+EnergyFast_raw = Bass * (0.6 - 0.4 * SongStyle)
+               + LowMid * (0.2 + 0.2 * SongStyle)
+               + Highs * (0.2 + 0.2 * SongStyle);
+
+EnergyFast = clamp(EnergyFast_raw, 0, 1);
+```
+
+**Optional:** Add `Smooth: 0.4` modifier after Expression if you want calmer response.
+
+**Effect:**
+- **SongStyle = 0.0**: `Bass * 0.6 + LowMid * 0.2 + Highs * 0.2` (bass-focused)
+- **SongStyle = 1.0**: `Bass * 0.2 + LowMid * 0.4 + Highs * 0.4` (highs/mids-focused)
+
+**Purpose:** Real-time intensity that adapts to track personality.
+
+```mermaid
+flowchart TD
+    BASS_IN["Bass"] --> EXPR_EF["Expression:<br/>EnergyFast_raw =<br/>Bass * (0.6 - 0.4 * SongStyle)<br/>+ LowMid * (0.2 + 0.2 * SongStyle)<br/>+ Highs * (0.2 + 0.2 * SongStyle);<br/><br/>EnergyFast = clamp(EnergyFast_raw, 0, 1)"]
+    LOWMID_IN["LowMid"] --> EXPR_EF
+    HIGHS_IN["Highs"] --> EXPR_EF
+    SONGSTYLE_IN["SongStyle"] -.-> EXPR_EF
+    
+    EXPR_EF --> SMOOTH_EF["Optional Smooth: 0.4"]
+    SMOOTH_EF --> ENERGYFAST["EnergyFast<br/>(Range: 0–1)"]
     
     style BASS_IN fill:#f3e5f5
     style LOWMID_IN fill:#f3e5f5
     style HIGHS_IN fill:#f3e5f5
-    style EXPR_E1 fill:#fff9c4
-    style SMOOTH_E1 fill:#fff3e0
-    style EXPR_E2 fill:#fff9c4
-    style ENERGY_FAST fill:#e8f5e9
-```
-
-#### EnergySlow (Build-Up Level)
-
-**EnergySlow** – Source: EnergyFast / Feature: Value
-
-Modifiers:
-1. **Average**: `4.0` (seconds)
-2. **Expression**: `min(max(x, 0), 1)`
-
-**Purpose**: Averaged energy over time for gradual intensity changes.
-
-**Use for**: Layer count, geometry complexity, slowly growing brightness/feedback.
-
-```mermaid
-flowchart TD
-    ENERGY_FAST_IN["EnergyFast"] --> AVG["Average: 4.0 seconds"]
-    AVG --> EXPR_ES["Expression:<br/>min(max(x, 0), 1)"]
-    EXPR_ES --> ENERGY_SLOW["EnergySlow<br/>(Range: 0–1)"]
-    
-    style ENERGY_FAST_IN fill:#f3e5f5
-    style AVG fill:#fff3e0
-    style EXPR_ES fill:#fff9c4
-    style ENERGY_SLOW fill:#e8f5e9
+    style SONGSTYLE_IN fill:#fce4ec
+    style EXPR_EF fill:#fff9c4
+    style SMOOTH_EF fill:#fff3e0
+    style ENERGYFAST fill:#e8f5e9
 ```
 
 ---
 
-### Kick Detection
+#### EnergySlow
+
+**EnergySlow** – Source: EnergyFast / Feature Value
+
+Modifiers:
+1. **Average**: `4.0` (seconds)
+2. **Expression**: `EnergySlow = clamp(x, 0, 1)`
+
+**Purpose:** Averaged intensity for gradual changes (layer count, complexity, feedback).
+
+```mermaid
+flowchart TD
+    ENERGYFAST_IN["EnergyFast"] --> AVG_ES["Average: 4.0 seconds"]
+    AVG_ES --> EXPR_ES["Expression:<br/>EnergySlow = clamp(x, 0, 1)"]
+    EXPR_ES --> ENERGYSLOW["EnergySlow<br/>(Range: 0–1)"]
+    
+    style ENERGYFAST_IN fill:#f3e5f5
+    style AVG_ES fill:#fff3e0
+    style EXPR_ES fill:#fff9c4
+    style ENERGYSLOW fill:#e8f5e9
+```
+
+---
+
+## Kick Detection and Beat Tracking
+
+### Kick Envelope Chain
 
 #### KickRaw
 
-**KickRaw** – Source 0 / Feature: Freq. Range 40–120 Hz
+**KickRaw** – Source: Source 0 / Freq. Range 40–120 Hz
 
 Modifiers:
 1. **Smooth**: `0.05`
 2. **Peak**: `0.5`
 
-**Purpose**: Raw kick transient detection.
+**Purpose:** Raw kick transient detection.
 
-#### KickEnv
+---
 
-**KickEnv** – Source: KickRaw / Feature: Value
+#### KickEnvSlow
 
-Modifiers:
-1. **Smooth**: `0.35`
-2. **Expression**: `min(x * 2.0, 1)`
-
-**Purpose**: Smooth envelope that bumps on each kick and decays between beats.
-
-#### KickPulse
-
-**KickPulse** – Source: KickEnv / Feature: Value
+**KickEnvSlow** – Source: KickRaw / Feature Value
 
 Modifiers:
-1. **Threshold**: `0.6` (outputs 0 or 1)
-2. **Trigger (Integer)**: Threshold `0.5` (optional for clean pulses)
+1. **Smooth**: `0.6`
 
-**Purpose**: Binary kick trigger for one-shot events (flashes, step changes).
+**Purpose:** Slow kick envelope for bass-heavy tracks.
+
+---
+
+#### KickEnvFast
+
+**KickEnvFast** – Source: KickRaw / Feature Value
+
+Modifiers:
+1. **Smooth**: `0.15`
+
+**Purpose:** Fast kick envelope for bright, snappy tracks.
+
+---
+
+#### KickEnvFinal (SongStyle Blend)
+
+**KickEnvFinal** – Source: none (Expression-only)
+
+Modifiers:
+1. **Expression**:
+```
+KickEnvFinal = clamp(
+    KickEnvSlow * (1 - SongStyle) + KickEnvFast * SongStyle,
+    0, 1
+);
+```
+
+**Effect:**
+- **SongStyle = 0.0**: Uses KickEnvSlow (slower, more sustained response)
+- **SongStyle = 1.0**: Uses KickEnvFast (faster, snappier response)
+
+**Purpose:** Adaptive kick envelope that matches track character.
 
 ```mermaid
 flowchart TD
-    AUDIO_KICK["Audio Source 0<br/>(40–120 Hz)"] --> SMOOTH_K1["Smooth: 0.05"]
-    SMOOTH_K1 --> PEAK_K["Peak: 0.5"]
-    PEAK_K --> KICK_RAW["KickRaw"]
+    AUDIO_K["Source 0<br/>(40–120 Hz)"] --> SMOOTH_KR["Smooth: 0.05"]
+    SMOOTH_KR --> PEAK_K["Peak: 0.5"]
+    PEAK_K --> KICKRAW["KickRaw"]
     
-    KICK_RAW --> SMOOTH_K2["Smooth: 0.35"]
-    SMOOTH_K2 --> EXPR_K["Expression:<br/>min(x * 2.0, 1)"]
-    EXPR_K --> KICK_ENV["KickEnv"]
+    KICKRAW --> SMOOTH_KS["Smooth: 0.6"]
+    SMOOTH_KS --> KICKENVSLOW["KickEnvSlow"]
     
-    KICK_ENV --> THRESH_K["Threshold: 0.6"]
-    THRESH_K --> TRIG_K["Trigger (Integer):<br/>Threshold 0.5"]
-    TRIG_K --> KICK_PULSE["KickPulse<br/>(0 or 1)"]
+    KICKRAW --> SMOOTH_KF["Smooth: 0.15"]
+    SMOOTH_KF --> KICKENVFAST["KickEnvFast"]
     
-    style AUDIO_KICK fill:#e3f2fd
-    style KICK_RAW fill:#e8f5e9
-    style KICK_ENV fill:#e8f5e9
-    style KICK_PULSE fill:#e8f5e9
+    KICKENVSLOW --> EXPR_KEF["Expression:<br/>KickEnvFinal = clamp(<br/>KickEnvSlow * (1 - SongStyle)<br/>+ KickEnvFast * SongStyle,<br/>0, 1)"]
+    KICKENVFAST --> EXPR_KEF
+    SONGSTYLE_K["SongStyle"] -.-> EXPR_KEF
+    EXPR_KEF --> KICKENVFINAL["KickEnvFinal<br/>(Range: 0–1)"]
+    
+    style AUDIO_K fill:#e3f2fd
+    style KICKRAW fill:#e8f5e9
+    style KICKENVSLOW fill:#e8f5e9
+    style KICKENVFAST fill:#e8f5e9
+    style SONGSTYLE_K fill:#fce4ec
+    style EXPR_KEF fill:#fff9c4
+    style KICKENVFINAL fill:#e8f5e9
 ```
 
 ---
 
-### Beat Counter
+### Beat Tracking
 
-#### Beat4 (4-Beat Counter)
+#### KickPulse
 
-**Beat4** – Source: KickPulse / Feature: Value
+**KickPulse** – Source: KickEnvFinal / Feature Value
+
+Modifiers:
+1. **Threshold**: `0.6`
+2. **Trigger (Integer)**: Threshold `0.5`
+
+**Result:** Clean 0→1 pulses on each kick attack.
+
+**Purpose:** Binary kick trigger for one-shot events.
+
+---
+
+#### Beat4 (4-Step Counter)
+
+**Beat4** – Source: KickPulse / Feature Value
 
 Modifiers:
 1. **Trigger (Integer)**: Threshold `0.5`
 2. **Increase**: Step `1`
 3. **Wrap**: `4.0`
 
-**Result**: Cycles through 0 → 1 → 2 → 3 → 0 (repeating) in sync with kicks.
+**Result:** Sequence 0, 1, 2, 3, 0, 1, …
 
-**Typical Usage in Expressions**:
-- `Beat4 == 0` → "bar 1" accents
-- `Beat4 % 2` → every second beat
-- `1 + 0.2 * (Beat4 == 0)` → boost on first beat
+**Purpose:** 4-beat counter for structured patterns.
 
 ```mermaid
 flowchart TD
-    KICK_PULSE_IN["KickPulse"] --> TRIG_B["Trigger (Integer):<br/>Threshold 0.5"]
-    TRIG_B --> INC_B["Increase:<br/>Step 1"]
-    INC_B --> WRAP_B["Wrap: 4.0"]
-    WRAP_B --> BEAT4["Beat4<br/>(Values: 0, 1, 2, 3)"]
+    KICKENVFINAL_IN["KickEnvFinal"] --> THRESH_KP["Threshold: 0.6"]
+    THRESH_KP --> TRIG_KP["Trigger (Integer):<br/>Threshold 0.5"]
+    TRIG_KP --> KICKPULSE["KickPulse<br/>(0 or 1)"]
     
-    style KICK_PULSE_IN fill:#f3e5f5
-    style TRIG_B fill:#fff3e0
-    style INC_B fill:#fff3e0
-    style WRAP_B fill:#fff3e0
+    KICKPULSE --> TRIG_B4["Trigger (Integer):<br/>Threshold 0.5"]
+    TRIG_B4 --> INC_B4["Increase:<br/>Step 1"]
+    INC_B4 --> WRAP_B4["Wrap: 4.0"]
+    WRAP_B4 --> BEAT4["Beat4<br/>(Values: 0, 1, 2, 3)"]
+    
+    style KICKENVFINAL_IN fill:#f3e5f5
+    style KICKPULSE fill:#e8f5e9
     style BEAT4 fill:#e8f5e9
 ```
 
 ---
 
-## Buildup and Drop Controls
-
-### Buildup
-
-**Buildup** – Source: MIDI CC #25 (Strip 8 / Knob 2)
-
-Modifiers:
-1. **Smooth**: `0.5`
-2. **Expression**: `min(max(x, 0), 1)`
-
-**Purpose**: Manual control for building tension before a drop.
-
-```mermaid
-flowchart TD
-    MIDI_BUILD["MIDI CC #25<br/>(Strip 8 Knob 2)"] --> SMOOTH_BUILD["Smooth: 0.5"]
-    SMOOTH_BUILD --> EXPR_BUILD["Expression:<br/>min(max(x, 0), 1)"]
-    EXPR_BUILD --> BUILDUP["Buildup<br/>(Range: 0–1)"]
-    
-    style MIDI_BUILD fill:#e3f2fd
-    style SMOOTH_BUILD fill:#fff3e0
-    style EXPR_BUILD fill:#fff9c4
-    style BUILDUP fill:#e8f5e9
-```
-
----
-
-### Drop (Toggle)
-
-**Drop** – Source: MIDI Note 27 (Strip 8 / Button A)
-
-Modifiers:
-1. **Trigger (Integer)**: Threshold `0.5`
-2. **Wrap**: `2.0`
-
-**Result**: Toggles between 0 and 1 on each button press.
-
-**Purpose**: Activate "drop" mode for heavy visuals.
-
-```mermaid
-flowchart TD
-    MIDI_DROP["MIDI Note 27<br/>(Strip 8 Button A)"] --> TRIG_DROP["Trigger (Integer):<br/>Threshold 0.5"]
-    TRIG_DROP --> WRAP_DROP["Wrap: 2.0"]
-    WRAP_DROP --> DROP["Drop<br/>(Values: 0, 1)"]
-    
-    style MIDI_DROP fill:#e3f2fd
-    style TRIG_DROP fill:#fff3e0
-    style WRAP_DROP fill:#fff3e0
-    style DROP fill:#e8f5e9
-```
-
----
-
-### DropPulse (One-Shot Spike)
-
-**DropPulse** – Source: MIDI Note 27 (same as Drop)
-
-Modifiers:
-1. **Threshold**: `0.5`
-
-**Result**: Spike at press (0→1 only while button is pressed).
-
-**Purpose**: Trigger randomization or one-shot effects on drop.
-
----
-
-### Blackout (Emergency Kill)
-
-**Blackout** – Source: MIDI Note 43 (Strip 8 / Button B)
-
-Modifiers:
-1. **Trigger (Integer)**: Threshold `0.5`
-2. **Wrap**: `2.0`
-
-**Result**: Toggles between 0 (normal) and 1 (blackout).
-
-**Purpose**: Emergency "kill all visuals" button.
-
----
-
 ## Generator Bank System
 
-The generator bank system provides two independent shader buses (A and B) that are crossfaded based on song energy and manual control.
+Two generator scenes (GEN_BUS_A and GEN_BUS_B) with N slots each (example: N = 3).
 
-**Architecture**:
-- **GEN_BUS_A**: "Intro/Verse" look (calmer, geometric patterns)
-- **GEN_BUS_B**: "Buildup/Drop" look (intense, chaotic patterns)
-- Each bus contains N shaders (e.g., 3) with index-based selection
-- Crossfade between A and B driven by `GenBankMix`
-
-### GenBankMix (A/B Crossfade)
+### Generator Bank Mix (A vs B)
 
 #### GenBankManual
 
-**GenBankManual** – Source: MIDI CC #16 (Strip 1 / Knob 1)
+**GenBankManual** – Source: MIDImix Strip 1 / Knob 1
 
 Modifiers:
 1. **Smooth**: `0.3`
 
-**Purpose**: Manual control for A→B crossfade.
+**Purpose:** Manual A/B crossfade control.
 
-#### GenBankMix (Derived)
+---
 
-**GenBankMix** – Source: Expression-only
+#### GenBankMix
+
+**GenBankMix** – Source: none (Expression-only)
 
 Modifiers:
-1. **Expression**: `min(max(0.5 * Buildup + 0.5 * GenBankManual + Drop * (1 - Buildup), 0), 1)`
+1. **Expression**:
+```
+// Base crossfade from A to B:
+mix_base = 0.5 * Buildup + 0.5 * GenBankManual;
 
-**Effect**:
-- `Buildup` and `GenBankManual` both push from A→B
-- `Drop` forces toward B even if `Buildup` is low
+// Drop forces towards B:
+GenBankMix = clamp(mix_base + Drop * (1 - mix_base), 0, 1);
+```
+
+**Effect:**
+- Buildup and GenBankManual both push from A→B
+- Drop forces toward B even if Buildup is low
 - Range: 0.0 (100% A) → 1.0 (100% B)
+
+**Purpose:** Automatic and manual generator bus crossfade.
 
 ```mermaid
 flowchart TD
-    BUILDUP_IN["Buildup"] --> EXPR_MIX["Expression:<br/>min(max(0.5 * Buildup + 0.5 * GenBankManual<br/>+ Drop * (1 - Buildup), 0), 1)"]
-    GENBANKMAN["GenBankManual"] --> EXPR_MIX
-    DROP_IN["Drop"] --> EXPR_MIX
+    BUILDUP_IN["Buildup"] --> EXPR_GBM["Expression:<br/>mix_base = 0.5 * Buildup + 0.5 * GenBankManual;<br/><br/>GenBankMix = clamp(mix_base + Drop * (1 - mix_base), 0, 1)"]
+    GENBANKMAN["GenBankManual"] --> EXPR_GBM
+    DROP_IN["Drop"] --> EXPR_GBM
     
-    EXPR_MIX --> GENBANKMIX["GenBankMix<br/>(0 = A, 1 = B)"]
+    EXPR_GBM --> GENBANKMIX["GenBankMix<br/>(0 = A, 1 = B)"]
     
     style BUILDUP_IN fill:#f3e5f5
     style GENBANKMAN fill:#f3e5f5
     style DROP_IN fill:#f3e5f5
-    style EXPR_MIX fill:#fff9c4
+    style EXPR_GBM fill:#fff9c4
     style GENBANKMIX fill:#e8f5e9
 ```
 
 ---
 
-### Slot Index and Randomization (Per Bus)
+### Slot Index and Randomization
 
-For each generator bus (A and B), we need index selection and randomization.
+#### GenSlotIndexBase
 
-**Example for GEN_BUS_A** (assuming 3 shaders: slots 0, 1, 2):
-
-#### GenA_Index_Base
-
-**GenA_Index_Base** – Source: MIDI CC #17 (Strip 1 / Knob 2) or Expression
+**GenSlotIndexBase** – Source: MIDImix Strip 1 / Knob 2
 
 Modifiers:
-1. **Expression**: `floor(x * 3)`
+1. **Expression**: `GenSlotIndexBase = floor(x * N)`
 
-**Result**: Manual selection of slots 0, 1, or 2.
+where N = number of shaders per bus (e.g., 3)
 
-#### GenA_Index_Offset
+**Purpose:** Manual selection of generator slots.
 
-**GenA_Index_Offset** – Source: DropPulse / Feature: Value
+---
+
+#### GenA_Index_Offset / GenB_Index_Offset
+
+**GenA_Index_Offset** – Source: DropPulse
 
 Modifiers:
 1. **Trigger (Random)**
-2. **Expression**: `floor(x * 3)`
+2. **Expression**: `GenA_Index_Offset = floor(x * N)`
 
-**Purpose**: Randomize offset on drop (0, 1, or 2).
+**GenB_Index_Offset** – Same pattern (duplicate for independent randomization)
 
-#### GenA_Index
+**Purpose:** Randomize generator selection on drop.
 
-**GenA_Index** – Source: Expression-only
+---
+
+#### GenA_Index / GenB_Index
+
+**GenA_Index** – Source: none (Expression-only)
 
 Modifiers:
-1. **Expression**: `(GenA_Index_Base + GenA_Index_Offset) % 3`
+1. **Expression**: `GenA_Index = (GenSlotIndexBase + GenA_Index_Offset) % N`
 
-**Result**: Final active slot index (0, 1, or 2).
+**GenB_Index** – Source: none (Expression-only)
 
-**Repeat for GEN_BUS_B**:
-- `GenB_Index_Base`
-- `GenB_Index_Offset`
-- `GenB_Index`
+Modifiers:
+1. **Expression**: `GenB_Index = (GenSlotIndexBase + GenB_Index_Offset) % N`
+
+**Purpose:** Final active slot index (0, 1, or 2 for N=3).
 
 ```mermaid
 flowchart TD
-    MIDI_INDEX["MIDI CC #17<br/>(Strip 1 Knob 2)"] --> EXPR_BASE["Expression:<br/>floor(x * 3)"]
-    EXPR_BASE --> INDEX_BASE["GenA_Index_Base<br/>(0, 1, or 2)"]
+    MIDI_GSI["MIDI Strip 1 Knob 2<br/>(CC #17)"] --> EXPR_BASE["Expression:<br/>GenSlotIndexBase = floor(x * N)"]
+    EXPR_BASE --> GENSLOTBASE["GenSlotIndexBase<br/>(0, 1, or 2 for N=3)"]
     
-    DROP_PULSE_IN["DropPulse"] --> TRIG_RAND["Trigger (Random)"]
-    TRIG_RAND --> EXPR_RAND["Expression:<br/>floor(x * 3)"]
-    EXPR_RAND --> INDEX_OFFSET["GenA_Index_Offset<br/>(0, 1, or 2)"]
+    DROPPULSE_IN["DropPulse"] --> TRIG_RAND["Trigger (Random)"]
+    TRIG_RAND --> EXPR_RAND["Expression:<br/>GenA_Index_Offset = floor(x * N)"]
+    EXPR_RAND --> GENOFFSET["GenA_Index_Offset<br/>(0, 1, or 2)"]
     
-    INDEX_BASE --> EXPR_FINAL["Expression:<br/>(GenA_Index_Base + GenA_Index_Offset) % 3"]
-    INDEX_OFFSET --> EXPR_FINAL
-    EXPR_FINAL --> INDEX["GenA_Index<br/>(Final: 0, 1, or 2)"]
+    GENSLOTBASE --> EXPR_FINAL["Expression:<br/>GenA_Index = (GenSlotIndexBase + GenA_Index_Offset) % N"]
+    GENOFFSET --> EXPR_FINAL
+    EXPR_FINAL --> GENINDEX["GenA_Index<br/>(Final: 0, 1, or 2)"]
     
-    style MIDI_INDEX fill:#e3f2fd
-    style DROP_PULSE_IN fill:#f3e5f5
-    style INDEX_BASE fill:#e8f5e9
-    style INDEX_OFFSET fill:#e8f5e9
-    style INDEX fill:#e8f5e9
+    style MIDI_GSI fill:#e3f2fd
+    style DROPPULSE_IN fill:#f3e5f5
+    style GENSLOTBASE fill:#e8f5e9
+    style GENOFFSET fill:#e8f5e9
+    style GENINDEX fill:#e8f5e9
 ```
 
 ---
 
-### Slot Weights (Hard Switch)
+### Slot Weights
 
-For each slot in a bus, create a weight global:
+#### Hard Switch Pattern
 
-**For GEN_BUS_A**:
+For GEN_BUS_A:
 
-**GenA_Slot0_Weight** – Source: Expression-only
-- **Expression**: `GenA_Index == 0`
+**GenA_Slot0_Weight** – Expression: `GenA_Slot0_Weight = (GenA_Index == 0) ? 1 : 0`
 
-**GenA_Slot1_Weight** – Source: Expression-only
-- **Expression**: `GenA_Index == 1`
+**GenA_Slot1_Weight** – Expression: `GenA_Slot1_Weight = (GenA_Index == 1) ? 1 : 0`
 
-**GenA_Slot2_Weight** – Source: Expression-only
-- **Expression**: `GenA_Index == 2`
+**GenA_Slot2_Weight** – Expression: `GenA_Slot2_Weight = (GenA_Index == 2) ? 1 : 0`
 
-**Result**: Only one weight is 1, others are 0.
+For GEN_BUS_B: Use GenB_SlotX_Weight with GenB_Index.
 
-**Alternative (Soft Crossfade)**:
+#### Crossfade Pattern (Alternative)
 
-For smooth transitions between slots:
+For smooth transitions:
 
 ```
-GenA_Slot0_Weight = max(1 - abs(GenA_Index - 0), 0)
-GenA_Slot1_Weight = max(1 - abs(GenA_Index - 1), 0)
-GenA_Slot2_Weight = max(1 - abs(GenA_Index - 2), 0)
+GenA_Slot0_Weight = max(1 - abs(GenA_Index - 0), 0);
+GenA_Slot1_Weight = max(1 - abs(GenA_Index - 1), 0);
+GenA_Slot2_Weight = max(1 - abs(GenA_Index - 2), 0);
 ```
 
 ---
@@ -670,53 +657,81 @@ GenA_Slot2_Weight = max(1 - abs(GenA_Index - 2), 0)
 
 #### GenIntensityManual
 
-**GenIntensityManual** – Source: MIDI CC #19 (Strip 1 / Fader)
+**GenIntensityManual** – Source: MIDImix Strip 1 / Fader
 
 Modifiers:
 1. **Smooth**: `0.3`
 
-#### GenIntensity (Derived)
+---
 
-**GenIntensity** – Source: Expression-only
+#### GenRandAmt (Per-Generator Random Amount)
+
+**GenRandAmt** – Source: MIDImix Strip 1 / Knob 3
 
 Modifiers:
-1. **Expression**: `min(max(GenIntensityManual * (0.6 + 0.4 * EnergyFast) * (0.6 + 0.4 * Buildup) * (1 + 0.7 * Drop), 0), 2)`
+1. **Smooth**: `0.3`
+2. **Expression**: `GenRandAmt = clamp(x, 0, 1)`
 
-**Effect**: Generator strength reacts to manual control, energy, buildup, and drop.
+---
+
+#### GenIntensity
+
+**GenIntensity** – Source: none (Expression-only)
+
+Modifiers:
+1. **Expression**:
+```
+GenIntensity_raw = GenIntensityManual
+                 * (0.6 + 0.4 * EnergyFast)
+                 * (0.6 + 0.4 * Buildup)
+                 * (1.0 + 0.7 * Drop);
+
+GenIntensity = clamp(GenIntensity_raw, 0, 2);
+```
+
+**Purpose:** Audio-reactive generator strength with buildup/drop boost.
 
 ```mermaid
 flowchart TD
-    GEN_MAN["GenIntensityManual"] --> EXPR_INT["Expression:<br/>min(max(GenIntensityManual * (0.6 + 0.4 * EnergyFast)<br/>* (0.6 + 0.4 * Buildup) * (1 + 0.7 * Drop), 0), 2)"]
-    ENERGY_FAST_IN2["EnergyFast"] --> EXPR_INT
-    BUILDUP_IN2["Buildup"] --> EXPR_INT
-    DROP_IN2["Drop"] --> EXPR_INT
+    GENMAN["GenIntensityManual"] --> EXPR_GI["Expression:<br/>GenIntensity_raw = GenIntensityManual<br/>* (0.6 + 0.4 * EnergyFast)<br/>* (0.6 + 0.4 * Buildup)<br/>* (1.0 + 0.7 * Drop);<br/><br/>GenIntensity = clamp(GenIntensity_raw, 0, 2)"]
+    ENERGYFAST_GI["EnergyFast"] --> EXPR_GI
+    BUILDUP_GI["Buildup"] --> EXPR_GI
+    DROP_GI["Drop"] --> EXPR_GI
     
-    EXPR_INT --> GEN_INT["GenIntensity<br/>(Range: 0–2)"]
+    EXPR_GI --> GENINTENSITY["GenIntensity<br/>(Range: 0–2)"]
     
-    style GEN_MAN fill:#f3e5f5
-    style ENERGY_FAST_IN2 fill:#f3e5f5
-    style BUILDUP_IN2 fill:#f3e5f5
-    style DROP_IN2 fill:#f3e5f5
-    style EXPR_INT fill:#fff9c4
-    style GEN_INT fill:#e8f5e9
+    style GENMAN fill:#f3e5f5
+    style ENERGYFAST_GI fill:#f3e5f5
+    style BUILDUP_GI fill:#f3e5f5
+    style DROP_GI fill:#f3e5f5
+    style EXPR_GI fill:#fff9c4
+    style GENINTENSITY fill:#e8f5e9
 ```
 
 ---
 
-### Randomization Pattern
+### Per-Parameter Randomization Pattern
 
-For any parameter that should blend manual and random control:
+For any randomizable generator parameter:
 
+**Setup:**
+- Manual control global: `GenParam_Manual`
+- Random global: `GenParam_Rand` (Source: DropPulse or Beat4 via Trigger (Random))
+
+**Effective Randomization:**
 ```
-ParamFinal = ManualParam * (1 - RandGlobalAmt * GenRandAmt)
-           + RandParam * RandGlobalAmt * GenRandAmt
+EffectiveRand = RandGlobalAmt * GenRandAmt * (0.3 + 0.7 * SongStyle);
 ```
 
-Where:
-- `ManualParam` = manual control value
-- `RandParam` = randomized value (from Trigger (Random))
-- `RandGlobalAmt` = global randomization amount (MIDI CC #26)
-- `GenRandAmt` = generator-specific randomization amount (MIDI CC #18)
+**Final Parameter:**
+```
+GenParam_Final = GenParam_Manual * (1 - EffectiveRand)
+               + GenParam_Rand * EffectiveRand;
+```
+
+**Effect:**
+- **SongStyle = 0.0**: EffectiveRand limited to 30% of RandGlobalAmt * GenRandAmt
+- **SongStyle = 1.0**: EffectiveRand uses full RandGlobalAmt * GenRandAmt
 
 ---
 
@@ -724,31 +739,65 @@ Where:
 
 ### GEN_BUS_A Scene
 
-**Purpose**: "Intro/Verse" generator bus with calmer, geometric patterns.
+**Scene Name:** `GEN_BUS_A`
 
-**Structure**:
+**Purpose:** "Intro/Verse" generator bus with calmer, geometric patterns.
+
+**Modules:**
+1. **GLSL_A0**, **GLSL_A1**, **GLSL_A2** (three generator shaders)
+2. **Mix_A0**, **Mix_A1**, **Mix_A2** (one after each shader)
+3. **Mix_A01** (combine Mix_A0 + Mix_A1)
+4. **GEN_A_OUT** (combine Mix_A01 + Mix_A2)
+
+**Configuration:**
+
+**Mix_A0:**
+- Input A: GLSL_A0
+- Input B: black
+- Opacity: `GenA_Slot0_Weight * GenIntensity`
+
+**Mix_A1:**
+- Input A: black
+- Input B: GLSL_A1
+- Opacity: `GenA_Slot1_Weight * GenIntensity`
+
+**Mix_A2:**
+- Input A: black
+- Input B: GLSL_A2
+- Opacity: `GenA_Slot2_Weight * GenIntensity`
+
+**Mix_A01:**
+- Type: Add/Blend
+- Input A: Mix_A0
+- Input B: Mix_A1
+
+**GEN_A_OUT:**
+- Type: Add/Blend
+- Input A: Mix_A01
+- Input B: Mix_A2
+- **Scene Output:** GEN_A_OUT
 
 ```mermaid
 flowchart TD
     subgraph GEN_A["GEN_BUS_A Scene"]
-        SHADER_A0["GLSL_Tunnel<br/>(Shader 0)"] --> MIX_A0["Mix_A0<br/>Opacity: GenA_Slot0_Weight × GenIntensity"]
-        SHADER_A1["GLSL_Grid<br/>(Shader 1)"] --> MIX_A1["Mix_A1<br/>Opacity: GenA_Slot1_Weight × GenIntensity"]
-        SHADER_A2["GLSL_Noise<br/>(Shader 2)"] --> MIX_A2["Mix_A2<br/>Opacity: GenA_Slot2_Weight × GenIntensity"]
+        SHADER_A0["GLSL_A0<br/>(Shader Slot 0)"] --> MIX_A0["Mix_A0<br/>Opacity:<br/>GenA_Slot0_Weight * GenIntensity"]
+        SHADER_A1["GLSL_A1<br/>(Shader Slot 1)"] --> MIX_A1["Mix_A1<br/>Opacity:<br/>GenA_Slot1_Weight * GenIntensity"]
+        SHADER_A2["GLSL_A2<br/>(Shader Slot 2)"] --> MIX_A2["Mix_A2<br/>Opacity:<br/>GenA_Slot2_Weight * GenIntensity"]
         
-        MIX_A0 --> BLEND_A1["Add/Blend"]
-        MIX_A1 --> BLEND_A1
-        BLEND_A1 --> BLEND_A2["Add/Blend"]
-        MIX_A2 --> BLEND_A2
+        MIX_A0 --> MIX_A01["Mix_A01<br/>(Add/Blend)"]
+        MIX_A1 --> MIX_A01
+        MIX_A01 --> GEN_A_OUT["GEN_A_OUT<br/>(Add/Blend)"]
+        MIX_A2 --> GEN_A_OUT
         
-        BLEND_A2 --> OUTPUT_A["Scene Output<br/>(GEN_A_OUT)"]
+        GEN_A_OUT --> OUTPUT_A["Scene Output"]
     end
     
     SLOT0_W["GenA_Slot0_Weight"] -.-> MIX_A0
     SLOT1_W["GenA_Slot1_Weight"] -.-> MIX_A1
     SLOT2_W["GenA_Slot2_Weight"] -.-> MIX_A2
-    GEN_INT_A["GenIntensity"] -.-> MIX_A0
-    GEN_INT_A -.-> MIX_A1
-    GEN_INT_A -.-> MIX_A2
+    GEN_INT["GenIntensity"] -.-> MIX_A0
+    GEN_INT -.-> MIX_A1
+    GEN_INT -.-> MIX_A2
     
     style SHADER_A0 fill:#e1f5ff
     style SHADER_A1 fill:#e1f5ff
@@ -756,374 +805,330 @@ flowchart TD
     style MIX_A0 fill:#fff9c4
     style MIX_A1 fill:#fff9c4
     style MIX_A2 fill:#fff9c4
-    style BLEND_A1 fill:#f3e5f5
-    style BLEND_A2 fill:#f3e5f5
+    style MIX_A01 fill:#f3e5f5
+    style GEN_A_OUT fill:#f3e5f5
     style OUTPUT_A fill:#e8f5e9
 ```
-
-**Implementation**:
-
-1. **Create Scene**: `GEN_BUS_A`
-
-2. **Add 3 GLSLShader modules**:
-   - `GLSL_Tunnel`
-   - `GLSL_Grid`
-   - `GLSL_Noise`
-
-3. **Add Mix modules after each shader**:
-   - `Mix_A0`: Input A = `GLSL_Tunnel`, Input B = black
-     - Opacity parameter: Link to expression `GenA_Slot0_Weight * GenIntensity`
-   - `Mix_A1`: Input A = black, Input B = `GLSL_Grid`
-     - Opacity parameter: `GenA_Slot1_Weight * GenIntensity`
-   - `Mix_A2`: Input A = black, Input B = `GLSL_Noise`
-     - Opacity parameter: `GenA_Slot2_Weight * GenIntensity`
-
-4. **Add Add/Blend modules**:
-   - `Blend_A1`: Combine `Mix_A0` + `Mix_A1`
-   - `Blend_A2`: Combine `Blend_A1` + `Mix_A2`
-
-5. **Scene Output**: `Blend_A2` output
 
 ---
 
 ### GEN_BUS_B Scene
 
-**Purpose**: "Buildup/Drop" generator bus with intense, chaotic patterns.
+**Scene Name:** `GEN_BUS_B`
 
-**Structure**: Same as GEN_BUS_A, but with different shaders:
-- `GLSL_RadialRings`
-- `GLSL_PulseTunnel`
-- `GLSL_Fractal`
+**Purpose:** "Buildup/Drop" generator bus with intense, chaotic patterns.
 
-Use globals:
-- `GenB_Slot0_Weight`, `GenB_Slot1_Weight`, `GenB_Slot2_Weight`
-- `GenIntensity` (shared with A)
+**Structure:** Same as GEN_BUS_A but with:
+- Shaders: GLSL_B0, GLSL_B1, GLSL_B2
+- Weights: GenB_Slot0_Weight, GenB_Slot1_Weight, GenB_Slot2_Weight
+- Output: GEN_B_OUT
 
 ---
 
-### MASK_BUS Scene
+### MASK_BUS Scene (with Karaoke)
 
-**Purpose**: Apply masks and composite karaoke text over generator output.
+**Scene Name:** `MASK_BUS`
+
+**Purpose:** Apply masks and composite karaoke text over generator output.
+
+**Modules:**
+1. **SceneInput_MainImage** (receives GEN_OUT from MAIN)
+2. **Syphon_Karaoke** (SyphonClient)
+3. **LumaKey_Karaoke** (optional - remove black background)
+4. **GLSL_Mask0** (or multiple mask generators)
+5. **MaskCombined** (combine masks via Add/Multiply)
+6. **Mix_Karaoke** (overlay karaoke on masked image)
+
+**Globals:**
+
+**MaskAmountManual** – Source: MIDImix Strip 2 / Knob 1
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**KaraokeOpacityManual** – Source: MIDImix Strip 2 / Knob 2
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**MaskRandAmt** – Source: MIDImix Strip 2 / Knob 3
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**MaskBusMix** – Source: MIDImix Strip 2 / Fader
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**Derived Globals:**
+
+**MaskAmount:**
+```
+MaskAmount = MaskAmountManual * (0.5 + 0.5 * Buildup);
+```
+
+**KaraokeOpacity:**
+```
+KaraokeOpacity = clamp(
+    KaraokeOpacityManual * (0.5 + 0.5 * EnergySlow),
+    0, 1
+);
+```
+
+**Pipeline:**
+```
+SceneInput_MainImage
+  → Multiply with (MaskCombined * MaskAmount)
+  → MASK_BASE
+
+MASK_BASE
+  → Mix_Karaoke (A = MASK_BASE, B = KaraokeText)
+       Opacity = KaraokeOpacity
+  → MASK_OUT (scene output)
+```
 
 ```mermaid
 flowchart TD
     subgraph MASK_SCENE["MASK_BUS Scene"]
-        SCENE_IN["SceneInput_MainImage<br/>(from GEN_OUT)"] --> MASK_PROC["Mask Processing<br/>(optional multiply)"]
+        SCENE_IN["SceneInput_MainImage<br/>(from GEN_OUT)"] --> MASK_MULT["Multiply<br/>(with MaskCombined * MaskAmount)"]
         
-        SYPHON_K["SyphonClient<br/>(Karaoke Text)"] --> LUMA["LumaKey<br/>(optional)"]
-        LUMA --> MIX_K["Mix_Karaoke<br/>Opacity: KaraokeOpacity"]
+        MASK_GEN["GLSL_Mask0<br/>(Mask Generator)"] --> MASK_COMB["MaskCombined<br/>(Add/Multiply)"]
+        MASK_COMB --> MASK_MULT
         
-        MASK_PROC --> MIX_K
-        MIX_K --> MASK_OUT["Scene Output<br/>(MASK_OUT)"]
+        MASK_MULT --> MASK_BASE["MASK_BASE"]
+        
+        SYPHON_K["Syphon_Karaoke<br/>(SyphonClient)"] --> LUMA_K["LumaKey_Karaoke<br/>(optional)"]
+        LUMA_K --> MIX_K["Mix_Karaoke<br/>Opacity: KaraokeOpacity"]
+        
+        MASK_BASE --> MIX_K
+        MIX_K --> MASK_OUT["MASK_OUT<br/>(Scene Output)"]
     end
     
+    MASK_AMT["MaskAmount"] -.-> MASK_MULT
     KAR_OP["KaraokeOpacity"] -.-> MIX_K
     
     style SCENE_IN fill:#e1f5ff
     style SYPHON_K fill:#e1f5ff
-    style LUMA fill:#fff3e0
-    style MASK_PROC fill:#f3e5f5
+    style MASK_GEN fill:#e1f5ff
+    style LUMA_K fill:#fff3e0
+    style MASK_COMB fill:#f3e5f5
+    style MASK_MULT fill:#fff9c4
     style MIX_K fill:#fff9c4
     style MASK_OUT fill:#e8f5e9
 ```
-
-**Implementation**:
-
-1. **Create Scene**: `MASK_BUS`
-
-2. **Add SceneInput**:
-   - Module: `SceneInput_MainImage`
-   - This receives the generator output from main scene
-
-3. **Add SyphonClient**:
-   - Module: `SyphonClient`
-   - Configure sender/server to your karaoke app
-
-4. **Optional LumaKey**:
-   - If karaoke is white text on black background
-   - Adjust threshold so black becomes transparent
-
-5. **Add Mask Processing** (optional):
-   - Create mask generators (radial vignette, stripes, etc.)
-   - Use `Multiply` blend to apply mask to main image
-   - Control strength with `MaskAmount` global
-
-6. **Add Mix_Karaoke**:
-   - Input A: Masked main image
-   - Input B: Karaoke (after LumaKey)
-   - Opacity: Link to `KaraokeOpacity` global
-
-7. **Scene Output**: `Mix_Karaoke` output
-
-**Globals for MASK_BUS**:
-
-#### KaraokeOpacityManual
-
-**KaraokeOpacityManual** – Source: MIDI CC #21 (Strip 2 / Knob 2)
-
-Modifiers:
-1. **Smooth**: `0.3`
-
-#### KaraokeOpacity (Derived)
-
-**KaraokeOpacity** – Source: Expression-only
-
-Modifiers:
-1. **Expression**: `min(max(KaraokeOpacityManual * (0.5 + 0.5 * EnergySlow), 0), 1)`
-
-**Effect**: Karaoke opacity reacts to manual control and song energy.
-
-#### MaskAmountManual
-
-**MaskAmountManual** – Source: MIDI CC #20 (Strip 2 / Knob 1)
-
-Modifiers:
-1. **Smooth**: `0.3`
-
-#### MaskAmount (Derived)
-
-**MaskAmount** – Source: Expression-only
-
-Modifiers:
-1. **Expression**: `MaskAmountManual * (0.5 + 0.5 * Buildup)`
-
-**Effect**: Mask strength increases with buildup.
 
 ---
 
 ### FX_BUS Scene
 
-**Purpose**: Global distortion, warp, and color processing.
+**Scene Name:** `FX_BUS`
+
+**Purpose:** Global warp and color processing.
+
+**Modules:**
+1. **SceneInput_Image** (receives MASK_OUT from MAIN)
+2. **GLSL_Warp** (distortion effect)
+3. **ColorCorrect** (hue/saturation)
+4. **Mix_FX** (optional - fade FX in/out with FXBusMix)
+
+**Globals:**
+
+**FXAmountManual** – Source: MIDImix Strip 3 / Knob 1
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**FXWarpManual** – Source: MIDImix Strip 3 / Knob 2
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**FXColorShiftManual** – Source: MIDImix Strip 3 / Knob 3
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**FXBusMix** – Source: MIDImix Strip 3 / Fader
+
+Modifiers:
+1. **Smooth**: `0.3`
+
+**Derived Globals:**
+
+**FXAmount:**
+```
+FXAmount = FXAmountManual
+         * (0.5 + 0.5 * EnergyFast)
+         * (0.5 + 0.5 * Buildup)
+         * (1.0 + 0.5 * Drop);
+```
+
+**FXWarp:**
+```
+FXWarp = FXWarpManual * FXAmount;
+```
+
+**FXColorShift:**
+```
+FXColorShift = FXColorShiftManual * (0.5 + 0.5 * EnergySlow);
+```
+
+**Pipeline:**
+```
+SceneInput_Image
+  → GLSL_Warp (strength = FXWarp)
+  → ColorCorrect (hue = FXColorShift)
+  → Mix_FX (opacity = FXBusMix) [optional]
+  → FX_OUT (scene output)
+```
 
 ```mermaid
 flowchart TD
     subgraph FX_SCENE["FX_BUS Scene"]
-        SCENE_IN_FX["SceneInput_Image<br/>(from MASK_OUT)"] --> WARP["GLSL_Warp<br/>Amount: FXWarp"]
-        WARP --> COLOR["ColorCorrect<br/>Hue Shift: FXColorShift"]
-        COLOR --> FX_OUT["Scene Output<br/>(FX_OUT)"]
+        SCENE_IN_FX["SceneInput_Image<br/>(from MASK_OUT)"] --> WARP["GLSL_Warp<br/>Strength: FXWarp"]
+        WARP --> COLOR["ColorCorrect<br/>Hue: FXColorShift"]
+        COLOR --> MIX_FX["Mix_FX (optional)<br/>Opacity: FXBusMix"]
+        MIX_FX --> FX_OUT["FX_OUT<br/>(Scene Output)"]
     end
     
     FX_WARP_G["FXWarp"] -.-> WARP
     FX_COLOR_G["FXColorShift"] -.-> COLOR
+    FX_MIX_G["FXBusMix"] -.-> MIX_FX
     
     style SCENE_IN_FX fill:#e1f5ff
     style WARP fill:#fff9c4
     style COLOR fill:#fff9c4
+    style MIX_FX fill:#f3e5f5
     style FX_OUT fill:#e8f5e9
 ```
-
-**Implementation**:
-
-1. **Create Scene**: `FX_BUS`
-
-2. **Add SceneInput**:
-   - Module: `SceneInput_Image`
-
-3. **Add GLSL_Warp** (distortion effect):
-   - Connect `SceneInput_Image` → `GLSL_Warp`
-   - Link warp amount parameter to `FXWarp` global
-
-4. **Add ColorCorrect**:
-   - Connect `GLSL_Warp` → `ColorCorrect`
-   - Link hue/saturation parameters to `FXColorShift` global
-
-5. **Scene Output**: `ColorCorrect` output
-
-**Globals for FX_BUS**:
-
-#### FXAmountManual
-
-**FXAmountManual** – Source: MIDI CC #28 (Strip 3 / Knob 1)
-
-Modifiers:
-1. **Smooth**: `0.3`
-
-#### FXAmount (Derived)
-
-**FXAmount** – Source: Expression-only
-
-Modifiers:
-1. **Expression**: `FXAmountManual * (0.5 + 0.5 * EnergyFast) * (0.5 + 0.5 * Buildup) * (1 + 0.5 * Drop)`
-
-**Effect**: FX intensity reacts to manual control, energy, buildup, and drop.
-
-```mermaid
-flowchart TD
-    FX_MAN["FXAmountManual"] --> EXPR_FX["Expression:<br/>FXAmountManual * (0.5 + 0.5 * EnergyFast)<br/>* (0.5 + 0.5 * Buildup) * (1 + 0.5 * Drop)"]
-    ENERGY_FX["EnergyFast"] --> EXPR_FX
-    BUILDUP_FX["Buildup"] --> EXPR_FX
-    DROP_FX["Drop"] --> EXPR_FX
-    
-    EXPR_FX --> FX_AMT["FXAmount<br/>(Range: 0–~3)"]
-    
-    style FX_MAN fill:#f3e5f5
-    style ENERGY_FX fill:#f3e5f5
-    style BUILDUP_FX fill:#f3e5f5
-    style DROP_FX fill:#f3e5f5
-    style EXPR_FX fill:#fff9c4
-    style FX_AMT fill:#e8f5e9
-```
-
-#### FXWarpManual
-
-**FXWarpManual** – Source: MIDI CC #29 (Strip 3 / Knob 2)
-
-Modifiers:
-1. **Smooth**: `0.3`
-
-#### FXWarp (Derived)
-
-**FXWarp** – Source: Expression-only
-
-Modifiers:
-1. **Expression**: `FXWarpManual * FXAmount`
-
-#### FXColorShiftManual
-
-**FXColorShiftManual** – Source: MIDI CC #30 (Strip 3 / Knob 3)
-
-Modifiers:
-1. **Smooth**: `0.3`
-
-#### FXColorShift (Derived)
-
-**FXColorShift** – Source: Expression-only
-
-Modifiers:
-1. **Expression**: `FXColorShiftManual * (0.5 + 0.5 * EnergySlow)`
-
----
-
-## Karaoke Integration
-
-The karaoke text overlay is integrated into the `MASK_BUS` scene via Syphon.
-
-### Karaoke App Setup
-
-Use any app that can output text via Syphon, such as:
-- VDMX
-- Processing sketch with text rendering
-- MadMapper with text module
-- After Effects with Syphon plugin
-
-**Recommended Format**:
-- White text on black background
-- Full HD resolution (1920×1080)
-- Large, bold font for readability
-
-### MASK_BUS Integration
-
-In the `MASK_BUS` scene:
-
-1. **SyphonClient** receives karaoke feed
-2. **LumaKey** (optional) makes black background transparent
-3. **Mix** composites karaoke over generator image
-4. **KaraokeOpacity** controls visibility
-
-**Key Feature**: Karaoke opacity is audio-reactive:
-
-```
-KaraokeOpacity = KaraokeOpacityManual * (0.5 + 0.5 * EnergySlow)
-```
-
-**Effect**: Text becomes more visible during high-energy sections.
-
-### Alternative: Karaoke as Mask
-
-To make visuals visible **only inside the text**:
-
-1. Use karaoke feed as a mask texture
-2. Apply via `Multiply` blend instead of overlay
-3. Result: Generators visible only where text exists
 
 ---
 
 ## Main Scene Assembly
 
-The main scene connects all buses and applies master controls.
+**Scene Name:** `MAIN`
+
+**Purpose:** Connect all buses and apply master controls.
+
+**Modules:**
+1. **GenA** (Scene: GEN_BUS_A)
+2. **GenB** (Scene: GEN_BUS_B)
+3. **Mix_Gen** (crossfade A/B with GenBankMix)
+4. **MaskBus** (Scene: MASK_BUS)
+5. **FxBus** (Scene: FX_BUS)
+6. **MasterOut** (final mix with master opacity)
+
+**Pipeline:**
+
+```
+GenA output → Mix_Gen (Input A)
+GenB output → Mix_Gen (Input B)
+  Mix_Gen.Opacity = GenBankMix
+  → GEN_OUT
+
+GEN_OUT → MaskBus.SceneInput_MainImage
+  → MASK_OUT
+
+MASK_OUT → FxBus.SceneInput_Image
+  → FX_OUT
+
+FX_OUT → MasterOut
+  MasterOpacity = clamp(MasterIntensity * (1 - Blackout), 0, 1)
+  → OUTPUT (to Magic output module)
+```
+
+**MasterOpacity Global:**
+
+**MasterOpacity** – Source: none (Expression-only)
+
+Modifiers:
+1. **Expression**: `MasterOpacity = clamp(MasterIntensity * (1 - Blackout), 0, 1)`
+
+**Effect:**
+- When Blackout = 1, MasterOpacity = 0 (screen goes black)
+- When Blackout = 0, MasterOpacity = MasterIntensity (normal operation)
 
 ```mermaid
 flowchart TD
     subgraph MAIN_SCENE["MAIN Scene"]
-        GEN_A_MOD["Scene: GEN_BUS_A"] --> MIX_GEN["Mix_GenBanks<br/>Mix: GenBankMix"]
+        GEN_A_MOD["Scene: GEN_BUS_A"] --> MIX_GEN["Mix_Gen<br/>Opacity: GenBankMix"]
         GEN_B_MOD["Scene: GEN_BUS_B"] --> MIX_GEN
-        MIX_GEN --> GEN_OUT_INT["GEN_OUT"]
+        MIX_GEN --> GEN_OUT_NODE["GEN_OUT"]
         
-        GEN_OUT_INT --> MASK_MOD["Scene: MASK_BUS<br/>(SceneInput = GEN_OUT)"]
-        MASK_MOD --> MASK_OUT_INT["MASK_OUT"]
+        GEN_OUT_NODE --> MASK_MOD["Scene: MASK_BUS<br/>(SceneInput = GEN_OUT)"]
+        MASK_MOD --> MASK_OUT_NODE["MASK_OUT"]
         
-        MASK_OUT_INT --> FX_MOD["Scene: FX_BUS<br/>(SceneInput = MASK_OUT)"]
-        FX_MOD --> FX_OUT_INT["FX_OUT"]
+        MASK_OUT_NODE --> FX_MOD["Scene: FX_BUS<br/>(SceneInput = MASK_OUT)"]
+        FX_MOD --> FX_OUT_NODE["FX_OUT"]
         
-        FX_OUT_INT --> MASTER_MIX_MOD["Master_Mix<br/>Opacity: MasterOpacity"]
-        MASTER_MIX_MOD --> MAGIC_OUT["Magic Output"]
+        FX_OUT_NODE --> MASTER_MIX["MasterOut<br/>Opacity: MasterOpacity"]
+        MASTER_MIX --> MAGIC_OUT["Magic Output"]
     end
     
     GENBANKMIX_G["GenBankMix"] -.-> MIX_GEN
-    MASTER_OP_G["MasterOpacity"] -.-> MASTER_MIX_MOD
+    MASTER_OP_G["MasterOpacity"] -.-> MASTER_MIX
     
     style GEN_A_MOD fill:#e1f5ff
     style GEN_B_MOD fill:#e1f5ff
     style MASK_MOD fill:#e1f5ff
     style FX_MOD fill:#e1f5ff
     style MIX_GEN fill:#fff9c4
-    style MASTER_MIX_MOD fill:#fff9c4
+    style MASTER_MIX fill:#fff9c4
     style MAGIC_OUT fill:#e8f5e9
 ```
 
-**Implementation**:
+---
 
-1. **Add Scene Modules**:
-   - `Scene: GEN_BUS_A` → GenA module
-   - `Scene: GEN_BUS_B` → GenB module
-   - `Scene: MASK_BUS` → MaskBus module
-   - `Scene: FX_BUS` → FxBus module
+## Operating the Pipeline
 
-2. **Generator Bank Mix**:
-   - Add `Mix` module: `Mix_GenBanks`
-   - Input A: GenA output
-   - Input B: GenB output
-   - Mix parameter: Link to `GenBankMix` global
-   - Output: `GEN_OUT`
+### Preparing for a Track
 
-3. **Connect to Mask Bus**:
-   - Connect `GEN_OUT` to `MaskBus.SceneInput_MainImage`
-   - MaskBus output: `MASK_OUT`
+1. **Set MasterIntensity** ~ 0.7
+2. **Set Multi** ~ 0.8–1.0
+3. **Set SongStyle** according to track type:
+   - Deep/subby techno → SongStyle ≈ 0.2
+   - Bright, vocal EDM → SongStyle ≈ 0.8
+4. **Set Buildup** = 0
+5. **Ensure Drop** = 0, **Blackout** = 0
+6. **Choose starting generator** via GenSlotIndexBase (Strip 1 / Knob 2)
 
-4. **Connect to FX Bus**:
-   - Connect `MASK_OUT` to `FxBus.SceneInput_Image`
-   - FxBus output: `FX_OUT`
+### While Playing
 
-5. **Master Mix**:
-   - Add `Mix` or `Multiply` module: `Master_Mix`
-   - Input: `FX_OUT`
-   - Opacity parameter: Link to `MasterOpacity` global
+#### Using SongStyle
 
-6. **Connect to Magic Output**:
-   - Connect `Master_Mix` to Magic output module
+**For bass-heavy tracks (SongStyle near 0):**
+- EnergyFast responds mostly to Bass
+- KickEnvFinal uses more smoothing → slower motion
+- Randomization strength limited (min 0.3 factor)
 
-**MasterOpacity Global**:
+**For bright/complex tracks (SongStyle near 1):**
+- EnergyFast responds more to Highs/LowMid
+- KickEnvFinal uses faster profile → snappier movement
+- Randomization up to full effect
 
-**MasterOpacity** – Source: Expression-only
+#### Using Buildup
 
-Modifiers:
-1. **Expression**: `min(max(MasterIntensity * (1 - Blackout), 0), 1)`
+- Gradually increase Buildup to 1.0 during musical buildups
+- Crossfades GEN_BUS_A → GEN_BUS_B
+- Increases intensity (Gen, Mask, FX)
+- Maps to GenBankMix, MaskAmount, FXAmount
 
-**Effect**:
-- When `Blackout = 1`, `MasterOpacity = 0` (screen goes black)
-- When `Blackout = 0`, `MasterOpacity = MasterIntensity` (normal operation)
+#### Using Drop and DropPulse
 
-```mermaid
-flowchart TD
-    MASTER_INT_IN["MasterIntensity"] --> EXPR_MO["Expression:<br/>min(max(MasterIntensity * (1 - Blackout), 0), 1)"]
-    BLACKOUT_IN["Blackout"] --> EXPR_MO
-    EXPR_MO --> MASTER_OP["MasterOpacity<br/>(Range: 0–1)"]
-    
-    style MASTER_INT_IN fill:#f3e5f5
-    style BLACKOUT_IN fill:#f3e5f5
-    style EXPR_MO fill:#fff9c4
-    style MASTER_OP fill:#e8f5e9
-```
+**Press Drop at musical drop** → Drop = 1:
+- Extra multipliers in Gen/FX expressions
+- GenBankMix forced towards B
+- DropPulse triggers randomization:
+  - GenA_Index_Offset / GenB_Index_Offset updated via Trigger(Random)
+  - New shader selections happen exactly at drop
+
+#### Using Randomization
+
+**Control with RandGlobalAmt and per-bus GenRandAmt / MaskRandAmt:**
+- For subtle sets: keep RandGlobalAmt low
+- For glitchy/noisy sets: turn it up
+- SongStyle affects randomization strength (0.3–1.0 factor)
 
 ---
 
@@ -1133,76 +1138,146 @@ flowchart TD
 
 | Global Name | Source | Type | Range | Purpose |
 |-------------|--------|------|-------|---------|
-| `Multi` | MIDI CC #24 | Derived | 0.3–2.0 | Audio sensitivity |
-| `Bass` | Audio 20–120 Hz | Audio | 0–1 | Kick/bass detection |
+| `Multi` | MIDI Strip 8 Knob 1 | Derived | 0.3–2.0 | Audio sensitivity |
+| `SongStyle` | MIDI Strip 7 Knob 1 | Manual | 0–1 | Track adaptation |
+| `Buildup` | MIDI Strip 8 Knob 2 | Manual | 0–1 | Buildup level |
+| `Drop` | MIDI Strip 8 Button A | Toggle | 0/1 | Drop state |
+| `DropPulse` | MIDI Strip 8 Button A | Pulse | 0/1 | Drop spike |
+| `Blackout` | MIDI Strip 8 Button B | Toggle | 0/1 | Emergency blackout |
+| `MasterIntensity` | MIDI Strip 8 Fader | Manual | 0–1 | Master intensity |
+| `RandGlobalAmt` | MIDI Strip 8 Knob 3 | Manual | 0–1 | Global random amount |
+| `Bass` | Audio 20–120 Hz | Audio | 0–1 | Kick/bass |
 | `LowMid` | Audio 120–350 Hz | Audio | 0–1 | Drum body |
 | `Highs` | Audio 2k–6k Hz | Audio | 0–1 | Hi-hats, brightness |
-| `EnergyFast` | Expression | Derived | 0–1 | Instant intensity |
+| `EnergyFast` | Expression | Derived | 0–1 | SongStyle-aware intensity |
 | `EnergySlow` | EnergyFast avg | Derived | 0–1 | Averaged intensity |
 | `KickRaw` | Audio 40–120 Hz | Audio | 0–1 | Raw kick transient |
-| `KickEnv` | KickRaw | Derived | 0–1 | Kick envelope |
-| `KickPulse` | KickEnv | Derived | 0/1 | Binary kick trigger |
+| `KickEnvSlow` | KickRaw | Derived | 0–1 | Slow kick envelope |
+| `KickEnvFast` | KickRaw | Derived | 0–1 | Fast kick envelope |
+| `KickEnvFinal` | Expression | Derived | 0–1 | SongStyle-blended kick |
+| `KickPulse` | KickEnvFinal | Derived | 0/1 | Binary kick trigger |
 | `Beat4` | KickPulse | Derived | 0–3 | 4-beat counter |
-| `MasterIntensity` | MIDI CC #27 | Manual | 0–1 | Master intensity |
-| `Buildup` | MIDI CC #25 | Manual | 0–1 | Buildup level |
-| `Drop` | MIDI Note 27 | Toggle | 0/1 | Drop toggle |
-| `DropPulse` | MIDI Note 27 | Pulse | 0/1 | Drop spike |
-| `Blackout` | MIDI Note 43 | Toggle | 0/1 | Emergency blackout |
-| `GenBankManual` | MIDI CC #16 | Manual | 0–1 | A/B manual mix |
+| `GenBankManual` | MIDI Strip 1 Knob 1 | Manual | 0–1 | A/B manual mix |
 | `GenBankMix` | Expression | Derived | 0–1 | A/B final mix |
-| `GenIntensityManual` | MIDI CC #19 | Manual | 0–1 | Gen manual intensity |
+| `GenSlotIndexBase` | MIDI Strip 1 Knob 2 | Manual | 0–N-1 | Slot base index |
+| `GenA_Index_Offset` | DropPulse + Random | Derived | 0–N-1 | GenA random offset |
+| `GenB_Index_Offset` | DropPulse + Random | Derived | 0–N-1 | GenB random offset |
+| `GenA_Index` | Expression | Derived | 0–N-1 | GenA active slot |
+| `GenB_Index` | Expression | Derived | 0–N-1 | GenB active slot |
+| `GenIntensityManual` | MIDI Strip 1 Fader | Manual | 0–1 | Gen manual intensity |
+| `GenRandAmt` | MIDI Strip 1 Knob 3 | Manual | 0–1 | Gen random amount |
 | `GenIntensity` | Expression | Derived | 0–2 | Gen final intensity |
-| `GenA_Index` | Expression | Derived | 0–2 | Gen A active slot |
-| `GenB_Index` | Expression | Derived | 0–2 | Gen B active slot |
-| `MaskAmountManual` | MIDI CC #20 | Manual | 0–1 | Mask manual strength |
+| `MaskAmountManual` | MIDI Strip 2 Knob 1 | Manual | 0–1 | Mask manual strength |
 | `MaskAmount` | Expression | Derived | 0–1 | Mask final strength |
-| `KaraokeOpacityManual` | MIDI CC #21 | Manual | 0–1 | Karaoke manual opacity |
+| `KaraokeOpacityManual` | MIDI Strip 2 Knob 2 | Manual | 0–1 | Karaoke manual opacity |
 | `KaraokeOpacity` | Expression | Derived | 0–1 | Karaoke final opacity |
-| `FXAmountManual` | MIDI CC #28 | Manual | 0–1 | FX manual amount |
+| `MaskRandAmt` | MIDI Strip 2 Knob 3 | Manual | 0–1 | Mask random amount |
+| `MaskBusMix` | MIDI Strip 2 Fader | Manual | 0–1 | Mask bus mix |
+| `FXAmountManual` | MIDI Strip 3 Knob 1 | Manual | 0–1 | FX manual amount |
+| `FXWarpManual` | MIDI Strip 3 Knob 2 | Manual | 0–1 | Warp manual amount |
+| `FXColorShiftManual` | MIDI Strip 3 Knob 3 | Manual | 0–1 | Color shift manual |
+| `FXBusMix` | MIDI Strip 3 Fader | Manual | 0–1 | FX bus mix |
 | `FXAmount` | Expression | Derived | 0–~3 | FX final amount |
-| `FXWarpManual` | MIDI CC #29 | Manual | 0–1 | Warp manual amount |
 | `FXWarp` | Expression | Derived | 0–~3 | Warp final amount |
-| `FXColorShiftManual` | MIDI CC #30 | Manual | 0–1 | Color shift manual |
 | `FXColorShift` | Expression | Derived | 0–1 | Color shift final |
 | `MasterOpacity` | Expression | Derived | 0–1 | Master output opacity |
 
 ---
 
-### Expression Quick Reference
+### MIDImix Controller Layout
 
-**Audio Bands**:
+#### Strip 8: Global Master
+| Control | CC/Note | Global | Purpose |
+|---------|---------|--------|---------|
+| Knob 1 | CC #24 | Multi | Audio sensitivity |
+| Knob 2 | CC #25 | Buildup | Buildup control |
+| Knob 3 | CC #26 | RandGlobalAmt | Global randomization |
+| Fader | CC #27 | MasterIntensity | Master intensity |
+| Button A | Note 27 | Drop / DropPulse | Drop trigger |
+| Button B | Note 43 | Blackout | Emergency blackout |
+
+#### Strip 7: Track Adaptation
+| Control | CC/Note | Global | Purpose |
+|---------|---------|--------|---------|
+| Knob 1 | (Choose free) | SongStyle | Track personality |
+
+#### Strip 1: Generator Bank
+| Control | CC/Note | Global | Purpose |
+|---------|---------|--------|---------|
+| Knob 1 | CC #16 | GenBankManual | A/B crossfade |
+| Knob 2 | CC #17 | GenSlotIndexBase | Slot selection |
+| Knob 3 | CC #18 | GenRandAmt | Gen randomization |
+| Fader | CC #19 | GenIntensityManual | Gen intensity |
+
+#### Strip 2: Mask Bus
+| Control | CC/Note | Global | Purpose |
+|---------|---------|--------|---------|
+| Knob 1 | CC #20 | MaskAmountManual | Mask strength |
+| Knob 2 | CC #21 | KaraokeOpacityManual | Karaoke opacity |
+| Knob 3 | CC #22 | MaskRandAmt | Mask randomization |
+| Fader | CC #23 | MaskBusMix | Mask bus mix |
+
+#### Strip 3: FX Bus
+| Control | CC/Note | Global | Purpose |
+|---------|---------|--------|---------|
+| Knob 1 | CC #28 | FXAmountManual | FX intensity |
+| Knob 2 | CC #29 | FXWarpManual | Warp amount |
+| Knob 3 | CC #30 | FXColorShiftManual | Color shift |
+| Fader | CC #31 | FXBusMix | FX bus mix |
+
+---
+
+### Key Expression Quick Reference
+
+**Multi:**
 ```
-min(max(x * Multi * 2.0, 0), 1)
+Multi = 0.3 + x * 1.7
 ```
 
-**Energy Fast**:
+**SongStyle:**
 ```
-Bass * 0.5 + LowMid * 0.3 + Highs * 0.2
-```
-
-**Energy Slow**:
-```
-Average(EnergyFast, 4.0)
+SongStyle = clamp(x, 0, 1)
 ```
 
-**GenBankMix**:
+**EnergyFast (SongStyle-aware):**
 ```
-min(max(0.5 * Buildup + 0.5 * GenBankManual + Drop * (1 - Buildup), 0), 1)
-```
-
-**GenIntensity**:
-```
-min(max(GenIntensityManual * (0.6 + 0.4 * EnergyFast) * (0.6 + 0.4 * Buildup) * (1 + 0.7 * Drop), 0), 2)
+EnergyFast_raw = Bass * (0.6 - 0.4 * SongStyle)
+               + LowMid * (0.2 + 0.2 * SongStyle)
+               + Highs * (0.2 + 0.2 * SongStyle);
+EnergyFast = clamp(EnergyFast_raw, 0, 1);
 ```
 
-**FXAmount**:
+**KickEnvFinal (SongStyle blend):**
 ```
-FXAmountManual * (0.5 + 0.5 * EnergyFast) * (0.5 + 0.5 * Buildup) * (1 + 0.5 * Drop)
+KickEnvFinal = clamp(
+    KickEnvSlow * (1 - SongStyle) + KickEnvFast * SongStyle,
+    0, 1
+);
 ```
 
-**MasterOpacity**:
+**GenBankMix:**
 ```
-min(max(MasterIntensity * (1 - Blackout), 0), 1)
+mix_base = 0.5 * Buildup + 0.5 * GenBankManual;
+GenBankMix = clamp(mix_base + Drop * (1 - mix_base), 0, 1);
+```
+
+**GenIntensity:**
+```
+GenIntensity_raw = GenIntensityManual
+                 * (0.6 + 0.4 * EnergyFast)
+                 * (0.6 + 0.4 * Buildup)
+                 * (1.0 + 0.7 * Drop);
+GenIntensity = clamp(GenIntensity_raw, 0, 2);
+```
+
+**EffectiveRand (SongStyle-aware randomization):**
+```
+EffectiveRand = RandGlobalAmt * GenRandAmt * (0.3 + 0.7 * SongStyle);
+```
+
+**MasterOpacity:**
+```
+MasterOpacity = clamp(MasterIntensity * (1 - Blackout), 0, 1);
 ```
 
 ---
@@ -1211,45 +1286,15 @@ min(max(MasterIntensity * (1 - Blackout), 0), 1)
 
 ```
 GEN_BUS_A ──┐
-            ├─→ Mix(GenBankMix) → GEN_OUT
+            ├→ Mix(GenBankMix) → GEN_OUT
 GEN_BUS_B ──┘
-                     ↓
-              MASK_BUS(GEN_OUT + Karaoke) → MASK_OUT
-                     ↓
-              FX_BUS(Warp + Color) → FX_OUT
-                     ↓
-              Master_Mix(MasterOpacity) → Magic Output
+                 ↓
+         MASK_BUS(GEN_OUT + Karaoke) → MASK_OUT
+                 ↓
+         FX_BUS(Warp + Color) → FX_OUT
+                 ↓
+         MasterOut(MasterOpacity) → Magic Output
 ```
-
----
-
-### Tips for Live Performance
-
-1. **Start with defaults**:
-   - `GenBankMix = 0` (Bus A)
-   - `Buildup = 0`
-   - `Drop = 0`
-   - `MasterIntensity = 0.7`
-
-2. **During verse**:
-   - Keep `Buildup` low (0–0.3)
-   - `GenBankMix` stays near A
-   - Adjust `GenIntensity` for subtle movement
-
-3. **During buildup**:
-   - Gradually increase `Buildup` to 1.0
-   - `GenBankMix` automatically crossfades to B
-   - `FXAmount` increases naturally
-
-4. **On drop**:
-   - Press `Drop` button (toggles to 1)
-   - `GenBankMix` forced to B
-   - `GenIntensity` and `FXAmount` spike
-   - Consider randomizing generators
-
-5. **Emergency controls**:
-   - `Blackout` button for instant screen blackout
-   - `MasterIntensity` fader for quick dimming
 
 ---
 
@@ -1263,11 +1308,13 @@ GEN_BUS_B ──┘
 
 ## Credits
 
-This pipeline architecture is designed for live VJ performance with Magic Music Visuals, emphasizing:
-- Modular bus structure for clean signal flow
-- Audio-reactive controls with manual overrides
-- Smooth crossfades between song stages (intro, verse, buildup, drop)
-- Karaoke/text overlay integration via Syphon
-- Emergency controls for live safety
+This pipeline architecture features:
+- **SongStyle** - Global track adaptation system affecting energy mixing, kick response, and randomization
+- **Modular bus structure** - Clean separation of generators, masking, and effects
+- **Audio-reactive controls** - Dynamic responses to frequency bands and energy
+- **Manual overrides** - Complete MIDI control via Akai MIDImix
+- **Smooth crossfades** - Between song stages (intro, verse, buildup, drop)
+- **Karaoke/text overlay** - Syphon integration with audio-reactive opacity
+- **Emergency controls** - Blackout and master intensity for live safety
 
 Adapt CC numbers, expressions, and shader choices to your specific setup and musical style.
