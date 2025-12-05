@@ -128,9 +128,16 @@ jobs:
             echo "The MidiBus already cached"
           fi
           
-          # Install Processing Sound library (built-in library)
-          # Note: Sound library may not be needed for headless builds
-          # Skipping for now as it often fails to download
+          # Install Processing Sound library (for AudioAnalysisOSC sketch)
+          if [ ! -d "$PROCESSING_LIBS_DIR/sound" ]; then
+            echo "Installing Processing Sound library v2.4.0..."
+            wget -q https://github.com/processing/processing-sound/releases/download/v2.4.0/sound.zip
+            unzip -q sound.zip -d $PROCESSING_LIBS_DIR/
+            rm sound.zip
+            echo "✅ Sound library installed"
+          else
+            echo "Sound library already cached"
+          fi
           
           # Create Syphon stub for Linux CI (macOS-only library)
           if [ ! -d "$PROCESSING_LIBS_DIR/Syphon" ]; then

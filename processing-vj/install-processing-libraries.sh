@@ -44,21 +44,7 @@ install_library "oscP5" "https://github.com/sojamo/oscp5/releases/download/v2.0.
 install_library "themidibus" "http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip"
 
 # Install Processing Sound library
-if [ ! -d "$LIBS_DIR/sound" ]; then
-    echo "Installing Processing Sound library..."
-    
-    # Try to download from GitHub releases
-    if wget -q https://github.com/processing/processing-sound/releases/download/latest/sound.zip -O /tmp/sound.zip 2>/dev/null; then
-        unzip -q /tmp/sound.zip -d "$LIBS_DIR/"
-        rm /tmp/sound.zip
-        echo "✅ Sound library installed"
-    else
-        echo "⚠️  Could not download Sound library - may need to install via Processing IDE"
-        echo "   In Processing: Sketch → Import Library → Manage Libraries → Search 'Sound'"
-    fi
-else
-    echo "✓ Sound library already installed"
-fi
+install_library "sound" "https://github.com/processing/processing-sound/releases/download/v2.4.0/sound.zip"
 
 # Note about Syphon (macOS only)
 echo ""

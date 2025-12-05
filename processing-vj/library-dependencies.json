@@ -16,11 +16,12 @@
     {
       "name": "sound",
       "displayName": "Sound",
+      "downloadUrl": "https://github.com/processing/processing-sound/releases/download/v2.4.0/sound.zip",
+      "version": "2.4.0",
       "contributionType": "library",
       "isBuiltIn": true,
-      "installViaContributionManager": true,
       "requiredBy": ["AudioAnalysisOSC"],
-      "notes": "Built-in Processing library, install via Contribution Manager API"
+      "notes": "Official Processing Sound library with native support for Linux"
     },
     {
       "name": "Syphon",
