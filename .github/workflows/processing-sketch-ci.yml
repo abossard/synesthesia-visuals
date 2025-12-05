@@ -52,6 +52,9 @@ jobs:
       DISPLAY: :99
       CI_TEST_MODE: true
       PROCESSING_SKETCHBOOK: ${{ github.workspace }}/sketchbook
+      # Force Mesa software rendering for headless OpenGL (prevents SIGSEGV crashes)
+      LIBGL_ALWAYS_SOFTWARE: 1
+      GALLIUM_DRIVER: llvmpipe
     
     steps:
       - name: Checkout code
