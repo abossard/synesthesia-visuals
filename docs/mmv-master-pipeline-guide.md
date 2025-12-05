@@ -398,7 +398,7 @@ flowchart TD
     PEAK_K --> KICK_RAW["KickRaw"]
     
     KICK_RAW --> SMOOTH_K2["Smooth: 0.35"]
-    SMOOTH_K2 --> EXPR_K["Expression:<br/>min(x × 2.0, 1)"]
+    SMOOTH_K2 --> EXPR_K["Expression:<br/>min(x * 2.0, 1)"]
     EXPR_K --> KICK_ENV["KickEnv"]
     
     KICK_ENV --> THRESH_K["Threshold: 0.6"]
