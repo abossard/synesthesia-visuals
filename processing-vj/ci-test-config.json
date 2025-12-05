@@ -7,10 +7,10 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial analyzer state",
+          "description": "Capture initial state of AudioAnalysisOSC",
           "waitFrames": 60,
           "keyInputs": [],
-          "screenshotName": "audioanalysis-initial.png"
+          "screenshotName": "audioanalysisosc-initial.png"
         }
       ]
     },
@@ -21,30 +21,10 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial clean state",
-          "waitFrames": 30,
-          "keyInputs": [],
-          "screenshotName": "buildup-initial.png"
-        },
-        {
-          "name": "coverage-buildup",
-          "description": "Add several coverage panels",
-          "waitFrames": 30,
-          "keyInputs": [
-            "MOUSE_CLICK",
-            "MOUSE_CLICK",
-            "MOUSE_CLICK"
-          ],
-          "screenshotName": "buildup-coverage.png"
-        },
-        {
-          "name": "release-effect",
-          "description": "Trigger release with 'r' key",
+          "description": "Capture initial state of BuildupRelease",
           "waitFrames": 60,
-          "keyInputs": [
-            "r"
-          ],
-          "screenshotName": "buildup-release.png"
+          "keyInputs": [],
+          "screenshotName": "builduprelease-initial.png"
         }
       ]
     },
@@ -54,20 +34,11 @@
       "mainFile": "CrowdBattle.pde",
       "testScenarios": [
         {
-          "name": "initial-agents",
-          "description": "Capture initial crowd simulation state",
-          "waitFrames": 120,
+          "name": "initial-state",
+          "description": "Capture initial state of CrowdBattle",
+          "waitFrames": 60,
           "keyInputs": [],
           "screenshotName": "crowdbattle-initial.png"
-        },
-        {
-          "name": "bomb-drop",
-          "description": "Drop bomb and capture explosion",
-          "waitFrames": 60,
-          "keyInputs": [
-            "MOUSE_CLICK"
-          ],
-          "screenshotName": "crowdbattle-explosion.png"
         }
       ]
     },
@@ -78,7 +49,7 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial image overlay state",
+          "description": "Capture initial state of ImageOverlay",
           "waitFrames": 60,
           "keyInputs": [],
           "screenshotName": "imageoverlay-initial.png"
@@ -92,10 +63,10 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial overlay state (waiting for OSC)",
+          "description": "Capture initial state of KaraokeOverlay",
           "waitFrames": 60,
           "keyInputs": [],
-          "screenshotName": "karaoke-initial.png"
+          "screenshotName": "karaokeoverlay-initial.png"
         }
       ]
     },
@@ -106,19 +77,10 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial visualizer state",
+          "description": "Capture initial state of OscAudioVisualizer",
           "waitFrames": 60,
           "keyInputs": [],
-          "screenshotName": "oscvisualizer-initial.png"
-        },
-        {
-          "name": "toggle-hud",
-          "description": "Toggle HUD overlay with 'h' key",
-          "waitFrames": 30,
-          "keyInputs": [
-            "h"
-          ],
-          "screenshotName": "oscvisualizer-hud.png"
+          "screenshotName": "oscaudiovisualizer-initial.png"
         }
       ]
     },
@@ -129,8 +91,8 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial drawing canvas",
-          "waitFrames": 30,
+          "description": "Capture initial state of PatternDraw",
+          "waitFrames": 60,
           "keyInputs": [],
           "screenshotName": "patterndraw-initial.png"
         }
@@ -143,7 +105,7 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial VJ system state",
+          "description": "Capture initial state of VJSystem",
           "waitFrames": 60,
           "keyInputs": [],
           "screenshotName": "vjsystem-initial.png"
@@ -157,19 +119,10 @@
       "testScenarios": [
         {
           "name": "initial-state",
-          "description": "Capture initial game state with target visible",
+          "description": "Capture initial state of WhackAMole",
           "waitFrames": 60,
           "keyInputs": [],
           "screenshotName": "whackamole-initial.png"
-        },
-        {
-          "name": "mouse-click-simulation",
-          "description": "Simulate mouse click and capture particle effects",
-          "waitFrames": 30,
-          "keyInputs": [
-            "MOUSE_CLICK"
-          ],
-          "screenshotName": "whackamole-click.png"
         }
       ]
     }

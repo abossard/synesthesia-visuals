@@ -53,8 +53,14 @@ def create_ci_wrapper_sketch(original_sketch_path, output_dir, config):
     # Create the CI wrapper file
     main_pde = wrapper_dir / f"{sketch_name}_CI.pde"
     
-    ci_code = f"""/**
- * CI Test Wrapper for {sketch_name}
+    # Build the CI code as a string
+    wait_frames = config.get('waitFrames', 180)
+    screenshot_frame = wait_frames - 10
+    sketch_name_val = config.get('sketchName', 'sketch')
+    scenario_name_val = config.get('scenarioName', 'default')
+    
+    ci_code = '''/**
+ * CI Test Wrapper for ''' + sketch_name + '''
  * 
  * This wrapper adds CI test functionality without modifying the original sketch.
  * It intercepts setup() and draw() to add screenshot capture and auto-exit.
@@ -62,11 +68,11 @@ def create_ci_wrapper_sketch(original_sketch_path, output_dir, config):
 
 // CI Test Configuration
 boolean ciTestMode = false;
-int ciTestFrameLimit = {config.get('waitFrames', 180)};
-int ciTestScreenshotFrame = {config.get('waitFrames', 180) - 10};
+int ciTestFrameLimit = ''' + str(wait_frames) + ''';
+int ciTestScreenshotFrame = ''' + str(screenshot_frame) + ''';
 String ciTestOutputDir = "ci-output";
-String ciTestSketchName = "{config.get('sketchName', 'sketch')}";
-String ciTestScenarioName = "{config.get('scenarioName', 'default')}";
+String ciTestSketchName = "''' + sketch_name_val + '''";
+String ciTestScenarioName = "''' + scenario_name_val + '''";
 boolean ciTestScreenshotTaken = false;
 boolean ciTestInitialized = false;
 
@@ -76,42 +82,42 @@ boolean originalSetupCalled = false;
 /**
  * Override settings() to initialize CI mode early
  */
-void settings() {{
+void settings() {
   // Check if we're in CI mode
   String ciMode = System.getenv("CI_TEST_MODE");
   ciTestMode = (ciMode != null && ciMode.equals("true"));
   
-  if (ciTestMode) {{
+  if (ciTestMode) {
     // Get configuration from environment
     String frameLimitStr = System.getenv("CI_FRAME_LIMIT");
-    if (frameLimitStr != null) {{
-      try {{
+    if (frameLimitStr != null) {
+      try {
         ciTestFrameLimit = Integer.parseInt(frameLimitStr);
         ciTestScreenshotFrame = ciTestFrameLimit - 10;
-      }} catch (NumberFormatException e) {{}}
-    }}
+      } catch (NumberFormatException e) {}
+    }
     
     String screenshotFrameStr = System.getenv("CI_SCREENSHOT_FRAME");
-    if (screenshotFrameStr != null) {{
-      try {{
+    if (screenshotFrameStr != null) {
+      try {
         ciTestScreenshotFrame = Integer.parseInt(screenshotFrameStr);
-      }} catch (NumberFormatException e) {{}}
-    }}
+      } catch (NumberFormatException e) {}
+    }
     
     String outputDir = System.getenv("CI_OUTPUT_DIR");
-    if (outputDir != null && !outputDir.isEmpty()) {{
+    if (outputDir != null && !outputDir.isEmpty()) {
       ciTestOutputDir = outputDir;
-    }}
+    }
     
     String sketchName = System.getenv("CI_SKETCH_NAME");
-    if (sketchName != null && !sketchName.isEmpty()) {{
+    if (sketchName != null && !sketchName.isEmpty()) {
       ciTestSketchName = sketchName;
-    }}
+    }
     
     String scenarioName = System.getenv("CI_SCENARIO_NAME");
-    if (scenarioName != null && !scenarioName.isEmpty()) {{
+    if (scenarioName != null && !scenarioName.isEmpty()) {
       ciTestScenarioName = scenarioName;
-    }}
+    }
     
     println("=== CI TEST MODE ENABLED ===");
     println("Sketch: " + ciTestSketchName);
@@ -124,53 +130,53 @@ void settings() {{
     // Set deterministic random seeds
     randomSeed(12345);
     noiseSeed(12345);
-  }}
+  }
   
   // Call original settings if it exists in the sketch
   // Processing will handle this automatically
-}}
+}
 
-void setup() {{
-  if (ciTestMode && !ciTestInitialized) {{
+void setup() {
+  if (ciTestMode && !ciTestInitialized) {
     ciTestInitialized = true;
     println("CI Test wrapper initialized");
-  }}
-}}
+  }
+}
 
-void draw() {{
+void draw() {
   if (!ciTestMode) return;
   
   // Take screenshot at specified frame
-  if (frameCount == ciTestScreenshotFrame && !ciTestScreenshotTaken) {{
+  if (frameCount == ciTestScreenshotFrame && !ciTestScreenshotTaken) {
     ciTestSaveScreenshot();
     ciTestScreenshotTaken = true;
-  }}
+  }
   
   // Exit after frame limit
-  if (frameCount >= ciTestFrameLimit) {{
+  if (frameCount >= ciTestFrameLimit) {
     println("CI Test: Reached frame limit (" + ciTestFrameLimit + " frames), exiting...");
     
     // Make sure screenshot was taken
-    if (!ciTestScreenshotTaken) {{
+    if (!ciTestScreenshotTaken) {
       ciTestSaveScreenshot();
-    }}
+    }
     
     exit();
-  }}
-}}
+  }
+}
 
-void ciTestSaveScreenshot() {{
+void ciTestSaveScreenshot() {
   // Create output directory if it doesn't exist
   java.io.File dir = new java.io.File(ciTestOutputDir);
-  if (!dir.exists()) {{
+  if (!dir.exists()) {
     dir.mkdirs();
-  }}
+  }
   
   String filename = ciTestOutputDir + "/" + ciTestSketchName + "-" + ciTestScenarioName + ".png";
   save(filename);
   println("CI Test: Screenshot saved to " + filename + " at frame " + frameCount);
-}}
-"""
+}
+'''
     
     with open(main_pde, 'w') as f:
         f.write(ci_code)
@@ -220,7 +226,7 @@ def main():
     sketch_path = sys.argv[1]
     
     # Parse scenario config if provided
-    config = {{}}
+    config = {}
     if len(sys.argv) >= 3:
         try:
             config = json.loads(sys.argv[2])
