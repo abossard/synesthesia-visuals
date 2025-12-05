@@ -18,7 +18,7 @@ python vj_console.py          # Launch the terminal UI
 - **🎧 Audio Analysis**: Real-time audio analysis with beat detection, BPM, spectral features
 - **🏷️ Song Categorization**: AI-powered mood/theme analysis (dark, happy, love, death, etc.)
 - **📡 6+ OSC Channels**: Lyrics, refrain, keywords, categories, images, audio features, and app status
-- **🤖 AI Analysis**: OpenAI or local Ollama for refrain detection and image prompts
+- **🤖 AI Analysis**: OpenAI or local LM Studio for refrain detection and image prompts
 - **🎨 ComfyUI Integration**: Generates song-matched visuals with black backgrounds
 - **⚡ Daemon Mode**: Auto-restarts crashed Processing apps
 - **🔍 OSC Debug Panel**: Live view of all emitted OSC messages
@@ -145,7 +145,7 @@ flowchart TB
     end
 
     subgraph AI["🤖 AI Services"]
-        Ollama[Ollama LLM]
+        LMStudio[LM Studio]
         OpenAI[OpenAI API]
         ComfyUI[ComfyUI]
     end
@@ -165,7 +165,7 @@ flowchart TB
     
     KaraokeEngine --> SongCategorizer
     SongCategorizer --> LLMAnalyzer
-    LLMAnalyzer --> Ollama
+    LLMAnalyzer --> LMStudio
     LLMAnalyzer --> OpenAI
     KaraokeEngine --> ComfyUI
     
@@ -238,7 +238,7 @@ On startup, the console checks for available services and shows their status:
 ╠════════════════════════════════════════════════════════════╣
 ║  ✓ Spotify API      Credentials configured                 ║
 ║  ✓ VirtualDJ        ~/Documents/VirtualDJ/now_playing.txt  ║
-║  ✓ Ollama LLM       llama3.2 (from 5 models)               ║
+║  ✓ LM Studio       local-model (loaded)                    ║
 ║  ✓ ComfyUI          http://127.0.0.1:8188                  ║
 ║  ○ OpenAI           OPENAI_API_KEY not set                 ║
 ╚════════════════════════════════════════════════════════════╝
@@ -256,32 +256,22 @@ SPOTIPY_CLIENT_SECRET=your_client_secret
 SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
 
-### Ollama LLM Setup (Recommended)
+### LM Studio Setup (Recommended)
 
 For AI-powered lyrics analysis (refrain detection, keyword extraction, image prompts):
 
-```bash
-# Install Ollama from https://ollama.com/download
-# macOS:
-brew install ollama
-
-# Pull a recommended model:
-ollama pull llama3.2          # Best overall
-# or
-ollama pull mistral           # Lighter weight
-# or  
-ollama pull deepseek-r1       # Good for poetic language
-
-# Start Ollama service:
-ollama serve
-```
+1. Download LM Studio from https://lmstudio.ai/
+2. Install and launch LM Studio
+3. Download a model (e.g., Llama 3.2, Mistral, DeepSeek)
+4. Load the model in LM Studio
+5. Start the local server (enabled by default on port 1234)
 
 **Detection Process:**
-1. Checks `http://localhost:11434/api/tags` for running Ollama
-2. Lists installed models and selects best match from priority list
+1. Checks `http://localhost:1234/v1/models` for running LM Studio
+2. Uses the currently loaded model
 3. Falls back to basic heuristic analysis if unavailable
 
-**Priority order:** `llama3.2` → `llama3.1` → `mistral` → `deepseek-r1` → `llama2` → `phi3` → `gemma2`
+**API:** LM Studio provides an OpenAI-compatible API at `http://localhost:1234/v1/chat/completions`
 
 ### ComfyUI Image Generation (Optional, Disabled by Default)
 
@@ -346,13 +336,13 @@ python-vj/
 
 ### OpenAI Setup (Optional)
 
-As an alternative to local Ollama:
+As an alternative to local LM Studio:
 
 ```env
 OPENAI_API_KEY=sk-your-api-key
 ```
 
-Uses GPT-3.5-turbo for lyrics analysis. OpenAI is preferred over Ollama if both are available.
+Uses GPT-3.5-turbo for lyrics analysis. OpenAI is preferred over LM Studio if both are available.
 
 ## Usage
 
@@ -382,7 +372,7 @@ When a song starts playing, the console shows a colorful pipeline:
   ✓ ⏱ Parse LRC Timecodes - 47 lines
   ✓ 🔁 Detect Refrain - 12 refrain lines
   ✓ 🔑 Extract Keywords - Done
-  ◐ 🤖 AI Analysis - Using Ollama (llama3.2)...
+  ◐ 🤖 AI Analysis - Using LM Studio...
   ○ 🎨 Generate Image Prompt
   ○ 📡 Send OSC
 
@@ -563,7 +553,7 @@ See [`processing-vj/examples/ImageOverlay/`](../processing-vj/examples/ImageOver
 │ (Daemon Mode) │   │ Spotify API    │   │               │
 └───────────────┘   │ VirtualDJ      │   └───────┬───────┘
                     │ LRCLIB API     │           │
-                    │ Ollama LLM     │           │
+                    │ LM Studio     │           │
                     └───────┬────────┘           │
                             │ OSC                │
         ┌───────────────────┴───────────────────┐│

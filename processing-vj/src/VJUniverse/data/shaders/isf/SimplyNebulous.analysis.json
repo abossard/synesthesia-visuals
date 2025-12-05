@@ -1,0 +1,12 @@
+{
+  "shaderName": "SimplyNebulous",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "The shader generates a swirling, colorful nebula-like pattern with fractal elements and dynamic distortions.",
+  "colors": ["blue", "purple"],
+  "geometry": ["organic"],
+  "objects": ["nebula"],
+  "effects": ["glow", "distortion"],
+  "analyzedAt": 1764976947863
+}

@@ -1,0 +1,12 @@
+{
+  "shaderName": "TruchetDualLevelSpin",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "This shader generates a dynamic, rotating pattern of black and white tiles with glowing edges that create a complex and visually captivating effect.",
+  "colors": ["black", "white"],
+  "geometry": ["tessellation"],
+  "objects": ["tiles", "pattern"],
+  "effects": ["rotation", "distortion", "glow"],
+  "analyzedAt": 1764976969360
+}

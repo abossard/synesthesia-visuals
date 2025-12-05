@@ -165,17 +165,29 @@ ShaderAnalysis loadShaderAnalysis(String shaderPath) {
   String analysisPath = shaderPath.replaceAll("\\.(fs|frag|isf|glsl)$", ".analysis.json");
   String filepath = dataPath(analysisPath);
   
+  println("    [loadShaderAnalysis] Checking: " + filepath);
+  
   File f = new File(filepath);
   if (!f.exists()) {
+    println("    [loadShaderAnalysis] NOT FOUND");
     return null;
   }
   
+  println("    [loadShaderAnalysis] FOUND - loading...");
+  
   try {
     String[] lines = loadStrings(filepath);
-    if (lines == null || lines.length == 0) return null;
+    if (lines == null || lines.length == 0) {
+      println("    [loadShaderAnalysis] File empty or null");
+      return null;
+    }
     
     String json = String.join("\n", lines);
-    return parseAnalysisJson(json);
+    ShaderAnalysis result = parseAnalysisJson(json);
+    if (result != null) {
+      println("    [loadShaderAnalysis] Parsed OK: " + result.mood);
+    }
+    return result;
     
   } catch (Exception e) {
     println("Error loading shader analysis: " + e.getMessage());

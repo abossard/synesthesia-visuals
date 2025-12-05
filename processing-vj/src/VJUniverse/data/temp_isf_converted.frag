@@ -11,91 +11,91 @@ uniform float treble;
 uniform float level;
 uniform float beat;
 
-uniform vec2 spin;
-uniform float seedX;
-uniform float seedY;
-uniform float grid;
-uniform float spotlight;
-uniform float edge;
-uniform float glow;
-uniform float fill;
-uniform float freq;
-uniform float pulse;
-uniform float pulserate;
-uniform float thickness;
 uniform float scale;
 uniform float rate;
+uniform float loops;
+uniform float density;
+uniform float depth;
+uniform float detail;
+uniform float Xr;
+uniform float Yr;
+uniform float Zr;
+uniform float R;
+uniform float G;
+uniform float B;
+uniform vec2 lightpos;
 
+// Flip Y coordinate to match ISF expectations (Y=0 at bottom)
+vec2 isf_FragCoord = vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y);
 #define TIME time
 #define RENDERSIZE resolution
-#define isf_FragNormCoord (gl_FragCoord.xy / resolution)
+#define isf_FragNormCoord (isf_FragCoord / resolution)
 #define FRAMEINDEX int(time * 60.0)
 
-////////////////////////////////////////////////////////////////////
-// TruchetDualLevelSpin  by mojovideotech
+////////////////////////////////////////////////////////////
+// FractilianSpongeOfDoom   by mojovideotech
 //
-// based on :
-// shadertoy.com\/view\/ltcfz2 by Shane
+// based on 
+// shadertoy.com\/MdKyRw  by wyatt
 //
-// License Creative Commons Attribution-NonCommercial-ShareAlike 3.0
-////////////////////////////////////////////////////////////////////
+// Creative Commons Attribution-NonCommercial-ShareAlike 3.0
+////////////////////////////////////////////////////////////
 
 
+vec4 light;
+float T;
+mat2 m,n,nn;
 
-#define     twpi    6.2831853   // two pi, 2*pi
-
-vec2 hash22(vec2 p) { 
-    return fract(sin(vec2(262144, 32768))*sin(dot(p*vec2(seedX,seedY), vec2(57, 27))));
+float map (vec3 p) {
+    float t = 2.5, d = length(p-light.xyz)-light.w;
+    d = min(d,max(10.0-p.z, 0.0));
+    for (int i = 0; i < 20; i++) {
+    	if (float (i) >depth) break;
+        t = t*0.66;
+        p.xy = m*p.xy;
+        p.yz = n*p.yz;
+        p.zx = nn*p.zx;
+        p.xz = abs(p.xz) - t;
+    }
+    d = min(d,length(p)-density*t);
+    return d;
 }
- 
-vec2 rot( vec2 p ) {
-    float c = cos(TIME*spin.x), s = sin(TIME*spin.y);
-    mat2  m = mat2(c,-s,s,c);
-    return vec2(m*p.xy);
+
+vec3 norm (vec3 p) {
+    vec2 e = vec2 (detail, 0.0);
+    return normalize(vec3(
+        map(p+e.xyy) - map(p-e.xyy),
+        map(p+e.yxy) - map(p-e.yxy),
+        map(p+e.yyx) - map(p-e.yyx)));
 }
+
+vec3 ray (vec3 r, vec3 d) {
+    for (int i = 0; i < 40; i++) {
+        if (float (i) >loops) break;
+        r += d*map(r);
+    }
+    return r;
+}
+
+mat2 rot (float s) { return mat2(sin(s),cos(s),-cos(s),sin(s)); }
 
 void main() 
 {
-    float T = TIME * rate;             
-    float iRy = min(RENDERSIZE.y, 600.0);
-    vec2 uv = (gl_FragCoord.xy - RENDERSIZE.xy*0.5)/iRy;
-    uv = rot(uv); 
-    vec2 oP = uv*12.0 + vec2(0.5, T*0.5);
-    vec2 d = vec2(1e5), rndTh = vec2(freq, 1.0);
-    float dim = scale;    
-    for(int k=0; k<2; k++) {
-		vec2 ip = floor(oP*dim);
-        vec2 rnd = hash22(ip);
-        if(rnd.x<rndTh[k]) {
-        	float hd = 0.5/dim;
-            vec2 p = oP - (ip + 0.5)/dim;
- 		    d.y = abs(max(abs(p.x), abs(p.y)) - hd) - 0.333/grid;
-            p.y *= rnd.y>0.5? 1.0 : -1.0;
-            float aw = 0.5/3.0/dim;
-            p = p.x>-p.y? p : -p.yx;
-            d.x = abs(length(p - hd) - hd) - aw;
-            d.x *= k==1? -1.0 : 1.0;
-            d.x = min(d.x, (length(abs(p) - hd) - aw));
-            d.x -= 0.05*thickness;
-            d.x -= (sin(TIME*pulserate)*0.075*pulse);
-            break;
-        } 
-        dim *= 2.0;
-    }
-    
-    vec3 col = vec3(0.0);
-    float fo = (10.1-grid)/iRy;
-    col = mix(col, vec3(0.0), (1.0 - smoothstep(0.0, fo*5.0, d.y - 0.1))*0.15); 
-    col = mix(col, vec3(1.0), (1.0 - smoothstep(0.0, fo, d.y))*0.15);
-    fo = glow/iRy/sqrt(dim);
-    float sh = max(0.75 - d.x*edge, 0.0); 
-    sh *= clamp(-sin(d.x*twpi*edge) + 1.0, 0.25, 1.0) + 0.0025; 
-    col = mix(col, vec3(0.0), (1.0 - smoothstep(0.0, fo*5.0, d.x))*0.5); 
-    col = mix(col, vec3(0.0), 1.0 - smoothstep(0.0, fo, d.x));    
-    col = mix(col, vec3(0.3)*sh, 1.0 - smoothstep(0.0, fo, d.x + 0.51-fill)); 
-    col = mix(col, vec3(0.2, 0.3, 0.9)*sh, 1.0 - smoothstep(0.0, fo, abs(d.x + 0.12) - 0.02));
-    col = mix(col, col.gbr, uv.y*0.5 + 0.5);
-    col = mix(col, col*max(1.1 - length(uv)*0.95, 0.0), spotlight);
-    
-    gl_FragColor = vec4(sqrt(max(col, 0.0)), 1.0);
+    vec2 v = (isf_FragCoord.xy/RENDERSIZE.xy*2.0-1.0)*scale;
+	v.x *= RENDERSIZE.x/RENDERSIZE.y;
+    T = rate*TIME*10.0;
+    m = rot(Xr*T);
+    n = rot(Yr*T);
+    nn = rot(Zr*T);
+    vec3 r = vec3(0.0,0.0,-15.0+2.0*sin(0.01*T));
+    light = vec4(10.0*sin(0.01*T),lightpos.xy,1.0);
+    vec3 d = normalize(vec3(v,5.0));
+    vec3 p = ray(r,d);
+    d = normalize(light.xyz-p);
+    vec3 no = norm(p);
+    vec3 col = vec3(R,G,B)+0.25;
+    vec3 bounce = ray(p+0.01*d,d);
+    col = mix(col,vec3(0.0),dot(no, normalize(light.xyz-p)));
+    if (length(bounce-light.xyz) > light.w+0.1) col *= 0.2;
+    gl_FragColor = vec4(col,1.0);
 }

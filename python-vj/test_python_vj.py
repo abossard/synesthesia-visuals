@@ -391,8 +391,8 @@ class TestLLMAnalyzer(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             analyzer = LLMAnalyzer(cache_dir=Path(tmpdir))
             self.assertIsNotNone(analyzer)
-            # Should have a backend (none, openai, or ollama)
-            self.assertIn(analyzer._backend, ["none", "openai", "ollama"])
+            # Should have a backend (none, openai, or lmstudio)
+            self.assertIn(analyzer._backend, ["none", "openai", "lmstudio"])
     
     def test_backend_info(self):
         """backend_info should return a readable string."""

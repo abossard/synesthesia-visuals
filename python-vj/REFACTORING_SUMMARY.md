@@ -126,7 +126,7 @@ class AIOrchestrator:
 **Public interface**: `fetch(artist, title) -> Optional[str]`
 
 **LLMAnalyzer** - Hides complexity:
-- Multi-backend (OpenAI vs Ollama)
+- Multi-backend (OpenAI vs LM Studio)
 - Model auto-detection
 - JSON parsing from LLM responses
 - Fallback to keyword analysis

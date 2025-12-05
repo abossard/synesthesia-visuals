@@ -10,13 +10,19 @@ import java.io.*;
 // LM STUDIO API (OpenAI-compatible)
 // ============================================
 
+// Timeout settings (in milliseconds)
+int LLM_CONNECT_TIMEOUT = 30000;    // 30 seconds to connect
+int LLM_READ_TIMEOUT = 600000;      // 10 minutes to wait for response (LLMs can be slow)
+int LLM_MAX_RETRIES = 3;            // Number of retry attempts
+int LLM_RETRY_DELAY = 5000;         // 5 seconds between retries
+
 boolean checkLlmAvailable() {
   try {
     URL url = new URL(LLM_URL + "/v1/models");
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setRequestMethod("GET");
-    conn.setConnectTimeout(2000);
-    conn.setReadTimeout(2000);
+    conn.setConnectTimeout(5000);
+    conn.setReadTimeout(10000);
     
     int code = conn.getResponseCode();
     conn.disconnect();
@@ -28,15 +34,21 @@ boolean checkLlmAvailable() {
 }
 
 String callLlm(String prompt) {
+  return callLlmWithRetry(prompt, LLM_MAX_RETRIES);
+}
+
+String callLlmWithRetry(String prompt, int retriesLeft) {
   try {
     println("  [callLlm] Connecting to: " + LLM_URL + "/v1/chat/completions");
+    println("  [callLlm] Timeout: " + (LLM_READ_TIMEOUT / 1000) + "s, Retries left: " + retriesLeft);
+    
     URL url = new URL(LLM_URL + "/v1/chat/completions");
     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
     conn.setRequestMethod("POST");
     conn.setRequestProperty("Content-Type", "application/json");
     conn.setDoOutput(true);
-    conn.setConnectTimeout(30000);
-    conn.setReadTimeout(120000);  // Increased timeout for slower models
+    conn.setConnectTimeout(LLM_CONNECT_TIMEOUT);
+    conn.setReadTimeout(LLM_READ_TIMEOUT);
     
     // Build request JSON (OpenAI chat completions format)
     String requestBody = buildLmStudioRequest(prompt);
@@ -47,10 +59,13 @@ String callLlm(String prompt) {
     os.write(requestBody.getBytes("UTF-8"));
     os.close();
     
-    println("  [callLlm] Waiting for response...");
+    println("  [callLlm] Waiting for response (this may take several minutes for complex prompts)...");
+    long startTime = System.currentTimeMillis();
+    
     // Read response
     int code = conn.getResponseCode();
-    println("  [callLlm] Response code: " + code);
+    long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+    println("  [callLlm] Response code: " + code + " (took " + elapsed + "s)");
     
     if (code != 200) {
       println("  [callLlm] LM Studio returned error: " + code);
@@ -65,6 +80,7 @@ String callLlm(String prompt) {
         }
         errReader.close();
       } catch (Exception ignored) {}
+      conn.disconnect();
       return null;
     }
     
@@ -90,6 +106,32 @@ String callLlm(String prompt) {
     }
     return content;
     
+  } catch (java.net.SocketTimeoutException e) {
+    println("  [callLlm] Timeout: " + e.getMessage());
+    if (retriesLeft > 0) {
+      println("  [callLlm] Retrying in " + (LLM_RETRY_DELAY / 1000) + " seconds...");
+      try { Thread.sleep(LLM_RETRY_DELAY); } catch (InterruptedException ie) {}
+      return callLlmWithRetry(prompt, retriesLeft - 1);
+    }
+    println("  [callLlm] All retries exhausted");
+    return null;
+  } catch (java.net.ConnectException e) {
+    println("  [callLlm] Connection failed: " + e.getMessage());
+    if (retriesLeft > 0) {
+      println("  [callLlm] Retrying in " + (LLM_RETRY_DELAY / 1000) + " seconds...");
+      try { Thread.sleep(LLM_RETRY_DELAY); } catch (InterruptedException ie) {}
+      return callLlmWithRetry(prompt, retriesLeft - 1);
+    }
+    println("  [callLlm] All retries exhausted");
+    return null;
+  } catch (IOException e) {
+    println("  [callLlm] IO Exception: " + e.getMessage());
+    if (retriesLeft > 0 && !e.getMessage().contains("refused")) {
+      println("  [callLlm] Retrying in " + (LLM_RETRY_DELAY / 1000) + " seconds...");
+      try { Thread.sleep(LLM_RETRY_DELAY); } catch (InterruptedException ie) {}
+      return callLlmWithRetry(prompt, retriesLeft - 1);
+    }
+    return null;
   } catch (Exception e) {
     println("  [callLlm] Exception: " + e.getMessage());
     e.printStackTrace();

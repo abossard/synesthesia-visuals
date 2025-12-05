@@ -437,7 +437,7 @@ class ServicesPanel(ReactivePanel):
         lines = [self.render_section("Services", "═")]
         lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
         lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
-        lines.append(svc(s.get('ollama'), "Ollama LLM", ', '.join(s.get('ollama_models', [])) or "Not running"))
+        lines.append(svc(s.get('lmstudio'), "LM Studio", s.get('lmstudio_model', '') or "Not running"))
         lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
         lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
         lines.append(svc(s.get('synesthesia'), "Synesthesia", "Running" if s.get('synesthesia') else "Installed" if s.get('synesthesia_installed') else "Not installed"))
@@ -979,15 +979,16 @@ class VJConsoleApp(App):
     def _update_services(self) -> None:
         """Update services panel with current status."""
         import os
-        ollama_ok, ollama_models, comfyui_ok = False, [], False
+        lmstudio_ok, lmstudio_model, comfyui_ok = False, '', False
         
         try:
             import requests
-            # Single request to Ollama - reuse response
-            ollama_resp = requests.get("http://localhost:11434/api/tags", timeout=1)
-            if ollama_resp.status_code == 200:
-                ollama_ok = True
-                ollama_models = ollama_resp.json().get('models', [])
+            # Single request to LM Studio - reuse response
+            lmstudio_resp = requests.get("http://localhost:1234/v1/models", timeout=1)
+            if lmstudio_resp.status_code == 200:
+                lmstudio_ok = True
+                models = lmstudio_resp.json().get('data', [])
+                lmstudio_model = models[0].get('id', 'loaded') if models else 'no model'
             
             comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
         except Exception:
@@ -1000,8 +1001,8 @@ class VJConsoleApp(App):
                 'spotify': KaraokeConfig.has_spotify_credentials(),
                 'virtualdj': bool(vdj_path),
                 'vdj_file': vdj_path.name if vdj_path else '',
-                'ollama': ollama_ok,
-                'ollama_models': [m.get('name', '').split(':')[0] for m in ollama_models[:3]],
+                'lmstudio': lmstudio_ok,
+                'lmstudio_model': lmstudio_model,
                 'comfyui': comfyui_ok,
                 'openai': bool(os.environ.get('OPENAI_API_KEY')),
                 'synesthesia': self.synesthesia_running,
