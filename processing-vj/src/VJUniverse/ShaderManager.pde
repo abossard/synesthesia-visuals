@@ -231,10 +231,17 @@ String convertIsfToGlsl(String isfSource) {
   }
   
   // ISF compatibility defines
+  // Processing's gl_FragCoord has Y=0 at top, ISF expects Y=0 at bottom
+  // We need to flip Y coordinate for proper centering
+  sb.append("// Flip Y coordinate to match ISF expectations (Y=0 at bottom)\n");
+  sb.append("vec2 isf_FragCoord = vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y);\n");
   sb.append("#define TIME time\n");
   sb.append("#define RENDERSIZE resolution\n");
-  sb.append("#define isf_FragNormCoord (gl_FragCoord.xy / resolution)\n");
+  sb.append("#define isf_FragNormCoord (isf_FragCoord / resolution)\n");
   sb.append("#define FRAMEINDEX int(time * 60.0)\n\n");
+  
+  // Replace gl_FragCoord with our corrected version in the shader body
+  glslBody = glslBody.replace("gl_FragCoord", "isf_FragCoord");
   
   // Add the shader body
   sb.append(glslBody);

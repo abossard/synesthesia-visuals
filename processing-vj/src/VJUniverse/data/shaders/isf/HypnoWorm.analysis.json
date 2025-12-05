@@ -1,0 +1,12 @@
+{
+  "shaderName": "HypnoWorm",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "This shader generates a swirling, animated worm-like pattern with vibrant color gradients and psychedelic distortions.",
+  "colors": ["purple", "cyan"],
+  "geometry": ["spiral"],
+  "objects": ["worm"],
+  "effects": ["distortion", "gradient", "animation"],
+  "analyzedAt": 1764976587726
+}

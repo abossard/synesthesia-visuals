@@ -3,10 +3,10 @@
   "mood": "psychedelic",
   "energy": "high",
   "complexity": "complex",
-  "description": "This shader generates a flowing, distorted noise pattern with vibrant blue and purple hues.",
+  "description": "This shader generates a swirling, distorted fluid-like effect with vibrant blue and purple tones through complex noise calculations.",
   "colors": ["blue", "purple"],
   "geometry": ["organic"],
-  "objects": ["flow field"],
+  "objects": ["flow"],
   "effects": ["noise", "distortion"],
-  "analyzedAt": 1764976533237
+  "analyzedAt": 1764976599970
 }

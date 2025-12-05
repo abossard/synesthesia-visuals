@@ -27,23 +27,22 @@ logger = logging.getLogger('karaoke')
 
 class LLMAnalyzer:
     """
-    AI-powered lyrics analysis using OpenAI or local Ollama.
+    AI-powered lyrics analysis using OpenAI or local LM Studio.
     
     Deep module interface:
         analyze_lyrics(lyrics, artist, title) -> Dict
         generate_image_prompt(artist, title, keywords, themes) -> str
     
-    Hides: Multi-backend LLM (OpenAI/Ollama), caching, fallback logic
+    Hides: Multi-backend LLM (OpenAI/LM Studio), caching, fallback logic
     """
     
-    PREFERRED_MODELS = ['llama3.2', 'llama3.1', 'mistral', 'deepseek-r1', 'llama2']
-    OLLAMA_URL = "http://localhost:11434"
+    LM_STUDIO_URL = "http://localhost:1234"
     
     def __init__(self, cache_dir: Optional[Path] = None):
         self._cache_dir = (cache_dir or Config.APP_DATA_DIR) / "llm_cache"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._openai_client = None
-        self._ollama_model = None
+        self._lmstudio_model = None
         self._health = ServiceHealth("LLM")
         self._backend = "none"
         self._init_backend()
@@ -90,12 +89,16 @@ class LLMAnalyzer:
                     max_tokens=150
                 )
                 return response.choices[0].message.content.strip()
-            elif self._backend == "ollama":
-                resp = requests.post(f"{self.OLLAMA_URL}/api/generate",
-                    json={"model": self._ollama_model, "prompt": prompt, "stream": False},
+            elif self._backend == "lmstudio":
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 150
+                    },
                     timeout=30)
                 if resp.status_code == 200:
-                    return resp.json().get('response', '').strip()
+                    return resp.json().get('choices', [{}])[0].get('message', {}).get('content', '').strip()
         except Exception as e:
             logger.debug(f"Image prompt generation error: {e}")
         
@@ -109,8 +112,8 @@ class LLMAnalyzer:
     def backend_info(self) -> str:
         if self._backend == "openai":
             return "OpenAI"
-        elif self._backend == "ollama":
-            return f"Ollama ({self._ollama_model})"
+        elif self._backend == "lmstudio":
+            return f"LM Studio ({self._lmstudio_model})"
         return "Basic (no LLM)"
     
     # Private implementation
@@ -131,19 +134,16 @@ class LLMAnalyzer:
             except Exception:
                 pass
         
-        # Try Ollama
+        # Try LM Studio (OpenAI-compatible API)
         try:
-            resp = requests.get(f"{self.OLLAMA_URL}/api/tags", timeout=2)
+            resp = requests.get(f"{self.LM_STUDIO_URL}/v1/models", timeout=2)
             if resp.status_code == 200:
-                models = [m.get('name', '').split(':')[0] for m in resp.json().get('models', [])]
-                for preferred in self.PREFERRED_MODELS:
-                    if preferred in models:
-                        self._ollama_model = preferred
-                        break
-                if self._ollama_model:
-                    self._health.mark_available(f"Ollama ({self._ollama_model})")
-                    self._backend = "ollama"
-                    logger.info(f"LLM: ✓ Ollama ({self._ollama_model})")
+                models = resp.json().get('data', [])
+                if models:
+                    self._lmstudio_model = models[0].get('id', 'local-model')
+                    self._health.mark_available(f"LM Studio ({self._lmstudio_model})")
+                    self._backend = "lmstudio"
+                    logger.info(f"LLM: ✓ LM Studio ({self._lmstudio_model})")
                     return
         except Exception:
             pass
@@ -168,11 +168,18 @@ Lyrics: {lyrics[:2000]}"""
                     max_tokens=400
                 )
                 content = response.choices[0].message.content
-            elif self._backend == "ollama":
-                resp = requests.post(f"{self.OLLAMA_URL}/api/generate",
-                    json={"model": self._ollama_model, "prompt": prompt, "stream": False},
-                    timeout=30)
-                content = resp.json().get('response', '') if resp.status_code == 200 else None
+            elif self._backend == "lmstudio":
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 400
+                    },
+                    timeout=60)
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    content = None
             else:
                 return None
             
@@ -288,11 +295,18 @@ Return JSON: {{"dark": 0.8, "energetic": 0.3, ...}}"""
                     max_tokens=300
                 )
                 content = response.choices[0].message.content
-            elif self._llm._backend == "ollama":
-                resp = requests.post(f"{LLMAnalyzer.OLLAMA_URL}/api/generate",
-                    json={"model": self._llm._ollama_model, "prompt": prompt, "stream": False},
-                    timeout=30)
-                content = resp.json().get('response', '') if resp.status_code == 200 else None
+            elif self._llm._backend == "lmstudio":
+                resp = requests.post(f"{LLMAnalyzer.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._llm._lmstudio_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 300
+                    },
+                    timeout=60)
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    content = None
             else:
                 return None
             
