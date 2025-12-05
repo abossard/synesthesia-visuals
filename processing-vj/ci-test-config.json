@@ -1,20 +1,6 @@
 {
   "sketches": [
     {
-      "name": "AudioAnalysisOSC",
-      "path": "processing-vj/src/AudioAnalysisOSC",
-      "mainFile": "AudioAnalysisOSC.pde",
-      "testScenarios": [
-        {
-          "name": "initial-state",
-          "description": "Capture initial state of AudioAnalysisOSC",
-          "waitFrames": 60,
-          "keyInputs": [],
-          "screenshotName": "audioanalysisosc-initial.png"
-        }
-      ]
-    },
-    {
       "name": "BuildupRelease",
       "path": "processing-vj/examples/BuildupRelease",
       "mainFile": "BuildupRelease.pde",
