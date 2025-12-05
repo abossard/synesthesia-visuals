@@ -1,0 +1,177 @@
+{
+  "sketches": [
+    {
+      "name": "AudioAnalysisOSC",
+      "path": "processing-vj/src/AudioAnalysisOSC",
+      "mainFile": "AudioAnalysisOSC.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial analyzer state",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "audioanalysis-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "BuildupRelease",
+      "path": "processing-vj/examples/BuildupRelease",
+      "mainFile": "BuildupRelease.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial clean state",
+          "waitFrames": 30,
+          "keyInputs": [],
+          "screenshotName": "buildup-initial.png"
+        },
+        {
+          "name": "coverage-buildup",
+          "description": "Add several coverage panels",
+          "waitFrames": 30,
+          "keyInputs": [
+            "MOUSE_CLICK",
+            "MOUSE_CLICK",
+            "MOUSE_CLICK"
+          ],
+          "screenshotName": "buildup-coverage.png"
+        },
+        {
+          "name": "release-effect",
+          "description": "Trigger release with 'r' key",
+          "waitFrames": 60,
+          "keyInputs": [
+            "r"
+          ],
+          "screenshotName": "buildup-release.png"
+        }
+      ]
+    },
+    {
+      "name": "CrowdBattle",
+      "path": "processing-vj/examples/CrowdBattle",
+      "mainFile": "CrowdBattle.pde",
+      "testScenarios": [
+        {
+          "name": "initial-agents",
+          "description": "Capture initial crowd simulation state",
+          "waitFrames": 120,
+          "keyInputs": [],
+          "screenshotName": "crowdbattle-initial.png"
+        },
+        {
+          "name": "bomb-drop",
+          "description": "Drop bomb and capture explosion",
+          "waitFrames": 60,
+          "keyInputs": [
+            "MOUSE_CLICK"
+          ],
+          "screenshotName": "crowdbattle-explosion.png"
+        }
+      ]
+    },
+    {
+      "name": "ImageOverlay",
+      "path": "processing-vj/src/ImageOverlay",
+      "mainFile": "ImageOverlay.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial image overlay state",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "imageoverlay-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "KaraokeOverlay",
+      "path": "processing-vj/src/KaraokeOverlay",
+      "mainFile": "KaraokeOverlay.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial overlay state (waiting for OSC)",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "karaoke-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "OscAudioVisualizer",
+      "path": "processing-vj/src/OscAudioVisualizer",
+      "mainFile": "OscAudioVisualizer.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial visualizer state",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "oscvisualizer-initial.png"
+        },
+        {
+          "name": "toggle-hud",
+          "description": "Toggle HUD overlay with 'h' key",
+          "waitFrames": 30,
+          "keyInputs": [
+            "h"
+          ],
+          "screenshotName": "oscvisualizer-hud.png"
+        }
+      ]
+    },
+    {
+      "name": "PatternDraw",
+      "path": "processing-vj/examples/PatternDraw",
+      "mainFile": "PatternDraw.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial drawing canvas",
+          "waitFrames": 30,
+          "keyInputs": [],
+          "screenshotName": "patterndraw-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "VJSystem",
+      "path": "processing-vj/src/VJSystem",
+      "mainFile": "VJSystem.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial VJ system state",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "vjsystem-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "WhackAMole",
+      "path": "processing-vj/examples/WhackAMole",
+      "mainFile": "WhackAMole.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial game state with target visible",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "whackamole-initial.png"
+        },
+        {
+          "name": "mouse-click-simulation",
+          "description": "Simulate mouse click and capture particle effects",
+          "waitFrames": 30,
+          "keyInputs": [
+            "MOUSE_CLICK"
+          ],
+          "screenshotName": "whackamole-click.png"
+        }
+      ]
+    }
+  ]
+}

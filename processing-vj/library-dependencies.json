@@ -1,0 +1,33 @@
+{
+  "libraries": [
+    {
+      "name": "themidibus",
+      "displayName": "The MidiBus",
+      "downloadUrl": "https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip",
+      "requiredBy": ["WhackAMole", "BuildupRelease", "CrowdBattle", "PatternDraw", "VJSystem"]
+    },
+    {
+      "name": "oscP5",
+      "displayName": "oscP5",
+      "downloadUrl": "https://github.com/sojamo/oscp5/releases/download/v2.0.4/oscP5-2.0.4.zip",
+      "requiredBy": ["AudioAnalysisOSC", "ImageOverlay", "KaraokeOverlay", "OscAudioVisualizer"],
+      "notes": "Also provides netP5"
+    },
+    {
+      "name": "sound",
+      "displayName": "Sound",
+      "contributionType": "library",
+      "isBuiltIn": true,
+      "installViaContributionManager": true,
+      "requiredBy": ["AudioAnalysisOSC"],
+      "notes": "Built-in Processing library, install via Contribution Manager API"
+    },
+    {
+      "name": "Syphon",
+      "displayName": "Syphon",
+      "isMacOSOnly": true,
+      "requiredBy": ["WhackAMole", "BuildupRelease", "CrowdBattle", "PatternDraw", "KaraokeOverlay", "OscAudioVisualizer", "VJSystem"],
+      "notes": "macOS-only, needs stub for Linux CI"
+    }
+  ]
+}
