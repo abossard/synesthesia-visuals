@@ -208,6 +208,19 @@ jobs:
           echo "Libraries installed:"
           ls -la $PROCESSING_SKETCHBOOK/libraries/
       
+      - name: Configure Processing preferences
+        run: |
+          # Create Processing preferences directory
+          mkdir -p ~/.processing
+          
+          # Create preferences file with sketchbook location
+          cat > ~/.processing/preferences.txt << EOF
+          sketchbook.path=$PROCESSING_SKETCHBOOK
+          EOF
+          
+          echo "Processing preferences configured:"
+          cat ~/.processing/preferences.txt
+      
       - name: Start Xvfb
         run: |
           Xvfb :99 -screen 0 1920x1080x24 &
