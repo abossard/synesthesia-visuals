@@ -1,0 +1,12 @@
+{
+  "shaderName": "FractilianSpongeOfDoom ",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "This shader generates a highly detailed and distorted fractal sponge-like structure with psychedelic color variations.",
+  "colors": ["purple", "blue"],
+  "geometry": ["fractal"],
+  "objects": ["sponge"],
+  "effects": ["noise", "distortion"],
+  "analyzedAt": 1764977145467
+}

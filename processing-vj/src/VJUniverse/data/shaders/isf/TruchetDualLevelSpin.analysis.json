@@ -3,10 +3,10 @@
   "mood": "psychedelic",
   "energy": "high",
   "complexity": "complex",
-  "description": "This shader generates a dynamic, rotating pattern of black and white tiles with glowing edges that create a complex and visually captivating effect.",
+  "description": "This shader generates a dual-level Truchet pattern that spins and pulsates with noise, creating a complex and energetic visual.",
   "colors": ["black", "white"],
-  "geometry": ["tessellation"],
-  "objects": ["tiles", "pattern"],
-  "effects": ["rotation", "distortion", "glow"],
-  "analyzedAt": 1764976969360
+  "geometry": ["geometric"],
+  "objects": ["tiles"],
+  "effects": ["rotation", "noise"],
+  "analyzedAt": 1764977207598
 }

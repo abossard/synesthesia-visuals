@@ -233,11 +233,13 @@ void drawQuadTo(PGraphics pg) {
 void drawFullscreenQuad() {
   noStroke();
   fill(255);
+  // Use textureMode NORMAL for 0-1 coordinates
+  // Flip texture Y to match OpenGL conventions (bottom-left origin)
   beginShape(QUADS);
-  vertex(0, 0, 0, 0);
-  vertex(width, 0, 1, 0);
-  vertex(width, height, 1, 1);
-  vertex(0, height, 0, 1);
+  vertex(0, 0, 0, 1);           // top-left screen -> bottom-left texture
+  vertex(width, 0, 1, 1);       // top-right screen -> bottom-right texture
+  vertex(width, height, 1, 0);  // bottom-right screen -> top-right texture
+  vertex(0, height, 0, 0);      // bottom-left screen -> top-left texture
   endShape();
 }
 
