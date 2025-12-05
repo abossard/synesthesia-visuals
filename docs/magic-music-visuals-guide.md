@@ -383,7 +383,7 @@ Modifiers (in this order):
 2. **Increase** – Step: 1
 3. **Wrap** – 4.0
 
-`Beat4` cycles 0 → 1 → 2 → 3 → 0… in sync with the kick.
+`Beat4` cycles through values 0 → 1 → 2 → 3 → 0 (repeating) in sync with the kick.
 
 **Typical usages in Expressions:**
 - `Beat4 == 0` for "bar 1" accents
@@ -459,7 +459,7 @@ Since Magic treats boolean expressions as 0/1, this becomes:
 
 You can AND this with Drop in Expressions:
 - Example: `DropActive = Drop * HighEnergyFlag`
-- → Only allow heavy drop visuals when the track is actually intense.
+- Result: Only allow heavy drop visuals when the track is actually intense.
 
 ---
 
