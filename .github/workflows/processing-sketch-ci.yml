@@ -95,71 +95,47 @@ jobs:
       - name: Cache Processing libraries
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/sketchbook/libraries
+          path: ${{ github.workspace }}/processing-4.3/modes/java/libraries
           key: processing-libs-${{ runner.os }}-${{ hashFiles('processing-vj/**/*.pde') }}
           restore-keys: |
             processing-libs-${{ runner.os }}-
       
       - name: Install Processing libraries
         run: |
-          # Create sketchbook libraries directory
-          mkdir -p $PROCESSING_SKETCHBOOK/libraries
+          # Libraries must be installed in Processing's modes/java/libraries directory
+          # NOT in the sketchbook/libraries directory for processing-java to find them
+          PROCESSING_LIBS_DIR="$GITHUB_WORKSPACE/processing-4.3/modes/java/libraries"
           
-          echo "Installing Processing libraries from library-dependencies.json..."
+          echo "Installing Processing libraries to: $PROCESSING_LIBS_DIR"
           
           # Install oscP5 library (provides both oscP5 and netP5)
-          if [ ! -d "$PROCESSING_SKETCHBOOK/libraries/oscP5" ]; then
+          if [ ! -d "$PROCESSING_LIBS_DIR/oscP5" ]; then
             echo "Installing oscP5..."
             wget -q https://github.com/sojamo/oscp5/releases/download/v2.0.4/oscP5-2.0.4.zip
-            unzip -q oscP5-2.0.4.zip -d $PROCESSING_SKETCHBOOK/libraries/
+            unzip -q oscP5-2.0.4.zip -d $PROCESSING_LIBS_DIR/
             rm oscP5-2.0.4.zip
           else
             echo "oscP5 already cached"
           fi
           
           # Install The MidiBus library
-          if [ ! -d "$PROCESSING_SKETCHBOOK/libraries/themidibus" ]; then
+          if [ ! -d "$PROCESSING_LIBS_DIR/themidibus" ]; then
             echo "Installing The MidiBus..."
             wget -q http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip -O themidibus.zip
-            unzip -q themidibus.zip -d $PROCESSING_SKETCHBOOK/libraries/
+            unzip -q themidibus.zip -d $PROCESSING_LIBS_DIR/
             rm themidibus.zip
           else
             echo "The MidiBus already cached"
           fi
           
           # Install Processing Sound library (built-in library)
-          if [ ! -d "$PROCESSING_SKETCHBOOK/libraries/sound" ]; then
-            echo "Installing Processing Sound library..."
-            # Download from Processing's library repository
-            mkdir -p /tmp/sound-install
-            cd /tmp/sound-install
-            
-            # Use Processing's contribution manager download URL
-            # For Linux x64, Processing 4.3
-            wget -q https://github.com/processing/processing-sound/releases/download/latest/sound.zip || {
-              echo "⚠️  Could not download Sound library from GitHub, trying alternative..."
-              # Try alternative download from Processing's CDN
-              wget -q https://raw.githubusercontent.com/processing/processing-sound/main/dist/sound.zip || {
-                echo "⚠️  Sound library download failed - AudioAnalysisOSC may not build"
-                exit 0
-              }
-            }
-            
-            if [ -f "sound.zip" ]; then
-              unzip -q sound.zip -d $PROCESSING_SKETCHBOOK/libraries/
-              rm sound.zip
-              echo "✅ Sound library installed"
-            fi
-            
-            cd $GITHUB_WORKSPACE
-          else
-            echo "Sound library already cached"
-          fi
+          # Note: Sound library may not be needed for headless builds
+          # Skipping for now as it often fails to download
           
           # Create Syphon stub for Linux CI (macOS-only library)
-          if [ ! -d "$PROCESSING_SKETCHBOOK/libraries/Syphon" ]; then
+          if [ ! -d "$PROCESSING_LIBS_DIR/Syphon" ]; then
             echo "Creating Syphon stub for Linux CI..."
-            mkdir -p $PROCESSING_SKETCHBOOK/libraries/Syphon/library
+            mkdir -p $PROCESSING_LIBS_DIR/Syphon/library
             
             # Create stub Java files
             cat > /tmp/SyphonServer.java << 'EOF'
@@ -195,7 +171,7 @@ jobs:
             # Create JAR if compilation succeeded
             if [ -d "codeanticode" ]; then
               jar cf Syphon.jar codeanticode
-              cp Syphon.jar $PROCESSING_SKETCHBOOK/libraries/Syphon/library/
+              cp Syphon.jar $PROCESSING_LIBS_DIR/Syphon/library/
               echo "✅ Syphon stub created"
             fi
             
@@ -205,31 +181,8 @@ jobs:
           fi
           
           echo ""
-          echo "Libraries installed:"
-          ls -la $PROCESSING_SKETCHBOOK/libraries/
-      
-      - name: Configure Processing preferences
-        run: |
-          # Create Processing preferences directory
-          mkdir -p ~/.processing
-          
-          # Create preferences file with sketchbook location
-          cat > ~/.processing/preferences.txt << EOF
-          sketchbook.path=$PROCESSING_SKETCHBOOK
-          EOF
-          
-          echo "Processing preferences configured:"
-          cat ~/.processing/preferences.txt
-          echo ""
-          echo "Verifying library installation:"
-          echo "PROCESSING_SKETCHBOOK=$PROCESSING_SKETCHBOOK"
-          echo "Library directories:"
-          ls -la $PROCESSING_SKETCHBOOK/libraries/ || echo "Libraries directory not found!"
-          echo ""
-          echo "Checking specific libraries:"
-          ls -la $PROCESSING_SKETCHBOOK/libraries/themidibus/ 2>/dev/null || echo "themidibus not found"
-          ls -la $PROCESSING_SKETCHBOOK/libraries/oscP5/ 2>/dev/null || echo "oscP5 not found"
-          ls -la $PROCESSING_SKETCHBOOK/libraries/Syphon/ 2>/dev/null || echo "Syphon not found"
+          echo "Libraries installed in Processing:"
+          ls -la $PROCESSING_LIBS_DIR/
       
       - name: Start Xvfb
         run: |
