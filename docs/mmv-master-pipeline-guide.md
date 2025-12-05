@@ -209,7 +209,7 @@ All audio analysis uses **Source 0** (main stereo audio input, typically BlackHo
 Modifiers:
 1. **Expression**: `0.3 + x * 1.7`
 
-**Result**: Knob position [0,1] → Multi ≈ [0.3, 2.0]
+**Result**: Knob position [0,1] → Multi range [0.3, 2.0]
 
 **Purpose**: Global sensitivity multiplier for all audio bands.
 
@@ -240,7 +240,7 @@ Modifiers:
 ```mermaid
 flowchart TD
     AUDIO["Audio Source 0<br/>(20–120 Hz)"] --> SMOOTH1["Smooth: 0.15"]
-    SMOOTH1 --> EXPR1["Expression:<br/>min(max(x × Multi × 2.0, 0), 1)"]
+    SMOOTH1 --> EXPR1["Expression:<br/>min(max(x * Multi * 2.0, 0), 1)"]
     EXPR1 --> BASS["Bass<br/>(Range: 0–1)"]
     
     MULTI2["Multi"] -.-> EXPR1
@@ -316,7 +316,7 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    BASS_IN["Bass"] --> EXPR_E1["Expression:<br/>Bass × 0.5 + LowMid × 0.3 + Highs × 0.2"]
+    BASS_IN["Bass"] --> EXPR_E1["Expression:<br/>Bass * 0.5 + LowMid * 0.3 + Highs * 0.2"]
     LOWMID_IN["LowMid"] --> EXPR_E1
     HIGHS_IN["Highs"] --> EXPR_E1
     
@@ -561,7 +561,7 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    BUILDUP_IN["Buildup"] --> EXPR_MIX["Expression:<br/>min(max(0.5 × Buildup + 0.5 × GenBankManual<br/>+ Drop × (1 - Buildup), 0), 1)"]
+    BUILDUP_IN["Buildup"] --> EXPR_MIX["Expression:<br/>min(max(0.5 * Buildup + 0.5 * GenBankManual<br/>+ Drop * (1 - Buildup), 0), 1)"]
     GENBANKMAN["GenBankManual"] --> EXPR_MIX
     DROP_IN["Drop"] --> EXPR_MIX
     
@@ -617,11 +617,11 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    MIDI_INDEX["MIDI CC #17<br/>(Strip 1 Knob 2)"] --> EXPR_BASE["Expression:<br/>floor(x × 3)"]
+    MIDI_INDEX["MIDI CC #17<br/>(Strip 1 Knob 2)"] --> EXPR_BASE["Expression:<br/>floor(x * 3)"]
     EXPR_BASE --> INDEX_BASE["GenA_Index_Base<br/>(0, 1, or 2)"]
     
     DROP_PULSE_IN["DropPulse"] --> TRIG_RAND["Trigger (Random)"]
-    TRIG_RAND --> EXPR_RAND["Expression:<br/>floor(x × 3)"]
+    TRIG_RAND --> EXPR_RAND["Expression:<br/>floor(x * 3)"]
     EXPR_RAND --> INDEX_OFFSET["GenA_Index_Offset<br/>(0, 1, or 2)"]
     
     INDEX_BASE --> EXPR_FINAL["Expression:<br/>(GenA_Index_Base + GenA_Index_Offset) % 3"]
@@ -686,7 +686,7 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    GEN_MAN["GenIntensityManual"] --> EXPR_INT["Expression:<br/>min(max(GenIntensityManual × (0.6 + 0.4 × EnergyFast)<br/>× (0.6 + 0.4 × Buildup) × (1 + 0.7 × Drop), 0), 2)"]
+    GEN_MAN["GenIntensityManual"] --> EXPR_INT["Expression:<br/>min(max(GenIntensityManual * (0.6 + 0.4 * EnergyFast)<br/>* (0.6 + 0.4 * Buildup) * (1 + 0.7 * Drop), 0), 2)"]
     ENERGY_FAST_IN2["EnergyFast"] --> EXPR_INT
     BUILDUP_IN2["Buildup"] --> EXPR_INT
     DROP_IN2["Drop"] --> EXPR_INT
@@ -949,7 +949,7 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    FX_MAN["FXAmountManual"] --> EXPR_FX["Expression:<br/>FXAmountManual × (0.5 + 0.5 × EnergyFast)<br/>× (0.5 + 0.5 × Buildup) × (1 + 0.5 × Drop)"]
+    FX_MAN["FXAmountManual"] --> EXPR_FX["Expression:<br/>FXAmountManual * (0.5 + 0.5 * EnergyFast)<br/>* (0.5 + 0.5 * Buildup) * (1 + 0.5 * Drop)"]
     ENERGY_FX["EnergyFast"] --> EXPR_FX
     BUILDUP_FX["Buildup"] --> EXPR_FX
     DROP_FX["Drop"] --> EXPR_FX
@@ -1115,7 +1115,7 @@ Modifiers:
 
 ```mermaid
 flowchart TD
-    MASTER_INT_IN["MasterIntensity"] --> EXPR_MO["Expression:<br/>min(max(MasterIntensity × (1 - Blackout), 0), 1)"]
+    MASTER_INT_IN["MasterIntensity"] --> EXPR_MO["Expression:<br/>min(max(MasterIntensity * (1 - Blackout), 0), 1)"]
     BLACKOUT_IN["Blackout"] --> EXPR_MO
     EXPR_MO --> MASTER_OP["MasterOpacity<br/>(Range: 0–1)"]
     
