@@ -12,7 +12,8 @@ A complete, production-ready pipeline for live VJ performance using Magic Music 
 6. [Scene Structures](#scene-structures)
 7. [Main Scene Assembly](#main-scene-assembly)
 8. [Operating the Pipeline](#operating-the-pipeline)
-9. [Quick Reference](#quick-reference)
+9. [Shader Configuration Examples](#shader-configuration-examples)
+10. [Quick Reference](#quick-reference)
 
 ---
 
@@ -1295,6 +1296,314 @@ GEN_BUS_B ──┘
                  ↓
          MasterOut(MasterOpacity) → Magic Output
 ```
+
+---
+
+## Shader Configuration Examples
+
+This section provides concrete examples of built-in Magic shaders and ISF effects configured for the pipeline.
+
+### Generator Shaders (GEN_BUS_A - Intro/Verse)
+
+#### Example: GLSL_A0 - Tunnel Effect
+
+**Built-in Shader:** Tunnel / Radial Warp
+
+**Parameters:**
+- **Center X**: `0.5`
+- **Center Y**: `0.5`
+- **Speed**: Link to expression `0.5 + Bass * 0.5`
+  - Result: Slower at rest, speeds up with bass
+- **Zoom**: Link to expression `1.0 + KickEnvFinal * 0.3`
+  - Result: Pulses in/out with kicks
+- **Rotation**: Link to expression `time * (0.1 + EnergyFast * 0.2)`
+  - Result: Rotates faster during high energy
+- **Color Hue**: Link to expression `Beat4 * 0.25`
+  - Result: Cycles through colors every 4 beats
+
+---
+
+#### Example: GLSL_A1 - Grid Pattern
+
+**Built-in Shader:** Grid / Bars
+
+**Parameters:**
+- **Grid Size X**: `8.0`
+- **Grid Size Y**: `8.0`
+- **Line Thickness**: Link to expression `0.1 + LowMid * 0.1`
+  - Result: Thicker lines during mid frequencies
+- **Animation Speed**: Link to expression `0.3 + EnergySlow * 0.7`
+  - Result: Gradually speeds up with energy
+- **Color 1 Hue**: `0.6` (cyan)
+- **Color 2 Hue**: `0.0` (red)
+- **Color Mix**: Link to expression `0.5 + sin(time * 0.5) * 0.5`
+  - Result: Oscillates between two colors
+
+---
+
+#### Example: GLSL_A2 - Noise/Static
+
+**Built-in Shader:** Noise / Perlin Noise
+
+**Parameters:**
+- **Scale**: `10.0`
+- **Octaves**: `4`
+- **Speed**: Link to expression `0.2 + Highs * 0.8`
+  - Result: Faster movement with high frequencies
+- **Brightness**: Link to expression `0.5 + EnergyFast * 0.5`
+  - Result: Brighter during high energy
+- **Contrast**: `1.5`
+
+---
+
+### Generator Shaders (GEN_BUS_B - Buildup/Drop)
+
+#### Example: GLSL_B0 - Radial Rings
+
+**Built-in Shader:** Rings / Circle Strobe
+
+**Parameters:**
+- **Ring Count**: Link to expression `5.0 + floor(EnergyFast * 10.0)`
+  - Result: More rings during high energy (5–15 rings)
+- **Ring Speed**: Link to expression `1.0 + Drop * 2.0`
+  - Result: Speeds up dramatically during drop
+- **Ring Width**: Link to expression `0.5 - KickEnvFinal * 0.3`
+  - Result: Pulses thinner with kicks
+- **Color Hue**: Link to expression `time * 0.5 + Drop * 0.25`
+  - Result: Color shift, faster during drop
+- **Brightness**: Link to expression `0.7 + KickPulse * 0.3`
+  - Result: Flash on kick pulses
+
+---
+
+#### Example: GLSL_B1 - Fractal/Mandelbrot
+
+**Built-in Shader:** Fractal Zoom / Julia Set
+
+**Parameters:**
+- **Zoom Level**: Link to expression `2.0 + Buildup * 3.0 + Drop * 5.0`
+  - Result: Zooms in during buildup, extreme zoom on drop
+- **Iteration Count**: Link to expression `50 + floor(EnergyFast * 50)`
+  - Result: More detail with energy (50–100 iterations)
+- **Color Offset**: Link to expression `time * 0.2`
+  - Result: Slowly cycling color palette
+- **X Offset**: Link to expression `sin(time * 0.3) * 0.2`
+- **Y Offset**: Link to expression `cos(time * 0.3) * 0.2`
+  - Result: Gentle drift through fractal space
+
+---
+
+#### Example: GLSL_B2 - Pulse/Strobe
+
+**Built-in Shader:** Flash / Strobe
+
+**Parameters:**
+- **Frequency**: Link to expression `4.0 + EnergyFast * 12.0`
+  - Result: Slower pulses at low energy, rapid strobe at high energy
+- **Duty Cycle**: Link to expression `0.3 + KickEnvFinal * 0.4`
+  - Result: Longer flashes on kicks
+- **Color**: Link to expression `hsv(time * 0.5, 1.0, 1.0)`
+  - Result: Rainbow cycling
+- **Intensity**: Link to expression `GenIntensity`
+  - Result: Controlled by overall generator intensity
+
+---
+
+### Mask Generators (MASK_BUS)
+
+#### Example: GLSL_Mask0 - Radial Vignette
+
+**Built-in Shader:** Vignette / Gradient Radial
+
+**Parameters:**
+- **Center X**: `0.5`
+- **Center Y**: `0.5`
+- **Inner Radius**: Link to expression `0.3 + MaskAmountManual * 0.4`
+  - Result: Smaller spotlight with more masking
+- **Outer Radius**: `1.0`
+- **Feather**: `0.3`
+- **Invert**: `false`
+  - Result: Dark edges, bright center
+
+---
+
+#### Example: GLSL_Mask1 - Stripes/Bars
+
+**Built-in Shader:** Bars / Stripes
+
+**Parameters:**
+- **Stripe Count**: Link to expression `5.0 + floor(Beat4 * 2.5)`
+  - Result: 5, 7, 10, 12 stripes cycling every 4 beats
+- **Angle**: Link to expression `time * 0.1 + KickEnvFinal * 0.2`
+  - Result: Slowly rotating, pulses on kicks
+- **Stripe Width**: `0.5`
+- **Feather**: `0.1`
+
+---
+
+### FX Shaders (FX_BUS)
+
+#### Example: GLSL_Warp - Displacement/Distortion
+
+**ISF Shader:** Displacement Map / Wave Distortion
+
+**Parameters:**
+- **Displacement Amount**: Link to global `FXWarp`
+  - Driven by: `FXWarpManual * FXAmount`
+  - Result: Audio-reactive warp strength
+- **Wave Frequency**: `5.0`
+- **Wave Speed**: Link to expression `0.5 + EnergyFast * 1.0`
+  - Result: Faster waves during high energy
+- **Direction**: Link to expression `time * 0.1`
+  - Result: Rotating warp direction
+
+---
+
+#### Example: ColorCorrect - Hue Shift
+
+**Built-in Module:** Color Controls / HSL Adjust
+
+**Parameters:**
+- **Hue Shift**: Link to global `FXColorShift`
+  - Driven by: `FXColorShiftManual * (0.5 + 0.5 * EnergySlow)`
+  - Result: Gradual hue rotation, stronger during high energy
+- **Saturation**: Link to expression `1.0 + Buildup * 0.5`
+  - Result: More saturated during buildup (1.0–1.5)
+- **Brightness**: `1.0`
+- **Contrast**: Link to expression `1.0 + Drop * 0.3`
+  - Result: Higher contrast during drop
+
+---
+
+### Common ISF Effects
+
+#### Kaleidoscope
+
+**ISF:** Kaleidoscope.fs
+
+**Parameters:**
+- **Segments**: Link to expression `6.0 + floor(Beat4 * 2.0)`
+  - Result: 6, 8, 10, 12 segments cycling
+- **Angle**: Link to expression `time * 0.2`
+  - Result: Slowly rotating
+- **Center X**: `0.5 + sin(time * 0.3) * 0.1`
+- **Center Y**: `0.5 + cos(time * 0.3) * 0.1`
+  - Result: Gently drifting center
+
+**Use in:** GEN_BUS_B for drop visuals
+
+---
+
+#### RGB Shift / Chromatic Aberration
+
+**ISF:** RGB Shift.fs
+
+**Parameters:**
+- **Red Offset X**: Link to expression `Bass * 0.02`
+- **Green Offset X**: `0.0`
+- **Blue Offset X**: Link to expression `-Bass * 0.02`
+  - Result: Bass-reactive horizontal color separation
+- **Offset Y**: Link to expression `KickPulse * 0.01`
+  - Result: Vertical glitch on kick pulses
+
+**Use in:** FX_BUS for glitch effects
+
+---
+
+#### Blur / Gaussian Blur
+
+**Built-in:** Blur
+
+**Parameters:**
+- **Blur Radius**: Link to expression `(1.0 - GenIntensity) * 10.0`
+  - Result: Sharper when generators are intense, blurry when subtle
+- **Quality**: `High`
+
+**Alternative Expression for Dream Effect:**
+- **Blur Radius**: Link to expression `5.0 + EnergySlow * 15.0`
+  - Result: More blur during high energy for dream/psychedelic effect
+
+**Use in:** FX_BUS or as post-processing
+
+---
+
+#### Feedback Delay
+
+**Built-in:** Feedback / Trail
+
+**Parameters:**
+- **Feedback Amount**: Link to expression `0.8 + Buildup * 0.15`
+  - Result: More trails during buildup (0.8–0.95)
+- **Decay**: `0.95`
+- **Mix**: Link to expression `0.3 + Drop * 0.4`
+  - Result: Stronger feedback during drop
+
+**Use in:** FX_BUS for psychedelic trails
+
+---
+
+### Parameter Linking Patterns
+
+#### Audio-Reactive Speed
+```
+Speed = BaseSpeed + AudioGlobal * Multiplier
+
+Examples:
+- Rotation: time * (0.1 + EnergyFast * 0.3)
+- Animation: 0.5 + Bass * 1.5
+- Zoom: 1.0 + KickEnvFinal * 0.5
+```
+
+#### Energy-Based Complexity
+```
+Complexity = MinValue + EnergyGlobal * Range
+
+Examples:
+- Particle Count: 100 + floor(EnergyFast * 400)
+- Fractal Iterations: 50 + floor(EnergySlow * 100)
+- Grid Density: 5 + EnergyFast * 15
+```
+
+#### Beat-Synchronized Changes
+```
+Value = BaseValue + floor(Beat4 * StepSize) * StepAmount
+
+Examples:
+- Color Hue: Beat4 * 0.25  (cycles 0, 0.25, 0.5, 0.75)
+- Pattern Index: floor(Beat4 * 0.5) (changes every 2 beats)
+- Stripe Count: 4 + Beat4 * 2  (4, 6, 8, 10)
+```
+
+#### Kick-Triggered Pulses
+```
+Pulse = BaseValue + KickPulse * PulseAmount
+
+Examples:
+- Flash: KickPulse * 0.3
+- Scale: 1.0 + KickEnvFinal * 0.2
+- Brightness: 0.7 + KickPulse * 0.3
+```
+
+#### SongStyle-Adaptive Parameters
+```
+Adaptive = LowValue * (1 - SongStyle) + HighValue * SongStyle
+
+Examples:
+- Smoothness: 5.0 * (1 - SongStyle) + 1.0 * SongStyle
+  (Smoother for bass-heavy, sharper for bright tracks)
+- Color Saturation: 0.7 * (1 - SongStyle) + 1.0 * SongStyle
+  (Less saturated for bass, more for bright)
+```
+
+---
+
+### Performance Tips
+
+1. **Start Simple**: Begin with 2–3 shaders per bus, add more once stable
+2. **GPU Monitoring**: Watch frame rate, reduce shader complexity if drops occur
+3. **Precompute Where Possible**: Use globals for shared calculations
+4. **Layer Management**: Use slot weights to smoothly transition between shaders
+5. **Test Across Music**: Verify shaders work with different genres and energy levels
 
 ---
 
