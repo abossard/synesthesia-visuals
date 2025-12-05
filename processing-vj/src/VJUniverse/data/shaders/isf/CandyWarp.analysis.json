@@ -1,0 +1,12 @@
+{
+  "shaderName": "CandyWarp",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "The shader creates a swirling, distorted pattern resembling candy-like ripples or waves with vibrant hues.",
+  "colors": ["pink", "purple"],
+  "geometry": ["circles"],
+  "objects": ["ripples"],
+  "effects": ["distortion", "warp"],
+  "analyzedAt": 1764976542834
+}

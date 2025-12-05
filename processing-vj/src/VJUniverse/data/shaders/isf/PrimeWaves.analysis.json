@@ -1,0 +1,12 @@
+{
+  "shaderName": "PrimeWaves",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "The shader generates swirling, distorted waves with a psychedelic color palette and complex geometric patterns.",
+  "colors": ["blue", "green"],
+  "geometry": ["waves"],
+  "objects": ["distortion"],
+  "effects": ["noise", "ripple"],
+  "analyzedAt": 1764976430975
+}

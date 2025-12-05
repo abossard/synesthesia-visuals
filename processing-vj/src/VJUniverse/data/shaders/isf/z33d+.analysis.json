@@ -1,0 +1,12 @@
+{
+  "shaderName": "z33d+",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "This shader generates a swirling, distorted fractal pattern with rotating elements and vibrant color gradients.",
+  "colors": ["purple", "blue"],
+  "geometry": ["spiral"],
+  "objects": ["fractal"],
+  "effects": ["distortion", "rotation", "glow"],
+  "analyzedAt": 1764976459079
+}

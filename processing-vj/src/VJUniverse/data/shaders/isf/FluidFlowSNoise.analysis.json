@@ -1,0 +1,12 @@
+{
+  "shaderName": "FluidFlowSNoise",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "complex",
+  "description": "This shader generates a flowing, distorted noise pattern with vibrant blue and purple hues.",
+  "colors": ["blue", "purple"],
+  "geometry": ["organic"],
+  "objects": ["flow field"],
+  "effects": ["noise", "distortion"],
+  "analyzedAt": 1764976533237
+}
