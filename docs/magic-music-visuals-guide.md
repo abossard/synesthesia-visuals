@@ -8,15 +8,16 @@ A comprehensive technical guide to Magic Music Visuals for developers and engine
 2. [Core Architecture](#core-architecture)
 3. [Global Parameters](#global-parameters)
 4. [Audio Reactivity](#audio-reactivity)
-5. [ISF Shader Integration](#isf-shader-integration)
-6. [Effect Chains: Wobble, Glitch, Sparkle](#effect-chains-wobble-glitch-sparkle)
-7. [Reusable Scenes and Pipelines](#reusable-scenes-and-pipelines)
-8. [Post-Processing Scene Pattern](#post-processing-scene-pattern)
-9. [Song Stage Control](#song-stage-control)
-10. [MIDI Control Patterns](#midi-control-patterns)
-11. [Processing + Syphon Integration](#processing--syphon-integration)
-12. [Templates and Best Practices](#templates-and-best-practices)
-13. [Resources](#resources)
+5. [Reference Setup: Complete Global and Modifier Configuration](#reference-setup-complete-global-and-modifier-configuration)
+6. [ISF Shader Integration](#isf-shader-integration)
+7. [Effect Chains: Wobble, Glitch, Sparkle](#effect-chains-wobble-glitch-sparkle)
+8. [Reusable Scenes and Pipelines](#reusable-scenes-and-pipelines)
+9. [Post-Processing Scene Pattern](#post-processing-scene-pattern)
+10. [Song Stage Control](#song-stage-control)
+11. [MIDI Control Patterns](#midi-control-patterns)
+12. [Processing + Syphon Integration](#processing--syphon-integration)
+13. [Templates and Best Practices](#templates-and-best-practices)
+14. [Resources](#resources)
 
 ---
 
@@ -235,6 +236,283 @@ For each audio band, apply modifiers to shape the response:
    - Mids: Medium smoothing (0.2–0.4)
    - Highs: Lower smoothing (0.1–0.3) for quick response
 4. **Test with various music** - EDM, rock, ambient all behave differently
+
+---
+
+## Reference Setup: Complete Global and Modifier Configuration
+
+This section provides a production-ready configuration of Globals and Modifiers for EDM/Techno performance in Magic. This is a complete, coherent system you can implement directly in your Magic project.
+
+**Assumptions:**
+- **Source 0** = main stereo music input (e.g., BlackHole)
+- **Source 4** = MIDI controller
+- You already have basic globals like `Blackout`, `Buildup`, and `Drop`
+
+For each Global below, we list:
+- **Name** – Source / Feature
+- **Modifiers** (top → bottom) with concrete values and expressions
+
+---
+
+### 1. Core Audio Bands
+
+These are your main building blocks for most audio-reactive parameters.
+
+#### 1.1 Multi (Overall Sensitivity, from MIDI)
+
+**Multi** – Source 4 / Feature CC #23
+
+Modifiers:
+1. **Step**: 0.1
+2. **Offset**: 0.5
+
+This gives roughly 0.5–1.5 in 0.1 steps. Adjust the range by changing Offset/Step values to taste.
+
+---
+
+#### 1.2 Bass
+
+**Bass** – Source 0 / Feature Freq. Range 20–120 Hz
+
+Modifiers:
+1. **Smooth**: 0.15
+2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
+
+Use for kicks, bass-reactive scale, zoom, etc.
+
+---
+
+#### 1.3 LowMid
+
+**LowMid** – Source 0 / Feature Freq. Range 120–350 Hz
+
+Modifiers:
+1. **Smooth**: 0.15
+2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
+
+Good for the body of drums and low synths.
+
+---
+
+#### 1.4 VoiceMid
+
+**VoiceMid** – Source 0 / Feature Freq. Range 350–2k Hz
+
+Modifiers:
+1. **Smooth**: 0.15
+2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
+
+Good for vocals and lead synth presence.
+
+---
+
+#### 1.5 Highs
+
+**Highs** – Source 0 / Feature Freq. Range 2k–6k Hz
+
+Modifiers:
+1. **Smooth**: 0.15
+2. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
+
+Use for brightness, detail, sharper glows.
+
+---
+
+#### 1.6 VeryHigh
+
+**VeryHigh** – Source 0 / Feature Freq. Range 6k–20k Hz
+
+Modifiers:
+1. **Smooth**: 0.15
+2. **Peak**: 0.5
+3. **Expression**: `min(max(x * Multi * 2.0, 0), 1)`
+
+Use for hi-hat sparkle, fine flicker, outlines.
+
+---
+
+### 2. Drum-Oriented Globals (Kick, Hats, Beat Counter)
+
+#### 2.1 Kick (Envelope + Pulse)
+
+**KickRaw** – Source 0 / Feature Freq. Range 40–120 Hz
+
+Modifiers:
+1. **Smooth**: 0.05
+2. **Peak**: 0.5
+
+**KickEnv** – Source KickRaw / Feature Value
+
+Modifiers:
+1. **Smooth**: 0.35
+2. **Expression**: `min(x * 2.0, 1)`
+
+This is a soft envelope that bumps on each kick and decays between beats.
+
+**KickPulse** – Source KickEnv / Feature Value
+
+Modifiers:
+1. **Threshold**: 0.6 (outputs ~0 or 1)
+2. (Optional) **Trigger (Integer)** with Threshold: 0.5
+
+**Usage:**
+- Use `KickEnv` for continuous modulation (e.g., scale/zoom).
+- Use `KickPulse` after Threshold/Trigger for one-shot triggers (flashes, step changes).
+
+---
+
+#### 2.2 Hats
+
+**Hats** – Source 0 / Feature Freq. Range 6k–14k Hz
+
+Modifiers:
+1. **Smooth**: 0.08
+2. **Peak**: 0.4
+3. **Expression**: `min(x * Multi * 2.0, 1)`
+
+Use for fast, small movements: line jitter, edge flicker, subtle strobe.
+
+---
+
+#### 2.3 Beat4 (4-Beat Counter Per Bar)
+
+**Beat4** – Source KickPulse / Feature Value
+
+Modifiers (in this order):
+1. **Trigger (Integer)** – Threshold: 0.5
+2. **Increase** – Step: 1
+3. **Wrap** – 4.0
+
+`Beat4` cycles 0 → 1 → 2 → 3 → 0… in sync with the kick.
+
+**Typical usages in Expressions:**
+- `Beat4 == 0` for "bar 1" accents
+- `(Beat4 % 2)` for every second beat
+- `1 + 0.2 * (Beat4 == 0)` to boost things slightly on the first beat
+
+---
+
+### 3. Energy Over Time (Fast and Slow)
+
+#### 3.1 EnergyFast (Instant Intensity)
+
+**EnergyFast** – Source 0 (any) / Feature Value
+
+Modifiers:
+1. **Expression**: `Bass*0.5 + LowMid*0.3 + Highs*0.2`
+2. **Smooth**: 0.4
+3. **Expression**: `min(max(x, 0), 1)`
+
+**Notes:**
+- This global doesn't use its own Source value; it just combines other Globals in the Expression.
+- Use it as the main "how loud/intense is it right now" control.
+
+---
+
+#### 3.2 EnergySlow (Build-Up Level)
+
+**EnergySlow** – Source EnergyFast / Feature Value
+
+Modifiers:
+1. **Average**: 4.0 (averages about last 4 seconds; 6–8 also works for slower EDM)
+2. **Expression**: `min(max(x, 0), 1)`
+
+**Use EnergySlow for:**
+- Layer count, geometry complexity
+- Strength of non-audio-reactive effects
+- Slowly growing brightness or feedback as the track intensifies
+
+---
+
+### 4. Drop / Build Controls
+
+#### 4.1 MIDI-Based Drop and Buildup
+
+You may already have:
+
+**Buildup** – Source 4 / Feature CC #27
+
+(No modifiers or just a simple Smooth)
+
+**Drop** – Source 4 / Feature Note V.#9
+
+Modifiers:
+1. **Trigger**: 0.5
+2. **Wrap**: 2.0 (if you want it to toggle between 0 and 1)
+
+This gives you:
+- `Buildup` slider for manual "how much tension"
+- `Drop` button to fire a drop scene / toggle mode
+
+---
+
+#### 4.2 HighEnergyFlag (Audio-Based "High Energy" Flag)
+
+**HighEnergyFlag** – Source EnergySlow / Feature Value
+
+Modifiers:
+1. **Expression**: `EnergySlow > 0.8`
+
+Since Magic treats boolean expressions as 0/1, this becomes:
+- 0 when EnergySlow ≤ 0.8
+- 1 when EnergySlow > 0.8
+
+You can AND this with Drop in Expressions:
+- Example: `DropActive = Drop * HighEnergyFlag`
+- → Only allow heavy drop visuals when the track is actually intense.
+
+---
+
+### 5. Video Time Remap / Audio-Reactive Speed
+
+#### 5.1 VidSpeed (Speed from Fast Energy)
+
+**VidSpeed** – Source EnergyFast / Feature Value
+
+Modifiers:
+1. **Smooth**: 0.3
+2. **Expression**: `0.4 + x*1.6`
+
+**Behavior:**
+- Quiet sections: x ≈ 0 → speed ≈ 0.4 (slow-mo)
+- Loud/intense: x ≈ 1 → speed ≈ 2.0 (fast-forward)
+
+**On your VideoFile module:**
+- Set **Looping**: On
+- Link **Speed** parameter to VidSpeed (Source: VidSpeed, Feature: Value)
+
+---
+
+#### 5.2 VidSpeedKick (Kick-Driven Bursts, Optional)
+
+If you want bursts of speed on kicks:
+
+**VidSpeedKick** – Source KickEnv / Feature Value
+
+Modifiers:
+1. **Expression**: `1 + x*1.5`
+
+**Behavior:**
+- No kick: x ≈ 0 → speed ≈ 1
+- On kick: x spikes, so speed briefly jumps to ≈ 2.5 and falls back
+
+Use either `VidSpeed` or `VidSpeedKick`, or blend:
+- Expression: `mix(VidSpeed, VidSpeedKick, 0.5)`
+- Or: `0.5*VidSpeed + 0.5*VidSpeedKick` (if `mix` isn't available)
+
+---
+
+### 6. Quick Usage Notes
+
+- **Map Bass / LowMid / VoiceMid / Highs / VeryHigh** directly to shader parameters, mask opacity, distortions, etc.
+- **Use KickEnv and KickPulse** for "big moves" and triggering things.
+- **Use Hats** for fine texture jitter.
+- **Use EnergyFast and EnergySlow** as your main "how crazy should the whole scene be" dials.
+- **Use Beat4** for structured changes every beat or bar.
+- **Use Drop + HighEnergyFlag** to switch into special "drop" scenes and heavy effects.
+- **Drive VideoFile Speed** with VidSpeed / VidSpeedKick for audio-reactive time remapping.
+
+You can copy this configuration directly into your Magic project and adjust any numeric values to taste. This provides a complete, coherent global+modifier setup for EDM/Techno in Magic.
 
 ---
 
