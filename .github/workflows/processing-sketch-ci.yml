@@ -220,6 +220,16 @@ jobs:
           
           echo "Processing preferences configured:"
           cat ~/.processing/preferences.txt
+          echo ""
+          echo "Verifying library installation:"
+          echo "PROCESSING_SKETCHBOOK=$PROCESSING_SKETCHBOOK"
+          echo "Library directories:"
+          ls -la $PROCESSING_SKETCHBOOK/libraries/ || echo "Libraries directory not found!"
+          echo ""
+          echo "Checking specific libraries:"
+          ls -la $PROCESSING_SKETCHBOOK/libraries/themidibus/ 2>/dev/null || echo "themidibus not found"
+          ls -la $PROCESSING_SKETCHBOOK/libraries/oscP5/ 2>/dev/null || echo "oscP5 not found"
+          ls -la $PROCESSING_SKETCHBOOK/libraries/Syphon/ 2>/dev/null || echo "Syphon not found"
       
       - name: Start Xvfb
         run: |
