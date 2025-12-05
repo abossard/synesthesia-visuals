@@ -531,6 +531,7 @@ void loadShaderAnalyses() {
 
 // Called in a background thread
 void analyzeNextShader() {
+  // Check if we should stop
   if (shadersToAnalyze.size() == 0 || !llmAvailable) {
     analysisInProgress = false;
     currentAnalyzingShader = "";
@@ -543,7 +544,8 @@ void analyzeNextShader() {
   // Get next shader to analyze
   ShaderInfo shader = shadersToAnalyze.remove(0);
   currentAnalyzingShader = shader.name;  // Update for UI display
-  println("Analyzing shader: " + shader.name + " (" + shadersToAnalyze.size() + " remaining)");
+  int remaining = shadersToAnalyze.size();
+  println("Analyzing shader: " + shader.name + " (" + remaining + " remaining after this)");
   
   // Analyze it
   ShaderAnalysis analysis = analyzeShader(shader.name, dataPath(shader.path));
@@ -557,13 +559,14 @@ void analyzeNextShader() {
     println("  -> Failed to analyze: " + shader.name);
   }
   
-  // Small delay between analyses to not overload LLM
-  delay(500);
-  
-  // Continue with next shader
-  if (shadersToAnalyze.size() > 0) {
-    thread("analyzeNextShader");
+  // Check again if there are more shaders to analyze
+  if (shadersToAnalyze.size() > 0 && llmAvailable) {
+    // Small delay between analyses to not overload LLM
+    delay(1000);
+    // Continue with next shader in same thread (avoid thread explosion)
+    analyzeNextShader();
   } else {
+    // Done!
     analysisInProgress = false;
     currentAnalyzingShader = "";
     println("All shader analyses complete!");

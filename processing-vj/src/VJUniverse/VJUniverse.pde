@@ -723,7 +723,8 @@ void drawDebugOverlay() {
   // Shader analysis status
   if (analysisInProgress) {
     fill(255, 200, 50);  // Yellow for in-progress
-    text("Analysis: IN PROGRESS (" + shadersToAnalyze.size() + " remaining)", 20, y); y += lineHeight;
+    int total = shadersToAnalyze.size() + (currentAnalyzingShader.isEmpty() ? 0 : 1);
+    text("Analysis: IN PROGRESS (" + total + " to go)", 20, y); y += lineHeight;
     // Show which shader is being analyzed
     if (currentAnalyzingShader != null && !currentAnalyzingShader.isEmpty()) {
       text("  Analyzing: " + currentAnalyzingShader, 20, y); y += lineHeight;
