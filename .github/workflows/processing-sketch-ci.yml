@@ -62,7 +62,7 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'maven'  # Cache Maven dependencies
+          # No cache needed - Processing is cached separately below
       
       # Cache Processing installation
       - name: Cache Processing installation
