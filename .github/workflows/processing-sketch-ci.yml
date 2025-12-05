@@ -120,7 +120,7 @@ jobs:
           # Install The MidiBus library
           if [ ! -d "$PROCESSING_SKETCHBOOK/libraries/themidibus" ]; then
             echo "Installing The MidiBus..."
-            wget -q https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip
+            wget -q http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip -O themidibus.zip
             unzip -q themidibus.zip -d $PROCESSING_SKETCHBOOK/libraries/
             rm themidibus.zip
           else

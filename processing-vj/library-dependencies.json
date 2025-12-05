@@ -3,7 +3,7 @@
     {
       "name": "themidibus",
       "displayName": "The MidiBus",
-      "downloadUrl": "https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip",
+      "downloadUrl": "http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip",
       "requiredBy": ["WhackAMole", "BuildupRelease", "CrowdBattle", "PatternDraw", "VJSystem"]
     },
     {

@@ -41,7 +41,7 @@ install_library() {
 install_library "oscP5" "https://github.com/sojamo/oscp5/releases/download/v2.0.4/oscP5-2.0.4.zip"
 
 # Install The MidiBus
-install_library "themidibus" "https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip"
+install_library "themidibus" "http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip"
 
 # Install Processing Sound library
 if [ ! -d "$LIBS_DIR/sound" ]; then
