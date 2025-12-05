@@ -1,0 +1,12 @@
+{
+  "shaderName": "AnotherGridThingy",
+  "mood": "psychedelic",
+  "energy": "high",
+  "complexity": "medium",
+  "description": "The shader generates a vibrant, distorted grid with glowing elements that shift and change over time.",
+  "colors": ["blue", "green"],
+  "geometry": ["grid"],
+  "objects": ["dots"],
+  "effects": ["glow", "distortion"],
+  "analyzedAt": 1764977384250
+}
