@@ -8,6 +8,7 @@ This folder contains guides and references for the VJ/visual performance toolkit
 |----------|-------------|
 | [Live VJ Setup Guide](live-vj-setup-guide.md) | **Complete live rig setup**: Processing + Syphon + Synesthesia + Magic + BlackHole + MIDI |
 | [Magic Music Visuals Guide](magic-music-visuals-guide.md) | **Magic for software engineers**: Modules, globals, audio reactivity, ISF shaders, reusable pipelines, song stage control |
+| [MMV Master Pipeline Guide](mmv-master-pipeline-guide.md) | **Production-ready MMV pipeline**: Complete bus architecture with generator banks, karaoke integration, precise MIDI mapping, and expression chains |
 | [MIDI Controller Setup](midi-controller-setup.md) | Setup guides for Akai MIDImix and Launchpad Mini Mk3 |
 | [Processing Games Guide](processing-games-guide.md) | How to create interactive VJ games with Processing |
 | [ISF to Synesthesia Migration](isf-to-synesthesia-migration.md) | Converting ISF/Shadertoy shaders to Synesthesia SSF format |
@@ -15,11 +16,14 @@ This folder contains guides and references for the VJ/visual performance toolkit
 ## Quick Links
 
 ### For Magic Music Visuals
-- See [Magic Music Visuals Guide](magic-music-visuals-guide.md)
+- See [Magic Music Visuals Guide](magic-music-visuals-guide.md) for core concepts
+- See [MMV Master Pipeline Guide](mmv-master-pipeline-guide.md) for complete production setup
 - Global parameters and audio reactivity
 - Wobble, glitch, sparkle effect chains
 - Reusable scenes and post-processing pipelines
 - Song stage control (intro, buildup, drop, release)
+- Generator bank system with A/B crossfading
+- Karaoke integration via Syphon
 
 ### For VJ Work (Synesthesia/Resolume)
 - Use **Akai MIDImix** for faders, knobs, and layer control

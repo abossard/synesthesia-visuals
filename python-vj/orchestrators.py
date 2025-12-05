@@ -141,6 +141,19 @@ class PlaybackCoordinator:
     def _monitor_key(self, monitor) -> str:
         return getattr(monitor, 'monitor_key', monitor.__class__.__name__.replace("Monitor", "").lower())
 
+    def _collect_status(self) -> Dict[str, Dict[str, Any]]:
+        """Gather monitor ServiceHealth statuses."""
+        statuses = {}
+        for monitor in self._monitors:
+            name = self._monitor_key(monitor)
+            status_fn = getattr(monitor, 'status', None)
+            if callable(status_fn):
+                statuses[name] = status_fn()
+        return statuses
+
+    def _monitor_key(self, monitor) -> str:
+        return getattr(monitor, 'monitor_key', monitor.__class__.__name__.replace("Monitor", "").lower())
+
 
 # =============================================================================
 # LYRICS ORCHESTRATOR - Fetches and processes lyrics
