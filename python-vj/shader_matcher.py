@@ -16,8 +16,11 @@ Usage:
     matches = matcher.match_by_mood("energetic", energy=0.8)
 """
 
-import json
 import os
+# Suppress huggingface tokenizers parallelism warning (must be before chromadb import)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import json
 import math
 import logging
 from dataclasses import dataclass, field
