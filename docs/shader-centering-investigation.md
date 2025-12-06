@@ -85,3 +85,36 @@
 
 ## Summary
 Despite multiple refinements—buffer-based zoom/pan, arrow key corrections, and aligning shader resolution with physical pixel density—the circular GLSL shaders continue to render off-center. Evidence suggests a deeper mismatch between shader coordinate math and Processing’s hi-DPI rendering pipeline. Further debugging (coordinate visualizations, shader-by-shader analysis, verifying PGraphics density) is recommended to isolate the root cause.
+
+---
+
+## Planned HiDPI Fix (for future implementation)
+
+**Goal:** Render GLSL shaders that rely on `gl_FragCoord` perfectly centered on Retina/HiDPI displays while keeping the original shader code untouched. The fix hinges on giving every render surface the same pixel density and sending physical pixel dimensions (`pixelWidth`, `pixelHeight`) through the `resolution` uniform.
+
+### 1. Configure density once
+- After `size(...)`, call `pixelDensity(displayDensity())` so the main sketch uses the display’s physical pixel grid.
+- When creating offscreen buffers (e.g. `shaderBuffer = createGraphics(width, height, P2D);`) immediately set `shaderBuffer.pixelDensity(displayDensity());` so its pixel grid matches the main canvas.
+
+### 2. Pass physical resolution to shaders
+- When setting uniforms, derive `(pw, ph)` from the surface actually running the shader:
+  - Main sketch: `pw = pixelWidth`, `ph = pixelHeight`.
+  - Offscreen buffer: `pw = pg.pixelWidth`, `ph = pg.pixelHeight`.
+- Send `resolution = vec2(pw, ph)` to every shader that uses pixel coordinates. Scale mouse input similarly if the shader expects pixel space.
+
+### 3. Render pipeline with zoom/pan
+1. Render the shader into the hi-DPI `shaderBuffer` inside `beginDraw()/endDraw()`, drawing a fullscreen rect while the shader is active.
+2. Draw the buffer back to the main sketch via `image(shaderBuffer, x, y, scaledW, scaledH)` (your existing zoom/pan stage). Because pixel densities now match, no extra adjustments are needed here.
+
+### 4. Shader code stays untouched
+- Leave `gl_FragCoord` as-is; the key is that `resolution` reflects the correct physical size.
+- Distance checks such as `length(center - gl_FragCoord.xy)` will now map correctly as long as centers are computed from the same `resolution`.
+
+### 5. Implementation checklist
+1. Call `pixelDensity(displayDensity())` in `setup()` or `settings()`.
+2. After `createGraphics`, call `.pixelDensity(displayDensity())` on the buffer.
+3. Use `(pixelWidth, pixelHeight)` or `(pg.pixelWidth, pg.pixelHeight)` for the `resolution` uniform.
+4. Do **not** redefine `gl_FragCoord`; let the shader use the native coordinates.
+5. Always wrap buffer drawing in `beginDraw()/endDraw()` before presenting via `image()`.
+
+With these adjustments in place, all `gl_FragCoord`-based shaders should center correctly on Retina displays while preserving your original GLSL code.

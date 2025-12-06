@@ -2,8 +2,10 @@
 # Shader analysis management commands
 
 SHADERS_DIR := processing-vj/src/VJUniverse/data/shaders
+SCREENSHOTS_DIR := processing-vj/src/VJUniverse/data/screenshots
+PYTHON := python3
 
-.PHONY: help clean-errors clean-analysis clean-all stats
+.PHONY: help clean-errors clean-analysis clean-all stats find-black list-black
 
 help:
 	@echo "Shader Analysis Management"
@@ -12,6 +14,12 @@ help:
 	@echo "  make clean-errors    - Delete all .error.json files (allows re-analysis)"
 	@echo "  make clean-analysis  - Delete all .analysis.json files (full re-analysis)"
 	@echo "  make clean-all       - Delete both error and analysis files"
+	@echo ""
+	@echo "Screenshot Analysis (requires ImageMagick)"
+	@echo ""
+	@echo "  make find-black      - Find black/broken shaders from screenshots"
+	@echo "  make list-black      - List black shaders (quick, from cache)"
+	@echo "  make brightness-all  - Show all shaders sorted by brightness"
 	@echo ""
 
 # Show statistics about shader analysis
@@ -49,3 +57,34 @@ clean-all: clean-errors clean-analysis
 list-errors:
 	@echo "Shaders with errors:"
 	@find $(SHADERS_DIR) -name '*.error.json' -exec basename {} .error.json \;
+
+# ============================================================================
+# Screenshot Analysis (requires ImageMagick)
+# ============================================================================
+
+# Find black/broken shaders by analyzing screenshot brightness
+find-black:
+	@echo "Analyzing screenshots for black/broken shaders..."
+	@$(PYTHON) python-vj/scripts/find_black_shaders.py \
+		--screenshots $(SCREENSHOTS_DIR) \
+		--isf $(SHADERS_DIR)/isf \
+		--glsl $(SHADERS_DIR)/glsl \
+		--output $(SCREENSHOTS_DIR)/black-broken-shaders.txt
+	@echo ""
+	@cat $(SCREENSHOTS_DIR)/black-broken-shaders.txt
+
+# Quick list of known black shaders (from cached file)
+list-black:
+	@if [ -f $(SCREENSHOTS_DIR)/black-broken-shaders.txt ]; then \
+		cat $(SCREENSHOTS_DIR)/black-broken-shaders.txt; \
+	else \
+		echo "No cached black shaders list. Run 'make find-black' first."; \
+	fi
+
+# Show all shaders sorted by brightness
+brightness-all:
+	@$(PYTHON) python-vj/scripts/find_black_shaders.py \
+		--screenshots $(SCREENSHOTS_DIR) \
+		--isf $(SHADERS_DIR)/isf \
+		--glsl $(SHADERS_DIR)/glsl \
+		--all
