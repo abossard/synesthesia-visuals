@@ -176,6 +176,10 @@ void loadShaderByIndex(int index) {
       activeShader = loadShader(info.path);
     }
     println("Loaded shader: " + info.name);
+    
+    // Schedule screenshot after shader loads successfully
+    scheduleScreenshot(info.name);
+    
   } catch (Exception e) {
     String error = e.getMessage();
     if (e.getCause() != null) {

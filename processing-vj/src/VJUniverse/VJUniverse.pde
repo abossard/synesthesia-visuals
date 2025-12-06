@@ -70,6 +70,12 @@ final int CONSOLE_MAX_HISTORY = 20;
 // Syphon output
 SyphonServer syphon;
 
+// Screenshot scheduling
+float screenshotScheduledTime = -1;  // Time when screenshot should be taken (-1 = none scheduled)
+String screenshotShaderName = "";    // Shader name for scheduled screenshot
+final float SCREENSHOT_DELAY = 5.0;  // Seconds after shader load to take screenshot
+final String SCREENSHOTS_PATH = "screenshots";  // Folder for screenshots
+
 // ============================================
 // SETUP
 // ============================================
@@ -146,6 +152,9 @@ void draw() {
   if (syphon != null && frameCount > 1) {
     syphon.sendScreen();
   }
+  
+  // Check for scheduled screenshot
+  checkScheduledScreenshot();
   
   // Draw debug overlay
   if (debugMode) {
@@ -552,5 +561,56 @@ void drawDebugOverlay() {
   fill(150);
   textSize(12);
   text("D=debug  N/P=shader  R=reload  ENTER=console", 20, height - 25);
+}
+
+// ============================================
+// SCREENSHOT FUNCTIONALITY
+// ============================================
+
+void scheduleScreenshot(String shaderName) {
+  // Check if screenshot already exists
+  String screenshotPath = getScreenshotPath(shaderName);
+  File screenshotFile = new File(dataPath(screenshotPath));
+  
+  if (screenshotFile.exists()) {
+    println("Screenshot already exists: " + screenshotPath);
+    return;
+  }
+  
+  // Schedule screenshot for 5 seconds from now
+  screenshotScheduledTime = globalTime + SCREENSHOT_DELAY;
+  screenshotShaderName = shaderName;
+  println("Screenshot scheduled for shader: " + shaderName + " at t=" + nf(screenshotScheduledTime, 0, 1));
+}
+
+void checkScheduledScreenshot() {
+  if (screenshotScheduledTime < 0) return;  // No screenshot scheduled
+  
+  if (globalTime >= screenshotScheduledTime) {
+    takeScreenshot(screenshotShaderName);
+    screenshotScheduledTime = -1;  // Clear schedule
+    screenshotShaderName = "";
+  }
+}
+
+void takeScreenshot(String shaderName) {
+  // Create screenshots directory if needed
+  File screenshotsDir = new File(dataPath(SCREENSHOTS_PATH));
+  if (!screenshotsDir.exists()) {
+    screenshotsDir.mkdirs();
+  }
+  
+  String screenshotPath = getScreenshotPath(shaderName);
+  
+  // Save current frame (before debug overlay)
+  saveFrame(dataPath(screenshotPath));
+  println("Screenshot saved: " + screenshotPath);
+  consoleLog("📸 Screenshot: " + shaderName);
+}
+
+String getScreenshotPath(String shaderName) {
+  // Replace path separators with underscores for flat file storage
+  String safeName = shaderName.replace("/", "_").replace("\\", "_");
+  return SCREENSHOTS_PATH + "/" + safeName + ".png";
 }
 

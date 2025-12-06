@@ -223,15 +223,19 @@ class NowPlayingPanel(ReactivePanel):
         self.update("[dim]Waiting for playback...[/dim]")
 
     def watch_track_data(self, data: dict) -> None:
-        self._render()
+        self._safe_render()
     
     def watch_shader_name(self, name: str) -> None:
-        self._render()
+        self._safe_render()
     
-    def _render(self) -> None:
-        data = self.track_data
+    def _safe_render(self) -> None:
         if not self.is_mounted:
             return
+        data = self.track_data
+        if not data:
+            self.update("[dim]Waiting for playback...[/dim]")
+            return
+        
         error = data.get('error')
         backoff = data.get('backoff', 0.0)
         raw_source_value = data.get('source') or ""
