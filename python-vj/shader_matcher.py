@@ -1075,6 +1075,7 @@ class ShaderSelector:
         self.indexer = indexer
         self._usage_counts: Dict[str, int] = {}  # shader_name → count
         self._last_selected: Optional[str] = None
+        self._warned_shaders: set = set()  # Track warned shaders to avoid spam
     
     def reset_usage(self):
         """Reset usage tracking (e.g., at session start)."""
@@ -1145,13 +1146,16 @@ class ShaderSelector:
         # Get features
         features = self.indexer.shaders.get(best_name)
         if not features:
-            logger.warning(f"No features for {best_name}")
+            # Only warn once per shader (not every poll cycle)
+            if best_name not in self._warned_shaders:
+                logger.warning(f"No features for '{best_name}' - may need re-sync")
+                self._warned_shaders.add(best_name)
             return None
         
         # Record usage
         self._record_usage(best_name)
         
-        logger.debug(f"Selected {best_name}: dist={orig_dist:.3f} usage={usage} adj={adj_score:.3f}")
+        logger.info(f"Selected shader: {best_name} (score={adj_score:.2f}, usage={usage})")
         
         return ShaderMatch(
             name=best_name,

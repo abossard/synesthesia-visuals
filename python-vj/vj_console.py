@@ -216,12 +216,20 @@ class ReactivePanel(Static):
 class NowPlayingPanel(ReactivePanel):
     """Current track display."""
     track_data = reactive({})
+    shader_name = reactive("")  # Current active shader
 
     def on_mount(self) -> None:
         """Initialize content when mounted."""
         self.update("[dim]Waiting for playback...[/dim]")
 
     def watch_track_data(self, data: dict) -> None:
+        self._render()
+    
+    def watch_shader_name(self, name: str) -> None:
+        self._render()
+    
+    def _render(self) -> None:
+        data = self.track_data
         if not self.is_mounted:
             return
         error = data.get('error')
@@ -251,10 +259,15 @@ class NowPlayingPanel(ReactivePanel):
             if backoff:
                 warning += f" (retry in {backoff:.1f}s)"
         
+        # Add shader info if available
+        shader_info = ""
+        if self.shader_name:
+            shader_info = f"  │  [magenta]🎨 {self.shader_name}[/]"
+        
         self.update(
             f"{source_label}: {conn}\n"
             f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {source_label}  │  [dim]{time_str}[/]{warning}"
+            f"{icon} {source_label}  │  [dim]{time_str}[/]{shader_info}{warning}"
         )
 
 

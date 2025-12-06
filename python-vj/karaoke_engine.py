@@ -148,6 +148,12 @@ class KaraokeEngine:
         self._snapshot = PlaybackSnapshot(state=PlaybackState())
         self._backoff = BackoffState()
         self._last_matched_track = ""  # Track when we last matched shaders
+        self._current_shader = ""  # Currently active shader name
+    
+    @property
+    def current_shader(self) -> str:
+        """Get the currently active shader name."""
+        return self._current_shader
     
     @property
     def timing_offset_ms(self) -> int:
@@ -353,6 +359,7 @@ class KaraokeEngine:
                     valence=match.features.mood_valence
                 )
                 
+                self._current_shader = match.name  # Store current shader
                 self._last_matched_track = track_key
             else:
                 logger.debug(f"No shader match for {track.title}")
