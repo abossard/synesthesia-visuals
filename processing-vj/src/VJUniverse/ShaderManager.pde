@@ -13,8 +13,18 @@ int lastAutoReloadCheck = 0;
 // Maps uniform name -> default value (float, vec2, vec3, vec4, or bool as float 0/1)
 HashMap<String, float[]> isfUniformDefaults = new HashMap<String, float[]>();
 
+// GLSL detected uniforms - auto-detected from shader source
+HashMap<String, String> glslDetectedUniforms = new HashMap<String, String>();
+
 // Shader analyses cache (indexed by shader name) - loaded from .analysis.json files
 HashMap<String, ShaderAnalysis> shaderAnalyses = new HashMap<String, ShaderAnalysis>();
+
+// Shader type filter for manual navigation (T key toggles)
+ShaderType currentTypeFilter = null;  // null = show all types
+
+// Separate lists for each type (for filtered navigation)
+ArrayList<ShaderInfo> glslShaders = new ArrayList<ShaderInfo>();
+ArrayList<ShaderInfo> isfShaders = new ArrayList<ShaderInfo>();
 
 // Error logging - accumulated errors written to errors.json
 ArrayList<String> shaderErrors = new ArrayList<String>();
@@ -26,6 +36,8 @@ final String ERRORS_FILE = "errors.json";
 
 void loadAllShaders() {
   availableShaders.clear();
+  glslShaders.clear();
+  isfShaders.clear();
   shaderAnalyses.clear();
   shaderErrors.clear();
   
@@ -38,10 +50,11 @@ void loadAllShaders() {
   // Update directory timestamps
   File glslDir = new File(dataPath(SHADERS_PATH + "/glsl"));
   File isfDir = new File(dataPath(SHADERS_PATH + "/isf"));
-  if (glslDir.exists()) lastGlslDirModified = glslDir.lastModified();
-  if (isfDir.exists()) lastIsfDirModified = isfDir.lastModified();
+  if (glslDir.exists()) lastGlslDirModified = getNewestFileTime(glslDir);
+  if (isfDir.exists()) lastIsfDirModified = getNewestFileTime(isfDir);
   
   println("Loaded " + availableShaders.size() + " shaders total");
+  println("  GLSL: " + glslShaders.size() + ", ISF: " + isfShaders.size());
   
   // Load existing analysis files (from Python-side analysis)
   loadShaderAnalyses();
@@ -103,32 +116,184 @@ long getNewestFileTime(File dir) {
 void loadGlslShaders() {
   File glslDir = new File(dataPath(SHADERS_PATH + "/glsl"));
   if (!glslDir.exists()) {
-    println("GLSL shader directory not found: " + glslDir.getPath());
+    println("[GLSL] Shader directory not found: " + glslDir.getPath());
     return;
   }
   
   File[] files = glslDir.listFiles();
   if (files == null) return;
   
+  int count = 0;
   for (File f : files) {
-    if (f.getName().endsWith(".frag")) {
-      String name = f.getName().replace(".frag", "");
+    // Support both .frag, .txt, and .glsl extensions
+    if (isGlslFile(f.getName())) {
+      String name = stripGlslExtension(f.getName());
       String path = SHADERS_PATH + "/glsl/" + f.getName();
-      availableShaders.add(new ShaderInfo(name, path, ShaderType.GLSL));
-      println("  Found GLSL: " + name);
+      ShaderInfo info = new ShaderInfo(name, path, ShaderType.GLSL);
+      availableShaders.add(info);
+      glslShaders.add(info);
+      count++;
     }
   }
+  println("[GLSL] Loaded " + count + " shaders");
+}
+
+// Pure function: check if filename is a GLSL shader
+boolean isGlslFile(String filename) {
+  String lower = filename.toLowerCase();
+  return lower.endsWith(".frag") || lower.endsWith(".txt") || lower.endsWith(".glsl");
+}
+
+// Pure function: strip GLSL extension from filename
+String stripGlslExtension(String filename) {
+  if (filename.endsWith(".frag")) return filename.replace(".frag", "");
+  if (filename.endsWith(".txt")) return filename.replace(".txt", "");
+  if (filename.endsWith(".glsl")) return filename.replace(".glsl", "");
+  return filename;
+}
+
+/**
+ * Load and convert a raw GLSL shader for Processing
+ * Adds precision qualifiers, audio uniforms, and Processing compatibility
+ */
+PShader loadGlslShader(String path) {
+  String[] lines = loadStrings(path);
+  if (lines == null) {
+    String error = "Could not read file: " + path;
+    println("[GLSL] " + error);
+    logShaderError(path, path, error, ShaderType.GLSL);
+    return null;
+  }
+  
+  // Clear previous detected uniforms
+  glslDetectedUniforms.clear();
+  
+  String glslSource = String.join("\n", lines);
+  String convertedGlsl = convertGlslForProcessing(glslSource);
+  
+  // Save converted shader to temp file and load
+  String tempPath = "temp_glsl_converted.frag";
+  saveStrings(dataPath(tempPath), new String[]{convertedGlsl});
+  
+  try {
+    return loadShader(tempPath);
+  } catch (Exception e) {
+    String error = "GLSL compilation failed: " + e.getMessage();
+    if (e.getCause() != null) {
+      error += " | Cause: " + e.getCause().getMessage();
+    }
+    println("[GLSL] Shader error: " + error);
+    logShaderError(path, path, error, ShaderType.GLSL);
+    throw e;
+  }
+}
+
+/**
+ * Convert raw GLSL (Shadertoy-style) to Processing-compatible fragment shader
+ * 
+ * This is a CALCULATION (pure function) - no side effects
+ * Input: raw GLSL source
+ * Output: Processing-compatible GLSL with audio uniforms
+ */
+String convertGlslForProcessing(String glslSource) {
+  StringBuilder sb = new StringBuilder();
+  
+  // Detect what uniforms the shader already declares
+  boolean hasTime = glslSource.contains("uniform float time");
+  boolean hasMouse = glslSource.contains("uniform vec2 mouse");
+  boolean hasResolution = glslSource.contains("uniform vec2 resolution");
+  boolean hasSpeed = glslSource.contains("uniform float speed");
+  boolean hasPrecision = glslSource.contains("precision ");
+  
+  // Auto-detect other uniform patterns (store for reference)
+  detectGlslUniforms(glslSource);
+  
+  // Add precision qualifiers if not present
+  if (!hasPrecision) {
+    sb.append("#ifdef GL_ES\n");
+    sb.append("precision highp float;\n");
+    sb.append("precision highp int;\n");
+    sb.append("#endif\n\n");
+  }
+  
+  // Add standard uniforms (Processing will set these)
+  if (!hasTime) sb.append("uniform float time;\n");
+  if (!hasMouse) sb.append("uniform vec2 mouse;\n");
+  if (!hasResolution) sb.append("uniform vec2 resolution;\n");
+  
+  // Add speed uniform for audio-reactive time scaling (0-1)
+  // This is THE KEY audio reactivity hook for GLSL shaders
+  if (!hasSpeed) {
+    sb.append("uniform float speed;  // Audio-reactive speed 0-1\n");
+  }
+  sb.append("\n");
+  
+  // Add audio uniforms (always inject, shader can use or ignore)
+  sb.append(generateAudioUniformDeclarations());
+  sb.append("\n");
+  
+  // Add the original shader source
+  sb.append(glslSource);
+  
+  return sb.toString();
+}
+
+/**
+ * Detect uniforms declared in GLSL source
+ * Stores in glslDetectedUniforms for debugging/analysis
+ */
+void detectGlslUniforms(String source) {
+  // Simple pattern matching for uniform declarations
+  String[] lines = source.split("\n");
+  for (String line : lines) {
+    line = line.trim();
+    if (line.startsWith("uniform ")) {
+      // Parse: uniform type name;
+      String[] parts = line.replace(";", "").split("\\s+");
+      if (parts.length >= 3) {
+        String type = parts[1];
+        String name = parts[2];
+        glslDetectedUniforms.put(name, type);
+      }
+    }
+  }
+  
+  if (glslDetectedUniforms.size() > 0) {
+    println("[GLSL] Detected uniforms: " + glslDetectedUniforms.keySet());
+  }
+}
+
+/**
+ * Generate audio uniform declarations (shared between GLSL and ISF)
+ * 
+ * This is a CALCULATION (pure function) - returns string, no side effects
+ */
+String generateAudioUniformDeclarations() {
+  StringBuilder sb = new StringBuilder();
+  sb.append("// Audio-reactive uniforms (injected by VJUniverse)\n");
+  sb.append("uniform float bass;       // Low frequency energy 0-1\n");
+  sb.append("uniform float lowMid;     // Low-mid energy 0-1\n");
+  sb.append("uniform float mid;        // Mid frequency energy 0-1\n");
+  sb.append("uniform float highs;      // High frequency energy 0-1\n");
+  sb.append("uniform float level;      // Overall loudness 0-1\n");
+  sb.append("uniform float kickEnv;    // Kick/beat envelope 0-1\n");
+  sb.append("uniform float kickPulse;  // 1 on kick, decays to 0\n");
+  sb.append("uniform float beat;       // Beat phase 0-1\n");
+  sb.append("uniform float energyFast; // Fast energy envelope\n");
+  sb.append("uniform float energySlow; // Slow energy envelope\n");
+  return sb.toString();
 }
 
 void loadIsfShaders() {
   File isfDir = new File(dataPath(SHADERS_PATH + "/isf"));
   if (!isfDir.exists()) {
-    println("ISF shader directory not found: " + isfDir.getPath());
+    println("[ISF] Shader directory not found: " + isfDir.getPath());
     return;
   }
   
   // Recursively load shaders from directory and subdirectories
   loadIsfShadersRecursive(isfDir, "");
+  println("[ISF] Loaded " + isfShaders.size() + " shaders");
 }
 
 void loadIsfShadersRecursive(File dir, String prefix) {
@@ -153,29 +318,33 @@ void loadIsfShadersRecursive(File dir, String prefix) {
       String baseName = f.getName().replace(".fs", "").replace(".isf", "");
       String name = prefix.isEmpty() ? baseName : prefix + "/" + baseName;
       String path = SHADERS_PATH + "/isf/" + (prefix.isEmpty() ? "" : prefix + "/") + f.getName();
-      availableShaders.add(new ShaderInfo(name, path, ShaderType.ISF));
-      println("  Found ISF: " + name);
+      ShaderInfo info = new ShaderInfo(name, path, ShaderType.ISF);
+      availableShaders.add(info);
+      isfShaders.add(info);
     }
   }
 }
 
 void loadShaderByIndex(int index) {
-  if (index < 0 || index >= availableShaders.size()) {
+  // Use filtered list for navigation
+  ArrayList<ShaderInfo> targetList = getFilteredShaderList();
+  
+  if (index < 0 || index >= targetList.size()) {
     println("Invalid shader index: " + index);
     activeShader = null;
     return;
   }
   
-  ShaderInfo info = availableShaders.get(index);
+  ShaderInfo info = targetList.get(index);
   currentShaderIndex = index;
   
   try {
     if (info.type == ShaderType.ISF) {
       activeShader = loadIsfShader(info.path);
     } else {
-      activeShader = loadShader(info.path);
+      activeShader = loadGlslShader(info.path);
     }
-    println("Loaded shader: " + info.name);
+    println("Loaded " + info.type + " shader: " + info.name);
     
     // Setup default audio bindings if none were configured via OSC
     if (audioBindings.size() == 0) {
@@ -191,15 +360,65 @@ void loadShaderByIndex(int index) {
       error += " | Cause: " + e.getCause().getMessage();
     }
     println("Error loading shader " + info.name + ": " + error);
-    logShaderError(info.name, info.path, error);
+    logShaderError(info.name, info.path, error, info.type);
     activeShader = null;
   }
 }
 
+// Get shader list based on current type filter
+ArrayList<ShaderInfo> getFilteredShaderList() {
+  if (currentTypeFilter == null) {
+    return availableShaders;
+  } else if (currentTypeFilter == ShaderType.GLSL) {
+    return glslShaders;
+  } else {
+    return isfShaders;
+  }
+}
+
+// Toggle shader type filter (T key)
+void toggleShaderTypeFilter() {
+  if (currentTypeFilter == null) {
+    currentTypeFilter = ShaderType.GLSL;
+    println("Filter: GLSL only (" + glslShaders.size() + " shaders)");
+  } else if (currentTypeFilter == ShaderType.GLSL) {
+    currentTypeFilter = ShaderType.ISF;
+    println("Filter: ISF only (" + isfShaders.size() + " shaders)");
+  } else {
+    currentTypeFilter = null;
+    println("Filter: All shaders (" + availableShaders.size() + " shaders)");
+  }
+  
+  // Reset to first shader in filtered list
+  currentShaderIndex = 0;
+  ArrayList<ShaderInfo> list = getFilteredShaderList();
+  if (list.size() > 0) {
+    loadShaderByIndex(0);
+  }
+  
+  consoleLog("Type: " + (currentTypeFilter == null ? "ALL" : currentTypeFilter.toString()));
+}
+
+// Get current shader info (respecting filter)
+ShaderInfo getCurrentShaderInfo() {
+  ArrayList<ShaderInfo> list = getFilteredShaderList();
+  if (currentShaderIndex >= 0 && currentShaderIndex < list.size()) {
+    return list.get(currentShaderIndex);
+  }
+  return null;
+}
+
 void loadShaderByName(String name) {
+  // Search in ALL shaders (not filtered) - allows OSC to load any shader
   for (int i = 0; i < availableShaders.size(); i++) {
     if (availableShaders.get(i).name.equals(name)) {
+      ShaderInfo info = availableShaders.get(i);
+      
+      // Temporarily disable filter to load by absolute index
+      ShaderType savedFilter = currentTypeFilter;
+      currentTypeFilter = null;
       loadShaderByIndex(i);
+      currentTypeFilter = savedFilter;
       return;
     }
   }
@@ -264,11 +483,7 @@ String convertIsfToGlsl(String isfSource) {
   // Processing uniforms
   sb.append("uniform float time;\n");
   sb.append("uniform vec2 resolution;\n");
-  sb.append("uniform float bass;\n");
-  sb.append("uniform float mid;\n");
-  sb.append("uniform float treble;\n");
-  sb.append("uniform float level;\n");
-  sb.append("uniform float beat;\n\n");
+  sb.append("uniform float speed;  // Audio-reactive speed 0-1\n\n");
   
   // Parse ISF INPUTS and add as uniforms
   if (!jsonHeader.isEmpty()) {
@@ -282,19 +497,9 @@ String convertIsfToGlsl(String isfSource) {
     }
   }
   
-  // Audio uniforms - inject into all ISF shaders so they can react to music
-  // These are always set by AudioManager.applyAudioUniformsToShader()
-  sb.append("// Audio-reactive uniforms (injected)\n");
-  sb.append("uniform float bass;      // Low frequency energy 0-1\n");
-  sb.append("uniform float lowMid;    // Low-mid energy 0-1\n");
-  sb.append("uniform float mid;       // Mid frequency energy 0-1\n");
-  sb.append("uniform float highs;     // High frequency energy 0-1\n");
-  sb.append("uniform float level;     // Overall loudness 0-1\n");
-  sb.append("uniform float kickEnv;   // Kick/beat envelope 0-1\n");
-  sb.append("uniform float kickPulse; // 1 on kick, decays to 0\n");
-  sb.append("uniform float beat;      // Beat phase 0-1\n");
-  sb.append("uniform float energyFast; // Fast energy envelope\n");
-  sb.append("uniform float energySlow; // Slow energy envelope\n\n");
+  // Audio uniforms - use shared generation function
+  sb.append(generateAudioUniformDeclarations());
+  sb.append("\n");
   
   // ISF compatibility defines
   // ISF uses bottom-left origin, Processing uses top-left - flip Y coordinate
@@ -583,12 +788,12 @@ PShader getShaderByName(String name) {
         if (info.type == ShaderType.ISF) {
           return loadIsfShader(info.path);
         } else {
-          return loadShader(info.path);
+          return loadGlslShader(info.path);
         }
       } catch (Exception e) {
         String error = e.getMessage();
         println("Error loading shader " + name + ": " + error);
-        logShaderError(name, info.path, error);
+        logShaderError(name, info.path, error, info.type);
         return null;
       }
     }
@@ -616,15 +821,29 @@ void loadShaderAnalyses() {
 // ERROR LOGGING
 // ============================================
 
-void logShaderError(String shaderName, String filePath, String error) {
-  // Build JSON entry
+void logShaderError(String shaderName, String filePath, String error, ShaderType type) {
+  // Build JSON entry with shader type
   String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(new java.util.Date());
   String escapedError = error.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
-  String entry = "{\"name\":\"" + shaderName + "\",\"path\":\"" + filePath + "\",\"error\":\"" + escapedError + "\",\"timestamp\":\"" + timestamp + "\"}";
+  String entry = "{\"name\":\"" + shaderName + "\",\"path\":\"" + filePath + 
+                 "\",\"type\":\"" + type.toString() + "\",\"error\":\"" + escapedError + 
+                 "\",\"timestamp\":\"" + timestamp + "\"}";
   shaderErrors.add(entry);
   
   // Write to file
   saveErrorsFile();
+}
+
+// Backward compatibility overload
+void logShaderError(String shaderName, String filePath, String error) {
+  ShaderType type = ShaderType.GLSL;  // Default
+  for (ShaderInfo info : availableShaders) {
+    if (info.name.equals(shaderName) || info.path.equals(filePath)) {
+      type = info.type;
+      break;
+    }
+  }
+  logShaderError(shaderName, filePath, error, type);
 }
 
 void saveErrorsFile() {

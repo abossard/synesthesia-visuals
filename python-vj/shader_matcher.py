@@ -478,7 +478,11 @@ class ShaderMatcher:
             self.load_shaders(shaders_dir)
     
     def load_shaders(self, shaders_dir: str) -> int:
-        """Load all shader analyses from directory"""
+        """
+        Load all shader analyses from directory.
+        
+        Supports both ISF (.fs) and GLSL (.txt) shaders.
+        """
         self.shaders = []
         shaders_path = Path(shaders_dir)
         
@@ -488,10 +492,19 @@ class ShaderMatcher:
                 with open(analysis_file, 'r') as f:
                     data = json.load(f)
                 
+                # Get shader type from analysis or auto-detect
+                shader_type = data.get('shaderType', 'isf')
+                ext = data.get('extension', '.fs' if shader_type == 'isf' else '.txt')
+                
                 # Get corresponding shader path
-                shader_path = str(analysis_file).replace('.analysis.json', '.fs')
+                shader_path = str(analysis_file).replace('.analysis.json', ext)
                 if not os.path.exists(shader_path):
-                    shader_path = str(analysis_file).replace('.analysis.json', '.glsl')
+                    # Fallback: try other extensions
+                    for try_ext in ['.fs', '.txt', '.glsl', '.frag']:
+                        try_path = str(analysis_file).replace('.analysis.json', try_ext)
+                        if os.path.exists(try_path):
+                            shader_path = try_path
+                            break
                 
                 shader = ShaderFeatures.from_analysis_json(shader_path, data)
                 self.shaders.append(shader)
@@ -674,11 +687,17 @@ class ShaderIndexer:
         3. analyze_shader() - LLM analysis, writes JSON
     """
     
-    # Fixed path to ISF shaders (relative to this file)
-    DEFAULT_SHADERS_DIR = os.path.join(
+    # Base shaders directory (parent of isf/ and glsl/)
+    DEFAULT_SHADERS_BASE = os.path.join(
         os.path.dirname(__file__),
-        '..', 'processing-vj', 'src', 'VJUniverse', 'data', 'shaders', 'isf'
+        '..', 'processing-vj', 'src', 'VJUniverse', 'data', 'shaders'
     )
+    
+    # Shader type configurations: (subfolder, extension, prefix)
+    SHADER_TYPES = {
+        'isf': ('isf', '.fs', 'isf'),
+        'glsl': ('glsl', '.txt', 'glsl'),
+    }
     
     # Feature vector dimension names (must match ShaderFeatures order)
     FEATURE_NAMES = [
@@ -692,8 +711,20 @@ class ShaderIndexer:
         chromadb_path: Optional[str] = None,
         use_chromadb: bool = True
     ):
-        self.shaders_dir = Path(shaders_dir or self.DEFAULT_SHADERS_DIR).resolve()
-        self.shaders: Dict[str, ShaderFeatures] = {}  # name → features
+        # shaders_dir can be base (containing isf/, glsl/) or a specific type folder
+        base_dir = Path(shaders_dir or self.DEFAULT_SHADERS_BASE).resolve()
+        
+        # Auto-detect: if pointing to isf/ or glsl/, go up one level
+        if base_dir.name in ('isf', 'glsl'):
+            self.shaders_base = base_dir.parent
+        else:
+            self.shaders_base = base_dir
+        
+        # For backwards compatibility, keep shaders_dir pointing to ISF
+        self.shaders_dir = self.shaders_base / 'isf'
+        self.glsl_dir = self.shaders_base / 'glsl'
+        
+        self.shaders: Dict[str, ShaderFeatures] = {}  # name → features (prefixed)
         self._chromadb_client = None
         self._collection = None  # Feature vectors collection
         self._text_collection = None  # Text/semantic search collection
@@ -738,36 +769,47 @@ class ShaderIndexer:
             logger.debug(f"ChromaDB init skipped: {e}")
             self._use_chromadb = False
     
-    def scan_shaders(self) -> Tuple[List[Path], List[Path]]:
+    def scan_shaders(self) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
         """
-        Scan shader directory recursively.
+        Scan shader directories for both ISF and GLSL shaders.
         
         Returns:
-            (analyzed, unanalyzed) - Lists of shader file paths (Path objects)
+            (analyzed, unanalyzed) - Lists of (shader_path, shader_type) tuples
+            shader_type is 'isf' or 'glsl'
         """
         analyzed = []
         unanalyzed = []
         
-        if not self.shaders_dir.exists():
-            logger.error(f"Shaders directory not found: {self.shaders_dir}")
-            return [], []
+        # Scan ISF shaders (.fs files)
+        if self.shaders_dir.exists():
+            for shader_file in self.shaders_dir.rglob("*.fs"):
+                if shader_file.is_dir():
+                    logger.warning(f"Skipping directory with .fs extension: {shader_file}")
+                    continue
+                if shader_file.stem.endswith('.vs'):
+                    continue
+                
+                analysis_file = shader_file.with_suffix('.analysis.json')
+                if analysis_file.exists():
+                    analyzed.append((shader_file, 'isf'))
+                else:
+                    unanalyzed.append((shader_file, 'isf'))
+        else:
+            logger.warning(f"ISF directory not found: {self.shaders_dir}")
         
-        # Find all .fs files recursively (ISF shaders)
-        for shader_file in self.shaders_dir.rglob("*.fs"):
-            # Skip directories that happen to end with .fs (malformed entries)
-            if shader_file.is_dir():
-                logger.warning(f"Skipping directory with .fs extension: {shader_file}")
-                continue
-            # Skip vertex shaders (.vs files sometimes named .fs by mistake)
-            if shader_file.stem.endswith('.vs'):
-                continue
-            
-            analysis_file = shader_file.with_suffix('.analysis.json')
-            
-            if analysis_file.exists():
-                analyzed.append(shader_file)
-            else:
-                unanalyzed.append(shader_file)
+        # Scan GLSL shaders (.txt files)
+        if self.glsl_dir.exists():
+            for shader_file in self.glsl_dir.rglob("*.txt"):
+                if shader_file.is_dir():
+                    continue
+                
+                analysis_file = shader_file.with_suffix('.analysis.json')
+                if analysis_file.exists():
+                    analyzed.append((shader_file, 'glsl'))
+                else:
+                    unanalyzed.append((shader_file, 'glsl'))
+        else:
+            logger.debug(f"GLSL directory not found: {self.glsl_dir}")
         
         logger.debug(f"Scanned: {len(analyzed)} analyzed, {len(unanalyzed)} unanalyzed")
         return analyzed, unanalyzed
@@ -777,30 +819,34 @@ class ShaderIndexer:
         Sync JSON analyses to memory (and ChromaDB if enabled).
         
         Returns:
-            Stats dict: {loaded, chromadb_synced, text_synced, errors}
+            Stats dict: {loaded, chromadb_synced, text_synced, errors, isf_count, glsl_count}
         """
-        stats = {'loaded': 0, 'chromadb_synced': 0, 'text_synced': 0, 'errors': 0}
+        stats = {'loaded': 0, 'chromadb_synced': 0, 'text_synced': 0, 'errors': 0, 'isf_count': 0, 'glsl_count': 0}
         self.shaders.clear()
         
         analyzed, _ = self.scan_shaders()
         
-        for shader_path in analyzed:
+        for shader_path, shader_type in analyzed:
             try:
                 analysis_path = shader_path.with_suffix('.analysis.json')
                 
-                # Use relative path from shaders_dir as unique name
-                rel_path = shader_path.relative_to(self.shaders_dir)
-                # Name without extension, using / for subfolders
-                name = str(rel_path.with_suffix('')).replace('\\', '/')
+                # Get base dir for this shader type
+                base_dir = self.shaders_dir if shader_type == 'isf' else self.glsl_dir
+                
+                # Use relative path from type-specific dir as name
+                rel_path = shader_path.relative_to(base_dir)
+                # Prefixed name: "isf/shadername" or "glsl/shadername"
+                name = f"{shader_type}/{str(rel_path.with_suffix('')).replace(chr(92), '/')}"
                 
                 with open(analysis_path, 'r') as f:
                     data = json.load(f)
                 
                 features = ShaderFeatures.from_analysis_json(str(shader_path), data)
-                # Override name with relative path-based name
+                # Override name with prefixed path-based name
                 features.name = name
                 self.shaders[name] = features
                 stats['loaded'] += 1
+                stats[f'{shader_type}_count'] += 1
                 
                 # Sync to ChromaDB (feature vectors)
                 if self._use_chromadb and self._collection:
@@ -896,31 +942,58 @@ class ShaderIndexer:
         )
     
     def get_unanalyzed(self) -> List[str]:
-        """Get list of shader names without analysis (relative paths)."""
+        """Get list of shader names without analysis (prefixed paths)."""
         _, unanalyzed = self.scan_shaders()
-        # Convert paths to relative names
+        # Convert paths to prefixed names
         names = []
-        for shader_path in unanalyzed:
-            rel_path = shader_path.relative_to(self.shaders_dir)
-            name = str(rel_path.with_suffix('')).replace('\\', '/')
+        for shader_path, shader_type in unanalyzed:
+            base_dir = self.shaders_dir if shader_type == 'isf' else self.glsl_dir
+            rel_path = shader_path.relative_to(base_dir)
+            # Prefixed name: "isf/shadername" or "glsl/shadername"
+            name = f"{shader_type}/{str(rel_path.with_suffix('')).replace(chr(92), '/')}"
             names.append(name)
         return names
     
     def get_shader_source(self, name: str) -> Optional[str]:
-        """Load shader source code by name (supports subfolder paths like 'BitStreamer/BitStreamer')."""
-        # Try direct path first
-        shader_path = self.shaders_dir / f"{name}.fs"
-        if not shader_path.exists():
-            # Try adding .fs extension if name doesn't have it
-            shader_path = self.shaders_dir / name
-            if not shader_path.suffix:
-                shader_path = shader_path.with_suffix('.fs')
+        """
+        Load shader source code by name.
         
-        if not shader_path.exists() or shader_path.is_dir():
+        Supports:
+        - Prefixed names: 'isf/BitStreamer', 'glsl/acidspace3D'
+        - Legacy names (auto-detect): 'BitStreamer' tries ISF then GLSL
+        - Subfolder paths: 'isf/subdir/shader'
+        """
+        # Check for prefix
+        if name.startswith('isf/'):
+            shader_name = name[4:]  # Remove 'isf/' prefix
+            shader_path = self.shaders_dir / f"{shader_name}.fs"
+            if shader_path.exists() and not shader_path.is_dir():
+                with open(shader_path, 'r') as f:
+                    return f.read()
             return None
         
-        with open(shader_path, 'r') as f:
-            return f.read()
+        if name.startswith('glsl/'):
+            shader_name = name[5:]  # Remove 'glsl/' prefix
+            shader_path = self.glsl_dir / f"{shader_name}.txt"
+            if shader_path.exists() and not shader_path.is_dir():
+                with open(shader_path, 'r') as f:
+                    return f.read()
+            return None
+        
+        # Auto-detect: try ISF first, then GLSL
+        # ISF (.fs)
+        shader_path = self.shaders_dir / f"{name}.fs"
+        if shader_path.exists() and not shader_path.is_dir():
+            with open(shader_path, 'r') as f:
+                return f.read()
+        
+        # GLSL (.txt)
+        shader_path = self.glsl_dir / f"{name}.txt"
+        if shader_path.exists() and not shader_path.is_dir():
+            with open(shader_path, 'r') as f:
+                return f.read()
+        
+        return None
     
     def parse_isf_inputs(self, source: str) -> ShaderInputs:
         """Parse ISF JSON header to extract input capabilities."""
@@ -977,29 +1050,105 @@ class ShaderIndexer:
         inputs.input_names = input_names
         return inputs
     
+    def parse_glsl_inputs(self, source: str) -> ShaderInputs:
+        """
+        Parse uniform declarations from plain GLSL shader.
+        
+        GLSL shaders don't have ISF JSON headers, so we extract
+        uniform declarations via regex.
+        """
+        import re
+        
+        inputs = ShaderInputs()
+        input_names = []
+        
+        # Pattern: uniform <type> <name>;
+        # Handles: uniform float time; uniform vec2 resolution;
+        uniform_pattern = re.compile(
+            r'uniform\s+(\w+)\s+(\w+)\s*;',
+            re.MULTILINE
+        )
+        
+        for match in uniform_pattern.finditer(source):
+            uniform_type = match.group(1).lower()
+            uniform_name = match.group(2)
+            input_names.append(uniform_name)
+            
+            if uniform_type == 'float':
+                inputs.float_count += 1
+            elif uniform_type in ('vec2', 'point2d'):
+                inputs.point2d_count += 1
+            elif uniform_type in ('vec3', 'vec4', 'color'):
+                inputs.color_count += 1
+            elif uniform_type in ('bool', 'int'):
+                inputs.bool_count += 1
+            elif uniform_type in ('sampler2d', 'sampler1d'):
+                inputs.image_count += 1
+        
+        inputs.input_names = input_names
+        return inputs
+    
+    def parse_inputs(self, source: str, shader_type: str = 'isf') -> ShaderInputs:
+        """
+        Parse shader inputs based on shader type.
+        
+        Args:
+            source: Shader source code
+            shader_type: 'isf' or 'glsl'
+        
+        Returns:
+            ShaderInputs with parsed capabilities
+        """
+        if shader_type == 'glsl':
+            return self.parse_glsl_inputs(source)
+        else:
+            return self.parse_isf_inputs(source)
+    
     def save_analysis(
         self,
         name: str,
         features: Dict[str, float],
         inputs: ShaderInputs,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        shader_type: str = 'isf'
     ) -> bool:
         """
         Save analysis result to JSON file.
         
         Args:
-            name: Shader name (without extension)
+            name: Shader name (prefixed like 'isf/shader' or unprefixed)
             features: Feature dict {energy_score, mood_valence, ...}
-            inputs: Parsed ISF inputs
+            inputs: Parsed shader inputs
             metadata: Additional fields (mood, colors, description, etc.)
+            shader_type: 'isf' or 'glsl'
         
         Returns:
             True if saved successfully
         """
-        analysis_path = self.shaders_dir / f"{name}.analysis.json"
+        # Handle prefixed names
+        if name.startswith('isf/'):
+            shader_type = 'isf'
+            shader_name = name[4:]
+        elif name.startswith('glsl/'):
+            shader_type = 'glsl'
+            shader_name = name[5:]
+        else:
+            shader_name = name
+        
+        # Determine base directory and extension
+        if shader_type == 'glsl':
+            base_dir = self.glsl_dir
+            ext = '.txt'
+        else:
+            base_dir = self.shaders_dir
+            ext = '.fs'
+        
+        analysis_path = base_dir / f"{shader_name}.analysis.json"
         
         data = {
             'shaderName': name,
+            'shaderType': shader_type,
+            'extension': ext,
             'analyzedAt': int(os.times().system * 1000),
             'features': features,
             'inputs': {
@@ -1031,7 +1180,7 @@ class ShaderIndexer:
         Delete the .error.json to retry analysis.
         
         Args:
-            name: Shader name (without extension)
+            name: Shader name (prefixed like 'isf/shader' or unprefixed)
             error: Error message
             details: Optional additional error details
         
@@ -1039,10 +1188,25 @@ class ShaderIndexer:
             True if saved successfully
         """
         import time
-        error_path = self.shaders_dir / f"{name}.error.json"
+        
+        # Handle prefixed names (same logic as save_analysis)
+        shader_type = 'isf'
+        if name.startswith('isf/'):
+            shader_type = 'isf'
+            shader_name = name[4:]
+        elif name.startswith('glsl/'):
+            shader_type = 'glsl'
+            shader_name = name[5:]
+        else:
+            shader_name = name
+        
+        # Determine base directory
+        base_dir = self.glsl_dir if shader_type == 'glsl' else self.shaders_dir
+        error_path = base_dir / f"{shader_name}.error.json"
         
         data = {
             'shaderName': name,
+            'shaderType': shader_type,
             'error': error,
             'failedAt': time.strftime('%Y-%m-%d %H:%M:%S'),
             'timestamp': int(time.time()),
@@ -1084,8 +1248,10 @@ class ShaderIndexer:
             )
             
             pairs = []
-            for i, shader_id in enumerate(results['ids'][0]):
-                distance = results['distances'][0][i] if results.get('distances') else 0.0
+            ids_list = results.get('ids', [[]])[0]
+            distances_list = results.get('distances') or [[]]
+            for i, shader_id in enumerate(ids_list):
+                distance = distances_list[0][i] if distances_list and len(distances_list[0]) > i else 0.0
                 pairs.append((shader_id, distance))
             return pairs
             
@@ -1154,20 +1320,26 @@ class ShaderIndexer:
                 )
                 
                 output = []
-                ids = results.get('ids', [[]])[0]
-                distances = results.get('distances', [[]])[0]
-                metadatas = results.get('metadatas', [[]])[0]
+                ids_result = results.get('ids') or [[]]
+                distances_result = results.get('distances') or [[]]
+                metadatas_result = results.get('metadatas') or [[]]
+                
+                ids = ids_result[0] if ids_result else []
+                distances = distances_result[0] if distances_result else []
+                metadatas = metadatas_result[0] if metadatas_result else []
                 
                 for i, shader_id in enumerate(ids):
-                    distance = distances[i] if i < len(distances) else 1.0
+                    distance = float(distances[i]) if i < len(distances) else 1.0
                     metadata = metadatas[i] if i < len(metadatas) else {}
                     
                     # Load full features from memory if available
+                    colors_val = metadata.get('colors', '') if isinstance(metadata, dict) else ''
+                    effects_val = metadata.get('effects', '') if isinstance(metadata, dict) else ''
                     features = {
-                        'mood': metadata.get('mood', 'unknown'),
-                        'energy': metadata.get('energy', 'medium'),
-                        'colors': metadata.get('colors', '').split(',') if metadata.get('colors') else [],
-                        'effects': metadata.get('effects', '').split(',') if metadata.get('effects') else [],
+                        'mood': metadata.get('mood', 'unknown') if isinstance(metadata, dict) else 'unknown',
+                        'energy': metadata.get('energy', 'medium') if isinstance(metadata, dict) else 'medium',
+                        'colors': str(colors_val).split(',') if colors_val else [],
+                        'effects': str(effects_val).split(',') if effects_val else [],
                     }
                     
                     # Add numeric features if shader is in memory
@@ -1192,9 +1364,14 @@ class ShaderIndexer:
         results = []
         analyzed, _ = self.scan_shaders()
         
-        for name in analyzed:
+        for shader_path, shader_type in analyzed:
             try:
-                analysis_path = self.shaders_dir / f"{name}.analysis.json"
+                # Get prefixed name
+                base_dir = self.shaders_dir if shader_type == 'isf' else self.glsl_dir
+                rel_path = shader_path.relative_to(base_dir)
+                name = f"{shader_type}/{str(rel_path.with_suffix('')).replace(chr(92), '/')}"
+                
+                analysis_path = shader_path.with_suffix('.analysis.json')
                 with open(analysis_path, 'r') as f:
                     data = json.load(f)
                 
@@ -1236,7 +1413,7 @@ class ShaderIndexer:
                     results.append((name, 1.0 / (1.0 + score), features))
                     
             except Exception as e:
-                logger.debug(f"Failed to search {name}: {e}")
+                logger.debug(f"Failed to search {shader_path}: {e}")
         
         results.sort(key=lambda x: x[1])
         return results[:top_k]

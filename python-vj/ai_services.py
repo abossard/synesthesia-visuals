@@ -327,10 +327,21 @@ JSON response:"""
     def _parse_shader_analysis(self, content: str) -> Optional[Dict[str, Any]]:
         """Parse shader analysis JSON from LLM response."""
         try:
+            # Strip markdown code fences if present
+            cleaned = content.strip()
+            if cleaned.startswith('```'):
+                # Remove opening fence (```json or ```)
+                first_newline = cleaned.find('\n')
+                if first_newline > 0:
+                    cleaned = cleaned[first_newline + 1:]
+                # Remove closing fence
+                if cleaned.rstrip().endswith('```'):
+                    cleaned = cleaned.rstrip()[:-3].rstrip()
+            
             # Find JSON in response
-            start, end = content.find('{'), content.rfind('}')
+            start, end = cleaned.find('{'), cleaned.rfind('}')
             if start >= 0 and end > start:
-                return json.loads(content[start:end+1])
+                return json.loads(cleaned[start:end+1])
         except json.JSONDecodeError as e:
             logger.debug(f"Failed to parse shader analysis JSON: {e}")
         return None

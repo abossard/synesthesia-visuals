@@ -82,6 +82,11 @@ int shaderCycleIndex = 0;
 float lastShaderCycleTime = 0;
 final float SHADER_CYCLE_DELAY = 2.0;  // Seconds between shader changes
 
+// Shader rendering parameters
+float shaderZoom = 1.0;  // 1.0 = normal, <1 = zoom out, >1 = zoom in
+float shaderOffsetX = 0.0;  // UV offset X (-1 to 1)
+float shaderOffsetY = 0.0;  // UV offset Y (-1 to 1)
+
 // ============================================
 // SETUP
 // ============================================
@@ -234,13 +239,22 @@ void drawQuadTo(PGraphics pg) {
 void drawFullscreenQuad() {
   noStroke();
   fill(255);
-  // Use textureMode NORMAL for 0-1 coordinates
-  // Flip texture Y to match OpenGL conventions (bottom-left origin)
+  
+  // Calculate zoom-adjusted UV coordinates with pan offset
+  // Zoom works by shrinking UV range around center (0.5, 0.5)
+  float halfRange = 0.5 / shaderZoom;
+  float uvMinX = 0.5 - halfRange + shaderOffsetX;
+  float uvMaxX = 0.5 + halfRange + shaderOffsetX;
+  float uvMinY = 0.5 - halfRange + shaderOffsetY;
+  float uvMaxY = 0.5 + halfRange + shaderOffsetY;
+  
+  // Draw fullscreen quad with centered, zoom-adjusted, offset UVs
+  // UV origin at bottom-left (OpenGL convention)
   beginShape(QUADS);
-  vertex(0, 0, 0, 1);           // top-left screen -> bottom-left texture
-  vertex(width, 0, 1, 1);       // top-right screen -> bottom-right texture
-  vertex(width, height, 1, 0);  // bottom-right screen -> top-right texture
-  vertex(0, height, 0, 0);      // bottom-left screen -> top-left texture
+  vertex(0, 0, uvMinX, uvMaxY);           // top-left screen -> UV
+  vertex(width, 0, uvMaxX, uvMaxY);       // top-right screen -> UV
+  vertex(width, height, uvMaxX, uvMinY);  // bottom-right screen -> UV
+  vertex(0, height, uvMinX, uvMinY);      // bottom-left screen -> UV
   endShape();
 }
 
@@ -265,6 +279,16 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     // ISF compatibility uniforms
     s.set("TIME", globalTime);
     s.set("RENDERSIZE", w, h);
+    
+    // Mouse uniform (for Shadertoy-style GLSL shaders)
+    // Y is flipped to match OpenGL conventions
+    s.set("mouse", (float)mouseX, h - (float)mouseY);
+    
+    // Speed uniform: audio-reactive time scaling (0-1)
+    // Key hook for GLSL shader audio reactivity
+    // Uses energyFast which responds well to music dynamics
+    float audioSpeed = 0.3 + energyFast * 0.7;  // Base 0.3, boosted by audio up to 1.0
+    s.set("speed", audioSpeed);
     
     // Apply audio uniforms from AudioManager (includes bound uniforms)
     applyAudioUniformsToShader(s);
@@ -534,8 +558,12 @@ void keyPressed() {
     case 'R':
       startShaderCycling();
       break;
+    case 't':
+    case 'T':
+      toggleShaderTypeFilter();  // Toggle GLSL/ISF/All
+      break;
     case ' ':
-      if (currentShaderIndex < availableShaders.size()) {
+      if (currentShaderIndex < getFilteredShaderList().size()) {
         loadShaderByIndex(currentShaderIndex);
       }
       break;
@@ -547,18 +575,54 @@ void keyPressed() {
     case 'B':
       showAudioBars = !showAudioBars;  // Toggle audio bars visibility
       break;
+    case 'z':
+      shaderZoom = max(0.1, shaderZoom - 0.1);  // Zoom out
+      println("Shader zoom: " + nf(shaderZoom, 1, 2));
+      break;
+    case 'Z':
+      shaderZoom = min(5.0, shaderZoom + 0.1);  // Zoom in
+      println("Shader zoom: " + nf(shaderZoom, 1, 2));
+      break;
+    case 'x':
+    case 'X':
+      shaderZoom = 1.0;  // Reset zoom and offset
+      shaderOffsetX = 0.0;
+      shaderOffsetY = 0.0;
+      println("Shader zoom/offset reset");
+      break;
+  }
+  
+  // Arrow keys for shader panning (only when not in modal dialogs)
+  if (key == CODED) {
+    float offsetStep = 0.05 / shaderZoom;  // Scale step by zoom for consistent feel
+    switch (keyCode) {
+      case LEFT:
+        shaderOffsetX = constrain(shaderOffsetX - offsetStep, -1.0, 1.0);
+        break;
+      case RIGHT:
+        shaderOffsetX = constrain(shaderOffsetX + offsetStep, -1.0, 1.0);
+        break;
+      case UP:
+        shaderOffsetY = constrain(shaderOffsetY - offsetStep, -1.0, 1.0);
+        break;
+      case DOWN:
+        shaderOffsetY = constrain(shaderOffsetY + offsetStep, -1.0, 1.0);
+        break;
+    }
   }
 }
 
 void nextShader() {
-  if (availableShaders.size() == 0) return;
-  currentShaderIndex = (currentShaderIndex + 1) % availableShaders.size();
+  ArrayList<ShaderInfo> list = getFilteredShaderList();
+  if (list.size() == 0) return;
+  currentShaderIndex = (currentShaderIndex + 1) % list.size();
   loadShaderByIndex(currentShaderIndex);
 }
 
 void prevShader() {
-  if (availableShaders.size() == 0) return;
-  currentShaderIndex = (currentShaderIndex - 1 + availableShaders.size()) % availableShaders.size();
+  ArrayList<ShaderInfo> list = getFilteredShaderList();
+  if (list.size() == 0) return;
+  currentShaderIndex = (currentShaderIndex - 1 + list.size()) % list.size();
   loadShaderByIndex(currentShaderIndex);
 }
 
@@ -570,7 +634,7 @@ void drawDebugOverlay() {
   // Semi-transparent background
   fill(0, 180);
   noStroke();
-  rect(10, 10, 350, 200);
+  rect(10, 10, 380, 220);
   
   // Text
   fill(255);
@@ -591,14 +655,21 @@ void drawDebugOverlay() {
   text("  Bindings: " + audioBindings.size(), 20, y); y += lineHeight;
   y += 5;
   
-  String shaderName = availableShaders.size() > 0 ? 
-    availableShaders.get(currentShaderIndex).name : "none";
-  text("Shader [" + (currentShaderIndex + 1) + "/" + availableShaders.size() + "]: " + shaderName, 20, y); y += lineHeight;
+  // Shader info with type filter
+  ArrayList<ShaderInfo> list = getFilteredShaderList();
+  ShaderInfo current = getCurrentShaderInfo();
+  String shaderName = current != null ? current.name : "none";
+  String shaderType = current != null ? current.type.toString() : "";
+  String filterStr = currentTypeFilter == null ? "ALL" : currentTypeFilter.toString();
+  
+  text("Filter: " + filterStr + " | Shader [" + (currentShaderIndex + 1) + "/" + list.size() + "]", 20, y); y += lineHeight;
+  text("  " + shaderType + ": " + shaderName, 20, y); y += lineHeight;
+  text("  Zoom: " + nf(shaderZoom, 1, 2) + " | Offset: " + nf(shaderOffsetX, 1, 2) + ", " + nf(shaderOffsetY, 1, 2), 20, y); y += lineHeight;
   
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader r=reload R=cycle-all A=audio B=bars", 20, height - 25);
+  text("D=debug N/P=shader T=type z/Z=zoom arrows=pan X=reset r=reload A=audio B=bars", 20, height - 25);
 }
 
 // ============================================
