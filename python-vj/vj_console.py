@@ -39,7 +39,7 @@ from midi_infrastructure import list_controllers
 
 # Shader matching
 try:
-    from shader_matcher import ShaderIndexer, ShaderMatcher
+    from shader_matcher import ShaderIndexer, ShaderSelector
     SHADER_MATCHER_AVAILABLE = True
 except ImportError as e:
     SHADER_MATCHER_AVAILABLE = False
@@ -1288,7 +1288,7 @@ class VJConsoleApp(App):
         
         # Shader Indexer
         self.shader_indexer: Optional[Any] = None  # ShaderIndexer when available
-        self.shader_matcher: Optional[Any] = None  # ShaderMatcher when available  
+        self.shader_selector: Optional[Any] = None  # ShaderSelector when available  
         self.shader_analysis_worker: Optional[ShaderAnalysisWorker] = None
         self._current_shader_match: Dict[str, Any] = {}
         self._shader_search_results: Dict[str, Any] = {}
@@ -1391,9 +1391,8 @@ class VJConsoleApp(App):
             stats = self.shader_indexer.sync()
             logger.info(f"Shader indexer synced: {stats}")
             
-            # Create matcher with loaded shaders
-            shaders_dir = str(self.shader_indexer.shaders_dir)
-            self.shader_matcher = ShaderMatcher(shaders_dir)
+            # Create selector with loaded shaders (tracks usage)
+            self.shader_selector = ShaderSelector(self.shader_indexer)
             
             # Create LLM analyzer for shader analysis
             from ai_services import LLMAnalyzer
@@ -1408,7 +1407,7 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.exception(f"Shader indexer initialization failed: {e}")
             self.shader_indexer = None
-            self.shader_matcher = None
+            self.shader_selector = None
             self.shader_analysis_worker = None
     
     def _setup_log_capture(self) -> None:
@@ -1937,8 +1936,8 @@ class VJConsoleApp(App):
     
     def action_shader_search_mood(self) -> None:
         """Search shaders by mood (/ key)."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_matcher:
-            self.notify("Shader matcher not available", severity="warning")
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_selector:
+            self.notify("Shader selector not available", severity="warning")
             return
         
         # Cycle through common moods
@@ -1951,19 +1950,23 @@ class VJConsoleApp(App):
         except ValueError:
             next_mood = moods[0]
         
-        # Perform search
-        matches = self.shader_matcher.match_by_mood(next_mood, energy=0.5, top_k=8)
+        # Perform search using selector (tracks usage for variety)
         results = []
-        for shader, score in matches:
-            results.append({
-                'name': shader.name,
-                'score': score,
-                'features': {
-                    'energy_score': shader.energy_score,
-                    'mood_valence': shader.mood_valence,
-                    'motion_speed': shader.motion_speed,
-                }
-            })
+        for _ in range(8):
+            match = self.shader_selector.select_by_mood(next_mood, energy=0.5, top_k=10)
+            if match and match.name not in [r['name'] for r in results]:
+                results.append({
+                    'name': match.name,
+                    'score': match.score,
+                    'features': {
+                        'energy_score': match.features.energy_score,
+                        'mood_valence': match.features.mood_valence,
+                        'motion_speed': match.features.motion_speed,
+                    }
+                })
+        
+        # Reset usage to not pollute actual session tracking
+        self.shader_selector.reset_usage()
         
         self._shader_search_results = {
             'type': 'mood',
@@ -1973,8 +1976,8 @@ class VJConsoleApp(App):
     
     def action_shader_search_energy(self) -> None:
         """Search shaders by energy level (e key)."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_matcher:
-            self.notify("Shader matcher not available", severity="warning")
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_selector:
+            self.notify("Shader selector not available", severity="warning")
             return
         
         # Cycle through energy levels
@@ -1988,7 +1991,7 @@ class VJConsoleApp(App):
         except (ValueError, TypeError):
             next_energy = levels[0]
         
-        # Perform search using feature vector
+        # Perform search using feature vector via indexer
         target_vector = [next_energy, 0.0, 0.5, next_energy, 0.5, 0.5]  # energy-focused search
         
         if self.shader_indexer and self.shader_indexer._use_chromadb:
@@ -1996,8 +1999,8 @@ class VJConsoleApp(App):
             similar = self.shader_indexer.query_similar(target_vector, top_k=8)
             results = []
             for name, dist in similar:
-                # Find shader in list by name
-                shader = next((s for s in self.shader_matcher.shaders if s.name == name), None)
+                # Find shader features in indexer
+                shader = self.shader_indexer.shaders.get(name)
                 if shader:
                     results.append({
                         'name': name,
@@ -2009,26 +2012,33 @@ class VJConsoleApp(App):
                         }
                     })
                 else:
-                    # Shader found in ChromaDB but not in matcher - still show it
+                    # Shader found in ChromaDB but not in memory - still show it
                     results.append({
                         'name': name,
                         'score': dist,
                         'features': {}
                     })
         else:
-            # Fallback to mood search with energy
-            matches = self.shader_matcher.match_by_mood('energetic' if next_energy > 0.5 else 'calm', energy=next_energy, top_k=8)
+            # Fallback to mood search with energy via selector
             results = []
-            for shader, score in matches:
-                results.append({
-                    'name': shader.name,
-                    'score': score,
-                    'features': {
-                        'energy_score': shader.energy_score,
-                        'mood_valence': shader.mood_valence,
-                        'motion_speed': shader.motion_speed,
-                    }
-                })
+            for _ in range(8):
+                match = self.shader_selector.select_by_mood(
+                    'energetic' if next_energy > 0.5 else 'calm',
+                    energy=next_energy,
+                    top_k=10
+                )
+                if match and match.name not in [r['name'] for r in results]:
+                    results.append({
+                        'name': match.name,
+                        'score': match.score,
+                        'features': {
+                            'energy_score': match.features.energy_score,
+                            'mood_valence': match.features.mood_valence,
+                            'motion_speed': match.features.motion_speed,
+                        }
+                    })
+            # Reset usage to not pollute actual session tracking
+            self.shader_selector.reset_usage()
         
         self._shader_search_results = {
             'type': 'energy',

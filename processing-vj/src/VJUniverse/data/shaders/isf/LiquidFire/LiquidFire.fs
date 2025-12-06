@@ -1,23 +1,37 @@
-#ifdef GL_ES
-precision highp float;
-precision highp int;
-#endif
-
-uniform float time;
-uniform vec2 resolution;
-uniform float bass;
-uniform float mid;
-uniform float treble;
-uniform float level;
-uniform float beat;
-
-uniform vec2 offset;
-uniform float rate;
-
-#define TIME time
-#define RENDERSIZE resolution
-#define isf_FragNormCoord (gl_FragCoord.xy / resolution)
-#define FRAMEINDEX int(time * 60.0)
+/*{
+	"CREDIT": "by mojovideotech",
+	"DESCRIPTION": "",
+	"CATEGORIES": [
+		"generator",
+		"fire"
+	],
+  "INPUTS" : [
+    {
+      "NAME" : "offset",
+      "TYPE" : "point2D",
+      "DEFAULT": [
+		-1,
+		-1
+	  ],
+      "MAX" : [
+        1,
+        1
+      ],
+      "MIN" : [
+        -1,
+        -1
+      ]
+    },
+    	{
+			"NAME": "rate",
+			"TYPE": "float",
+			"DEFAULT": 2,
+			"MIN": 0.25,
+			"MAX": 5
+		}
+  ]
+}
+*/
 
 // LiquidFire by mojovideotech
 // based on :

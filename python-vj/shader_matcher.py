@@ -168,6 +168,78 @@ class SongFeatures:
         ]
 
 
+def categories_to_song_features(categories, track_title: str = "", track_artist: str = "") -> SongFeatures:
+    """
+    Convert SongCategories from AI analysis to SongFeatures for shader matching.
+    
+    Maps category scores to normalized feature space:
+    - energy: from energetic/calm scores
+    - valence: from happy/sad/dark/uplifting scores
+    - tempo: estimated from energetic + danceability proxy
+    - acousticness: from peaceful/calm vs aggressive/energetic
+    
+    Args:
+        categories: SongCategories from AI analysis
+        track_title: Song title
+        track_artist: Song artist
+    
+    Returns:
+        SongFeatures ready for shader matching
+    """
+    scores = categories.scores if categories else {}
+    
+    # Energy: combine energetic (positive) and calm (negative)
+    energetic = scores.get('energetic', 0.0)
+    calm = scores.get('calm', 0.0)
+    aggressive = scores.get('aggressive', 0.0)
+    energy = max(0.0, min(1.0, 0.5 + energetic * 0.5 - calm * 0.4 + aggressive * 0.3))
+    
+    # Valence: happy/uplifting (positive) vs sad/dark (negative)
+    happy = scores.get('happy', 0.0)
+    uplifting = scores.get('uplifting', 0.0)
+    romantic = scores.get('romantic', 0.0)
+    sad = scores.get('sad', 0.0)
+    dark = scores.get('dark', 0.0)
+    melancholic = scores.get('nostalgic', 0.0) * 0.5  # Nostalgic is mildly negative
+    death = scores.get('death', 0.0)
+    
+    valence = max(-1.0, min(1.0,
+        (happy * 0.4 + uplifting * 0.4 + romantic * 0.2) -
+        (sad * 0.4 + dark * 0.3 + melancholic * 0.15 + death * 0.3)
+    ))
+    
+    # Tempo proxy: energetic + danceability estimate
+    love = scores.get('love', 0.0)
+    peaceful = scores.get('peaceful', 0.0)
+    tempo = max(0.0, min(1.0, 0.5 + energetic * 0.4 - peaceful * 0.3 - love * 0.1))
+    
+    # Danceability: energetic + happy, reduced by calm/sad
+    danceability = max(0.0, min(1.0, 
+        0.4 + energetic * 0.3 + happy * 0.2 - calm * 0.2 - sad * 0.15
+    ))
+    
+    # Acousticness: peaceful/calm vs aggressive/energetic
+    acousticness = max(0.0, min(1.0,
+        0.5 + peaceful * 0.3 + calm * 0.2 - aggressive * 0.3 - energetic * 0.2
+    ))
+    
+    # Loudness: aggressive + energetic - peaceful
+    loudness = max(0.0, min(1.0,
+        0.5 + aggressive * 0.3 + energetic * 0.2 - peaceful * 0.2 - calm * 0.15
+    ))
+    
+    return SongFeatures(
+        title=track_title,
+        artist=track_artist,
+        energy=energy,
+        valence=valence,
+        tempo_normalized=tempo,
+        danceability=danceability,
+        acousticness=acousticness,
+        loudness_normalized=loudness
+    )
+
+
 class ShaderMatcher:
     """Match shaders to songs using feature vectors"""
     
@@ -448,12 +520,12 @@ class ShaderIndexer:
             logger.debug(f"ChromaDB init skipped: {e}")
             self._use_chromadb = False
     
-    def scan_shaders(self) -> Tuple[List[str], List[str]]:
+    def scan_shaders(self) -> Tuple[List[Path], List[Path]]:
         """
-        Scan shader directory.
+        Scan shader directory recursively.
         
         Returns:
-            (analyzed, unanalyzed) - Lists of shader names
+            (analyzed, unanalyzed) - Lists of shader file paths (Path objects)
         """
         analyzed = []
         unanalyzed = []
@@ -462,15 +534,22 @@ class ShaderIndexer:
             logger.error(f"Shaders directory not found: {self.shaders_dir}")
             return [], []
         
-        # Find all .fs files (ISF shaders)
-        for shader_file in self.shaders_dir.glob("*.fs"):
-            name = shader_file.stem
+        # Find all .fs files recursively (ISF shaders)
+        for shader_file in self.shaders_dir.rglob("*.fs"):
+            # Skip directories that happen to end with .fs (malformed entries)
+            if shader_file.is_dir():
+                logger.warning(f"Skipping directory with .fs extension: {shader_file}")
+                continue
+            # Skip vertex shaders (.vs files sometimes named .fs by mistake)
+            if shader_file.stem.endswith('.vs'):
+                continue
+            
             analysis_file = shader_file.with_suffix('.analysis.json')
             
             if analysis_file.exists():
-                analyzed.append(name)
+                analyzed.append(shader_file)
             else:
-                unanalyzed.append(name)
+                unanalyzed.append(shader_file)
         
         logger.debug(f"Scanned: {len(analyzed)} analyzed, {len(unanalyzed)} unanalyzed")
         return analyzed, unanalyzed
@@ -487,15 +566,21 @@ class ShaderIndexer:
         
         analyzed, _ = self.scan_shaders()
         
-        for name in analyzed:
+        for shader_path in analyzed:
             try:
-                analysis_path = self.shaders_dir / f"{name}.analysis.json"
-                shader_path = self.shaders_dir / f"{name}.fs"
+                analysis_path = shader_path.with_suffix('.analysis.json')
+                
+                # Use relative path from shaders_dir as unique name
+                rel_path = shader_path.relative_to(self.shaders_dir)
+                # Name without extension, using / for subfolders
+                name = str(rel_path.with_suffix('')).replace('\\', '/')
                 
                 with open(analysis_path, 'r') as f:
                     data = json.load(f)
                 
                 features = ShaderFeatures.from_analysis_json(str(shader_path), data)
+                # Override name with relative path-based name
+                features.name = name
                 self.shaders[name] = features
                 stats['loaded'] += 1
                 
@@ -510,7 +595,7 @@ class ShaderIndexer:
                     stats['text_synced'] += 1
                     
             except Exception as e:
-                logger.warning(f"Failed to load {name}: {e}")
+                logger.warning(f"Failed to load {shader_path}: {e}")
                 stats['errors'] += 1
         
         logger.info(f"Sync complete: {stats}")
@@ -593,14 +678,27 @@ class ShaderIndexer:
         )
     
     def get_unanalyzed(self) -> List[str]:
-        """Get list of shader names without analysis."""
+        """Get list of shader names without analysis (relative paths)."""
         _, unanalyzed = self.scan_shaders()
-        return unanalyzed
+        # Convert paths to relative names
+        names = []
+        for shader_path in unanalyzed:
+            rel_path = shader_path.relative_to(self.shaders_dir)
+            name = str(rel_path.with_suffix('')).replace('\\', '/')
+            names.append(name)
+        return names
     
     def get_shader_source(self, name: str) -> Optional[str]:
-        """Load shader source code."""
+        """Load shader source code by name (supports subfolder paths like 'BitStreamer/BitStreamer')."""
+        # Try direct path first
         shader_path = self.shaders_dir / f"{name}.fs"
         if not shader_path.exists():
+            # Try adding .fs extension if name doesn't have it
+            shader_path = self.shaders_dir / name
+            if not shader_path.suffix:
+                shader_path = shader_path.with_suffix('.fs')
+        
+        if not shader_path.exists() or shader_path.is_dir():
             return None
         
         with open(shader_path, 'r') as f:
@@ -937,6 +1035,178 @@ class ShaderIndexer:
             'loaded_in_memory': len(self.shaders),
             'chromadb_enabled': self._use_chromadb,
             'chromadb_count': self._collection.count() if self._collection else 0
+        }
+
+
+# =============================================================================
+# SHADER SELECTOR - Session-aware shader selection with usage tracking
+# =============================================================================
+
+@dataclass
+class ShaderMatch:
+    """Result from shader selection."""
+    name: str
+    path: str
+    score: float           # Lower = better match
+    usage_count: int       # Times used this session
+    features: ShaderFeatures
+
+
+class ShaderSelector:
+    """
+    Session-aware shader selection with usage tracking.
+    
+    Combines feature-based matching with variety preference:
+    - Tracks usage counts during session
+    - Penalizes frequently used shaders
+    - Uses ChromaDB for fast similarity queries
+    
+    Usage:
+        selector = ShaderSelector(indexer)
+        match = selector.select_for_song(song_features)
+        if match:
+            load_shader(match.name)
+    """
+    
+    # Penalty applied per usage (higher = prefer variety more)
+    USAGE_PENALTY = 0.15
+    
+    def __init__(self, indexer: ShaderIndexer):
+        self.indexer = indexer
+        self._usage_counts: Dict[str, int] = {}  # shader_name → count
+        self._last_selected: Optional[str] = None
+    
+    def reset_usage(self):
+        """Reset usage tracking (e.g., at session start)."""
+        self._usage_counts.clear()
+        self._last_selected = None
+        logger.info("Shader usage counts reset")
+    
+    def get_usage(self, name: str) -> int:
+        """Get usage count for a shader."""
+        return self._usage_counts.get(name, 0)
+    
+    def _record_usage(self, name: str):
+        """Record that a shader was selected."""
+        self._usage_counts[name] = self._usage_counts.get(name, 0) + 1
+        self._last_selected = name
+    
+    def select_for_song(
+        self,
+        song_features: SongFeatures,
+        top_k: int = 5,
+        exclude_last: bool = True
+    ) -> Optional[ShaderMatch]:
+        """
+        Select best shader for a song with variety preference.
+        
+        Args:
+            song_features: Song feature vector
+            top_k: Number of candidates to consider
+            exclude_last: Skip the last selected shader
+        
+        Returns:
+            ShaderMatch or None if no shaders available
+        """
+        target = song_features.to_shader_target()
+        
+        # Query candidates from ChromaDB
+        candidates = self.indexer.query_similar(target, top_k=top_k * 2)
+        
+        if not candidates:
+            logger.warning("No shader candidates found")
+            return None
+        
+        # Score with usage penalty
+        scored = []
+        for name, distance in candidates:
+            # Skip last selected if requested
+            if exclude_last and name == self._last_selected:
+                continue
+            
+            # Apply usage penalty
+            usage = self.get_usage(name)
+            penalty = usage * self.USAGE_PENALTY
+            adjusted_score = distance + penalty
+            
+            scored.append((name, adjusted_score, distance, usage))
+        
+        if not scored:
+            # All excluded, fall back to any candidate
+            name, distance = candidates[0]
+            scored = [(name, distance, distance, self.get_usage(name))]
+        
+        # Sort by adjusted score
+        scored.sort(key=lambda x: x[1])
+        
+        # Select best
+        best_name, adj_score, orig_dist, usage = scored[0]
+        
+        # Get features
+        features = self.indexer.shaders.get(best_name)
+        if not features:
+            logger.warning(f"No features for {best_name}")
+            return None
+        
+        # Record usage
+        self._record_usage(best_name)
+        
+        logger.debug(f"Selected {best_name}: dist={orig_dist:.3f} usage={usage} adj={adj_score:.3f}")
+        
+        return ShaderMatch(
+            name=best_name,
+            path=features.path,
+            score=adj_score,
+            usage_count=usage + 1,  # After increment
+            features=features
+        )
+    
+    def select_by_mood(
+        self,
+        mood: str,
+        energy: float = 0.5,
+        valence: float = 0.0,
+        top_k: int = 5
+    ) -> Optional[ShaderMatch]:
+        """
+        Select shader by mood keyword with variety preference.
+        
+        Args:
+            mood: Mood keyword (energetic, calm, dark, bright, etc.)
+            energy: Energy level 0-1
+            valence: Mood valence -1 to 1
+            top_k: Number of candidates
+        
+        Returns:
+            ShaderMatch or None
+        """
+        # Create pseudo song features from mood
+        song = SongFeatures(
+            title=f"mood_{mood}",
+            energy=energy,
+            valence=valence,
+            tempo_normalized=energy * 0.7,
+            danceability=energy,
+            acousticness=0.3 if mood in ('calm', 'dreamy', 'melancholic') else 0.7,
+            loudness_normalized=energy
+        )
+        return self.select_for_song(song, top_k=top_k)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get selector statistics."""
+        total_uses = sum(self._usage_counts.values())
+        unique_used = len(self._usage_counts)
+        
+        return {
+            'total_selections': total_uses,
+            'unique_shaders_used': unique_used,
+            'available_shaders': len(self.indexer.shaders),
+            'last_selected': self._last_selected,
+            'top_used': sorted(
+                self._usage_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:5]
         }
 
 

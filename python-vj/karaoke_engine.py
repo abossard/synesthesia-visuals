@@ -58,7 +58,7 @@ from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
 
 # Shader matching (optional)
 try:
-    from shader_matcher import ShaderIndexer, ShaderMatcher
+    from shader_matcher import ShaderIndexer, ShaderSelector, categories_to_song_features
     SHADER_MATCHER_AVAILABLE = True
 except ImportError:
     SHADER_MATCHER_AVAILABLE = False
@@ -129,15 +129,15 @@ class KaraokeEngine:
         
         # Shader matching (optional)
         self._shader_indexer = None
-        self._shader_matcher = None
+        self._shader_selector = None
         if SHADER_MATCHER_AVAILABLE:
             try:
                 self._shader_indexer = ShaderIndexer()
                 self._shader_indexer.sync()
-                self._shader_matcher = ShaderMatcher(str(self._shader_indexer.shaders_dir))
-                logger.info(f"Shader matcher loaded: {len(self._shader_matcher.shaders)} shaders")
+                self._shader_selector = ShaderSelector(self._shader_indexer)
+                logger.info(f"Shader selector loaded: {len(self._shader_indexer.shaders)} shaders")
             except Exception as e:
-                logger.warning(f"Shader matcher init failed: {e}")
+                logger.warning(f"Shader selector init failed: {e}")
         
         # Current state
         self._current_lines = []
@@ -316,7 +316,7 @@ class KaraokeEngine:
     
     def _check_shader_match(self, track):
         """Match shaders when categories become available for a new track."""
-        if not self._shader_matcher or not track:
+        if not self._shader_selector or not track:
             return
         
         track_key = track.key
@@ -328,34 +328,34 @@ class KaraokeEngine:
         if not categories or not categories.primary_mood:
             return  # Not ready yet
         
-        # Match shaders based on mood and energy
+        # Convert categories to song features and select shader
         try:
-            mood = categories.primary_mood.lower()
+            song_features = categories_to_song_features(
+                categories,
+                track_title=track.title,
+                track_artist=track.artist
+            )
             
-            # Extract energy from categories if available
-            energy = 0.5
-            for cat in categories.get_top(10):
-                if cat.name == 'energetic':
-                    energy = max(energy, cat.score)
-                elif cat.name == 'calm':
-                    energy = min(energy, 1.0 - cat.score)
+            match = self._shader_selector.select_for_song(song_features, top_k=5)
             
-            matches = self._shader_matcher.match_by_mood(mood, energy=energy, top_k=1)
-            
-            if matches:
-                shader, score = matches[0]
-                logger.info(f"Shader: {shader.name} → mood={mood} energy={energy:.2f}")
+            if match:
+                logger.info(
+                    f"Shader: {match.name} → "
+                    f"energy={song_features.energy:.2f} "
+                    f"valence={song_features.valence:.2f} "
+                    f"(usage={match.usage_count})"
+                )
                 
                 # Send OSC command to load shader
                 self._osc.send_shader(
-                    shader.name,
-                    energy=shader.energy_score,
-                    valence=shader.mood_valence
+                    match.name,
+                    energy=match.features.energy_score,
+                    valence=match.features.mood_valence
                 )
                 
                 self._last_matched_track = track_key
             else:
-                logger.debug(f"No shader match for mood={mood}")
+                logger.debug(f"No shader match for {track.title}")
                 
         except Exception as e:
             logger.warning(f"Shader match skipped: {e}")
@@ -548,9 +548,9 @@ class KaraokeEngine:
         return self._lyrics_orchestrator.current_metadata
     
     @property
-    def shader_matcher(self):
-        """Access shader matcher (for vj_console.py)."""
-        return self._shader_matcher
+    def shader_selector(self):
+        """Access shader selector (for vj_console.py)."""
+        return self._shader_selector
     
     @property
     def shader_indexer(self):

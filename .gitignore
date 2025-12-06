@@ -51,3 +51,5 @@ local.sh
 .cache-*
 temp_*.frag
 .chromadb/
+*.errors.json
+*.analysis.json

@@ -86,7 +86,13 @@ long getNewestFileTime(File dir) {
   File[] files = dir.listFiles();
   if (files != null) {
     for (File f : files) {
-      if (f.lastModified() > newest) {
+      if (f.isDirectory()) {
+        // Recurse into subdirectories
+        long subNewest = getNewestFileTime(f);
+        if (subNewest > newest) {
+          newest = subNewest;
+        }
+      } else if (f.lastModified() > newest) {
         newest = f.lastModified();
       }
     }
@@ -121,13 +127,32 @@ void loadIsfShaders() {
     return;
   }
   
-  File[] files = isfDir.listFiles();
+  // Recursively load shaders from directory and subdirectories
+  loadIsfShadersRecursive(isfDir, "");
+}
+
+void loadIsfShadersRecursive(File dir, String prefix) {
+  File[] files = dir.listFiles();
   if (files == null) return;
   
   for (File f : files) {
+    // Recurse into subdirectories
+    if (f.isDirectory()) {
+      String subPrefix = prefix.isEmpty() ? f.getName() : prefix + "/" + f.getName();
+      loadIsfShadersRecursive(f, subPrefix);
+      continue;
+    }
+    
+    // Load .fs and .isf files (must be actual files, not directories)
+    if (!f.isFile()) continue;  // Skip directories with .fs extension
+    
     if (f.getName().endsWith(".fs") || f.getName().endsWith(".isf")) {
-      String name = f.getName().replace(".fs", "").replace(".isf", "");
-      String path = SHADERS_PATH + "/isf/" + f.getName();
+      // Skip vertex shaders
+      if (f.getName().endsWith(".vs.fs")) continue;
+      
+      String baseName = f.getName().replace(".fs", "").replace(".isf", "");
+      String name = prefix.isEmpty() ? baseName : prefix + "/" + baseName;
+      String path = SHADERS_PATH + "/isf/" + (prefix.isEmpty() ? "" : prefix + "/") + f.getName();
       availableShaders.add(new ShaderInfo(name, path, ShaderType.ISF));
       println("  Found ISF: " + name);
     }
@@ -213,6 +238,9 @@ String convertIsfToGlsl(String isfSource) {
   if (isfSource.startsWith("/*{") && headerEnd > 0) {
     jsonHeader = isfSource.substring(2, headerEnd).trim();  // Remove /* and */
     glslBody = isfSource.substring(headerEnd + 2).trim();
+    println("  [ISF] Parsed JSON header (" + jsonHeader.length() + " chars)");
+  } else {
+    println("  [ISF] Warning: No JSON header found");
   }
   
   // Build Processing-compatible shader
@@ -236,6 +264,7 @@ String convertIsfToGlsl(String isfSource) {
   // Parse ISF INPUTS and add as uniforms
   if (!jsonHeader.isEmpty()) {
     ArrayList<String> inputUniforms = parseIsfInputs(jsonHeader);
+    println("  [ISF] Found " + inputUniforms.size() + " inputs, defaults: " + isfUniformDefaults.size());
     for (String uniform : inputUniforms) {
       sb.append(uniform).append("\n");
     }
@@ -246,7 +275,8 @@ String convertIsfToGlsl(String isfSource) {
   
   // ISF compatibility defines
   // gl_FragCoord is used directly - no Y flip needed, handled by texture coordinates
-  sb.append("#define TIME time\n");
+  // Use max(time, 0.001) to avoid log(0) and division by zero at startup
+  sb.append("#define TIME max(time, 0.001)\n");
   sb.append("#define RENDERSIZE resolution\n");
   sb.append("#define isf_FragNormCoord (gl_FragCoord.xy / resolution)\n");
   sb.append("#define FRAMEINDEX int(time * 60.0)\n\n");
@@ -301,6 +331,7 @@ ArrayList<String> parseIsfInputs(String jsonHeader) {
       uniforms.add(uniform);
       
       // Store default value for this uniform
+      println("  [ISF] Input: " + name + " (" + type + ") default=" + (defaultVal != null ? defaultVal : "null"));
       storeIsfDefault(name, type, defaultVal);
     }
     
@@ -410,19 +441,23 @@ void storeIsfDefault(String name, String isfType, String defaultVal) {
       println("  ISF default: " + name + " = " + val);
     }
     else if (isfType.equals("point2D")) {
-      // Format: [x, y]
-      String cleaned = defaultVal.replace("[", "").replace("]", "").trim();
+      // Format: [x, y] - may contain newlines
+      String cleaned = defaultVal.replace("[", "").replace("]", "")
+                                 .replace("\n", "").replace("\r", "").replace("\t", " ").trim();
       String[] parts = cleaned.split(",");
       if (parts.length >= 2) {
         float x = Float.parseFloat(parts[0].trim());
         float y = Float.parseFloat(parts[1].trim());
         isfUniformDefaults.put(name, new float[]{x, y});
         println("  ISF default: " + name + " = [" + x + ", " + y + "]");
+      } else {
+        println("  Warning: point2D parse failed for " + name + ": '" + cleaned + "'");
       }
     }
     else if (isfType.equals("point3D")) {
-      // Format: [x, y, z]
-      String cleaned = defaultVal.replace("[", "").replace("]", "").trim();
+      // Format: [x, y, z] - may contain newlines
+      String cleaned = defaultVal.replace("[", "").replace("]", "")
+                                 .replace("\n", "").replace("\r", "").replace("\t", " ").trim();
       String[] parts = cleaned.split(",");
       if (parts.length >= 3) {
         float x = Float.parseFloat(parts[0].trim());
@@ -430,11 +465,14 @@ void storeIsfDefault(String name, String isfType, String defaultVal) {
         float z = Float.parseFloat(parts[2].trim());
         isfUniformDefaults.put(name, new float[]{x, y, z});
         println("  ISF default: " + name + " = [" + x + ", " + y + ", " + z + "]");
+      } else {
+        println("  Warning: point3D parse failed for " + name + ": '" + cleaned + "'");
       }
     }
     else if (isfType.equals("color")) {
-      // Format: [r, g, b, a]
-      String cleaned = defaultVal.replace("[", "").replace("]", "").trim();
+      // Format: [r, g, b, a] - may contain newlines
+      String cleaned = defaultVal.replace("[", "").replace("]", "")
+                                 .replace("\n", "").replace("\r", "").replace("\t", " ").trim();
       String[] parts = cleaned.split(",");
       if (parts.length >= 4) {
         float r = Float.parseFloat(parts[0].trim());
@@ -443,6 +481,8 @@ void storeIsfDefault(String name, String isfType, String defaultVal) {
         float a = Float.parseFloat(parts[3].trim());
         isfUniformDefaults.put(name, new float[]{r, g, b, a});
         println("  ISF default: " + name + " = [" + r + ", " + g + ", " + b + ", " + a + "]");
+      } else {
+        println("  Warning: color parse failed for " + name + ": '" + cleaned + "'");
       }
     }
   } catch (Exception e) {
