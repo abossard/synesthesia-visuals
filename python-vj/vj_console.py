@@ -1660,7 +1660,9 @@ class VJConsoleApp(App):
             source_connected = any(status.get('available', False) for status in monitor_status.values())
         track_data = build_track_data(snapshot, source_connected)
         try:
-            self.query_one("#now-playing", NowPlayingPanel).track_data = track_data
+            now_playing = self.query_one("#now-playing", NowPlayingPanel)
+            now_playing.track_data = track_data
+            now_playing.shader_name = self.karaoke_engine.current_shader
         except Exception:
             pass
 
