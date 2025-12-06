@@ -53,7 +53,7 @@ jobs:
           
           # Install The MidiBus library
           echo "Installing The MidiBus..."
-          wget -q https://github.com/sparks/themidibus/releases/download/v9/themidibus.zip
+          wget -q http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip -O themidibus.zip
           unzip -q themidibus.zip -d $HOME/sketchbook/libraries/
           
           # Note: Syphon is macOS-only, so we create a stub for Linux CI

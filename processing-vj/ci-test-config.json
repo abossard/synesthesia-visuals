@@ -1,0 +1,116 @@
+{
+  "sketches": [
+    {
+      "name": "BuildupRelease",
+      "path": "processing-vj/examples/BuildupRelease",
+      "mainFile": "BuildupRelease.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of BuildupRelease",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "builduprelease-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "CrowdBattle",
+      "path": "processing-vj/examples/CrowdBattle",
+      "mainFile": "CrowdBattle.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of CrowdBattle",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "crowdbattle-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "ImageOverlay",
+      "path": "processing-vj/src/ImageOverlay",
+      "mainFile": "ImageOverlay.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of ImageOverlay",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "imageoverlay-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "KaraokeOverlay",
+      "path": "processing-vj/src/KaraokeOverlay",
+      "mainFile": "KaraokeOverlay.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of KaraokeOverlay",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "karaokeoverlay-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "OscAudioVisualizer",
+      "path": "processing-vj/src/OscAudioVisualizer",
+      "mainFile": "OscAudioVisualizer.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of OscAudioVisualizer",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "oscaudiovisualizer-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "PatternDraw",
+      "path": "processing-vj/examples/PatternDraw",
+      "mainFile": "PatternDraw.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of PatternDraw",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "patterndraw-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "VJSystem",
+      "path": "processing-vj/src/VJSystem",
+      "mainFile": "VJSystem.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of VJSystem",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "vjsystem-initial.png"
+        }
+      ]
+    },
+    {
+      "name": "WhackAMole",
+      "path": "processing-vj/examples/WhackAMole",
+      "mainFile": "WhackAMole.pde",
+      "testScenarios": [
+        {
+          "name": "initial-state",
+          "description": "Capture initial state of WhackAMole",
+          "waitFrames": 60,
+          "keyInputs": [],
+          "screenshotName": "whackamole-initial.png"
+        }
+      ]
+    }
+  ]
+}

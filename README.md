@@ -8,11 +8,15 @@ A toolkit for VJ performances combining Synesthesia shaders, Processing games, a
 ├── synesthesia-shaders/    # Synesthesia scene files and GLSL shaders
 ├── processing-vj/          # Processing games and interactive visuals
 │   ├── examples/           # Example game implementations
-│   └── lib/                # Shared utilities
+│   ├── lib/                # Shared utilities
+│   └── CI_TESTING.md       # CI testing documentation
 ├── python-vj/              # Python VJ control and karaoke engine
 │   ├── vj_console.py       # Terminal UI for managing VJ apps
 │   └── karaoke_engine.py   # Lyrics via OSC from Spotify/VirtualDJ
-└── docs/                   # Documentation and guides
+├── docs/                   # Documentation and guides
+└── .github/workflows/      # CI/CD pipelines
+    ├── processing-tests.yml        # Build validation
+    └── processing-sketch-ci.yml    # Headless testing with screenshots
 ```
 
 ## Quick Start
@@ -55,6 +59,7 @@ This project uses:
 | Guide | Description |
 |-------|-------------|
 | **[Processing VJ Guides](docs/processing-guides/README.md)** | **NEW**: Comprehensive guide series for creating interactive, audio-reactive simulations |
+| **[Processing CI Testing](processing-vj/CI_TESTING.md)** | **NEW**: Automated headless testing with screenshot capture |
 | [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic + BlackHole |
 | [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
 | [MIDI Router](python-vj/MIDI_ROUTER.md) | **Toggle state manager** for Magic Music Visuals with LED feedback |
@@ -75,6 +80,18 @@ Master creating **interactive, living, efficient simulations** in Processing for
 - **[Resources](docs/processing-guides/09-resources.md)** - Libraries, tools, examples, learning materials
 
 **Features**: Modern 2024 techniques, GPU acceleration, mermaid diagrams, AI-optimized structure
+
+## CI/CD Pipeline
+
+All Processing sketches are automatically tested on every push:
+
+- ✅ **Build validation** - All sketches compile successfully
+- 📸 **Screenshot capture** - Visual regression testing via artifacts
+- 🎯 **Headless execution** - Runs with Xvfb (virtual display)
+- ⚡ **Parallel testing** - All sketches tested simultaneously
+- 💾 **Library caching** - Fast builds with cached dependencies
+
+See **[Processing CI Testing](processing-vj/CI_TESTING.md)** for details on how to add tests and view results.
 
 ## Controller Roles
 

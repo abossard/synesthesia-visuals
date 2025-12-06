@@ -22,6 +22,9 @@ node_modules/
 # Build artifacts
 *.log
 
+# Processing CI test output
+ci-output/
+
 # Python
 __pycache__/
 *.py[cod]
