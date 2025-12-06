@@ -73,8 +73,14 @@ SyphonServer syphon;
 // Screenshot scheduling
 float screenshotScheduledTime = -1;  // Time when screenshot should be taken (-1 = none scheduled)
 String screenshotShaderName = "";    // Shader name for scheduled screenshot
-final float SCREENSHOT_DELAY = 5.0;  // Seconds after shader load to take screenshot
+final float SCREENSHOT_DELAY = 1.0;  // Seconds after shader load to take screenshot
 final String SCREENSHOTS_PATH = "screenshots";  // Folder for screenshots
+
+// Shader cycling mode (triggered by 'R')
+boolean shaderCyclingActive = false;
+int shaderCycleIndex = 0;
+float lastShaderCycleTime = 0;
+final float SHADER_CYCLE_DELAY = 2.0;  // Seconds between shader changes
 
 // ============================================
 // SETUP
@@ -155,6 +161,9 @@ void draw() {
   
   // Check for scheduled screenshot
   checkScheduledScreenshot();
+  
+  // Update shader cycling if active
+  updateShaderCycling();
   
   // Draw audio bars (AudioManager.pde)
   drawAudioBars();
@@ -519,9 +528,11 @@ void keyPressed() {
       prevShader();
       break;
     case 'r':
-    case 'R':
       loadAllShaders();
       println("Shaders reloaded: " + availableShaders.size());
+      break;
+    case 'R':
+      startShaderCycling();
       break;
     case ' ':
       if (currentShaderIndex < availableShaders.size()) {
@@ -587,7 +598,7 @@ void drawDebugOverlay() {
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader R=reload A=audio B=bars ENTER=console", 20, height - 25);
+  text("D=debug N/P=shader r=reload R=cycle-all A=audio B=bars", 20, height - 25);
 }
 
 // ============================================
@@ -639,5 +650,48 @@ String getScreenshotPath(String shaderName) {
   // Replace path separators with underscores for flat file storage
   String safeName = shaderName.replace("/", "_").replace("\\", "_");
   return SCREENSHOTS_PATH + "/" + safeName + ".png";
+}
+
+
+// ============================================
+// SHADER CYCLING (R key)
+// ============================================
+
+void startShaderCycling() {
+  if (availableShaders.size() == 0) {
+    println("No shaders to cycle through");
+    return;
+  }
+  
+  shaderCyclingActive = true;
+  shaderCycleIndex = 0;
+  lastShaderCycleTime = globalTime;
+  
+  // Load first shader
+  loadShaderByIndex(shaderCycleIndex);
+  println("Shader cycling started: " + availableShaders.size() + " shaders, " + SHADER_CYCLE_DELAY + "s each");
+  consoleLog("🔄 Cycling " + availableShaders.size() + " shaders...");
+}
+
+void updateShaderCycling() {
+  if (!shaderCyclingActive) return;
+  
+  // Check if it's time to advance to next shader
+  if (globalTime - lastShaderCycleTime >= SHADER_CYCLE_DELAY) {
+    shaderCycleIndex++;
+    
+    if (shaderCycleIndex >= availableShaders.size()) {
+      // Done cycling
+      shaderCyclingActive = false;
+      println("Shader cycling complete");
+      consoleLog("✓ Cycling complete");
+      return;
+    }
+    
+    // Load next shader
+    loadShaderByIndex(shaderCycleIndex);
+    lastShaderCycleTime = globalTime;
+    println("Cycling shader " + (shaderCycleIndex + 1) + "/" + availableShaders.size() + ": " + availableShaders.get(shaderCycleIndex).name);
+  }
 }
 

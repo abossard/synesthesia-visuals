@@ -194,8 +194,13 @@ void selectAudioDevice(int index) {
       audioIn = null;
     }
     
-    // Set input device (static method)
-    Sound.inputDevice(index);
+    // IMPORTANT: Must create Sound object and set device BEFORE creating AudioIn
+    // The Sound library caches the device selection globally
+    Sound sound = new Sound(this);
+    sound.inputDevice(index);
+    
+    // Small delay to let the device switch take effect
+    delay(100);
     
     // Reinitialize audio input with new device
     audioIn = new AudioIn(this, 0);
@@ -348,21 +353,21 @@ float calculateBandEnergy(int startBin, int endBin) {
   for (int i = startBin; i < min(endBin, fftBands); i++) {
     sum += rawSpectrum[i];
   }
-  // FFT values are tiny (0.0-0.1), boost heavily for 0-1 output
-  // Using 50x gain - adjust if still too quiet/loud
-  return count > 0 ? constrain(sum / count * 50.0, 0, 1) : 0;
+  // FFT values are tiny, boost for 0-1 output
+  // Different gains per frequency range work better
+  return count > 0 ? constrain(sum / count * 20.0, 0, 1) : 0;
 }
 
 void updateKickDetection() {
-  // Kick raw: tight bass band with extra boost for punch detection
-  kickRaw = calculateBandEnergy(0, 2) * 3;  // Additional 3x for transient detection
+  // Kick raw: use bass energy directly (already boosted)
+  kickRaw = constrain(smoothAudioBass * 1.5, 0, 1);
   
   // Dual envelope (from MMV guide)
   kickEnvSlow = lerp(kickEnvSlow, kickRaw, 1 - KICK_SMOOTHING_SLOW);
   kickEnvFast = lerp(kickEnvFast, kickRaw, 1 - KICK_SMOOTHING_FAST);
   
   // Blend based on songStyle: 0=slow, 1=fast
-  kickEnv = kickEnvSlow * (1 - songStyle) + kickEnvFast * songStyle;
+  kickEnv = constrain(kickEnvSlow * (1 - songStyle) + kickEnvFast * songStyle, 0, 1);
   
   // Kick pulse: detect transients
   float timeSinceKick = millis() - lastKickTime;
@@ -567,6 +572,54 @@ void setupDefaultAudioBindings() {
     if (lower.contains("iter") || lower.contains("step") || lower.contains("detail") ||
         lower.contains("octave")) {
       addAudioBinding(name, "level", "multiply", 1.0, 0.8, baseVal, baseVal * 0.5, baseVal * 1.5);
+      continue;
+    }
+    
+    // Glow/bloom/bright → level (loudness drives glow intensity)
+    if (lower.contains("glow") || lower.contains("bloom") || lower.contains("bright") ||
+        lower.contains("lumi") || lower.contains("emit")) {
+      addAudioBinding(name, "level", "multiply", 2.0, 0.7, baseVal, baseVal * 0.3, baseVal * 3);
+      continue;
+    }
+    
+    // Radius/width/thick → bass (bass pulses expand shapes)
+    if (lower.contains("radius") || lower.contains("width") || lower.contains("thick") ||
+        lower.contains("stroke") || lower.contains("line")) {
+      addAudioBinding(name, "bass", "add", 0.4, 0.75, baseVal, baseVal * 0.5, baseVal * 2);
+      continue;
+    }
+    
+    // Pulse/beat/kick → kickEnv (direct beat response)
+    if (lower.contains("pulse") || lower.contains("beat") || lower.contains("kick") ||
+        lower.contains("hit") || lower.contains("impact")) {
+      addAudioBinding(name, "kickEnv", "replace", 1.0, 0.4, 0.0, 0.0, 1.0);
+      continue;
+    }
+    
+    // Morph/transform/evolve → energySlow (gradual changes)
+    if (lower.contains("morph") || lower.contains("transform") || lower.contains("evolve") ||
+        lower.contains("mutate")) {
+      addAudioBinding(name, "energySlow", "replace", 1.0, 0.85, 0.5, 0.0, 1.0);
+      continue;
+    }
+    
+    // Turbulence/complexity/density → mid (mid frequencies add complexity)
+    if (lower.contains("turb") || lower.contains("complex") || lower.contains("density") ||
+        lower.contains("rough")) {
+      addAudioBinding(name, "mid", "multiply", 1.5, 0.7, baseVal, baseVal * 0.5, baseVal * 2);
+      continue;
+    }
+    
+    // Seed/random/rnd → highs (high frequencies add variation)
+    if (lower.equals("seed") || lower.equals("rnd") || lower.contains("random") ||
+        lower.contains("jitter")) {
+      addAudioBinding(name, "highs", "add", 0.5, 0.5, baseVal, baseVal * 0.5, baseVal * 1.5);
+      continue;
+    }
+    
+    // Contrast/gamma/curve → level (loudness affects contrast)
+    if (lower.contains("contrast") || lower.contains("gamma") || lower.contains("curve")) {
+      addAudioBinding(name, "level", "multiply", 1.2, 0.8, baseVal, baseVal * 0.8, baseVal * 1.5);
       continue;
     }
   }

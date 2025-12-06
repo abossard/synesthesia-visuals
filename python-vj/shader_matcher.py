@@ -337,12 +337,29 @@ def categories_to_song_features(
     """
     scores = categories.scores if categories else {}
     
-    # Extract keywords and themes from LLM result
+    # Extract keywords and themes from LLM result (handle both string and dict items)
     keywords = []
     themes = []
     if llm_result:
-        keywords = [k.lower() for k in llm_result.get('keywords', [])]
-        themes = [t.lower() for t in llm_result.get('themes', [])]
+        raw_keywords = llm_result.get('keywords', [])
+        raw_themes = llm_result.get('themes', [])
+        
+        # Handle items that might be strings or dicts
+        for k in raw_keywords:
+            if isinstance(k, str):
+                keywords.append(k.lower())
+            elif isinstance(k, dict) and 'name' in k:
+                keywords.append(str(k['name']).lower())
+            elif isinstance(k, dict) and 'keyword' in k:
+                keywords.append(str(k['keyword']).lower())
+        
+        for t in raw_themes:
+            if isinstance(t, str):
+                themes.append(t.lower())
+            elif isinstance(t, dict) and 'name' in t:
+                themes.append(str(t['name']).lower())
+            elif isinstance(t, dict) and 'theme' in t:
+                themes.append(str(t['theme']).lower())
     
     # Theme-based modifiers (boost/reduce based on detected themes)
     theme_energy_mod = 0.0

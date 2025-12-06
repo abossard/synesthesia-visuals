@@ -282,15 +282,32 @@ String convertIsfToGlsl(String isfSource) {
     }
   }
   
+  // Audio uniforms - inject into all ISF shaders so they can react to music
+  // These are always set by AudioManager.applyAudioUniformsToShader()
+  sb.append("// Audio-reactive uniforms (injected)\n");
+  sb.append("uniform float bass;      // Low frequency energy 0-1\n");
+  sb.append("uniform float lowMid;    // Low-mid energy 0-1\n");
+  sb.append("uniform float mid;       // Mid frequency energy 0-1\n");
+  sb.append("uniform float highs;     // High frequency energy 0-1\n");
+  sb.append("uniform float level;     // Overall loudness 0-1\n");
+  sb.append("uniform float kickEnv;   // Kick/beat envelope 0-1\n");
+  sb.append("uniform float kickPulse; // 1 on kick, decays to 0\n");
+  sb.append("uniform float beat;      // Beat phase 0-1\n");
+  sb.append("uniform float energyFast; // Fast energy envelope\n");
+  sb.append("uniform float energySlow; // Slow energy envelope\n\n");
+  
   // ISF compatibility defines
-  // gl_FragCoord is used directly - no Y flip needed, handled by texture coordinates
+  // ISF uses bottom-left origin, Processing uses top-left - flip Y coordinate
   // Use max(time, 0.001) to avoid log(0) and division by zero at startup
   sb.append("#define TIME max(time, 0.001)\n");
   sb.append("#define RENDERSIZE resolution\n");
-  sb.append("#define isf_FragNormCoord (gl_FragCoord.xy / resolution)\n");
+  sb.append("#define isf_FragCoord vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y)\n");
+  sb.append("#define isf_FragNormCoord (isf_FragCoord.xy / resolution)\n");
   sb.append("#define FRAMEINDEX int(time * 60.0)\n\n");
   
-  // No gl_FragCoord replacement needed - shaders use it directly
+  // Replace gl_FragCoord with flipped version for ISF compatibility
+  // Use word boundary check to avoid replacing partial matches
+  glslBody = glslBody.replaceAll("\\bgl_FragCoord\\b", "isf_FragCoord");
   
   // Add the shader body
   sb.append(glslBody);
