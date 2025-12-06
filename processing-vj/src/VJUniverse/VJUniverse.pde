@@ -96,6 +96,8 @@ PGraphics shaderBuffer;
 
 void settings() {
   size(WINDOW_WIDTH, WINDOW_HEIGHT, P3D);
+  // Disable HiDPI scaling for sanity checks (use logical pixel grid)
+  pixelDensity(1);
 }
 
 void setup() {
@@ -300,8 +302,11 @@ void applyShaderUniforms() {
 void applyShaderUniformsTo(PShader s, PGraphics pg) {
   if (s == null) return;
   
-  float w = pg != null ? pg.width : width;
-  float h = pg != null ? pg.height : height;
+  // Use PIXEL dimensions, not logical dimensions!
+  // On Retina/HiDPI displays, pixelWidth/pixelHeight are 2x width/height
+  // gl_FragCoord operates in physical pixels, so resolution must match
+  float w = pg != null ? pg.pixelWidth : pixelWidth;
+  float h = pg != null ? pg.pixelHeight : pixelHeight;
   
   // Set uniforms safely - Processing warns but doesn't crash if uniform unused
   // These warnings are expected and harmless
@@ -631,19 +636,23 @@ void keyPressed() {
     float offsetStep = 0.05 / shaderZoom;  // Scale step by zoom for consistent feel
     switch (keyCode) {
       case LEFT:
-        shaderOffsetX = constrain(shaderOffsetX - offsetStep, -1.0, 1.0);
+        // LEFT arrow = pan view left = move shader content right = increase offset
+        shaderOffsetX = constrain(shaderOffsetX + offsetStep, -1.0, 1.0);
         println("Pan LEFT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case RIGHT:
-        shaderOffsetX = constrain(shaderOffsetX + offsetStep, -1.0, 1.0);
+        // RIGHT arrow = pan view right = move shader content left = decrease offset
+        shaderOffsetX = constrain(shaderOffsetX - offsetStep, -1.0, 1.0);
         println("Pan RIGHT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case UP:
-        shaderOffsetY = constrain(shaderOffsetY - offsetStep, -1.0, 1.0);
+        // UP arrow = pan view up = move shader content down = increase Y offset
+        shaderOffsetY = constrain(shaderOffsetY + offsetStep, -1.0, 1.0);
         println("Pan UP: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case DOWN:
-        shaderOffsetY = constrain(shaderOffsetY + offsetStep, -1.0, 1.0);
+        // DOWN arrow = pan view down = move shader content up = decrease Y offset
+        shaderOffsetY = constrain(shaderOffsetY - offsetStep, -1.0, 1.0);
         println("Pan DOWN: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
     }

@@ -778,7 +778,7 @@ class ShaderMatchPanel(ReactivePanel):
 
 
 class ShaderAnalysisPanel(ReactivePanel):
-    """Panel showing shader analysis progress."""
+    """Panel showing shader analysis progress and recent results."""
     analysis_status = reactive({})
     
     def on_mount(self) -> None:
@@ -805,6 +805,7 @@ class ShaderAnalysisPanel(ReactivePanel):
         analyzed = self.analysis_status.get('analyzed', 0)
         errors = self.analysis_status.get('errors', 0)
         last_error = self.analysis_status.get('last_error', '')
+        recent = self.analysis_status.get('recent', [])
         
         # Status
         if running:
@@ -823,13 +824,46 @@ class ShaderAnalysisPanel(ReactivePanel):
             lines.append(f"  Progress: {bar} {progress}/{total}")
         
         lines.append("")
-        lines.append(f"  ✓ Analyzed: [green]{analyzed}[/]")
-        if errors > 0:
-            lines.append(f"  ✗ Errors:   [red]{errors}[/]")
+        lines.append(f"  ✓ Analyzed: [green]{analyzed}[/]    ✗ Errors: [red]{errors}[/]")
+        
+        # Recent analyses table
+        if recent:
+            lines.append("")
+            lines.append("[bold]Recent Analyses:[/]")
+            lines.append("[dim]" + "─" * 60 + "[/]")
+            lines.append(f"  {'Shader':<22} {'Mood':<12} {'Energy':<8} {'E':>4} {'M':>4} {'G':>4}")
+            lines.append("[dim]" + "─" * 60 + "[/]")
+            
+            for r in recent[:8]:
+                name = truncate(r.get('name', '?'), 20)
+                mood = r.get('mood', '?')[:10]
+                energy = r.get('energy', '?')[:6]
+                features = r.get('features', {})
+                e_score = features.get('energy_score', 0)
+                m_speed = features.get('motion_speed', 0)
+                g_score = features.get('geometric_score', 0)
+                
+                # Color mood by type
+                mood_colors = {
+                    'energetic': 'bright_red', 'aggressive': 'red',
+                    'calm': 'bright_blue', 'peaceful': 'blue',
+                    'dark': 'dim', 'mysterious': 'magenta',
+                    'bright': 'bright_yellow', 'psychedelic': 'bright_magenta',
+                    'chaotic': 'orange1', 'dreamy': 'cyan'
+                }
+                mc = mood_colors.get(mood, 'white')
+                
+                lines.append(
+                    f"  {name:<22} [{mc}]{mood:<12}[/] {energy:<8} "
+                    f"[cyan]{e_score:.1f}[/] [green]{m_speed:.1f}[/] [yellow]{g_score:.1f}[/]"
+                )
+            
+            lines.append("[dim]" + "─" * 60 + "[/]")
+            lines.append("[dim]E=energy M=motion G=geometric[/]")
         
         if last_error:
             lines.append("")
-            lines.append(f"  [dim]Last error: {truncate(last_error, 40)}[/]")
+            lines.append(f"[dim]Last error: {truncate(last_error, 50)}[/]")
         
         lines.append("")
         lines.append("[dim]Keys: [p] pause/resume, [r] retry errors[/]")
@@ -998,6 +1032,8 @@ class ShaderAnalysisWorker:
     Call rescan() to refresh the queue if new shaders are added.
     """
     
+    MAX_RECENT = 10  # Keep last N analyses for display
+    
     def __init__(self, indexer, llm_analyzer):
         self.indexer = indexer
         self.llm = llm_analyzer
@@ -1007,6 +1043,7 @@ class ShaderAnalysisWorker:
         self._lock = threading.Lock()
         self._queue: List[str] = []  # Queue of shader names to analyze
         self._scanned = False
+        self._recent: List[dict] = []  # Recent analysis results for UI
         
         # Status for UI
         self.status = {
@@ -1018,7 +1055,8 @@ class ShaderAnalysisWorker:
             'analyzed': 0,
             'errors': 0,
             'last_error': '',
-            'queue': []
+            'queue': [],
+            'recent': []
         }
     
     def start(self):
@@ -1138,6 +1176,18 @@ class ShaderAnalysisWorker:
                     if success:
                         self.status['analyzed'] += 1
                         self.status['progress'] = self.status['analyzed']
+                        
+                        # Track recent analysis for UI
+                        with self._lock:
+                            self._recent.insert(0, {
+                                'name': shader_name,
+                                'mood': result.get('mood', '?'),
+                                'energy': result.get('energy', '?'),
+                                'colors': result.get('colors', [])[:2],
+                                'features': features
+                            })
+                            self._recent = self._recent[:self.MAX_RECENT]
+                            self.status['recent'] = self._recent.copy()
                         
                         # Sync to ChromaDB
                         self.indexer.sync()
