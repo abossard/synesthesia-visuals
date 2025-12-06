@@ -1,12 +1,49 @@
 {
   "shaderName": "CandyWarp",
+  "analyzedAt": 3170,
+  "features": {
+    "energy_score": 0.85,
+    "mood_valence": 0.7,
+    "color_warmth": 0.4,
+    "motion_speed": 0.9,
+    "geometric_score": 0.2,
+    "visual_density": 0.7
+  },
+  "inputs": {
+    "floatCount": 8,
+    "point2DCount": 0,
+    "colorCount": 0,
+    "boolCount": 1,
+    "imageCount": 0,
+    "hasAudio": false,
+    "inputNames": [
+      "scale",
+      "cycle",
+      "thickness",
+      "loops",
+      "warp",
+      "hue",
+      "tint",
+      "rate",
+      "invert"
+    ]
+  },
   "mood": "psychedelic",
+  "colors": [
+    "purple",
+    "cyan"
+  ],
+  "effects": [
+    "distortion",
+    "bloom"
+  ],
+  "description": "This shader creates a warped, colorful field that pulsates with energy and distortion.",
+  "geometry": [
+    "organic"
+  ],
+  "objects": [
+    "warped shapes"
+  ],
   "energy": "high",
-  "complexity": "complex",
-  "description": "This shader creates a swirling, distorted pattern resembling candy-like waves with vibrant color gradients.",
-  "colors": ["purple", "blue"],
-  "geometry": ["circular"],
-  "objects": ["waves"],
-  "effects": ["distortion", "gradient", "warp"],
-  "analyzedAt": 1764976552472
+  "complexity": "complex"
 }

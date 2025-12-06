@@ -965,7 +965,8 @@ class AudioAnalyzer(threading.Thread):
     def stop(self):
         """Stop the analyzer thread."""
         self.running = False
-        self.join(timeout=2.0)
+        if self.is_alive():
+            self.join(timeout=2.0)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get analyzer statistics."""

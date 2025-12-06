@@ -22,8 +22,8 @@ import subprocess
 import time
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, VerticalScroll
-from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input
+from textual.containers import Container, Horizontal, VerticalScroll, Vertical
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label
 from textual.reactive import reactive
 from textual.binding import Binding
 from textual.screen import ModalScreen
@@ -881,6 +881,92 @@ class ShaderSearchPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class AudioActionsPanel(Static):
+    """Action buttons for Audio Analyzer screen."""
+    
+    analyzer_running = reactive(False)
+    
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="action-buttons"):
+            yield Button("▶ Start Analyzer", variant="primary", id="audio-start-stop")
+            yield Button("◀ Prev Device", id="audio-prev-device")
+            yield Button("Next Device ▶", id="audio-next-device")
+    
+    def watch_analyzer_running(self, running: bool) -> None:
+        """Update button label based on analyzer state."""
+        try:
+            btn = self.query_one("#audio-start-stop", Button)
+            btn.label = "■ Stop Analyzer" if running else "▶ Start Analyzer"
+            btn.variant = "error" if running else "primary"
+        except Exception:
+            pass
+
+
+class ShaderActionsPanel(Static):
+    """Action buttons for Shader Indexer screen."""
+    
+    analysis_running = reactive(False)
+    
+    def compose(self) -> ComposeResult:
+        with Horizontal(classes="action-buttons"):
+            yield Button("▶ Start Analysis", variant="primary", id="shader-pause-resume")
+            yield Button("🔍 Mood", id="shader-search-mood")
+            yield Button("⚡ Energy", id="shader-search-energy")
+            yield Button("📝 Text", variant="success", id="shader-search-text")
+            yield Button("🔄 Rescan", id="shader-rescan")
+    
+    def watch_analysis_running(self, running: bool) -> None:
+        """Update button label based on analysis state."""
+        try:
+            btn = self.query_one("#shader-pause-resume", Button)
+            btn.label = "⏸ Pause Analysis" if running else "▶ Start Analysis"
+            btn.variant = "warning" if running else "primary"
+        except Exception:
+            pass
+
+
+class ShaderSearchModal(ModalScreen):
+    """Modal for text-based shader search."""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+    
+    def __init__(self):
+        super().__init__()
+        self.search_query = ""
+    
+    def compose(self) -> ComposeResult:
+        with Vertical(id="shader-search-modal"):
+            yield Label("[bold cyan]🔍 Search Shaders[/]")
+            yield Label("[dim]Search by: name, mood, colors, effects, description, geometry, objects, inputNames[/]\n")
+            yield Label("Examples: love, colorful, psychedelic, distortion, bloom, waves, particles")
+            yield Input(placeholder="Enter search term...", id="search-input")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Search", variant="primary", id="search-btn")
+                yield Button("Cancel", variant="default", id="cancel-btn")
+    
+    def on_mount(self) -> None:
+        """Focus the input when modal opens."""
+        self.query_one("#search-input", Input).focus()
+    
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle enter key in input."""
+        self.search_query = event.value.strip()
+        if self.search_query:
+            self.dismiss(self.search_query)
+    
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "search-btn":
+            inp = self.query_one("#search-input", Input)
+            self.search_query = inp.value.strip()
+            if self.search_query:
+                self.dismiss(self.search_query)
+        elif event.button.id == "cancel-btn":
+            self.dismiss(None)
+
+
 # ============================================================================
 # SHADER ANALYSIS WORKER - Background thread for LLM analysis
 # ============================================================================
@@ -891,8 +977,8 @@ class ShaderAnalysisWorker:
     """
     Background worker that analyzes unanalyzed shaders using LLM.
     
-    Runs in a separate thread, processes one shader at a time,
-    and reports progress via a status dict that UI can poll.
+    Scans once on start, then processes the queue. Does NOT continuously re-scan.
+    Call rescan() to refresh the queue if new shaders are added.
     """
     
     def __init__(self, indexer, llm_analyzer):
@@ -902,6 +988,8 @@ class ShaderAnalysisWorker:
         self._running = False
         self._paused = True  # Start paused, user must press 'p' to begin
         self._lock = threading.Lock()
+        self._queue: List[str] = []  # Queue of shader names to analyze
+        self._scanned = False
         
         # Status for UI
         self.status = {
@@ -940,11 +1028,28 @@ class ShaderAnalysisWorker:
             self.status['paused'] = self._paused
             logger.info(f"Shader analysis {'paused' if self._paused else 'resumed'}")
     
+    def rescan(self):
+        """Rescan for unanalyzed shaders and rebuild queue."""
+        with self._lock:
+            self._queue = self.indexer.get_unanalyzed()
+            self.status['total'] = len(self._queue) + self.status['analyzed']
+            self.status['queue'] = self._queue[:5]
+            logger.info(f"Rescanned: {len(self._queue)} shaders in queue")
+    
     def is_paused(self) -> bool:
         return self._paused
     
     def _run(self):
-        """Main worker loop."""
+        """Main worker loop - scans once, then processes queue."""
+        # Initial scan (once)
+        if not self._scanned:
+            with self._lock:
+                self._queue = self.indexer.get_unanalyzed()
+                self.status['total'] = len(self._queue)
+                self.status['queue'] = self._queue[:5]
+                self._scanned = True
+                logger.info(f"Initial scan: {len(self._queue)} unanalyzed shaders")
+        
         while self._running:
             # Check if paused
             if self._paused:
@@ -952,24 +1057,21 @@ class ShaderAnalysisWorker:
                 time.sleep(0.5)
                 continue
             
-            # Get unanalyzed shaders
-            unanalyzed = self.indexer.get_unanalyzed()
-            
-            if not unanalyzed:
-                self.status['running'] = False
-                self.status['current_shader'] = ''
-                time.sleep(2.0)  # Check again in 2 seconds
-                continue
-            
-            # Update status
+            # Check if queue is empty
             with self._lock:
-                self.status['running'] = True
-                self.status['total'] = len(unanalyzed) + self.status['analyzed']
-                self.status['queue'] = unanalyzed[:5]  # Show next 5
+                if not self._queue:
+                    self.status['running'] = False
+                    self.status['current_shader'] = ''
+                    # Don't rescan - just wait. User can press 'r' to rescan.
+                    time.sleep(1.0)
+                    continue
+                
+                # Get next shader from queue
+                shader_name = self._queue[0]
             
-            # Analyze next shader
-            shader_name = unanalyzed[0]
+            self.status['running'] = True
             self.status['current_shader'] = shader_name
+            self.status['queue'] = self._queue[:5]
             
             try:
                 # Get shader source
@@ -978,6 +1080,10 @@ class ShaderAnalysisWorker:
                     logger.warning(f"Could not read shader: {shader_name}")
                     self.status['errors'] += 1
                     self.status['last_error'] = f"Could not read {shader_name}"
+                    # Remove from queue even on error
+                    with self._lock:
+                        if shader_name in self._queue:
+                            self._queue.remove(shader_name)
                     continue
                 
                 # Analyze with LLM
@@ -1033,6 +1139,11 @@ class ShaderAnalysisWorker:
                 self.status['last_error'] = f"{shader_name}: {error_msg[:50]}"
                 logger.exception(f"Error analyzing {shader_name}: {e}")
             
+            # Remove processed shader from queue
+            with self._lock:
+                if shader_name in self._queue:
+                    self._queue.remove(shader_name)
+            
             # Small delay between analyses to avoid overwhelming LLM
             time.sleep(1.0)
         
@@ -1040,15 +1151,10 @@ class ShaderAnalysisWorker:
     
     def get_status(self) -> dict:
         """Get current status for UI."""
-        # Also include indexer stats
-        stats = self.indexer.get_stats()
+        # Return cached status - don't call indexer.get_stats() which rescans
         return {
             **self.status,
-            'total_shaders': stats.get('total_shaders', 0),
-            'analyzed': stats.get('analyzed', 0),
-            'unanalyzed': stats.get('unanalyzed', 0),
-            'loaded_in_memory': stats.get('loaded_in_memory', 0),
-            'chromadb_enabled': stats.get('chromadb_enabled', False),
+            'queue_size': len(self._queue),
         }
 
 
@@ -1068,6 +1174,17 @@ class VJConsoleApp(App):
     #left-col { width: 40%; }
     #right-col { width: 60%; }
     
+    /* Action button panels */
+    .action-buttons {
+        height: auto;
+        padding: 1;
+    }
+    
+    .action-buttons Button {
+        margin: 0 1 1 0;
+        min-width: 16;
+    }
+    
     /* Controller selection modal */
     #controller-modal {
         width: 80;
@@ -1075,6 +1192,19 @@ class VJConsoleApp(App):
         background: $surface;
         border: thick $primary;
         padding: 2;
+    }
+    
+    /* Shader search modal */
+    #shader-search-modal {
+        width: 70;
+        height: auto;
+        background: $surface;
+        border: thick $success;
+        padding: 2;
+    }
+    
+    #shader-search-modal Input {
+        margin: 1 0;
     }
     
     #modal-buttons {
@@ -1127,6 +1257,7 @@ class VJConsoleApp(App):
         Binding("p", "shader_toggle_analysis", "Pause/Resume Analysis", show=False),
         Binding("slash", "shader_search_mood", "Search by Mood", show=False),
         Binding("e", "shader_search_energy", "Search by Energy", show=False),
+        Binding("R", "shader_rescan", "Rescan Shaders", show=False),
     ]
 
     current_tab = reactive("master")
@@ -1337,6 +1468,7 @@ class VJConsoleApp(App):
             
             # Tab 5: Audio Analyzer
             with TabPane("5️⃣ Audio Analyzer", id="audio"):
+                yield AudioActionsPanel(id="audio-actions")
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield AudioAnalyzerStatusPanel(id="audio-status", classes="panel")
@@ -1356,6 +1488,7 @@ class VJConsoleApp(App):
             
             # Tab 7: Shader Indexer
             with TabPane("7️⃣ Shaders", id="shaders"):
+                yield ShaderActionsPanel(id="shader-actions")
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield ShaderIndexPanel(id="shader-index", classes="panel")
@@ -1379,6 +1512,30 @@ class VJConsoleApp(App):
         # Background updates
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Route button clicks to actions."""
+        button_id = event.button.id
+        
+        # Audio buttons
+        if button_id == "audio-start-stop":
+            self.action_toggle_audio_analyzer()
+        elif button_id == "audio-prev-device":
+            self.action_audio_device_prev()
+        elif button_id == "audio-next-device":
+            self.action_audio_device_next()
+        
+        # Shader buttons
+        elif button_id == "shader-pause-resume":
+            self.action_shader_toggle_analysis()
+        elif button_id == "shader-search-mood":
+            self.action_shader_search_mood()
+        elif button_id == "shader-search-energy":
+            self.action_shader_search_energy()
+        elif button_id == "shader-search-text":
+            self.action_shader_search_text()
+        elif button_id == "shader-rescan":
+            self.action_shader_rescan()
 
     # === Actions (impure, side effects) ===
     
@@ -1569,8 +1726,8 @@ class VJConsoleApp(App):
             return
         
         try:
-            # Update watchdog for self-healing
-            if self.audio_watchdog:
+            # Update watchdog for self-healing (only if analyzer was started)
+            if self.audio_watchdog and self.audio_analyzer.is_alive():
                 self.audio_watchdog.update()
             
             # Get analyzer stats
@@ -1590,6 +1747,13 @@ class VJConsoleApp(App):
             try:
                 features_panel = self.query_one("#audio-features", AudioFeaturesPanel)
                 features_panel.features = features
+            except Exception:
+                pass
+            
+            # Update action panel button labels
+            try:
+                actions_panel = self.query_one("#audio-actions", AudioActionsPanel)
+                actions_panel.analyzer_running = self.audio_analyzer.is_alive()
             except Exception:
                 pass
             
@@ -1615,6 +1779,13 @@ class VJConsoleApp(App):
                 try:
                     analysis_panel = self.query_one("#shader-analysis", ShaderAnalysisPanel)
                     analysis_panel.analysis_status = self.shader_analysis_worker.get_status()
+                except Exception:
+                    pass
+                
+                # Update action panel button labels
+                try:
+                    actions_panel = self.query_one("#shader-actions", ShaderActionsPanel)
+                    actions_panel.analysis_running = not self.shader_analysis_worker.is_paused()
                 except Exception:
                     pass
             
@@ -1825,7 +1996,8 @@ class VJConsoleApp(App):
             similar = self.shader_indexer.query_similar(target_vector, top_k=8)
             results = []
             for name, dist in similar:
-                shader = self.shader_matcher.shaders.get(name)
+                # Find shader in list by name
+                shader = next((s for s in self.shader_matcher.shaders if s.name == name), None)
                 if shader:
                     results.append({
                         'name': name,
@@ -1835,6 +2007,13 @@ class VJConsoleApp(App):
                             'mood_valence': shader.mood_valence,
                             'motion_speed': shader.motion_speed,
                         }
+                    })
+                else:
+                    # Shader found in ChromaDB but not in matcher - still show it
+                    results.append({
+                        'name': name,
+                        'score': dist,
+                        'features': {}
                     })
         else:
             # Fallback to mood search with energy
@@ -1856,6 +2035,45 @@ class VJConsoleApp(App):
             'query': f'{next_energy:.1f}',
             'results': results
         }
+    
+    def action_shader_search_text(self) -> None:
+        """Open text search modal for shaders."""
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
+            self.notify("Shader indexer not available", severity="warning")
+            return
+        
+        def handle_search_result(query: str | None) -> None:
+            if not query:
+                return
+            
+            # Perform text search
+            results = self.shader_indexer.text_search(query, top_k=10)
+            
+            formatted_results = []
+            for name, score, features in results:
+                formatted_results.append({
+                    'name': name,
+                    'score': score,
+                    'features': features
+                })
+            
+            self._shader_search_results = {
+                'type': 'text',
+                'query': query,
+                'results': formatted_results
+            }
+            
+            self.notify(f"Found {len(results)} shaders matching '{query}'", severity="information")
+        
+        self.push_screen(ShaderSearchModal(), handle_search_result)
+    
+    def action_shader_rescan(self) -> None:
+        """Rescan for unanalyzed shaders (R key)."""
+        if self.shader_analysis_worker:
+            self.shader_analysis_worker.rescan()
+            self.notify("Rescanning for unanalyzed shaders...", severity="information")
+        else:
+            self.notify("Shader analysis worker not available", severity="warning")
     
     def action_audio_device_prev(self) -> None:
         """Switch to previous audio device ([ key)."""
@@ -2161,7 +2379,7 @@ class VJConsoleApp(App):
             self.karaoke_engine.stop()
         if self.midi_router:
             self.midi_router.stop()
-        if self.audio_analyzer and AUDIO_ANALYZER_AVAILABLE:
+        if self.audio_analyzer and AUDIO_ANALYZER_AVAILABLE and self.audio_analyzer.is_alive():
             self.audio_analyzer.stop()
         self.process_manager.cleanup()
 

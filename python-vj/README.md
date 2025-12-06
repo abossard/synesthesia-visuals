@@ -590,6 +590,7 @@ Or use a VirtualDJ script/plugin to write "Artist - Title" to a file.
 - **textual**: Modern terminal UI library
 - **psutil**: Process management
 - **openai**: OpenAI API client (optional)
+- **chromadb**: Vector database for shader semantic search
 - **sounddevice**: Real-time audio I/O (for audio analyzer)
 - **numpy**: FFT and spectral analysis (for audio analyzer)
 - **essentia**: Beat detection, tempo, pitch estimation (for audio analyzer)
@@ -678,3 +679,99 @@ Audio device selection is persisted to `~/.vj_audio_config.json`:
 ```
 
 Edit this file or use the Audio Analysis screen to change devices.
+
+## Shader Analysis & Semantic Search
+
+The VJ Console includes an AI-powered shader analysis system that indexes your Synesthesia shaders for semantic search and feature-based matching.
+
+### Features
+
+- **LLM Analysis**: Analyzes shader source code to extract mood, energy, visual style, colors, and effects
+- **ChromaDB Vector Store**: Stores shader embeddings for fast semantic similarity search
+- **Feature Extraction**: Parses ISF inputs and extracts quantitative features (motion, complexity, etc.)
+- **Background Processing**: Analysis runs in background thread without blocking UI
+
+### Setup
+
+**1. Install ChromaDB** (included in requirements.txt):
+```bash
+pip install chromadb>=0.4.0
+```
+
+**2. Configure LM Studio** (recommended for local LLM):
+- Download and run [LM Studio](https://lmstudio.ai/)
+- Load a model (e.g., Llama 3.2, Qwen 2.5, or similar)
+- Start the local server (default: `http://localhost:1234`)
+- The VJ Console will auto-detect LM Studio
+
+**3. Launch VJ Console**:
+```bash
+python vj_console.py
+```
+Press `7` for Shaders screen.
+
+### Keyboard Shortcuts (Shaders Screen)
+
+| Key | Action |
+|-----|--------|
+| `p` | Pause/Resume shader analysis |
+| `R` | Rescan for new unanalyzed shaders |
+| `/` | Search by mood (cycles: dreamy → energetic → dark → calm) |
+| `e` | Search by energy level (cycles: 0.2 → 0.4 → 0.6 → 0.8 → 1.0) |
+
+### How It Works
+
+1. **Scan**: Discovers all `.synScene` directories in the shaders folder
+2. **Analyze**: Sends shader source to LLM with structured prompt
+3. **Store**: Saves `.analysis.json` file alongside each shader
+4. **Index**: Adds shader features to ChromaDB for vector search
+5. **Search**: Query by mood, energy, or semantic similarity
+
+### Analysis Output
+
+Each shader gets a JSON analysis file:
+```json
+{
+  "shader_name": "fluid_noise_pixel",
+  "mood": "dreamy",
+  "energy": "medium",
+  "colors": ["blue", "purple", "cyan"],
+  "effects": ["noise", "flow", "particle"],
+  "geometry": ["organic", "fluid"],
+  "description": "Flowing particle system with ethereal color palette",
+  "features": {
+    "energy_score": 0.6,
+    "mood_valence": 0.7,
+    "complexity_score": 0.5,
+    "motion_speed": 0.4
+  }
+}
+```
+
+### ChromaDB Storage
+
+ChromaDB stores shader embeddings locally at `~/.vj_shader_index/chroma.db`:
+- **Persistent**: Index survives restarts
+- **Fast**: Sub-millisecond vector similarity queries
+- **Embedded**: No external server required
+
+To reset the index:
+```bash
+rm -rf ~/.vj_shader_index
+```
+
+### Troubleshooting
+
+**ChromaDB not available**:
+```bash
+pip install chromadb>=0.4.0
+```
+
+**LLM analysis times out**:
+- Check LM Studio is running and model is loaded
+- Increase timeout in `ai_services.py` (default: 300s)
+
+**Shaders not found**:
+- Verify shader path in `shader_matcher.py`
+- Default: `../synesthesia-shaders/` relative to python-vj folder
+

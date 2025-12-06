@@ -1,12 +1,45 @@
 {
   "shaderName": "AnotherGridThingy",
+  "analyzedAt": 8320,
+  "features": {
+    "energy_score": 0.6,
+    "mood_valence": 0.7,
+    "color_warmth": 0.4,
+    "motion_speed": 0.5,
+    "geometric_score": 0.8,
+    "visual_density": 0.4
+  },
+  "inputs": {
+    "floatCount": 3,
+    "point2DCount": 2,
+    "colorCount": 0,
+    "boolCount": 0,
+    "imageCount": 0,
+    "hasAudio": false,
+    "inputNames": [
+      "grid_size",
+      "bright",
+      "glow_size",
+      "rate",
+      "rndseed"
+    ]
+  },
   "mood": "psychedelic",
-  "energy": "high",
-  "complexity": "medium",
-  "description": "The shader generates a vibrant, distorted grid with glowing elements that shift and change over time.",
-  "colors": ["blue", "green"],
-  "geometry": ["grid"],
-  "objects": ["dots"],
-  "effects": ["glow", "distortion"],
-  "analyzedAt": 1764977384250
+  "colors": [
+    "purple",
+    "yellow"
+  ],
+  "effects": [
+    "glow",
+    "distortion"
+  ],
+  "description": "This shader creates a grid-based visual with glowing edges and distorted colors, animated by time.",
+  "geometry": [
+    "grid"
+  ],
+  "objects": [
+    "dots"
+  ],
+  "energy": "medium",
+  "complexity": "medium"
 }

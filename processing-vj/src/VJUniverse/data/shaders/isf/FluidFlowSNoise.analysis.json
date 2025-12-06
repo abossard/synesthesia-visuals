@@ -1,12 +1,48 @@
 {
   "shaderName": "FluidFlowSNoise",
+  "analyzedAt": 4010,
+  "features": {
+    "energy_score": 0.85,
+    "mood_valence": 0.7,
+    "color_warmth": 0.3,
+    "motion_speed": 0.75,
+    "geometric_score": 0.4,
+    "visual_density": 0.65
+  },
+  "inputs": {
+    "floatCount": 6,
+    "point2DCount": 0,
+    "colorCount": 2,
+    "boolCount": 0,
+    "imageCount": 0,
+    "hasAudio": false,
+    "inputNames": [
+      "rate",
+      "zrate",
+      "depth",
+      "blur",
+      "freq",
+      "freq2",
+      "c1",
+      "c2"
+    ]
+  },
   "mood": "psychedelic",
+  "colors": [
+    "purple",
+    "cyan"
+  ],
+  "effects": [
+    "distortion",
+    "smooth animation"
+  ],
+  "description": "A flowing, distorted field of color creates a mesmerizing and energetic visual experience.",
+  "geometry": [
+    "organic"
+  ],
+  "objects": [
+    "flow field"
+  ],
   "energy": "high",
-  "complexity": "complex",
-  "description": "This shader generates a swirling, distorted fluid-like effect with vibrant blue and purple tones through complex noise calculations.",
-  "colors": ["blue", "purple"],
-  "geometry": ["organic"],
-  "objects": ["flow"],
-  "effects": ["noise", "distortion"],
-  "analyzedAt": 1764976599970
+  "complexity": "complex"
 }

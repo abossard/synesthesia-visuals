@@ -402,14 +402,15 @@ class ShaderIndexer:
         self.shaders_dir = Path(shaders_dir or self.DEFAULT_SHADERS_DIR).resolve()
         self.shaders: Dict[str, ShaderFeatures] = {}  # name → features
         self._chromadb_client = None
-        self._collection = None
+        self._collection = None  # Feature vectors collection
+        self._text_collection = None  # Text/semantic search collection
         self._use_chromadb = use_chromadb
         
         if use_chromadb:
             self._init_chromadb(chromadb_path)
     
     def _init_chromadb(self, path: Optional[str] = None):
-        """Initialize ChromaDB client and collection."""
+        """Initialize ChromaDB client and collections."""
         try:
             import chromadb
             from chromadb.config import Settings
@@ -423,10 +424,19 @@ class ShaderIndexer:
                 path=db_path,
                 settings=Settings(anonymized_telemetry=False)
             )
+            
+            # Collection for feature vectors (numeric similarity)
             self._collection = self._chromadb_client.get_or_create_collection(
                 name="shader_features",
-                metadata={"hnsw:space": "cosine"}  # Cosine similarity
+                metadata={"hnsw:space": "cosine"}
             )
+            
+            # Collection for semantic text search (uses default embedding)
+            self._text_collection = self._chromadb_client.get_or_create_collection(
+                name="shader_text",
+                metadata={"hnsw:space": "cosine"}
+            )
+            
             logger.info(f"ChromaDB initialized: {db_path}")
         except ImportError:
             logger.debug("chromadb not installed, using JSON-only mode")
@@ -459,7 +469,7 @@ class ShaderIndexer:
             else:
                 unanalyzed.append(name)
         
-        logger.info(f"Scanned: {len(analyzed)} analyzed, {len(unanalyzed)} unanalyzed")
+        logger.debug(f"Scanned: {len(analyzed)} analyzed, {len(unanalyzed)} unanalyzed")
         return analyzed, unanalyzed
     
     def sync(self) -> Dict[str, int]:
@@ -467,9 +477,9 @@ class ShaderIndexer:
         Sync JSON analyses to memory (and ChromaDB if enabled).
         
         Returns:
-            Stats dict: {loaded, chromadb_synced, errors}
+            Stats dict: {loaded, chromadb_synced, text_synced, errors}
         """
-        stats = {'loaded': 0, 'chromadb_synced': 0, 'errors': 0}
+        stats = {'loaded': 0, 'chromadb_synced': 0, 'text_synced': 0, 'errors': 0}
         self.shaders.clear()
         
         analyzed, _ = self.scan_shaders()
@@ -486,10 +496,15 @@ class ShaderIndexer:
                 self.shaders[name] = features
                 stats['loaded'] += 1
                 
-                # Sync to ChromaDB
+                # Sync to ChromaDB (feature vectors)
                 if self._use_chromadb and self._collection:
                     self._upsert_to_chromadb(features)
                     stats['chromadb_synced'] += 1
+                
+                # Sync to text collection (semantic search)
+                if self._use_chromadb and self._text_collection:
+                    self._upsert_text_document(name, data)
+                    stats['text_synced'] += 1
                     
             except Exception as e:
                 logger.warning(f"Failed to load {name}: {e}")
@@ -499,7 +514,7 @@ class ShaderIndexer:
         return stats
     
     def _upsert_to_chromadb(self, features: ShaderFeatures):
-        """Add or update shader in ChromaDB."""
+        """Add or update shader in ChromaDB feature collection."""
         if not self._collection:
             return
         
@@ -514,6 +529,63 @@ class ShaderIndexer:
         self._collection.upsert(
             ids=[features.name],
             embeddings=[vector],
+            metadatas=[metadata]
+        )
+    
+    def _upsert_text_document(self, name: str, data: dict):
+        """Add or update shader text document for semantic search."""
+        if not self._text_collection:
+            return
+        
+        # Build searchable document from all text fields
+        doc_parts = [
+            f"Shader: {name}",
+            f"Mood: {data.get('mood', 'unknown')}",
+            f"Energy: {data.get('energy', 'medium')}",
+            f"Complexity: {data.get('complexity', 'medium')}",
+        ]
+        
+        # Add description
+        desc = data.get('description', '')
+        if desc:
+            doc_parts.append(f"Description: {desc}")
+        
+        # Add list fields
+        colors = data.get('colors', [])
+        if colors:
+            doc_parts.append(f"Colors: {', '.join(colors)}")
+        
+        effects = data.get('effects', [])
+        if effects:
+            doc_parts.append(f"Effects: {', '.join(effects)}")
+        
+        geometry = data.get('geometry', [])
+        if geometry:
+            doc_parts.append(f"Geometry: {', '.join(geometry)}")
+        
+        objects = data.get('objects', [])
+        if objects:
+            doc_parts.append(f"Objects: {', '.join(objects)}")
+        
+        # Add input names
+        inputs = data.get('inputs', {})
+        input_names = inputs.get('inputNames', [])
+        if input_names:
+            doc_parts.append(f"Controls: {', '.join(input_names)}")
+        
+        document = ". ".join(doc_parts)
+        
+        # Store metadata for results
+        metadata = {
+            'mood': data.get('mood', 'unknown'),
+            'energy': data.get('energy', 'medium'),
+            'colors': ','.join(data.get('colors', [])),
+            'effects': ','.join(data.get('effects', [])),
+        }
+        
+        self._text_collection.upsert(
+            ids=[name],
+            documents=[document],
             metadatas=[metadata]
         )
     
@@ -731,6 +803,124 @@ class ShaderIndexer:
     def get_all_features(self) -> List[ShaderFeatures]:
         """Get all loaded shader features."""
         return list(self.shaders.values())
+    
+    def text_search(self, query: str, top_k: int = 10) -> List[Tuple[str, float, Dict]]:
+        """
+        Semantic search for shaders by text query.
+        
+        Uses ChromaDB's embedding-based search for semantic similarity.
+        Falls back to keyword search if ChromaDB unavailable.
+        
+        Searches across: name, mood, colors, effects, description, geometry, 
+                        objects, energy, complexity, inputNames
+        
+        Args:
+            query: Natural language search query (e.g., "colorful waves", "dark psychedelic")
+            top_k: Number of results to return
+        
+        Returns:
+            List of (shader_name, distance, features_dict) tuples sorted by relevance
+        """
+        query = query.strip()
+        if not query:
+            return []
+        
+        # Try semantic search via ChromaDB
+        if self._use_chromadb and self._text_collection:
+            try:
+                results = self._text_collection.query(
+                    query_texts=[query],
+                    n_results=top_k,
+                    include=['metadatas', 'distances', 'documents']
+                )
+                
+                output = []
+                ids = results.get('ids', [[]])[0]
+                distances = results.get('distances', [[]])[0]
+                metadatas = results.get('metadatas', [[]])[0]
+                
+                for i, shader_id in enumerate(ids):
+                    distance = distances[i] if i < len(distances) else 1.0
+                    metadata = metadatas[i] if i < len(metadatas) else {}
+                    
+                    # Load full features from memory if available
+                    features = {
+                        'mood': metadata.get('mood', 'unknown'),
+                        'energy': metadata.get('energy', 'medium'),
+                        'colors': metadata.get('colors', '').split(',') if metadata.get('colors') else [],
+                        'effects': metadata.get('effects', '').split(',') if metadata.get('effects') else [],
+                    }
+                    
+                    # Add numeric features if shader is in memory
+                    if shader_id in self.shaders:
+                        sf = self.shaders[shader_id]
+                        features['energy_score'] = sf.energy_score
+                        features['mood_valence'] = sf.mood_valence
+                    
+                    output.append((shader_id, distance, features))
+                
+                return output
+                
+            except Exception as e:
+                logger.warning(f"ChromaDB semantic search failed: {e}, falling back to keyword")
+        
+        # Fallback: keyword-based search
+        return self._keyword_search(query, top_k)
+    
+    def _keyword_search(self, query: str, top_k: int) -> List[Tuple[str, float, Dict]]:
+        """Fallback keyword search when ChromaDB unavailable."""
+        query_lower = query.lower()
+        results = []
+        analyzed, _ = self.scan_shaders()
+        
+        for name in analyzed:
+            try:
+                analysis_path = self.shaders_dir / f"{name}.analysis.json"
+                with open(analysis_path, 'r') as f:
+                    data = json.load(f)
+                
+                # Build searchable text
+                searchable_parts = [
+                    data.get('shaderName', ''),
+                    data.get('mood', ''),
+                    data.get('description', ''),
+                    data.get('energy', ''),
+                    data.get('complexity', ''),
+                ]
+                searchable_parts.extend(data.get('colors', []))
+                searchable_parts.extend(data.get('effects', []))
+                searchable_parts.extend(data.get('geometry', []))
+                searchable_parts.extend(data.get('objects', []))
+                searchable_parts.extend(data.get('inputs', {}).get('inputNames', []))
+                
+                searchable_text = ' '.join(str(p) for p in searchable_parts).lower()
+                
+                # Score by occurrence count
+                score = 0.0
+                for word in query_lower.split():
+                    if word in searchable_text:
+                        score += searchable_text.count(word)
+                        if word in name.lower():
+                            score += 3.0
+                        if word == data.get('mood', '').lower():
+                            score += 2.0
+                
+                if score > 0:
+                    features = {
+                        'energy_score': data.get('features', {}).get('energy_score', 0.5),
+                        'mood': data.get('mood', 'unknown'),
+                        'colors': data.get('colors', []),
+                        'effects': data.get('effects', []),
+                        'description': data.get('description', '')[:80],
+                    }
+                    # Convert score to distance (lower = better)
+                    results.append((name, 1.0 / (1.0 + score), features))
+                    
+            except Exception as e:
+                logger.debug(f"Failed to search {name}: {e}")
+        
+        results.sort(key=lambda x: x[1])
+        return results[:top_k]
     
     def get_stats(self) -> Dict[str, Any]:
         """Get indexer statistics."""
