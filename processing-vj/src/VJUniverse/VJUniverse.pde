@@ -92,8 +92,8 @@ void setup() {
   passBuffer1 = createGraphics(width, height, P3D);
   passBuffer2 = createGraphics(width, height, P3D);
   
-  // Initialize audio
-  initAudio();
+  // Initialize audio (AudioManager.pde) - includes device selection
+  initAudioManager();
   
   // Initialize OSC
   initOsc();
@@ -121,8 +121,8 @@ void setup() {
 void draw() {
   globalTime = millis() / 1000.0;
   
-  // Update audio analysis
-  updateAudio();
+  // Update audio analysis (AudioManager.pde)
+  updateAudioAnalysis();
   
   // Check for shader file changes (auto-reload)
   reloadShadersIfChanged();
@@ -156,6 +156,9 @@ void draw() {
   // Check for scheduled screenshot
   checkScheduledScreenshot();
   
+  // Draw audio bars (AudioManager.pde)
+  drawAudioBars();
+  
   // Draw debug overlay
   if (debugMode) {
     drawDebugOverlay();
@@ -165,6 +168,9 @@ void draw() {
   if (consoleActive) {
     drawConsole();
   }
+  
+  // Draw device selection UI (on top of everything)
+  drawDeviceSelectionUI();
 }
 
 void drawMultiPassPipeline() {
@@ -247,20 +253,19 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     s.set("time", globalTime);
     s.set("resolution", w, h);
     
-    // Audio uniforms
-    s.set("bass", smoothBass);
-    s.set("mid", smoothMid);
-    s.set("treble", smoothTreble);
-    s.set("level", level);
-    s.set("beat", beatPhase);
-    
     // ISF compatibility uniforms
     s.set("TIME", globalTime);
     s.set("RENDERSIZE", w, h);
     
-    // Apply ISF uniform defaults (critical for animation!)
-    // These are the values from the shader's INPUTS DEFAULT fields
+    // Apply audio uniforms from AudioManager (includes bound uniforms)
+    applyAudioUniformsToShader(s);
+    
+    // Apply ISF uniform defaults (for uniforms not bound to audio)
+    // Only set if not already bound to audio
     for (String name : isfUniformDefaults.keySet()) {
+      // Skip if this uniform is audio-bound
+      if (boundUniformValues.containsKey(name)) continue;
+      
       float[] val = isfUniformDefaults.get(name);
       if (val.length == 1) {
         s.set(name, val[0]);
@@ -331,6 +336,12 @@ void initOsc() {
 
 void oscEvent(OscMessage msg) {
   String addr = msg.addrPattern();
+  
+  // Audio config messages (AudioManager.pde)
+  if (addr.startsWith("/audio/")) {
+    handleAudioOSC(msg);
+    return;
+  }
   
   // Python shader selection: /shader/load [name, energy, valence]
   if (addr.equals("/shader/load")) {
@@ -461,6 +472,13 @@ void consoleSubmit() {
 // ============================================
 
 void keyPressed() {
+  // Device selection UI handling (AudioManager.pde)
+  if (deviceSelectionActive) {
+    handleDeviceSelectionKey(keyCode, key);
+    if (key == ESC) key = 0;  // Prevent sketch exit
+    return;
+  }
+  
   // Console input handling
   if (consoleActive) {
     if (key == ENTER || key == RETURN) {
@@ -510,6 +528,14 @@ void keyPressed() {
         loadShaderByIndex(currentShaderIndex);
       }
       break;
+    case 'a':
+    case 'A':
+      toggleDeviceSelection();  // Open audio device selection
+      break;
+    case 'b':
+    case 'B':
+      showAudioBars = !showAudioBars;  // Toggle audio bars visibility
+      break;
   }
 }
 
@@ -533,7 +559,7 @@ void drawDebugOverlay() {
   // Semi-transparent background
   fill(0, 180);
   noStroke();
-  rect(10, 10, 350, 180);
+  rect(10, 10, 350, 200);
   
   // Text
   fill(255);
@@ -547,10 +573,11 @@ void drawDebugOverlay() {
   text("Time: " + nf(globalTime, 0, 2), 20, y); y += lineHeight;
   y += 5;
   
-  text("Audio:", 20, y); y += lineHeight;
-  text("  Bass:   " + nf(smoothBass, 0, 3), 20, y); y += lineHeight;
-  text("  Mid:    " + nf(smoothMid, 0, 3), 20, y); y += lineHeight;
-  text("  Treble: " + nf(smoothTreble, 0, 3), 20, y); y += lineHeight;
+  String audioStatus = audioInitialized ? "OK" : (audioRetryPending ? "RETRY " + audioRetryCount : "FAIL");
+  text("Audio [" + audioStatus + "]: " + currentDeviceName, 20, y); y += lineHeight;
+  text("  Energy: " + nf(energyFast, 0, 2) + " (slow: " + nf(energySlow, 0, 2) + ")", 20, y); y += lineHeight;
+  text("  Kick: " + nf(kickEnv, 0, 2) + " | Beat: " + beat4, 20, y); y += lineHeight;
+  text("  Bindings: " + audioBindings.size(), 20, y); y += lineHeight;
   y += 5;
   
   String shaderName = availableShaders.size() > 0 ? 
@@ -560,7 +587,7 @@ void drawDebugOverlay() {
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug  N/P=shader  R=reload  ENTER=console", 20, height - 25);
+  text("D=debug N/P=shader R=reload A=audio B=bars ENTER=console", 20, height - 25);
 }
 
 // ============================================

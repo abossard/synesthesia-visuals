@@ -11,59 +11,61 @@ uniform float treble;
 uniform float level;
 uniform float beat;
 
-uniform vec2 offset;
+uniform vec2 grid;
+uniform float density;
 uniform float rate;
+uniform float seed1;
+uniform float seed2;
+uniform float seed3;
+uniform float offset1;
+uniform float offset2;
 
-#define TIME time
+#define TIME max(time, 0.001)
 #define RENDERSIZE resolution
 #define isf_FragNormCoord (gl_FragCoord.xy / resolution)
 #define FRAMEINDEX int(time * 60.0)
 
-// LiquidFire by mojovideotech
+///////////////////////////////////////////
+// BitStreamer  by mojovideotech
+//
+// Creative Commons Attribution-NonCommercial-ShareAlike 3.0
+//
 // based on :
-// glslsandbox.com/e#29962.1
-// by @301z
-
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-float rnd(vec2 n) 
-{ 
-	return fract(cos(dot(n, vec2(5.14229, 433.494437))) * 2971.215073);
+// www.patriciogonzalezvivo.com/2015/thebookofshaders/10/ikeda-03.frag
+//
+// from :
+// thebookofshaders.com  by Patricio Gonzalez Vivo
+///////////////////////////////////////////
+ 
+float ranf(in float x) {
+    return fract(sin(x)*1e4);
 }
 
-float noise(vec2 n) 
-{
-	const vec2 d = vec2(0.0, 1.0);
-	vec2 b = floor(n), f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
-	return mix(mix(rnd(b), rnd(b + d.yx), f.x), mix(rnd(b + d.xy), rnd(b + d.yy), f.x), f.y);
+float rant(in vec2 st) { 
+    return fract(sin(dot(st.xy, vec2(seed1,seed2)))*seed3);
 }
 
-float fbm(vec2 n) {
-	float total = 0.0, amplitude = 1.0;
-	for (int i = 0; i < 6; i++) 
-	{
-		total += noise(n) * amplitude;
-		n += n;
-		amplitude *= 0.6;
-	}
-	return total;
+float pattern(vec2 st, vec2 v, float t) {
+    vec2 p = floor(st+v);
+    return step(t, rant(100.+p*.000001)+ranf(p.x)*0.5 );
 }
 
-void main() 
-{
-	vec3 uv = vec3(RENDERSIZE.x,RENDERSIZE.y,100.);
-	vec2 p = gl_FragCoord.xy * 8.0 / uv.xx;
-	float T = TIME*rate;
-	const vec3 c1 = vec3(0.2, 0.3, 0.1); 
-	const vec3 c2 = vec3(0.9, 0.1, 0.0);
-	const vec3 c3 = vec3(0.2, 0.0, 0.0); 
-	const vec3 c4 = vec3(1.0, 0.9, 0.0); 
-	const vec3 c5 = vec3(0.1);
-	const vec3 c6 = vec3(0.9);
-	float q = fbm(p - T * 0.25); 
-	vec2 r = vec2(fbm(p + q + log2(T * 0.618) - p.x - p.y), fbm(p + q - abs(log2(T * 3.142))));
-	vec3 c = mix(c1, c2, fbm(p + r-offset.x)) + mix(c3, c4, r.x) - mix(c5, c6, r.y);
-	gl_FragColor = vec4(c * cos(1.0-offset.y * gl_FragCoord.y / uv.y),1.0);
+void main() {
+    vec2 st = gl_FragCoord.xy/RENDERSIZE.xy;
+    st.x *= RENDERSIZE.x/RENDERSIZE.y;
+    st *= grid;
+    
+    vec2 ipos = floor(st);  
+    vec2 fpos = fract(st);  
+    vec2 vel = vec2(TIME*rate*max(grid.x,grid.y)); 
+    vel *= vec2(-1.,0.0) * ranf(1.0+ipos.y); 
+    vec2 off1 = vec2(offset1,0.);
+    vec2 off2 = vec2(offset2,0.);
+    vec3 color = vec3(0.);
+    color.r = pattern(st+off1,vel,0.5+density/RENDERSIZE.x);
+    color.g = pattern(st,vel,0.5+density/RENDERSIZE.x);
+    color.b = pattern(st-off2,vel,0.5+density/RENDERSIZE.x); 
+    color *= step(0.2,fpos.y);
+
+    gl_FragColor = vec4(color,1.0);
 }

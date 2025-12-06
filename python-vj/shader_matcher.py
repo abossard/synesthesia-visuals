@@ -9,6 +9,24 @@ Architecture:
     - ShaderMatcher: Feature-based matching (from indexed shaders)
     - JSON files are source of truth, ChromaDB is derived index
 
+Audio-Reactive Spec (from MMV pipeline guide):
+    Audio Sources:
+        - bass: 20-120 Hz, kick/sub (smoothed)
+        - lowMid: 120-350 Hz, drum body/synth
+        - highs: 2000-6000 Hz, hats/cymbals
+        - kickEnv: 40-120 Hz envelope (attack detection)
+        - kickPulse: binary 0/1 on kick hits
+        - beat4: 4-step counter (0,1,2,3 cycling)
+        - energyFast: weighted band mix (realtime)
+        - energySlow: 4s averaged energy
+        - level: overall loudness
+    
+    Modulation Types:
+        - add: uniform = base + (audio * multiplier)
+        - multiply: uniform = base * (1 + audio * multiplier)
+        - replace: uniform = audio * multiplier
+        - threshold: uniform = 1 if audio > threshold else 0
+
 Usage:
     indexer = ShaderIndexer()
     await indexer.sync()  # JSON → ChromaDB, analyze unanalyzed
@@ -92,6 +110,127 @@ class ShaderInputs:
         )
 
 
+# =============================================================================
+# AUDIO-REACTIVE SPEC - Typed mappings from MMV pipeline guide
+# =============================================================================
+
+class AudioSource:
+    """Audio source names matching VJUniverse audio analysis."""
+    BASS = "bass"           # 20-120 Hz, kick/sub
+    LOW_MID = "lowMid"      # 120-350 Hz, drum body
+    HIGHS = "highs"         # 2000-6000 Hz, hats/cymbals
+    KICK_ENV = "kickEnv"    # 40-120 Hz envelope
+    KICK_PULSE = "kickPulse"  # Binary kick trigger
+    BEAT4 = "beat4"         # 4-step counter (0,1,2,3)
+    ENERGY_FAST = "energyFast"  # Weighted band mix
+    ENERGY_SLOW = "energySlow"  # 4s averaged
+    LEVEL = "level"         # Overall loudness
+    TREBLE = "treble"       # Alias for highs
+    MID = "mid"             # Alias for lowMid
+
+
+class ModulationType:
+    """How audio modulates the uniform value."""
+    ADD = "add"             # base + (audio * mult)
+    MULTIPLY = "multiply"   # base * (1 + audio * mult)
+    REPLACE = "replace"     # audio * mult
+    THRESHOLD = "threshold" # 1 if audio > threshold else 0
+
+
+@dataclass
+class UniformAudioBinding:
+    """
+    Binding between a shader uniform and an audio source.
+    
+    Example OSC message: /shader/audio_binding scale bass multiply 0.5 0.15
+    """
+    uniform_name: str           # ISF input name (e.g., "scale", "rate")
+    audio_source: str           # AudioSource constant
+    modulation_type: str        # ModulationType constant
+    multiplier: float = 1.0     # Strength of effect
+    smoothing: float = 0.15     # 0=instant, 1=very slow
+    base_value: float = 0.5     # Default value when audio is 0
+    min_value: float = 0.0      # Clamp minimum
+    max_value: float = 1.0      # Clamp maximum
+    
+    def to_dict(self) -> dict:
+        return {
+            'uniform': self.uniform_name,
+            'source': self.audio_source,
+            'modulation': self.modulation_type,
+            'multiplier': self.multiplier,
+            'smoothing': self.smoothing,
+            'baseValue': self.base_value,
+            'minValue': self.min_value,
+            'maxValue': self.max_value
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UniformAudioBinding':
+        return cls(
+            uniform_name=data.get('uniform', ''),
+            audio_source=data.get('source', AudioSource.LEVEL),
+            modulation_type=data.get('modulation', ModulationType.MULTIPLY),
+            multiplier=data.get('multiplier', 1.0),
+            smoothing=data.get('smoothing', 0.15),
+            base_value=data.get('baseValue', 0.5),
+            min_value=data.get('minValue', 0.0),
+            max_value=data.get('maxValue', 1.0)
+        )
+    
+    def to_osc_args(self) -> List:
+        """Convert to flat OSC argument list."""
+        return [
+            self.uniform_name,
+            self.audio_source,
+            self.modulation_type,
+            self.multiplier,
+            self.smoothing,
+            self.base_value,
+            self.min_value,
+            self.max_value
+        ]
+
+
+@dataclass 
+class AudioReactiveProfile:
+    """
+    Complete audio-reactive configuration for a shader.
+    
+    Stored in .analysis.json under 'audioMapping' key.
+    Sent to Processing via OSC when shader loads.
+    """
+    bindings: List[UniformAudioBinding] = field(default_factory=list)
+    song_style: float = 0.5     # 0=bass-focused, 1=highs-focused
+    buildup_response: float = 0.5  # How much shader responds to buildup
+    drop_intensity: float = 1.0    # Intensity multiplier during drops
+    
+    def to_dict(self) -> dict:
+        return {
+            'bindings': [b.to_dict() for b in self.bindings],
+            'songStyle': self.song_style,
+            'buildupResponse': self.buildup_response,
+            'dropIntensity': self.drop_intensity
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'AudioReactiveProfile':
+        bindings = [UniformAudioBinding.from_dict(b) for b in data.get('bindings', [])]
+        return cls(
+            bindings=bindings,
+            song_style=data.get('songStyle', 0.5),
+            buildup_response=data.get('buildupResponse', 0.5),
+            drop_intensity=data.get('dropIntensity', 1.0)
+        )
+    
+    def get_binding(self, uniform: str) -> Optional['UniformAudioBinding']:
+        """Get binding for a specific uniform."""
+        for b in self.bindings:
+            if b.uniform_name == uniform:
+                return b
+        return None
+
+
 @dataclass
 class ShaderFeatures:
     """Shader feature vector for matching"""
@@ -168,31 +307,92 @@ class SongFeatures:
         ]
 
 
-def categories_to_song_features(categories, track_title: str = "", track_artist: str = "") -> SongFeatures:
+def categories_to_song_features(
+    categories, 
+    track_title: str = "", 
+    track_artist: str = "",
+    llm_result: Optional[Dict[str, Any]] = None
+) -> SongFeatures:
     """
-    Convert SongCategories from AI analysis to SongFeatures for shader matching.
+    Convert SongCategories and LLM analysis to SongFeatures for shader matching.
     
-    Maps category scores to normalized feature space:
-    - energy: from energetic/calm scores
-    - valence: from happy/sad/dark/uplifting scores
+    Merges both data sources:
+    - categories: SongCategories with mood scores (energetic, calm, happy, etc.)
+    - llm_result: Dict with 'keywords' and 'themes' lists from LLM analysis
+    
+    Maps to normalized feature space:
+    - energy: from energetic/calm scores + theme modifiers
+    - valence: from happy/sad/dark/uplifting scores + keyword modifiers
     - tempo: estimated from energetic + danceability proxy
-    - acousticness: from peaceful/calm vs aggressive/energetic
+    - acousticness: from peaceful/calm vs aggressive/energetic + genre hints
     
     Args:
         categories: SongCategories from AI analysis
         track_title: Song title
         track_artist: Song artist
+        llm_result: Optional dict with 'keywords' and 'themes' from LLM
     
     Returns:
         SongFeatures ready for shader matching
     """
     scores = categories.scores if categories else {}
     
+    # Extract keywords and themes from LLM result
+    keywords = []
+    themes = []
+    if llm_result:
+        keywords = [k.lower() for k in llm_result.get('keywords', [])]
+        themes = [t.lower() for t in llm_result.get('themes', [])]
+    
+    # Theme-based modifiers (boost/reduce based on detected themes)
+    theme_energy_mod = 0.0
+    theme_valence_mod = 0.0
+    theme_acoustic_mod = 0.0
+    theme_geometric_mod = 0.0
+    
+    # High-energy themes
+    energy_boost_themes = {'party', 'dance', 'fight', 'battle', 'power', 'rage', 'chaos', 'war', 'rebellion'}
+    energy_reduce_themes = {'sleep', 'dream', 'meditation', 'peace', 'rest', 'lullaby', 'quiet'}
+    
+    # Positive valence themes
+    positive_themes = {'love', 'joy', 'celebration', 'freedom', 'hope', 'victory', 'summer', 'sunshine'}
+    negative_themes = {'death', 'loss', 'pain', 'grief', 'despair', 'darkness', 'fear', 'loneliness', 'betrayal'}
+    
+    # Electronic/synthetic vs organic/acoustic themes
+    electronic_themes = {'synth', 'electronic', 'digital', 'future', 'cyber', 'robot', 'machine', 'techno'}
+    acoustic_themes = {'nature', 'acoustic', 'folk', 'organic', 'earth', 'forest', 'ocean', 'wind'}
+    
+    # Geometric vs organic visual themes
+    geometric_themes = {'city', 'urban', 'geometric', 'abstract', 'digital', 'grid', 'structure', 'architecture'}
+    organic_themes = {'nature', 'water', 'fire', 'earth', 'organic', 'flowing', 'waves', 'growth'}
+    
+    all_text = set(keywords + themes)
+    
+    for theme in all_text:
+        if theme in energy_boost_themes:
+            theme_energy_mod += 0.15
+        if theme in energy_reduce_themes:
+            theme_energy_mod -= 0.15
+        if theme in positive_themes:
+            theme_valence_mod += 0.1
+        if theme in negative_themes:
+            theme_valence_mod -= 0.1
+        if theme in electronic_themes:
+            theme_acoustic_mod -= 0.1
+            theme_geometric_mod += 0.1
+        if theme in acoustic_themes:
+            theme_acoustic_mod += 0.1
+            theme_geometric_mod -= 0.1
+        if theme in geometric_themes:
+            theme_geometric_mod += 0.1
+        if theme in organic_themes:
+            theme_geometric_mod -= 0.1
+    
     # Energy: combine energetic (positive) and calm (negative)
     energetic = scores.get('energetic', 0.0)
     calm = scores.get('calm', 0.0)
     aggressive = scores.get('aggressive', 0.0)
-    energy = max(0.0, min(1.0, 0.5 + energetic * 0.5 - calm * 0.4 + aggressive * 0.3))
+    energy = max(0.0, min(1.0, 0.5 + energetic * 0.5 - calm * 0.4 + aggressive * 0.3 + theme_energy_mod))
     
     # Valence: happy/uplifting (positive) vs sad/dark (negative)
     happy = scores.get('happy', 0.0)
@@ -205,7 +405,8 @@ def categories_to_song_features(categories, track_title: str = "", track_artist:
     
     valence = max(-1.0, min(1.0,
         (happy * 0.4 + uplifting * 0.4 + romantic * 0.2) -
-        (sad * 0.4 + dark * 0.3 + melancholic * 0.15 + death * 0.3)
+        (sad * 0.4 + dark * 0.3 + melancholic * 0.15 + death * 0.3) +
+        theme_valence_mod
     ))
     
     # Tempo proxy: energetic + danceability estimate
@@ -218,9 +419,9 @@ def categories_to_song_features(categories, track_title: str = "", track_artist:
         0.4 + energetic * 0.3 + happy * 0.2 - calm * 0.2 - sad * 0.15
     ))
     
-    # Acousticness: peaceful/calm vs aggressive/energetic
+    # Acousticness: peaceful/calm vs aggressive/energetic + theme modifiers
     acousticness = max(0.0, min(1.0,
-        0.5 + peaceful * 0.3 + calm * 0.2 - aggressive * 0.3 - energetic * 0.2
+        0.5 + peaceful * 0.3 + calm * 0.2 - aggressive * 0.3 - energetic * 0.2 + theme_acoustic_mod
     ))
     
     # Loudness: aggressive + energetic - peaceful

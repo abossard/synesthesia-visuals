@@ -53,6 +53,9 @@ class Config:
     
     # Feature flags - ComfyUI is disabled by default (experimental)
     COMFYUI_ENABLED = os.environ.get('COMFYUI_ENABLED', '').lower() in ('1', 'true', 'yes', 'on')
+    
+    # Image prompt generation - disabled by default (set IMAGE_PROMPT_ENABLED=1 to enable)
+    IMAGE_PROMPT_ENABLED = os.environ.get('IMAGE_PROMPT_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
 
     # Spotify monitor feature flags (AppleScript enabled by default)
     SPOTIFY_WEBAPI_ENABLED = os.environ.get('SPOTIFY_WEBAPI_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')

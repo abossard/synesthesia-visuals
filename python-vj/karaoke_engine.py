@@ -19,7 +19,7 @@ import logging
 import argparse
 from dataclasses import replace
 from threading import Lock
-from typing import Optional
+from typing import Optional, Dict
 
 # Domain and infrastructure
 from domain import (
@@ -187,6 +187,11 @@ class KaraokeEngine:
         return self._ai_orchestrator.current_categories
     
     @property
+    def last_llm_result(self) -> Optional[Dict]:
+        """Last LLM analysis result with keywords/themes (for shader matching)."""
+        return self._ai_orchestrator.last_llm_result
+    
+    @property
     def osc_sender(self) -> OSCSender:
         """OSC sender (for vj_console.py)."""
         return self._osc
@@ -334,12 +339,16 @@ class KaraokeEngine:
         if not categories or not categories.primary_mood:
             return  # Not ready yet
         
-        # Convert categories to song features and select shader
+        # Get LLM result for enhanced matching (keywords, themes)
+        llm_result = self.last_llm_result
+        
+        # Convert categories + LLM themes to song features and select shader
         try:
             song_features = categories_to_song_features(
                 categories,
                 track_title=track.title,
-                track_artist=track.artist
+                track_artist=track.artist,
+                llm_result=llm_result
             )
             
             match = self._shader_selector.select_for_song(song_features, top_k=5)

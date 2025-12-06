@@ -177,6 +177,11 @@ void loadShaderByIndex(int index) {
     }
     println("Loaded shader: " + info.name);
     
+    // Setup default audio bindings if none were configured via OSC
+    if (audioBindings.size() == 0) {
+      setupDefaultAudioBindings();
+    }
+    
     // Schedule screenshot after shader loads successfully
     scheduleScreenshot(info.name);
     

@@ -1114,6 +1114,9 @@ class ShaderAnalysisWorker:
                     # Extract features
                     features = result.get('features', {})
                     
+                    # Extract audio mapping (new)
+                    audio_mapping = result.get('audioMapping', {})
+                    
                     # Save analysis
                     success = self.indexer.save_analysis(
                         shader_name,
@@ -1127,7 +1130,8 @@ class ShaderAnalysisWorker:
                             'geometry': result.get('geometry', []),
                             'objects': result.get('objects', []),
                             'energy': result.get('energy', 'medium'),
-                            'complexity': result.get('complexity', 'medium')
+                            'complexity': result.get('complexity', 'medium'),
+                            'audioMapping': audio_mapping
                         }
                     )
                     

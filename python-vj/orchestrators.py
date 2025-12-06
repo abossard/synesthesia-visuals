@@ -16,7 +16,7 @@ from threading import Thread, Event
 from typing import Optional, List, Dict, Any
 
 from domain import Track, PlaybackState, parse_lrc, analyze_lyrics
-from infrastructure import PipelineTracker
+from infrastructure import PipelineTracker, Config
 from typing import Optional, List, Dict, Any
 from adapters import LyricsFetcher, OSCSender
 from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
@@ -265,11 +265,17 @@ class AIOrchestrator:
         
         # Current state (for vj_console.py)
         self._current_categories = None
+        self._last_llm_result = None  # Store keywords/themes for shader matching
     
     @property
     def current_categories(self):
         """Get current song categories."""
         return self._current_categories
+    
+    @property
+    def last_llm_result(self) -> Optional[Dict[str, Any]]:
+        """Get last LLM analysis result (keywords, themes)."""
+        return self._last_llm_result
     
     def start(self):
         """Start background worker threads."""
@@ -319,19 +325,25 @@ class AIOrchestrator:
                     if result:
                         self._pipeline.complete("llm_analysis", f"{len(result.get('keywords', []))} keywords")
                         
-                        # Image prompt generation
-                        self._pipeline.start("generate_image_prompt")
-                        prompt = result.get('image_prompt') or self._llm.generate_image_prompt(
-                            track.artist, track.title,
-                            result.get('keywords', []),
-                            result.get('themes', [])
-                        )
-                        self._pipeline.set_image_prompt(prompt)
-                        self._pipeline.complete("generate_image_prompt")
+                        # Store LLM results for shader matching
+                        self._last_llm_result = result
                         
-                        # Queue image generation
-                        if self._image_gen.is_available and prompt:
-                            self._generate_image(track, prompt)
+                        # Image prompt generation (disabled by default)
+                        if Config.IMAGE_PROMPT_ENABLED:
+                            self._pipeline.start("generate_image_prompt")
+                            prompt = result.get('image_prompt') or self._llm.generate_image_prompt(
+                                track.artist, track.title,
+                                result.get('keywords', []),
+                                result.get('themes', [])
+                            )
+                            self._pipeline.set_image_prompt(prompt)
+                            self._pipeline.complete("generate_image_prompt")
+                            
+                            # Queue image generation
+                            if self._image_gen.is_available and prompt:
+                                self._generate_image(track, prompt)
+                        else:
+                            self._pipeline.skip("generate_image_prompt", "Disabled by config")
                     else:
                         self._pipeline.skip("llm_analysis", "LLM unavailable")
                 else:

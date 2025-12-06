@@ -177,7 +177,7 @@ class LLMAnalyzer:
         return {'error': 'Unknown error', 'shader_name': shader_name}
     
     def _build_shader_analysis_prompt(self, shader_name: str, source: str) -> str:
-        """Build prompt for shader analysis with GLSL pattern guidance."""
+        """Build prompt for shader analysis with GLSL pattern guidance and audio mapping."""
         # Smart truncation for large shaders - preserve header and key parts
         max_len = 8000
         if len(source) > max_len:
@@ -199,9 +199,29 @@ class LLMAnalyzer:
         else:
             truncated = source
         
+        # Extract ISF input names from header for audio mapping hints
+        input_names = []
+        try:
+            if '/*' in source and '*/' in source:
+                json_start = source.find('/*') + 2
+                json_end = source.find('*/')
+                isf_json = source[json_start:json_end].strip()
+                import json as json_module
+                isf_header = json_module.loads(isf_json)
+                for inp in isf_header.get('INPUTS', []):
+                    name = inp.get('NAME', '')
+                    inp_type = inp.get('TYPE', '')
+                    if name and inp_type in ('float', 'long', 'bool'):
+                        input_names.append(f"{name} ({inp_type})")
+        except:
+            pass
+        
+        inputs_hint = ", ".join(input_names) if input_names else "None detected"
+        
         return f"""Analyze this GLSL shader for VJ music visualization matching.
 
 Shader name: {shader_name}
+Detected ISF inputs: {inputs_hint}
 
 Source code:
 ```glsl
@@ -240,6 +260,33 @@ visual_density (0.0-1.0):
   MEDIUM (0.3-0.7): moderate complexity, 5-20 iterations, some layering
   MINIMAL (0.0-0.3): simple math, few operations, clean output, <5 iterations
 
+AUDIO MAPPING - Map shader uniforms to audio sources for music reactivity.
+
+Available audio sources (all normalized 0-1):
+  bass: 20-120 Hz, responds to kick drums and sub-bass
+  lowMid: 120-350 Hz, responds to drum body and low synths
+  mid: 350-2000 Hz, responds to vocals and instruments
+  highs: 2000-6000 Hz, responds to hi-hats and cymbals
+  kickEnv: kick drum envelope (fast attack, slow decay)
+  kickPulse: binary 1 on kick hit, 0 otherwise
+  beat4: cycles 0→0.33→0.66→1 every 4 beats
+  energyFast: weighted band mix (realtime energy)
+  energySlow: 4-second averaged energy (buildup detection)
+  level: overall loudness
+
+Modulation types:
+  add: uniform = baseValue + (audio * multiplier)
+  multiply: uniform = baseValue * (1 + audio * multiplier)
+  replace: uniform = audio * multiplier
+  threshold: uniform = 1 if audio > multiplier else 0
+
+For each ISF input uniform, suggest optimal audio binding based on:
+- "scale/zoom" params → bass or kickEnv (pulse with kick)
+- "rate/speed" params → energyFast or mid (vary with energy)
+- "color/hue" params → beat4 or energySlow (gradual shifts)
+- "intensity/brightness" → level or energyFast
+- "warp/distortion" → bass or kickEnv (punch on kicks)
+
 Respond with ONLY valid JSON:
 {{
   "mood": "<one word: energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
@@ -257,6 +304,21 @@ Respond with ONLY valid JSON:
     "motion_speed": <float>,
     "geometric_score": <float>,
     "visual_density": <float>
+  }},
+  "audioMapping": {{
+    "songStyle": <0.0-1.0: 0=bass-focused, 1=highs-focused>,
+    "bindings": [
+      {{
+        "uniform": "<ISF input name>",
+        "source": "<audio source name>",
+        "modulation": "<add|multiply|replace|threshold>",
+        "multiplier": <float: effect strength>,
+        "smoothing": <0.0-1.0: 0=instant, 0.9=very smooth>,
+        "baseValue": <float: value when audio is 0>,
+        "minValue": <float: clamp minimum>,
+        "maxValue": <float: clamp maximum>
+      }}
+    ]
   }}
 }}
 
