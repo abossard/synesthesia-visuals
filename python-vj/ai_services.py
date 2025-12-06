@@ -135,7 +135,7 @@ class LLMAnalyzer:
                 response = self._openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=800,
+                    max_tokens=1200,
                     timeout=timeout
                 )
                 content = response.choices[0].message.content
@@ -144,7 +144,7 @@ class LLMAnalyzer:
                     json={
                         "model": self._lmstudio_model,
                         "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 800
+                        "max_tokens": 1200
                     },
                     timeout=timeout)  # Long timeout for large shaders
                 if resp.status_code == 200:
@@ -260,72 +260,42 @@ visual_density (0.0-1.0):
   MEDIUM (0.3-0.7): moderate complexity, 5-20 iterations, some layering
   MINIMAL (0.0-0.3): simple math, few operations, clean output, <5 iterations
 
-AUDIO MAPPING - Map shader uniforms to audio sources for music reactivity.
+AUDIO MAPPING - Suggest best audio source for this shader's primary parameter.
+Audio sources: bass, mid, highs, kickEnv, beat4, energyFast, level
 
-Available audio sources (all normalized 0-1):
-  bass: 20-120 Hz, responds to kick drums and sub-bass
-  lowMid: 120-350 Hz, responds to drum body and low synths
-  mid: 350-2000 Hz, responds to vocals and instruments
-  highs: 2000-6000 Hz, responds to hi-hats and cymbals
-  kickEnv: kick drum envelope (fast attack, slow decay)
-  kickPulse: binary 1 on kick hit, 0 otherwise
-  beat4: cycles 0→0.33→0.66→1 every 4 beats
-  energyFast: weighted band mix (realtime energy)
-  energySlow: 4-second averaged energy (buildup detection)
-  level: overall loudness
+IMPORTANT: Keep response SHORT. Output ONLY valid JSON, no markdown fences.
 
-Modulation types:
-  add: uniform = baseValue + (audio * multiplier)
-  multiply: uniform = baseValue * (1 + audio * multiplier)
-  replace: uniform = audio * multiplier
-  threshold: uniform = 1 if audio > multiplier else 0
-
-For each ISF input uniform, suggest optimal audio binding based on:
-- "scale/zoom" params → bass or kickEnv (pulse with kick)
-- "rate/speed" params → energyFast or mid (vary with energy)
-- "color/hue" params → beat4 or energySlow (gradual shifts)
-- "intensity/brightness" → level or energyFast
-- "warp/distortion" → bass or kickEnv (punch on kicks)
-
-Respond with ONLY valid JSON:
 {{
-  "mood": "<one word: energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
-  "colors": ["<dominant color>", "<secondary color>"],
-  "geometry": ["<shape type>"],
-  "objects": ["<visual element>"],
-  "effects": ["<visual effect>"],
+  "mood": "<energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
+  "colors": ["<color1>", "<color2>"],
+  "geometry": ["<shape>"],
+  "objects": ["<element>"],
+  "effects": ["<effect>"],
   "energy": "<low|medium|high>",
   "complexity": "<simple|medium|complex>",
-  "description": "<one sentence description>",
+  "description": "<15 words max>",
   "features": {{
-    "energy_score": <float>,
-    "mood_valence": <float>,
-    "color_warmth": <float>,
-    "motion_speed": <float>,
-    "geometric_score": <float>,
-    "visual_density": <float>
+    "energy_score": <0.0-1.0>,
+    "mood_valence": <-1.0 to 1.0>,
+    "color_warmth": <0.0-1.0>,
+    "motion_speed": <0.0-1.0>,
+    "geometric_score": <0.0-1.0>,
+    "visual_density": <0.0-1.0>
   }},
   "audioMapping": {{
-    "songStyle": <0.0-1.0: 0=bass-focused, 1=highs-focused>,
-    "bindings": [
-      {{
-        "uniform": "<ISF input name>",
-        "source": "<audio source name>",
-        "modulation": "<add|multiply|replace|threshold>",
-        "multiplier": <float: effect strength>,
-        "smoothing": <0.0-1.0: 0=instant, 0.9=very smooth>,
-        "baseValue": <float: value when audio is 0>,
-        "minValue": <float: clamp minimum>,
-        "maxValue": <float: clamp maximum>
-      }}
-    ]
+    "primarySource": "<best audio source for this shader>",
+    "songStyle": <0.0-1.0>
   }}
 }}
 
-JSON response:"""
+JSON:"""
+    
+    # Required fields for valid shader analysis
+    REQUIRED_FIELDS = {'mood', 'colors', 'effects', 'energy', 'description', 'features'}
+    REQUIRED_FEATURES = {'energy_score', 'mood_valence', 'color_warmth', 'motion_speed', 'geometric_score', 'visual_density'}
     
     def _parse_shader_analysis(self, content: str) -> Optional[Dict[str, Any]]:
-        """Parse shader analysis JSON from LLM response."""
+        """Parse shader analysis JSON from LLM response. Returns None if invalid or incomplete."""
         try:
             # Strip markdown code fences if present
             cleaned = content.strip()
@@ -339,12 +309,39 @@ JSON response:"""
                     cleaned = cleaned.rstrip()[:-3].rstrip()
             
             # Find JSON in response
-            start, end = cleaned.find('{'), cleaned.rfind('}')
+            start = cleaned.find('{')
+            end = cleaned.rfind('}')
+            
             if start >= 0 and end > start:
-                return json.loads(cleaned[start:end+1])
+                json_str = cleaned[start:end+1]
+                result = json.loads(json_str)
+                
+                # Validate required fields
+                missing = self.REQUIRED_FIELDS - set(result.keys())
+                if missing:
+                    logger.warning(f"Missing required fields: {missing}")
+                    return None
+                
+                # Validate features dict
+                features = result.get('features', {})
+                if not isinstance(features, dict):
+                    logger.warning("'features' is not a dict")
+                    return None
+                
+                missing_features = self.REQUIRED_FEATURES - set(features.keys())
+                if missing_features:
+                    logger.warning(f"Missing required features: {missing_features}")
+                    return None
+                
+                return result
+            
+            # No valid JSON found
+            logger.warning(f"No valid JSON found in LLM response: {content[:200]}...")
+            return None
+                    
         except json.JSONDecodeError as e:
-            logger.debug(f"Failed to parse shader analysis JSON: {e}")
-        return None
+            logger.warning(f"Failed to parse shader analysis JSON: {e}")
+            return None
     
     @property
     def is_available(self) -> bool:

@@ -216,10 +216,11 @@ String convertGlslForProcessing(String glslSource) {
     sb.append("#endif\n\n");
   }
   
-  // Add standard uniforms (Processing will set these)
+  // Add standard uniforms FIRST (Processing will set these)
   if (!hasTime) sb.append("uniform float time;\n");
   if (!hasMouse) sb.append("uniform vec2 mouse;\n");
   if (!hasResolution) sb.append("uniform vec2 resolution;\n");
+  sb.append("\n");
   
   // Add speed uniform for audio-reactive time scaling (0-1)
   // This is THE KEY audio reactivity hook for GLSL shaders
@@ -507,7 +508,7 @@ String convertIsfToGlsl(String isfSource) {
   sb.append("#define TIME max(time, 0.001)\n");
   sb.append("#define RENDERSIZE resolution\n");
   sb.append("#define isf_FragCoord vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y)\n");
-  sb.append("#define isf_FragNormCoord (isf_FragCoord.xy / resolution)\n");
+  sb.append("#define isf_FragNormCoord (isf_FragCoord / resolution)\n");
   sb.append("#define FRAMEINDEX int(time * 60.0)\n\n");
   
   // Replace gl_FragCoord with flipped version for ISF compatibility

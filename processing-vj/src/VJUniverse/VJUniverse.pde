@@ -83,9 +83,12 @@ float lastShaderCycleTime = 0;
 final float SHADER_CYCLE_DELAY = 2.0;  // Seconds between shader changes
 
 // Shader rendering parameters
-float shaderZoom = 1.0;  // 1.0 = normal, <1 = zoom out, >1 = zoom in
-float shaderOffsetX = 0.0;  // UV offset X (-1 to 1)
-float shaderOffsetY = 0.0;  // UV offset Y (-1 to 1)
+float shaderZoom = 1.0;  // 1.0 = normal, >1 = zoom in, <1 = zoom out
+float shaderOffsetX = 0.0;  // Pan offset X (-1 to 1)
+float shaderOffsetY = 0.0;  // Pan offset Y (-1 to 1)
+
+// Offscreen buffer for shader rendering (allows zoom/pan post-process)
+PGraphics shaderBuffer;
 
 // ============================================
 // SETUP
@@ -102,6 +105,9 @@ void setup() {
   // Initialize multi-pass buffers
   passBuffer1 = createGraphics(width, height, P3D);
   passBuffer2 = createGraphics(width, height, P3D);
+  
+  // Initialize shader render buffer for zoom/pan support
+  shaderBuffer = createGraphics(width, height, P3D);
   
   // Initialize audio (AudioManager.pde) - includes device selection
   initAudioManager();
@@ -141,23 +147,36 @@ void draw() {
   // Clear background
   background(0);
   
-  // Apply shader pipeline (multi-pass or single)
+  // TWO-STAGE RENDERING for zoom/pan support:
+  // 1. Render shader to offscreen buffer at native resolution
+  // 2. Draw buffer to screen with zoom/pan transformation
+  
+  // Stage 1: Render shader to buffer
+  shaderBuffer.beginDraw();
+  shaderBuffer.background(0);
+  
   if (useMultiPass && activeShaderPipeline.size() > 1) {
+    // Multi-pass renders to its own buffers, copy result
     drawMultiPassPipeline();
+    // Note: multi-pass currently draws to main screen, would need refactor
   } else if (activeShader != null) {
     try {
-      applyShaderUniforms();
-      shader(activeShader);
-      drawFullscreenQuad();
-      resetShader();
+      applyShaderUniformsTo(activeShader, shaderBuffer);
+      shaderBuffer.shader(activeShader);
+      drawQuadTo(shaderBuffer);
+      shaderBuffer.resetShader();
     } catch (Exception e) {
-      // Shader error - reset and continue
-      resetShader();
-      drawFullscreenQuad();
+      // Shader error - just draw plain quad
+      shaderBuffer.resetShader();
+      drawQuadTo(shaderBuffer);
     }
   } else {
-    drawFullscreenQuad();
+    drawQuadTo(shaderBuffer);
   }
+  shaderBuffer.endDraw();
+  
+  // Stage 2: Draw buffer to screen with zoom/pan transformation
+  drawShaderBufferWithZoomPan();
   
   // Send frame to Syphon
   if (syphon != null && frameCount > 1) {
@@ -239,23 +258,38 @@ void drawQuadTo(PGraphics pg) {
 void drawFullscreenQuad() {
   noStroke();
   fill(255);
-  
-  // Calculate zoom-adjusted UV coordinates with pan offset
-  // Zoom works by shrinking UV range around center (0.5, 0.5)
-  float halfRange = 0.5 / shaderZoom;
-  float uvMinX = 0.5 - halfRange + shaderOffsetX;
-  float uvMaxX = 0.5 + halfRange + shaderOffsetX;
-  float uvMinY = 0.5 - halfRange + shaderOffsetY;
-  float uvMaxY = 0.5 + halfRange + shaderOffsetY;
-  
-  // Draw fullscreen quad with centered, zoom-adjusted, offset UVs
-  // UV origin at bottom-left (OpenGL convention)
   beginShape(QUADS);
-  vertex(0, 0, uvMinX, uvMaxY);           // top-left screen -> UV
-  vertex(width, 0, uvMaxX, uvMaxY);       // top-right screen -> UV
-  vertex(width, height, uvMaxX, uvMinY);  // bottom-right screen -> UV
-  vertex(0, height, uvMinX, uvMinY);      // bottom-left screen -> UV
+  vertex(0, 0, 0, 1);
+  vertex(width, 0, 1, 1);
+  vertex(width, height, 1, 0);
+  vertex(0, height, 0, 0);
   endShape();
+}
+
+/**
+ * Draw the shader buffer to screen with zoom and pan transformation.
+ * This is the key to making zoom/pan work with gl_FragCoord-based shaders.
+ * 
+ * Zoom > 1: image appears larger (zoomed in)
+ * Zoom < 1: image appears smaller (zoomed out)
+ * Offset: shifts the view (pan)
+ */
+void drawShaderBufferWithZoomPan() {
+  // Calculate the scaled dimensions and position
+  float scaledW = width * shaderZoom;
+  float scaledH = height * shaderZoom;
+  
+  // Center the scaled image, then apply offset
+  // Offset is in normalized coordinates (-1 to 1), convert to pixels
+  float offsetPixelsX = shaderOffsetX * width;
+  float offsetPixelsY = shaderOffsetY * height;
+  
+  float x = (width - scaledW) / 2 - offsetPixelsX * shaderZoom;
+  float y = (height - scaledH) / 2 - offsetPixelsY * shaderZoom;
+  
+  // Draw the shader buffer scaled and positioned
+  imageMode(CORNER);
+  image(shaderBuffer, x, y, scaledW, scaledH);
 }
 
 void applyShaderUniforms() {
@@ -598,15 +632,19 @@ void keyPressed() {
     switch (keyCode) {
       case LEFT:
         shaderOffsetX = constrain(shaderOffsetX - offsetStep, -1.0, 1.0);
+        println("Pan LEFT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case RIGHT:
         shaderOffsetX = constrain(shaderOffsetX + offsetStep, -1.0, 1.0);
+        println("Pan RIGHT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case UP:
         shaderOffsetY = constrain(shaderOffsetY - offsetStep, -1.0, 1.0);
+        println("Pan UP: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
       case DOWN:
         shaderOffsetY = constrain(shaderOffsetY + offsetStep, -1.0, 1.0);
+        println("Pan DOWN: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
     }
   }
