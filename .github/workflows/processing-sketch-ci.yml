@@ -224,16 +224,21 @@ jobs:
           echo "✅ Build successful for $SKETCH_NAME"
       
       - name: Run test scenarios and capture screenshots
+        env:
+          DISPLAY: ':99'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: 'llvmpipe'
+          CI_TEST_MODE: 'true'
         run: |
           SKETCH_PATH="${{ matrix.sketch.path }}"
           SKETCH_NAME="${{ matrix.sketch.name }}"
           
-          # Create CI output directory
+          # Create CI output directory  
           mkdir -p ci-output/$SKETCH_NAME
           
-          # Export CI environment variables
-          export CI_SKETCH_NAME="$SKETCH_NAME"
+          # Export CI output directory as absolute path
           export CI_OUTPUT_DIR="$PWD/ci-output/$SKETCH_NAME"
+          export CI_SKETCH_NAME="$SKETCH_NAME"
           
           # Parse test scenarios from matrix
           SCENARIOS='${{ toJson(matrix.sketch.testScenarios) }}'
@@ -249,32 +254,51 @@ jobs:
             SCREENSHOT_NAME=$(echo "$SCENARIO" | jq -r '.screenshotName')
             
             echo ""
-            echo "----------------------------------------"
+            echo "========================================"
             echo "Scenario: $SCENARIO_NAME"
             echo "Description: $DESCRIPTION"
-            echo "----------------------------------------"
+            echo "Wait Frames: $WAIT_FRAMES"
+            echo "Screenshot: $SCREENSHOT_NAME"
+            echo "========================================"
             
+            # Export scenario-specific environment variables
             export CI_SCENARIO_NAME="$SCENARIO_NAME"
             export CI_FRAME_LIMIT="$WAIT_FRAMES"
-            export CI_SCREENSHOT_FRAME="$((WAIT_FRAMES - 10))"  # Screenshot 10 frames before exit
+            export CI_SCREENSHOT_FRAME="$((WAIT_FRAMES - 10))"
             
-            # Run the sketch headlessly
-            timeout 30 xvfb-run -a ./processing-4.3/processing-java \
-              --sketch="$PWD/$SKETCH_PATH" \
-              --run 2>&1 | tee "ci-output/$SKETCH_NAME/$SCENARIO_NAME-log.txt" || {
-                echo "⚠️ Sketch exited (this is expected in CI test mode)"
+            # Create scenario config JSON
+            cat > /tmp/scenario-config.json << EOF
+          {
+            "sketchName": "$SKETCH_NAME",
+            "scenarioName": "$SCENARIO_NAME",
+            "waitFrames": $WAIT_FRAMES,
+            "screenshotName": "$SCREENSHOT_NAME"
+          }
+          EOF
+            
+            echo "Config file created:"
+            cat /tmp/scenario-config.json
+            
+            # Run using Python wrapper script
+            timeout 60 python3 processing-vj/run-sketch-ci.py \
+              "$PWD/$SKETCH_PATH" \
+              /tmp/scenario-config.json \
+              2>&1 | tee "ci-output/$SKETCH_NAME/$SCENARIO_NAME-log.txt" || {
+                EXIT_CODE=$?
+                echo "⚠️ Sketch exited (exit code: $EXIT_CODE)"
               }
             
-            # Rename screenshot if it exists
-            if [ -f "$CI_OUTPUT_DIR/$SKETCH_NAME-$SCENARIO_NAME.png" ]; then
-              mv "$CI_OUTPUT_DIR/$SKETCH_NAME-$SCENARIO_NAME.png" \
-                 "$CI_OUTPUT_DIR/$SCREENSHOT_NAME"
-              echo "✅ Screenshot saved: $SCREENSHOT_NAME"
+            # Check for screenshot
+            if [ -f "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME" ]; then
+              SIZE=$(stat -c%s "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME" 2>/dev/null || stat -f%z "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME")
+              echo "✅ Screenshot saved: $SCREENSHOT_NAME (${SIZE} bytes)"
             else
-              echo "⚠️ No screenshot found for $SCENARIO_NAME"
+              echo "⚠️ No screenshot found: $SCREENSHOT_NAME"
+              echo "Looking for files in ci-output/$SKETCH_NAME/:"
+              ls -lah "ci-output/$SKETCH_NAME/" 2>/dev/null || echo "Directory doesn't exist"
             fi
             
-            sleep 1
+            sleep 2
           done
           
           echo ""

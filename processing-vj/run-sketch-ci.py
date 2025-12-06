@@ -183,9 +183,22 @@ void ciTestSaveScreenshot() {
     
     return wrapper_dir
 
-def run_sketch_with_processing(sketch_path, processing_java_path="processing-java"):
+def run_sketch_with_processing(sketch_path):
     """Run a Processing sketch using processing-java"""
+    # Find processing-java
+    processing_java_path = "./processing-4.3/processing-java"
+    if not os.path.exists(processing_java_path):
+        processing_java_path = "processing-java"  # Try system path
+    
     try:
+        # Set display for Xvfb
+        env = os.environ.copy()
+        env['DISPLAY'] = env.get('DISPLAY', ':99')
+        
+        # Force software rendering for headless
+        env['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        env['GALLIUM_DRIVER'] = 'llvmpipe'
+        
         # Run the sketch
         cmd = [
             processing_java_path,
@@ -194,12 +207,14 @@ def run_sketch_with_processing(sketch_path, processing_java_path="processing-jav
         ]
         
         print(f"Running: {' '.join(cmd)}")
+        print(f"Environment: DISPLAY={env.get('DISPLAY')}, LIBGL_ALWAYS_SOFTWARE={env.get('LIBGL_ALWAYS_SOFTWARE')}")
         
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=60  # 60 second timeout
+            timeout=60,  # 60 second timeout
+            env=env
         )
         
         print("STDOUT:")
@@ -216,11 +231,13 @@ def run_sketch_with_processing(sketch_path, processing_java_path="processing-jav
         return 0
     except Exception as e:
         print(f"❌ Error running sketch: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 run-sketch-ci.py <sketch_path> [scenario_config_json]")
+        print("Usage: python3 run-sketch-ci.py <sketch_path> [scenario_config_json_file]")
         return 1
     
     sketch_path = sys.argv[1]
@@ -228,15 +245,22 @@ def main():
     # Parse scenario config if provided
     config = {}
     if len(sys.argv) >= 3:
+        config_file = sys.argv[2]
         try:
-            config = json.loads(sys.argv[2])
-        except json.JSONDecodeError:
-            print(f"Warning: Could not parse scenario config, using defaults")
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            print(f"Loaded config from {config_file}: {config}")
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Warning: Could not load scenario config from {config_file}: {e}")
+            print("Using defaults...")
     
-    # Get config from environment variables
+    # Get config from environment variables as fallback
     config.setdefault('sketchName', os.environ.get('CI_SKETCH_NAME', 'sketch'))
     config.setdefault('scenarioName', os.environ.get('CI_SCENARIO_NAME', 'default'))
     config.setdefault('waitFrames', int(os.environ.get('CI_FRAME_LIMIT', '180')))
+    config.setdefault('screenshotName', f"{config['sketchName']}-{config['scenarioName']}.png")
+    
+    print(f"CI Config: {config}")
     
     # Create wrapper sketch in temp directory
     with tempfile.TemporaryDirectory() as tmpdir:
