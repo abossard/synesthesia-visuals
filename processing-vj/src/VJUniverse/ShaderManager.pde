@@ -13,13 +13,12 @@ int lastAutoReloadCheck = 0;
 // Maps uniform name -> default value (float, vec2, vec3, vec4, or bool as float 0/1)
 HashMap<String, float[]> isfUniformDefaults = new HashMap<String, float[]>();
 
-// Shader analyses cache (indexed by shader name)
+// Shader analyses cache (indexed by shader name) - loaded from .analysis.json files
 HashMap<String, ShaderAnalysis> shaderAnalyses = new HashMap<String, ShaderAnalysis>();
 
-// Shader analysis queue for background processing
-ArrayList<ShaderInfo> shadersToAnalyze = new ArrayList<ShaderInfo>();
-boolean analysisInProgress = false;
-String currentAnalyzingShader = "";  // Name of shader currently being analyzed
+// Error logging - accumulated errors written to errors.json
+ArrayList<String> shaderErrors = new ArrayList<String>();
+final String ERRORS_FILE = "errors.json";
 
 // ============================================
 // SHADER LOADING
@@ -28,6 +27,7 @@ String currentAnalyzingShader = "";  // Name of shader currently being analyzed
 void loadAllShaders() {
   availableShaders.clear();
   shaderAnalyses.clear();
+  shaderErrors.clear();
   
   // Load GLSL shaders
   loadGlslShaders();
@@ -43,7 +43,7 @@ void loadAllShaders() {
   
   println("Loaded " + availableShaders.size() + " shaders total");
   
-  // Load existing analyses and queue missing ones
+  // Load existing analysis files (from Python-side analysis)
   loadShaderAnalyses();
 }
 
@@ -152,7 +152,12 @@ void loadShaderByIndex(int index) {
     }
     println("Loaded shader: " + info.name);
   } catch (Exception e) {
-    println("Error loading shader " + info.name + ": " + e.getMessage());
+    String error = e.getMessage();
+    if (e.getCause() != null) {
+      error += " | Cause: " + e.getCause().getMessage();
+    }
+    println("Error loading shader " + info.name + ": " + error);
+    logShaderError(info.name, info.path, error);
     activeShader = null;
   }
 }
@@ -174,7 +179,9 @@ void loadShaderByName(String name) {
 PShader loadIsfShader(String path) {
   String[] lines = loadStrings(path);
   if (lines == null) {
+    String error = "Could not read file";
     println("Could not load ISF file: " + path);
+    logShaderError(path, path, error);
     return null;
   }
   
@@ -188,7 +195,14 @@ PShader loadIsfShader(String path) {
   String tempPath = "temp_isf_converted.frag";
   saveStrings(dataPath(tempPath), new String[]{convertedGlsl});
   
-  return loadShader(tempPath);
+  try {
+    return loadShader(tempPath);
+  } catch (Exception e) {
+    String error = "GLSL compilation failed: " + e.getMessage();
+    println("ISF shader error: " + error);
+    logShaderError(path, path, error);
+    throw e;  // Re-throw to be caught by loadShaderByIndex
+  }
 }
 
 String convertIsfToGlsl(String isfSource) {
@@ -294,6 +308,76 @@ ArrayList<String> parseIsfInputs(String jsonHeader) {
   }
   
   return uniforms;
+}
+
+// Parse ISF header and extract input capabilities for VJ matching
+ShaderInputs parseIsfInputCapabilities(String jsonHeader) {
+  int floatCount = 0;
+  int point2DCount = 0;
+  int colorCount = 0;
+  int boolCount = 0;
+  int imageCount = 0;
+  boolean hasAudio = false;
+  ArrayList<String> inputNames = new ArrayList<String>();
+  
+  int inputsStart = jsonHeader.indexOf("\"INPUTS\"");
+  if (inputsStart < 0) {
+    return new ShaderInputs(floatCount, point2DCount, colorCount, boolCount, 
+                            imageCount, hasAudio, new String[0]);
+  }
+  
+  int arrayStart = jsonHeader.indexOf("[", inputsStart);
+  if (arrayStart < 0) {
+    return new ShaderInputs(floatCount, point2DCount, colorCount, boolCount, 
+                            imageCount, hasAudio, new String[0]);
+  }
+  
+  // Find matching closing bracket
+  int depth = 1;
+  int pos = arrayStart + 1;
+  while (pos < jsonHeader.length() && depth > 0) {
+    char c = jsonHeader.charAt(pos);
+    if (c == '[' || c == '{') depth++;
+    else if (c == ']' || c == '}') depth--;
+    pos++;
+  }
+  
+  String inputsArray = jsonHeader.substring(arrayStart, pos);
+  
+  // Count each input type
+  int objStart = 0;
+  while ((objStart = inputsArray.indexOf("{", objStart)) >= 0) {
+    int objEnd = inputsArray.indexOf("}", objStart);
+    if (objEnd < 0) break;
+    
+    String inputObj = inputsArray.substring(objStart, objEnd + 1);
+    String name = extractJsonField(inputObj, "NAME");
+    String type = extractJsonField(inputObj, "TYPE");
+    
+    if (name != null) inputNames.add(name);
+    
+    if (type != null) {
+      type = type.toLowerCase();
+      if (type.equals("float") || type.equals("long")) {
+        floatCount++;
+      } else if (type.equals("point2d")) {
+        point2DCount++;
+      } else if (type.equals("color")) {
+        colorCount++;
+      } else if (type.equals("bool") || type.equals("event")) {
+        boolCount++;
+      } else if (type.equals("image")) {
+        imageCount++;
+      } else if (type.equals("audio") || type.equals("audiofft")) {
+        hasAudio = true;
+      }
+    }
+    
+    objStart = objEnd + 1;
+  }
+  
+  return new ShaderInputs(floatCount, point2DCount, colorCount, boolCount,
+                          imageCount, hasAudio, inputNames.toArray(new String[0]));
 }
 
 void storeIsfDefault(String name, String isfType, String defaultVal) {
@@ -422,36 +506,8 @@ String isfTypeToGlsl(String isfType) {
 }
 
 // ============================================
-// SELECTION HELPERS
+// SHADER LOOKUP
 // ============================================
-
-void applySelection() {
-  if (currentSelection == null || currentSelection.shaderIds.length == 0) return;
-  
-  // Build shader pipeline from selection
-  activeShaderPipeline.clear();
-  
-  for (String shaderId : currentSelection.shaderIds) {
-    PShader s = getShaderByName(shaderId);
-    if (s != null) {
-      activeShaderPipeline.add(s);
-    }
-  }
-  
-  // Set first shader as active (for single-pass fallback)
-  if (activeShaderPipeline.size() > 0) {
-    activeShader = activeShaderPipeline.get(0);
-    // Update currentShaderIndex to match
-    for (int i = 0; i < availableShaders.size(); i++) {
-      if (availableShaders.get(i).name.equals(currentSelection.shaderIds[0])) {
-        currentShaderIndex = i;
-        break;
-      }
-    }
-  }
-  
-  println("Applied selection with " + activeShaderPipeline.size() + " shaders in pipeline");
-}
 
 PShader getShaderByName(String name) {
   for (int i = 0; i < availableShaders.size(); i++) {
@@ -464,7 +520,9 @@ PShader getShaderByName(String name) {
           return loadShader(info.path);
         }
       } catch (Exception e) {
-        println("Error loading shader " + name + ": " + e.getMessage());
+        String error = e.getMessage();
+        println("Error loading shader " + name + ": " + error);
+        logShaderError(name, info.path, error);
         return null;
       }
     }
@@ -473,121 +531,47 @@ PShader getShaderByName(String name) {
   return null;
 }
 
-void selectRandomShaders() {
-  if (availableShaders.size() == 0) return;
-  
-  int numToSelect = min(3, availableShaders.size());
-  String[] selected = new String[numToSelect];
-  
-  ArrayList<Integer> indices = new ArrayList<Integer>();
-  for (int i = 0; i < availableShaders.size(); i++) {
-    indices.add(i);
-  }
-  java.util.Collections.shuffle(indices);
-  
-  for (int i = 0; i < numToSelect; i++) {
-    selected[i] = availableShaders.get(indices.get(i)).name;
-  }
-  
-  currentSelection = new ShaderSelection(
-    currentSong.getId(),
-    selected,
-    "random"
-  );
-  
-  applySelection();
-  saveCachedSelection(currentSelection);
-}
-
 // ============================================
-// SHADER ANALYSIS MANAGEMENT
+// SHADER ANALYSIS LOADING
 // ============================================
 
 void loadShaderAnalyses() {
-  shadersToAnalyze.clear();
-  
-  // For each shader, try to load existing analysis or queue for LLM analysis
+  // Load existing analysis files (created by Python)
   for (ShaderInfo shader : availableShaders) {
     ShaderAnalysis existing = loadShaderAnalysis(shader.path);
-    
     if (existing != null) {
       shaderAnalyses.put(shader.name, existing);
-      println("  Loaded analysis for: " + shader.name + " [" + existing.mood + "]");
-    } else {
-      // Queue for analysis
-      shadersToAnalyze.add(shader);
-      println("  Queued for analysis: " + shader.name);
     }
   }
-  
-  // Start background analysis if there are shaders to analyze
-  if (shadersToAnalyze.size() > 0 && llmAvailable) {
-    println("Starting background shader analysis for " + shadersToAnalyze.size() + " shaders...");
-    thread("analyzeNextShader");
-  } else if (shadersToAnalyze.size() > 0) {
-    println("LLM not available - " + shadersToAnalyze.size() + " shaders need analysis");
-  }
+  println("Loaded " + shaderAnalyses.size() + "/" + availableShaders.size() + " shader analyses");
 }
 
-// Called in a background thread
-void analyzeNextShader() {
-  // Check if we should stop
-  if (shadersToAnalyze.size() == 0 || !llmAvailable) {
-    analysisInProgress = false;
-    currentAnalyzingShader = "";
-    println("Shader analysis complete!");
-    return;
-  }
+// ============================================
+// ERROR LOGGING
+// ============================================
+
+void logShaderError(String shaderName, String filePath, String error) {
+  // Build JSON entry
+  String timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(new java.util.Date());
+  String escapedError = error.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+  String entry = "{\"name\":\"" + shaderName + "\",\"path\":\"" + filePath + "\",\"error\":\"" + escapedError + "\",\"timestamp\":\"" + timestamp + "\"}";
+  shaderErrors.add(entry);
   
-  analysisInProgress = true;
-  
-  // Get next shader to analyze
-  ShaderInfo shader = shadersToAnalyze.remove(0);
-  currentAnalyzingShader = shader.name;  // Update for UI display
-  int remaining = shadersToAnalyze.size();
-  println("Analyzing shader: " + shader.name + " (" + remaining + " remaining after this)");
-  
-  // Analyze it
-  ShaderAnalysis analysis = analyzeShader(shader.name, dataPath(shader.path));
-  
-  if (analysis != null) {
-    // Save and cache
-    shaderAnalyses.put(shader.name, analysis);
-    saveShaderAnalysis(shader.path, analysis);
-    println("  -> " + shader.name + ": " + analysis.mood + ", " + analysis.energy + " energy");
-  } else {
-    println("  -> Failed to analyze: " + shader.name);
-  }
-  
-  // Check again if there are more shaders to analyze
-  if (shadersToAnalyze.size() > 0 && llmAvailable) {
-    // Small delay between analyses to not overload LLM
-    delay(1000);
-    // Continue with next shader in same thread (avoid thread explosion)
-    analyzeNextShader();
-  } else {
-    // Done!
-    analysisInProgress = false;
-    currentAnalyzingShader = "";
-    println("All shader analyses complete!");
-  }
+  // Write to file
+  saveErrorsFile();
 }
 
-// Force re-analysis of all shaders (deletes existing JSON files)
-void reanalyzeAllShaders() {
-  // Delete existing analysis files
-  for (ShaderInfo shader : availableShaders) {
-    String analysisPath = shader.path.replaceAll("\\.(fs|frag|isf|glsl)$", ".analysis.json");
-    File f = new File(dataPath(analysisPath));
-    if (f.exists()) {
-      f.delete();
-    }
+void saveErrorsFile() {
+  StringBuilder sb = new StringBuilder();
+  sb.append("[\n");
+  for (int i = 0; i < shaderErrors.size(); i++) {
+    sb.append("  ").append(shaderErrors.get(i));
+    if (i < shaderErrors.size() - 1) sb.append(",");
+    sb.append("\n");
   }
-  
-  shaderAnalyses.clear();
-  
-  // Reload analyses (will queue all for LLM)
-  loadShaderAnalyses();
+  sb.append("]");
+  saveStrings(dataPath(ERRORS_FILE), new String[]{sb.toString()});
+  println("Shader errors saved to: " + ERRORS_FILE);
 }
 
 // Get analysis for a shader by name

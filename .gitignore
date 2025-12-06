@@ -49,3 +49,4 @@ local.sh
 
 # Spotify cache
 .cache-*
+temp_*.frag

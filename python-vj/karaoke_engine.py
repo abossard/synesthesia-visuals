@@ -56,6 +56,13 @@ from adapters import (
 # AI services
 from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
 
+# Shader matching (optional)
+try:
+    from shader_matcher import ShaderIndexer, ShaderMatcher
+    SHADER_MATCHER_AVAILABLE = True
+except ImportError:
+    SHADER_MATCHER_AVAILABLE = False
+
 # Orchestrators
 from orchestrators import PlaybackCoordinator, LyricsOrchestrator, AIOrchestrator
 
@@ -120,6 +127,18 @@ class KaraokeEngine:
             self._llm, self._categorizer, self._image_gen, self._pipeline, self._osc
         )
         
+        # Shader matching (optional)
+        self._shader_indexer = None
+        self._shader_matcher = None
+        if SHADER_MATCHER_AVAILABLE:
+            try:
+                self._shader_indexer = ShaderIndexer()
+                self._shader_indexer.sync()
+                self._shader_matcher = ShaderMatcher(str(self._shader_indexer.shaders_dir))
+                logger.info(f"Shader matcher loaded: {len(self._shader_matcher.shaders)} shaders")
+            except Exception as e:
+                logger.warning(f"Shader matcher init failed: {e}")
+        
         # Current state
         self._current_lines = []
         self._last_active_index = -1
@@ -128,6 +147,7 @@ class KaraokeEngine:
         self._snapshot_lock = Lock()
         self._snapshot = PlaybackSnapshot(state=PlaybackState())
         self._backoff = BackoffState()
+        self._last_matched_track = ""  # Track when we last matched shaders
     
     @property
     def timing_offset_ms(self) -> int:
@@ -257,6 +277,9 @@ class KaraokeEngine:
         state = snapshot.state
         self._handle_track_change(state.track)
         
+        # Check if categories arrived and we need to match shaders
+        self._check_shader_match(state.track)
+        
         if state.track and self._current_lines:
             offset_sec = self._settings.timing_offset_ms / 1000.0
             position = self._effective_position(state)
@@ -290,6 +313,52 @@ class KaraokeEngine:
             self._on_track_change(track)
         else:
             self._on_no_track()
+    
+    def _check_shader_match(self, track):
+        """Match shaders when categories become available for a new track."""
+        if not self._shader_matcher or not track:
+            return
+        
+        track_key = track.key
+        if track_key == self._last_matched_track:
+            return  # Already matched this track
+        
+        # Check if categories are ready
+        categories = self.current_categories
+        if not categories or not categories.primary_mood:
+            return  # Not ready yet
+        
+        # Match shaders based on mood and energy
+        try:
+            mood = categories.primary_mood.lower()
+            
+            # Extract energy from categories if available
+            energy = 0.5
+            for cat in categories.get_top(10):
+                if cat.name == 'energetic':
+                    energy = max(energy, cat.score)
+                elif cat.name == 'calm':
+                    energy = min(energy, 1.0 - cat.score)
+            
+            matches = self._shader_matcher.match_by_mood(mood, energy=energy, top_k=1)
+            
+            if matches:
+                shader, score = matches[0]
+                logger.info(f"Shader: {shader.name} → mood={mood} energy={energy:.2f}")
+                
+                # Send OSC command to load shader
+                self._osc.send_shader(
+                    shader.name,
+                    energy=shader.energy_score,
+                    valence=shader.mood_valence
+                )
+                
+                self._last_matched_track = track_key
+            else:
+                logger.debug(f"No shader match for mood={mood}")
+                
+        except Exception as e:
+            logger.warning(f"Shader match skipped: {e}")
 
     def _refresh_snapshot(self, force: bool = False) -> PlaybackSnapshot:
         """Poll playback with exponential backoff and return snapshot."""
@@ -360,8 +429,16 @@ class KaraokeEngine:
             self._pipeline.start("send_osc")
             self._pipeline.complete("send_osc", f"{len(lines)} lines sent")
         else:
-            # No lyrics but still send track info
+            # No LRC lyrics - still send track info
             self._osc.send_karaoke("lyrics", "reset", {"song_id": track.key, "has_lyrics": False})
+        
+        # Fetch metadata via LLM (plain lyrics, keywords, song info) - background thread
+        import threading
+        def fetch_metadata():
+            metadata = self._lyrics_orchestrator.fetch_metadata(track)
+            if metadata:
+                self._send_metadata(track, metadata)
+        threading.Thread(target=fetch_metadata, daemon=True, name="SongMetadata").start()
     
     def _on_no_track(self):
         """Handle no track playing."""
@@ -426,6 +503,59 @@ class KaraokeEngine:
                     "index": index,
                     "keywords": line.keywords
                 })
+    
+    def _send_metadata(self, track, metadata: dict):
+        """Send song metadata via OSC."""
+        import json
+        
+        # Send keywords (most significant words from lyrics)
+        keywords = metadata.get('keywords', [])
+        if keywords:
+            self._osc.send_karaoke("metadata", "keywords", keywords if isinstance(keywords, list) else [keywords])
+        
+        # Send themes
+        themes = metadata.get('themes', [])
+        if themes:
+            self._osc.send_karaoke("metadata", "themes", themes if isinstance(themes, list) else [themes])
+        
+        # Send individual metadata fields
+        if metadata.get('release_date'):
+            self._osc.send_karaoke("metadata", "release_date", str(metadata['release_date']))
+        if metadata.get('album'):
+            self._osc.send_karaoke("metadata", "album", str(metadata['album']))
+        if metadata.get('genre'):
+            genre = metadata['genre']
+            if isinstance(genre, list):
+                genre = ', '.join(genre)
+            self._osc.send_karaoke("metadata", "genre", genre)
+        if metadata.get('label'):
+            self._osc.send_karaoke("metadata", "label", str(metadata['label']))
+        if metadata.get('writers'):
+            writers = metadata['writers']
+            if isinstance(writers, list):
+                writers = ', '.join(writers)
+            self._osc.send_karaoke("metadata", "writers", writers)
+        
+        # Send full metadata as JSON blob for advanced consumers
+        self._osc.send_karaoke("metadata", "full", json.dumps(metadata))
+        
+        kw_count = len(keywords) if keywords else 0
+        logger.info(f"Song metadata sent: {kw_count} keywords, {metadata.get('release_date', 'unknown')} / {metadata.get('genre', 'unknown')}")
+    
+    @property
+    def current_song_info(self):
+        """Get current song metadata (for vj_console.py)."""
+        return self._lyrics_orchestrator.current_metadata
+    
+    @property
+    def shader_matcher(self):
+        """Access shader matcher (for vj_console.py)."""
+        return self._shader_matcher
+    
+    @property
+    def shader_indexer(self):
+        """Access shader indexer (for vj_console.py)."""
+        return self._shader_indexer
 
 
 # =============================================================================

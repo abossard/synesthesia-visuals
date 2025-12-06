@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any
 
 from domain import Track, PlaybackState, parse_lrc, analyze_lyrics
 from infrastructure import PipelineTracker
+from typing import Optional, List, Dict, Any
 from adapters import LyricsFetcher, OSCSender
 from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
 
@@ -136,10 +137,11 @@ class PlaybackCoordinator:
 
 class LyricsOrchestrator:
     """
-    Orchestrates lyrics fetching, parsing, and analysis.
+    Orchestrates lyrics fetching, parsing, analysis, and song metadata.
     
     Interface:
         process_track(track, timing_offset_ms) -> Optional[List[LyricLine]]
+        fetch_metadata(track) -> Dict  # LLM-powered: plain lyrics, keywords, song info
     
     Dependency Injection: LyricsFetcher, PipelineTracker
     """
@@ -147,19 +149,20 @@ class LyricsOrchestrator:
     def __init__(self, fetcher: LyricsFetcher, pipeline: PipelineTracker):
         self._fetcher = fetcher
         self._pipeline = pipeline
+        self._current_metadata = None
     
     def process_track(self, track: Track, timing_offset_ms: int = 0) -> Optional[List]:
         """
-        Fetch and analyze lyrics for track.
-        Returns list of LyricLine objects or None if no lyrics found.
+        Fetch and analyze LRC lyrics for karaoke timing.
+        Returns list of LyricLine objects or None if no LRC lyrics found.
         """
         self._pipeline.start("fetch_lyrics")
         
-        # Fetch LRC
+        # Fetch synced LRC lyrics
         lrc_text = self._fetcher.fetch(track.artist, track.title, track.album, track.duration)
         
         if not lrc_text:
-            self._pipeline.error("fetch_lyrics", "No lyrics found")
+            self._pipeline.skip("fetch_lyrics", "No LRC available")
             return None
         
         self._pipeline.complete("fetch_lyrics", f"{len(lrc_text)} bytes")
@@ -184,6 +187,49 @@ class LyricsOrchestrator:
         self._pipeline.complete("analyze_refrain", f"{sum(1 for line in lines if line.is_refrain)} refrain lines")
         
         return lines
+    
+    def fetch_metadata(self, track: Track) -> Dict[str, Any]:
+        """
+        Fetch song metadata via LLM: plain lyrics, keywords, song info.
+        Always returns a dict (may be empty if LLM unavailable).
+        """
+        self._pipeline.start("fetch_song_info")
+        
+        metadata = self._fetcher.fetch_metadata(track.artist, track.title)
+        
+        if metadata:
+            self._current_metadata = metadata
+            details = []
+            if metadata.get('keywords'):
+                kw_count = len(metadata['keywords']) if isinstance(metadata['keywords'], list) else 0
+                details.append(f"{kw_count} keywords")
+            if metadata.get('release_date'):
+                details.append(str(metadata['release_date']))
+            if metadata.get('genre'):
+                genre = metadata['genre']
+                details.append(genre if isinstance(genre, str) else genre[0] if genre else '')
+            self._pipeline.complete("fetch_song_info", ', '.join(details) if details else "metadata found")
+        else:
+            self._current_metadata = {}
+            self._pipeline.skip("fetch_song_info", "LLM unavailable")
+        
+        return metadata or {}
+    
+    # Backwards compatibility
+    def fetch_song_info(self, track: Track) -> Optional[Dict[str, Any]]:
+        """Alias for fetch_metadata."""
+        result = self.fetch_metadata(track)
+        return result if result else None
+    
+    @property
+    def current_song_info(self) -> Optional[Dict[str, Any]]:
+        """Get current song metadata (backwards compat)."""
+        return self._current_metadata
+    
+    @property
+    def current_metadata(self) -> Dict[str, Any]:
+        """Get current song metadata."""
+        return self._current_metadata or {}
 
 
 # =============================================================================

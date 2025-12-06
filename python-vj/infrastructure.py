@@ -258,6 +258,7 @@ class PipelineTracker:
         "parse_lrc": "⏱ Parse LRC Timecodes",
         "analyze_refrain": "🔁 Detect Refrain",
         "extract_keywords": "🔑 Extract Keywords",
+        "fetch_song_info": "🎵 AI Song Metadata",
         "categorize_song": "🏷️ Categorize Song",
         "llm_analysis": "🤖 AI Analysis",
         "generate_image_prompt": "🎨 Generate Image Prompt",

@@ -2,13 +2,14 @@
 """
 VJ Console - Textual Edition with Multi-Screen Support
 
-Screens (press 1-6 to switch):
+Screens (press 1-7 to switch):
 1. Master Control - Main dashboard with all controls
 2. OSC View - Full OSC message debug view  
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
 5. MIDI Router - Toggle management and MIDI traffic debug
 6. Audio Analysis - Real-time audio analysis and OSC emission
+7. Shader Index - Shader analysis status and matching
 """
 
 from dotenv import load_dotenv
@@ -35,6 +36,15 @@ from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, Mid
 from midi_router import MidiRouter, ConfigManager
 from midi_domain import RouterConfig, DeviceConfig
 from midi_infrastructure import list_controllers
+
+# Shader matching
+try:
+    from shader_matcher import ShaderIndexer, ShaderMatcher
+    SHADER_MATCHER_AVAILABLE = True
+except ImportError as e:
+    SHADER_MATCHER_AVAILABLE = False
+    import sys
+    print(f"Warning: Shader matcher not available - {e}", file=sys.stderr)
 
 # Audio analysis (imported conditionally to handle missing dependencies)
 try:
@@ -645,6 +655,403 @@ class AudioDevicesPanel(ReactivePanel):
         self.update("\n".join(lines))
 
 
+class ShaderIndexPanel(ReactivePanel):
+    """Shader indexer status panel."""
+    status = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_status(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Shader Indexer", "═")]
+        
+        if not SHADER_MATCHER_AVAILABLE:
+            lines.append("[yellow]Shader matcher not available[/]")
+            lines.append("[dim]Check shader_matcher.py imports[/]")
+        else:
+            total = self.status.get('total_shaders', 0)
+            analyzed = self.status.get('analyzed', 0)
+            unanalyzed = self.status.get('unanalyzed', 0)
+            loaded = self.status.get('loaded_in_memory', 0)
+            chromadb = self.status.get('chromadb_enabled', False)
+            
+            status_icon = format_status_icon(loaded > 0, "● READY", "○ loading")
+            chromadb_icon = format_status_icon(chromadb, "● ON", "○ OFF")
+            
+            lines.append(f"  Status:        {status_icon}")
+            lines.append(f"  Total Shaders: {total}")
+            lines.append(f"  Analyzed:      [green]{analyzed}[/]")
+            
+            if unanalyzed > 0:
+                lines.append(f"  Unanalyzed:    [yellow]{unanalyzed}[/]")
+            else:
+                lines.append(f"  Unanalyzed:    {unanalyzed}")
+            
+            lines.append(f"  Loaded:        {loaded}")
+            lines.append(f"  ChromaDB:      {chromadb_icon}")
+            
+            shaders_dir = self.status.get('shaders_dir', '')
+            if shaders_dir:
+                lines.append(f"\n[dim]Path: {truncate(shaders_dir, 50)}[/]")
+        
+        self.update("\n".join(lines))
+
+
+class ShaderMatchPanel(ReactivePanel):
+    """Shader matching test panel."""
+    match_result = reactive({})
+    
+    def on_mount(self) -> None:
+        """Initialize content when mounted."""
+        self._safe_render()
+    
+    def watch_match_result(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        """Render only if mounted."""
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Shader Matching", "═")]
+        
+        if not SHADER_MATCHER_AVAILABLE:
+            lines.append("[dim]Shader matcher not available[/]")
+        elif not self.match_result.get('matches'):
+            lines.append("[dim](no matches yet)[/dim]")
+            lines.append("")
+            lines.append("[dim]Matches update on track change[/]")
+        else:
+            mood = self.match_result.get('mood', 'unknown')
+            energy = self.match_result.get('energy', 0.5)
+            lines.append(f"  Mood:   [cyan]{mood}[/]")
+            lines.append(f"  Energy: {format_bar(energy)} {energy:.2f}")
+            lines.append("")
+            lines.append("[bold]Top Matches:[/]")
+            
+            for match in self.match_result.get('matches', [])[:5]:
+                name = match.get('name', 'Unknown')
+                score = match.get('score', 0)
+                features = match.get('features', {})
+                
+                # Color by match quality (lower score = better match)
+                if score < 0.3:
+                    color = "green"
+                elif score < 0.6:
+                    color = "yellow"
+                else:
+                    color = "dim"
+                
+                lines.append(f"  [{color}]{name:25s} {score:.3f}[/]")
+                
+                if features:
+                    e = features.get('energy_score', 0.5)
+                    v = features.get('mood_valence', 0)
+                    lines.append(f"    [dim]energy={e:.2f} valence={v:+.2f}[/]")
+        
+        self.update("\n".join(lines))
+
+
+class ShaderAnalysisPanel(ReactivePanel):
+    """Panel showing shader analysis progress."""
+    analysis_status = reactive({})
+    
+    def on_mount(self) -> None:
+        self._safe_render()
+    
+    def watch_analysis_status(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Shader Analysis", "═")]
+        
+        if not SHADER_MATCHER_AVAILABLE:
+            lines.append("[yellow]Shader matcher not available[/]")
+            self.update("\n".join(lines))
+            return
+        
+        running = self.analysis_status.get('running', False)
+        current = self.analysis_status.get('current_shader', '')
+        progress = self.analysis_status.get('progress', 0)
+        total = self.analysis_status.get('total', 0)
+        analyzed = self.analysis_status.get('analyzed', 0)
+        errors = self.analysis_status.get('errors', 0)
+        last_error = self.analysis_status.get('last_error', '')
+        
+        # Status
+        if running:
+            lines.append(f"  Status: [green]● ANALYZING[/]")
+            lines.append(f"  Current: [cyan]{truncate(current, 30)}[/]")
+        else:
+            if total > 0 and progress >= total:
+                lines.append(f"  Status: [green]● COMPLETE[/]")
+            else:
+                lines.append(f"  Status: [yellow]○ PAUSED[/] (press [bold]p[/] to start)")
+        
+        # Progress bar
+        if total > 0:
+            pct = progress / total
+            bar = format_bar(pct)
+            lines.append(f"  Progress: {bar} {progress}/{total}")
+        
+        lines.append("")
+        lines.append(f"  ✓ Analyzed: [green]{analyzed}[/]")
+        if errors > 0:
+            lines.append(f"  ✗ Errors:   [red]{errors}[/]")
+        
+        if last_error:
+            lines.append("")
+            lines.append(f"  [dim]Last error: {truncate(last_error, 40)}[/]")
+        
+        lines.append("")
+        lines.append("[dim]Keys: [p] pause/resume, [r] retry errors[/]")
+        
+        self.update("\n".join(lines))
+
+
+class ShaderSearchPanel(ReactivePanel):
+    """Panel for semantic shader search testing."""
+    search_results = reactive({})
+    
+    def on_mount(self) -> None:
+        self._safe_render()
+    
+    def watch_search_results(self, data: dict) -> None:
+        self._safe_render()
+    
+    def _safe_render(self) -> None:
+        if not self.is_mounted:
+            return
+        
+        lines = [self.render_section("Semantic Search", "═")]
+        
+        if not SHADER_MATCHER_AVAILABLE:
+            lines.append("[dim]Shader matcher not available[/]")
+            self.update("\n".join(lines))
+            return
+        
+        query = self.search_results.get('query', '')
+        results = self.search_results.get('results', [])
+        search_type = self.search_results.get('type', 'mood')
+        
+        lines.append(f"  Type: [cyan]{search_type}[/]")
+        if query:
+            lines.append(f"  Query: [bold]{query}[/]")
+        else:
+            lines.append("  [dim]Press / to search by mood[/]")
+            lines.append("  [dim]Press e to search by energy[/]")
+        
+        if results:
+            lines.append("")
+            lines.append("[bold]Results:[/]")
+            for i, result in enumerate(results[:8], 1):
+                name = result.get('name', 'Unknown')
+                score = result.get('score', 0)
+                features = result.get('features', {})
+                
+                # Color by rank
+                if i <= 2:
+                    color = "green"
+                elif i <= 5:
+                    color = "yellow"
+                else:
+                    color = "dim"
+                
+                lines.append(f"  {i}. [{color}]{name:25s}[/] [dim]dist={score:.3f}[/]")
+                
+                if features:
+                    e = features.get('energy_score', 0.5)
+                    m = features.get('motion_speed', 0.5)
+                    lines.append(f"     [dim]energy={e:.2f} motion={m:.2f}[/]")
+        elif query:
+            lines.append("")
+            lines.append("[dim]No results[/]")
+        
+        self.update("\n".join(lines))
+
+
+# ============================================================================
+# SHADER ANALYSIS WORKER - Background thread for LLM analysis
+# ============================================================================
+
+import threading
+
+class ShaderAnalysisWorker:
+    """
+    Background worker that analyzes unanalyzed shaders using LLM.
+    
+    Runs in a separate thread, processes one shader at a time,
+    and reports progress via a status dict that UI can poll.
+    """
+    
+    def __init__(self, indexer, llm_analyzer):
+        self.indexer = indexer
+        self.llm = llm_analyzer
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+        self._paused = True  # Start paused, user must press 'p' to begin
+        self._lock = threading.Lock()
+        
+        # Status for UI
+        self.status = {
+            'running': False,
+            'paused': True,
+            'current_shader': '',
+            'progress': 0,
+            'total': 0,
+            'analyzed': 0,
+            'errors': 0,
+            'last_error': '',
+            'queue': []
+        }
+    
+    def start(self):
+        """Start the analysis worker thread."""
+        if self._thread and self._thread.is_alive():
+            return
+        
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True, name="ShaderAnalysis")
+        self._thread.start()
+        logger.info("Shader analysis worker started")
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        logger.info("Shader analysis worker stopped")
+    
+    def toggle_pause(self):
+        """Toggle pause state."""
+        with self._lock:
+            self._paused = not self._paused
+            self.status['paused'] = self._paused
+            logger.info(f"Shader analysis {'paused' if self._paused else 'resumed'}")
+    
+    def is_paused(self) -> bool:
+        return self._paused
+    
+    def _run(self):
+        """Main worker loop."""
+        while self._running:
+            # Check if paused
+            if self._paused:
+                self.status['running'] = False
+                time.sleep(0.5)
+                continue
+            
+            # Get unanalyzed shaders
+            unanalyzed = self.indexer.get_unanalyzed()
+            
+            if not unanalyzed:
+                self.status['running'] = False
+                self.status['current_shader'] = ''
+                time.sleep(2.0)  # Check again in 2 seconds
+                continue
+            
+            # Update status
+            with self._lock:
+                self.status['running'] = True
+                self.status['total'] = len(unanalyzed) + self.status['analyzed']
+                self.status['queue'] = unanalyzed[:5]  # Show next 5
+            
+            # Analyze next shader
+            shader_name = unanalyzed[0]
+            self.status['current_shader'] = shader_name
+            
+            try:
+                # Get shader source
+                source = self.indexer.get_shader_source(shader_name)
+                if not source:
+                    logger.warning(f"Could not read shader: {shader_name}")
+                    self.status['errors'] += 1
+                    self.status['last_error'] = f"Could not read {shader_name}"
+                    continue
+                
+                # Analyze with LLM
+                logger.info(f"Analyzing shader: {shader_name}")
+                result = self.llm.analyze_shader(shader_name, source)
+                
+                if result and 'error' not in result:
+                    # Parse ISF inputs
+                    inputs = self.indexer.parse_isf_inputs(source)
+                    
+                    # Extract features
+                    features = result.get('features', {})
+                    
+                    # Save analysis
+                    success = self.indexer.save_analysis(
+                        shader_name,
+                        features,
+                        inputs,
+                        {
+                            'mood': result.get('mood', 'unknown'),
+                            'colors': result.get('colors', []),
+                            'effects': result.get('effects', []),
+                            'description': result.get('description', ''),
+                            'geometry': result.get('geometry', []),
+                            'objects': result.get('objects', []),
+                            'energy': result.get('energy', 'medium'),
+                            'complexity': result.get('complexity', 'medium')
+                        }
+                    )
+                    
+                    if success:
+                        self.status['analyzed'] += 1
+                        self.status['progress'] = self.status['analyzed']
+                        
+                        # Sync to ChromaDB
+                        self.indexer.sync()
+                        logger.info(f"Analyzed and saved: {shader_name}")
+                    else:
+                        self.status['errors'] += 1
+                        self.status['last_error'] = f"Failed to save {shader_name}"
+                else:
+                    # Save error file
+                    error_msg = result.get('error', 'Unknown error') if result else 'No result'
+                    self.indexer.save_error(shader_name, error_msg, {'result': result})
+                    self.status['errors'] += 1
+                    self.status['last_error'] = f"{shader_name}: {error_msg[:50]}"
+                    logger.warning(f"Analysis failed for {shader_name}: {error_msg}")
+                    
+            except Exception as e:
+                error_msg = str(e)
+                self.indexer.save_error(shader_name, error_msg)
+                self.status['errors'] += 1
+                self.status['last_error'] = f"{shader_name}: {error_msg[:50]}"
+                logger.exception(f"Error analyzing {shader_name}: {e}")
+            
+            # Small delay between analyses to avoid overwhelming LLM
+            time.sleep(1.0)
+        
+        self.status['running'] = False
+    
+    def get_status(self) -> dict:
+        """Get current status for UI."""
+        # Also include indexer stats
+        stats = self.indexer.get_stats()
+        return {
+            **self.status,
+            'total_shaders': stats.get('total_shaders', 0),
+            'analyzed': stats.get('analyzed', 0),
+            'unanalyzed': stats.get('unanalyzed', 0),
+            'loaded_in_memory': stats.get('loaded_in_memory', 0),
+            'chromadb_enabled': stats.get('chromadb_enabled', False),
+        }
+
+
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
@@ -700,8 +1107,10 @@ class VJConsoleApp(App):
         Binding("4", "screen_logs", "Logs"),
         Binding("5", "screen_audio", "Audio"),
         Binding("6", "screen_midi", "MIDI"),
+        Binding("7", "screen_shaders", "Shaders"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
         Binding("m", "toggle_milksyphon", "MilkSyphon"),
+        Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
         Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
@@ -714,6 +1123,10 @@ class VJConsoleApp(App):
         Binding("r", "midi_rename", "Rename", show=False),
         Binding("d", "midi_delete", "Delete", show=False),
         Binding("space", "midi_test_toggle", "Toggle", show=False),
+        # Shader analysis bindings (active on shaders tab)
+        Binding("p", "shader_toggle_analysis", "Pause/Resume Analysis", show=False),
+        Binding("slash", "shader_search_mood", "Search by Mood", show=False),
+        Binding("e", "shader_search_energy", "Search by Energy", show=False),
     ]
 
     current_tab = reactive("master")
@@ -741,6 +1154,14 @@ class VJConsoleApp(App):
         self.audio_device_manager: Optional[Any] = None  # DeviceManager when available
         self.audio_watchdog: Optional[Any] = None  # AudioAnalyzerWatchdog when available
         self._setup_audio_analyzer()
+        
+        # Shader Indexer
+        self.shader_indexer: Optional[Any] = None  # ShaderIndexer when available
+        self.shader_matcher: Optional[Any] = None  # ShaderMatcher when available  
+        self.shader_analysis_worker: Optional[ShaderAnalysisWorker] = None
+        self._current_shader_match: Dict[str, Any] = {}
+        self._shader_search_results: Dict[str, Any] = {}
+        self._setup_shader_indexer()
         
         self._setup_log_capture()
 
@@ -826,6 +1247,39 @@ class VJConsoleApp(App):
             self.audio_device_manager = None
             self.audio_watchdog = None
     
+    def _setup_shader_indexer(self) -> None:
+        """Initialize shader indexer and analysis worker."""
+        if not SHADER_MATCHER_AVAILABLE:
+            logger.warning("Shader matcher not available - skipping initialization")
+            return
+        
+        try:
+            self.shader_indexer = ShaderIndexer()
+            
+            # Sync from JSON files on startup
+            stats = self.shader_indexer.sync()
+            logger.info(f"Shader indexer synced: {stats}")
+            
+            # Create matcher with loaded shaders
+            shaders_dir = str(self.shader_indexer.shaders_dir)
+            self.shader_matcher = ShaderMatcher(shaders_dir)
+            
+            # Create LLM analyzer for shader analysis
+            from ai_services import LLMAnalyzer
+            llm = LLMAnalyzer()
+            
+            # Create and start the analysis worker (starts paused)
+            self.shader_analysis_worker = ShaderAnalysisWorker(self.shader_indexer, llm)
+            self.shader_analysis_worker.start()
+            
+            logger.info("Shader indexer and analysis worker initialized")
+            
+        except Exception as e:
+            logger.exception(f"Shader indexer initialization failed: {e}")
+            self.shader_indexer = None
+            self.shader_matcher = None
+            self.shader_analysis_worker = None
+    
     def _setup_log_capture(self) -> None:
         """Setup logging handler to capture logs to _logs list."""
         class ListHandler(logging.Handler):
@@ -899,18 +1353,28 @@ class VJConsoleApp(App):
                     with VerticalScroll(id="right-col"):
                         yield MidiTogglesPanel(id="midi-toggles", classes="panel")
                         yield MidiDebugPanel(id="midi-debug", classes="panel full-height")
+            
+            # Tab 7: Shader Indexer
+            with TabPane("7️⃣ Shaders", id="shaders"):
+                with Horizontal():
+                    with VerticalScroll(id="left-col"):
+                        yield ShaderIndexPanel(id="shader-index", classes="panel")
+                        yield ShaderAnalysisPanel(id="shader-analysis", classes="panel")
+                    with VerticalScroll(id="right-col"):
+                        yield ShaderSearchPanel(id="shader-search", classes="panel")
+                        yield ShaderMatchPanel(id="shader-match", classes="panel full-height")
 
         yield Footer()
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-6 to switch screens"
+        self.sub_title = "Press 1-7 to switch screens"
         
         # Initialize
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
         self._start_karaoke()
-        self._start_audio_analyzer()
+        # Audio analyzer starts on 'a' keypress, not automatically
         
         # Background updates
         self.set_interval(0.5, self._update_data)
@@ -1095,6 +1559,9 @@ class VJConsoleApp(App):
         
         # Update audio analyzer panels
         self._update_audio_panels()
+        
+        # Update shader panels
+        self._update_shader_panels()
 
     def _update_audio_panels(self) -> None:
         """Update audio analyzer panels."""
@@ -1128,6 +1595,45 @@ class VJConsoleApp(App):
             
         except Exception as e:
             logger.debug(f"Failed to update audio panels: {e}")
+    
+    def _update_shader_panels(self) -> None:
+        """Update shader indexer/matcher panels."""
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
+            return
+        
+        try:
+            # Update index status
+            stats = self.shader_indexer.get_stats()
+            try:
+                index_panel = self.query_one("#shader-index", ShaderIndexPanel)
+                index_panel.status = stats
+            except Exception:
+                pass
+            
+            # Update analysis progress panel
+            if self.shader_analysis_worker:
+                try:
+                    analysis_panel = self.query_one("#shader-analysis", ShaderAnalysisPanel)
+                    analysis_panel.analysis_status = self.shader_analysis_worker.get_status()
+                except Exception:
+                    pass
+            
+            # Update search results panel
+            try:
+                search_panel = self.query_one("#shader-search", ShaderSearchPanel)
+                search_panel.search_results = self._shader_search_results
+            except Exception:
+                pass
+            
+            # Update match panel
+            try:
+                match_panel = self.query_one("#shader-match", ShaderMatchPanel)
+                match_panel.match_result = self._current_shader_match
+            except Exception:
+                pass
+            
+        except Exception as e:
+            logger.debug(f"Failed to update shader panels: {e}")
     
     def _update_midi_panels(self) -> None:
         """Update MIDI router panels."""
@@ -1197,6 +1703,9 @@ class VJConsoleApp(App):
     
     def action_screen_midi(self) -> None:
         self.query_one("#screens", TabbedContent).active = "midi"
+    
+    def action_screen_shaders(self) -> None:
+        self.query_one("#screens", TabbedContent).active = "shaders"
 
     # === App control ===
     
@@ -1216,6 +1725,137 @@ class VJConsoleApp(App):
                     subprocess.Popen(['open', '-a', str(p)])
                     break
         self._check_apps()
+    
+    def action_toggle_audio_analyzer(self) -> None:
+        """Toggle audio analyzer on/off (a key)."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            self.notify("Audio analyzer not available", severity="warning")
+            return
+        
+        if self.audio_analyzer.is_alive():
+            self._stop_audio_analyzer()
+            self.notify("Audio analyzer stopped", severity="information")
+        else:
+            self._start_audio_analyzer()
+            self.notify("Audio analyzer started", severity="information")
+    
+    def _stop_audio_analyzer(self) -> None:
+        """Stop the audio analyzer thread."""
+        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
+            return
+        
+        try:
+            self.audio_analyzer.stop()
+            logger.info("Audio analyzer stopped")
+        except Exception as e:
+            logger.exception(f"Audio analyzer stop error: {e}")
+    
+    # === Shader analysis actions ===
+    
+    def action_shader_toggle_analysis(self) -> None:
+        """Toggle shader analysis pause/resume (p key)."""
+        if not self.shader_analysis_worker:
+            self.notify("Shader analysis worker not available", severity="warning")
+            return
+        
+        self.shader_analysis_worker.toggle_pause()
+        if self.shader_analysis_worker.is_paused():
+            self.notify("Shader analysis paused", severity="information")
+        else:
+            self.notify("Shader analysis resumed", severity="information")
+    
+    def action_shader_search_mood(self) -> None:
+        """Search shaders by mood (/ key)."""
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_matcher:
+            self.notify("Shader matcher not available", severity="warning")
+            return
+        
+        # Cycle through common moods
+        moods = ['energetic', 'calm', 'dark', 'bright', 'psychedelic', 'mysterious', 'chaotic', 'peaceful']
+        current = self._shader_search_results.get('query', '')
+        
+        try:
+            idx = moods.index(current)
+            next_mood = moods[(idx + 1) % len(moods)]
+        except ValueError:
+            next_mood = moods[0]
+        
+        # Perform search
+        matches = self.shader_matcher.match_by_mood(next_mood, energy=0.5, top_k=8)
+        results = []
+        for shader, score in matches:
+            results.append({
+                'name': shader.name,
+                'score': score,
+                'features': {
+                    'energy_score': shader.energy_score,
+                    'mood_valence': shader.mood_valence,
+                    'motion_speed': shader.motion_speed,
+                }
+            })
+        
+        self._shader_search_results = {
+            'type': 'mood',
+            'query': next_mood,
+            'results': results
+        }
+    
+    def action_shader_search_energy(self) -> None:
+        """Search shaders by energy level (e key)."""
+        if not SHADER_MATCHER_AVAILABLE or not self.shader_matcher:
+            self.notify("Shader matcher not available", severity="warning")
+            return
+        
+        # Cycle through energy levels
+        levels = [0.2, 0.4, 0.6, 0.8, 1.0]
+        current_query = self._shader_search_results.get('query', '')
+        
+        try:
+            current_energy = float(current_query)
+            idx = min(range(len(levels)), key=lambda i: abs(levels[i] - current_energy))
+            next_energy = levels[(idx + 1) % len(levels)]
+        except (ValueError, TypeError):
+            next_energy = levels[0]
+        
+        # Perform search using feature vector
+        target_vector = [next_energy, 0.0, 0.5, next_energy, 0.5, 0.5]  # energy-focused search
+        
+        if self.shader_indexer and self.shader_indexer._use_chromadb:
+            # Use ChromaDB
+            similar = self.shader_indexer.query_similar(target_vector, top_k=8)
+            results = []
+            for name, dist in similar:
+                shader = self.shader_matcher.shaders.get(name)
+                if shader:
+                    results.append({
+                        'name': name,
+                        'score': dist,
+                        'features': {
+                            'energy_score': shader.energy_score,
+                            'mood_valence': shader.mood_valence,
+                            'motion_speed': shader.motion_speed,
+                        }
+                    })
+        else:
+            # Fallback to mood search with energy
+            matches = self.shader_matcher.match_by_mood('energetic' if next_energy > 0.5 else 'calm', energy=next_energy, top_k=8)
+            results = []
+            for shader, score in matches:
+                results.append({
+                    'name': shader.name,
+                    'score': score,
+                    'features': {
+                        'energy_score': shader.energy_score,
+                        'mood_valence': shader.mood_valence,
+                        'motion_speed': shader.motion_speed,
+                    }
+                })
+        
+        self._shader_search_results = {
+            'type': 'energy',
+            'query': f'{next_energy:.1f}',
+            'results': results
+        }
     
     def action_audio_device_prev(self) -> None:
         """Switch to previous audio device ([ key)."""

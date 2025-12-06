@@ -4,46 +4,6 @@
  */
 
 // ============================================
-// SONG METADATA
-// ============================================
-
-class SongMetadata {
-  final String id;
-  final String title;
-  final String artist;
-  final String lyrics;
-  
-  SongMetadata(String id, String title, String artist, String lyrics) {
-    this.id = id;
-    this.title = title;
-    this.artist = artist;
-    this.lyrics = lyrics;
-  }
-  
-  String getId() {
-    if (id != null && !id.isEmpty()) return id;
-    // Generate ID from title+artist
-    return sanitizeFilename(title + "_" + artist);
-  }
-  
-  SongMetadata withId(String newId) {
-    return new SongMetadata(newId, title, artist, lyrics);
-  }
-  
-  SongMetadata withTitle(String newTitle) {
-    return new SongMetadata(id, newTitle, artist, lyrics);
-  }
-  
-  SongMetadata withArtist(String newArtist) {
-    return new SongMetadata(id, title, newArtist, lyrics);
-  }
-  
-  SongMetadata withLyrics(String newLyrics) {
-    return new SongMetadata(id, title, artist, newLyrics);
-  }
-}
-
-// ============================================
 // SHADER INFO
 // ============================================
 
@@ -117,8 +77,53 @@ class ShaderSelection {
 }
 
 // ============================================
-// SHADER ANALYSIS (LLM-generated)
+// SHADER ANALYSIS (LLM-generated + ISF parsed)
 // ============================================
+
+// Input capabilities parsed from ISF JSON header
+class ShaderInputs {
+  final int floatCount;        // Number of float sliders (MIDI mappable)
+  final int point2DCount;      // Number of point2D inputs (mouse/touch)
+  final int colorCount;        // Number of color pickers
+  final int boolCount;         // Number of toggles
+  final int imageCount;        // Number of image inputs (compositing)
+  final boolean hasAudio;      // Has audio/audioFFT input
+  final String[] inputNames;   // All input names for reference
+  
+  ShaderInputs() {
+    this(0, 0, 0, 0, 0, false, new String[0]);
+  }
+  
+  ShaderInputs(int floatCount, int point2DCount, int colorCount, int boolCount,
+               int imageCount, boolean hasAudio, String[] inputNames) {
+    this.floatCount = floatCount;
+    this.point2DCount = point2DCount;
+    this.colorCount = colorCount;
+    this.boolCount = boolCount;
+    this.imageCount = imageCount;
+    this.hasAudio = hasAudio;
+    this.inputNames = inputNames;
+  }
+  
+  // Capability checks for VJ matching
+  boolean isInteractive() { return point2DCount > 0; }
+  boolean isCompositable() { return imageCount > 0; }
+  boolean isMidiMappable() { return floatCount >= 2; }
+  boolean isAudioReactive() { return hasAudio; }
+  boolean isAutonomous() { return floatCount == 0 && point2DCount == 0 && imageCount == 0; }
+  
+  int totalControls() { return floatCount + point2DCount + colorCount + boolCount; }
+  
+  String getCapabilityString() {
+    ArrayList<String> caps = new ArrayList<String>();
+    if (isAutonomous()) caps.add("generator");
+    if (isInteractive()) caps.add("interactive");
+    if (isCompositable()) caps.add("compositor");
+    if (isMidiMappable()) caps.add("midi-mappable");
+    if (isAudioReactive()) caps.add("audio-reactive");
+    return caps.size() > 0 ? String.join(", ", caps) : "basic";
+  }
+}
 
 class ShaderAnalysis {
   final String shaderName;
@@ -132,24 +137,46 @@ class ShaderAnalysis {
   final String description;    // brief description
   final long analyzedAt;
   
+  // Normalized feature scores for semantic matching (0.0 to 1.0, mood_valence: -1.0 to 1.0)
+  final HashMap<String, Float> features;
+  
+  // Input capabilities parsed from ISF header
+  final ShaderInputs inputs;
+  
+  // Feature keys for matching
+  static final String FEAT_ENERGY = "energy_score";
+  static final String FEAT_MOOD = "mood_valence";
+  static final String FEAT_WARMTH = "color_warmth";
+  static final String FEAT_MOTION = "motion_speed";
+  static final String FEAT_GEOMETRIC = "geometric_score";
+  static final String FEAT_DENSITY = "visual_density";
+  
   ShaderAnalysis(String shaderName, String mood, String[] colors, String[] geometry,
                  String[] objects, String[] effects, String energy, 
                  String complexity, String description) {
-    this.shaderName = shaderName;
-    this.mood = mood;
-    this.colors = colors;
-    this.geometry = geometry;
-    this.objects = objects;
-    this.effects = effects;
-    this.energy = energy;
-    this.complexity = complexity;
-    this.description = description;
-    this.analyzedAt = System.currentTimeMillis();
+    this(shaderName, mood, colors, geometry, objects, effects, energy, 
+         complexity, description, System.currentTimeMillis(), new HashMap<String, Float>(), new ShaderInputs());
   }
   
   ShaderAnalysis(String shaderName, String mood, String[] colors, String[] geometry,
                  String[] objects, String[] effects, String energy, 
                  String complexity, String description, long analyzedAt) {
+    this(shaderName, mood, colors, geometry, objects, effects, energy, 
+         complexity, description, analyzedAt, new HashMap<String, Float>(), new ShaderInputs());
+  }
+  
+  ShaderAnalysis(String shaderName, String mood, String[] colors, String[] geometry,
+                 String[] objects, String[] effects, String energy, 
+                 String complexity, String description, long analyzedAt,
+                 HashMap<String, Float> features) {
+    this(shaderName, mood, colors, geometry, objects, effects, energy, 
+         complexity, description, analyzedAt, features, new ShaderInputs());
+  }
+  
+  ShaderAnalysis(String shaderName, String mood, String[] colors, String[] geometry,
+                 String[] objects, String[] effects, String energy, 
+                 String complexity, String description, long analyzedAt,
+                 HashMap<String, Float> features, ShaderInputs inputs) {
     this.shaderName = shaderName;
     this.mood = mood;
     this.colors = colors;
@@ -160,6 +187,26 @@ class ShaderAnalysis {
     this.complexity = complexity;
     this.description = description;
     this.analyzedAt = analyzedAt;
+    this.features = features != null ? features : new HashMap<String, Float>();
+    this.inputs = inputs != null ? inputs : new ShaderInputs();
+  }
+  
+  // Get feature value with default
+  float getFeature(String key, float defaultVal) {
+    return features.containsKey(key) ? features.get(key) : defaultVal;
+  }
+  
+  // Convenience getters for common features
+  float getEnergyScore() { return getFeature(FEAT_ENERGY, 0.5f); }
+  float getMoodValence() { return getFeature(FEAT_MOOD, 0.0f); }
+  float getColorWarmth() { return getFeature(FEAT_WARMTH, 0.5f); }
+  float getMotionSpeed() { return getFeature(FEAT_MOTION, 0.5f); }
+  float getGeometricScore() { return getFeature(FEAT_GEOMETRIC, 0.5f); }
+  float getVisualDensity() { return getFeature(FEAT_DENSITY, 0.5f); }
+  
+  // Check if features are populated
+  boolean hasFeatures() {
+    return features != null && features.size() > 0;
   }
   
   // Get all tags as a combined array for matching
@@ -177,6 +224,18 @@ class ShaderAnalysis {
   
   String getTagString() {
     return String.join(", ", getAllTags());
+  }
+  
+  // Get feature vector as array for distance calculations
+  float[] getFeatureVector() {
+    return new float[] {
+      getEnergyScore(),
+      getMoodValence(),
+      getColorWarmth(),
+      getMotionSpeed(),
+      getGeometricScore(),
+      getVisualDensity()
+    };
   }
 }
 

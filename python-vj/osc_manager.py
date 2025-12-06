@@ -42,7 +42,7 @@ class OSCManager:
         self._client = udp_client.SimpleUDPClient(host, port)
         self._message_log: deque = deque(maxlen=200)  # Fixed-size, efficient
         self._log_lock = threading.Lock()
-        self._logging_enabled = False  # Disabled by default for performance
+        self._logging_enabled = True  # Enabled by default for debug view
         self._host = host
         self._port = port
         self._message_count = 0

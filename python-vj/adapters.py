@@ -7,6 +7,7 @@ Each adapter handles one external service (Spotify, VirtualDJ, LRCLIB, OSC).
 """
 
 import json
+import re
 import time
 import logging
 import subprocess
@@ -30,83 +31,111 @@ except ImportError:
 
 
 # =============================================================================
-# LYRICS FETCHER - Deep module hiding LRCLIB API complexity
+# LYRICS FETCHER - Deep module with LRCLIB + LM Studio web-search fallback
 # =============================================================================
 
 class LyricsFetcher:
     """
-    Fetches lyrics from LRCLIB API with caching.
+    Fetches lyrics and song metadata.
     
-    Deep module - simple interface, complex implementation.
-    Public interface: fetch(artist, title) -> Optional[str]
-    Hides: HTTP requests, cache management, TTL expiration, retry logic
+    Simple interface:
+        fetch_lrc(artist, title) -> Optional[str]  # Synced LRC for karaoke timing
+        fetch_metadata(artist, title) -> Dict      # Plain lyrics, keywords, song info
+    
+    Strategy:
+    - LRC lyrics: LRCLIB API only (fast, accurate timestamps)
+    - Metadata: LM Studio with web-search MCP (plain lyrics, keywords, song info)
+    
+    Both are cached together but serve different purposes.
     """
     
     BASE_URL = "https://lrclib.net/api"
-    CACHE_TTL_SECONDS = 86400  # 24 hours for "not found" entries
+    LM_STUDIO_URL = "http://localhost:1234"
+    CACHE_TTL_SECONDS = 86400 * 7  # 7 days
     
     def __init__(self, cache_dir: Optional[Path] = None):
         self._cache_dir = cache_dir or Config.DEFAULT_LYRICS_CACHE_DIR
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "KaraokeEngine/1.0"
+        self._lmstudio_available = None
+        self._lmstudio_model = None
+    
+    # =========================================================================
+    # PUBLIC API
+    # =========================================================================
     
     def fetch(self, artist: str, title: str, album: str = "", duration: float = 0) -> Optional[str]:
         """
-        Fetch synced lyrics for a track. Returns LRC format string or None.
-        Automatically uses cache to avoid redundant API calls.
+        Fetch synced LRC lyrics for karaoke timing. Returns LRC string or None.
+        Only returns lyrics with timestamps [mm:ss.xx] - never plain lyrics.
         """
-        # Check cache first
-        cache_file = self._get_cache_path(artist, title)
-        cached_result = self._check_cache(cache_file)
-        if cached_result is not None:
-            return cached_result if cached_result != "" else None
+        cache = self._load_cache(artist, title)
         
-        # Fetch from API
-        lrc_text = self._fetch_from_api(artist, title, album, duration)
+        # Return cached LRC if available
+        if cache.get('syncedLyrics'):
+            logger.debug(f"Using cached LRC: {artist} - {title}")
+            return cache['syncedLyrics']
         
-        # Save to cache
-        if lrc_text:
-            self._save_to_cache(cache_file, {'syncedLyrics': lrc_text})
-            logger.info(f"Fetched and cached lyrics: {artist} - {title}")
-        else:
-            # Cache "not found" with TTL
-            self._save_to_cache(cache_file, {'not_found': True, 'cached_at': time.time()})
-            logger.debug(f"No lyrics found: {artist} - {title}")
+        # Fetch from LRCLIB
+        lrc = self._fetch_from_lrclib(artist, title, album, duration)
+        if lrc:
+            cache['syncedLyrics'] = lrc
+            cache['lrc_source'] = 'lrclib'
+            cache['lrc_fetched_at'] = time.time()
+            self._save_cache(artist, title, cache)
+            logger.info(f"Fetched LRC from LRCLIB: {artist} - {title}")
+            return lrc
         
-        return lrc_text
+        logger.debug(f"No LRC available: {artist} - {title}")
+        return None
+    
+    def fetch_metadata(self, artist: str, title: str) -> Dict[str, Any]:
+        """
+        Fetch song metadata via LLM: plain lyrics, keywords, song info.
+        Always returns a dict (may be empty if LLM unavailable).
+        """
+        cache = self._load_cache(artist, title)
+        
+        # Return cached metadata if fresh
+        if cache.get('metadata') and cache.get('metadata_fetched_at'):
+            age = time.time() - cache['metadata_fetched_at']
+            if age < self.CACHE_TTL_SECONDS:
+                logger.debug(f"Using cached metadata: {artist} - {title}")
+                return cache['metadata']
+        
+        # Fetch via LLM
+        if not self._check_lmstudio():
+            logger.debug("LM Studio not available for metadata fetch")
+            return cache.get('metadata', {})
+        
+        metadata = self._fetch_metadata_via_llm(artist, title)
+        if metadata:
+            cache['metadata'] = metadata
+            cache['metadata_fetched_at'] = time.time()
+            self._save_cache(artist, title, cache)
+            logger.info(f"Fetched metadata via LLM: {artist} - {title}")
+        
+        return metadata or {}
     
     def get_cached_count(self) -> int:
-        """Return number of cached lyrics files."""
+        """Return number of cached files."""
         if self._cache_dir.exists():
             return len(list(self._cache_dir.glob("*.json")))
         return 0
     
-    # Private methods - implementation details
+    # Backwards compatibility
+    def get_song_info(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+        """Alias for fetch_metadata."""
+        result = self.fetch_metadata(artist, title)
+        return result if result else None
     
-    def _check_cache(self, cache_file: Path) -> Optional[str]:
-        """Check cache, returns lyrics string, empty string for not-found, or None for cache miss."""
-        if not cache_file.exists():
-            return None
-        
-        try:
-            data = json.loads(cache_file.read_text())
-            
-            # Check for expired "not found" entries
-            if data.get('not_found'):
-                cached_at = data.get('cached_at', 0)
-                if time.time() - cached_at > self.CACHE_TTL_SECONDS:
-                    cache_file.unlink()  # Delete expired entry
-                    return None
-                return ""  # Still within TTL, return empty to signal not-found
-            
-            logger.debug(f"Using cached lyrics: {cache_file.stem}")
-            return data.get('syncedLyrics')
-        except (json.JSONDecodeError, IOError):
-            return None
+    # =========================================================================
+    # PRIVATE - LRCLIB
+    # =========================================================================
     
-    def _fetch_from_api(self, artist: str, title: str, album: str, duration: float) -> Optional[str]:
-        """Fetch from LRCLIB API."""
+    def _fetch_from_lrclib(self, artist: str, title: str, album: str, duration: float) -> Optional[str]:
+        """Fetch synced LRC from LRCLIB API."""
         try:
             params = {"artist_name": artist, "track_name": title}
             if album:
@@ -122,14 +151,134 @@ class LyricsFetcher:
             elif resp.status_code != 404:
                 logger.warning(f"LRCLIB error {resp.status_code}")
         except requests.RequestException as e:
-            logger.error(f"Lyrics fetch error: {e}")
+            logger.error(f"LRCLIB fetch error: {e}")
         
         return None
     
-    def _save_to_cache(self, cache_file: Path, data: Dict):
-        """Save data to cache file."""
+    # =========================================================================
+    # PRIVATE - LM STUDIO
+    # =========================================================================
+    
+    def _check_lmstudio(self) -> bool:
+        """Check if LM Studio is available."""
+        if self._lmstudio_available is not None:
+            return self._lmstudio_available
+        
         try:
-            cache_file.write_text(json.dumps(data, indent=2))
+            resp = self._session.get(f"{self.LM_STUDIO_URL}/v1/models", timeout=2)
+            if resp.status_code == 200:
+                models = resp.json().get('data', [])
+                if models:
+                    self._lmstudio_model = models[0].get('id', 'local-model')
+                    self._lmstudio_available = True
+                    logger.debug(f"LM Studio available: {self._lmstudio_model}")
+                    return True
+        except Exception:
+            pass
+        
+        self._lmstudio_available = False
+        return False
+    
+    def _ask_lmstudio(self, system_prompt: str, user_prompt: str, timeout: int = 90) -> Optional[str]:
+        """
+        Send a prompt to LM Studio and get the response.
+        LM Studio has MCP configured with web-search - model uses it automatically.
+        """
+        if not self._check_lmstudio():
+            return None
+        
+        try:
+            resp = self._session.post(
+                f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                json={
+                    "model": self._lmstudio_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 3000,
+                    "temperature": 0.3
+                },
+                timeout=timeout
+            )
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                return result.get('choices', [{}])[0].get('message', {}).get('content', '')
+        except requests.Timeout:
+            logger.debug("LM Studio request timed out")
+        except Exception as e:
+            logger.debug(f"LM Studio error: {e}")
+        
+        return None
+    
+    def _fetch_metadata_via_llm(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch song metadata via LM Studio: plain lyrics, keywords, song info.
+        Uses web-search MCP to find accurate information.
+        """
+        system_prompt = """You are a music information assistant with access to web search.
+Search for complete information about the requested song and return a JSON object with:
+{
+  "plain_lyrics": "full lyrics text without timestamps",
+  "keywords": ["list", "of", "significant", "words", "from", "lyrics"],
+  "themes": ["main", "themes"],
+  "release_date": "year or date",
+  "album": "album name",
+  "genre": "genre(s)",
+  "writers": "songwriters",
+  "mood": "overall mood/feeling"
+}
+
+For keywords: extract 10-15 most significant/meaningful words from the lyrics - 
+words that capture the essence, emotions, and imagery of the song.
+Exclude common words like "the", "and", "is", etc.
+
+Return ONLY valid JSON, no other text."""
+
+        user_prompt = f'Search the web for complete lyrics and information about "{title}" by {artist}.'
+        
+        logger.debug(f"Fetching metadata via LLM: {artist} - {title}")
+        content = self._ask_lmstudio(system_prompt, user_prompt, timeout=120)
+        
+        if not content:
+            return None
+        
+        # Extract JSON from response
+        try:
+            start = content.find('{')
+            end = content.rfind('}')
+            if start >= 0 and end > start:
+                metadata = json.loads(content[start:end+1])
+                metadata['fetched_at'] = time.time()
+                metadata['source'] = 'llm_web_search'
+                return metadata
+        except json.JSONDecodeError:
+            logger.debug(f"Failed to parse metadata JSON: {content[:200]}")
+        
+        return None
+    
+    # =========================================================================
+    # PRIVATE - CACHE
+    # =========================================================================
+    
+    def _load_cache(self, artist: str, title: str) -> Dict:
+        """Load cache for artist/title, returns empty dict if not found."""
+        cache_file = self._get_cache_path(artist, title)
+        if cache_file.exists():
+            try:
+                return json.loads(cache_file.read_text())
+            except (json.JSONDecodeError, IOError):
+                pass
+        return {}
+    
+    def _save_cache(self, artist: str, title: str, data: Dict):
+        """Save cache data, merging with existing."""
+        cache_file = self._get_cache_path(artist, title)
+        try:
+            existing = self._load_cache(artist, title)
+            existing.update(data)
+            cache_file.write_text(json.dumps(existing, indent=2))
         except IOError:
             pass
     
@@ -497,6 +646,16 @@ class OSCSender:
         self._current_track_info = {}
         logger.info(f"OSC: using centralized manager {osc.host}:{osc.port}")
     
+    def send(self, address: str, args: Any = None):
+        """
+        Send a raw OSC message (passthrough to centralized manager).
+        
+        Args:
+            address: OSC address pattern (e.g., "/audio/levels")
+            args: Message arguments (single value, list, or None)
+        """
+        osc.send(address, args)
+    
     def send_karaoke(self, channel: str, event: str, data: Any = None):
         """
         Send karaoke OSC message with backward compatibility for Processing.
@@ -612,6 +771,20 @@ class OSCSender:
         address = f"/vj/{subsystem}/{event}"
         args = self._prepare_args(data)
         osc.send(address, args)
+    
+    def send_shader(self, shader_name: str, energy: float = 0.5, valence: float = 0.0):
+        """
+        Send shader load command to Processing.
+        
+        Args:
+            shader_name: Name of shader to load (without extension)
+            energy: Energy score (0.0-1.0)
+            valence: Mood valence (-1.0 to 1.0)
+        
+        OSC Message: /shader/load [name, energy, valence]
+        """
+        logger.info(f"OSC → /shader/load [{shader_name}, {energy:.2f}, {valence:.2f}]")
+        osc.send("/shader/load", [shader_name, float(energy), float(valence)])
     
     def get_recent_messages(self, count: int = 20) -> List[tuple]:
         """Get recent OSC messages for debug display."""

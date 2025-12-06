@@ -115,6 +115,53 @@ String escapeJson(String s) {
 }
 
 // ============================================
+// JSON PARSING HELPERS
+// ============================================
+
+String extractJsonString(String json, String key) {
+  int keyPos = json.indexOf("\"" + key + "\"");
+  if (keyPos < 0) return null;
+  
+  int colonPos = json.indexOf(":", keyPos);
+  if (colonPos < 0) return null;
+  
+  int quoteStart = json.indexOf("\"", colonPos);
+  if (quoteStart < 0) return null;
+  
+  int quoteEnd = json.indexOf("\"", quoteStart + 1);
+  if (quoteEnd < 0) return null;
+  
+  return json.substring(quoteStart + 1, quoteEnd);
+}
+
+String[] extractJsonArray(String json, String key) {
+  int keyPos = json.indexOf("\"" + key + "\"");
+  if (keyPos < 0) return null;
+  
+  int bracketStart = json.indexOf("[", keyPos);
+  if (bracketStart < 0) return null;
+  
+  int bracketEnd = json.indexOf("]", bracketStart);
+  if (bracketEnd < 0) return null;
+  
+  String arrayContent = json.substring(bracketStart + 1, bracketEnd);
+  
+  // Extract quoted strings
+  ArrayList<String> items = new ArrayList<String>();
+  int pos = 0;
+  while (pos < arrayContent.length()) {
+    int start = arrayContent.indexOf("\"", pos);
+    if (start < 0) break;
+    int end = arrayContent.indexOf("\"", start + 1);
+    if (end < 0) break;
+    items.add(arrayContent.substring(start + 1, end));
+    pos = end + 1;
+  }
+  
+  return items.toArray(new String[0]);
+}
+
+// ============================================
 // FILE UTILITIES
 // ============================================
 
@@ -161,33 +208,18 @@ String[] listCachedSelections() {
 
 ShaderAnalysis loadShaderAnalysis(String shaderPath) {
   // Analysis JSON is stored alongside the shader file
-  // e.g., shaders/isf/CandyWarp.fs -> shaders/isf/CandyWarp.analysis.json
   String analysisPath = shaderPath.replaceAll("\\.(fs|frag|isf|glsl)$", ".analysis.json");
   String filepath = dataPath(analysisPath);
   
-  println("    [loadShaderAnalysis] Checking: " + filepath);
-  
   File f = new File(filepath);
-  if (!f.exists()) {
-    println("    [loadShaderAnalysis] NOT FOUND");
-    return null;
-  }
-  
-  println("    [loadShaderAnalysis] FOUND - loading...");
+  if (!f.exists()) return null;
   
   try {
     String[] lines = loadStrings(filepath);
-    if (lines == null || lines.length == 0) {
-      println("    [loadShaderAnalysis] File empty or null");
-      return null;
-    }
+    if (lines == null || lines.length == 0) return null;
     
     String json = String.join("\n", lines);
-    ShaderAnalysis result = parseAnalysisJson(json);
-    if (result != null) {
-      println("    [loadShaderAnalysis] Parsed OK: " + result.mood);
-    }
-    return result;
+    return parseAnalysisJson(json);
     
   } catch (Exception e) {
     println("Error loading shader analysis: " + e.getMessage());
@@ -225,6 +257,30 @@ String analysisToJson(ShaderAnalysis a) {
   sb.append("  \"objects\": ").append(arrayToJson(a.objects)).append(",\n");
   sb.append("  \"effects\": ").append(arrayToJson(a.effects)).append(",\n");
   
+  // Serialize features HashMap
+  sb.append("  \"features\": {\n");
+  if (a.features != null && a.features.size() > 0) {
+    int count = 0;
+    for (String key : a.features.keySet()) {
+      if (count > 0) sb.append(",\n");
+      sb.append("    \"").append(escapeJson(key)).append("\": ").append(a.features.get(key));
+      count++;
+    }
+    sb.append("\n");
+  }
+  sb.append("  },\n");
+  
+  // Serialize input capabilities
+  sb.append("  \"inputs\": {\n");
+  sb.append("    \"floatCount\": ").append(a.inputs.floatCount).append(",\n");
+  sb.append("    \"point2DCount\": ").append(a.inputs.point2DCount).append(",\n");
+  sb.append("    \"colorCount\": ").append(a.inputs.colorCount).append(",\n");
+  sb.append("    \"boolCount\": ").append(a.inputs.boolCount).append(",\n");
+  sb.append("    \"imageCount\": ").append(a.inputs.imageCount).append(",\n");
+  sb.append("    \"hasAudio\": ").append(a.inputs.hasAudio).append(",\n");
+  sb.append("    \"inputNames\": ").append(arrayToJson(a.inputs.inputNames)).append("\n");
+  sb.append("  },\n");
+  
   sb.append("  \"analyzedAt\": ").append(a.analyzedAt).append("\n");
   sb.append("}");
   
@@ -252,6 +308,12 @@ ShaderAnalysis parseAnalysisJson(String json) {
   String[] geometry = extractJsonArray(json, "geometry");
   String[] objects = extractJsonArray(json, "objects");
   String[] effects = extractJsonArray(json, "effects");
+  
+  // Extract features object
+  HashMap<String, Float> features = extractFeaturesObject(json);
+  
+  // Extract inputs object
+  ShaderInputs inputs = extractInputsObject(json);
   
   // Extract analyzedAt (number)
   long analyzedAt = System.currentTimeMillis();
@@ -290,6 +352,145 @@ ShaderAnalysis parseAnalysisJson(String json) {
     energy != null ? energy : "medium",
     complexity != null ? complexity : "medium",
     description != null ? description : "",
-    analyzedAt
+    analyzedAt,
+    features,
+    inputs
   );
+}
+
+// Extract inputs object from analysis JSON
+ShaderInputs extractInputsObject(String json) {
+  int inputsPos = json.indexOf("\"inputs\"");
+  if (inputsPos < 0) return new ShaderInputs();
+  
+  int braceStart = json.indexOf("{", inputsPos);
+  if (braceStart < 0) return new ShaderInputs();
+  
+  // Find matching closing brace
+  int depth = 1;
+  int braceEnd = braceStart + 1;
+  while (braceEnd < json.length() && depth > 0) {
+    char c = json.charAt(braceEnd);
+    if (c == '{') depth++;
+    else if (c == '}') depth--;
+    braceEnd++;
+  }
+  
+  if (depth != 0) return new ShaderInputs();
+  
+  String inputsJson = json.substring(braceStart, braceEnd);
+  
+  int floatCount = extractIntField(inputsJson, "floatCount", 0);
+  int point2DCount = extractIntField(inputsJson, "point2DCount", 0);
+  int colorCount = extractIntField(inputsJson, "colorCount", 0);
+  int boolCount = extractIntField(inputsJson, "boolCount", 0);
+  int imageCount = extractIntField(inputsJson, "imageCount", 0);
+  boolean hasAudio = extractBoolField(inputsJson, "hasAudio", false);
+  String[] inputNames = extractJsonArray(inputsJson, "inputNames");
+  
+  if (inputNames == null) inputNames = new String[0];
+  
+  return new ShaderInputs(floatCount, point2DCount, colorCount, boolCount,
+                          imageCount, hasAudio, inputNames);
+}
+
+int extractIntField(String json, String key, int defaultVal) {
+  int keyPos = json.indexOf("\"" + key + "\"");
+  if (keyPos < 0) return defaultVal;
+  
+  int colonPos = json.indexOf(":", keyPos);
+  if (colonPos < 0) return defaultVal;
+  
+  int start = colonPos + 1;
+  while (start < json.length() && !Character.isDigit(json.charAt(start)) && json.charAt(start) != '-') {
+    start++;
+  }
+  int end = start;
+  if (end < json.length() && json.charAt(end) == '-') end++;
+  while (end < json.length() && Character.isDigit(json.charAt(end))) {
+    end++;
+  }
+  
+  if (end > start) {
+    try {
+      return Integer.parseInt(json.substring(start, end));
+    } catch (NumberFormatException e) {}
+  }
+  return defaultVal;
+}
+
+boolean extractBoolField(String json, String key, boolean defaultVal) {
+  int keyPos = json.indexOf("\"" + key + "\"");
+  if (keyPos < 0) return defaultVal;
+  
+  int colonPos = json.indexOf(":", keyPos);
+  if (colonPos < 0) return defaultVal;
+  
+  String rest = json.substring(colonPos + 1, min(colonPos + 20, json.length())).trim();
+  if (rest.startsWith("true")) return true;
+  if (rest.startsWith("false")) return false;
+  return defaultVal;
+}
+
+// Extract features object { "key": value, ... }
+HashMap<String, Float> extractFeaturesObject(String json) {
+  HashMap<String, Float> features = new HashMap<String, Float>();
+  
+  int featPos = json.indexOf("\"features\"");
+  if (featPos < 0) return features;
+  
+  int braceStart = json.indexOf("{", featPos);
+  if (braceStart < 0) return features;
+  
+  // Find matching closing brace
+  int depth = 1;
+  int braceEnd = braceStart + 1;
+  while (braceEnd < json.length() && depth > 0) {
+    char c = json.charAt(braceEnd);
+    if (c == '{') depth++;
+    else if (c == '}') depth--;
+    braceEnd++;
+  }
+  
+  if (depth != 0) return features;
+  
+  String featuresJson = json.substring(braceStart + 1, braceEnd - 1);
+  
+  // Parse key: value pairs
+  String[] featureKeys = {"energy_score", "mood_valence", "color_warmth", 
+                          "motion_speed", "geometric_score", "visual_density"};
+  
+  for (String key : featureKeys) {
+    int keyPos = featuresJson.indexOf("\"" + key + "\"");
+    if (keyPos >= 0) {
+      int colonPos = featuresJson.indexOf(":", keyPos);
+      if (colonPos >= 0) {
+        // Find the number value
+        int start = colonPos + 1;
+        while (start < featuresJson.length() && 
+               (featuresJson.charAt(start) == ' ' || featuresJson.charAt(start) == '\n')) {
+          start++;
+        }
+        
+        int end = start;
+        // Handle negative sign for mood_valence
+        if (end < featuresJson.length() && featuresJson.charAt(end) == '-') {
+          end++;
+        }
+        while (end < featuresJson.length() && 
+               (Character.isDigit(featuresJson.charAt(end)) || featuresJson.charAt(end) == '.')) {
+          end++;
+        }
+        
+        if (end > start) {
+          try {
+            float value = Float.parseFloat(featuresJson.substring(start, end));
+            features.put(key, value);
+          } catch (NumberFormatException e) {}
+        }
+      }
+    }
+  }
+  
+  return features;
 }

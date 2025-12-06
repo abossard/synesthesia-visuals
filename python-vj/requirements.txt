@@ -22,6 +22,9 @@ psutil>=5.9.0
 # LLM support (optional - uses local Ollama by default if no OpenAI key)
 openai>=1.0.0
 
+# Vector database for shader semantic search
+chromadb>=0.4.0
+
 # MIDI I/O for MIDI router
 python-rtmidi>=1.5.0
 

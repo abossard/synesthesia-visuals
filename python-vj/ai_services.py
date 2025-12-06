@@ -31,6 +31,7 @@ class LLMAnalyzer:
     
     Deep module interface:
         analyze_lyrics(lyrics, artist, title) -> Dict
+        analyze_shader(shader_name, shader_source) -> Dict
         generate_image_prompt(artist, title, keywords, themes) -> str
     
     Hides: Multi-backend LLM (OpenAI/LM Studio), caching, fallback logic
@@ -103,6 +104,174 @@ class LLMAnalyzer:
             logger.debug(f"Image prompt generation error: {e}")
         
         return self._basic_image_prompt(artist, title, keywords, themes)
+    
+    def analyze_shader(self, shader_name: str, shader_source: str, timeout: int = 300) -> Dict[str, Any]:
+        """
+        Analyze GLSL shader source for VJ music visualization matching.
+        
+        Args:
+            shader_name: Name of the shader
+            shader_source: GLSL source code
+            timeout: Request timeout in seconds (default 300s = 5 min for large shaders)
+        
+        Returns dict with:
+            - mood: str (energetic|calm|dark|bright|psychedelic|...)
+            - colors: List[str]
+            - effects: List[str]
+            - description: str
+            - features: Dict[str, float] (energy_score, mood_valence, etc.)
+            - error: str (only present if analysis failed)
+        """
+        self._try_reconnect()
+        
+        if not self._health.available:
+            logger.debug("LLM not available for shader analysis")
+            return {'error': 'LLM not available', 'shader_name': shader_name}
+        
+        prompt = self._build_shader_analysis_prompt(shader_name, shader_source)
+        
+        try:
+            if self._backend == "openai":
+                response = self._openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=800,
+                    timeout=timeout
+                )
+                content = response.choices[0].message.content
+            elif self._backend == "lmstudio":
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 800
+                    },
+                    timeout=timeout)  # Long timeout for large shaders
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    error_msg = f"LLM returned status {resp.status_code}: {resp.text[:200]}"
+                    logger.warning(f"Shader analysis failed: {error_msg}")
+                    return {'error': error_msg, 'shader_name': shader_name}
+            else:
+                return {'error': 'No LLM backend configured', 'shader_name': shader_name}
+            
+            # Parse JSON from response
+            if content:
+                result = self._parse_shader_analysis(content)
+                if result:
+                    return result
+                else:
+                    return {'error': f'Failed to parse LLM response: {content[:200]}...', 'shader_name': shader_name}
+                
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Request timeout after {timeout}s"
+            logger.warning(f"Shader analysis timeout for {shader_name}: {error_msg}")
+            return {'error': error_msg, 'shader_name': shader_name}
+        except Exception as e:
+            error_msg = str(e)
+            logger.warning(f"Shader analysis error for {shader_name}: {error_msg}")
+            self._health.mark_unavailable(error_msg)
+            return {'error': error_msg, 'shader_name': shader_name}
+        
+        return {'error': 'Unknown error', 'shader_name': shader_name}
+    
+    def _build_shader_analysis_prompt(self, shader_name: str, source: str) -> str:
+        """Build prompt for shader analysis with GLSL pattern guidance."""
+        # Smart truncation for large shaders - preserve header and key parts
+        max_len = 8000
+        if len(source) > max_len:
+            # Try to preserve ISF header (JSON at top) and main function
+            header_end = source.find('*/')
+            main_start = source.find('void main')
+            if main_start < 0:
+                main_start = source.find('vec4 main')
+            
+            if header_end > 0 and main_start > 0:
+                # Keep header + ... + main function area
+                header = source[:header_end + 2]
+                remaining = max_len - len(header) - 100
+                main_section = source[main_start:main_start + remaining]
+                truncated = f"{header}\n\n// ... ({len(source) - max_len} chars omitted) ...\n\n{main_section}"
+            else:
+                # Simple truncation with note
+                truncated = source[:max_len] + f"\n// ... (truncated, {len(source) - max_len} chars omitted)"
+        else:
+            truncated = source
+        
+        return f"""Analyze this GLSL shader for VJ music visualization matching.
+
+Shader name: {shader_name}
+
+Source code:
+```glsl
+{truncated}
+```
+
+SCORING GUIDE - Look for these GLSL patterns:
+
+energy_score (0.0-1.0):
+  HIGH (0.7-1.0): TIME*fast_multiplier (>2.0), sin/cos with high freq, feedback loops, many iterations
+  MEDIUM (0.3-0.7): TIME*moderate (0.5-2.0), smooth animations, gradual changes
+  LOW (0.0-0.3): TIME*slow (<0.5), static patterns, no animation, still images
+
+mood_valence (-1.0 to 1.0):
+  POSITIVE (+0.5 to +1.0): bright colors, saturation boost, bloom/glow, rainbows, warm tones
+  NEUTRAL (-0.3 to +0.3): balanced palettes, grayscale, neutral processing
+  NEGATIVE (-1.0 to -0.5): dark themes, desaturation, noise/distortion, glitch, vignette, shadows
+
+color_warmth (0.0-1.0):
+  WARM (0.7-1.0): red/orange/yellow dominant, vec3(1,0.5,0), fire palettes
+  NEUTRAL (0.3-0.7): purple/white/mixed, balanced RGB
+  COOL (0.0-0.3): blue/cyan/green dominant, vec3(0,0.5,1), water/ice palettes
+
+motion_speed (0.0-1.0):
+  FAST (0.7-1.0): TIME*5+, rapid UV scrolling, high-freq sin/cos, particle velocity
+  MEDIUM (0.3-0.7): TIME*1-3, moderate rotation/translation
+  SLOW (0.0-0.3): TIME*0.1-0.5, subtle drift, nearly static, slow morphing
+
+geometric_score (0.0-1.0):
+  GEOMETRIC (0.7-1.0): step(), mod(), floor(), grid patterns, sharp edges, polygons, voronoi
+  MIXED (0.3-0.7): combination of smooth and sharp, soft-edged shapes
+  ORGANIC (0.0-0.3): smoothstep(), noise(), fbm(), fluid simulations, clouds, soft gradients
+
+visual_density (0.0-1.0):
+  DENSE (0.7-1.0): many loop iterations (>20), layered effects, complex fbm, particle systems
+  MEDIUM (0.3-0.7): moderate complexity, 5-20 iterations, some layering
+  MINIMAL (0.0-0.3): simple math, few operations, clean output, <5 iterations
+
+Respond with ONLY valid JSON:
+{{
+  "mood": "<one word: energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
+  "colors": ["<dominant color>", "<secondary color>"],
+  "geometry": ["<shape type>"],
+  "objects": ["<visual element>"],
+  "effects": ["<visual effect>"],
+  "energy": "<low|medium|high>",
+  "complexity": "<simple|medium|complex>",
+  "description": "<one sentence description>",
+  "features": {{
+    "energy_score": <float>,
+    "mood_valence": <float>,
+    "color_warmth": <float>,
+    "motion_speed": <float>,
+    "geometric_score": <float>,
+    "visual_density": <float>
+  }}
+}}
+
+JSON response:"""
+    
+    def _parse_shader_analysis(self, content: str) -> Optional[Dict[str, Any]]:
+        """Parse shader analysis JSON from LLM response."""
+        try:
+            # Find JSON in response
+            start, end = content.find('{'), content.rfind('}')
+            if start >= 0 and end > start:
+                return json.loads(content[start:end+1])
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse shader analysis JSON: {e}")
+        return None
     
     @property
     def is_available(self) -> bool:
