@@ -50,31 +50,39 @@ This project uses:
 
 ## Documentation
 
-### Essential Guides
+**[📚 Complete Documentation](docs/)** - Organized by purpose: Setup, Operation, Reference, Development, Archive
 
-| Guide | Description |
-|-------|-------------|
-| **[Processing VJ Guides](docs/processing-guides/README.md)** | **NEW**: Comprehensive guide series for creating interactive, audio-reactive simulations |
-| [Live VJ Setup Guide](docs/live-vj-setup-guide.md) | **Complete live rig**: Processing + Syphon + Synesthesia + Magic + BlackHole |
-| [MIDI Controller Setup](docs/midi-controller-setup.md) | How to configure MIDImix and Launchpad |
-| [MIDI Router](python-vj/MIDI_ROUTER.md) | **Toggle state manager** for Magic Music Visuals with LED feedback |
-| [Processing Games Guide](docs/processing-games-guide.md) | Creating interactive VJ games in Java |
-| [Python VJ Tools](python-vj/README.md) | VJ Console and Karaoke Engine documentation |
-| [ISF to Synesthesia Migration](docs/isf-to-synesthesia-migration.md) | Converting shaders to SSF format |
+### Quick Links by Purpose
 
-### Processing VJ Guide Series (NEW)
+**🚀 Setup & Installation**
+- [Quick Start: OSC Pipeline](docs/setup/QUICK_START_OSC_PIPELINE.md) - Get running in 5 minutes
+- [Live VJ Setup Guide](docs/setup/live-vj-setup-guide.md) - Complete live rig setup
+- [MIDI Controller Setup](docs/setup/midi-controller-setup.md) - Configure hardware
 
-Master creating **interactive, living, efficient simulations** in Processing for VJ performances:
+**🎮 Using the System**
+- [Processing Games Guide](docs/operation/processing-games-guide.md) - Interactive VJ games
+- [Magic Music Visuals Guide](docs/operation/magic-music-visuals-guide.md) - MMV operations
+- [MMV Master Pipeline](docs/operation/mmv-master-pipeline-guide.md) - Production setup
 
-- **[Overview](docs/processing-guides/00-overview.md)** - System architecture, quick start, performance targets
-- **[Core Concepts](docs/processing-guides/01-core-concepts.md)** - Module lifecycle, coordinate systems, anti-patterns
-- **[Audio Reactivity](docs/processing-guides/02-audio-reactivity.md)** - FFT analysis, beat detection, BPM calculation
-- **[Particle Systems](docs/processing-guides/03-particle-systems.md)** - CPU & GPU particles, PixelFlow (100k+ particles)
-- **[Fluid Simulations](docs/processing-guides/04-fluid-simulations.md)** - Reaction-diffusion, flow fields, GPU fluids
-- **[Code Patterns](docs/processing-guides/08-code-patterns.md)** - Copy-paste ready modules and algorithms
-- **[Resources](docs/processing-guides/09-resources.md)** - Libraries, tools, examples, learning materials
+**📚 Technical Reference**
+- [Processing VJ Guides](docs/reference/processing-guides/README.md) - Comprehensive development series
+- [Processing Levels](docs/reference/processing-levels/README.md) - 14 visual concept implementations
+- [ISF to Synesthesia Migration](docs/reference/isf-to-synesthesia-migration.md) - Shader conversion
+- [Python VJ Tools](python-vj/README.md) - VJ Console, audio analyzer, MIDI router
 
-**Features**: Modern 2024 techniques, GPU acceleration, mermaid diagrams, AI-optimized structure
+**🔧 Development**
+- [Active Development Plans](docs/development/) - Implementation roadmaps
+- [Python VJ Refactor Plan](docs/development/python-vj-refactor-plan.md) - Architecture improvements
+
+### Processing VJ Guide Highlights
+
+Master creating **interactive, living, efficient simulations** for VJ performances:
+- Audio Reactivity (FFT, beat detection, BPM)
+- Particle Systems (100k+ particles with GPU)
+- Fluid Simulations (reaction-diffusion, flow fields)
+- Code Patterns (copy-paste ready modules)
+
+Full series: [docs/reference/processing-guides/](docs/reference/processing-guides/README.md)
 
 ## Controller Roles
 
