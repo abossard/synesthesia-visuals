@@ -52,6 +52,7 @@ try:
         AudioConfig, DeviceConfig as AudioDeviceConfig, DeviceManager, 
         AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
     )
+    from audio_analytics_screen import EnhancedAudioAnalyticsPanel
     AUDIO_ANALYZER_AVAILABLE = True
 except ImportError as e:
     AUDIO_ANALYZER_AVAILABLE = False
@@ -1439,12 +1440,21 @@ class VJConsoleApp(App):
                 log_level=logging.INFO,
             )
             
-            # Create OSC callback that integrates with karaoke engine
+            # Create OSC callback that integrates with karaoke engine AND new audio panel
             def osc_callback(address: str, args: List):
-                """Send audio features via OSC."""
+                """Send audio features via OSC and to UI."""
                 try:
+                    # Send via network OSC
                     if self.karaoke_engine and self.karaoke_engine.osc_sender:
                         self.karaoke_engine.osc_sender.send(address, args)
+                    
+                    # Send to enhanced audio analytics panel
+                    try:
+                        panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
+                        panel.add_osc_message(address, args)
+                    except Exception:
+                        pass  # Panel might not be mounted yet
+                        
                 except Exception as e:
                     logger.debug(f"OSC send error: {e}")
             
@@ -1553,15 +1563,12 @@ class VJConsoleApp(App):
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
             
-            # Tab 5: Audio Analyzer
+            # Tab 5: Audio Analyzer (Enhanced)
             with TabPane("5️⃣ Audio Analyzer", id="audio"):
-                yield AudioActionsPanel(id="audio-actions")
-                with Horizontal():
-                    with VerticalScroll(id="left-col"):
-                        yield AudioAnalyzerStatusPanel(id="audio-status", classes="panel")
-                        yield AudioDevicesPanel(id="audio-devices", classes="panel")
-                    with VerticalScroll(id="right-col"):
-                        yield AudioFeaturesPanel(id="audio-features", classes="panel full-height")
+                if AUDIO_ANALYZER_AVAILABLE:
+                    yield EnhancedAudioAnalyticsPanel(id="enhanced-audio-analytics")
+                else:
+                    yield Label("[yellow]Audio analyzer not available[/]\n[dim]Install: pip install sounddevice numpy essentia[/]")
             
             # Tab 6: MIDI Router
             with TabPane("6️⃣ MIDI Router", id="midi"):
@@ -1599,6 +1606,17 @@ class VJConsoleApp(App):
         # Background updates
         self.set_interval(0.5, self._update_data)
         self.set_interval(2.0, self._check_apps)
+        
+        # Flush audio analytics log batches at 30 FPS
+        self.set_interval(1.0 / 30, self._flush_audio_log)
+    
+    def _flush_audio_log(self) -> None:
+        """Flush batched messages in audio analytics log."""
+        try:
+            panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
+            panel.flush_log()
+        except Exception:
+            pass  # Panel might not exist
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
@@ -1642,6 +1660,13 @@ class VJConsoleApp(App):
             # Start analyzer thread
             self.audio_analyzer.start()
             logger.info("Audio analyzer started")
+            
+            # Update enhanced panel status
+            try:
+                panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
+                panel.set_connection_status("Connected")
+            except Exception:
+                pass
             
             # Update devices list
             self._update_audio_devices()
@@ -2007,6 +2032,14 @@ class VJConsoleApp(App):
         try:
             self.audio_analyzer.stop()
             logger.info("Audio analyzer stopped")
+            
+            # Update enhanced panel status
+            try:
+                panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
+                panel.set_connection_status("Disconnected")
+            except Exception:
+                pass
+                
         except Exception as e:
             logger.exception(f"Audio analyzer stop error: {e}")
     
