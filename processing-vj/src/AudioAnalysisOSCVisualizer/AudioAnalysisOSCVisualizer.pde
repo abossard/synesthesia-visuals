@@ -80,7 +80,14 @@ void settings() {
 
 void setup() {
   surface.setTitle("Audio Analysis OSC Visualizer");
-  hudFont = createFont("IBM Plex Mono", 16, true);
+  
+  // Use Processing's default monospace font for cross-platform compatibility
+  // Falls back gracefully if IBM Plex Mono not available
+  try {
+    hudFont = createFont("IBM Plex Mono", 16, true);
+  } catch (Exception e) {
+    hudFont = createFont("Courier", 16, true);
+  }
   textFont(hudFont);
   
   // Initialize OSC receiver
@@ -127,6 +134,12 @@ void draw() {
 
 // === OSC Event Handler ===
 
+// Expected OSC type tags for validation
+final String LEVELS_TYPE_TAG = "ffffffff";  // 8 floats
+final String BPM_TYPE_TAG = "ff";            // 2 floats
+final String PITCH_TYPE_TAG = "ff";          // 2 floats
+final String SPECTRAL_TYPE_TAG = "fff";      // 3 floats
+
 void oscEvent(OscMessage msg) {
   lastOscTime = millis();
   
@@ -134,7 +147,7 @@ void oscEvent(OscMessage msg) {
   
   if (addr.equals("/audio/levels")) {
     // [sub_bass, bass, low_mid, mid, high_mid, presence, air, overall_rms]
-    if (msg.checkTypetag("ffffffff")) {
+    if (msg.checkTypetag(LEVELS_TYPE_TAG)) {
       subBass = msg.get(0).floatValue();
       bass = msg.get(1).floatValue();
       lowMid = msg.get(2).floatValue();
@@ -164,21 +177,21 @@ void oscEvent(OscMessage msg) {
   }
   else if (addr.equals("/audio/bpm")) {
     // [bpm, confidence]
-    if (msg.checkTypetag("ff")) {
+    if (msg.checkTypetag(BPM_TYPE_TAG)) {
       bpm = msg.get(0).floatValue();
       bpmConfidence = msg.get(1).floatValue();
     }
   }
   else if (addr.equals("/audio/pitch")) {
     // [frequency_hz, confidence]
-    if (msg.checkTypetag("ff")) {
+    if (msg.checkTypetag(PITCH_TYPE_TAG)) {
       pitchHz = msg.get(0).floatValue();
       pitchConf = msg.get(1).floatValue();
     }
   }
   else if (addr.equals("/audio/spectral")) {
     // [centroid_norm, rolloff_hz, flux]
-    if (msg.checkTypetag("fff")) {
+    if (msg.checkTypetag(SPECTRAL_TYPE_TAG)) {
       spectralCentroid = msg.get(0).floatValue();
       spectralRolloff = msg.get(1).floatValue();
       spectralFlux = msg.get(2).floatValue();

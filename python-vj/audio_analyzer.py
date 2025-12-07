@@ -813,7 +813,7 @@ class AudioAnalyzer(threading.Thread):
                     if self.last_beat_time > 0:
                         interval = current_time - self.last_beat_time
                         # Filter out extremely short intervals (debounce)
-                        if interval > 0.12:  # Min ~500 BPM
+                        if interval > 0.12:  # Max ~500 BPM (60/0.12 = 500)
                             self.beat_times.append(interval)
                     self.last_beat_time = current_time
                     
@@ -888,10 +888,16 @@ class AudioAnalyzer(threading.Thread):
         alpha = 0.1
         sensitivity = 1.5
         
+        # Band indices for multi-band detection
+        # Based on config.band_names: sub_bass, bass, low_mid, mid, high_mid, presence, air
+        BASS_BAND_INDEX = 1  # 60-250 Hz
+        MID_BAND_INDICES = [2, 3, 4]  # 250-500, 500-2000, 2000-4000 Hz
+        HIGH_BAND_INDICES = [5, 6]  # 4000-6000, 6000-20000 Hz
+        
         # Average bands for multi-band detection
-        bass_energy = self.smoothed_bands[1] if len(self.smoothed_bands) > 1 else 0.0
-        mid_energy = sum([self.smoothed_bands[i] for i in [2, 3, 4] if i < len(self.smoothed_bands)]) / 3.0
-        high_energy = sum([self.smoothed_bands[i] for i in [5, 6] if i < len(self.smoothed_bands)]) / 2.0
+        bass_energy = self.smoothed_bands[BASS_BAND_INDEX] if len(self.smoothed_bands) > BASS_BAND_INDEX else 0.0
+        mid_energy = sum([self.smoothed_bands[i] for i in MID_BAND_INDICES if i < len(self.smoothed_bands)]) / len(MID_BAND_INDICES)
+        high_energy = sum([self.smoothed_bands[i] for i in HIGH_BAND_INDICES if i < len(self.smoothed_bands)]) / len(HIGH_BAND_INDICES)
         
         # Update running averages
         self.bass_avg = self.bass_avg * (1 - alpha) + bass_energy * alpha

@@ -155,7 +155,8 @@ def test_continuous_stream():
             spectrum = [0.3 + 0.2 * abs((i + frame) % 16 - 8) / 8.0 for i in range(32)]
             client.send_message("/audio/spectrum", spectrum)
             
-            # /audio/beats (beat every 0.5 seconds)
+            # /audio/beats (beat every 0.5 seconds = 120 BPM)
+            # At 60 Hz, beat every 30 frames = 0.5 seconds
             is_beat = 1 if (frame % 30) == 0 else 0
             client.send_message("/audio/beats", [
                 is_beat, 
