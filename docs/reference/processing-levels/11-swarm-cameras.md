@@ -60,4 +60,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.11](../processing-implementation-plan.md#611-level-intelligent-swarm-cameras)
+- [Implementation Plan — Phase 6.11](../../development/processing-implementation-plan.md#611-level-intelligent-swarm-cameras)

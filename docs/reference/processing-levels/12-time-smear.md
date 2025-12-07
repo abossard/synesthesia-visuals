@@ -60,4 +60,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.12](../processing-implementation-plan.md#612-level-time-smear--history-trails)
+- [Implementation Plan — Phase 6.12](../../development/processing-implementation-plan.md#612-level-time-smear--history-trails)

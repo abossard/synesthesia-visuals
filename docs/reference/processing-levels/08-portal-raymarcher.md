@@ -59,4 +59,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.8](../processing-implementation-plan.md#68-level-wormhole--portal-raymarcher)
+- [Implementation Plan — Phase 6.8](../../development/processing-implementation-plan.md#68-level-wormhole--portal-raymarcher)

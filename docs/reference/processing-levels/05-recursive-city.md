@@ -60,4 +60,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.5](../processing-implementation-plan.md#65-level-recursive-city--escher-camera-ride)
+- [Implementation Plan — Phase 6.5](../../development/processing-implementation-plan.md#65-level-recursive-city--escher-camera-ride)

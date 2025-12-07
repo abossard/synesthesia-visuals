@@ -64,4 +64,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.3](../processing-implementation-plan.md#63-level-crowd-of-agents-drawing-light-trails)
+- [Implementation Plan — Phase 6.3](../../development/processing-implementation-plan.md#63-level-crowd-of-agents-drawing-light-trails)

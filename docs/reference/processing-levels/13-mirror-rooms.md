@@ -60,4 +60,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.13](../processing-implementation-plan.md#613-level-split-reality--mirror-rooms)
+- [Implementation Plan — Phase 6.13](../../development/processing-implementation-plan.md#613-level-split-reality--mirror-rooms)
