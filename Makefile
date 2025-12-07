@@ -3,6 +3,7 @@
 
 SHADERS_DIR := processing-vj/src/VJUniverse/data/shaders
 SCREENSHOTS_DIR := processing-vj/src/VJUniverse/data/screenshots
+CHROMADB_DIR := python-vj/.chromadb
 PYTHON := python3
 
 .PHONY: help clean-errors clean-analysis clean-all stats find-black list-black
@@ -51,6 +52,8 @@ clean-analysis:
 
 # Delete both error and analysis files
 clean-all: clean-errors clean-analysis
+	@echo "Deleting ChromaDB cache..."
+	@rm -rf $(CHROMADB_DIR)
 	@echo "All analysis data cleared."
 
 # List shaders with errors (useful for debugging)
