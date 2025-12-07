@@ -335,7 +335,12 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     // Speed uniform: audio-reactive time scaling (0-1)
     // Key hook for GLSL shader audio reactivity
     // Uses energyFast which responds well to music dynamics
-    float audioSpeed = 0.3 + energyFast * 0.7;  // Base 0.3, boosted by audio up to 1.0
+    // Adaptive tempo: ensure motion never fully stops and swells with energy + kick dynamics
+    float baseSpeedFloor = 0.15f + energySlow * 0.15f;   // 0.15 – 0.30 based on long envelope
+    float speedRange = max(0.0f, 1.0f - baseSpeedFloor);
+    float audioSpeed = baseSpeedFloor + (energyFast * speedRange);
+    audioSpeed += 0.08f * kickEnv;  // Gentle beat accent, keeps impact without spikes
+    audioSpeed = constrain(audioSpeed, baseSpeedFloor, 1.0f);
     s.set("speed", audioSpeed);
     
     // Apply audio uniforms from AudioManager (includes bound uniforms)

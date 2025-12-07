@@ -122,9 +122,11 @@ class PlaybackCoordinator:
         statuses = {}
         for monitor in self._monitors:
             name = self._monitor_key(monitor)
-            status_fn = getattr(monitor, 'status', None)
-            if callable(status_fn):
-                statuses[name] = status_fn()
+            status_attr = getattr(monitor, 'status', None)
+            if callable(status_attr):
+                statuses[name] = status_attr()
+            elif status_attr is not None:
+                statuses[name] = status_attr
         return statuses
 
     def _monitor_key(self, monitor) -> str:
