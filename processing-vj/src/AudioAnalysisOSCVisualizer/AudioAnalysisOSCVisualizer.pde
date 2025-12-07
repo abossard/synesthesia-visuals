@@ -66,6 +66,21 @@ int isDrop = 0;
 float energyTrend = 0.0f;
 float brightness = 0.0f;
 
+// === EDM Features (14 new descriptors) ===
+float beat = 0.0f;  // Beat impulse (0 or 1)
+float beatConf = 0.0f;  // Beat confidence
+float energy = 0.0f;  // Raw energy
+float energySmooth = 0.0f;  // EMA-smoothed energy (normalized)
+float beatEnergyGlobal = 0.0f;  // Global beat loudness
+float beatEnergyLow = 0.0f;  // Low-band beat loudness
+float beatEnergyHigh = 0.0f;  // High-band beat loudness
+float brightnessNorm = 0.0f;  // Normalized brightness (0=dark, 1=bright)
+float noisiness = 0.0f;  // Spectral flatness (0=tonal, 1=noise)
+float bassBand = 0.0f;  // Low band energy (normalized)
+float midBand = 0.0f;  // Mid band energy (normalized)
+float highBand = 0.0f;  // High band energy (normalized)
+float dynamicComplexity = 0.0f;  // Loudness variance
+
 // === Connection Status ===
 long lastOscTime = 0;
 boolean oscConnected = false;
@@ -123,6 +138,7 @@ void draw() {
     drawBeatPanel(width - 200, 180);
     drawSpectralPanel(24, 24);
     drawStructurePanel(24, 180);
+    drawEDMPanel(280, 24);  // New EDM features panel
   }
   
   // Always draw HUD
@@ -205,6 +221,46 @@ void oscEvent(OscMessage msg) {
       energyTrend = msg.get(2).floatValue();
       brightness = msg.get(3).floatValue();
     }
+  }
+  // === EDM Features (14 new descriptors) ===
+  else if (addr.equals("/beat")) {
+    beat = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/beat_conf")) {
+    beatConf = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/energy")) {
+    energy = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/energy_smooth")) {
+    energySmooth = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/beat_energy")) {
+    beatEnergyGlobal = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/beat_energy_low")) {
+    beatEnergyLow = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/beat_energy_high")) {
+    beatEnergyHigh = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/brightness")) {
+    brightnessNorm = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/noisiness")) {
+    noisiness = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/bass_band")) {
+    bassBand = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/mid_band")) {
+    midBand = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/high_band")) {
+    highBand = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/dynamic_complexity")) {
+    dynamicComplexity = msg.get(0).floatValue();
   }
 }
 
@@ -524,6 +580,96 @@ void drawStructurePanel(float x, float y) {
   text("Brightness:", x, py);
   fill(255, 220, 100);
   text(String.format("%.2f", brightness), x + 90, py);
+}
+
+void drawEDMPanel(float x, float y) {
+  // Background panel for EDM features
+  fill(20);
+  stroke(60);
+  rect(x - 4, y - 4, 280, 140, 4);
+  noStroke();
+  
+  float py = y;
+  
+  // Title
+  fill(200);
+  text("EDM Features", x, py);
+  py += 22;
+  
+  // Energy displays
+  fill(180);
+  text("Energy:", x, py);
+  fill(255, 220, 100);
+  text(String.format("%.3f", energy), x + 90, py);
+  fill(100, 200, 255);
+  text("Smooth:", x + 160, py);
+  text(String.format("%.2f", energySmooth), x + 220, py);
+  py += 18;
+  
+  // Energy bar
+  fill(40);
+  rect(x, py, 260, 8);
+  fill(100, 255, 150);
+  rect(x, py, 260 * constrain(energySmooth, 0, 1), 8);
+  py += 14;
+  
+  // Beat energies
+  fill(180);
+  text("Beat Energy:", x, py);
+  py += 16;
+  
+  // Three columns for beat energy
+  float col1 = x;
+  float col2 = x + 90;
+  float col3 = x + 180;
+  
+  fill(120);
+  textSize(10);
+  text("Global", col1, py);
+  text("Low", col2, py);
+  text("High", col3, py);
+  textSize(16);
+  py += 14;
+  
+  fill(255, 200, 100);
+  text(String.format("%.2f", beatEnergyGlobal), col1, py);
+  text(String.format("%.2f", beatEnergyLow), col2, py);
+  text(String.format("%.2f", beatEnergyHigh), col3, py);
+  py += 18;
+  
+  // Band energies
+  fill(180);
+  text("Bands (norm):", x, py);
+  py += 16;
+  
+  fill(120);
+  textSize(10);
+  text("Bass", col1, py);
+  text("Mid", col2, py);
+  text("High", col3, py);
+  textSize(16);
+  py += 14;
+  
+  fill(255, 100, 50);
+  text(String.format("%.2f", bassBand), col1, py);
+  fill(100, 255, 100);
+  text(String.format("%.2f", midBand), col2, py);
+  fill(100, 100, 255);
+  text(String.format("%.2f", highBand), col3, py);
+  py += 18;
+  
+  // Spectral qualities
+  fill(180);
+  text("Brightness:", x, py);
+  fill(255, 220, 100);
+  text(String.format("%.2f", brightnessNorm), x + 100, py);
+  
+  fill(180);
+  text("Noise:", x + 160, py);
+  fill(noisiness > 0.5 ? color(255, 100, 100) : color(100, 255, 100));
+  text(String.format("%.2f", noisiness), x + 220, py);
+  
+  textSize(16);
 }
 
 void keyPressed() {
