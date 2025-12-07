@@ -63,4 +63,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.4](../processing-implementation-plan.md#64-level-reactiondiffusion-skin-on-3d-shapes)
+- [Implementation Plan — Phase 6.4](../../development/processing-implementation-plan.md#64-level-reactiondiffusion-skin-on-3d-shapes)
