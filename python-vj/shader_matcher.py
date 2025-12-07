@@ -39,6 +39,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import json
+import hashlib
 import math
 import logging
 from dataclasses import dataclass, field
@@ -849,23 +850,25 @@ class ShaderIndexer:
                 
                 with open(analysis_path, 'r') as f:
                     data = json.load(f)
+                analysis_hash = self._compute_analysis_hash(data)
                 
                 features = ShaderFeatures.from_analysis_json(str(shader_path), data)
                 # Override name with prefixed path-based name
                 features.name = name
                 self.shaders[name] = features
+                features.analysis_hash = analysis_hash  # type: ignore[attr-defined]
                 stats['loaded'] += 1
                 stats[f'{shader_type}_count'] += 1
                 
                 # Sync to ChromaDB (feature vectors)
                 if self._use_chromadb and self._collection:
-                    self._upsert_to_chromadb(features)
-                    stats['chromadb_synced'] += 1
+                    if self._upsert_to_chromadb(features, analysis_hash):
+                        stats['chromadb_synced'] += 1
                 
                 # Sync to text collection (semantic search)
                 if self._use_chromadb and self._text_collection:
-                    self._upsert_text_document(name, data)
-                    stats['text_synced'] += 1
+                    if self._upsert_text_document(name, data, analysis_hash):
+                        stats['text_synced'] += 1
                     
             except Exception as e:
                 logger.warning(f"Failed to load {shader_path}: {e}")
@@ -874,10 +877,29 @@ class ShaderIndexer:
         logger.info(f"Sync complete: {stats}")
         return stats
     
-    def _upsert_to_chromadb(self, features: ShaderFeatures):
-        """Add or update shader in ChromaDB feature collection."""
+    def _compute_analysis_hash(self, data: dict) -> str:
+        """Compute deterministic hash for analysis JSON content."""
+        normalized = json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        return hashlib.sha1(normalized.encode('utf-8')).hexdigest()
+
+    def _upsert_to_chromadb(self, features: ShaderFeatures, analysis_hash: str) -> bool:
+        """Add or update shader in ChromaDB feature collection.
+
+        Returns True when an upsert occurs, False when existing entry is unchanged.
+        """
         if not self._collection:
-            return
+            return False
+        try:
+            existing = self._collection.get(ids=[features.name])
+        except Exception:
+            existing = None
+
+        if existing:
+            metadatas = existing.get('metadatas') or []
+            if metadatas:
+                existing_hash = metadatas[0].get('analysis_hash')
+                if existing_hash == analysis_hash:
+                    return False
         
         vector = features.to_vector()
         metadata = {
@@ -885,6 +907,7 @@ class ShaderIndexer:
             'mood': features.mood,
             'energy_score': features.energy_score,
             'mood_valence': features.mood_valence,
+            'analysis_hash': analysis_hash,
         }
         
         self._collection.upsert(
@@ -892,11 +915,26 @@ class ShaderIndexer:
             embeddings=[vector],
             metadatas=[metadata]
         )
+        return True
     
-    def _upsert_text_document(self, name: str, data: dict):
-        """Add or update shader text document for semantic search."""
+    def _upsert_text_document(self, name: str, data: dict, analysis_hash: str) -> bool:
+        """Add or update shader text document for semantic search.
+
+        Returns True when an upsert occurs, False when existing entry is unchanged.
+        """
         if not self._text_collection:
-            return
+            return False
+        try:
+            existing = self._text_collection.get(ids=[name])
+        except Exception:
+            existing = None
+
+        if existing:
+            metadatas = existing.get('metadatas') or []
+            if metadatas:
+                existing_hash = metadatas[0].get('analysis_hash')
+                if existing_hash == analysis_hash:
+                    return False
         
         # Build searchable document from all text fields
         doc_parts = [
@@ -942,6 +980,7 @@ class ShaderIndexer:
             'energy': data.get('energy', 'medium'),
             'colors': ','.join(data.get('colors', [])),
             'effects': ','.join(data.get('effects', [])),
+            'analysis_hash': analysis_hash,
         }
         
         self._text_collection.upsert(
@@ -949,6 +988,7 @@ class ShaderIndexer:
             documents=[document],
             metadatas=[metadata]
         )
+        return True
     
     def get_unanalyzed(self) -> List[str]:
         """Get list of shader names without analysis (prefixed paths)."""
