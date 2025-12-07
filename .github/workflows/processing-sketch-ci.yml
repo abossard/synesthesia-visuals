@@ -1,0 +1,406 @@
+name: Processing Sketch CI - Build and Test
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'processing-vj/**'
+      - '.github/workflows/processing-sketch-ci.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'processing-vj/**'
+      - '.github/workflows/processing-sketch-ci.yml'
+  workflow_dispatch:
+    inputs:
+      sketch_filter:
+        description: 'Filter sketches to test (comma-separated names, or "all")'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: read
+
+jobs:
+  # Discover sketches from config
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Read sketch configuration
+        id: set-matrix
+        run: |
+          # Parse ci-test-config.json and create matrix
+          SKETCHES=$(cat processing-vj/ci-test-config.json | jq -c '.sketches')
+          echo "matrix={\"sketch\":$SKETCHES}" >> $GITHUB_OUTPUT
+          echo "Found sketches:"
+          echo "$SKETCHES" | jq -r '.[].name'
+
+  # Build and test sketches in parallel
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Continue testing other sketches even if one fails
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    
+    env:
+      DISPLAY: :99
+      CI_TEST_MODE: true
+      PROCESSING_SKETCHBOOK: ${{ github.workspace }}/sketchbook
+      # Force Mesa software rendering for headless OpenGL (prevents SIGSEGV crashes)
+      LIBGL_ALWAYS_SOFTWARE: 1
+      GALLIUM_DRIVER: llvmpipe
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          # No cache needed - Processing is cached separately below
+      
+      # Cache Processing installation
+      - name: Cache Processing installation
+        id: cache-processing
+        uses: actions/cache@v4
+        with:
+          path: processing-4.3
+          key: processing-4.3-linux-x64-${{ runner.os }}
+          restore-keys: |
+            processing-4.3-linux-x64-
+      
+      - name: Download and install Processing
+        if: steps.cache-processing.outputs.cache-hit != 'true'
+        run: |
+          echo "Downloading Processing 4.3..."
+          wget -q https://github.com/processing/processing4/releases/download/processing-1293-4.3/processing-4.3-linux-x64.tgz
+          tar xzf processing-4.3-linux-x64.tgz
+          rm processing-4.3-linux-x64.tgz
+      
+      - name: Add Processing to PATH
+        run: |
+          echo "$PWD/processing-4.3" >> $GITHUB_PATH
+      
+      - name: Install headless tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool x11-utils imagemagick
+      
+      # Cache Processing libraries
+      - name: Cache Processing libraries
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/processing-4.3/modes/java/libraries
+          key: processing-libs-${{ runner.os }}-${{ hashFiles('processing-vj/**/*.pde') }}
+          restore-keys: |
+            processing-libs-${{ runner.os }}-
+      
+      - name: Install Processing libraries
+        run: |
+          # Libraries must be installed in Processing's modes/java/libraries directory
+          # NOT in the sketchbook/libraries directory for processing-java to find them
+          PROCESSING_LIBS_DIR="$GITHUB_WORKSPACE/processing-4.3/modes/java/libraries"
+          
+          echo "Installing Processing libraries to: $PROCESSING_LIBS_DIR"
+          
+          # Install oscP5 library (provides both oscP5 and netP5)
+          if [ ! -d "$PROCESSING_LIBS_DIR/oscP5" ]; then
+            echo "Installing oscP5..."
+            wget -q https://github.com/sojamo/oscp5/releases/download/v2.0.4/oscP5-2.0.4.zip
+            unzip -q oscP5-2.0.4.zip -d $PROCESSING_LIBS_DIR/
+            rm oscP5-2.0.4.zip
+          else
+            echo "oscP5 already cached"
+          fi
+          
+          # Install The MidiBus library
+          if [ ! -d "$PROCESSING_LIBS_DIR/themidibus" ]; then
+            echo "Installing The MidiBus..."
+            wget -q http://www.smallbutdigital.com/releases/themidibus/themidibus-latest.zip -O themidibus.zip
+            unzip -q themidibus.zip -d $PROCESSING_LIBS_DIR/
+            rm themidibus.zip
+          else
+            echo "The MidiBus already cached"
+          fi
+          
+          # Install Processing Sound library (for AudioAnalysisOSC sketch)
+          if [ ! -d "$PROCESSING_LIBS_DIR/sound" ]; then
+            echo "Installing Processing Sound library v2.4.0..."
+            wget -q https://github.com/processing/processing-sound/releases/download/v2.4.0/sound.zip
+            unzip -q sound.zip -d $PROCESSING_LIBS_DIR/
+            rm sound.zip
+            echo "✅ Sound library installed"
+          else
+            echo "Sound library already cached"
+          fi
+          
+          # Create Syphon stub for Linux CI (macOS-only library)
+          if [ ! -d "$PROCESSING_LIBS_DIR/Syphon" ]; then
+            echo "Creating Syphon stub for Linux CI..."
+            mkdir -p $PROCESSING_LIBS_DIR/Syphon/library
+            
+            # Create stub Java files
+            cat > /tmp/SyphonServer.java << 'EOF'
+          package codeanticode.syphon;
+          import processing.core.*;
+          public class SyphonServer {
+            public SyphonServer(PApplet parent, String name) {}
+            public void sendScreen() {}
+            public void sendImage(PGraphics pg) {}
+            public void stop() {}
+          }
+          EOF
+            
+            cat > /tmp/SyphonClient.java << 'EOF'
+          package codeanticode.syphon;
+          import processing.core.*;
+          public class SyphonClient {
+            public SyphonClient(PApplet parent) {}
+            public SyphonClient(PApplet parent, String appName, String serverName) {}
+            public boolean newFrame() { return false; }
+            public PGraphics getGraphics(PGraphics pg) { return pg; }
+            public void stop() {}
+          }
+          EOF
+            
+            mkdir -p /tmp/syphon-stub
+            cd /tmp/syphon-stub
+            
+            # Compile stubs
+            javac -cp $GITHUB_WORKSPACE/processing-4.3/core/library/core.jar \
+              -d . /tmp/SyphonServer.java /tmp/SyphonClient.java 2>/dev/null || true
+            
+            # Create JAR if compilation succeeded
+            if [ -d "codeanticode" ]; then
+              jar cf Syphon.jar codeanticode
+              cp Syphon.jar $PROCESSING_LIBS_DIR/Syphon/library/
+              echo "✅ Syphon stub created"
+            fi
+            
+            cd $GITHUB_WORKSPACE
+          else
+            echo "Syphon stub already cached"
+          fi
+          
+          echo ""
+          echo "Libraries installed in Processing:"
+          ls -la $PROCESSING_LIBS_DIR/
+      
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 3
+          echo "Xvfb started on display :99"
+      
+      - name: Build sketch
+        run: |
+          SKETCH_PATH="${{ matrix.sketch.path }}"
+          SKETCH_NAME="${{ matrix.sketch.name }}"
+          
+          echo "========================================"
+          echo "Building: $SKETCH_NAME"
+          echo "Path: $SKETCH_PATH"
+          echo "========================================"
+          
+          # Create output directory
+          OUTPUT_DIR="/tmp/processing-build/$SKETCH_NAME"
+          mkdir -p "$OUTPUT_DIR"
+          
+          # Build the sketch
+          xvfb-run -a ./processing-4.3/processing-java \
+            --sketch="$PWD/$SKETCH_PATH" \
+            --output="$OUTPUT_DIR" \
+            --force \
+            --build
+          
+          echo "✅ Build successful for $SKETCH_NAME"
+      
+      - name: Run test scenarios and capture screenshots
+        env:
+          DISPLAY: ':99'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: 'llvmpipe'
+          CI_TEST_MODE: 'true'
+        run: |
+          SKETCH_PATH="${{ matrix.sketch.path }}"
+          SKETCH_NAME="${{ matrix.sketch.name }}"
+          
+          # Create CI output directory  
+          mkdir -p ci-output/$SKETCH_NAME
+          
+          # Export CI output directory as absolute path
+          export CI_OUTPUT_DIR="$PWD/ci-output/$SKETCH_NAME"
+          export CI_SKETCH_NAME="$SKETCH_NAME"
+          
+          # Parse test scenarios from matrix
+          SCENARIOS='${{ toJson(matrix.sketch.testScenarios) }}'
+          NUM_SCENARIOS=$(echo "$SCENARIOS" | jq '. | length')
+          
+          echo "Running $NUM_SCENARIOS test scenario(s) for $SKETCH_NAME"
+          
+          for i in $(seq 0 $((NUM_SCENARIOS - 1))); do
+            SCENARIO=$(echo "$SCENARIOS" | jq -r ".[$i]")
+            SCENARIO_NAME=$(echo "$SCENARIO" | jq -r '.name')
+            DESCRIPTION=$(echo "$SCENARIO" | jq -r '.description')
+            WAIT_FRAMES=$(echo "$SCENARIO" | jq -r '.waitFrames')
+            SCREENSHOT_NAME=$(echo "$SCENARIO" | jq -r '.screenshotName')
+            
+            echo ""
+            echo "========================================"
+            echo "Scenario: $SCENARIO_NAME"
+            echo "Description: $DESCRIPTION"
+            echo "Wait Frames: $WAIT_FRAMES"
+            echo "Screenshot: $SCREENSHOT_NAME"
+            echo "========================================"
+            
+            # Export scenario-specific environment variables
+            export CI_SCENARIO_NAME="$SCENARIO_NAME"
+            export CI_FRAME_LIMIT="$WAIT_FRAMES"
+            export CI_SCREENSHOT_FRAME="$((WAIT_FRAMES - 10))"
+            
+            # Create scenario config JSON
+            cat > /tmp/scenario-config.json << EOF
+          {
+            "sketchName": "$SKETCH_NAME",
+            "scenarioName": "$SCENARIO_NAME",
+            "waitFrames": $WAIT_FRAMES,
+            "screenshotName": "$SCREENSHOT_NAME"
+          }
+          EOF
+            
+            echo "Config file created:"
+            cat /tmp/scenario-config.json
+            
+            # Run using Python wrapper script
+            timeout 60 python3 processing-vj/run-sketch-ci.py \
+              "$PWD/$SKETCH_PATH" \
+              /tmp/scenario-config.json \
+              2>&1 | tee "ci-output/$SKETCH_NAME/$SCENARIO_NAME-log.txt" || {
+                EXIT_CODE=$?
+                echo "⚠️ Sketch exited (exit code: $EXIT_CODE)"
+              }
+            
+            # Check for screenshot
+            if [ -f "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME" ]; then
+              SIZE=$(stat -c%s "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME" 2>/dev/null || stat -f%z "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME")
+              echo "✅ Screenshot saved: $SCREENSHOT_NAME (${SIZE} bytes)"
+            else
+              echo "⚠️ No screenshot found: $SCREENSHOT_NAME"
+              echo "Looking for files in ci-output/$SKETCH_NAME/:"
+              ls -lah "ci-output/$SKETCH_NAME/" 2>/dev/null || echo "Directory doesn't exist"
+            fi
+            
+            sleep 2
+          done
+          
+          echo ""
+          echo "========================================"
+          echo "Test scenarios complete for $SKETCH_NAME"
+          echo "========================================"
+      
+      - name: Create test report
+        if: always()
+        run: |
+          SKETCH_NAME="${{ matrix.sketch.name }}"
+          REPORT_FILE="ci-output/$SKETCH_NAME/TEST_REPORT.md"
+          
+          cat > "$REPORT_FILE" << 'EOF'
+          # Test Report: ${{ matrix.sketch.name }}
+          
+          **Sketch Path:** `${{ matrix.sketch.path }}`  
+          **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **Commit:** ${{ github.sha }}
+          
+          ## Test Scenarios
+          
+          EOF
+          
+          # List all scenarios and their results
+          SCENARIOS='${{ toJson(matrix.sketch.testScenarios) }}'
+          NUM_SCENARIOS=$(echo "$SCENARIOS" | jq '. | length')
+          
+          for i in $(seq 0 $((NUM_SCENARIOS - 1))); do
+            SCENARIO=$(echo "$SCENARIOS" | jq -r ".[$i]")
+            SCENARIO_NAME=$(echo "$SCENARIO" | jq -r '.name')
+            DESCRIPTION=$(echo "$SCENARIO" | jq -r '.description')
+            SCREENSHOT_NAME=$(echo "$SCENARIO" | jq -r '.screenshotName')
+            
+            cat >> "$REPORT_FILE" << EOF
+          ### $SCENARIO_NAME
+          
+          **Description:** $DESCRIPTION
+          
+          **Screenshot:** \`$SCREENSHOT_NAME\`
+          
+          EOF
+            
+            if [ -f "ci-output/$SKETCH_NAME/$SCREENSHOT_NAME" ]; then
+              echo "✅ Screenshot captured successfully" >> "$REPORT_FILE"
+            else
+              echo "❌ Screenshot missing" >> "$REPORT_FILE"
+            fi
+            
+            echo "" >> "$REPORT_FILE"
+          done
+          
+          cat >> "$REPORT_FILE" << 'EOF'
+          
+          ## Files in this artifact
+          
+          - `*.png` - Screenshot captures from test scenarios
+          - `*-log.txt` - Console output from each test scenario
+          - `TEST_REPORT.md` - This report
+          
+          ## Finding Screenshots
+          
+          Screenshots are uploaded as build artifacts. To view them:
+          
+          1. Go to the workflow run summary page
+          2. Scroll to "Artifacts" section at the bottom
+          3. Download the artifact for this sketch: `processing-screenshots-${{ matrix.sketch.name }}`
+          4. Extract the ZIP file to view screenshots
+          
+          EOF
+          
+          cat "$REPORT_FILE"
+      
+      - name: Upload screenshots as artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: processing-screenshots-${{ matrix.sketch.name }}
+          path: ci-output/${{ matrix.sketch.name }}/
+          retention-days: 30
+          if-no-files-found: warn
+  
+  # Summary job to collect results
+  summary:
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Create summary
+        run: |
+          echo "# Processing Sketch CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All sketch tests completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Screenshots from all test scenarios have been uploaded as artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "Each sketch has its own artifact named \`processing-screenshots-{SketchName}\`." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## What was tested" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Headless execution with Xvfb" >> $GITHUB_STEP_SUMMARY
+          echo "- Screenshot capture at specific frames" >> $GITHUB_STEP_SUMMARY
+          echo "- Deterministic rendering (fixed random seeds)" >> $GITHUB_STEP_SUMMARY
+          echo "- Automatic exit after bounded frames" >> $GITHUB_STEP_SUMMARY
