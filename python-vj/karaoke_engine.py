@@ -18,8 +18,8 @@ import time
 import logging
 import argparse
 from dataclasses import replace
-from threading import Lock
-from typing import Optional, Dict
+from threading import Lock, Event, Thread
+from typing import Optional, Dict, List
 
 # Domain and infrastructure
 from domain import (
@@ -102,6 +102,7 @@ class KaraokeEngine:
         
         # Pipeline tracking
         self._pipeline = PipelineTracker()
+        self._pipeline.set_observer(self._handle_pipeline_update)
         
         # External adapters
         self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
@@ -120,12 +121,6 @@ class KaraokeEngine:
         self._llm = LLMAnalyzer()
         self._categorizer = SongCategorizer(llm=self._llm)
         self._image_gen = ComfyUIGenerator()
-        
-        # Orchestrators
-        self._lyrics_orchestrator = LyricsOrchestrator(self._lyrics_fetcher, self._pipeline)
-        self._ai_orchestrator = AIOrchestrator(
-            self._llm, self._categorizer, self._image_gen, self._pipeline, self._osc
-        )
         
         # Shader matching (optional)
         self._shader_indexer = None
@@ -149,6 +144,11 @@ class KaraokeEngine:
         self._backoff = BackoffState()
         self._last_matched_track = ""  # Track when we last matched shaders
         self._current_shader = ""  # Currently active shader name
+        self._current_metadata: Dict = {}
+        self._current_categories = None
+        self._last_llm_analysis = None
+        self._pipeline_thread: Optional[Thread] = None
+        self._pipeline_cancel: Optional[Event] = None
     
     @property
     def current_shader(self) -> str:
@@ -184,12 +184,12 @@ class KaraokeEngine:
     @property
     def current_categories(self) -> Optional['SongCategories']:
         """Current song categories (for vj_console.py)."""
-        return self._ai_orchestrator.current_categories
+        return self._current_categories
     
     @property
     def last_llm_result(self) -> Optional[Dict]:
         """Last LLM analysis result with keywords/themes (for shader matching)."""
-        return self._ai_orchestrator.last_llm_result
+        return self._last_llm_analysis
     
     @property
     def osc_sender(self) -> OSCSender:
@@ -234,27 +234,23 @@ class KaraokeEngine:
         if self._running:
             return
         
-        import threading
         self._running = True
-        self._ai_orchestrator.start()
-        thread = threading.Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Karaoke-Main")
+        thread = Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Karaoke-Main")
         thread.start()
         logger.info("Karaoke engine started")
     
     def stop(self):
         """Stop engine and workers."""
         self._running = False
-        self._ai_orchestrator.stop()
         logger.info("Karaoke engine stopped")
     
     def run(self, poll_interval: float = 2.0):
         """Run in foreground (blocking). Polls every 2 seconds."""
         self._running = True
-        self._ai_orchestrator.start()
         try:
             self._run_loop(poll_interval)
         finally:
-            self._ai_orchestrator.stop()
+            self._running = False
     
     # Private implementation
     
@@ -287,9 +283,6 @@ class KaraokeEngine:
         """Fast check for lyric changes (100ms precision)."""
         state = snapshot.state
         self._handle_track_change(state.track)
-        
-        # Check if categories arrived and we need to match shaders
-        self._check_shader_match(state.track)
         
         if state.track and self._current_lines:
             offset_sec = self._settings.timing_offset_ms / 1000.0
@@ -325,24 +318,15 @@ class KaraokeEngine:
         else:
             self._on_no_track()
     
-    def _check_shader_match(self, track):
-        """Match shaders when categories become available for a new track."""
-        if not self._shader_selector or not track:
-            return
-        
+    def _select_shader_for_track(self, track, categories, llm_result) -> bool:
+        """Select and activate shader for given track data."""
+        if not self._shader_selector or not track or not categories or not categories.scores:
+            return False
+
         track_key = track.key
         if track_key == self._last_matched_track:
-            return  # Already matched this track
-        
-        # Check if categories are ready
-        categories = self.current_categories
-        if not categories or not categories.scores:
-            return  # Not ready yet
-        
-        # Get LLM result for enhanced matching (keywords, themes)
-        llm_result = self.last_llm_result
-        
-        # Convert categories + LLM themes to song features and select shader
+            return True
+
         try:
             song_features = categories_to_song_features(
                 categories,
@@ -350,9 +334,9 @@ class KaraokeEngine:
                 track_artist=track.artist,
                 llm_result=llm_result
             )
-            
+
             match = self._shader_selector.select_for_song(song_features, top_k=5)
-            
+
             if match:
                 logger.info(
                     f"Shader: {match.name} → "
@@ -360,21 +344,22 @@ class KaraokeEngine:
                     f"valence={song_features.valence:.2f} "
                     f"(usage={match.usage_count})"
                 )
-                
-                # Send OSC command to load shader
+
                 self._osc.send_shader(
                     match.name,
                     energy=match.features.energy_score,
                     valence=match.features.mood_valence
                 )
-                
-                self._current_shader = match.name  # Store current shader
+
+                self._current_shader = match.name
                 self._last_matched_track = track_key
-            else:
-                logger.debug(f"No shader match for {track.title}")
-                
+                return True
+
+            logger.debug(f"No shader match for {track.title}")
         except Exception as e:
             logger.warning(f"Shader match skipped: {e}")
+
+        return False
 
     def _refresh_snapshot(self, force: bool = False) -> PlaybackSnapshot:
         """Poll playback with exponential backoff and return snapshot."""
@@ -414,10 +399,15 @@ class KaraokeEngine:
     def _on_track_change(self, track):
         """Handle new track."""
         logger.info(f"Track: {track.artist} - {track.title}")
+        self._cancel_pipeline_worker()
         self._pipeline.reset(track.key)
         self._current_lines = []
+        self._current_metadata = {}
+        self._current_categories = None
+        self._last_llm_analysis = None
         self._last_active_index = -1
-        
+        self._last_matched_track = ""
+
         # Send track info with source
         self._osc.send_karaoke("track", "info", {
             "source": self._playback.current_source,
@@ -426,52 +416,223 @@ class KaraokeEngine:
             "album": track.album,
             "duration": track.duration
         })
-        
-        # Fetch and process lyrics
-        self._pipeline.start("detect_playback")
-        self._pipeline.complete("detect_playback")
-        
-        lines = self._lyrics_orchestrator.process_track(track, self._settings.timing_offset_ms)
-        
-        if lines:
-            self._current_lines = lines
-            self._send_all_lyrics(track.key, lines)
-            
-            # Queue AI tasks (background)
-            lrc_text = '\n'.join(f"[{int(line.time_sec//60):02d}:{int(line.time_sec%60):02d}]{line.text}" for line in lines)
-            self._ai_orchestrator.queue_categorization(track, lrc_text)
-            self._ai_orchestrator.queue_analysis(track, lrc_text)
-            
-            self._pipeline.start("send_osc")
-            self._pipeline.complete("send_osc", f"{len(lines)} lines sent")
-        else:
-            # No LRC lyrics - still send track info
-            self._osc.send_karaoke("lyrics", "reset", {"song_id": track.key, "has_lyrics": False})
-            reason = "Lyrics unavailable"
-            self._pipeline.skip("parse_lrc", reason)
-            self._pipeline.skip("analyze_refrain", reason)
-            self._pipeline.skip("extract_keywords", reason)
-            # Categorization still possible using metadata-only pipeline
-            self._pipeline.start("categorize_song")
-            self._pipeline.skip("categorize_song", "Awaiting LRC / fallback pending")
-            self._pipeline.skip("llm_analysis", reason)
-            self._pipeline.skip("generate_image_prompt", reason)
-            self._pipeline.skip("comfyui_generate", reason)
-            self._pipeline.skip("send_osc", reason)
-        
-        # Fetch metadata via LLM (plain lyrics, keywords, song info) - background thread
-        import threading
-        def fetch_metadata():
-            metadata = self._lyrics_orchestrator.fetch_metadata(track)
-            if metadata:
-                self._send_metadata(track, metadata)
-        threading.Thread(target=fetch_metadata, daemon=True, name="SongMetadata").start()
+        self._osc.send_karaoke("lyrics", "reset", {"song_id": track.key})
+        self._osc.send_karaoke("refrain", "reset", {"song_id": track.key})
+        self._osc.send_karaoke("keywords", "reset", {"song_id": track.key})
+
+        self._start_pipeline_worker(track)
     
     def _on_no_track(self):
         """Handle no track playing."""
+        self._cancel_pipeline_worker()
         self._pipeline.reset()
         self._current_lines = []
         self._osc.send_karaoke("track", "none", {})
+
+    # ------------------------------------------------------------------
+    # Pipeline coordination
+    # ------------------------------------------------------------------
+
+    def _handle_pipeline_update(self, step: str, status: str, message: str):
+        """Broadcast pipeline state changes over OSC."""
+        payload = [step, status, message or ""]
+        self._osc.send("/pipeline/step", payload)
+
+    def _cancel_pipeline_worker(self):
+        if self._pipeline_cancel:
+            self._pipeline_cancel.set()
+        if self._pipeline_thread and self._pipeline_thread.is_alive():
+            self._pipeline_thread.join(timeout=0.5)
+        self._pipeline_thread = None
+        self._pipeline_cancel = None
+
+    def _start_pipeline_worker(self, track: Track):
+        cancel = Event()
+        worker = Thread(
+            target=self._run_pipeline,
+            args=(track, cancel),
+            daemon=True,
+            name=f"Pipeline-{track.key}"
+        )
+        self._pipeline_cancel = cancel
+        self._pipeline_thread = worker
+        worker.start()
+
+    def _run_pipeline(self, track: Track, cancel_event: Event):
+        """Execute sequential pipeline for a single track."""
+        def cancelled() -> bool:
+            return cancel_event.is_set() or not self._running or track.key != self._last_track_key
+
+        try:
+            # 1. Detect playback
+            self._pipeline.start("detect_playback", self._playback.current_source)
+            if cancelled():
+                return
+            self._pipeline.complete("detect_playback", self._playback.current_source)
+
+            # 2. Fetch LRC lyrics
+            self._pipeline.start("fetch_lyrics")
+            lrc_text = None
+            timed_lines = []
+            try:
+                lrc_text = self._lyrics_fetcher.fetch(track.artist, track.title, track.album, track.duration)
+                if lrc_text:
+                    timed_lines = parse_lrc(lrc_text)
+                    self._pipeline.complete("fetch_lyrics", f"{len(timed_lines)} lines")
+                else:
+                    self._pipeline.skip("fetch_lyrics", "No LRC available")
+            except Exception as exc:
+                logger.error(f"LRC fetch failed: {exc}")
+                self._pipeline.error("fetch_lyrics", str(exc))
+                lrc_text = None
+                timed_lines = []
+            if cancelled():
+                return
+
+            # 3. Fetch metadata
+            self._pipeline.start("fetch_metadata")
+            metadata = {}
+            plain_lyrics = ""
+            try:
+                metadata = self._lyrics_fetcher.fetch_metadata(track.artist, track.title)
+                if metadata:
+                    self._current_metadata = metadata
+                    plain_lyrics = metadata.get('plain_lyrics', '') or ''
+                    details = []
+                    if metadata.get('keywords'):
+                        kw = metadata['keywords']
+                        kw_count = len(kw) if isinstance(kw, list) else 1
+                        details.append(f"{kw_count} keywords")
+                    if metadata.get('release_date'):
+                        details.append(str(metadata['release_date']))
+                    message = ', '.join(details) if details else 'metadata fetched'
+                    self._pipeline.complete("fetch_metadata", message)
+                    if cancelled():
+                        return
+                    self._send_metadata(track, metadata)
+                else:
+                    self._current_metadata = {}
+                    self._pipeline.skip("fetch_metadata", "No metadata")
+            except Exception as exc:
+                logger.error(f"Metadata fetch failed: {exc}")
+                self._current_metadata = {}
+                self._pipeline.error("fetch_metadata", str(exc))
+            if cancelled():
+                return
+
+            # 4. Detect refrain
+            self._pipeline.start("detect_refrain")
+            analysis_lines = []
+            if timed_lines:
+                analysis_lines = analyze_lyrics(timed_lines)
+                refrain_count = sum(1 for line in analysis_lines if line.is_refrain)
+                self._current_lines = analysis_lines
+                self._send_all_lyrics(track.key, analysis_lines)
+                self._pipeline.complete("detect_refrain", f"{refrain_count} refrain lines (timed)")
+            else:
+                fallback = self._build_plain_lyric_lines(plain_lyrics)
+                if fallback:
+                    analysis_lines = analyze_lyrics(fallback)
+                    refrain_count = sum(1 for line in analysis_lines if line.is_refrain)
+                    self._pipeline.complete("detect_refrain", f"{refrain_count} refrain lines (metadata)")
+                else:
+                    self._pipeline.skip("detect_refrain", "No lyrics available")
+            if cancelled():
+                return
+
+            # 5. Extract keywords (merge sources)
+            self._pipeline.start("extract_keywords")
+            keyword_set = set()
+            for line in analysis_lines:
+                if getattr(line, 'keywords', ''):
+                    for token in line.keywords.split():
+                        keyword_set.add(token.lower())
+            meta_keywords = []
+            if metadata:
+                kw_meta = metadata.get('keywords')
+                if isinstance(kw_meta, list):
+                    meta_keywords = [k.lower() for k in kw_meta]
+                elif isinstance(kw_meta, str) and kw_meta:
+                    meta_keywords = [kw_meta.lower()]
+                keyword_set.update(meta_keywords)
+            if keyword_set:
+                consolidated = sorted(keyword_set)
+                self._pipeline.complete("extract_keywords", f"{len(consolidated)} keywords")
+                self._osc.send_karaoke("metadata", "keywords", consolidated)
+            else:
+                self._pipeline.skip("extract_keywords", "No keywords found")
+            if cancelled():
+                return
+
+            # 6. Categorize song
+            self._pipeline.start("categorize_song")
+            lyric_text = lrc_text or plain_lyrics
+            categories = None
+            if lyric_text and self._categorizer and self._categorizer.is_available:
+                try:
+                    categories = self._categorizer.categorize(track.artist, track.title, lyric_text, track.album)
+                    if categories:
+                        self._current_categories = categories
+                        top = categories.get_top(5)
+                        self._pipeline.complete("categorize_song", f"{len(top)} moods")
+                        for cat in categories.get_top(10):
+                            self._osc.send_karaoke("categories", cat.name, cat.score)
+                    else:
+                        self._pipeline.skip("categorize_song", "No categories returned")
+                except Exception as exc:
+                    logger.error(f"Categorization failed: {exc}")
+                    self._pipeline.error("categorize_song", str(exc))
+            else:
+                reason = "No lyrics input" if not lyric_text else "Categorizer unavailable"
+                self._pipeline.skip("categorize_song", reason)
+            if cancelled():
+                return
+
+            # 7. AI analysis
+            self._pipeline.start("ai_analysis")
+            llm_result = None
+            if lyric_text and self._llm and self._llm.is_available:
+                try:
+                    llm_result = self._llm.analyze_lyrics(lyric_text, track.artist, track.title)
+                    if llm_result:
+                        self._last_llm_analysis = llm_result
+                        keyword_count = len(llm_result.get('keywords', []))
+                        self._pipeline.complete("ai_analysis", f"{keyword_count} keywords")
+                    else:
+                        self._pipeline.skip("ai_analysis", "LLM returned no data")
+                except Exception as exc:
+                    logger.error(f"LLM analysis failed: {exc}")
+                    self._pipeline.error("ai_analysis", str(exc))
+            else:
+                reason = "No lyrics input" if not lyric_text else "LLM unavailable"
+                self._pipeline.skip("ai_analysis", reason)
+            if cancelled():
+                return
+
+            # 8. Shader selection
+            self._pipeline.start("shader_selection")
+            success = self._select_shader_for_track(track, self._current_categories, self._last_llm_analysis)
+            if success:
+                self._pipeline.complete("shader_selection", self._current_shader or "")
+            else:
+                self._pipeline.skip("shader_selection", "No shader match")
+
+        finally:
+            cancel_event.set()
+
+    def _build_plain_lyric_lines(self, plain_text: str) -> List[LyricLine]:
+        """Convert plain lyrics into pseudo-timed LyricLine list for analysis."""
+        if not plain_text:
+            return []
+        lines = []
+        time_cursor = 0.0
+        for raw in plain_text.splitlines():
+            text = raw.strip()
+            if not text:
+                continue
+            lines.append(LyricLine(time_sec=time_cursor, text=text))
+            time_cursor += 1.0
+        return lines
     
     def _send_all_lyrics(self, song_id: str, lines):
         """Send all lyrics channels via OSC."""
@@ -572,7 +733,7 @@ class KaraokeEngine:
     @property
     def current_song_info(self):
         """Get current song metadata (for vj_console.py)."""
-        return self._lyrics_orchestrator.current_metadata
+        return self._current_metadata
     
     @property
     def shader_selector(self):

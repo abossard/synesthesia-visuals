@@ -245,29 +245,23 @@ class PipelineTracker:
     STEPS = [
         "detect_playback",
         "fetch_lyrics",
-        "fetch_song_info",
-        "parse_lrc",
-        "analyze_refrain",
+        "fetch_metadata",
+        "detect_refrain",
         "extract_keywords",
         "categorize_song",
-        "llm_analysis",
-        "generate_image_prompt",
-        "comfyui_generate",
-        "send_osc"
+        "ai_analysis",
+        "shader_selection"
     ]
     
     STEP_LABELS = {
         "detect_playback": "🎵 Detect Playback",
         "fetch_lyrics": "📜 Fetch Lyrics",
-        "parse_lrc": "⏱ Parse LRC Timecodes",
-        "analyze_refrain": "🔁 Detect Refrain",
+        "fetch_metadata": "🎵 AI Song Metadata",
+        "detect_refrain": "🔁 Detect Refrain",
         "extract_keywords": "🔑 Extract Keywords",
-        "fetch_song_info": "🎵 AI Song Metadata",
         "categorize_song": "🏷️ Categorize Song",
-        "llm_analysis": "🤖 AI Analysis",
-        "generate_image_prompt": "🎨 Generate Image Prompt",
-        "comfyui_generate": "🖼 ComfyUI Generate Image",
-        "send_osc": "📡 Send OSC"
+        "ai_analysis": "🤖 AI Analysis",
+        "shader_selection": "🖥️ Shader Selection"
     }
     
     def __init__(self):
@@ -277,6 +271,7 @@ class PipelineTracker:
         self._logs: List[str] = []
         self._image_prompt = ""
         self._generated_image_path = ""
+        self._observer = None
         self.reset()
     
     def reset(self, track_key: str = ""):
@@ -293,6 +288,21 @@ class PipelineTracker:
             if track_key:
                 self._logs.append(f"Pipeline reset for: {track_key}")
     
+    def set_observer(self, observer):
+        """Register callback invoked on every state change."""
+        with self._lock:
+            self._observer = observer
+
+    def _notify(self, step: str, status: str, message: str):
+        observer = None
+        with self._lock:
+            observer = self._observer
+        if observer:
+            try:
+                observer(step, status, message)
+            except Exception:
+                logger.debug("Pipeline observer error", exc_info=True)
+
     def start(self, step: str, message: str = ""):
         """Mark step as running."""
         with self._lock:
@@ -303,6 +313,10 @@ class PipelineTracker:
                     message=message,
                     timestamp=time.time()
                 )
+                notify_message = message
+            else:
+                return
+        self._notify(step, "running", notify_message)
     
     def complete(self, step: str, message: str = ""):
         """Mark step as complete."""
@@ -314,6 +328,10 @@ class PipelineTracker:
                     message=message,
                     timestamp=time.time()
                 )
+                notify_message = message
+            else:
+                return
+        self._notify(step, "complete", notify_message)
     
     def error(self, step: str, message: str = ""):
         """Mark step as errored."""
@@ -326,6 +344,10 @@ class PipelineTracker:
                     timestamp=time.time()
                 )
                 self._logs.append(f"❌ {step}: {message}")
+                notify_message = message
+            else:
+                return
+        self._notify(step, "error", notify_message)
     
     def skip(self, step: str, message: str = ""):
         """Mark step as skipped."""
@@ -337,6 +359,10 @@ class PipelineTracker:
                     message=message,
                     timestamp=time.time()
                 )
+                notify_message = message
+            else:
+                return
+        self._notify(step, "skipped", notify_message)
     
     def log(self, message: str):
         """Add log message."""
