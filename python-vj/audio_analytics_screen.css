@@ -1,0 +1,75 @@
+/* CSS for Enhanced Audio Analytics Screen */
+
+/* Main container */
+EnhancedAudioAnalyticsPanel {
+    layout: vertical;
+    height: 100%;
+}
+
+/* Top horizontal layout */
+EnhancedAudioAnalyticsPanel > Horizontal {
+    height: 1fr;
+}
+
+/* Left panel: Feature groups (20% width) */
+#feature-groups-container {
+    width: 25%;
+    border-right: solid $accent;
+    padding: 1;
+}
+
+#feature-groups-title {
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    padding-bottom: 1;
+}
+
+#feature-groups-table {
+    height: 1fr;
+}
+
+/* Center panel: Message log (50% width) */
+#message-log-container {
+    width: 50%;
+    padding: 1;
+}
+
+#message-log-title {
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    padding-bottom: 1;
+}
+
+#osc-message-log {
+    height: 1fr;
+    border: solid $accent;
+    background: $surface;
+}
+
+/* Right panel: Metrics (30% width) */
+#metrics-container {
+    width: 25%;
+    border-left: solid $accent;
+    padding: 1;
+}
+
+#metrics-panel {
+    height: 1fr;
+    overflow-y: auto;
+}
+
+/* Bottom status bar */
+#status-bar {
+    height: 1;
+    dock: bottom;
+    background: $panel;
+    color: $text;
+    padding: 0 1;
+}
+
+#status-bar-content {
+    width: 100%;
+    text-align: center;
+}

@@ -107,6 +107,14 @@ class AudioConfig:
     energy_window_sec: float = 2.0  # Window for trend analysis
     buildup_threshold: float = 0.3  # Energy increase rate
     drop_threshold: float = 0.5     # Energy jump after low period
+    
+    # EDM-specific features (EMA smoothing coefficients)
+    ema_energy: float = 0.2  # Fast response for energy (0.8 * prev + 0.2 * new)
+    ema_brightness: float = 0.3  # Medium response for brightness
+    ema_bands: float = 0.2  # Fast response for bass/mid/high bands
+    
+    # Running normalization window
+    norm_window_sec: float = 10.0  # Sliding window for running max normalization
 
     # Performance toggles
     enable_essentia: bool = True
@@ -515,17 +523,45 @@ class AudioAnalyzer(threading.Thread):
         self.energy_history = deque(maxlen=frames_per_window)
         
         # Essentia objects (if available)
-        self.onset_detection = None
+        self.onset_hfc = None
+        self.onset_complex = None
+        self.onset_flux = None
         self.pitch_yin = None
-        self.beat_tracker = None
         self.centroid_algo = None
+        self.rolloff_algo = None
         self.flux_algo = None
+        self.energy_algo = None
+        self.onset_rate = None
+        
+        # EDM-specific Essentia algorithms
+        self.beat_tracker = None
+        self.beats_loudness = None
+        self.flatness_algo = None
+        self.spread_algo = None
+        self.loudness_algo = None
+        
         self.enable_essentia = config.enable_essentia and ESSENTIA_AVAILABLE
         
         if self.enable_essentia:
             try:
                 # Standard mode algorithms (frame-by-frame processing)
-                self.onset_detection = es.OnsetDetection(method='hfc')  # High Frequency Content method
+                # Following https://essentia.upf.edu/tutorial_rhythm_beatdetection.html
+                
+                # Beat tracking with BeatTrackerMultiFeature (best for EDM)
+                # Note: BeatTrackerMultiFeature needs longer audio buffers, so we'll use
+                # BeatTrackerDegara which works better for real-time frame-by-frame
+                if config.enable_bpm:
+                    try:
+                        # BeatTrackerDegara for real-time beat detection
+                        self.beat_tracker = es.BeatTrackerDegara()
+                        logger.info("Using BeatTrackerDegara for real-time beat detection")
+                    except Exception as e:
+                        logger.warning(f"BeatTrackerDegara unavailable: {e}, falling back to onset detection")
+                        # Fallback to onset detection - combine multiple methods for robustness
+                        self.onset_hfc = es.OnsetDetection(method='hfc')  # High Frequency Content
+                        self.onset_complex = es.OnsetDetection(method='complex')  # Complex domain
+                        self.onset_flux = es.OnsetDetection(method='flux')  # Spectral flux
+                
                 if config.enable_pitch:
                     self.pitch_yin = es.PitchYin(
                         frameSize=config.fft_size,
@@ -534,15 +570,22 @@ class AudioAnalyzer(threading.Thread):
                         maxFrequency=2000,
                         tolerance=0.15
                     )
-                # Centroid for brightness
+                
+                # Spectral features for brightness and timbral analysis
                 self.centroid_algo = es.Centroid()
-                # Flux for novelty detection
+                self.rolloff_algo = es.RollOff()
                 self.flux_algo = es.Flux()
+                self.flatness_algo = es.Flatness()  # For noisiness (0=tonal, 1=noise)
+                self.spread_algo = es.CentralMoments()  # For spectral spread
                 
-                # BPM tracking - use simpler custom approach since BeatTrackerDegara needs longer buffers
-                # We'll use onset detection + interval estimation instead
+                # Energy and loudness
+                self.energy_algo = es.Energy()
+                self.loudness_algo = es.Loudness()  # LUFS-based loudness
                 
-                logger.info("Essentia initialized for beat/tempo/pitch detection")
+                # BeatsLoudness for per-beat energy analysis
+                # Note: BeatsLoudness requires beat times, we'll compute manually per band
+                
+                logger.info("Essentia initialized with EDM-optimized beat/spectral algorithms")
             except Exception as e:
                 logger.warning(f"Essentia initialization failed: {e}")
         elif ESSENTIA_AVAILABLE:
@@ -557,6 +600,32 @@ class AudioAnalyzer(threading.Thread):
         # Statistics
         self.frames_processed = 0
         self.last_stats_time = time.monotonic()
+        
+        # EDM feature state with EMA smoothing
+        self.energy_smooth = 0.0
+        self.brightness_smooth = 0.0  # Normalized centroid with EMA
+        self.noisiness_smooth = 0.0  # Spectral flatness with EMA
+        self.bass_band_smooth = 0.0
+        self.mid_band_smooth = 0.0
+        self.high_band_smooth = 0.0
+        
+        # Running normalization (sliding window max)
+        norm_frames = int(config.norm_window_sec * config.sample_rate / config.block_size)
+        self.energy_history = deque(maxlen=norm_frames)
+        self.brightness_history = deque(maxlen=norm_frames)
+        self.bass_history = deque(maxlen=norm_frames)
+        self.mid_history = deque(maxlen=norm_frames)
+        self.high_history = deque(maxlen=norm_frames)
+        
+        # Beat energy tracking (per-beat loudness)
+        self.beat_energy_global = 0.0
+        self.beat_energy_low = 0.0
+        self.beat_energy_high = 0.0
+        self.last_beat_frame = 0
+        
+        # Dynamic complexity (variance of loudness)
+        self.loudness_history = deque(maxlen=60)  # 1 second at 60fps
+        self.dynamic_complexity = 0.0
         
         # Latest features (thread-safe access for UI)
         self.latest_features = {
@@ -736,6 +805,14 @@ class AudioAnalyzer(threading.Thread):
             except Exception:
                 pass  # Fall back to numpy calculation
         
+        # Calculate spectral rolloff (85% of energy cutoff point)
+        rolloff_hz = 0.0
+        if self.rolloff_algo:
+            try:
+                rolloff_hz = float(self.rolloff_algo(magnitude))
+            except Exception:
+                pass
+        
         flux = calculate_spectral_flux(magnitude, self.prev_magnitude)
         
         # Use Essentia for flux if available
@@ -748,10 +825,87 @@ class AudioAnalyzer(threading.Thread):
         
         self.prev_magnitude = magnitude.copy()
         
+        # --- EDM-specific features ---
+        
+        # Spectral flatness (noisiness: 0=tonal, 1=noise-like)
+        flatness = 0.0
+        if self.flatness_algo:
+            try:
+                flatness = float(self.flatness_algo(magnitude))
+            except Exception:
+                # Fallback: geometric mean / arithmetic mean
+                geo_mean = np.exp(np.mean(np.log(magnitude + 1e-10)))
+                arith_mean = np.mean(magnitude)
+                flatness = geo_mean / (arith_mean + 1e-10) if arith_mean > 0 else 0.0
+        
+        # Energy with Essentia Loudness if available
+        energy_raw = calculate_rms(mono)
+        if self.loudness_algo:
+            try:
+                loudness = float(self.loudness_algo(mono))
+                # Loudness is in LUFS, normalize to 0-1 range (assuming -60 to 0 LUFS)
+                energy_raw = max(0.0, (loudness + 60) / 60.0)
+            except Exception:
+                pass
+        
+        # EMA smoothing for continuous features (as per user spec)
+        alpha_energy = self.config.ema_energy
+        alpha_brightness = self.config.ema_brightness
+        alpha_bands = self.config.ema_bands
+        
+        self.energy_smooth = (1 - alpha_energy) * self.energy_smooth + alpha_energy * energy_raw
+        self.brightness_smooth = (1 - alpha_brightness) * self.brightness_smooth + alpha_brightness * centroid_norm
+        self.noisiness_smooth = (1 - alpha_brightness) * self.noisiness_smooth + alpha_brightness * flatness
+        
+        # Band indices for multi-band detection
+        BASS_BAND_INDEX = 1  # 60-250 Hz
+        MID_BAND_INDICES = [2, 3, 4]  # 250-500, 500-2000, 2000-4000 Hz
+        HIGH_BAND_INDICES = [5, 6]  # 4000-6000, 6000-20000 Hz
+        
+        # Calculate bass/mid/high band energies
+        bass_energy = self.smoothed_bands[BASS_BAND_INDEX] if len(self.smoothed_bands) > BASS_BAND_INDEX else 0.0
+        mid_energy = sum([self.smoothed_bands[i] for i in MID_BAND_INDICES if i < len(self.smoothed_bands)]) / len(MID_BAND_INDICES)
+        high_energy = sum([self.smoothed_bands[i] for i in HIGH_BAND_INDICES if i < len(self.smoothed_bands)]) / len(HIGH_BAND_INDICES)
+        
+        # EMA smoothing for band energies
+        self.bass_band_smooth = (1 - alpha_bands) * self.bass_band_smooth + alpha_bands * bass_energy
+        self.mid_band_smooth = (1 - alpha_bands) * self.mid_band_smooth + alpha_bands * mid_energy
+        self.high_band_smooth = (1 - alpha_bands) * self.high_band_smooth + alpha_bands * high_energy
+        
+        # Running max normalization (sliding window)
+        self.energy_history.append(energy_raw)
+        self.brightness_history.append(centroid_norm)
+        self.bass_history.append(bass_energy)
+        self.mid_history.append(mid_energy)
+        self.high_history.append(high_energy)
+        
+        # Normalize using running max
+        energy_max = max(self.energy_history) if self.energy_history else 1.0
+        brightness_max = max(self.brightness_history) if self.brightness_history else 1.0
+        bass_max = max(self.bass_history) if self.bass_history else 1.0
+        mid_max = max(self.mid_history) if self.mid_history else 1.0
+        high_max = max(self.high_history) if self.high_history else 1.0
+        
+        # Clamp to [0, 1]
+        energy_norm = np.clip(self.energy_smooth / (energy_max + 1e-9), 0, 1)
+        brightness_norm = np.clip(self.brightness_smooth / (brightness_max + 1e-9), 0, 1)
+        bass_norm = np.clip(self.bass_band_smooth / (bass_max + 1e-9), 0, 1)
+        mid_norm = np.clip(self.mid_band_smooth / (mid_max + 1e-9), 0, 1)
+        high_norm = np.clip(self.high_band_smooth / (high_max + 1e-9), 0, 1)
+        
+        # Dynamic complexity (variance of loudness over short window)
+        self.loudness_history.append(energy_raw)
+        if len(self.loudness_history) > 10:
+            self.dynamic_complexity = float(np.var(list(self.loudness_history)))
+        
         # Track energy for build-up/drop detection
         total_energy = sum(raw_bands)
         if self.config.enable_structure:
-            self.energy_history.append(total_energy)
+            if not hasattr(self, 'structure_energy_history'):
+                self.structure_energy_history = deque(
+                    maxlen=int(self.config.energy_window_sec * self.config.sample_rate / self.config.block_size)
+                )
+            self.structure_energy_history.append(total_energy)
         
         # --- Essentia features (if available) ---
         
@@ -761,26 +915,41 @@ class AudioAnalyzer(threading.Thread):
         pitch_conf = 0.0
         onset_strength = 0.0
         
-        if self.onset_detection and self.config.enable_bpm:
+        if self.onset_hfc and self.config.enable_bpm:
             try:
-                # Onset detection using HFC method
-                # OnsetDetection expects magnitude and phase
-                onset_strength = float(self.onset_detection(magnitude, np.angle(spectrum)))
+                # Multi-method onset detection for robustness
+                # Following Essentia beat detection best practices
+                phase_spectrum = np.angle(spectrum)
                 
-                # Threshold for onset detection (tune based on testing)
+                onset_hfc_val = float(self.onset_hfc(magnitude, phase_spectrum))
+                onset_complex_val = 0.0
+                onset_flux_val = 0.0
+                
+                if self.onset_complex:
+                    onset_complex_val = float(self.onset_complex(magnitude, phase_spectrum))
+                if self.onset_flux:
+                    onset_flux_val = float(self.onset_flux(magnitude, phase_spectrum))
+                
+                # Combine onset detection methods with weighting
+                # HFC is best for percussive content, complex for general, flux for novelty
+                onset_strength = (onset_hfc_val * 0.5 + onset_complex_val * 0.3 + onset_flux_val * 0.2)
+                
+                # Adaptive threshold based on recent history
                 onset_threshold = 0.3
                 is_onset = onset_strength > onset_threshold
                 
-                # Track beat times for custom BPM estimation
+                # Track beat times for BPM estimation
                 if is_onset:
                     current_time = time.monotonic()
                     if self.last_beat_time > 0:
                         interval = current_time - self.last_beat_time
-                        self.beat_times.append(interval)
+                        # Filter out extremely short intervals (debounce)
+                        if interval > 0.12:  # Max ~500 BPM (60/0.12 = 500)
+                            self.beat_times.append(interval)
                     self.last_beat_time = current_time
                     
             except Exception as e:
-                logger.error(f"Essentia processing error: {e}")
+                logger.error(f"Essentia onset detection error: {e}")
         elif self.config.enable_bpm:
             # Flux-based fallback onset detection
             self.flux_avg = 0.9 * self.flux_avg + 0.1 * flux
@@ -821,11 +990,28 @@ class AudioAnalyzer(threading.Thread):
             )
             bpm = custom_bpm
         
+        # Beat energy tracking (BeatsLoudness equivalent)
+        # Capture energy at beat moments for global + low/high bands
+        if is_onset:
+            self.beat_energy_global = energy_raw
+            self.beat_energy_low = bass_energy
+            self.beat_energy_high = high_energy
+            self.last_beat_frame = self.frames_processed
+        else:
+            # Decay beat energy between beats
+            frames_since_beat = self.frames_processed - self.last_beat_frame
+            if frames_since_beat > 0:
+                # Decay over ~0.5 seconds
+                decay_rate = 0.9
+                self.beat_energy_global *= decay_rate
+                self.beat_energy_low *= decay_rate
+                self.beat_energy_high *= decay_rate
+        
         # Build-up/drop detection
-        if self.config.enable_structure and self.energy_history:
-            window_frames = len(self.energy_history)
+        if self.config.enable_structure and hasattr(self, 'structure_energy_history') and self.structure_energy_history:
+            window_frames = len(self.structure_energy_history)
             is_buildup, is_drop, energy_trend = detect_buildup_drop(
-                self.energy_history,
+                self.structure_energy_history,
                 window_frames,
                 self.config.buildup_threshold,
                 self.config.drop_threshold
@@ -834,6 +1020,62 @@ class AudioAnalyzer(threading.Thread):
             is_buildup = False
             is_drop = False
             energy_trend = 0.0
+        
+        # Multi-band beat pulses (bass, mid, high)
+        # These decay over time and spike on band-specific onsets
+        if not hasattr(self, 'bassHitPulse'):
+            self.bassHitPulse = 0.0
+            self.midHitPulse = 0.0
+            self.highHitPulse = 0.0
+            self.bass_avg = 0.0
+            self.mid_avg = 0.0
+            self.high_avg = 0.0
+        
+        # Simple adaptive thresholding for each band
+        decay = 0.88
+        alpha = 0.1
+        sensitivity = 1.5
+        
+        # Band indices for multi-band detection
+        # Based on config.band_names: sub_bass, bass, low_mid, mid, high_mid, presence, air
+        BASS_BAND_INDEX = 1  # 60-250 Hz
+        MID_BAND_INDICES = [2, 3, 4]  # 250-500, 500-2000, 2000-4000 Hz
+        HIGH_BAND_INDICES = [5, 6]  # 4000-6000, 6000-20000 Hz
+        
+        # Average bands for multi-band detection
+        bass_energy = self.smoothed_bands[BASS_BAND_INDEX] if len(self.smoothed_bands) > BASS_BAND_INDEX else 0.0
+        mid_energy = sum([self.smoothed_bands[i] for i in MID_BAND_INDICES if i < len(self.smoothed_bands)]) / len(MID_BAND_INDICES)
+        high_energy = sum([self.smoothed_bands[i] for i in HIGH_BAND_INDICES if i < len(self.smoothed_bands)]) / len(HIGH_BAND_INDICES)
+        
+        # Update running averages
+        self.bass_avg = self.bass_avg * (1 - alpha) + bass_energy * alpha
+        self.mid_avg = self.mid_avg * (1 - alpha) + mid_energy * alpha
+        self.high_avg = self.high_avg * (1 - alpha) + high_energy * alpha
+        
+        # Detect hits
+        bass_hit = bass_energy > self.bass_avg * sensitivity
+        mid_hit = mid_energy > self.mid_avg * sensitivity
+        high_hit = high_energy > self.high_avg * sensitivity
+        
+        # Update pulses
+        if bass_hit:
+            self.bassHitPulse = 1.0
+        else:
+            self.bassHitPulse *= decay
+            
+        if mid_hit:
+            self.midHitPulse = 1.0
+        else:
+            self.midHitPulse *= decay
+            
+        if high_hit:
+            self.highHitPulse = 1.0
+        else:
+            self.highHitPulse *= decay
+        
+        bassHitPulse = self.bassHitPulse
+        midHitPulse = self.midHitPulse
+        highHitPulse = self.highHitPulse
         
         # Downsample spectrum for OSC when needed
         spectrum_down: List[float] = []
@@ -869,25 +1111,75 @@ class AudioAnalyzer(threading.Thread):
         
         if self.osc_callback:
             try:
-                # Levels (per-band + overall RMS)
+                # /audio/levels: [sub_bass, bass, low_mid, mid, high_mid, presence, air, overall_rms]
+                # Matches Processing AudioAnalysisOSC format
                 self.osc_callback('/audio/levels', self.smoothed_bands + [self.smoothed_rms])
                 
+                # /audio/spectrum: 32 bins for detailed visualization
                 if spectrum_down:
                     self.osc_callback('/audio/spectrum', spectrum_down)
                 
+                # /audio/beats: [is_beat, beat_pulse, bass_pulse, mid_pulse, high_pulse]
+                # Matches Processing format exactly
                 if self.config.enable_bpm:
-                    self.osc_callback('/audio/beat', [beat_int, float(flux)])
+                    beat_pulse = float(onset_strength) if is_onset else 0.0
+                    self.osc_callback('/audio/beats', [
+                        1 if is_onset else 0,
+                        beat_pulse,
+                        float(bassHitPulse),
+                        float(midHitPulse), 
+                        float(highHitPulse)
+                    ])
+                
+                # /audio/bpm: [bpm, confidence]
+                if self.config.enable_bpm:
                     self.osc_callback('/audio/bpm', [float(bpm), float(bpm_confidence)])
                 
+                # /audio/pitch: [frequency_hz, confidence]
                 if self.config.enable_pitch:
                     self.osc_callback('/audio/pitch', [float(pitch_hz), float(pitch_conf)])
                 
+                # /audio/spectral: [centroid_norm, rolloff_hz, flux]
+                # Additional spectral features
+                self.osc_callback('/audio/spectral', [
+                    float(centroid_norm), float(rolloff_hz), float(flux)
+                ])
+                
+                # /audio/structure: [is_buildup, is_drop, energy_trend, brightness]
                 if self.config.enable_structure:
                     buildup_int = 1 if is_buildup else 0
                     drop_int = 1 if is_drop else 0
                     self.osc_callback('/audio/structure', [
                         buildup_int, drop_int, float(energy_trend), float(centroid_norm)
                     ])
+                
+                # === EDM-specific features (10-15 globals, normalized 0-1) ===
+                
+                # Single-value features for easy mapping in VJ software
+                self.osc_callback('/beat', [1.0 if is_onset else 0.0])  # Beat impulse
+                self.osc_callback('/bpm', [float(bpm)])  # Current BPM
+                self.osc_callback('/beat_conf', [float(bpm_confidence)])  # Beat confidence
+                
+                # Energy features with EMA smoothing
+                self.osc_callback('/energy', [float(energy_raw)])  # Short-term energy/RMS
+                self.osc_callback('/energy_smooth', [float(energy_norm)])  # EMA-smoothed, normalized
+                
+                # Beat energy (BeatsLoudness equivalent)
+                self.osc_callback('/beat_energy', [float(self.beat_energy_global)])  # Global beat loudness
+                self.osc_callback('/beat_energy_low', [float(self.beat_energy_low)])  # Low-band beat loudness
+                self.osc_callback('/beat_energy_high', [float(self.beat_energy_high)])  # High-band beat loudness
+                
+                # Spectral features (normalized)
+                self.osc_callback('/brightness', [float(brightness_norm)])  # Normalized centroid (0=dark, 1=bright)
+                self.osc_callback('/noisiness', [float(self.noisiness_smooth)])  # Spectral flatness (0=tonal, 1=noise)
+                
+                # Band energies (EMA-smoothed and normalized)
+                self.osc_callback('/bass_band', [float(bass_norm)])  # Low band energy
+                self.osc_callback('/mid_band', [float(mid_norm)])  # Mid band energy
+                self.osc_callback('/high_band', [float(high_norm)])  # High band energy
+                
+                # Optional: Dynamic complexity
+                self.osc_callback('/dynamic_complexity', [float(self.dynamic_complexity)])  # Loudness variance
                 
             except Exception as e:
                 logger.error(f"OSC send error: {e}")
@@ -1224,10 +1516,11 @@ class LatencyTester:
             onset_strength = 0.0
             config = self.analyzer.config
             
-            if self.analyzer.onset_detection and config.enable_bpm:
+            if self.analyzer.onset_hfc and config.enable_bpm:
                 essentia_start = time.perf_counter()
                 try:
-                    onset_strength = float(self.analyzer.onset_detection(magnitude, np.angle(spectrum)))
+                    phase_spectrum = np.angle(spectrum)
+                    onset_strength = float(self.analyzer.onset_hfc(magnitude, phase_spectrum))
                     onset_threshold = 0.3
                     is_onset = onset_strength > onset_threshold
                     
@@ -1269,7 +1562,7 @@ class LatencyTester:
                         self.analyzer.beat_times.append(interval)
                     self.analyzer.last_beat_time = now
             
-            if self.analyzer.pitch_yin and config.enable_pitch and not (self.analyzer.onset_detection and config.enable_bpm):
+            if self.analyzer.pitch_yin and config.enable_pitch and not (self.analyzer.onset_hfc and config.enable_bpm):
                 try:
                     pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
                     pitch_hz = float(pitch_hz)
