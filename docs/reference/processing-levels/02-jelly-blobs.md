@@ -64,4 +64,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.2](../processing-implementation-plan.md#62-level-jelly-blobs-and-goo-physics)
+- [Implementation Plan — Phase 6.2](../../development/processing-implementation-plan.md#62-level-jelly-blobs-and-goo-physics)

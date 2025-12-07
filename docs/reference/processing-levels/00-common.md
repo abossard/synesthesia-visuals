@@ -10,7 +10,7 @@ Shared guidance for all levels in the Processing → Syphon VJ system.
 
 - Grid rows from bottom to top use notes `11–18`, `21–28`, …, `81–88`
 - Right-column scene buttons use `19–89`
-- See [MIDI Controller Setup](../midi-controller-setup.md) for details
+- See [MIDI Controller Setup](../../setup/midi-controller-setup.md) for details
 
 Convert notes to grid coords:
 ```
@@ -175,7 +175,7 @@ interface Level {
 
 ## Related Documents
 
-- [Implementation Plan](../processing-implementation-plan.md) — step-by-step build guide
-- [MIDI Controller Setup](../midi-controller-setup.md) — Launchpad configuration
-- [Live VJ Setup Guide](../live-vj-setup-guide.md) — Syphon + Magic pipeline
+- [Implementation Plan](../../development/processing-implementation-plan.md) — step-by-step build guide
+- [MIDI Controller Setup](../../setup/midi-controller-setup.md) — Launchpad configuration
+- [Live VJ Setup Guide](../../setup/live-vj-setup-guide.md) — Syphon + Magic pipeline
 - [Level Index](./README.md) — all 14 level designs

@@ -206,7 +206,7 @@ void draw() {
 - Set Synesthesia audio input to BlackHole
 
 ## Key Files Reference
-- [docs/isf-to-synesthesia-migration.md](../docs/isf-to-synesthesia-migration.md) - comprehensive shader conversion guide
-- [docs/live-vj-setup-guide.md](../docs/live-vj-setup-guide.md) - full Syphon/Magic/VPT pipeline
-- [docs/midi-controller-setup.md](../docs/midi-controller-setup.md) - Launchpad/MIDImix configuration
+- [docs/reference/isf-to-synesthesia-migration.md](../docs/reference/isf-to-synesthesia-migration.md) - comprehensive shader conversion guide
+- [docs/setup/live-vj-setup-guide.md](../docs/setup/live-vj-setup-guide.md) - full Syphon/Magic/VPT pipeline
+- [docs/setup/midi-controller-setup.md](../docs/setup/midi-controller-setup.md) - Launchpad/MIDImix configuration
 - [processing-vj/lib/LaunchpadUtils.pde](../processing-vj/lib/LaunchpadUtils.pde) - grid conversion, LED colors

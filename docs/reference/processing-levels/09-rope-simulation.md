@@ -59,4 +59,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.9](../processing-implementation-plan.md#69-level-string-theory--rope-simulation)
+- [Implementation Plan — Phase 6.9](../../development/processing-implementation-plan.md#69-level-string-theory--rope-simulation)

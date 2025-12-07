@@ -61,4 +61,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.1](../processing-implementation-plan.md#61-level-gravity-wells-in-a-particle-galaxy)
+- [Implementation Plan — Phase 6.1](../../development/processing-implementation-plan.md#61-level-gravity-wells-in-a-particle-galaxy)

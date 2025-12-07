@@ -35,7 +35,7 @@ Each level document follows this template:
 
 ## Related Documents
 
-- [Implementation Plan](../processing-implementation-plan.md) — step-by-step build order
+- [Implementation Plan](../../development/processing-implementation-plan.md) — step-by-step build order
 - [Idea Board (legacy)](../processing-syphon-idea-board.md) — original brainstorm doc
-- [Live VJ Setup Guide](../live-vj-setup-guide.md) — Syphon/audio/MIDI rig
-- [MIDI Controller Setup](../midi-controller-setup.md) — Launchpad configuration
+- [Live VJ Setup Guide](../../setup/live-vj-setup-guide.md) — Syphon/audio/MIDI rig
+- [MIDI Controller Setup](../../setup/midi-controller-setup.md) — Launchpad configuration

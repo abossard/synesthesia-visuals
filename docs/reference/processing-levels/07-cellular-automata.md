@@ -59,4 +59,4 @@ stateDiagram-v2
 ## Related
 
 - [Common Reference](./00-common.md)
-- [Implementation Plan — Phase 6.7](../processing-implementation-plan.md#67-level-cellular-automata-zoo)
+- [Implementation Plan — Phase 6.7](../../development/processing-implementation-plan.md#67-level-cellular-automata-zoo)
