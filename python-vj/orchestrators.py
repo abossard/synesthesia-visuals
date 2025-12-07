@@ -164,7 +164,14 @@ class LyricsOrchestrator:
         lrc_text = self._fetcher.fetch(track.artist, track.title, track.album, track.duration)
         
         if not lrc_text:
-            self._pipeline.skip("fetch_lyrics", "No LRC available")
+            reason = "No LRC available"
+            self._pipeline.skip("fetch_lyrics", reason)
+            self._pipeline.start("parse_lrc")
+            self._pipeline.skip("parse_lrc", reason)
+            self._pipeline.start("analyze_refrain")
+            self._pipeline.skip("analyze_refrain", reason)
+            self._pipeline.start("extract_keywords")
+            self._pipeline.skip("extract_keywords", reason)
             return None
         
         self._pipeline.complete("fetch_lyrics", f"{len(lrc_text)} bytes")
@@ -174,6 +181,8 @@ class LyricsOrchestrator:
         lines = parse_lrc(lrc_text)
         if not lines:
             self._pipeline.error("parse_lrc", "Failed to parse")
+            self._pipeline.skip("analyze_refrain", "Parse failed")
+            self._pipeline.skip("extract_keywords", "Parse failed")
             return None
         self._pipeline.complete("parse_lrc", f"{len(lines)} lines")
         
@@ -187,6 +196,21 @@ class LyricsOrchestrator:
         self._pipeline.start("analyze_refrain")
         lines = analyze_lyrics(lines)
         self._pipeline.complete("analyze_refrain", f"{sum(1 for line in lines if line.is_refrain)} refrain lines")
+        
+        # Extract keyword stats for pipeline display
+        self._pipeline.start("extract_keywords")
+        keyword_tokens = []
+        for line in lines:
+            if line.keywords:
+                keyword_tokens.extend(line.keywords.split())
+        if keyword_tokens:
+            unique_keywords = len({kw.lower() for kw in keyword_tokens})
+            self._pipeline.complete(
+                "extract_keywords",
+                f"{unique_keywords} unique / {len(keyword_tokens)} total"
+            )
+        else:
+            self._pipeline.skip("extract_keywords", "No keywords found")
         
         return lines
     

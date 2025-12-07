@@ -245,6 +245,7 @@ class PipelineTracker:
     STEPS = [
         "detect_playback",
         "fetch_lyrics",
+        "fetch_song_info",
         "parse_lrc",
         "analyze_refrain",
         "extract_keywords",
@@ -365,7 +366,7 @@ class PipelineTracker:
                     status = "✗"
                     color = "red"
                 elif step.status == "skipped":
-                    status = "○"
+                    status = "⊘"
                     color = "dim"
                 else:
                     status = "○"

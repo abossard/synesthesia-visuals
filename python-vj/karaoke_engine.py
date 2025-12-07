@@ -336,7 +336,7 @@ class KaraokeEngine:
         
         # Check if categories are ready
         categories = self.current_categories
-        if not categories or not categories.primary_mood:
+        if not categories or not categories.scores:
             return  # Not ready yet
         
         # Get LLM result for enhanced matching (keywords, themes)
@@ -447,6 +447,17 @@ class KaraokeEngine:
         else:
             # No LRC lyrics - still send track info
             self._osc.send_karaoke("lyrics", "reset", {"song_id": track.key, "has_lyrics": False})
+            reason = "Lyrics unavailable"
+            self._pipeline.skip("parse_lrc", reason)
+            self._pipeline.skip("analyze_refrain", reason)
+            self._pipeline.skip("extract_keywords", reason)
+            # Categorization still possible using metadata-only pipeline
+            self._pipeline.start("categorize_song")
+            self._pipeline.skip("categorize_song", "Awaiting LRC / fallback pending")
+            self._pipeline.skip("llm_analysis", reason)
+            self._pipeline.skip("generate_image_prompt", reason)
+            self._pipeline.skip("comfyui_generate", reason)
+            self._pipeline.skip("send_osc", reason)
         
         # Fetch metadata via LLM (plain lyrics, keywords, song info) - background thread
         import threading
