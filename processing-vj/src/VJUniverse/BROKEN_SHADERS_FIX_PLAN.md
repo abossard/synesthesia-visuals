@@ -1,22 +1,180 @@
-# ISF Shader Fix Plan
+# Shader Fix Plan
 
-Analysis of 15 broken/black shaders and proposed fixes.
+Analysis of **57 broken/black shaders** and proposed fixes.
 
 ## Summary of Issues
 
-| Issue Category | Count | Shaders |
+| Issue Category | Count | Example Shaders |
 |----------------|-------|---------|
-| **Vertex Shader + varyings** | 5 | Life, Hoop Dreams, WaveLines-2, Wisps-2, WorkinOnTheBlockChainGang |
+| **Mouse-dependent (mouse=0,0)** | ~25 | AMPwaves, faerieblobs, kaleidoblast, RBrectomatic, redbricks |
+| **Backbuffer/feedback required** | ~6 | angerlightR, christmasgel, orbitalrainbowdots |
+| **Resolution-dependent positioning** | ~8 | LBgraphpaperdots, lifeessence, heartbeat |
+| **Dark color defaults** | ~5 | OBgeartastic, BWsemicyclical |
+| **Vertex Shader + varyings (ISF)** | 5 | Life, Hoop Dreams, WaveLines-2, Wisps-2, WorkinOnTheBlockChainGang |
 | **PASSES (persistent buffers)** | 1 | Life |
-| **Coordinate/math issues** | 4 | Cosplay, Discspin, VoronoiSimplexTriTap, Fractal Cartoon |
-| **Default values cause black** | 2 | Triangle, Heart |
-| **Long/dropdown type** | 1 | Noise |
+| **Coordinate/math issues (ISF)** | 4 | Cosplay, Discspin, VoronoiSimplexTriTap, Fractal Cartoon |
+| **Default values cause black (ISF)** | 2 | Triangle, Heart |
+| **Long/dropdown type (ISF)** | 1 | Noise |
 
 ---
 
-## Detailed Analysis
+## GLSL Shader Analysis (New)
 
-### 1. Life (Game of Life)
+### Category 1: Mouse-Dependent Shaders (BLACK when mouse=0,0)
+
+These shaders use `mouse` uniform for critical calculations. When mouse defaults to (0,0), output is black.
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **AMPwaves_animate** | `sin(...) * 0.15 * mouse.y` - multiplied by 0 | Default mouse to (0.5, 0.5) |
+| **BWanxiety2** | `perspective(mouse)` - polar transform at origin | Default mouse to (0.5, 0.5) |
+| **RBrectomatic_animate** | `vec2 c = mouse` in fractal iteration | Default mouse to (0.5, 0.5) |
+| **faerieblobs** | `makePoint() / mouse.x` - division by 0! | Default mouse to (0.5, 0.5) |
+| **kaleidoblast_animate** | `makeSymmetry()` adds mouse offset | Default mouse to (0.5, 0.5) |
+| **flyingthroughspace** | `position - mouse` centers at origin | Default mouse to (0.5, 0.5) |
+| **redbricks** | `mouse*resolution` for light position | Default mouse to (0.5, 0.5) |
+| **Ginsanity_animate** | `light_pos = resolution*mouse` | Default mouse to (0.5, 0.5) |
+| **globetag3D** | Camera controlled by mouse | Default mouse to (0.5, 0.5) |
+| **fractalreact_animate** | Julia set `c = -(mouse - 0.5) * 1.2` | Default mouse to (0.5, 0.5) |
+| **discolights** | `mouse / 4.0` in UV calculation | Default mouse to (0.5, 0.5) |
+| **polarcolorswirls** | Complex effect depends on mouse | Default mouse to (0.5, 0.5) |
+
+**Global Fix:** In ShaderManager, set `mouse` default to `vec2(0.5, 0.5)` instead of `vec2(0, 0)`.
+
+### Category 2: Backbuffer/Feedback Required
+
+These shaders sample `backbuffer` or use feedback loops. Without prior frame data, output is black or wrong.
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **angerlightR** | `mix(color, bbf(position), 0.5)` - samples empty buffer | Need PGraphics feedback loop |
+| **christmasgel_animate** | `texture2D(backbuffer, uv_distorted)` | Need PGraphics feedback loop |
+| **orbitalrainbowdots** | `texture2D(backbuffer, texPos)*0.9` - trail effect | Need PGraphics feedback loop |
+
+**Fix:** Implement dual-buffer rendering for feedback shaders or mark as unsupported.
+
+### Category 3: Resolution-Dependent Pixel Positioning
+
+These shaders use hardcoded pixel values that don't scale with resolution.
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **LBgraphpaperdots** | `pos(move, fps)` returns `s * resolution` | Should work, but dot radius=50px may be too small |
+| **lifeessence** | `mb[i] = vec2(187,293)...` hardcoded pixel coords | Scale by resolution ratio |
+| **heartbeat** | `gl_FragCoord.xy-resolution` calculation | Should work, needs time to animate |
+
+### Category 4: Dark Color Output by Design
+
+These shaders produce very dark output due to color calculations.
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **OBgeartastic** | `vec3 c = m1 > m2 ? vec3(0.0, 0.05, 0.2) : vec3(0.2, 0.05, 0.0)` - very dark | Multiply output by brightness factor |
+| **BWsemicyclical** | Output is `vec4(color) * .3` - intentionally dim | Increase multiplier |
+| **BWanxiety** | Similar dimming | Increase output brightness |
+| **redtrianglearmy** | `if (d < 0.0) color.r = ...` - black outside triangles | Expected behavior |
+| **blinkyspherescube_animate** | HSV coloring with `exp(-0.01*t*t)` fog | Raymarcher needs camera movement |
+
+### Category 5: Division by Zero or Invalid Math
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **emberdrive** | `gradient += ... / pow(length(...), 1.5)` - safe but scale issue | Works, just dark at start |
+| **torch** | Works but `defaultPosition = vec2(0.5, 0.2)` flame is dim | Increase color multiplier |
+| **colorsquaroid** | `pow(abs(...), 0.1)` produces large negative | Math issue with pow |
+
+### Category 6: Complex Raymarchers (Need Time/Camera)
+
+| Shader | Issue | Fix |
+|--------|-------|-----|
+| **alienworks** | Raymarching through tunnel, needs time | Wait for animation |
+| **alienworksrapid** | Same as alienworks | Wait for animation |
+| **octopus** | Heart shape calculation, y offset | Should work |
+
+---
+
+## Quick Fixes (ShaderManager.pde)
+
+### 1. Default mouse to center (HIGHEST IMPACT)
+
+```java
+// In setupShaderUniforms() or similar
+shader.set("mouse", 0.5f, 0.5f);  // Center instead of (0,0)
+```
+
+This single fix should restore ~25 shaders!
+
+### 2. Add brightness boost for dark shaders
+
+For shaders in Category 4, add post-processing or output multiplier:
+
+```java
+// In shader output or as uniform
+uniform float brightness_boost;  // default 1.0, set higher for dark shaders
+gl_FragColor.rgb *= brightness_boost;
+```
+
+### 3. Mark backbuffer shaders as needing feedback
+
+Create a list of shaders requiring feedback and implement dual-buffer:
+
+```java
+String[] feedbackShaders = {
+  "angerlightR", "christmasgel_animate", "orbitalrainbowdots"
+};
+```
+
+---
+
+## Full Shader List by Category
+
+### Working After Mouse Fix (~25 shaders)
+- AMPwaves_animate
+- BWanxiety2  
+- BWconcentriccirleparts
+- BWshaketunnel_animate
+- Ginsanity_animate
+- RBrectomatic_animate
+- RGBfractalreactor_animate
+- discolights
+- emberdrive
+- faerieblobs
+- flyingthroughspace
+- fractalreact_animate
+- globetag3D
+- kaleidoblast_animate
+- pinkmistmorning
+- polarcolorswirls
+- rainbowripples
+- redbricks
+- retina2
+
+### Need Backbuffer (6 shaders)
+- angerlightR
+- christmasgel_animate
+- orbitalrainbowdots
+- badvideo (uses distortion but ok without)
+
+### Intentionally Dark / Need Brightness (5 shaders)
+- OBgeartastic
+- BWsemicyclical
+- BWanxiety
+- redtrianglearmy
+- smogmonster
+
+### Complex / May Work with Time (8 shaders)
+- alienworks
+- alienworksrapid
+- blinkyspherescube_animate
+- torch
+- octopus
+- heartbeat
+- lifeessence
+- colorsquaroid
+
+---
+
+## ISF Shader Analysis (Original)
 
 **Problem:** Uses ISF PASSES for persistent buffer + vertex shader varyings
 ```glsl

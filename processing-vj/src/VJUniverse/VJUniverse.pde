@@ -321,7 +321,16 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     
     // Mouse uniform (for Shadertoy-style GLSL shaders)
     // Y is flipped to match OpenGL conventions
-    s.set("mouse", (float)mouseX, h - (float)mouseY);
+    // Default to center (0.5, 0.5) normalized when mouse is at origin
+    // Many GLSL shaders use mouse for critical calculations and fail with (0,0)
+    float mx = mouseX;
+    float my = mouseY;
+    if (mx == 0 && my == 0) {
+      // Mouse hasn't moved - default to center for shader compatibility
+      mx = w * 0.5f;
+      my = h * 0.5f;
+    }
+    s.set("mouse", mx / w, 1.0f - (my / h));  // Normalized 0-1, Y-flipped
     
     // Speed uniform: audio-reactive time scaling (0-1)
     // Key hook for GLSL shader audio reactivity

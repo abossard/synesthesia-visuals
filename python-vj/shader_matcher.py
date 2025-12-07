@@ -693,6 +693,12 @@ class ShaderIndexer:
         '..', 'processing-vj', 'src', 'VJUniverse', 'data', 'shaders'
     )
     
+    # Screenshots directory
+    DEFAULT_SCREENSHOTS_DIR = os.path.join(
+        os.path.dirname(__file__),
+        '..', 'processing-vj', 'src', 'VJUniverse', 'data', 'screenshots'
+    )
+    
     # Shader type configurations: (subfolder, extension, prefix)
     SHADER_TYPES = {
         'isf': ('isf', '.fs', 'isf'),
@@ -723,6 +729,9 @@ class ShaderIndexer:
         # For backwards compatibility, keep shaders_dir pointing to ISF
         self.shaders_dir = self.shaders_base / 'isf'
         self.glsl_dir = self.shaders_base / 'glsl'
+        
+        # Screenshots directory (sibling to shaders)
+        self.screenshots_dir = Path(self.DEFAULT_SCREENSHOTS_DIR).resolve()
         
         self.shaders: Dict[str, ShaderFeatures] = {}  # name → features (prefixed)
         self._chromadb_client = None
@@ -992,6 +1001,54 @@ class ShaderIndexer:
         if shader_path.exists() and not shader_path.is_dir():
             with open(shader_path, 'r') as f:
                 return f.read()
+        
+        return None
+    
+    def get_screenshot_path(self, name: str) -> Optional[Path]:
+        """
+        Find screenshot for a shader by name.
+        
+        Screenshots may be named:
+        - {shader_name}.png
+        - {shader_name}_{shader_name}.png (ISF naming convention)
+        - Without prefix (just the shader name)
+        
+        Args:
+            name: Shader name (may include 'isf/' or 'glsl/' prefix)
+        
+        Returns:
+            Path to screenshot file, or None if not found
+        """
+        if not self.screenshots_dir.exists():
+            return None
+        
+        # Strip prefix if present
+        if name.startswith('isf/') or name.startswith('glsl/'):
+            base_name = name.split('/', 1)[1]
+        else:
+            base_name = name
+        
+        # Try various naming patterns
+        patterns = [
+            f"{base_name}.png",
+            f"{base_name}_{base_name}.png",  # ISF duplicate naming
+            f"{base_name.replace(' ', '')}.png",  # No spaces
+            f"{base_name.replace('_', '')}.png",  # No underscores
+        ]
+        
+        for pattern in patterns:
+            screenshot_path = self.screenshots_dir / pattern
+            if screenshot_path.exists():
+                return screenshot_path
+        
+        # Fuzzy search: find any screenshot that starts with base_name
+        for png_file in self.screenshots_dir.glob("*.png"):
+            # Normalize both names for comparison
+            file_base = png_file.stem.lower().replace('_', '').replace(' ', '').replace('-', '')
+            search_base = base_name.lower().replace('_', '').replace(' ', '').replace('-', '')
+            
+            if file_base.startswith(search_base) or search_base.startswith(file_base):
+                return png_file
         
         return None
     

@@ -1141,9 +1141,17 @@ class ShaderAnalysisWorker:
                             self._queue.remove(shader_name)
                     continue
                 
-                # Analyze with LLM
-                logger.info(f"Analyzing shader: {shader_name}")
-                result = self.llm.analyze_shader(shader_name, source)
+                # Check for screenshot (most significant for analysis)
+                screenshot_path = self.indexer.get_screenshot_path(shader_name)
+                screenshot_str = str(screenshot_path) if screenshot_path else None
+                
+                # Analyze with LLM (includes screenshot if available)
+                if screenshot_path:
+                    logger.info(f"Analyzing shader with screenshot: {shader_name}")
+                else:
+                    logger.info(f"Analyzing shader (no screenshot): {shader_name}")
+                
+                result = self.llm.analyze_shader(shader_name, source, screenshot_path=screenshot_str)
                 
                 if result and 'error' not in result:
                     # Parse ISF inputs
@@ -1152,25 +1160,33 @@ class ShaderAnalysisWorker:
                     # Extract features
                     features = result.get('features', {})
                     
-                    # Extract audio mapping (new)
+                    # Extract audio mapping
                     audio_mapping = result.get('audioMapping', {})
+                    
+                    # Build metadata dict
+                    metadata = {
+                        'mood': result.get('mood', 'unknown'),
+                        'colors': result.get('colors', []),
+                        'effects': result.get('effects', []),
+                        'description': result.get('description', ''),
+                        'geometry': result.get('geometry', []),
+                        'objects': result.get('objects', []),
+                        'energy': result.get('energy', 'medium'),
+                        'complexity': result.get('complexity', 'medium'),
+                        'audioMapping': audio_mapping,
+                        'has_screenshot': result.get('has_screenshot', False)
+                    }
+                    
+                    # Include screenshot analysis data if present
+                    if 'screenshot' in result:
+                        metadata['screenshot'] = result['screenshot']
                     
                     # Save analysis
                     success = self.indexer.save_analysis(
                         shader_name,
                         features,
                         inputs,
-                        {
-                            'mood': result.get('mood', 'unknown'),
-                            'colors': result.get('colors', []),
-                            'effects': result.get('effects', []),
-                            'description': result.get('description', ''),
-                            'geometry': result.get('geometry', []),
-                            'objects': result.get('objects', []),
-                            'energy': result.get('energy', 'medium'),
-                            'complexity': result.get('complexity', 'medium'),
-                            'audioMapping': audio_mapping
-                        }
+                        metadata
                     )
                     
                     if success:
@@ -1184,7 +1200,8 @@ class ShaderAnalysisWorker:
                                 'mood': result.get('mood', '?'),
                                 'energy': result.get('energy', '?'),
                                 'colors': result.get('colors', [])[:2],
-                                'features': features
+                                'features': features,
+                                'has_screenshot': result.get('has_screenshot', False)
                             })
                             self._recent = self._recent[:self.MAX_RECENT]
                             self.status['recent'] = self._recent.copy()

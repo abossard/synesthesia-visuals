@@ -105,13 +105,20 @@ class LLMAnalyzer:
         
         return self._basic_image_prompt(artist, title, keywords, themes)
     
-    def analyze_shader(self, shader_name: str, shader_source: str, timeout: int = 300) -> Dict[str, Any]:
+    def analyze_shader(
+        self, 
+        shader_name: str, 
+        shader_source: str, 
+        screenshot_path: Optional[str] = None,
+        timeout: int = 300
+    ) -> Dict[str, Any]:
         """
-        Analyze GLSL shader source for VJ music visualization matching.
+        Analyze GLSL shader source (and optionally screenshot) for VJ music visualization matching.
         
         Args:
             shader_name: Name of the shader
             shader_source: GLSL source code
+            screenshot_path: Optional path to PNG screenshot for visual analysis
             timeout: Request timeout in seconds (default 300s = 5 min for large shaders)
         
         Returns dict with:
@@ -120,6 +127,7 @@ class LLMAnalyzer:
             - effects: List[str]
             - description: str
             - features: Dict[str, float] (energy_score, mood_valence, etc.)
+            - screenshot: Dict (visual analysis if screenshot provided)
             - error: str (only present if analysis failed)
         """
         self._try_reconnect()
@@ -128,6 +136,15 @@ class LLMAnalyzer:
             logger.debug("LLM not available for shader analysis")
             return {'error': 'LLM not available', 'shader_name': shader_name}
         
+        # If screenshot available, use combined vision+code analysis
+        if screenshot_path:
+            result = self._analyze_with_screenshot(shader_name, shader_source, screenshot_path, timeout)
+            if result and 'error' not in result:
+                return result
+            # Fall back to code-only analysis if vision fails
+            logger.debug(f"Vision analysis failed, falling back to code-only: {result.get('error', '')}")
+        
+        # Code-only analysis
         prompt = self._build_shader_analysis_prompt(shader_name, shader_source)
         
         try:
@@ -175,6 +192,152 @@ class LLMAnalyzer:
             return {'error': error_msg, 'shader_name': shader_name}
         
         return {'error': 'Unknown error', 'shader_name': shader_name}
+    
+    def _analyze_with_screenshot(
+        self,
+        shader_name: str,
+        shader_source: str,
+        screenshot_path: str,
+        timeout: int
+    ) -> Dict[str, Any]:
+        """
+        Combined analysis using both shader code and screenshot image.
+        
+        This is the most accurate analysis as it sees actual visual output.
+        """
+        import base64
+        from pathlib import Path
+        
+        # Read and encode image
+        try:
+            img_path = Path(screenshot_path)
+            if not img_path.exists():
+                return {'error': f'Screenshot not found: {screenshot_path}'}
+            
+            with open(img_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            mime_type = 'image/png' if img_path.suffix.lower() == '.png' else 'image/jpeg'
+        except Exception as e:
+            return {'error': f'Failed to read screenshot: {e}'}
+        
+        prompt = self._build_combined_analysis_prompt(shader_name, shader_source)
+        
+        try:
+            if self._backend == "openai":
+                response = self._openai_client.chat.completions.create(
+                    model="gpt-4o-mini",  # Vision-capable model
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{image_data}",
+                                    "detail": "low"
+                                }
+                            }
+                        ]
+                    }],
+                    max_tokens=1200,
+                    timeout=timeout
+                )
+                content = response.choices[0].message.content
+                
+            elif self._backend == "lmstudio":
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{image_data}"}
+                                }
+                            ]
+                        }],
+                        "max_tokens": 1200
+                    },
+                    timeout=timeout)
+                
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    return {'error': 'Vision not supported by LM Studio model'}
+            else:
+                return {'error': 'No vision-capable backend'}
+            
+            if content:
+                result = self._parse_shader_analysis(content)
+                if result:
+                    result['has_screenshot'] = True
+                    return result
+                    
+        except Exception as e:
+            logger.debug(f"Vision analysis failed: {e}")
+            return {'error': str(e)}
+        
+        return {'error': 'Vision analysis failed'}
+    
+    def _build_combined_analysis_prompt(self, shader_name: str, source: str) -> str:
+        """Build prompt for combined code + screenshot analysis."""
+        # Truncate source more aggressively since we have the image
+        max_len = 4000
+        if len(source) > max_len:
+            source = source[:max_len] + "\n// ... (truncated)"
+        
+        return f"""Analyze this shader using BOTH the code AND the screenshot image.
+
+Shader: {shader_name}
+
+The IMAGE shows the actual visual output - use it to determine:
+- Actual colors (what you SEE, not what code suggests)
+- Visual patterns and shapes
+- Brightness and contrast
+- Perceived motion/energy
+
+Code (for context):
+```glsl
+{source}
+```
+
+IMPORTANT: The screenshot is the SOURCE OF TRUTH for visual properties.
+Keep response SHORT. Output ONLY valid JSON, no markdown.
+
+{{
+  "mood": "<energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
+  "colors": ["<actual colors from image>"],
+  "geometry": ["<shapes you see>"],
+  "objects": ["<visual elements>"],
+  "effects": ["<visual effects>"],
+  "energy": "<low|medium|high>",
+  "complexity": "<simple|medium|complex>",
+  "description": "<15 words describing what you SEE in the image>",
+  "features": {{
+    "energy_score": <0.0-1.0 based on visual intensity>,
+    "mood_valence": <-1.0 to 1.0: dark=-1, bright=+1>,
+    "color_warmth": <0.0-1.0: cool blues=0, warm reds=1>,
+    "motion_speed": <0.0-1.0 based on perceived motion>,
+    "geometric_score": <0.0-1.0: organic=0, geometric=1>,
+    "visual_density": <0.0-1.0: minimal=0, dense=1>
+  }},
+  "screenshot": {{
+    "dominant_colors": ["<top 3 colors from image>"],
+    "visual_patterns": ["<stripes|spirals|grids|particles|waves|etc>"],
+    "brightness": <0.0-1.0>,
+    "contrast": <0.0-1.0>,
+    "colorfulness": <0.0-1.0>
+  }},
+  "audioMapping": {{
+    "primarySource": "<bass|mid|highs|kickEnv|energyFast|level>",
+    "songStyle": <0.0-1.0>
+  }}
+}}
+
+JSON:"""
     
     def _build_shader_analysis_prompt(self, shader_name: str, source: str) -> str:
         """Build prompt for shader analysis with GLSL pattern guidance and audio mapping."""
@@ -341,6 +504,183 @@ JSON:"""
                     
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse shader analysis JSON: {e}")
+            return None
+    
+    def analyze_screenshot(self, shader_name: str, screenshot_path: str, timeout: int = 60) -> Dict[str, Any]:
+        """
+        Analyze shader screenshot using vision-capable LLM.
+        
+        This provides visual analysis that complements code analysis:
+        - Actual colors visible in the output
+        - Visual patterns and shapes
+        - Perceived mood and energy from the image
+        - Description of what the shader looks like
+        
+        Args:
+            shader_name: Name of the shader
+            screenshot_path: Path to PNG screenshot file
+            timeout: Request timeout in seconds
+        
+        Returns dict with:
+            - visual_mood: str (energetic|calm|dark|bright|psychedelic|...)
+            - dominant_colors: List[str] (actual colors seen)
+            - visual_patterns: List[str] (stripes, spirals, particles, etc.)
+            - visual_description: str (what it looks like)
+            - visual_features: Dict[str, float] (scores from image)
+            - error: str (only if analysis failed)
+        """
+        self._try_reconnect()
+        
+        if not self._health.available:
+            return {'error': 'LLM not available', 'shader_name': shader_name}
+        
+        # Read and encode image as base64
+        try:
+            import base64
+            from pathlib import Path
+            
+            img_path = Path(screenshot_path)
+            if not img_path.exists():
+                return {'error': f'Screenshot not found: {screenshot_path}', 'shader_name': shader_name}
+            
+            with open(img_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            # Determine mime type
+            suffix = img_path.suffix.lower()
+            mime_type = 'image/png' if suffix == '.png' else 'image/jpeg'
+            
+        except Exception as e:
+            return {'error': f'Failed to read screenshot: {e}', 'shader_name': shader_name}
+        
+        prompt = self._build_screenshot_analysis_prompt(shader_name)
+        
+        try:
+            if self._backend == "openai":
+                response = self._openai_client.chat.completions.create(
+                    model="gpt-4o-mini",  # Vision-capable model
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{image_data}",
+                                    "detail": "low"  # Use low detail for faster/cheaper analysis
+                                }
+                            }
+                        ]
+                    }],
+                    max_tokens=800,
+                    timeout=timeout
+                )
+                content = response.choices[0].message.content
+                
+            elif self._backend == "lmstudio":
+                # LM Studio with vision model (if available)
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{image_data}"
+                                    }
+                                }
+                            ]
+                        }],
+                        "max_tokens": 800
+                    },
+                    timeout=timeout)
+                
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    # Vision might not be supported - return graceful error
+                    return {'error': f'Vision not supported by LM Studio model', 'shader_name': shader_name}
+            else:
+                return {'error': 'No vision-capable backend', 'shader_name': shader_name}
+            
+            # Parse response
+            if content:
+                result = self._parse_screenshot_analysis(content)
+                if result:
+                    return result
+                else:
+                    return {'error': f'Failed to parse vision response', 'shader_name': shader_name}
+                    
+        except Exception as e:
+            logger.warning(f"Screenshot analysis error for {shader_name}: {e}")
+            return {'error': str(e), 'shader_name': shader_name}
+        
+        return {'error': 'Unknown error', 'shader_name': shader_name}
+    
+    def _build_screenshot_analysis_prompt(self, shader_name: str) -> str:
+        """Build prompt for screenshot/image analysis."""
+        return f"""Analyze this shader screenshot for VJ music visualization matching.
+
+Shader: {shader_name}
+
+Look at the IMAGE and describe what you SEE. Focus on:
+1. Actual colors visible (not guessed from code)
+2. Visual patterns (spirals, grids, particles, waves, etc.)
+3. Overall mood/feeling the image conveys
+4. Brightness and contrast levels
+5. Motion impression (does it look fast/slow/static?)
+
+IMPORTANT: Keep response SHORT. Output ONLY valid JSON, no markdown.
+
+{{
+  "visual_mood": "<energetic|calm|dark|bright|psychedelic|mysterious|chaotic|peaceful|aggressive|dreamy>",
+  "dominant_colors": ["<color1>", "<color2>", "<color3>"],
+  "visual_patterns": ["<pattern1>", "<pattern2>"],
+  "visual_objects": ["<what you see: tunnels, fractals, shapes, etc>"],
+  "visual_description": "<15 words max describing what it looks like>",
+  "visual_features": {{
+    "brightness": <0.0-1.0: 0=very dark, 1=very bright>,
+    "contrast": <0.0-1.0: 0=flat, 1=high contrast>,
+    "colorfulness": <0.0-1.0: 0=monochrome, 1=rainbow>,
+    "complexity": <0.0-1.0: 0=simple, 1=intricate>,
+    "perceived_motion": <0.0-1.0: 0=static, 1=fast movement>
+  }}
+}}
+
+JSON:"""
+    
+    def _parse_screenshot_analysis(self, content: str) -> Optional[Dict[str, Any]]:
+        """Parse screenshot analysis JSON from LLM response."""
+        try:
+            cleaned = content.strip()
+            if cleaned.startswith('```'):
+                first_newline = cleaned.find('\n')
+                if first_newline > 0:
+                    cleaned = cleaned[first_newline + 1:]
+                if cleaned.rstrip().endswith('```'):
+                    cleaned = cleaned.rstrip()[:-3].rstrip()
+            
+            start = cleaned.find('{')
+            end = cleaned.rfind('}')
+            
+            if start >= 0 and end > start:
+                json_str = cleaned[start:end+1]
+                result = json.loads(json_str)
+                
+                # Validate required fields
+                required = {'visual_mood', 'dominant_colors', 'visual_description', 'visual_features'}
+                if not required.issubset(set(result.keys())):
+                    logger.warning(f"Screenshot analysis missing fields: {required - set(result.keys())}")
+                    return None
+                
+                return result
+            
+            return None
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse screenshot analysis JSON: {e}")
             return None
     
     @property

@@ -5,56 +5,61 @@ precision highp int;
 
 uniform float time;
 uniform vec2 resolution;
-uniform float bass;
-uniform float mid;
-uniform float treble;
-uniform float level;
-uniform float beat;
+uniform float speed;  // Audio-reactive speed 0-1
 
-uniform float scale;
-uniform float cycle;
-uniform float thickness;
-uniform float loops;
-uniform float warp;
-uniform float hue;
-uniform float tint;
-uniform float rate;
-uniform bool invert;
+uniform float offset;
+uniform float frequency;
+uniform int curve;
+uniform bool vertical;
+uniform vec4 startColor;
+uniform vec4 endColor;
+
+// Audio-reactive uniforms (injected by VJUniverse)
+uniform float bass;       // Low frequency energy 0-1
+uniform float lowMid;     // Low-mid energy 0-1
+uniform float mid;        // Mid frequency energy 0-1
+uniform float highs;      // High frequency energy 0-1
+uniform float level;      // Overall loudness 0-1
+uniform float kickEnv;    // Kick/beat envelope 0-1
+uniform float kickPulse;  // 1 on kick, decays to 0
+uniform float beat;       // Beat phase 0-1
+uniform float energyFast; // Fast energy envelope
+uniform float energySlow; // Slow energy envelope
 
 #define TIME max(time, 0.001)
 #define RENDERSIZE resolution
 #define isf_FragCoord vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y)
-#define isf_FragNormCoord (isf_FragCoord.xy / resolution)
+#define isf_FragNormCoord (isf_FragCoord / resolution)
 #define FRAMEINDEX int(time * 60.0)
 
-////////////////////////////////////////////////////////////
-// CandyWarp  by mojovideotech
-//
-// based on :  
-// glslsandbox.com/e#38710.0
-// Posted by Trisomie21
-// modified by @hintz
-//
-// Creative Commons Attribution-NonCommercial-ShareAlike 3.0
-////////////////////////////////////////////////////////////
+const float pi = 3.14159265359;
+const float e = 2.71828182846;
 
 
 
-
-void main(void)
-{
-	float s = RENDERSIZE.y / scale;
-	float radius = RENDERSIZE.x / cycle;
-	float gap = s * (1.0 - thickness);
-	vec2 pos = isf_FragCoord.xy - RENDERSIZE.xy * 0.5;
-	float d = length(pos);
-	float T = TIME * rate;
-	d += warp * (sin(pos.y * 0.25 / s + T) * sin(pos.x * 0.25 / s + T * 0.5)) * s * 5.0;
-	float v = mod(d + radius / (loops * 2.0), radius / loops);
-	v = abs(v - radius / (loops * 2.0));
-	v = clamp(v - gap, 0.0, 1.0);
-	d /= radius - T;
-	vec3 m = fract((d - 1.0) * vec3(loops * hue, -loops, loops * tint) * 0.5);
-	if (invert) 	gl_FragColor = vec4(m / v, 1.0);
-	else gl_FragColor = vec4(m * v, 1.0);
+void main() {
+	float mixAmount = 0.0;
+	float phase = offset;
+	
+	if (vertical)	{
+		mixAmount = phase + frequency * isf_FragNormCoord[1];
+	}
+	else	{
+		mixAmount = phase + frequency * isf_FragNormCoord[0];
+	}
+	
+	if (curve == 0)	{
+		mixAmount = mod(2.0 * mixAmount,2.0);
+		mixAmount = (mixAmount < 1.0) ? mixAmount : 1.0 - (mixAmount - floor(mixAmount));
+	}
+	else if (curve == 1)	{
+		mixAmount = sin(mixAmount * pi * 2.0 - pi / 2.0) * 0.5 + 0.5;
+	}
+	else if (curve == 2)	{
+		mixAmount = mod(2.0 * mixAmount, 2.0);
+		mixAmount = (mixAmount < 1.0) ? mixAmount : 1.0 - (mixAmount - floor(mixAmount));
+		mixAmount = pow(mixAmount, 2.0);
+	}
+	
+	gl_FragColor = mix(startColor,endColor,mixAmount);
 }
