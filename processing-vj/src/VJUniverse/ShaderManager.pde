@@ -409,11 +409,37 @@ ShaderInfo getCurrentShaderInfo() {
   return null;
 }
 
+String normalizeShaderRequest(String request) {
+  if (request == null) return null;
+  String normalized = request.trim().replace("\\", "/");
+  if (normalized.length() == 0) return normalized;
+  // Strip optional type prefix (glsl/, isf/)
+  int slash = normalized.indexOf('/');
+  if (slash > 0) {
+    String prefix = normalized.substring(0, slash).toLowerCase();
+    if (prefix.equals("glsl") || prefix.equals("isf")) {
+      normalized = normalized.substring(slash + 1);
+    }
+  }
+  // Remove known extensions
+  if (normalized.endsWith(".frag")) normalized = normalized.substring(0, normalized.length()-5);
+  else if (normalized.endsWith(".txt")) normalized = normalized.substring(0, normalized.length()-4);
+  else if (normalized.endsWith(".glsl")) normalized = normalized.substring(0, normalized.length()-5);
+  else if (normalized.endsWith(".fs")) normalized = normalized.substring(0, normalized.length()-3);
+  else if (normalized.endsWith(".isf")) normalized = normalized.substring(0, normalized.length()-4);
+  return normalized;
+}
+
 void loadShaderByName(String name) {
+  String normalized = normalizeShaderRequest(name);
+  if (normalized == null || normalized.length() == 0) {
+    println("Shader request was empty");
+    return;
+  }
   // Search in ALL shaders (not filtered) - allows OSC to load any shader
   for (int i = 0; i < availableShaders.size(); i++) {
-    if (availableShaders.get(i).name.equals(name)) {
-      ShaderInfo info = availableShaders.get(i);
+    ShaderInfo info = availableShaders.get(i);
+    if (info.name.equals(normalized) || info.name.equalsIgnoreCase(normalized)) {
       
       // Temporarily disable filter to load by absolute index
       ShaderType savedFilter = currentTypeFilter;
@@ -423,7 +449,7 @@ void loadShaderByName(String name) {
       return;
     }
   }
-  println("Shader not found: " + name);
+  println("Shader not found: " + name + " (normalized: " + normalized + ")");
 }
 
 // ============================================
