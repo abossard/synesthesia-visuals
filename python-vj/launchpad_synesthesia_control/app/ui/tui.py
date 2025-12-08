@@ -189,6 +189,31 @@ class LogPanel(VerticalScroll):
             self.mount(Label(log))
 
 
+class BankSelectorPanel(Container):
+    """Bank selector panel."""
+    
+    active_bank_index: reactive[int] = reactive(0)
+    available_banks: reactive[List] = reactive([])
+    
+    def compose(self) -> ComposeResult:
+        yield Label("Bank Selector", classes="panel-title")
+        with Horizontal(id="bank_buttons", classes="bank-row"):
+            for i in range(4):  # Show first 4 banks
+                yield Button(f"B{i}", id=f"bank_{i}", classes="bank-button")
+    
+    def watch_active_bank_index(self, new_index: int):
+        """Update button appearance when active bank changes."""
+        for i in range(4):
+            try:
+                btn = self.query_one(f"#bank_{i}", Button)
+                if i == new_index:
+                    btn.variant = "success"
+                else:
+                    btn.variant = "default"
+            except:
+                pass
+
+
 class OscConfigPanel(Container):
     """OSC configuration panel."""
     
@@ -220,14 +245,14 @@ class LaunchpadSynesthesiaApp(App):
     CSS = """
     Screen {
         layout: grid;
-        grid-size: 3 3;
+        grid-size: 3 4;
         grid-columns: 2fr 1fr 1fr;
-        grid-rows: 2fr 1fr 1fr;
+        grid-rows: 2fr 1fr 1fr 1fr;
     }
     
     #grid_container {
         column-span: 2;
-        row-span: 2;
+        row-span: 3;
         border: solid green;
         padding: 1;
     }
@@ -242,14 +267,19 @@ class LaunchpadSynesthesiaApp(App):
         padding: 1;
     }
     
-    #osc_config_container {
+    #bank_container {
         border: solid magenta;
+        padding: 1;
+    }
+    
+    #osc_config_container {
+        border: solid blue;
         padding: 1;
     }
     
     #log_container {
         column-span: 2;
-        border: solid blue;
+        border: solid white;
         padding: 1;
         height: 100%;
     }
@@ -267,6 +297,16 @@ class LaunchpadSynesthesiaApp(App):
     
     .port-input {
         width: 10;
+    }
+    
+    .bank-row {
+        height: 3;
+        margin: 1 0;
+    }
+    
+    .bank-button {
+        width: 6;
+        margin: 0 1;
     }
     """
     
@@ -300,6 +340,9 @@ class LaunchpadSynesthesiaApp(App):
         
         with Container(id="learn_mode_container"):
             yield LearnModePanel(id="learn_panel")
+        
+        with Container(id="bank_container"):
+            yield BankSelectorPanel(id="bank_panel")
         
         with Container(id="osc_config_container"):
             yield OscConfigPanel()
@@ -498,7 +541,16 @@ class LaunchpadSynesthesiaApp(App):
         status.app_mode = self.state.app_mode
         status.active_scene = self.state.active_scene
         status.active_preset = self.state.active_preset
+        status.active_bank_name = self.state.active_bank_name
         status.beat_pulse = self.state.beat_pulse
+        
+        # Update bank panel
+        try:
+            bank_panel = self.query_one("#bank_panel", BankSelectorPanel)
+            bank_panel.active_bank_index = self.state.active_bank_index
+            bank_panel.available_banks = self.state.available_banks
+        except Exception:
+            pass  # Bank panel might not be mounted yet
         
         # Update learn panel
         try:
@@ -541,9 +593,18 @@ class LaunchpadSynesthesiaApp(App):
     
     async def on_button_pressed(self, event: Button.Pressed):
         """Handle button press."""
+        from ..domain.fsm import switch_bank
+        
         if event.button.id == "apply_osc":
             # Reload OSC with new ports
             await self._init_osc()
+        elif event.button.id and event.button.id.startswith("bank_"):
+            # Bank switching
+            bank_index = int(event.button.id.split("_")[1])
+            new_state, effects = switch_bank(self.state, bank_index)
+            self.state = new_state
+            await self._execute_effects(effects)
+            self._update_ui()
 
 
 def run_app():

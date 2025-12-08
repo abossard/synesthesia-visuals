@@ -243,3 +243,58 @@ See main repository LICENSE
 ## Credits
 
 Part of the [Synesthesia Visuals](https://github.com/abossard/synesthesia-visuals) project.
+
+## Multi-Bank Support
+
+### Overview
+
+Organize your Launchpad into **multiple banks** for different control layouts. Switch between banks on the fly during performances.
+
+### Default Banks
+
+- **Bank 0 (Default)**: General-purpose controls
+- **Bank 1 (Scenes)**: Scene selection pads
+- **Bank 2 (Effects)**: Effect toggles and triggers
+- **Bank 3 (Colors)**: Color/hue controls
+
+### Switching Banks
+
+Click the bank buttons (B0, B1, B2, B3) in the Bank Selector panel. The active bank is highlighted in green and shown in the Status panel.
+
+### Bank-Specific Configurations
+
+Currently, pad mappings are shared across banks. For per-bank configurations, extend your YAML:
+
+```yaml
+active_bank_index: 1
+active_bank_name: "Scenes"
+banks:
+  0:
+    name: "Default"
+    pads: { ... }
+  1:
+    name: "Scenes"
+    pads: { ... }
+```
+
+### Learn Mode Without Hardware
+
+**New Feature**: Configure pads entirely from the TUI!
+
+1. Press `L` for Learn Mode
+2. **Click a pad in the TUI grid** (no Launchpad needed)
+3. Trigger action in Synesthesia
+4. Wait 5 seconds for OSC recording
+5. Configure pad type, group, colors
+
+The TUI grid is fully interactive - you can map all 82 pads without connecting hardware.
+
+### Programmer Mode Setup
+
+If you have a physical Launchpad, put it in Programmer mode:
+
+1. Hold **Session** button
+2. Press the **orange pad** (top-right)
+3. Release both buttons
+
+The Status panel shows these instructions when Launchpad is not detected.

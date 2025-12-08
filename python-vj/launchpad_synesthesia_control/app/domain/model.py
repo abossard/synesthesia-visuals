@@ -231,6 +231,17 @@ class LearnState:
 # =============================================================================
 
 @dataclass(frozen=True)
+class BankConfig:
+    """Configuration for a Launchpad bank (preset layout)."""
+    name: str  # Human-readable bank name
+    index: int  # Bank number 0-7 (for 8 banks)
+
+
+# =============================================================================
+# CONTROLLER STATE (FULL APPLICATION STATE)
+# =============================================================================
+
+@dataclass(frozen=True)
 class ControllerState:
     """
     Complete controller state (immutable).
@@ -244,7 +255,9 @@ class ControllerState:
     active_scene: Current active scene name
     active_preset: Current active preset name
     active_color_hue: Current meta color hue
-    active_bank_index: Current bank index
+    active_bank_index: Current bank index (0-7)
+    active_bank_name: Current bank name
+    available_banks: List of available banks
     beat_phase: Beat phase 0-1 from OSC
     beat_pulse: Current beat pulse state
     last_osc_messages: Recent OSC messages for diagnostics
@@ -259,7 +272,16 @@ class ControllerState:
     active_scene: Optional[str] = None
     active_preset: Optional[str] = None
     active_color_hue: Optional[float] = None
+    
+    # Bank state
     active_bank_index: int = 0
+    active_bank_name: str = "Default"
+    available_banks: List[BankConfig] = field(default_factory=lambda: [
+        BankConfig("Default", 0),
+        BankConfig("Scenes", 1),
+        BankConfig("Effects", 2),
+        BankConfig("Colors", 3),
+    ])
     
     # Audio/beat state
     beat_phase: float = 0.0
