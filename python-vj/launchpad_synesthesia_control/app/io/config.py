@@ -168,9 +168,7 @@ class ConfigManager:
             # Create controller state
             state = ControllerState(
                 pads=pads,
-                pad_runtime=pad_runtime,
-                active_bank_index=data.get("active_bank_index", 0),
-                active_bank_name=data.get("active_bank_name", "Default")
+                pad_runtime=pad_runtime
             )
             
             logger.info(f"Loaded {len(pads)} pad configurations")
@@ -200,8 +198,6 @@ class ConfigManager:
             
             data = {
                 "version": "1.0",
-                "active_bank_index": state.active_bank_index,
-                "active_bank_name": state.active_bank_name,
                 "pads": pads_data
             }
             

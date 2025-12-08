@@ -524,37 +524,3 @@ def select_learn_command(
     ]
     
     return new_state, effects
-
-
-# =============================================================================
-# BANK SWITCHING
-# =============================================================================
-
-def switch_bank(state: ControllerState, bank_index: int) -> Tuple[ControllerState, List[Effect]]:
-    """
-    Switch to a different bank (pure function).
-    
-    Args:
-        state: Current controller state
-        bank_index: Target bank index (0-7)
-    
-    Returns:
-        (new_state, effects)
-    """
-    if not (0 <= bank_index < len(state.available_banks)):
-        return state, [LogEffect(f"Invalid bank index: {bank_index}", level="ERROR")]
-    
-    bank = state.available_banks[bank_index]
-    
-    new_state = replace(
-        state,
-        active_bank_index=bank_index,
-        active_bank_name=bank.name
-    )
-    
-    effects = [
-        LogEffect(f"Switched to bank {bank_index}: {bank.name}"),
-        SaveConfigEffect()  # Save bank preference
-    ]
-    
-    return new_state, effects
