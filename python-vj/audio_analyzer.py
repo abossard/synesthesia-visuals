@@ -513,6 +513,7 @@ class AudioAnalyzer(threading.Thread):
         self.smoothed_rms = 0.0
         self.band_peaks = [1e-3] * len(config.bands)
         self.rms_peak = 1e-3
+        self.flux_smooth = 0.0
         
         # Build-up/drop detection
         frames_per_window = int(config.energy_window_sec * config.sample_rate / config.block_size)
@@ -802,7 +803,7 @@ class AudioAnalyzer(threading.Thread):
                 pass
         
         flux = calculate_spectral_flux(magnitude, self.prev_magnitude)
-        
+
         # Use Essentia for flux if available
         if self.flux_algo:
             try:
@@ -810,6 +811,11 @@ class AudioAnalyzer(threading.Thread):
                 flux = essentia_flux
             except Exception:
                 pass  # Fall back to numpy calculation
+
+        # Smooth and gate flux to reduce visual jitter
+        alpha_flux = 0.15
+        self.flux_smooth = (1 - alpha_flux) * self.flux_smooth + alpha_flux * flux
+        flux_for_send = self.flux_smooth if self.flux_smooth >= 0.02 else 0.0
         
         self.prev_magnitude = magnitude.copy()
         
@@ -1080,7 +1086,7 @@ class AudioAnalyzer(threading.Thread):
                 if self.config.enable_bpm:
                     self.osc_callback('/audio/beat', [
                         1 if is_onset else 0,
-                        float(flux)
+                        float(flux_for_send)
                     ])
                 
                 # /audio/bpm: [bpm, confidence]
@@ -1094,7 +1100,7 @@ class AudioAnalyzer(threading.Thread):
                 # /audio/spectral: [centroid_norm, rolloff_hz, flux]
                 # Additional spectral features
                 self.osc_callback('/audio/spectral', [
-                    float(centroid_norm), float(rolloff_hz), float(flux)
+                    float(centroid_norm), float(rolloff_hz), float(flux_for_send)
                 ])
                 
                 # /audio/structure: [is_buildup, is_drop, energy_trend, brightness]

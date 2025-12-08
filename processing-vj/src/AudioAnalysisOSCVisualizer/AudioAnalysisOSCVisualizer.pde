@@ -433,12 +433,13 @@ void drawBeatPanel(float x, float y) {
   
   float circleSize = 40;
   float pulse = constrain(beatPulse, 0, 1);
+  pulse = min(pulse, 0.6f);
   float cx = x + 40;
   boolean beatActive = (millis() - lastBeatMillis) < 120;
   
   fill(40);
   ellipse(cx, py + 18, circleSize, circleSize);
-  if (beatActive || pulse > 0.01f) {
+  if (beatActive || pulse > 0.05f) {
     float pulseSize = circleSize * (0.6f + pulse * 0.6f);
     fill(255, 180, 80, 120 + pulse * 120);
     ellipse(cx, py + 18, pulseSize, pulseSize);
