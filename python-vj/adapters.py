@@ -211,13 +211,13 @@ class LyricsFetcher:
             logger.debug(f"LM Studio error: {e}")
         
         return None
-    
-        def _fetch_metadata_via_llm(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
-                """
-                Fetch song metadata via LM Studio: plain lyrics, keywords, song info, and condensed lyric analysis.
-                Uses web-search MCP to find accurate information.
-                """
-                system_prompt = """You are a music information assistant with access to web search.
+
+    def _fetch_metadata_via_llm(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch song metadata via LM Studio: plain lyrics, keywords, song info, and condensed lyric analysis.
+        Uses web-search MCP to find accurate information.
+        """
+        system_prompt = """You are a music information assistant with access to web search.
 Search for complete information about the requested song and return a JSON object with:
 {
     "plain_lyrics": "full lyrics text without timestamps",
@@ -246,13 +246,13 @@ Keep refrain_lines short (under 80 characters) and only include lines that repea
 Return ONLY valid JSON, no other text."""
 
         user_prompt = f'Search the web for complete lyrics and information about "{title}" by {artist}.'
-        
+
         logger.debug(f"Fetching metadata via LLM: {artist} - {title}")
         content = self._ask_lmstudio(system_prompt, user_prompt, timeout=120)
-        
+
         if not content:
             return None
-        
+
         # Extract JSON from response
         try:
             start = content.find('{')
@@ -264,7 +264,7 @@ Return ONLY valid JSON, no other text."""
                 return metadata
         except json.JSONDecodeError:
             logger.debug(f"Failed to parse metadata JSON: {content[:200]}")
-        
+
         return None
     
     # =========================================================================

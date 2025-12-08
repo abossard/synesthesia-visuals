@@ -7,13 +7,11 @@ uniform float time;
 uniform vec2 resolution;
 uniform float speed;  // Audio-reactive speed 0-1
 
-uniform float size;
-uniform float rotation;
-uniform float angle;
-uniform vec2 shift;
-uniform vec4 xcolor;
-uniform vec4 ycolor;
-uniform vec4 background;
+uniform float scale;
+uniform float thickness;
+uniform float twists;
+uniform float rate;
+uniform float gamma;
 
 // Audio-reactive uniforms (injected by VJUniverse)
 uniform float bass;       // Low frequency energy 0-1
@@ -33,42 +31,31 @@ uniform float energySlow; // Slow energy envelope
 #define isf_FragNormCoord (isf_FragCoord / resolution)
 #define FRAMEINDEX int(time * 60.0)
 
-//	Basically just uses the same gradient as the Sine Warp Tile but uses the x/y values as the mix amounts for our colors
+////////////////////////////////////////////////////////////
+// RainbowRingCubicTwist  by mojovideotech
+//
+// based on :
+// glslsandbox/e#58416.0
+//
+// Creative Commons Attribution-NonCommercial-ShareAlike 3.0
+////////////////////////////////////////////////////////////
 
 
-const float tau = 6.28318530718;
+#ifdef GL_ES
+precision highp float;
+#endif
 
 
-vec2 pattern() {
-	float s = sin(tau * rotation * 0.5);
-	float c = cos(tau * rotation * 0.5);
-	vec2 tex = isf_FragNormCoord;
-	float scale = 1.0 / max(size,0.001);
-	vec2 point = vec2( c * tex.x - s * tex.y, s * tex.x + c * tex.y ) * scale;
-	point = point - scale * shift / RENDERSIZE;
-	//	do the sine distort
-	point = 0.5 + 0.5 * vec2( sin(scale * point.x), sin(scale * point.y));
-	
-	//	now do a rotation
-	vec2 center = vec2(0.5,0.5);
-	float r = distance(center, point);
-	float a = atan ((point.y-center.y),(point.x-center.x));
-	
-	s = sin(a + tau * angle);
-	c = cos(a + tau * angle);
-	
-	float zoom = max(abs(s),abs(c))*RENDERSIZE.x / RENDERSIZE.y;
-	
-	point.x = (r * c)/zoom + 0.5;
-	point.y = (r * s)/zoom + 0.5;
-
-	return point;
-}
-
-
-void main() {
-
-	vec2 pat = pattern();
-
-	gl_FragColor = background + pat.x * xcolor + pat.y * ycolor;
+void main() 
+{
+    float T = TIME * rate;
+    vec2 R = RENDERSIZE;  
+    vec2 P = (isf_FragCoord.xy - 0.5*R)*(2.1 - scale);
+    vec4 S, E, F;
+    P = vec2(length(P) / R.y - 0.333, atan(P.y,P.x));  
+    P *= vec2(2.6 - thickness,floor(twists));                                                                                                             ;
+    S = 0.08*cos(1.5*vec4(0.0, 1.0, 2.0, 3.0) + T + P.y + sin(P.y)*cos(T));
+    E = S.yzwx; 
+    F = max(P.x - S, E - P.x);
+    gl_FragColor = pow(dot(clamp(F*R.y, 0.0, 1.0), 72.0*(S - E))*(S - 0.1), vec4(gamma));
 }
