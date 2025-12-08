@@ -40,12 +40,10 @@ float subBass, bass, lowMid, mid, highMid, presence, air, overallLevel;
 int spectrumBins = 32;
 float[] spectrum = new float[spectrumBins];
 
-// Beats
+// Beat/onset (single stream)
 int isBeat = 0;
-float beatPulse = 0.0f;
-float bassHitPulse = 0.0f;
-float midHitPulse = 0.0f;
-float highHitPulse = 0.0f;
+float beatPulse = 0.0f;  // Spectral flux-based pulse
+long lastBeatMillis = 0;  // Time of last onset
 
 // BPM
 float bpm = 0.0f;
@@ -124,6 +122,9 @@ void setup() {
 void draw() {
   frameCounter++;
   background(0);
+
+  // Decay beat pulse so the circle fades quickly between onsets
+  beatPulse *= 0.80f;
   
   // Check connection status
   long now = millis();
@@ -181,16 +182,18 @@ void oscEvent(OscMessage msg) {
       spectrum[i] = msg.get(i).floatValue();
     }
   }
-  else if (addr.equals("/audio/beats")) {
-    // [is_beat, beat_pulse, bass_pulse, mid_pulse, high_pulse]
-    if (msg.typetag().length() >= 5) {
-      isBeat = msg.get(0).intValue();
-      beatPulse = msg.get(1).floatValue();
-      bassHitPulse = msg.get(2).floatValue();
-      midHitPulse = msg.get(3).floatValue();
-      highHitPulse = msg.get(4).floatValue();
+  else if (addr.equals("/audio/beat")) {
+      // [is_onset, spectral_flux]
+      if (msg.typetag().length() >= 2) {
+        isBeat = msg.get(0).intValue();
+        float flux = msg.get(1).floatValue();
+        beatPulse = constrain(flux, 0, 1);
+        spectralFlux = flux;  // Keep flux visible in spectral panel
+        if (isBeat == 1) {
+          lastBeatMillis = lastOscTime;
+        }
+      }
     }
-  }
   else if (addr.equals("/audio/bpm")) {
     // [bpm, confidence]
     if (msg.checkTypetag(BPM_TYPE_TAG)) {
@@ -198,6 +201,10 @@ void oscEvent(OscMessage msg) {
       bpmConfidence = msg.get(1).floatValue();
     }
   }
+    else if (addr.equals("/bpm")) {
+      // Single-value BPM (EDM features)
+      bpm = msg.get(0).floatValue();
+    }
   else if (addr.equals("/audio/pitch")) {
     // [frequency_hz, confidence]
     if (msg.checkTypetag(PITCH_TYPE_TAG)) {
@@ -377,17 +384,6 @@ void drawLevelBars(float x, float y) {
       rect(x + 65, ly, barWidth * level, barHeight);
     }
     
-    // Beat pulse indicators
-    if (i == 1 && bassHitPulse > 0.1f) {
-      fill(255, 100, 50, bassHitPulse * 255);
-      ellipse(x + 65 + barWidth + 15, ly + barHeight/2, 10, 10);
-    } else if (i == 3 && midHitPulse > 0.1f) {
-      fill(100, 255, 100, midHitPulse * 255);
-      ellipse(x + 65 + barWidth + 15, ly + barHeight/2, 10, 10);
-    } else if (i == 5 && highHitPulse > 0.1f) {
-      fill(100, 100, 255, highHitPulse * 255);
-      ellipse(x + 65 + barWidth + 15, ly + barHeight/2, 10, 10);
-    }
   }
   textAlign(LEFT, TOP);
 }
@@ -435,45 +431,21 @@ void drawBeatPanel(float x, float y) {
   text("Pulses", x, py);
   py += 20;
   
-  float circleSize = 30;
-  float cx = x + 25;
+  float circleSize = 40;
+  float pulse = constrain(beatPulse, 0, 1);
+  float cx = x + 40;
+  boolean beatActive = (millis() - lastBeatMillis) < 120;
   
-  // Bass pulse circle
   fill(40);
-  ellipse(cx, py + 15, circleSize, circleSize);
-  if (bassHitPulse > 0.05f) {
-    fill(255, 100, 50, 100 + bassHitPulse * 155);
-    float pulseSize = circleSize * (0.5f + bassHitPulse * 0.5f);
-    ellipse(cx, py + 15, pulseSize, pulseSize);
+  ellipse(cx, py + 18, circleSize, circleSize);
+  if (beatActive || pulse > 0.01f) {
+    float pulseSize = circleSize * (0.6f + pulse * 0.6f);
+    fill(255, 180, 80, 120 + pulse * 120);
+    ellipse(cx, py + 18, pulseSize, pulseSize);
   }
   fill(180);
   textAlign(CENTER, TOP);
-  text("Bass", cx, py + 32);
-  
-  // Mid pulse circle
-  cx += 55;
-  fill(40);
-  ellipse(cx, py + 15, circleSize, circleSize);
-  if (midHitPulse > 0.05f) {
-    fill(100, 255, 100, 100 + midHitPulse * 155);
-    float pulseSize = circleSize * (0.5f + midHitPulse * 0.5f);
-    ellipse(cx, py + 15, pulseSize, pulseSize);
-  }
-  fill(180);
-  text("Mid", cx, py + 32);
-  
-  // High pulse circle
-  cx += 55;
-  fill(40);
-  ellipse(cx, py + 15, circleSize, circleSize);
-  if (highHitPulse > 0.05f) {
-    fill(150, 100, 255, 100 + highHitPulse * 155);
-    float pulseSize = circleSize * (0.5f + highHitPulse * 0.5f);
-    ellipse(cx, py + 15, pulseSize, pulseSize);
-  }
-  fill(180);
-  text("High", cx, py + 32);
-  
+  text("Onset", cx, py + 36);
   textAlign(LEFT, TOP);
 }
 
@@ -680,7 +652,7 @@ void keyPressed() {
       spectrum[i] = 0;
     }
     isBeat = 0;
-    beatPulse = bassHitPulse = midHitPulse = highHitPulse = 0;
+    beatPulse = 0;
     bpm = bpmConfidence = 0;
     pitchHz = pitchConf = 0;
     spectralCentroid = spectralRolloff = spectralFlux = 0;

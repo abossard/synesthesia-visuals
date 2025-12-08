@@ -20,6 +20,8 @@ Architecture follows "Grokking Simplicity" principles:
 - Stateful components isolated and explicit
 """
 
+import argparse
+import sys
 import time
 import queue
 import threading
@@ -36,19 +38,20 @@ import numpy as np
 try:
     import sounddevice as sd
     SOUNDDEVICE_AVAILABLE = True
-except (ImportError, OSError) as e:
+except (ImportError, OSError):
     SOUNDDEVICE_AVAILABLE = False
     sd = None
-    # logger not initialized yet, will log later
 
-# Try to import essentia
+# Essentia is mandatory for this analyzer
+import essentia.standard as es
+ESSENTIA_AVAILABLE = True
+
 try:
-    import essentia.standard as es
-    ESSENTIA_AVAILABLE = True
-except ImportError as e:
-    ESSENTIA_AVAILABLE = False
-    es = None
-    # logger not initialized yet, will log later
+    from pythonosc import udp_client
+    OSC_AVAILABLE = True
+except ImportError:
+    udp_client = None
+    OSC_AVAILABLE = False
 
 logger = logging.getLogger('audio_analyzer')
 
@@ -56,9 +59,6 @@ logger = logging.getLogger('audio_analyzer')
 if not SOUNDDEVICE_AVAILABLE:
     logger.warning("sounddevice not available - audio input disabled")
     logger.info("Install PortAudio library and sounddevice with: pip install sounddevice")
-if not ESSENTIA_AVAILABLE:
-    logger.warning("Essentia not available - beat/tempo/pitch detection disabled")
-    logger.info("Install essentia with: pip install essentia")
 
 
 # =============================================================================
@@ -69,8 +69,8 @@ if not ESSENTIA_AVAILABLE:
 class AudioConfig:
     """Audio analysis configuration (immutable)."""
     sample_rate: int = 44100
-    block_size: int = 512
-    fft_size: int = 512
+    block_size: int = 1024  # Align with Essentia rhythm tutorial (frameSize)
+    fft_size: int = 1024    # Align with Essentia rhythm tutorial (frameSize)
     channels: int = 2
     
     # OSC configuration
@@ -514,10 +514,6 @@ class AudioAnalyzer(threading.Thread):
         self.band_peaks = [1e-3] * len(config.bands)
         self.rms_peak = 1e-3
         
-        # Beat/BPM tracking
-        self.beat_times = deque(maxlen=config.bpm_history_size)
-        self.last_beat_time = 0.0
-        
         # Build-up/drop detection
         frames_per_window = int(config.energy_window_sec * config.sample_rate / config.block_size)
         self.energy_history = deque(maxlen=frames_per_window)
@@ -534,64 +530,44 @@ class AudioAnalyzer(threading.Thread):
         self.onset_rate = None
         
         # EDM-specific Essentia algorithms
-        self.beat_tracker = None
+        self.rhythm_extractor = None
         self.beats_loudness = None
         self.flatness_algo = None
         self.spread_algo = None
         self.loudness_algo = None
         
-        self.enable_essentia = config.enable_essentia and ESSENTIA_AVAILABLE
-        
-        if self.enable_essentia:
-            try:
-                # Standard mode algorithms (frame-by-frame processing)
-                # Following https://essentia.upf.edu/tutorial_rhythm_beatdetection.html
-                
-                # Beat tracking with BeatTrackerMultiFeature (best for EDM)
-                # Note: BeatTrackerMultiFeature needs longer audio buffers, so we'll use
-                # BeatTrackerDegara which works better for real-time frame-by-frame
-                if config.enable_bpm:
-                    try:
-                        # BeatTrackerDegara for real-time beat detection
-                        self.beat_tracker = es.BeatTrackerDegara()
-                        logger.info("Using BeatTrackerDegara for real-time beat detection")
-                    except Exception as e:
-                        logger.warning(f"BeatTrackerDegara unavailable: {e}, falling back to onset detection")
-                        # Fallback to onset detection - combine multiple methods for robustness
-                        self.onset_hfc = es.OnsetDetection(method='hfc')  # High Frequency Content
-                        self.onset_complex = es.OnsetDetection(method='complex')  # Complex domain
-                        self.onset_flux = es.OnsetDetection(method='flux')  # Spectral flux
-                
-                if config.enable_pitch:
-                    self.pitch_yin = es.PitchYin(
-                        frameSize=config.fft_size,
-                        sampleRate=config.sample_rate,
-                        minFrequency=20,
-                        maxFrequency=2000,
-                        tolerance=0.15
-                    )
-                
-                # Spectral features for brightness and timbral analysis
-                self.centroid_algo = es.Centroid()
-                self.rolloff_algo = es.RollOff()
-                self.flux_algo = es.Flux()
-                self.flatness_algo = es.Flatness()  # For noisiness (0=tonal, 1=noise)
-                self.spread_algo = es.CentralMoments()  # For spectral spread
-                
-                # Energy and loudness
-                self.energy_algo = es.Energy()
-                self.loudness_algo = es.Loudness()  # LUFS-based loudness
-                
-                # BeatsLoudness for per-beat energy analysis
-                # Note: BeatsLoudness requires beat times, we'll compute manually per band
-                
-                logger.info("Essentia initialized with EDM-optimized beat/spectral algorithms")
-            except Exception as e:
-                logger.warning(f"Essentia initialization failed: {e}")
-        elif ESSENTIA_AVAILABLE:
-            logger.info("Essentia disabled via config - advanced features skipped")
-        else:
-            logger.warning("Essentia not available - beat/tempo/pitch detection disabled")
+        # Essentia is required; initialize algorithms
+        if not ESSENTIA_AVAILABLE:
+            raise RuntimeError("Essentia is required for audio analysis")
+        try:
+            if config.enable_bpm:
+                self.rhythm_extractor = es.RhythmExtractor2013(
+                    method='multifeature',
+                    minTempo=int(config.bpm_min),
+                    maxTempo=int(config.bpm_max),
+                )
+                logger.info("Using RhythmExtractor2013 (multifeature) for beat/BPM tracking")
+                self.onset_hfc = es.OnsetDetection(method='hfc')
+                self.onset_complex = es.OnsetDetection(method='complex')
+                self.onset_flux = es.OnsetDetection(method='flux')
+            if config.enable_pitch:
+                self.pitch_yin = es.PitchYin(
+                    frameSize=config.fft_size,
+                    sampleRate=config.sample_rate,
+                    minFrequency=20,
+                    maxFrequency=2000,
+                    tolerance=0.15
+                )
+            self.centroid_algo = es.Centroid()
+            self.rolloff_algo = es.RollOff()
+            self.flux_algo = es.Flux()
+            self.flatness_algo = es.Flatness()
+            self.spread_algo = es.CentralMoments()
+            self.energy_algo = es.Energy()
+            self.loudness_algo = es.Loudness()
+            logger.info("Essentia initialized (multifeature rhythm, spectral, pitch)")
+        except Exception as e:
+            raise RuntimeError(f"Essentia initialization failed: {e}")
         
         # Control flags
         self.running = False
@@ -639,9 +615,14 @@ class AudioAnalyzer(threading.Thread):
         }
         self.ui_publish_interval = 1.0 / config.ui_publish_hz if config.ui_publish_hz > 0 else 0.0
         self.last_ui_publish = 0.0
-        self.flux_avg = 0.0
-        self.flux_peak = 0.0
-        self.last_flux_onset = 0.0
+        self.rhythm_buffer = deque(maxlen=int(self.config.sample_rate * 12))
+        self.last_rhythm_refresh = 0.0
+        self.last_rhythm_beat_time = 0.0
+        self.rhythm_bpm = 0.0
+        self.rhythm_confidence = 0.0
+        self.rhythm_min_buffer_sec = 8.0  # follow Essentia examples (multi-second context)
+        self.rhythm_refresh_sec = 0.5
+        self.rhythm_cached_beats: List[float] = []
     
     def _audio_callback(self, indata: np.ndarray, frames: int, 
                        time_info: dict, status: Any):
@@ -688,8 +669,9 @@ class AudioAnalyzer(threading.Thread):
                 self.active_channels = channels
 
                 if device_idx is not None:
-                    dev = sd.query_devices(device_idx)
-                    dev_name = dev['name']
+                    dev_raw = sd.query_devices(device_idx)
+                    dev_dict = dev_raw if isinstance(dev_raw, dict) else {}
+                    dev_name = str(dev_dict.get('name', 'unknown'))
                 else:
                     dev_name = 'system default'
                 logger.info(
@@ -744,6 +726,12 @@ class AudioAnalyzer(threading.Thread):
         """
         # Convert to mono
         mono = block.mean(axis=1).astype(np.float32)
+
+        # Accumulate audio for beat tracker (sliding window ~12s)
+        try:
+            self.rhythm_buffer.extend(mono.tolist())
+        except Exception:
+            pass
         
         # Pad if needed
         if len(mono) < self.config.fft_size:
@@ -907,66 +895,41 @@ class AudioAnalyzer(threading.Thread):
                 )
             self.structure_energy_history.append(total_energy)
         
-        # --- Essentia features (if available) ---
+        # --- Essentia rhythm (tutorial-aligned: run on multi-second buffer) ---
         
         is_onset = False
-        bpm = 0.0
+        bpm = self.rhythm_bpm
         pitch_hz = 0.0
         pitch_conf = 0.0
-        onset_strength = 0.0
-        
-        if self.onset_hfc and self.config.enable_bpm:
-            try:
-                # Multi-method onset detection for robustness
-                # Following Essentia beat detection best practices
-                phase_spectrum = np.angle(spectrum)
-                
-                onset_hfc_val = float(self.onset_hfc(magnitude, phase_spectrum))
-                onset_complex_val = 0.0
-                onset_flux_val = 0.0
-                
-                if self.onset_complex:
-                    onset_complex_val = float(self.onset_complex(magnitude, phase_spectrum))
-                if self.onset_flux:
-                    onset_flux_val = float(self.onset_flux(magnitude, phase_spectrum))
-                
-                # Combine onset detection methods with weighting
-                # HFC is best for percussive content, complex for general, flux for novelty
-                onset_strength = (onset_hfc_val * 0.5 + onset_complex_val * 0.3 + onset_flux_val * 0.2)
-                
-                # Adaptive threshold based on recent history
-                onset_threshold = 0.3
-                is_onset = onset_strength > onset_threshold
-                
-                # Track beat times for BPM estimation
-                if is_onset:
-                    current_time = time.monotonic()
-                    if self.last_beat_time > 0:
-                        interval = current_time - self.last_beat_time
-                        # Filter out extremely short intervals (debounce)
-                        if interval > 0.12:  # Max ~500 BPM (60/0.12 = 500)
-                            self.beat_times.append(interval)
-                    self.last_beat_time = current_time
-                    
-            except Exception as e:
-                logger.error(f"Essentia onset detection error: {e}")
-        elif self.config.enable_bpm:
-            # Flux-based fallback onset detection
-            self.flux_avg = 0.9 * self.flux_avg + 0.1 * flux
-            self.flux_peak = max(self.flux_peak * 0.95, flux)
-            adaptive_threshold = self.flux_avg + (self.flux_peak - self.flux_avg) * 0.5
+        bpm_confidence = self.rhythm_confidence
+        frame_duration = len(mono) / self.config.sample_rate
+
+        if self.rhythm_extractor and self.config.enable_bpm:
             now = time.monotonic()
-            if (
-                flux > adaptive_threshold
-                and flux > 0.001
-                and (now - self.last_flux_onset) > 0.12
-            ):
-                is_onset = True
-                self.last_flux_onset = now
-                if self.last_beat_time > 0:
-                    interval = now - self.last_beat_time
-                    self.beat_times.append(interval)
-                self.last_beat_time = now
+            buffer_arr = np.fromiter(self.rhythm_buffer, dtype=np.float32)
+            buffer_duration = len(buffer_arr) / self.config.sample_rate if len(buffer_arr) > 0 else 0.0
+
+            if buffer_duration >= self.rhythm_min_buffer_sec and (now - self.last_rhythm_refresh) >= self.rhythm_refresh_sec:
+                try:
+                    bpm_out, beat_times, beat_conf, _, _ = self.rhythm_extractor(buffer_arr)
+                    self.rhythm_bpm = float(bpm_out)
+                    self.rhythm_confidence = float(beat_conf)
+                    self.rhythm_cached_beats = list(beat_times)
+                    self.last_rhythm_refresh = now
+                except Exception as e:
+                    logger.error(f"Rhythm extractor error: {e}")
+
+            # Convert cached beat times (seconds from start of buffer) into absolute wall-clock
+            if self.rhythm_cached_beats:
+                recent_abs = [now - (buffer_duration - bt) for bt in self.rhythm_cached_beats if bt <= buffer_duration]
+                if recent_abs:
+                    latest = max(recent_abs)
+                    if latest - self.last_rhythm_beat_time > frame_duration * 0.5:
+                        is_onset = True
+                        self.last_rhythm_beat_time = latest
+
+            bpm = self.rhythm_bpm
+            bpm_confidence = self.rhythm_confidence
         
         # Pitch detection with PitchYin (optional)
         if self.pitch_yin and self.config.enable_pitch:
@@ -981,14 +944,7 @@ class AudioAnalyzer(threading.Thread):
                 pitch_hz = 0.0
                 pitch_conf = 0.0
         
-        bpm_confidence = 0.0
-        if self.config.enable_bpm:
-            custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
-                list(self.beat_times),
-                self.config.bpm_min,
-                self.config.bpm_max
-            )
-            bpm = custom_bpm
+        # BPM already derived from rhythm extractor; no interval fallback
         
         # Beat energy tracking (BeatsLoudness equivalent)
         # Capture energy at beat moments for global + low/high bands
@@ -1035,6 +991,7 @@ class AudioAnalyzer(threading.Thread):
         decay = 0.88
         alpha = 0.1
         sensitivity = 1.5
+        overall_gate = max(self.smoothed_rms, 0.0)
         
         # Band indices for multi-band detection
         # Based on config.band_names: sub_bass, bass, low_mid, mid, high_mid, presence, air
@@ -1052,10 +1009,14 @@ class AudioAnalyzer(threading.Thread):
         self.mid_avg = self.mid_avg * (1 - alpha) + mid_energy * alpha
         self.high_avg = self.high_avg * (1 - alpha) + high_energy * alpha
         
-        # Detect hits
-        bass_hit = bass_energy > self.bass_avg * sensitivity
-        mid_hit = mid_energy > self.mid_avg * sensitivity
-        high_hit = high_energy > self.high_avg * sensitivity
+        # Detect hits (guard against noise floor)
+        bass_thresh = max(self.bass_avg * sensitivity, 0.12)
+        mid_thresh = max(self.mid_avg * sensitivity, 0.10)
+        high_thresh = max(self.high_avg * sensitivity, 0.08)
+
+        bass_hit = overall_gate > 0.03 and bass_energy > bass_thresh
+        mid_hit = overall_gate > 0.03 and mid_energy > mid_thresh
+        high_hit = overall_gate > 0.03 and high_energy > high_thresh
         
         # Update pulses
         if bass_hit:
@@ -1072,10 +1033,6 @@ class AudioAnalyzer(threading.Thread):
             self.highHitPulse = 1.0
         else:
             self.highHitPulse *= decay
-        
-        bassHitPulse = self.bassHitPulse
-        midHitPulse = self.midHitPulse
-        highHitPulse = self.highHitPulse
         
         # Downsample spectrum for OSC when needed
         spectrum_down: List[float] = []
@@ -1119,16 +1076,11 @@ class AudioAnalyzer(threading.Thread):
                 if spectrum_down:
                     self.osc_callback('/audio/spectrum', spectrum_down)
                 
-                # /audio/beats: [is_beat, beat_pulse, bass_pulse, mid_pulse, high_pulse]
-                # Matches Processing format exactly
+                # /audio/beat: [is_onset, spectral_flux]
                 if self.config.enable_bpm:
-                    beat_pulse = float(onset_strength) if is_onset else 0.0
-                    self.osc_callback('/audio/beats', [
+                    self.osc_callback('/audio/beat', [
                         1 if is_onset else 0,
-                        beat_pulse,
-                        float(bassHitPulse),
-                        float(midHitPulse), 
-                        float(highHitPulse)
+                        float(flux)
                     ])
                 
                 # /audio/bpm: [bpm, confidence]
@@ -1507,62 +1459,35 @@ class LatencyTester:
             if self.analyzer.config.enable_structure:
                 self.analyzer.energy_history.append(total_energy)
             
-            # Measure Essentia (if available)
+            # Measure Essentia rhythm (assumed available)
             essentia_time = 0.0
             is_onset = False
-            bpm = 0.0
+            bpm = self.analyzer.rhythm_bpm
             pitch_hz = 0.0
             pitch_conf = 0.0
-            onset_strength = 0.0
             config = self.analyzer.config
-            
-            if self.analyzer.onset_hfc and config.enable_bpm:
+            if self.analyzer.rhythm_extractor and config.enable_bpm:
                 essentia_start = time.perf_counter()
                 try:
-                    phase_spectrum = np.angle(spectrum)
-                    onset_strength = float(self.analyzer.onset_hfc(magnitude, phase_spectrum))
-                    onset_threshold = 0.3
-                    is_onset = onset_strength > onset_threshold
-                    
-                    if is_onset:
-                        current_time = time.monotonic()
-                        if self.analyzer.last_beat_time > 0:
-                            interval = current_time - self.analyzer.last_beat_time
-                            self.analyzer.beat_times.append(interval)
-                        self.analyzer.last_beat_time = current_time
-                    
-                    if self.analyzer.pitch_yin and config.enable_pitch:
-                        pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
-                        pitch_hz = float(pitch_hz)
-                        pitch_conf = float(pitch_conf)
-                        if pitch_conf < 0.6:
-                            pitch_hz = 0.0
-                            pitch_conf = 0.0
-                    
+                    buffer_arr = np.fromiter(self.analyzer.rhythm_buffer, dtype=np.float32)
+                    buffer_duration = len(buffer_arr) / self.analyzer.config.sample_rate if len(buffer_arr) > 0 else 0.0
+                    if buffer_duration >= self.analyzer.rhythm_min_buffer_sec:
+                        bpm_out, beat_times, beat_conf, _, _ = self.analyzer.rhythm_extractor(buffer_arr)
+                        self.analyzer.rhythm_bpm = float(bpm_out)
+                        self.analyzer.rhythm_confidence = float(beat_conf)
+                        self.analyzer.rhythm_cached_beats = list(beat_times)
+                        bpm = self.analyzer.rhythm_bpm
+                        if beat_times:
+                            # Treat latest beat within the last frame as onset for timing benchmark
+                            latest_rel = beat_times[-1]
+                            if buffer_duration - latest_rel <= (config.block_size / config.sample_rate):
+                                is_onset = True
                     essentia_time = (time.perf_counter() - essentia_start) * 1_000_000
                 except Exception:
                     pass
-                
                 self.essentia_times.append(essentia_time)
-            elif config.enable_bpm:
-                # Flux fallback for onset timing
-                self.analyzer.flux_avg = 0.9 * self.analyzer.flux_avg + 0.1 * flux
-                self.analyzer.flux_peak = max(self.analyzer.flux_peak * 0.95, flux)
-                adaptive_threshold = self.analyzer.flux_avg + (self.analyzer.flux_peak - self.analyzer.flux_avg) * 0.5
-                now = time.monotonic()
-                if (
-                    flux > adaptive_threshold
-                    and flux > 0.001
-                    and (now - self.analyzer.last_flux_onset) > 0.12
-                ):
-                    is_onset = True
-                    self.analyzer.last_flux_onset = now
-                    if self.analyzer.last_beat_time > 0:
-                        interval = now - self.analyzer.last_beat_time
-                        self.analyzer.beat_times.append(interval)
-                    self.analyzer.last_beat_time = now
-            
-            if self.analyzer.pitch_yin and config.enable_pitch and not (self.analyzer.onset_hfc and config.enable_bpm):
+
+            if self.analyzer.pitch_yin and config.enable_pitch:
                 try:
                     pitch_hz, pitch_conf = self.analyzer.pitch_yin(mono)
                     pitch_hz = float(pitch_hz)
@@ -1573,15 +1498,8 @@ class LatencyTester:
                 except Exception:
                     pitch_hz = 0.0
                     pitch_conf = 0.0
-            
-            bpm_confidence = 0.0
-            if config.enable_bpm:
-                custom_bpm, bpm_confidence = estimate_bpm_from_intervals(
-                    list(self.analyzer.beat_times),
-                    config.bpm_min,
-                    config.bpm_max
-                )
-                bpm = custom_bpm
+
+            bpm_confidence = self.analyzer.rhythm_confidence if config.enable_bpm else 0.0
             
             if config.enable_structure and self.analyzer.energy_history:
                 window_frames = len(self.analyzer.energy_history)
@@ -1688,15 +1606,15 @@ class LatencyTester:
             duration_sec=actual_duration,
             avg_fps=total_frames / actual_duration if actual_duration > 0 else 0,
             
-            fft_time_us=np.mean(self.fft_times) if self.fft_times else 0,
-            band_extraction_time_us=np.mean(self.band_times) if self.band_times else 0,
-            essentia_time_us=np.mean(self.essentia_times) if self.essentia_times else 0,
-            osc_send_time_us=np.mean(self.osc_times) if self.osc_times else 0,
-            total_processing_time_us=np.mean(self.frame_latencies) * 1000 if self.frame_latencies else 0,
+            fft_time_us=float(np.mean(self.fft_times)) if self.fft_times else 0.0,
+            band_extraction_time_us=float(np.mean(self.band_times)) if self.band_times else 0.0,
+            essentia_time_us=float(np.mean(self.essentia_times)) if self.essentia_times else 0.0,
+            osc_send_time_us=float(np.mean(self.osc_times)) if self.osc_times else 0.0,
+            total_processing_time_us=float(np.mean(self.frame_latencies) * 1000) if self.frame_latencies else 0.0,
             
             min_latency_ms=min(latencies_sorted) if latencies_sorted else 0,
             max_latency_ms=max(latencies_sorted) if latencies_sorted else 0,
-            avg_latency_ms=np.mean(latencies_sorted) if latencies_sorted else 0,
+            avg_latency_ms=float(np.mean(latencies_sorted)) if latencies_sorted else 0.0,
             p95_latency_ms=latencies_sorted[p95_idx] if p95_idx < len(latencies_sorted) else 0,
             p99_latency_ms=latencies_sorted[p99_idx] if p99_idx < len(latencies_sorted) else 0,
             
@@ -1707,3 +1625,196 @@ class LatencyTester:
         logger.info(f"Benchmark complete: {results.avg_fps:.1f} fps, {results.avg_latency_ms:.2f}ms avg latency")
         
         return results
+
+
+# =============================================================================
+# CLI UTILITIES
+# =============================================================================
+
+
+def _build_config_from_args(args: argparse.Namespace) -> AudioConfig:
+    log_level = getattr(logging, args.log_level.upper(), logging.INFO)
+    return AudioConfig(
+        sample_rate=args.sample_rate,
+        block_size=args.block_size,
+        fft_size=args.fft_size,
+        channels=args.channels,
+        osc_host=args.osc_host,
+        osc_port=args.osc_port,
+        enable_essentia=not args.disable_essentia,
+        enable_pitch=not args.disable_pitch,
+        enable_bpm=not args.disable_bpm,
+        enable_structure=not args.disable_structure,
+        enable_spectrum=not args.disable_spectrum,
+        enable_logging=True,
+        log_level=log_level,
+    )
+
+
+def _create_osc_callback(host: str, port: int) -> Callable[[str, List], None]:
+    if not OSC_AVAILABLE:
+        raise RuntimeError("python-osc not installed. Install with: pip install python-osc")
+    if udp_client is None:
+        raise RuntimeError("python-osc import failed")
+    client = udp_client.SimpleUDPClient(host, port)
+
+    def _send(addr: str, payload: List):
+        client.send_message(addr, payload)
+
+    return _send
+
+
+def _log_callback(addr: str, payload: List):
+    logger.info("%s %s", addr, payload)
+
+
+def _list_devices(device_manager: DeviceManager) -> int:
+    devices = device_manager.list_devices()
+    if not devices:
+        print("No input devices found or sounddevice unavailable.")
+        return 1
+    for idx, dev in enumerate(devices):
+        name = dev.get('name', 'unknown')
+        channels = dev.get('channels', 0)
+        rate = dev.get('sample_rate', 0)
+        print(f"[{idx}] {name} - {channels}ch @ {rate}Hz")
+    return 0
+
+
+def _run_live(args: argparse.Namespace) -> int:
+    if not SOUNDDEVICE_AVAILABLE:
+        logger.error("sounddevice is required for live mode. Install PortAudio + sounddevice.")
+        return 1
+
+    config = _build_config_from_args(args)
+    device_manager = DeviceManager()
+    device_manager.config.auto_select_blackhole = not args.no_blackhole
+    if args.device_index is not None:
+        device_manager.config.device_index = args.device_index
+
+    osc_callback: Optional[Callable[[str, List], None]] = None
+    if not args.log_only:
+        try:
+            osc_callback = _create_osc_callback(config.osc_host, config.osc_port)
+        except Exception as exc:
+            logger.error("OSC setup failed: %s", exc)
+            return 1
+    else:
+        osc_callback = _log_callback
+
+    analyzer = AudioAnalyzer(config, device_manager, osc_callback=osc_callback)
+    analyzer.start()
+
+    try:
+        end_time = time.monotonic() + args.duration if args.duration else None
+        while analyzer.is_alive():
+            if end_time and time.monotonic() > end_time:
+                break
+            time.sleep(0.25)
+    except KeyboardInterrupt:
+        logger.info("Stopping (Ctrl+C pressed)...")
+    
+    if args.benchmark_secs and analyzer.running:
+        tester = LatencyTester(analyzer)
+        results = tester.run_benchmark(duration_sec=args.benchmark_secs)
+        print(json.dumps(results.to_dict(), indent=2))
+
+    analyzer.stop()
+
+    return 0
+
+
+def _generate_tone_block(freq: float, block_size: int, channels: int, sample_rate: int, frame_idx: int) -> np.ndarray:
+    t = (np.arange(block_size, dtype=np.float32) + frame_idx * block_size) / float(sample_rate)
+    mono = 0.5 * np.sin(2 * np.pi * freq * t)
+    return np.repeat(mono[:, None], channels, axis=1)
+
+
+def _run_dry_run(args: argparse.Namespace) -> int:
+    config = _build_config_from_args(args)
+    device_manager = DeviceManager()
+
+    osc_callback: Optional[Callable[[str, List], None]] = None
+    if not args.log_only:
+        try:
+            osc_callback = _create_osc_callback(config.osc_host, config.osc_port)
+        except Exception as exc:
+            logger.error("OSC setup failed: %s", exc)
+            return 1
+    else:
+        osc_callback = _log_callback
+
+    analyzer = AudioAnalyzer(config, device_manager, osc_callback=osc_callback)
+    analyzer.running = True
+
+    frame_interval = config.block_size / float(config.sample_rate)
+    end_time = time.monotonic() + args.duration if args.duration else None
+    frame_idx = 0
+
+    try:
+        while True:
+            if end_time and time.monotonic() > end_time:
+                break
+            block = _generate_tone_block(args.frequency, config.block_size, config.channels, config.sample_rate, frame_idx)
+            analyzer._process_frame(block)
+            frame_idx += 1
+            time.sleep(frame_interval)
+    except KeyboardInterrupt:
+        logger.info("Stopping dry-run (Ctrl+C pressed)...")
+    finally:
+        analyzer.running = False
+
+    return 0
+
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Standalone audio analyzer CLI")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Logging level")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--sample-rate", type=int, default=44100)
+    common.add_argument("--block-size", type=int, default=512)
+    common.add_argument("--fft-size", type=int, default=512)
+    common.add_argument("--channels", type=int, default=2)
+    common.add_argument("--osc-host", default="127.0.0.1")
+    common.add_argument("--osc-port", type=int, default=9000)
+    common.add_argument("--disable-essentia", action="store_true")
+    common.add_argument("--disable-pitch", action="store_true")
+    common.add_argument("--disable-bpm", action="store_true")
+    common.add_argument("--disable-structure", action="store_true")
+    common.add_argument("--disable-spectrum", action="store_true")
+    common.add_argument("--log-only", action="store_true", help="Log features instead of sending OSC")
+
+    run_parser = subparsers.add_parser("run", parents=[common], help="Run live analyzer with audio input")
+    run_parser.add_argument("--duration", type=float, default=0.0, help="Stop after N seconds (0=run until Ctrl+C)")
+    run_parser.add_argument("--device-index", type=int, default=None, help="sounddevice input index to use")
+    run_parser.add_argument("--no-blackhole", action="store_true", help="Disable BlackHole auto-selection")
+    run_parser.add_argument("--benchmark-secs", type=float, default=0.0, help="Optional latency benchmark duration")
+
+    dry_parser = subparsers.add_parser("dry-run", parents=[common], help="Feed synthetic audio without a device")
+    dry_parser.add_argument("--duration", type=float, default=10.0, help="Run for N seconds (0=until Ctrl+C)")
+    dry_parser.add_argument("--frequency", type=float, default=220.0, help="Test tone frequency")
+
+    subparsers.add_parser("list-devices", help="List available input devices")
+
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
+    logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO), format="%(asctime)s %(levelname)s %(message)s")
+
+    if args.command == "list-devices":
+        return _list_devices(DeviceManager())
+    if args.command == "run":
+        return _run_live(args)
+    if args.command == "dry-run":
+        return _run_dry_run(args)
+    logger.error("Unknown command: %s", args.command)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
