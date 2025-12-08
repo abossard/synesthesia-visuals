@@ -245,22 +245,20 @@ class PipelineTracker:
     STEPS = [
         "detect_playback",
         "fetch_lyrics",
-        "fetch_metadata",
+        "metadata_analysis",
         "detect_refrain",
         "extract_keywords",
         "categorize_song",
-        "ai_analysis",
         "shader_selection"
     ]
     
     STEP_LABELS = {
         "detect_playback": "🎵 Detect Playback",
         "fetch_lyrics": "📜 Fetch Lyrics",
-        "fetch_metadata": "🎵 AI Song Metadata",
+        "metadata_analysis": "🎛️ Metadata + Analysis",
         "detect_refrain": "🔁 Detect Refrain",
         "extract_keywords": "🔑 Extract Keywords",
         "categorize_song": "🏷️ Categorize Song",
-        "ai_analysis": "🤖 AI Analysis",
         "shader_selection": "🖥️ Shader Selection"
     }
     

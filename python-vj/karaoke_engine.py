@@ -489,8 +489,8 @@ class KaraokeEngine:
             if cancelled():
                 return
 
-            # 3. Fetch metadata
-            self._pipeline.start("fetch_metadata")
+            # 3. Fetch metadata + analysis (merged LLM call)
+            self._pipeline.start("metadata_analysis")
             metadata = {}
             plain_lyrics = ""
             try:
@@ -505,18 +505,37 @@ class KaraokeEngine:
                         details.append(f"{kw_count} keywords")
                     if metadata.get('release_date'):
                         details.append(str(metadata['release_date']))
-                    message = ', '.join(details) if details else 'metadata fetched'
-                    self._pipeline.complete("fetch_metadata", message)
+                    analysis_payload = self._extract_analysis_from_metadata(metadata)
+                    if analysis_payload:
+                        self._last_llm_analysis = analysis_payload
+                        hook_lines = len(analysis_payload.get('refrain_lines', []))
+                        if hook_lines:
+                            details.append(f"{hook_lines} refrain lines")
+                        if analysis_payload.get('summary'):
+                            details.append("analysis merged")
+                    else:
+                        # Fallback to keywords/themes even if analysis missing
+                        self._last_llm_analysis = {
+                            'keywords': self._coerce_list(metadata.get('keywords')),
+                            'themes': self._coerce_list(metadata.get('themes')),
+                            'summary': metadata.get('mood', ''),
+                            'source': metadata.get('source', 'metadata_only')
+                        }
+
+                    message = ', '.join(details) if details else 'metadata + analysis fetched'
+                    self._pipeline.complete("metadata_analysis", message)
                     if cancelled():
                         return
                     self._send_metadata(track, metadata)
                 else:
                     self._current_metadata = {}
-                    self._pipeline.skip("fetch_metadata", "No metadata")
+                    self._last_llm_analysis = None
+                    self._pipeline.skip("metadata_analysis", "No metadata")
             except Exception as exc:
                 logger.error(f"Metadata fetch failed: {exc}")
                 self._current_metadata = {}
-                self._pipeline.error("fetch_metadata", str(exc))
+                self._last_llm_analysis = None
+                self._pipeline.error("metadata_analysis", str(exc))
             if cancelled():
                 return
 
@@ -588,28 +607,7 @@ class KaraokeEngine:
             if cancelled():
                 return
 
-            # 7. AI analysis
-            self._pipeline.start("ai_analysis")
-            llm_result = None
-            if lyric_text and self._llm and self._llm.is_available:
-                try:
-                    llm_result = self._llm.analyze_lyrics(lyric_text, track.artist, track.title)
-                    if llm_result:
-                        self._last_llm_analysis = llm_result
-                        keyword_count = len(llm_result.get('keywords', []))
-                        self._pipeline.complete("ai_analysis", f"{keyword_count} keywords")
-                    else:
-                        self._pipeline.skip("ai_analysis", "LLM returned no data")
-                except Exception as exc:
-                    logger.error(f"LLM analysis failed: {exc}")
-                    self._pipeline.error("ai_analysis", str(exc))
-            else:
-                reason = "No lyrics input" if not lyric_text else "LLM unavailable"
-                self._pipeline.skip("ai_analysis", reason)
-            if cancelled():
-                return
-
-            # 8. Shader selection
+            # 7. Shader selection
             self._pipeline.start("shader_selection")
             success = self._select_shader_for_track(track, self._current_categories, self._last_llm_analysis)
             if success:
@@ -619,6 +617,64 @@ class KaraokeEngine:
 
         finally:
             cancel_event.set()
+
+    def _coerce_list(self, value) -> List[str]:
+        """Normalize metadata values into a unique, trimmed list of strings."""
+        items: List[str] = []
+        if isinstance(value, list):
+            items = value
+        elif isinstance(value, str):
+            items = [value]
+        else:
+            return []
+
+        seen = set()
+        result: List[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(text)
+        return result
+
+    def _extract_analysis_from_metadata(self, metadata: Dict) -> Optional[Dict]:
+        """Derive merged analysis payload from metadata response."""
+        if not metadata:
+            return None
+
+        analysis = metadata.get('analysis') if isinstance(metadata.get('analysis'), dict) else {}
+
+        keywords = self._coerce_list(analysis.get('keywords')) or self._coerce_list(metadata.get('keywords'))
+        themes = self._coerce_list(metadata.get('themes')) or self._coerce_list(analysis.get('themes'))
+        refrain_lines = self._coerce_list(analysis.get('refrain_lines'))
+        emotions = self._coerce_list(analysis.get('emotions'))
+        visuals = self._coerce_list(analysis.get('visual_adjectives'))
+        summary = (analysis.get('summary') or metadata.get('mood') or '').strip()
+        tempo = (analysis.get('tempo') or '').strip()
+
+        payload = {
+            'keywords': keywords,
+            'themes': themes,
+            'refrain_lines': refrain_lines,
+            'emotions': emotions,
+            'visual_adjectives': visuals,
+            'summary': summary,
+            'tempo': tempo,
+            'source': metadata.get('source', 'metadata_combined')
+        }
+
+        # Remove empty values to keep payload lean
+        payload = {k: v for k, v in payload.items() if v}
+
+        if payload.get('keywords') or payload.get('themes') or payload.get('summary'):
+            return payload
+        return None
 
     def _build_plain_lyric_lines(self, plain_text: str) -> List[LyricLine]:
         """Convert plain lyrics into pseudo-timed LyricLine list for analysis."""

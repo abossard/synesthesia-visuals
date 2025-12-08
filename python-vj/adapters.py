@@ -40,7 +40,7 @@ class LyricsFetcher:
     
     Simple interface:
         fetch_lrc(artist, title) -> Optional[str]  # Synced LRC for karaoke timing
-        fetch_metadata(artist, title) -> Dict      # Plain lyrics, keywords, song info
+        fetch_metadata(artist, title) -> Dict      # Plain lyrics, keywords, song info, merged AI analysis
     
     Strategy:
     - LRC lyrics: LRCLIB API only (fast, accurate timestamps)
@@ -92,7 +92,7 @@ class LyricsFetcher:
     
     def fetch_metadata(self, artist: str, title: str) -> Dict[str, Any]:
         """
-        Fetch song metadata via LLM: plain lyrics, keywords, song info.
+        Fetch song metadata via LLM: plain lyrics, keywords, song info, and lyric analysis insights.
         Always returns a dict (may be empty if LLM unavailable).
         """
         cache = self._load_cache(artist, title)
@@ -212,27 +212,36 @@ class LyricsFetcher:
         
         return None
     
-    def _fetch_metadata_via_llm(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
-        """
-        Fetch song metadata via LM Studio: plain lyrics, keywords, song info.
-        Uses web-search MCP to find accurate information.
-        """
-        system_prompt = """You are a music information assistant with access to web search.
+        def _fetch_metadata_via_llm(self, artist: str, title: str) -> Optional[Dict[str, Any]]:
+                """
+                Fetch song metadata via LM Studio: plain lyrics, keywords, song info, and condensed lyric analysis.
+                Uses web-search MCP to find accurate information.
+                """
+                system_prompt = """You are a music information assistant with access to web search.
 Search for complete information about the requested song and return a JSON object with:
 {
-  "plain_lyrics": "full lyrics text without timestamps",
-  "keywords": ["list", "of", "significant", "words", "from", "lyrics"],
-  "themes": ["main", "themes"],
-  "release_date": "year or date",
-  "album": "album name",
-  "genre": "genre(s)",
-  "writers": "songwriters",
-  "mood": "overall mood/feeling"
+    "plain_lyrics": "full lyrics text without timestamps",
+    "keywords": ["list", "of", "significant", "words", "from", "lyrics"],
+    "themes": ["main", "themes"],
+    "release_date": "year or date",
+    "album": "album name",
+    "genre": "genre(s)",
+    "writers": "songwriters",
+    "mood": "overall mood/feeling",
+    "analysis": {
+        "summary": "two-sentence vivid summary of the song story and energy",
+        "refrain_lines": ["notable repeated lyric lines"],
+        "emotions": ["dominant emotions"],
+        "visual_adjectives": ["adjectives helpful for VJ visuals"],
+        "tempo": "slow|mid|fast description",
+        "keywords": ["repeat or expand keyword list for redundancy"]
+    }
 }
 
-For keywords: extract 10-15 most significant/meaningful words from the lyrics - 
+For keywords: extract 8-15 most significant/meaningful words from the lyrics - 
 words that capture the essence, emotions, and imagery of the song.
 Exclude common words like "the", "and", "is", etc.
+Keep refrain_lines short (under 80 characters) and only include lines that repeat.
 
 Return ONLY valid JSON, no other text."""
 

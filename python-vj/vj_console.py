@@ -188,6 +188,16 @@ def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Di
                 'keywords': line.keywords,
                 'is_refrain': line.is_refrain
             }
+    analysis = engine.last_llm_result or {}
+    if analysis:
+        pipeline_data['analysis_summary'] = {
+            'summary': analysis.get('summary') or analysis.get('lyric_summary') or analysis.get('mood'),
+            'keywords': [str(k) for k in (analysis.get('keywords') or []) if str(k).strip()][:6],
+            'themes': [str(t) for t in (analysis.get('themes') or []) if str(t).strip()][:4],
+            'refrain_lines': [str(r) for r in (analysis.get('refrain_lines') or []) if str(r).strip()][:2],
+            'visuals': [str(v) for v in (analysis.get('visual_adjectives') or []) if str(v).strip()][:4],
+            'tempo': analysis.get('tempo')
+        }
     return pipeline_data
 
 
@@ -429,6 +439,23 @@ class PipelinePanel(ReactivePanel):
                 lines.append(f"[yellow]  Keywords: {lyric['keywords']}[/]")
             if lyric.get('is_refrain'):
                 lines.append("[magenta]  [REFRAIN][/]")
+            has_content = True
+
+        summary = self.pipeline_data.get('analysis_summary')
+        if summary:
+            lines.append("\n[bold cyan]AI Insights[/]")
+            if summary.get('summary'):
+                lines.append(f"[cyan]{truncate(str(summary['summary']), 180)}[/]")
+            if summary.get('keywords'):
+                lines.append(f"[yellow]Keywords:[/] {', '.join(summary['keywords'])}")
+            if summary.get('themes'):
+                lines.append(f"[green]Themes:[/] {', '.join(summary['themes'])}")
+            if summary.get('visuals'):
+                lines.append(f"[magenta]Visuals:[/] {', '.join(summary['visuals'])}")
+            if summary.get('refrain_lines'):
+                lines.append(f"[dim]Hooks:[/] | {' | '.join(summary['refrain_lines'])}")
+            if summary.get('tempo'):
+                lines.append(f"[dim]Tempo:[/] {summary['tempo']}")
             has_content = True
 
         if self.pipeline_data.get('error'):
