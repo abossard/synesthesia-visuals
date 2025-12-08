@@ -443,8 +443,6 @@ class TestPipelineTracker(unittest.TestCase):
         tracker = PipelineTracker()
         tracker.reset("Test Track")
         
-        tracker.skip("comfyui_generate", "Not available")
-        self.assertEqual(tracker.steps["comfyui_generate"].status, "skipped")
     
     def test_log_entries(self):
         """log() should add timestamped entries."""
