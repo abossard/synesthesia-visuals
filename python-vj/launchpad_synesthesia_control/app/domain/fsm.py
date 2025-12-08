@@ -213,6 +213,7 @@ def handle_osc_event(
     - /controls/meta/hue: Update color selector
     
     If in LEARN_RECORD_OSC mode, also records the event.
+    **NEW: Timer starts on FIRST CONTROLLABLE OSC message received**
     
     Returns:
         (new_state, effects_to_execute)
@@ -221,11 +222,17 @@ def handle_osc_event(
     
     # Record OSC events during learn mode
     if state.app_mode == AppMode.LEARN_RECORD_OSC:
-        new_recorded = list(state.learn_state.recorded_osc_events) + [event]
-        new_learn_state = replace(state.learn_state, recorded_osc_events=new_recorded)
-        state = replace(state, learn_state=new_learn_state)
-        
-        # Check if 5 seconds elapsed (will be handled by imperative shell timer)
+        # Only record controllable messages
+        if OscCommand.is_controllable(event.address):
+            new_recorded = list(state.learn_state.recorded_osc_events) + [event]
+            new_learn_state = replace(state.learn_state, recorded_osc_events=new_recorded)
+            
+            # Start timer on FIRST CONTROLLABLE message
+            if state.learn_state.record_start_time is None:
+                new_learn_state = replace(new_learn_state, record_start_time=event.timestamp)
+                effects.append(LogEffect(f"Learn mode: First controllable message received ({event.address}), starting 5s timer"))
+            
+            state = replace(state, learn_state=new_learn_state)
     
     # Update diagnostics
     new_last_messages = list(state.last_osc_messages[-49:]) + [event]  # Keep last 50

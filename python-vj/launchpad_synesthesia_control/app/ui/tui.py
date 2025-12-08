@@ -201,9 +201,9 @@ class LaunchpadSynesthesiaApp(App):
     CSS = """
     Screen {
         layout: grid;
-        grid-size: 3 2;
+        grid-size: 3 3;
         grid-columns: 2fr 1fr 1fr;
-        grid-rows: 3fr 2fr;
+        grid-rows: 2fr 1fr 1fr;
     }
     
     #grid_container {
@@ -218,12 +218,18 @@ class LaunchpadSynesthesiaApp(App):
         padding: 1;
     }
     
-    #osc_config_container {
+    #learn_mode_container {
         border: solid yellow;
         padding: 1;
     }
     
+    #osc_config_container {
+        border: solid magenta;
+        padding: 1;
+    }
+    
     #log_container {
+        column-span: 2;
         border: solid blue;
         padding: 1;
         height: 100%;
@@ -262,6 +268,8 @@ class LaunchpadSynesthesiaApp(App):
     
     def compose(self) -> ComposeResult:
         """Create UI layout."""
+        from .learn_ui import LearnModePanel
+        
         yield Header()
         
         with Container(id="grid_container"):
@@ -270,6 +278,9 @@ class LaunchpadSynesthesiaApp(App):
         
         with Container(id="status_container"):
             yield StatusPanel(id="status_panel")
+        
+        with Container(id="learn_mode_container"):
+            yield LearnModePanel(id="learn_panel")
         
         with Container(id="osc_config_container"):
             yield OscConfigPanel()
@@ -301,6 +312,9 @@ class LaunchpadSynesthesiaApp(App):
         
         # Start reconnection loop
         self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+        
+        # Start learn mode timer loop
+        self._learn_timer_task = asyncio.create_task(self._learn_timer_loop())
         
         # Update UI
         self._update_ui()
@@ -353,6 +367,28 @@ class LaunchpadSynesthesiaApp(App):
             # Try to reconnect OSC
             if self.osc and not self.osc.is_connected():
                 await self._init_osc()
+    
+    async def _learn_timer_loop(self):
+        """Check learn mode recording timer."""
+        from ..domain.fsm import finish_osc_recording
+        
+        while True:
+            await asyncio.sleep(0.1)  # Check every 100ms
+            
+            if self.state.app_mode == AppMode.LEARN_RECORD_OSC:
+                if self.state.learn_state.record_start_time:
+                    elapsed = time.time() - self.state.learn_state.record_start_time
+                    
+                    if elapsed >= 5.0:
+                        # Time's up - finish recording
+                        new_state, effects = finish_osc_recording(self.state)
+                        self.state = new_state
+                        await self._execute_effects(effects)
+                        self._update_ui()
+            
+            # Update learn panel timer display
+            if self.state.app_mode in (AppMode.LEARN_RECORD_OSC, AppMode.LEARN_WAIT_PAD, AppMode.LEARN_SELECT_MSG):
+                self._update_ui()
     
     def _on_pad_press(self, pad_id: PadId, velocity: int):
         """Handle Launchpad pad press (called from MIDI thread)."""
@@ -444,6 +480,15 @@ class LaunchpadSynesthesiaApp(App):
         status.active_scene = self.state.active_scene
         status.active_preset = self.state.active_preset
         status.beat_pulse = self.state.beat_pulse
+        
+        # Update learn panel
+        try:
+            from .learn_ui import LearnModePanel
+            learn_panel = self.query_one("#learn_panel", LearnModePanel)
+            learn_panel.app_mode = self.state.app_mode
+            learn_panel.learn_state = self.state.learn_state
+        except Exception:
+            pass  # Learn panel might not be mounted yet
     
     def _update_connection_status(self):
         """Update connection status in UI."""
