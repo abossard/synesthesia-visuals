@@ -18,7 +18,6 @@ class LevelManager {
   private SharedContext ctx;
   
   // LED feedback
-  private LaunchpadHUD hud;
   
   // Level selection row (row 7 = notes 71-78)
   private static final int LEVEL_ROW = 7;
@@ -29,15 +28,10 @@ class LevelManager {
     this.activeIndex = -1;
     this.queuedIndex = -1;
     this.activeLevel = null;
-    this.hud = null;
   }
   
   /**
-   * Set HUD for LED feedback
    */
-  void setHUD(LaunchpadHUD hud) {
-    this.hud = hud;
-  }
   
   // ============================================
   // LEVEL REGISTRATION
@@ -240,43 +234,12 @@ class LevelManager {
    * Update level selection LEDs on top row
    */
   void updateLevelLEDs() {
-    if (hud == null) return;
-    
-    hud.beginBatch();
-    
-    // Show available, active, and queued levels on top row
-    for (int col = 0; col < 8; col++) {
-      int ledColor;
-
-      if (col == activeIndex) {
-        ledColor = LP_GREEN;           // Active level
-      } else if (col == queuedIndex) {
-        ledColor = LP_AMBER;           // Queued level
-      } else if (col < levels.size()) {
-        ledColor = LP_WHITE_DIM;       // Available level
-      } else {
-        ledColor = LP_OFF;             // No level
-      }
-
-      hud.setPad(col, LEVEL_ROW, ledColor);
-    }
-    
-    hud.endBatch();
   }
   
   /**
    * Show FSM state on a specific row
    */
   void showFSMState(int row) {
-    if (hud == null || activeLevel == null) return;
-    
-    int stateColor = activeLevel.getFSM().getStateColor();
-    
-    hud.beginBatch();
-    for (int col = 0; col < 8; col++) {
-      hud.setPad(col, row, stateColor);
-    }
-    hud.endBatch();
   }
   
   // ============================================

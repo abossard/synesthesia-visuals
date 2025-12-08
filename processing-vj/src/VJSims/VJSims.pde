@@ -1,16 +1,13 @@
 /**
  * VJSims — Processing VJ Simulation Framework
  * 
- * A highly interactive simulation framework for VJ performances.
- * Supports Launchpad control and Synesthesia Audio OSC input.
+ * Framework for interactive VJ simulations with Synesthesia Audio OSC support.
  * Outputs via Syphon for compositing in Magic/Synesthesia.
  * 
  * Requirements:
  * - Processing 4.x (Intel/x64 build on Apple Silicon for Syphon)
- * - The MidiBus library
  * - Syphon library
- * - oscP5 library (for Synesthesia Audio OSC)
- * - Launchpad Mini Mk3 in Programmer mode (optional)
+ * - oscP5 library (for Synesthesia Audio OSC - TODO)
  * 
  * Audio Reactivity:
  * - Synesthesia Audio OSC: Receive real-time audio analysis from Synesthesia
@@ -19,7 +16,6 @@
  */
 
 import codeanticode.syphon.*;
-import themidibus.*;
 
 // ============================================
 // CORE COMPONENTS
@@ -30,11 +26,6 @@ SharedContext ctx;
 
 // Level management
 LevelManager levelManager;
-
-// MIDI modules
-MidiIO midi;
-LaunchpadGrid grid;
-LaunchpadHUD hud;
 
 // Input collection
 Inputs inputs;
@@ -56,41 +47,18 @@ void settings() {
 
 void setup() {
   frameRate(60);
-  lastFrameTime = millis();
   
-  // Initialize shared context (creates framebuffer, syphon, audio, config)
+  // Initialize shared context
   ctx = new SharedContext(this);
-  
-  // Initialize MIDI modules
-  midi = new MidiIO(this);
-  grid = new LaunchpadGrid(midi);
-  hud = new LaunchpadHUD(grid);
-  
-  // Wire MIDI to shared context
-  ctx.setMidi(grid, hud);
   
   // Initialize inputs collector
   inputs = new Inputs();
   
   // Initialize level manager
   levelManager = new LevelManager(ctx);
-  levelManager.setHUD(hud);
   
   // Register levels
   registerLevels();
-  
-  // Set up MIDI listener
-  midi.setListener(new MidiListener() {
-    void onNote(int channel, int pitch, int velocity, boolean isOn) {
-      handleMidiNote(pitch, velocity, isOn);
-    }
-    void onCC(int channel, int number, int value) {
-      handleMidiCC(number, value);
-    }
-  });
-  
-  // Clear Launchpad LEDs
-  hud.clearAll();
   
   // Start first level
   levelManager.start();
@@ -98,47 +66,45 @@ void setup() {
   println("VJSims initialized");
   println("  Syphon server: VJSims");
   println("  Resolution: " + width + "x" + height);
-  println("  Launchpad: " + (midi.isConnected() ? midi.getDeviceName() : "not found (keyboard mode)"));
   println("  Levels: " + levelManager.getLevelCount());
   println("  Audio: Synesthesia OSC (TODO: implement OSC listener)");
-
-  // Show keyboard controls if Launchpad not found
-  if (!midi.isConnected()) {
-    println();
-    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println("  KEYBOARD CONTROLS (Launchpad Emulation)");
-    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println("  Level Selection:");
-    println("    1-8          Switch to level 1-8");
-    println("    ← →          Previous/Next level");
-    println();
-    println("  Level Control:");
-    println("    S            Start level");
-    println("    R            Reset level");
-    println("    P            Pause/Resume");
-    println();
-    println("  Audio Simulation:");
-    println("    SPACE        Trigger beat (all bands)");
-    println("    B            Bass hit");
-    println("    M            Mid hit");
-    println("    H            High hit");
-    println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println();
-  }
+  println();
+  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  println("  KEYBOARD CONTROLS");
+  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  println("  Level Selection:");
+  println("    1-8          Switch to level 1-8");
+  println("    ← →          Previous/Next level");
+  println();
+  println("  Level Control:");
+  println("    S            Start level");
+  println("    R            Reset level");
+  println("    P            Pause/Resume");
+  println();
+  println("  Audio Simulation:");
+  println("    SPACE        Trigger beat (all bands)");
+  println("    B            Bass hit");
+  println("    M            Mid hit");
+  println("    H            High hit");
+  println();
+  println("  System:");
+  println("    ESC          Quit");
+  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  println();
+  
+  lastFrameTime = millis();
 }
 
-/**
- * Register all levels with the level manager
- */
+// ============================================
+// LEVEL REGISTRATION
+// ============================================
+
 void registerLevels() {
-  // Add empty placeholder levels for testing
-  // Replace with actual level implementations later
-  levelManager.addLevel(new EmptyLevel());
+  // Add simulation levels here
+  // levelManager.addLevel(new MyCustomLevel());
   
-  // TODO: Add all 14 levels
-  // levelManager.addLevel(new GravityWellsLevel());
-  // levelManager.addLevel(new JellyBlobsLevel());
-  // etc.
+  // Default empty level
+  levelManager.addLevel(new EmptyLevel());
 }
 
 // ============================================
@@ -147,198 +113,108 @@ void registerLevels() {
 
 void draw() {
   // Calculate delta time
-  int now = millis();
-  float dt = (now - lastFrameTime) / 1000.0;
-  lastFrameTime = now;
+  int currentTime = millis();
+  float dt = (currentTime - lastFrameTime) / 1000.0;
+  lastFrameTime = currentTime;
   
-  // Collect inputs for this frame
-  inputs.dt = dt;
-  inputs.frameNum = frameCount;
-  ctx.audio.copyTo(inputs);
+  // Begin framebuffer
+  ctx.canvas.beginDraw();
   
-  // Update audio envelope
-  ctx.audio.update(dt);
+  // Update level manager
+  levelManager.update(dt);
   
-  // Update level manager (processes pad events, updates active level)
-  levelManager.update(dt, inputs);
+  // Render active level
+  levelManager.render();
   
-  // Draw active level to framebuffer
-  levelManager.draw(ctx.framebuffer);
+  // End framebuffer
+  ctx.canvas.endDraw();
   
-  // Clear pad events for next frame
-  inputs.clear();
-  
-  // Display framebuffer to window (for performer preview)
-  image(ctx.framebuffer, 0, 0);
+  // Display on screen
+  image(ctx.canvas, 0, 0);
   
   // Send to Syphon
-  ctx.sendToSyphon();
+  ctx.syphon.sendImage(ctx.canvas);
   
-  // Debug overlay (first 3 seconds only)
-  if (frameCount < 180) {
-    drawDebugOverlay();
-  }
-}
-
-void drawDebugOverlay() {
-  fill(255);
-  textAlign(LEFT, TOP);
-  textSize(14);
-  
-  Level active = levelManager.getActiveLevel();
-  String levelName = active != null ? active.getName() : "none";
-  String fsmState = active != null ? active.getFSM().getState().toString() : "-";
-  
-  text("VJSims", 20, 20);
-  text("Level: " + levelManager.getActiveIndex() + " - " + levelName, 20, 40);
-  text("State: " + fsmState, 20, 60);
-  text("FPS: " + nf(frameRate, 0, 1), 20, 80);
-  text("Launchpad: " + (midi.isConnected() ? "connected" : "keyboard mode"), 20, 100);
-}
-
-// ============================================
-// MIDI HANDLING
-// ============================================
-
-void handleMidiNote(int pitch, int velocity, boolean isOn) {
-  // Check if it's a scene button
-  if (grid.isSceneButton(pitch)) {
-    int sceneIndex = grid.getSceneIndex(pitch);
-    if (isOn) {
-      levelManager.handleSceneButton(sceneIndex, velocity);
-    }
-    return;
-  }
-  
-  // Check if it's a valid pad
-  PVector cell = grid.noteToCell(pitch);
-  if (cell != null) {
-    int col = (int) cell.x;
-    int row = (int) cell.y;
-    int vel = isOn ? velocity : 0;
-    
-    // Add to inputs for level manager to process
-    inputs.addPadEvent(col, row, vel);
-    
-    // Visual feedback for non-top-row pads
-    if (row != 7) {
-      if (isOn) {
-        hud.setPad(col, row, LP_GREEN);
-      } else {
-        hud.clearPad(col, row);
-      }
-    }
-  }
-}
-
-void handleMidiCC(int number, int value) {
-  // CC messages could be used for audio simulation or parameter control
-  // Map CC to audio bands for manual testing
-  // CC 1 = bass, CC 2 = mid, CC 3 = high
-  float normalized = value / 127.0;
-  
-  if (number == 1) {
-    ctx.audio.setBass(normalized);
-  } else if (number == 2) {
-    ctx.audio.setMid(normalized);
-  } else if (number == 3) {
-    ctx.audio.setHigh(normalized);
+  // Optional: Display info overlay
+  if (ctx.showInfo) {
+    fill(255);
+    textAlign(LEFT, TOP);
+    text("FPS: " + int(frameRate), 20, 20);
+    text("Level: " + levelManager.getCurrentLevelName(), 20, 40);
+    text("Audio: Synesthesia OSC (TODO)", 20, 60);
   }
 }
 
 // ============================================
-// KEYBOARD FALLBACK
+// KEYBOARD HANDLING
 // ============================================
 
 void keyPressed() {
-  // Number keys 1-8 simulate top row pads (level selection)
+  // Level selection (1-8)
   if (key >= '1' && key <= '8') {
-    int level = key - '1';
-    if (level < levelManager.getLevelCount()) {
-      levelManager.switchTo(level);
-    }
+    int levelIndex = key - '1';
+    levelManager.switchToLevel(levelIndex);
+    return;
   }
   
-  // Arrow keys for next/prev level
+  // Level navigation
+  if (keyCode == LEFT) {
+    levelManager.previousLevel();
+    return;
+  }
   if (keyCode == RIGHT) {
     levelManager.nextLevel();
-  }
-  if (keyCode == LEFT) {
-    levelManager.prevLevel();
+    return;
   }
   
-  // Space = simulate beat / audio hit
-  if (key == ' ') {
-    ctx.audio.hitBass(1.0);
-    ctx.audio.hitMid(0.7);
-    ctx.audio.hitHigh(0.5);
-  }
-  
-  // B/M/H = individual audio band triggers
-  if (key == 'b' || key == 'B') ctx.audio.hitBass(1.0);
-  if (key == 'm' || key == 'M') ctx.audio.hitMid(1.0);
-  if (key == 'h' || key == 'H') ctx.audio.hitHigh(1.0);
-  
-  // R = reset current level
-  if (key == 'r' || key == 'R') {
-    Level active = levelManager.getActiveLevel();
-    if (active != null) {
-      active.getFSM().trigger(FSMEvent.RESTART);
-    }
-  }
-  
-  // S = start current level
+  // Level control
   if (key == 's' || key == 'S') {
-    Level active = levelManager.getActiveLevel();
-    if (active != null) {
-      active.getFSM().trigger(FSMEvent.START);
-    }
+    levelManager.start();
+    return;
+  }
+  if (key == 'r' || key == 'R') {
+    levelManager.reset();
+    return;
+  }
+  if (key == 'p' || key == 'P') {
+    levelManager.togglePause();
+    return;
   }
   
-  // P = pause/resume
-  if (key == 'p' || key == 'P') {
-    Level active = levelManager.getActiveLevel();
-    if (active != null) {
-      LevelFSM fsm = active.getFSM();
-      if (fsm.isState(State.PAUSED)) {
-        fsm.trigger(FSMEvent.RESUME);
-      } else if (fsm.isPlaying()) {
-        fsm.trigger(FSMEvent.PAUSE);
-      }
-    }
+  // Audio simulation (for testing without Synesthesia)
+  if (key == ' ') {
+    // Trigger all bands
+    ctx.audio.triggerBeat();
+    ctx.audio.bass.trigger();
+    ctx.audio.mid.trigger();
+    ctx.audio.high.trigger();
+    return;
+  }
+  if (key == 'b' || key == 'B') {
+    ctx.audio.bass.trigger();
+    return;
+  }
+  if (key == 'm' || key == 'M') {
+    ctx.audio.mid.trigger();
+    return;
+  }
+  if (key == 'h' || key == 'H') {
+    ctx.audio.high.trigger();
+    return;
+  }
+  
+  // System
+  if (key == 'i' || key == 'I') {
+    ctx.showInfo = !ctx.showInfo;
+    return;
   }
 }
 
 // ============================================
-// MIDI CALLBACKS (route to MidiIO)
-// ============================================
-
-void noteOn(int channel, int pitch, int velocity) {
-  midi.onNoteOn(channel, pitch, velocity);
-}
-
-void noteOff(int channel, int pitch, int velocity) {
-  midi.onNoteOff(channel, pitch, velocity);
-}
-
-void controllerChange(int channel, int number, int value) {
-  midi.onCC(channel, number, value);
-}
-
-// ============================================
-// CLEANUP
+// SHUTDOWN
 // ============================================
 
 void exit() {
-  // Dispose all levels
-  if (levelManager != null) {
-    levelManager.dispose();
-  }
-  
-  // Clear Launchpad LEDs
-  if (hud != null) {
-    hud.clearAll();
-  }
-  
+  println("VJSims shutting down...");
   super.exit();
 }

@@ -15,9 +15,6 @@ class SharedContext {
   AudioEnvelope audio;
   SketchConfig config;
   
-  // Launchpad access (for LED feedback)
-  LaunchpadGrid grid;
-  LaunchpadHUD hud;
   
   SharedContext(PApplet parent) {
     // Framebuffer at sketch resolution
@@ -36,12 +33,7 @@ class SharedContext {
   }
   
   /**
-   * Set MIDI components (called after MIDI init)
    */
-  void setMidi(LaunchpadGrid grid, LaunchpadHUD hud) {
-    this.grid = grid;
-    this.hud = hud;
-  }
   
   /**
    * Send framebuffer to Syphon
