@@ -44,6 +44,8 @@ float[] spectrum = new float[spectrumBins];
 int isBeat = 0;
 float beatPulse = 0.0f;  // Spectral flux-based pulse
 long lastBeatMillis = 0;  // Time of last onset
+ArrayList<Float> beatHistory = new ArrayList<Float>();
+int beatHistorySize = 120;
 
 // BPM
 float bpm = 0.0f;
@@ -79,6 +81,15 @@ float midBand = 0.0f;  // Mid band energy (normalized)
 float highBand = 0.0f;  // High band energy (normalized)
 float dynamicComplexity = 0.0f;  // Loudness variance
 
+// Slow envelopes / macro controls
+float energySlow = 0.0f;
+float brightnessSlow = 0.0f;
+float noisinessSlow = 0.0f;
+float bassSlow = 0.0f;
+float midSlow = 0.0f;
+float highSlow = 0.0f;
+float intensitySlow = 0.0f;
+
 // === Connection Status ===
 long lastOscTime = 0;
 boolean oscConnected = false;
@@ -88,7 +99,7 @@ PFont hudFont;
 int frameCounter = 0;
 
 void settings() {
-  size(960, 540, P3D);  // P3D required for Syphon
+  size(1280, 720, P3D);  // Larger layout for clear panels
 }
 
 void setup() {
@@ -125,6 +136,10 @@ void draw() {
 
   // Decay beat pulse so the circle fades quickly between onsets
   beatPulse *= 0.80f;
+  if (beatHistory.size() >= beatHistorySize) {
+    beatHistory.remove(0);
+  }
+  beatHistory.add(beatPulse);
   
   // Check connection status
   long now = millis();
@@ -133,13 +148,14 @@ void draw() {
   if (!oscConnected) {
     drawConnectionStatus();
   } else {
-    // Draw all visualizations
-    drawSpectrumBars(24, height - 120, width - 48, 100);
-    drawLevelBars(width - 200, 24);
-    drawBeatPanel(width - 200, 180);
-    drawSpectralPanel(24, 24);
-    drawStructurePanel(24, 180);
-    drawEDMPanel(280, 24);  // New EDM features panel
+    // Draw all visualizations (three-column layout)
+    drawSlowPanel(40, 80);
+    drawEDMPanel(560, 80);
+    drawLevelBars(width - 220, 80);
+    drawBeatPanel(width - 220, 260);
+    drawSpectralPanel(40, 360);
+    drawStructurePanel(560, 360);
+    drawSpectrumBars(40, height - 160, width - 80, 140);
   }
   
   // Always draw HUD
@@ -242,6 +258,9 @@ void oscEvent(OscMessage msg) {
   else if (addr.equals("/energy_smooth")) {
     energySmooth = msg.get(0).floatValue();
   }
+  else if (addr.equals("/energy_slow")) {
+    energySlow = msg.get(0).floatValue();
+  }
   else if (addr.equals("/beat_energy")) {
     beatEnergyGlobal = msg.get(0).floatValue();
   }
@@ -254,17 +273,35 @@ void oscEvent(OscMessage msg) {
   else if (addr.equals("/brightness")) {
     brightnessNorm = msg.get(0).floatValue();
   }
+  else if (addr.equals("/brightness_slow")) {
+    brightnessSlow = msg.get(0).floatValue();
+  }
   else if (addr.equals("/noisiness")) {
     noisiness = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/noisiness_slow")) {
+    noisinessSlow = msg.get(0).floatValue();
   }
   else if (addr.equals("/bass_band")) {
     bassBand = msg.get(0).floatValue();
   }
+  else if (addr.equals("/bass_band_slow")) {
+    bassSlow = msg.get(0).floatValue();
+  }
   else if (addr.equals("/mid_band")) {
     midBand = msg.get(0).floatValue();
   }
+  else if (addr.equals("/mid_band_slow")) {
+    midSlow = msg.get(0).floatValue();
+  }
   else if (addr.equals("/high_band")) {
     highBand = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/high_band_slow")) {
+    highSlow = msg.get(0).floatValue();
+  }
+  else if (addr.equals("/intensity")) {
+    intensitySlow = msg.get(0).floatValue();
   }
   else if (addr.equals("/dynamic_complexity")) {
     dynamicComplexity = msg.get(0).floatValue();
@@ -272,6 +309,107 @@ void oscEvent(OscMessage msg) {
 }
 
 // === Drawing Functions ===
+
+void drawSlowPanel(float x, float y) {
+  float w = 480;
+  float h = 220;
+  fill(20);
+  stroke(60);
+  rect(x - 4, y - 4, w + 8, h + 8, 4);
+  noStroke();
+
+  float py = y;
+  fill(200);
+  text("Slow Envelopes", x, py);
+  py += 20;
+
+  // Intensity headline
+  fill(255, 220, 100);
+  textSize(28);
+  text(String.format("%.2f", intensitySlow), x, py);
+  textSize(16);
+  fill(180);
+  text("Intensity", x + 90, py + 6);
+  py += 30;
+  
+  // Intensity bar
+  fill(40);
+  rect(x, py, w, 10);
+  fill(100, 255, 150);
+  rect(x, py, w * constrain(intensitySlow, 0, 1), 10);
+  py += 18;
+  
+  // Energy / brightness / noise
+  fill(180);
+  text("Energy", x, py);
+  fill(255, 220, 100);
+  text(String.format("%.2f", energySlow), x + 70, py);
+  py += 16;
+  fill(40);
+  rect(x, py, w, 8);
+  fill(100, 255, 150);
+  rect(x, py, w * constrain(energySlow, 0, 1), 8);
+  py += 14;
+  
+  fill(180);
+  text("Brightness", x, py);
+  fill(255, 220, 100);
+  text(String.format("%.2f", brightnessSlow), x + 90, py);
+  py += 16;
+  fill(40);
+  rect(x, py, w, 8);
+  fill(100, 200, 255);
+  rect(x, py, w * constrain(brightnessSlow, 0, 1), 8);
+  py += 14;
+  
+  fill(180);
+  text("Noise", x, py);
+  fill(noisinessSlow > 0.5f ? color(255, 100, 100) : color(100, 255, 100));
+  text(String.format("%.2f", noisinessSlow), x + 60, py);
+  py += 16;
+  fill(40);
+  rect(x, py, w, 8);
+  fill(200, 150, 255);
+  rect(x, py, w * constrain(noisinessSlow, 0, 1), 8);
+  py += 18;
+  
+  // Bands
+  fill(180);
+  text("Bands", x, py);
+  py += 16;
+  float col1 = x;
+  float col2 = x + 100;
+  float col3 = x + 200;
+  fill(120);
+  textSize(10);
+  text("Bass", col1, py);
+  text("Mid", col2, py);
+  text("High", col3, py);
+  textSize(16);
+  py += 14;
+  
+  fill(255, 100, 50);
+  text(String.format("%.2f", bassSlow), col1, py);
+  fill(100, 255, 100);
+  text(String.format("%.2f", midSlow), col2, py);
+  fill(100, 100, 255);
+  text(String.format("%.2f", highSlow), col3, py);
+  py += 12;
+  
+  float barW = 80;
+  fill(40);
+  rect(col1, py, barW, 6);
+  rect(col2, py, barW, 6);
+  rect(col3, py, barW, 6);
+  fill(255, 100, 50);
+  rect(col1, py, barW * constrain(bassSlow, 0, 1), 6);
+  fill(100, 255, 100);
+  rect(col2, py, barW * constrain(midSlow, 0, 1), 6);
+  fill(100, 100, 255);
+  rect(col3, py, barW * constrain(highSlow, 0, 1), 6);
+  
+  textSize(16);
+}
 
 void drawConnectionStatus() {
   fill(200, 50, 50);
@@ -431,23 +569,44 @@ void drawBeatPanel(float x, float y) {
   text("Pulses", x, py);
   py += 20;
   
-  float circleSize = 40;
   float pulse = constrain(beatPulse, 0, 1);
   pulse = min(pulse, 0.6f);
-  float cx = x + 40;
   boolean beatActive = (millis() - lastBeatMillis) < 120;
+  float cx = x + 10;
+  float graphWidth = 140;
+  float graphHeight = 50;
   
-  fill(40);
-  ellipse(cx, py + 18, circleSize, circleSize);
-  if (beatActive || pulse > 0.05f) {
-    float pulseSize = circleSize * (0.6f + pulse * 0.6f);
-    fill(255, 180, 80, 120 + pulse * 120);
-    ellipse(cx, py + 18, pulseSize, pulseSize);
+  // Graph background
+  fill(25);
+  rect(cx, py - 14, graphWidth, graphHeight, 4);
+  stroke(60);
+  line(cx, py + graphHeight / 2, cx + graphWidth, py + graphHeight / 2);
+  
+  // Draw heartbeat-like waveform
+  noFill();
+  stroke(255, 180, 80);
+  strokeWeight(2);
+  beginShape();
+  int count = beatHistory.size();
+  for (int i = 0; i < count; i++) {
+    float t = map(i, 0, beatHistorySize - 1, 0, graphWidth);
+    float val = beatHistory.get(i);
+    float yOffset = map(val, 0, 0.6f, graphHeight * 0.7f, graphHeight * 0.3f);
+    vertex(cx + t, py + yOffset);
   }
+  endShape();
+  strokeWeight(1);
+  
+  // Current pulse indicator (vertical line)
+  if (beatActive || pulse > 0.05f) {
+    float markerX = cx + graphWidth - 2;
+    stroke(255, 220, 100);
+    line(markerX, py + graphHeight * 0.3f, markerX, py + graphHeight * 0.7f);
+  }
+  noStroke();
   fill(180);
-  textAlign(CENTER, TOP);
-  text("Onset", cx, py + 36);
   textAlign(LEFT, TOP);
+  text("Pulse History", cx, py + graphHeight + 6);
 }
 
 void drawSpectralPanel(float x, float y) {
@@ -659,5 +818,8 @@ void keyPressed() {
     spectralCentroid = spectralRolloff = spectralFlux = 0;
     isBuildup = isDrop = 0;
     energyTrend = brightness = 0;
+    energySlow = brightnessSlow = noisinessSlow = 0;
+    bassSlow = midSlow = highSlow = 0;
+    intensitySlow = 0;
   }
 }

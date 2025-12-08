@@ -69,8 +69,8 @@ if not SOUNDDEVICE_AVAILABLE:
 class AudioConfig:
     """Audio analysis configuration (immutable)."""
     sample_rate: int = 44100
-    block_size: int = 1024  # Align with Essentia rhythm tutorial (frameSize)
-    fft_size: int = 1024    # Align with Essentia rhythm tutorial (frameSize)
+    block_size: int = 4410  # 10 Hz frame cadence (0.1s blocks)
+    fft_size: int = 4410    # Match block size for Essentia consistency
     channels: int = 2
     
     # OSC configuration
@@ -125,6 +125,7 @@ class AudioConfig:
     enable_logging: bool = True
     log_level: int = logging.INFO
     ui_publish_hz: float = 30.0
+    osc_publish_hz: float = 10.0
 
 
 @dataclass
@@ -514,6 +515,12 @@ class AudioAnalyzer(threading.Thread):
         self.band_peaks = [1e-3] * len(config.bands)
         self.rms_peak = 1e-3
         self.flux_smooth = 0.0
+        self.energy_slow = 0.0
+        self.brightness_slow = 0.0
+        self.noisiness_slow = 0.0
+        self.bass_band_slow = 0.0
+        self.mid_band_slow = 0.0
+        self.high_band_slow = 0.0
         
         # Build-up/drop detection
         frames_per_window = int(config.energy_window_sec * config.sample_rate / config.block_size)
@@ -616,6 +623,8 @@ class AudioAnalyzer(threading.Thread):
         }
         self.ui_publish_interval = 1.0 / config.ui_publish_hz if config.ui_publish_hz > 0 else 0.0
         self.last_ui_publish = 0.0
+        self.osc_publish_interval = 1.0 / config.osc_publish_hz if config.osc_publish_hz > 0 else 0.0
+        self.last_osc_publish = 0.0
         self.rhythm_buffer = deque(maxlen=int(self.config.sample_rate * 12))
         self.last_rhythm_refresh = 0.0
         self.last_rhythm_beat_time = 0.0
@@ -846,10 +855,16 @@ class AudioAnalyzer(threading.Thread):
         alpha_energy = self.config.ema_energy
         alpha_brightness = self.config.ema_brightness
         alpha_bands = self.config.ema_bands
+        alpha_slow = 0.05
         
         self.energy_smooth = (1 - alpha_energy) * self.energy_smooth + alpha_energy * energy_raw
         self.brightness_smooth = (1 - alpha_brightness) * self.brightness_smooth + alpha_brightness * centroid_norm
         self.noisiness_smooth = (1 - alpha_brightness) * self.noisiness_smooth + alpha_brightness * flatness
+
+        # Slow envelopes (lower alpha) for non-flickery control
+        self.energy_slow = (1 - alpha_slow) * self.energy_slow + alpha_slow * energy_raw
+        self.brightness_slow = (1 - alpha_slow) * self.brightness_slow + alpha_slow * centroid_norm
+        self.noisiness_slow = (1 - alpha_slow) * self.noisiness_slow + alpha_slow * flatness
         
         # Band indices for multi-band detection
         BASS_BAND_INDEX = 1  # 60-250 Hz
@@ -865,6 +880,10 @@ class AudioAnalyzer(threading.Thread):
         self.bass_band_smooth = (1 - alpha_bands) * self.bass_band_smooth + alpha_bands * bass_energy
         self.mid_band_smooth = (1 - alpha_bands) * self.mid_band_smooth + alpha_bands * mid_energy
         self.high_band_smooth = (1 - alpha_bands) * self.high_band_smooth + alpha_bands * high_energy
+
+        self.bass_band_slow = (1 - alpha_slow) * self.bass_band_slow + alpha_slow * bass_energy
+        self.mid_band_slow = (1 - alpha_slow) * self.mid_band_slow + alpha_slow * mid_energy
+        self.high_band_slow = (1 - alpha_slow) * self.high_band_slow + alpha_slow * high_energy
         
         # Running max normalization (sliding window)
         self.energy_history.append(energy_raw)
@@ -886,6 +905,13 @@ class AudioAnalyzer(threading.Thread):
         bass_norm = np.clip(self.bass_band_smooth / (bass_max + 1e-9), 0, 1)
         mid_norm = np.clip(self.mid_band_smooth / (mid_max + 1e-9), 0, 1)
         high_norm = np.clip(self.high_band_smooth / (high_max + 1e-9), 0, 1)
+
+        energy_slow_norm = np.clip(self.energy_slow / (energy_max + 1e-9), 0, 1)
+        brightness_slow_norm = np.clip(self.brightness_slow / (brightness_max + 1e-9), 0, 1)
+        bass_slow_norm = np.clip(self.bass_band_slow / (bass_max + 1e-9), 0, 1)
+        mid_slow_norm = np.clip(self.mid_band_slow / (mid_max + 1e-9), 0, 1)
+        high_slow_norm = np.clip(self.high_band_slow / (high_max + 1e-9), 0, 1)
+        noisiness_slow_norm = np.clip(self.noisiness_slow, 0, 1)
         
         # Dynamic complexity (variance of loudness over short window)
         self.loudness_history.append(energy_raw)
@@ -900,6 +926,7 @@ class AudioAnalyzer(threading.Thread):
                     maxlen=int(self.config.energy_window_sec * self.config.sample_rate / self.config.block_size)
                 )
             self.structure_energy_history.append(total_energy)
+
         
         # --- Essentia rhythm (tutorial-aligned: run on multi-second buffer) ---
         
@@ -1069,10 +1096,27 @@ class AudioAnalyzer(threading.Thread):
             mid_level=float(mid_level),
             high_level=float(high_level),
         )
+
+        energy_rel = np.clip((energy_slow_norm - 0.4) / 0.6, 0.0, 1.0)
+        brightness_rel = np.clip((brightness_slow_norm - 0.3) / 0.7, 0.0, 1.0)
+        band_rel = np.clip((max(bass_slow_norm, mid_slow_norm, high_slow_norm) - 0.3) / 0.7, 0.0, 1.0)
+        intensity = float(np.clip(
+            0.6 * energy_rel + 0.3 * brightness_rel + 0.1 * band_rel,
+            0.0,
+            1.0,
+        ))
         
-        # --- Send OSC messages (always, when analyzer is active) ---
+        # --- Send OSC messages (rate-limited when configured) ---
         
-        if self.osc_callback:
+        should_publish_osc = True
+        if self.osc_publish_interval > 0:
+            now = time.monotonic()
+            if (now - self.last_osc_publish) >= self.osc_publish_interval:
+                self.last_osc_publish = now
+            else:
+                should_publish_osc = False
+
+        if self.osc_callback and should_publish_osc:
             try:
                 # /audio/levels: [sub_bass, bass, low_mid, mid, high_mid, presence, air, overall_rms]
                 # Matches Processing AudioAnalysisOSC format
@@ -1121,6 +1165,7 @@ class AudioAnalyzer(threading.Thread):
                 # Energy features with EMA smoothing
                 self.osc_callback('/energy', [float(energy_raw)])  # Short-term energy/RMS
                 self.osc_callback('/energy_smooth', [float(energy_norm)])  # EMA-smoothed, normalized
+                self.osc_callback('/energy_slow', [float(energy_slow_norm)])  # Slow envelope
                 
                 # Beat energy (BeatsLoudness equivalent)
                 self.osc_callback('/beat_energy', [float(self.beat_energy_global)])  # Global beat loudness
@@ -1129,15 +1174,23 @@ class AudioAnalyzer(threading.Thread):
                 
                 # Spectral features (normalized)
                 self.osc_callback('/brightness', [float(brightness_norm)])  # Normalized centroid (0=dark, 1=bright)
+                self.osc_callback('/brightness_slow', [float(brightness_slow_norm)])
                 self.osc_callback('/noisiness', [float(self.noisiness_smooth)])  # Spectral flatness (0=tonal, 1=noise)
+                self.osc_callback('/noisiness_slow', [float(noisiness_slow_norm)])
                 
                 # Band energies (EMA-smoothed and normalized)
                 self.osc_callback('/bass_band', [float(bass_norm)])  # Low band energy
                 self.osc_callback('/mid_band', [float(mid_norm)])  # Mid band energy
                 self.osc_callback('/high_band', [float(high_norm)])  # High band energy
+                self.osc_callback('/bass_band_slow', [float(bass_slow_norm)])
+                self.osc_callback('/mid_band_slow', [float(mid_slow_norm)])
+                self.osc_callback('/high_band_slow', [float(high_slow_norm)])
                 
                 # Optional: Dynamic complexity
                 self.osc_callback('/dynamic_complexity', [float(self.dynamic_complexity)])  # Loudness variance
+
+                # Composite intensity for stable macro control
+                self.osc_callback('/intensity', [intensity])
                 
             except Exception as e:
                 logger.error(f"OSC send error: {e}")
@@ -1654,6 +1707,7 @@ def _build_config_from_args(args: argparse.Namespace) -> AudioConfig:
         enable_spectrum=not args.disable_spectrum,
         enable_logging=True,
         log_level=log_level,
+        osc_publish_hz=args.osc_rate,
     )
 
 
@@ -1781,8 +1835,8 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--sample-rate", type=int, default=44100)
-    common.add_argument("--block-size", type=int, default=512)
-    common.add_argument("--fft-size", type=int, default=512)
+    common.add_argument("--block-size", type=int, default=4410)
+    common.add_argument("--fft-size", type=int, default=4410)
     common.add_argument("--channels", type=int, default=2)
     common.add_argument("--osc-host", default="127.0.0.1")
     common.add_argument("--osc-port", type=int, default=9000)
@@ -1792,6 +1846,7 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     common.add_argument("--disable-structure", action="store_true")
     common.add_argument("--disable-spectrum", action="store_true")
     common.add_argument("--log-only", action="store_true", help="Log features instead of sending OSC")
+    common.add_argument("--osc-rate", type=float, default=10.0, help="Max OSC send rate in Hz (0=unlimited)")
 
     run_parser = subparsers.add_parser("run", parents=[common], help="Run live analyzer with audio input")
     run_parser.add_argument("--duration", type=float, default=0.0, help="Stop after N seconds (0=run until Ctrl+C)")
