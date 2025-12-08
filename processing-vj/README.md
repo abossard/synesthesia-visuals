@@ -80,13 +80,13 @@ A lyrics overlay that receives synced lyrics via OSC from the Python Karaoke Eng
 
 ### OscAudioVisualizer
 
-Neon HUD that visualizes the OSC stream from [python-vj/audio_analyzer.py](../python-vj/audio_analyzer.py): orbital band arcs, flux-driven beat bursts, and a spectrum river ready for mixing.
+Neon HUD that visualizes the OSC stream from [python-vj/Synesthesia (native audio analysis)](../python-vj/Synesthesia (native audio analysis)): orbital band arcs, flux-driven beat bursts, and a spectrum river ready for mixing.
 
 **Requirements:**
 
 - oscP5 + netP5 libraries
 - Syphon library (for downstream routing)
-- `audio_analyzer.py` running with `--osc-host 127.0.0.1 --osc-port 9000` (defaults already match)
+- `Synesthesia (native audio analysis)` running with `--osc-host 127.0.0.1 --osc-port 9000` (defaults already match)
 
 **Controls:**
 

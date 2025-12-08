@@ -39,7 +39,7 @@ __all__ = [
     'parse_lrc', 'extract_keywords', 'detect_refrains', 'analyze_lyrics',
     'get_active_line_index', 'get_refrain_lines',
     'PipelineTracker', 'PipelineStep',
-    'LLMAnalyzer', 'SongCategorizer', 'ComfyUIGenerator',
+    'LLMAnalyzer', 'SongCategorizer',
     'LyricsFetcher', 'SpotifyMonitor', 'VirtualDJMonitor', 'OSCSender',
     'PlaybackSnapshot', 'BackoffState',
 ]
@@ -54,7 +54,7 @@ from adapters import (
 )
 
 # AI services
-from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
+from ai_services import LLMAnalyzer, SongCategorizer
 
 # Shader matching (optional)
 try:
@@ -120,7 +120,6 @@ class KaraokeEngine:
         # AI services (all optional)
         self._llm = LLMAnalyzer()
         self._categorizer = SongCategorizer(llm=self._llm)
-        self._image_gen = ComfyUIGenerator()
         
         # Shader matching (optional)
         self._shader_indexer = None

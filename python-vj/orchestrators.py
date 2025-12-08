@@ -19,7 +19,7 @@ from domain import Track, PlaybackState, parse_lrc, analyze_lyrics
 from infrastructure import PipelineTracker, Config
 from typing import Optional, List, Dict, Any
 from adapters import LyricsFetcher, OSCSender
-from ai_services import LLMAnalyzer, SongCategorizer, ComfyUIGenerator
+from ai_services import LLMAnalyzer, SongCategorizer
 
 logger = logging.getLogger('karaoke')
 
@@ -271,14 +271,13 @@ class AIOrchestrator:
         queue_categorization(track, lrc_text)
         start() / stop()
     
-    Dependency Injection: LLMAnalyzer, SongCategorizer, ComfyUIGenerator, PipelineTracker, OSCSender
+    Dependency Injection: LLMAnalyzer, SongCategorizer, PipelineTracker, OSCSender
     """
     
     def __init__(self, llm: LLMAnalyzer, categorizer: SongCategorizer, 
-                 image_gen: ComfyUIGenerator, pipeline: PipelineTracker, osc: OSCSender):
+                 pipeline: PipelineTracker, osc: OSCSender):
         self._llm = llm
         self._categorizer = categorizer
-        self._image_gen = image_gen
         self._pipeline = pipeline
         self._osc = osc
         
@@ -366,8 +365,6 @@ class AIOrchestrator:
                             self._pipeline.complete("generate_image_prompt")
                             
                             # Queue image generation
-                            if self._image_gen.is_available and prompt:
-                                self._generate_image(track, prompt)
                         else:
                             self._pipeline.skip("generate_image_prompt", "Disabled by config")
                     else:
@@ -411,18 +408,3 @@ class AIOrchestrator:
                 logger.error(f"Categorization worker error: {e}", exc_info=True)
                 time.sleep(0.1)
     
-    def _generate_image(self, track: Track, prompt: str):
-        """Generate image in background thread."""
-        def _gen():
-            try:
-                self._pipeline.start("comfyui_generate")
-                img_path = self._image_gen.generate_image(prompt, track.artist, track.title)
-                if img_path:
-                    self._pipeline.complete("comfyui_generate", str(img_path.name))
-                    self._osc.send_karaoke("image", "path", str(img_path))
-                else:
-                    self._pipeline.skip("comfyui_generate", "Generation failed")
-            except Exception as e:
-                self._pipeline.error("comfyui_generate", str(e))
-        
-        Thread(target=_gen, daemon=True, name="ImageGen").start()

@@ -51,8 +51,6 @@ class Config:
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
     
-    # Feature flags - ComfyUI is disabled by default (experimental)
-    COMFYUI_ENABLED = os.environ.get('COMFYUI_ENABLED', '').lower() in ('1', 'true', 'yes', 'on')
     
     # Image prompt generation - disabled by default (set IMAGE_PROMPT_ENABLED=1 to enable)
     IMAGE_PROMPT_ENABLED = os.environ.get('IMAGE_PROMPT_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')

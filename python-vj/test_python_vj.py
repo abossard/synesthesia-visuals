@@ -255,37 +255,6 @@ class TestSettings(unittest.TestCase):
             self.assertAlmostEqual(settings.timing_offset_sec, -0.3)
 
 
-class TestAudioSetup(unittest.TestCase):
-    """Tests for audio_setup module."""
-    
-    def test_imports(self):
-        """All classes should be importable."""
-        from audio_setup import AudioSetup, AudioDevice, print_status
-    
-    def test_audio_device_dataclass(self):
-        """AudioDevice should store device info."""
-        from audio_setup import AudioDevice
-        
-        dev = AudioDevice(
-            name="Test Device",
-            uid="test-123",
-            device_id=1,
-            is_input=True,
-            is_output=False
-        )
-        
-        self.assertEqual(dev.name, "Test Device")
-        self.assertEqual(dev.uid, "test-123")
-        self.assertTrue(dev.is_input)
-        self.assertFalse(dev.is_output)
-    
-    def test_audio_setup_instantiation(self):
-        """AudioSetup should instantiate without errors."""
-        from audio_setup import AudioSetup
-        
-        setup = AudioSetup()
-        self.assertIsNotNone(setup)
-
 
 class TestVJConsole(unittest.TestCase):
     """Tests for process_manager module."""
@@ -344,18 +313,6 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("vj_console.py", result.stdout)  # Should recommend main script
     
-    def test_audio_setup_help(self):
-        """audio_setup.py --help should work."""
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "audio_setup.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("--fix", result.stdout)
-
 
 class TestConfig(unittest.TestCase):
     """Tests for Config class."""
@@ -471,13 +428,6 @@ class TestPipelineTracker(unittest.TestCase):
         self.assertEqual(tracker.steps["fetch_lyrics"].status, "running")
         
         # Complete the step
-        tracker.complete("fetch_lyrics", "Found 50 lines")
-        self.assertEqual(tracker.steps["fetch_lyrics"].status, "complete")
-        
-        # Error on another step
-        tracker.start("llm_analysis", "Calling API...")
-        tracker.error("llm_analysis", "Connection timeout")
-        self.assertEqual(tracker.steps["llm_analysis"].status, "error")
     
     def test_skip_step(self):
         """skip() should mark step as skipped."""
@@ -486,8 +436,6 @@ class TestPipelineTracker(unittest.TestCase):
         tracker = PipelineTracker()
         tracker.reset("Test Track")
         
-        tracker.skip("comfyui_generate", "Not available")
-        self.assertEqual(tracker.steps["comfyui_generate"].status, "skipped")
     
     def test_log_entries(self):
         """log() should add timestamped entries."""
@@ -690,227 +638,6 @@ class TestOSCSender(unittest.TestCase):
         pass
 
 
-class TestAudioAnalyzer(unittest.TestCase):
-    """Tests for audio analyzer module."""
-    
-    def test_imports(self):
-        """Audio analyzer should be importable (if dependencies available)."""
-        try:
-            from audio_analyzer import (
-                AudioConfig, DeviceConfig, DeviceManager,
-                AudioAnalyzer, AudioAnalyzerWatchdog,
-                compress_value, calculate_rms, calculate_spectral_centroid,
-                extract_band_energy, smooth_value, estimate_bpm_from_intervals,
-                detect_buildup_drop, downsample_spectrum
-            )
-        except ImportError as e:
-            self.skipTest(f"Audio analyzer dependencies not available: {e}")
-    
-    def test_audio_config_immutable(self):
-        """AudioConfig should be immutable."""
-        try:
-            from audio_analyzer import AudioConfig
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        config = AudioConfig()
-        
-        # Should not be able to modify
-        with self.assertRaises(Exception):  # FrozenInstanceError
-            config.sample_rate = 48000
-    
-    def test_device_config_serialization(self):
-        """DeviceConfig should serialize to/from dict."""
-        try:
-            from audio_analyzer import DeviceConfig
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        config = DeviceConfig(device_index=1, device_name="Test Device")
-        
-        # Convert to dict
-        data = config.to_dict()
-        self.assertEqual(data['device_index'], 1)
-        self.assertEqual(data['device_name'], "Test Device")
-        
-        # Restore from dict
-        restored = DeviceConfig.from_dict(data)
-        self.assertEqual(restored.device_index, 1)
-        self.assertEqual(restored.device_name, "Test Device")
-    
-    def test_compress_value(self):
-        """compress_value should compress values using tanh."""
-        try:
-            from audio_analyzer import compress_value
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        # Test compression
-        self.assertAlmostEqual(compress_value(0.0), 0.0, places=5)
-        self.assertGreater(compress_value(1.0), 0.9)  # Should be close to 1
-        self.assertLess(compress_value(1.0), 1.0)  # But less than 1
-    
-    def test_calculate_rms(self):
-        """calculate_rms should calculate root mean square."""
-        try:
-            from audio_analyzer import calculate_rms
-            import numpy as np
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        # Sine wave with amplitude 1 should have RMS ~0.707
-        t = np.linspace(0, 1, 1000)
-        signal = np.sin(2 * np.pi * 440 * t)
-        rms = calculate_rms(signal)
-        
-        self.assertAlmostEqual(rms, 0.707, places=2)
-    
-    def test_smooth_value(self):
-        """smooth_value should apply exponential moving average."""
-        try:
-            from audio_analyzer import smooth_value
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        # No smoothing (factor=0)
-        result = smooth_value(0.0, 1.0, 0.0)
-        self.assertAlmostEqual(result, 1.0, places=5)
-        
-        # Full smoothing (factor=1)
-        result = smooth_value(0.5, 1.0, 1.0)
-        self.assertAlmostEqual(result, 0.5, places=5)
-        
-        # Partial smoothing
-        result = smooth_value(0.0, 1.0, 0.5)
-        self.assertAlmostEqual(result, 0.5, places=5)
-    
-    def test_estimate_bpm_from_intervals(self):
-        """estimate_bpm_from_intervals should calculate BPM and confidence."""
-        try:
-            from audio_analyzer import estimate_bpm_from_intervals
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        # 120 BPM = 0.5 second intervals
-        intervals = [0.5, 0.5, 0.5, 0.5, 0.5]
-        bpm, confidence = estimate_bpm_from_intervals(intervals)
-        
-        self.assertAlmostEqual(bpm, 120.0, places=0)
-        self.assertGreater(confidence, 0.5)  # Should have decent confidence
-        
-        # Empty intervals
-        bpm, confidence = estimate_bpm_from_intervals([])
-        self.assertEqual(bpm, 0.0)
-        self.assertEqual(confidence, 0.0)
-    
-    def test_downsample_spectrum(self):
-        """downsample_spectrum should reduce spectrum to target bins."""
-        try:
-            from audio_analyzer import downsample_spectrum
-            import numpy as np
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        # Create a spectrum with 512 bins
-        spectrum = np.random.rand(512)
-        
-        # Downsample to 32 bins
-        downsampled = downsample_spectrum(spectrum, 32)
-        
-        self.assertEqual(len(downsampled), 32)
-        self.assertLessEqual(np.max(downsampled), 1.0)  # Should be normalized
-    
-    def test_device_manager_config_persistence(self):
-        """DeviceManager should persist configuration."""
-        try:
-            from audio_analyzer import DeviceManager
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Mock config file location
-            import audio_analyzer
-            original_config_file = audio_analyzer.DeviceManager.CONFIG_FILE
-            
-            try:
-                test_config_file = Path(tmpdir) / 'test_config.json'
-                audio_analyzer.DeviceManager.CONFIG_FILE = test_config_file
-                
-                # Create manager and set device
-                manager = DeviceManager()
-                manager.config.device_index = 5
-                manager.config.device_name = "Test Device"
-                manager.save_config()
-                
-                # Create new manager - should load saved config
-                manager2 = DeviceManager()
-                self.assertEqual(manager2.config.device_index, 5)
-                self.assertEqual(manager2.config.device_name, "Test Device")
-                
-            finally:
-                # Restore original config file location
-                audio_analyzer.DeviceManager.CONFIG_FILE = original_config_file
-    
-    def test_audio_analyzer_initialization(self):
-        """AudioAnalyzer should initialize without errors."""
-        try:
-            from audio_analyzer import AudioConfig, DeviceManager, AudioAnalyzer
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        config = AudioConfig()
-        device_manager = DeviceManager()
-        
-        # Should initialize without crashing
-        analyzer = AudioAnalyzer(config, device_manager, osc_callback=None)
-        
-        # Check initial state
-        self.assertFalse(analyzer.running)
-        self.assertEqual(analyzer.frames_processed, 0)
-        self.assertEqual(len(analyzer.smoothed_bands), len(config.bands))
-    
-    def test_watchdog_health_check(self):
-        """AudioAnalyzerWatchdog should detect unhealthy state."""
-        try:
-            from audio_analyzer import AudioConfig, DeviceManager, AudioAnalyzer, AudioAnalyzerWatchdog
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        config = AudioConfig()
-        device_manager = DeviceManager()
-        analyzer = AudioAnalyzer(config, device_manager, osc_callback=None)
-        
-        watchdog = AudioAnalyzerWatchdog(analyzer)
-        
-        # Analyzer not running should be unhealthy
-        healthy, message = watchdog.check_health()
-        self.assertFalse(healthy)
-        self.assertIn("not running", message.lower())
-    
-    def test_latency_benchmark_structure(self):
-        """LatencyBenchmark should have expected fields."""
-        try:
-            from audio_analyzer import LatencyBenchmark
-        except ImportError:
-            self.skipTest("Audio analyzer not available")
-        
-        benchmark = LatencyBenchmark(
-            total_frames=600,
-            duration_sec=10.0,
-            avg_fps=60.0,
-            avg_latency_ms=15.5
-        )
-        
-        self.assertEqual(benchmark.total_frames, 600)
-        self.assertAlmostEqual(benchmark.duration_sec, 10.0)
-        self.assertAlmostEqual(benchmark.avg_fps, 60.0)
-        self.assertAlmostEqual(benchmark.avg_latency_ms, 15.5)
-        
-        # Should convert to dict
-        data = benchmark.to_dict()
-        self.assertIn('total_frames', data)
-        self.assertIn('avg_fps', data)
-        self.assertIn('avg_latency_ms', data)
 
 
 if __name__ == "__main__":

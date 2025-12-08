@@ -41,7 +41,6 @@ jobs:
         run: |
           cd python-vj
           python -m py_compile karaoke_engine.py
-          python -m py_compile audio_setup.py
           python -m py_compile vj_console.py
           python -m py_compile process_manager.py
           echo "All Python files have valid syntax"
@@ -55,4 +54,3 @@ jobs:
         run: |
           cd python-vj
           python karaoke_engine.py --help
-          python audio_setup.py --help
