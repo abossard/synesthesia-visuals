@@ -1,103 +1,556 @@
-# Learn Mode Configuration Workflow - Design Plan v2
+# Learn Mode Configuration Workflow - Design Plan v3 (Simplified)
 
-## Philosophy: Row-First Configuration
+## Philosophy: Auto-Detection + Position-Agnostic
 
-**Key Insight:** Users think in rows/areas, not individual pads!
+**Key Insight:** OSC messages contain all the information we need!
 
-Instead of configuring 64 pads one-by-one:
-1. **Define row purpose** first (e.g., "Row 0-4 = Scenes")
-2. **Bulk configure** the row with smart defaults
-3. **Fine-tune** individual pads if needed
+Instead of asking users questions:
+1. **User triggers action** in Synesthesia (click scene, toggle effect, etc.)
+2. **System detects everything** from OSC patterns
+3. **Auto-configure** with smart defaults
+4. **User confirms** (or edits if needed)
 
-This reduces configuration from 64 steps to ~8 rows + tweaks!
+This reduces configuration to 30 seconds per pad with ZERO manual input!
 
 ---
 
-## Revised User Journey Flow
+## Simplified User Journey Flow
 
 ```
 NORMAL MODE
     ↓ [Press L]
-SETUP_WIZARD (Welcome & choose config method)
-    ↓ [Choose Quick Setup OR Advanced]
-    
-Quick Setup Path:
-    ↓
-DEFINE_LAYOUT (Define what each row does)
-    ↓
-BULK_CONFIGURE (Auto-configure rows with OSC learning)
-    ↓
-NORMAL MODE (Ready to use!)
-
-Advanced Path:
-    ↓
-LEARN_WAIT_PAD (Select individual pad)
-    ↓
-LEARN_RECORD_OSC (Record OSC for that pad)
-    ↓
-CONFIGURE_PAD (Configure that specific pad)
-    ↓
-NORMAL MODE
+LEARN_WAIT_PAD (Click any pad to configure)
+    ↓ [Click pad anywhere on grid]
+LEARN_RECORD_OSC (Trigger action in Synesthesia, auto-detect mode/group)
+    ↓ [5 seconds of OSC recording]
+LEARN_CONFIRM (Review auto-detected config, confirm or edit)
+    ↓ [Enter to save, E to edit, ESC to cancel]
+NORMAL MODE (Pad configured!)
 ```
 
----
+**Total time per pad:** ~30 seconds
+**Manual input required:** Click pad + trigger action = 2 actions
+**Everything else:** Auto-detected from OSC patterns!
 
 ---
 
-## Detailed Step-by-Step Plan (Quick Setup - Recommended)
+## Detailed Step-by-Step Plan
 
-### Step 0: Welcome Screen
+
+### Step 1: Enter Learn Mode
 **Trigger:** User presses `L` key from NORMAL mode
 **UI Display:**
 ```
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║              🎹 LAUNCHPAD CONFIGURATION WIZARD 🎹          ║
+║              🎹 LEARN MODE ACTIVE 🎹                      ║
 ║                                                           ║
-║  Welcome! Let's set up your Launchpad for Synesthesia.   ║
+║  Click any pad to configure (TUI or hardware)            ║
 ║                                                           ║
-║  This wizard will guide you step-by-step to create a     ║
-║  layout that works perfectly for your VJ style.          ║
+║  💡 Tip: Pads can be anywhere - position doesn't matter! ║
+║      Scenes/presets grouped by OSC address, not layout   ║
 ║                                                           ║
-║  ┌─────────────────────────────────────────────────────┐ ║
-║  │                                                     │ ║
-║  │  Choose your setup method:                         │ ║
-║  │                                                     │ ║
-║  │  ► [1] QUICK SETUP (Recommended - 5 minutes)       │ ║
-║  │      • Configure rows/areas at once                │ ║
-║  │      • Perfect for scene/preset layouts            │ ║
-║  │      • Smart defaults & OSC learning               │ ║
-║  │                                                     │ ║
-║  │    [2] ADVANCED (One pad at a time)                │ ║
-║  │      • Full control over each pad                  │ ║
-║  │      • Best for custom/complex setups              │ ║
-║  │      • Takes longer but very flexible              │ ║
-║  │                                                     │ ║
-║  │    [3] LOAD TEMPLATE                               │ ║
-║  │      • Start from pre-made layout                  │ ║
-║  │      • Edit template to fit your needs             │ ║
-║  │                                                     │ ║
-║  └─────────────────────────────────────────────────────┘ ║
-║                                                           ║
-║  Controls:                                                ║
-║  • 1/2/3 - Select method                                  ║
-║  • ↑/↓ - Navigate                                         ║
-║  • Enter - Confirm                                        ║
-║  • ESC - Cancel and return                                ║
+║  Press ESC to cancel                                      ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 ```
 
-**Friendly Tips:**
-- Most users should choose **Quick Setup**
-- You can always reconfigure individual pads later
-- Templates available: "Scenes+Presets", "DJ Effects", "Color Control"
+**State:** AppMode.LEARN_WAIT_PAD
+**Actions:** Wait for user to click a pad
 
+---
+
+### Step 2: Select Pad
+**Trigger:** User clicks any pad in TUI or presses on hardware
+**UI Display:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║              Recording OSC for pad (3,2)                  ║
+║                                                           ║
+║  Trigger the action in Synesthesia now...                ║
+║  (Click scene, toggle effect, switch preset, etc.)       ║
+║                                                           ║
+║  ⏱️  Waiting for first message... (5s timeout)            ║
+║                                                           ║
+║  💡 I'll detect the mode automatically!                  ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+**State:** AppMode.LEARN_RECORD_OSC
+**Selected Pad:** Highlighted in TUI with blue blinking
+**Timer:** Starts on first controllable OSC message
+**Actions:** Record all OSC messages for 5 seconds
+
+---
+
+### Step 3: Record OSC (Auto-Detection Magic!)
+**What System Captures:**
+- All OSC messages for 5 seconds after first controllable message
+- Bidirectional feedback (if Synesthesia sends back)
+- Message patterns (ON/OFF for toggles)
+
+**Auto-Detection Logic:**
+
+**1. Detect Group (from address pattern):**
+```python
+if address.startswith("/scenes/"):
+    group = "scenes"
+elif address.startswith("/presets/") or address.startswith("/favslots/"):
+    group = "presets"
+elif address.startswith("/controls/meta/hue"):
+    group = "colors"
+elif address.startswith("/playlist/"):
+    group = "playlist"
+else:
+    group = "custom"
+```
+
+**2. Detect Mode (from OSC behavior):**
+```python
+# Check if bidirectional (Synesthesia sends back)
+if received_osc_from_synesthesia:
+    # Check if part of a known selector group
+    if group in ["scenes", "presets", "playlist"]:
+        mode = PadMode.SELECTOR
+    # Check if toggle pattern (0.0 / 1.0 args)
+    elif has_on_off_pattern(messages):
+        mode = PadMode.TOGGLE
+        # Extract both ON and OFF commands
+    else:
+        mode = PadMode.ONE_SHOT
+else:
+    # No feedback = one-shot trigger
+    mode = PadMode.ONE_SHOT
+```
+
+**3. Generate Label (from address):**
+```python
+# /scenes/AlienCavern → "Alien Cavern"
+# /presets/Preset1 → "Preset 1"
+# /controls/meta/hue → "Hue"
+
+label = address.split("/")[-1]  # Get last part
+label = label.replace("_", " ")  # Underscores to spaces
+label = title_case(label)  # Capitalize words
+```
+
+**4. Assign Colors (from group):**
+```python
+color_defaults = {
+    "scenes": (3, 21),    # White → Green (blinks)
+    "presets": (45, 37),  # Blue → Cyan (blinks)
+    "colors": (5, 13),    # Red → Yellow
+    "playlist": (9, 13),  # Orange → Yellow
+    "custom": (3, 45),    # White → Blue
+}
+
+if mode == PadMode.TOGGLE:
+    idle_color = 5   # Red (OFF)
+    active_color = 21  # Green (ON)
+else:
+    idle_color, active_color = color_defaults.get(group, (3, 45))
+```
+
+**UI During Recording:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║              Recording OSC for pad (3,2)                  ║
+║                                                           ║
+║  ⏱️  Recording... 3 seconds remaining                     ║
+║                                                           ║
+║  📡 Captured messages:                                   ║
+║    → /scenes/AlienCavern                                 ║
+║    ← /scenes/AlienCavern (feedback detected!)           ║
+║                                                           ║
+║  🤖 Auto-detecting: SELECTOR mode, scenes group          ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+---
+
+### Step 4: Confirm Auto-Detected Configuration
+**Trigger:** 5 seconds elapsed
+**UI Display:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║          ✅ Configuration Detected!                       ║
+║                                                           ║
+║  Pad: (3,2)                                              ║
+║  ┌─────────────────────────────────────────────────────┐ ║
+║  │ OSC Address:  /scenes/AlienCavern                   │ ║
+║  │ Mode:         SELECTOR (auto-detected)              │ ║
+║  │ Group:        scenes (from address)                 │ ║
+║  │ Label:        Alien Cavern (auto-generated)         │ ║
+║  │ Idle Color:   White                                 │ ║
+║  │ Active Color: Green (blinks with beat)              │ ║
+║  └─────────────────────────────────────────────────────┘ ║
+║                                                           ║
+║  💡 This looks good! Most users just press Enter.        ║
+║                                                           ║
+║  Actions:                                                 ║
+║  • [Enter] - Save configuration (recommended)            ║
+║  • [E]     - Edit label or colors                        ║
+║  • [ESC]   - Cancel and try again                        ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+**State:** AppMode.LEARN_CONFIRM
 **Actions:**
-- 1 → Quick Setup (recommended path)
-- 2 → Advanced mode (original one-by-one flow)
-- 3 → Show template browser
-- ESC → Cancel
+- **Enter** - Save configuration to YAML and return to NORMAL
+- **E** - Open edit dialog (change label/colors)
+- **ESC** - Discard and return to NORMAL
+
+**If user presses E (edit):**
+```
+╔═══════════════════════════════════════════════════════════╗
+║  Edit Configuration                                       ║
+║  ┌─────────────────────────────────────────────────────┐ ║
+║  │ Label: [Alien Cavern________________]  (Type text)  │ ║
+║  │                                                     │ ║
+║  │ Idle Color:  ○ Red  ○ Orange  ○ Yellow             │ ║
+║  │              ● White ○ Green  ○ Blue  ○ Purple     │ ║
+║  │                                        (Tab/1-8)    │ ║
+║  │ Active Color: ○ Red  ○ Orange  ○ Yellow            │ ║
+║  │               ○ White ● Green  ○ Blue  ○ Purple    │ ║
+║  │                                        (Tab/1-8)    │ ║
+║  └─────────────────────────────────────────────────────┘ ║
+║  [Enter: Save]  [ESC: Cancel edit]                        ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+---
+
+### Step 5: Save and Return
+**Trigger:** User presses Enter in confirm screen
+**Actions:**
+1. Create PadBehavior with detected config
+2. Update ControllerState.pads
+3. Save to YAML config file
+4. Return to NORMAL mode
+5. Show success message
+
+**UI Display:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║                                                           ║
+║          ✅ Pad Configured Successfully!                  ║
+║                                                           ║
+║  Pad (3,2) now mapped to: Alien Cavern (scenes)          ║
+║                                                           ║
+║  Press L to configure another pad                         ║
+║  or continue using normally                               ║
+║                                                           ║
+║  (This message will disappear in 3 seconds)               ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+---
+
+## Position-Agnostic Layout Examples
+
+**Key Principle:** Scenes/presets can be ANYWHERE on the grid!
+
+### Example 1: Scattered Scenes
+```yaml
+# Scenes don't need to be in rows - place them anywhere!
+"0,0": { mode: SELECTOR, group: "scenes", label: "Alien Cavern" }
+"1,0": { mode: SELECTOR, group: "scenes", label: "Neon City" }
+"5,3": { mode: SELECTOR, group: "scenes", label: "Ocean" }
+"2,7": { mode: SELECTOR, group: "scenes", label: "Desert" }
+
+# All 4 pads are in the "scenes" group, so only one can be active
+# Position is purely visual preference!
+```
+
+### Example 2: Presets Mixed In
+```yaml
+# Presets anywhere - system groups by OSC address
+"3,0": { mode: SELECTOR, group: "presets", label: "1" }
+"4,0": { mode: SELECTOR, group: "presets", label: "2" }
+"5,0": { mode: SELECTOR, group: "presets", label: "3" }
+
+# These are grouped separately from scenes
+# Number labels auto-generated from /presets/1, /presets/2, etc.
+```
+
+### Example 3: Toggles and One-Shots
+```yaml
+# Toggle detected from bidirectional OSC
+"0,7": { mode: TOGGLE, label: "Strobe", osc_on: {...}, osc_off: {...} }
+
+# One-shot detected from no feedback
+"1,7": { mode: ONE_SHOT, label: "Next", osc_action: "/playlist/next" }
+"2,7": { mode: ONE_SHOT, label: "Random", osc_action: "/playlist/random" }
+```
+
+---
+
+## Auto-Detection Algorithms (Technical Details)
+
+### Bidirectional Feedback Detection
+
+**How it works:**
+1. User triggers action in Synesthesia
+2. App sends OSC (if needed) OR just waits for incoming OSC
+3. If Synesthesia sends back matching message → BIDIRECTIONAL
+4. If no response → ONE_SHOT
+
+**Example - Scene Change:**
+```
+Timeline:
+  0.0s: User clicks "Alien Cavern" in Synesthesia
+  0.0s: → Synesthesia sends: /scenes/AlienCavern
+  0.1s: System records message
+  5.0s: Timeout, analyze
+
+Analysis:
+  - Received from Synesthesia: Yes
+  - Address pattern: /scenes/*
+  - Mode: SELECTOR (scenes are radio groups)
+  - Group: "scenes"
+```
+
+**Example - Toggle:**
+```
+Timeline:
+  0.0s: User clicks "Strobe ON" in Synesthesia
+  0.0s: → Synesthesia sends: /effects/strobe 1.0
+  2.0s: User clicks "Strobe OFF"
+  2.0s: → Synesthesia sends: /effects/strobe 0.0
+  5.0s: Timeout, analyze
+
+Analysis:
+  - Received from Synesthesia: Yes
+  - Same address, different args (1.0, 0.0)
+  - Mode: TOGGLE
+  - ON command: /effects/strobe 1.0
+  - OFF command: /effects/strobe 0.0
+```
+
+**Example - One-Shot:**
+```
+Timeline:
+  0.0s: User clicks "Next" button in Synesthesia
+  0.0s: → Synesthesia sends: /playlist/next
+  5.0s: Timeout, analyze
+
+Analysis:
+  - Received from Synesthesia: Yes
+  - No repeated messages or feedback
+  - Mode: ONE_SHOT
+  - Action: /playlist/next
+```
+
+### Group Pattern Matching
+
+**Priority order (first match wins):**
+1. `/scenes/*` → group: "scenes"
+2. `/presets/*` → group: "presets"
+3. `/favslots/*` → group: "presets" (alias)
+4. `/playlist/*` → group: "playlist"
+5. `/controls/meta/hue` → group: "colors"
+6. `/controls/meta/saturation` → group: "colors"
+7. `/controls/global/*` → group: "global"
+8. Everything else → group: "custom"
+
+**Custom groups:**
+User can also manually edit YAML later to create custom groups like "drums", "vocals", "effects_a", etc.
+
+### Label Generation
+
+**Examples:**
+```
+/scenes/AlienCavern          → "Alien Cavern"
+/scenes/alien_cavern         → "Alien Cavern"
+/presets/Preset1             → "Preset 1"
+/presets/1                   → "1"
+/controls/meta/hue           → "Hue"
+/playlist/next               → "Next"
+/effects/strobe_on_off       → "Strobe On Off"
+```
+
+**Algorithm:**
+1. Extract last segment after final `/`
+2. Replace `_` and `-` with spaces
+3. Insert space before capital letters (camelCase → Camel Case)
+4. Title case (first letter of each word capitalized)
+5. Trim to 12 characters max for display
+
+### Color Assignment
+
+**Defaults by group:**
+```python
+COLOR_DEFAULTS = {
+    "scenes": {
+        "idle": 3,   # White
+        "active": 21,  # Green (blinks)
+    },
+    "presets": {
+        "idle": 45,  # Blue
+        "active": 37,  # Cyan (blinks)
+    },
+    "playlist": {
+        "idle": 9,   # Orange
+        "active": 13,  # Yellow
+    },
+    "colors": {
+        "idle": 5,   # Red
+        "active": 13,  # Yellow (rainbow gradient later)
+    },
+    "custom": {
+        "idle": 3,   # White
+        "active": 45,  # Blue
+    }
+}
+
+# Special case for TOGGLE mode (overrides group)
+TOGGLE_COLORS = {
+    "idle": 5,   # Red (OFF state)
+    "active": 21,  # Green (ON state)
+}
+```
+
+**Blink behavior:**
+- SELECTOR pads in scenes/presets/playlist → Blink when active
+- TOGGLE pads → No blink (solid color for clear ON/OFF state)
+- ONE_SHOT pads → Brief flash on press, then return to idle
+
+---
+
+## Advantages of Auto-Detection
+
+### For Users
+✅ **10x faster** - 30 seconds vs 5+ minutes per pad
+✅ **Zero questions** - no mode/group/color selection needed
+✅ **Can't make mistakes** - system reads OSC truth
+✅ **Position freedom** - place pads anywhere
+✅ **Works immediately** - smart defaults are production-ready
+
+### For Implementation
+✅ **Simpler FSM** - 4 states instead of 10+
+✅ **Less code** - no complex wizard UI
+✅ **Self-documenting** - OSC patterns define behavior
+✅ **Easier to test** - deterministic detection logic
+✅ **Future-proof** - adapts to new OSC patterns
+
+### For Compatibility
+✅ **Software agnostic** - works with any OSC-based VJ software
+✅ **No hardcoded assumptions** - learns from actual behavior
+✅ **Flexible** - handles custom OSC addresses gracefully
+
+---
+
+## Edge Cases & Error Handling
+
+### No OSC Messages Received
+**Scenario:** User clicks pad but doesn't trigger anything in Synesthesia
+**UI:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║  ⚠️  No OSC messages captured                             ║
+║                                                           ║
+║  Troubleshooting:                                         ║
+║  • Is Synesthesia running?                               ║
+║  • Are OSC ports configured? (Check OSC Config panel)    ║
+║  • Is Synesthesia OSC output enabled?                    ║
+║                                                           ║
+║  [R]etry  [ESC] Cancel                                    ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+### Ambiguous Pattern
+**Scenario:** Multiple different OSC messages received
+**UI:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║  Multiple OSC messages detected                           ║
+║                                                           ║
+║  Which one should this pad control?                       ║
+║                                                           ║
+║  1. /scenes/AlienCavern                                  ║
+║  2. /presets/Preset1                                     ║
+║  3. /controls/meta/hue 0.5                               ║
+║                                                           ║
+║  [1-3] Select  [R]etry  [ESC] Cancel                      ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+### Reconfigure Existing Pad
+**Scenario:** User tries to learn a pad that's already configured
+**UI:**
+```
+╔═══════════════════════════════════════════════════════════╗
+║  ⚠️  Pad (3,2) already configured                         ║
+║                                                           ║
+║  Current: Alien Cavern (SELECTOR, scenes)                ║
+║                                                           ║
+║  Reconfigure this pad?                                    ║
+║                                                           ║
+║  [Y]es, reconfigure  [N]o, keep existing  [ESC] Cancel    ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+---
+
+## Complete Example Session
+
+**User wants to configure 6 scenes + 3 presets in 3 minutes:**
+
+```
+Step 1: Configure Scene 1
+  - Press L
+  - Click pad (0,0)
+  - Click "Alien Cavern" in Synesthesia
+  - System detects: SELECTOR, scenes, "Alien Cavern", White→Green
+  - Press Enter
+  ✅ Saved in ~30 seconds
+
+Step 2: Configure Scene 2
+  - Press L
+  - Click pad (1,0)
+  - Click "Neon City" in Synesthesia
+  - System detects: SELECTOR, scenes, "Neon City", White→Green
+  - Press Enter
+  ✅ Saved in ~30 seconds
+
+... repeat for 4 more scenes (pads 2,0 through 5,0) ...
+
+Step 7: Configure Preset 1
+  - Press L
+  - Click pad (0,1)
+  - Switch to "Preset 1" in Synesthesia
+  - System detects: SELECTOR, presets, "1", Blue→Cyan
+  - Press Enter
+  ✅ Saved in ~30 seconds
+
+... repeat for 2 more presets ...
+
+Total time: ~3 minutes for 9 pads
+Manual input: 18 clicks (L + pad for each) + 9 actions in Synesthesia
+Everything else: Auto-detected!
+```
+
+---
+
+## Summary
+
+**Old approach (row-first):** Complex, asks too many questions, ~5 minutes per row
+**New approach (auto-detect):** Simple, learns from OSC, ~30 seconds per pad
+
+**Key insight:** The OSC communication IS the configuration!
+- Address pattern → group
+- Bidirectional feedback → mode
+- Message content → labels
+- Group type → colors
+
+**Result:** Fastest, easiest Launchpad configuration tool ever built! 🎉
 
 ---
 
