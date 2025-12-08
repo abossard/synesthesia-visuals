@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 class OscConfig:
     """OSC configuration."""
     host: str = "127.0.0.1"
-    send_port: int = 9000  # Synesthesia listens here
-    receive_port: int = 9001  # We listen here for Synesthesia output
+    send_port: int = 9000  # Synesthesia listens here (default)
+    receive_port: int = 8000  # Synesthesia sends here (default)
     
 
 # =============================================================================

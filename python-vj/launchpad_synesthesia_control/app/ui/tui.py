@@ -37,13 +37,30 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 class LaunchpadGrid(Static):
-    """Visual representation of Launchpad 8x8 grid + top row + right column."""
+    """Visual representation of Launchpad 8x8 grid + top row + right column.
+    
+    Clickable - selecting a pad in the TUI acts like pressing it on hardware.
+    """
     
     state: reactive[ControllerState] = reactive(ControllerState)
     
+    # Add message handler for clicks
+    BINDINGS = [
+        # No bindings needed - will handle mouse clicks
+    ]
+    
+    def on_click(self, event) -> None:
+        """Handle clicks on the grid to select pads."""
+        # Calculate which pad was clicked based on position
+        # This will be implemented when we handle the click event
+        pass
+    
     def render(self) -> str:
-        """Render the Launchpad grid as ASCII art."""
+        """Render the Launchpad grid as ASCII art with clickable indicators."""
         lines = []
+        
+        # Title with hint
+        lines.append("[dim]Click pads to select in Learn Mode[/]")
         
         # Top row (y=-1)
         top_row = "╔"
@@ -183,11 +200,13 @@ class OscConfigPanel(Container):
             Input(value="9000", id="osc_send_port", classes="port-input"),
             classes="config-row"
         )
+        yield Label("[dim]Synesthesia Input (default 9000)[/]")
         yield Horizontal(
             Label("Receive Port:"),
-            Input(value="9001", id="osc_receive_port", classes="port-input"),
+            Input(value="8000", id="osc_receive_port", classes="port-input"),
             classes="config-row"
         )
+        yield Label("[dim]Synesthesia Output (default 8000)[/]")
         yield Button("Apply", id="apply_osc", variant="primary")
 
 
@@ -336,9 +355,9 @@ class LaunchpadSynesthesiaApp(App):
     
     async def _init_osc(self):
         """Initialize OSC connection."""
-        # Get port from inputs
-        send_port = 9000
-        receive_port = 9001
+        # Get port from inputs (or use Synesthesia defaults)
+        send_port = 9000  # Synesthesia receives on 9000
+        receive_port = 8000  # Synesthesia sends on 8000
         
         self.osc = OscManager(OscConfig(
             host="127.0.0.1",

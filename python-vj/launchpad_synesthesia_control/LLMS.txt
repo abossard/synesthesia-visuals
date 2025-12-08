@@ -20,6 +20,16 @@ This is a Python Textual TUI app that creates a bi-directional bridge between:
 - **OSC Driver**: `app/io/osc_synesthesia.py` - Synesthesia communication
 - **Config**: `app/io/config.py` - YAML persistence
 
+## Synesthesia OSC Default Ports
+
+**Standard Configuration**:
+- **Send to Synesthesia**: Port 9000 (Synesthesia Input)
+- **Receive from Synesthesia**: Port 8000 (Synesthesia Output)
+
+**Synesthesia Settings**:
+- OSC Input Port: 9000 (receives commands from this app)
+- OSC Output Port: 8000 (sends state/audio to this app)
+
 ## OSC Messages Reference
 
 ### Controllable Addresses (Can be mapped to pads)
@@ -316,8 +326,8 @@ sudo usermod -a -G audio $USER
 
 ### Issue: OSC not connecting
 **Check**: Synesthesia OSC settings
-- Output port should match our receive_port (default 9001)
-- Input port should match our send_port (default 9000)
+- Input port should be 9000 (default - receives our commands)
+- Output port should be 8000 (default - sends state to us)
 **Check**: Firewall not blocking localhost UDP
 
 ### Issue: Config not saving
