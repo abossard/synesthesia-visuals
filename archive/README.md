@@ -16,9 +16,33 @@ This directory contains deprecated or superseded components that are preserved f
 - Status: Deprecated
 - Reason: No longer needed with Synesthesia-based workflow
 
+### ISF Shader Support (Removed from VJUniverse)
+
+**VJUniverse_ISF_shaders/** - ISF (Interactive Shader Format) shader collection
+- Status: Archived - ISF format no longer supported in VJUniverse
+- Reason: Simplified to GLSL-only for consistency and maintainability
+- Alternative: Convert ISF shaders to Synesthesia format using `.github/prompts/shadertoy-to-synesthesia-converter.prompt.md`
+- Contains: ~70 ISF shaders from various authors
+
+**VJUniverse_original_README.md** - Original VJUniverse specification document
+- Status: Archived - replaced with simplified, focused README
+- Reason: Original was a detailed spec for building the system; new README is user-focused
+
 ## Note
 
 The python-vj audio analyzer (audio_analyzer.py) is **NOT** archived as it serves a different purpose:
 - It works alongside Synesthesia via OSC
-- Provides additional audio features for VJ control
-- Used for specific Python-based workflows
+- Provides additional audio features for VJ control  
+- Used for specific Python-based workflows (Essentia-based analysis)
+
+## Using Archived Components
+
+If you need to access archived components:
+
+1. **Processing Audio Analyzers**: Copy from archive back to `processing-vj/src/` if needed
+2. **ISF Shaders**: Use the shader conversion prompt to convert to Synesthesia format
+3. **Historical Reference**: Consult VJUniverse_original_README.md for original system design
+
+## Removal Dates
+
+- 2024-12-08: AudioAnalysisOSC, AudioAnalysisOSCVisualizer, ISF support from VJUniverse
