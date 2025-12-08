@@ -8,7 +8,7 @@
 // ============================================
 
 enum ShaderType {
-  GLSL, ISF
+  GLSL  // Only GLSL shaders supported (.glsl, .txt, .frag)
 }
 
 class ShaderInfo {

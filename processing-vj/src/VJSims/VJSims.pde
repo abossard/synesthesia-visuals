@@ -1,14 +1,21 @@
 /**
- * VJSystem — Processing VJ Visual System
+ * VJSims — Processing VJ Simulation Framework
  * 
- * Main sketch file for the Launchpad-controlled VJ system.
+ * A highly interactive simulation framework for VJ performances.
+ * Supports Launchpad control and Synesthesia Audio OSC input.
  * Outputs via Syphon for compositing in Magic/Synesthesia.
  * 
  * Requirements:
  * - Processing 4.x (Intel/x64 build on Apple Silicon for Syphon)
  * - The MidiBus library
  * - Syphon library
+ * - oscP5 library (for Synesthesia Audio OSC)
  * - Launchpad Mini Mk3 in Programmer mode (optional)
+ * 
+ * Audio Reactivity:
+ * - Synesthesia Audio OSC: Receive real-time audio analysis from Synesthesia
+ *   (bass, mid, high levels, BPM, spectrum, etc.)
+ * - Keyboard fallback: Simulate audio hits for testing without Synesthesia
  */
 
 import codeanticode.syphon.*;
@@ -88,11 +95,12 @@ void setup() {
   // Start first level
   levelManager.start();
 
-  println("VJSystem initialized");
-  println("  Syphon server: VJSystem");
+  println("VJSims initialized");
+  println("  Syphon server: VJSims");
   println("  Resolution: " + width + "x" + height);
   println("  Launchpad: " + (midi.isConnected() ? midi.getDeviceName() : "not found (keyboard mode)"));
   println("  Levels: " + levelManager.getLevelCount());
+  println("  Audio: Synesthesia OSC (TODO: implement OSC listener)");
 
   // Show keyboard controls if Launchpad not found
   if (!midi.isConnected()) {
@@ -181,7 +189,7 @@ void drawDebugOverlay() {
   String levelName = active != null ? active.getName() : "none";
   String fsmState = active != null ? active.getFSM().getState().toString() : "-";
   
-  text("VJSystem", 20, 20);
+  text("VJSims", 20, 20);
   text("Level: " + levelManager.getActiveIndex() + " - " + levelName, 20, 40);
   text("State: " + fsmState, 20, 60);
   text("FPS: " + nf(frameRate, 0, 1), 20, 80);
