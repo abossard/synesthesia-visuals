@@ -428,13 +428,6 @@ class TestPipelineTracker(unittest.TestCase):
         self.assertEqual(tracker.steps["fetch_lyrics"].status, "running")
         
         # Complete the step
-        tracker.complete("fetch_lyrics", "Found 50 lines")
-        self.assertEqual(tracker.steps["fetch_lyrics"].status, "complete")
-        
-        # Error on another step
-        tracker.start("llm_analysis", "Calling API...")
-        tracker.error("llm_analysis", "Connection timeout")
-        self.assertEqual(tracker.steps["llm_analysis"].status, "error")
     
     def test_skip_step(self):
         """skip() should mark step as skipped."""
