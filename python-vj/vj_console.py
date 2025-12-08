@@ -1249,10 +1249,6 @@ class VJConsoleApp(App):
             logger.warning(f"MIDI router initialization failed: {e}")
             self.midi_router = None
     
-    def _setup_audio_analyzer(self) -> None:
-        """Setup audio analyzer (removed - use Synesthesia)."""
-        pass
-
     def _setup_shader_indexer(self) -> None:
         """Initialize shader indexer and analysis worker."""
         if not SHADER_MATCHER_AVAILABLE:
@@ -1402,10 +1398,6 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
     
-    def _start_audio_analyzer(self) -> None:
-        """Start audio analyzer (removed - use Synesthesia)."""
-        pass
-
     def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
         """Run a subprocess, return True if successful."""
         try:
@@ -1544,10 +1536,6 @@ class VJConsoleApp(App):
         # Update shader panels
         self._update_shader_panels()
 
-    def _update_audio_panels(self) -> None:
-        """Update audio analyzer panels (removed - use Synesthesia)."""
-        pass
-
     def _update_shader_panels(self) -> None:
         """Update shader indexer/matcher panels."""
         if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
@@ -1685,14 +1673,6 @@ class VJConsoleApp(App):
                     break
         self._check_apps()
     
-    def action_toggle_audio_analyzer(self) -> None:
-        """Toggle audio analyzer (removed - use Synesthesia)."""
-        pass
-
-    def _stop_audio_analyzer(self) -> None:
-        """Stop audio analyzer (removed - use Synesthesia)."""
-        pass
-
     def action_shader_toggle_analysis(self) -> None:
         """Toggle shader analysis pause/resume (p key)."""
         if not self.shader_analysis_worker:
