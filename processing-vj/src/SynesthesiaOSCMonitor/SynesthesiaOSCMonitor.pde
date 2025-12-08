@@ -18,6 +18,7 @@ import codeanticode.syphon.*;
 // === OSC Configuration ===
 OscP5 osc;
 int listenPort = 7777;
+int oscBufferBytes = 4096;
 
 // === Syphon Output ===
 SyphonServer syphon;
@@ -80,7 +81,12 @@ void setup() {
   }
   textFont(hudFont);
 
-  osc = new OscP5(this, listenPort);
+  OscProperties props = new OscProperties();
+  props.setRemoteAddress("127.0.0.1", listenPort);
+  props.setListeningPort(listenPort);
+  props.setNetworkProtocol(OscProperties.UDP);
+  props.setDatagramSize(oscBufferBytes);
+  osc = new OscP5(this, props);
   println("Listening for Synesthesia OSC on port " + listenPort);
 
   syphon = new SyphonServer(this, "SynesthesiaOSC");

@@ -4,13 +4,12 @@
  * A Processing sketch with:
  * - P3D renderer for generative visuals
  * - Dynamic shader loading (GLSL + ISF)
- * - FFT audio analysis
+ * - OSC-driven audio analysis
  * - OSC for song metadata
  * - LM Studio LLM for shader selection (OpenAI-compatible API)
  * - Disk caching of selections
  */
 
-import processing.sound.*;
 import oscP5.*;
 import netP5.*;
 import codeanticode.syphon.*;
@@ -27,17 +26,6 @@ final String SCENES_PATH = "scenes";
 // ============================================
 // GLOBAL STATE
 // ============================================
-
-// Audio
-AudioIn audioIn;
-FFT fft;
-int fftBands = 512;
-float[] spectrum = new float[fftBands];
-float bass, mid, treble, level;
-float smoothBass, smoothMid, smoothTreble;
-float beatThreshold = 0.15;
-float lastBeatTime = 0;
-float beatPhase = 0;
 
 // OSC
 OscP5 oscP5;
@@ -111,8 +99,8 @@ void setup() {
   // Initialize shader render buffer for zoom/pan support
   shaderBuffer = createGraphics(width, height, P3D);
   
-  // Initialize audio (AudioManager.pde) - includes device selection
-  initAudioManager();
+  // Initialize OSC audio bridge (Synesthesia feed)
+  initSynesthesiaAudio();
   
   // Initialize OSC
   initOsc();
@@ -140,8 +128,8 @@ void setup() {
 void draw() {
   globalTime = millis() / 1000.0;
   
-  // Update audio analysis (AudioManager.pde)
-  updateAudioAnalysis();
+  // Update audio parameters from OSC feed
+  updateSynesthesiaAudio();
   
   // Check for shader file changes (auto-reload)
   reloadShadersIfChanged();
@@ -204,8 +192,7 @@ void draw() {
     drawConsole();
   }
   
-  // Draw device selection UI (on top of everything)
-  drawDeviceSelectionUI();
+  // Device selection UI removed (OSC feed handles audio input)
 }
 
 void drawMultiPassPipeline() {
@@ -369,50 +356,6 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
 }
 
 // ============================================
-// AUDIO ANALYSIS
-// ============================================
-
-void initAudio() {
-  audioIn = new AudioIn(this, 0);
-  audioIn.start();
-  
-  fft = new FFT(this, fftBands);
-  fft.input(audioIn);
-}
-
-void updateAudio() {
-  fft.analyze(spectrum);
-  
-  // Calculate band levels
-  bass = calculateBandLevel(0, 10);
-  mid = calculateBandLevel(10, 100);
-  treble = calculateBandLevel(100, fftBands);
-  level = calculateBandLevel(0, fftBands);
-  
-  // Smooth values
-  float smoothing = 0.85;
-  smoothBass = lerp(smoothBass, bass, 1 - smoothing);
-  smoothMid = lerp(smoothMid, mid, 1 - smoothing);
-  smoothTreble = lerp(smoothTreble, treble, 1 - smoothing);
-  
-  // Simple beat detection
-  if (bass > beatThreshold && millis() - lastBeatTime > 200) {
-    lastBeatTime = millis();
-    beatPhase = 1.0;
-  }
-  beatPhase *= 0.95;
-}
-
-float calculateBandLevel(int startBand, int endBand) {
-  float sum = 0;
-  int count = min(endBand, fftBands) - startBand;
-  for (int i = startBand; i < min(endBand, fftBands); i++) {
-    sum += spectrum[i];
-  }
-  return count > 0 ? sum / count : 0;
-}
-
-// ============================================
 // OSC HANDLING
 // ============================================
 
@@ -423,9 +366,7 @@ void initOsc() {
 void oscEvent(OscMessage msg) {
   String addr = msg.addrPattern();
   
-  // Audio config messages (AudioManager.pde)
-  if (addr.startsWith("/audio/")) {
-    handleAudioOSC(msg);
+  if (handleSynesthesiaAudioMessage(msg)) {
     return;
   }
   
@@ -558,13 +499,6 @@ void consoleSubmit() {
 // ============================================
 
 void keyPressed() {
-  // Device selection UI handling (AudioManager.pde)
-  if (deviceSelectionActive) {
-    handleDeviceSelectionKey(keyCode, key);
-    if (key == ESC) key = 0;  // Prevent sketch exit
-    return;
-  }
-  
   // Console input handling
   if (consoleActive) {
     if (key == ENTER || key == RETURN) {
@@ -619,10 +553,6 @@ void keyPressed() {
       if (currentShaderIndex < getFilteredShaderList().size()) {
         loadShaderByIndex(currentShaderIndex);
       }
-      break;
-    case 'a':
-    case 'A':
-      toggleDeviceSelection();  // Open audio device selection
       break;
     case 'b':
     case 'B':
@@ -709,8 +639,10 @@ void drawDebugOverlay() {
   text("Time: " + nf(globalTime, 0, 2), 20, y); y += lineHeight;
   y += 5;
   
-  String audioStatus = audioInitialized ? "OK" : (audioRetryPending ? "RETRY " + audioRetryCount : "FAIL");
-  text("Audio [" + audioStatus + "]: " + currentDeviceName, 20, y); y += lineHeight;
+  boolean audioActive = isSynAudioActive();
+  String audioStatus = audioActive ? "stream" : "wait";
+  text("Audio [" + audioStatus + "]: " + synAudioSourceLabel, 20, y); y += lineHeight;
+  text("  Age: " + nf(synAudioAgeSeconds(), 0, 1) + "s", 20, y); y += lineHeight;
   text("  Energy: " + nf(energyFast, 0, 2) + " (slow: " + nf(energySlow, 0, 2) + ")", 20, y); y += lineHeight;
   text("  Kick: " + nf(kickEnv, 0, 2) + " | Beat: " + beat4, 20, y); y += lineHeight;
   text("  Bindings: " + audioBindings.size(), 20, y); y += lineHeight;
@@ -730,7 +662,7 @@ void drawDebugOverlay() {
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader T=type z/Z=zoom arrows=pan X=reset r=reload A=audio B=bars", 20, height - 25);
+  text("D=debug N/P=shader T=type z/Z=zoom arrows=pan X=reset r=reload B=bars", 20, height - 25);
 }
 
 // ============================================

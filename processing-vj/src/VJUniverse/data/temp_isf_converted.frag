@@ -7,11 +7,8 @@ uniform float time;
 uniform vec2 resolution;
 uniform float speed;  // Audio-reactive speed 0-1
 
-uniform float scale;
-uniform float thickness;
-uniform float twists;
+uniform vec2 offset;
 uniform float rate;
-uniform float gamma;
 
 // Audio-reactive uniforms (injected by VJUniverse)
 uniform float bass;       // Low frequency energy 0-1
@@ -31,31 +28,51 @@ uniform float energySlow; // Slow energy envelope
 #define isf_FragNormCoord (isf_FragCoord / resolution)
 #define FRAMEINDEX int(time * 60.0)
 
-////////////////////////////////////////////////////////////
-// RainbowRingCubicTwist  by mojovideotech
-//
+// LiquidFire by mojovideotech
 // based on :
-// glslsandbox/e#58416.0
-//
-// Creative Commons Attribution-NonCommercial-ShareAlike 3.0
-////////////////////////////////////////////////////////////
-
+// glslsandbox.com/e#29962.1
+// by @301z
 
 #ifdef GL_ES
-precision highp float;
+precision mediump float;
 #endif
 
+float rnd(vec2 n) 
+{ 
+	return fract(cos(dot(n, vec2(5.14229, 433.494437))) * 2971.215073);
+}
+
+float noise(vec2 n) 
+{
+	const vec2 d = vec2(0.0, 1.0);
+	vec2 b = floor(n), f = smoothstep(vec2(0.0), vec2(1.0), fract(n));
+	return mix(mix(rnd(b), rnd(b + d.yx), f.x), mix(rnd(b + d.xy), rnd(b + d.yy), f.x), f.y);
+}
+
+float fbm(vec2 n) {
+	float total = 0.0, amplitude = 1.0;
+	for (int i = 0; i < 6; i++) 
+	{
+		total += noise(n) * amplitude;
+		n += n;
+		amplitude *= 0.6;
+	}
+	return total;
+}
 
 void main() 
 {
-    float T = TIME * rate;
-    vec2 R = RENDERSIZE;  
-    vec2 P = (isf_FragCoord.xy - 0.5*R)*(2.1 - scale);
-    vec4 S, E, F;
-    P = vec2(length(P) / R.y - 0.333, atan(P.y,P.x));  
-    P *= vec2(2.6 - thickness,floor(twists));                                                                                                             ;
-    S = 0.08*cos(1.5*vec4(0.0, 1.0, 2.0, 3.0) + T + P.y + sin(P.y)*cos(T));
-    E = S.yzwx; 
-    F = max(P.x - S, E - P.x);
-    gl_FragColor = pow(dot(clamp(F*R.y, 0.0, 1.0), 72.0*(S - E))*(S - 0.1), vec4(gamma));
+	vec3 uv = vec3(RENDERSIZE.x,RENDERSIZE.y,100.);
+	vec2 p = isf_FragCoord.xy * 8.0 / uv.xx;
+	float T = TIME*rate;
+	const vec3 c1 = vec3(0.2, 0.3, 0.1); 
+	const vec3 c2 = vec3(0.9, 0.1, 0.0);
+	const vec3 c3 = vec3(0.2, 0.0, 0.0); 
+	const vec3 c4 = vec3(1.0, 0.9, 0.0); 
+	const vec3 c5 = vec3(0.1);
+	const vec3 c6 = vec3(0.9);
+	float q = fbm(p - T * 0.25); 
+	vec2 r = vec2(fbm(p + q + log2(T * 0.618) - p.x - p.y), fbm(p + q - abs(log2(T * 3.142))));
+	vec3 c = mix(c1, c2, fbm(p + r-offset.x)) + mix(c3, c4, r.x) - mix(c5, c6, r.y);
+	gl_FragColor = vec4(c * cos(1.0-offset.y * isf_FragCoord.y / uv.y),1.0);
 }
