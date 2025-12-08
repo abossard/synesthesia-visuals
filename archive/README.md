@@ -30,10 +30,10 @@ This directory contains deprecated or superseded components that are preserved f
 
 ## Note
 
-The python-vj audio analyzer (audio_analyzer.py) is **NOT** archived as it serves a different purpose:
-- It works alongside Synesthesia via OSC
-- Provides additional audio features for VJ control  
-- Used for specific Python-based workflows (Essentia-based analysis)
+The python-vj audio analyzer (audio_analyzer.py) has been **removed**. Use Synesthesia for audio analysis:
+- Synesthesia provides professional-grade audio analysis
+- Lower latency and better accuracy
+- Native integration with Synesthesia shaders
 
 ## Using Archived Components
 

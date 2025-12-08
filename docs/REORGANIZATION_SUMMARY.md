@@ -7,7 +7,7 @@ Complete summary of the "Gentle cleanup and improvements" implementation.
 ### 1. Audio Analytics Consolidation ✅
 - **Archived**: Processing audio analyzers to `archive/`
 - **Primary Engine**: Synesthesia (superior latency, professional features)
-- **Preserved**: Python audio_analyzer.py for Essentia-based workflows
+- **Preserved**: Python audio analyzer removed - use Synesthesia instead
 
 ### 2. VJUniverse - ISF Support Removal ✅
 - **Removed**: ~350 lines of ISF conversion code

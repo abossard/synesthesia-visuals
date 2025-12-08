@@ -8,7 +8,7 @@ Screens (press 1-7 to switch):
 3. Song AI Debug - Song categorization and pipeline details
 4. All Logs - Complete application logs
 5. MIDI Router - Toggle management and MIDI traffic debug
-6. Audio Analysis - Real-time audio analysis and OSC emission
+6. (Audio Analysis removed - use Synesthesia instead)
 7. Shader Index - Shader analysis status and matching
 """
 
@@ -46,20 +46,8 @@ except ImportError as e:
     import sys
     print(f"Warning: Shader matcher not available - {e}", file=sys.stderr)
 
-# Audio analysis (imported conditionally to handle missing dependencies)
-try:
-    from audio_analyzer import (
-        AudioConfig, DeviceConfig as AudioDeviceConfig, DeviceManager, 
-        AudioAnalyzer, AudioAnalyzerWatchdog, LatencyTester
-    )
-    from audio_analytics_screen import EnhancedAudioAnalyticsPanel
-    AUDIO_ANALYZER_AVAILABLE = True
-except ImportError as e:
-    AUDIO_ANALYZER_AVAILABLE = False
-    # Logger might not be initialized yet at module level, so use print as fallback
-    import sys
-    print(f"Warning: Audio analyzer not available - {e}", file=sys.stderr)
-    print("Install dependencies: pip install sounddevice numpy essentia", file=sys.stderr)
+# Audio analyzer removed - Synesthesia is the primary audio engine
+AUDIO_ANALYZER_AVAILABLE = False
 
 logger = logging.getLogger('vj_console')
 
@@ -1355,9 +1343,7 @@ class VJConsoleApp(App):
         Binding("6", "screen_midi", "MIDI"),
         Binding("7", "screen_shaders", "Shaders"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
-        Binding("m", "toggle_milksyphon", "MilkSyphon"),
-        Binding("a", "toggle_audio_analyzer", "Audio Analyzer"),
-        Binding("k,up", "nav_up", "Up"),
+        Binding("m", "toggle_milksyphon", "MilkSyphon"),        Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
@@ -1396,12 +1382,7 @@ class VJConsoleApp(App):
         self.midi_messages: List[Tuple[float, str, Any]] = []  # (timestamp, direction, message)
         self._setup_midi_router()
         
-        # Audio Analyzer
-        self.audio_analyzer: Optional[Any] = None  # AudioAnalyzer when available
-        self.audio_device_manager: Optional[Any] = None  # DeviceManager when available
-        self.audio_watchdog: Optional[Any] = None  # AudioAnalyzerWatchdog when available
-        self._setup_audio_analyzer()
-        
+        # Audio Analyzer        self.audio_device_manager: Optional[Any] = None  # DeviceManager when available        
         # Shader Indexer
         self.shader_indexer: Optional[Any] = None  # ShaderIndexer when available
         self.shader_selector: Optional[Any] = None  # ShaderSelector when available  
@@ -1445,59 +1426,9 @@ class VJConsoleApp(App):
             self.midi_router = None
     
     def _setup_audio_analyzer(self) -> None:
-        """Initialize audio analyzer."""
-        if not AUDIO_ANALYZER_AVAILABLE:
-            logger.warning("Audio analyzer not available - skipping initialization")
-            return
-        
-        try:
-            # Create device manager
-            self.audio_device_manager = DeviceManager()
-            
-            # Create audio config
-            audio_config = AudioConfig(
-                sample_rate=44100,
-                block_size=512,
-                enable_logging=True,
-                log_level=logging.INFO,
-            )
-            
-            # Create OSC callback that integrates with karaoke engine AND new audio panel
-            def osc_callback(address: str, args: List):
-                """Send audio features via OSC and to UI."""
-                try:
-                    # Send via network OSC
-                    if self.karaoke_engine and self.karaoke_engine.osc_sender:
-                        self.karaoke_engine.osc_sender.send(address, args)
-                    
-                    # Send to enhanced audio analytics panel
-                    try:
-                        panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
-                        panel.add_osc_message(address, args)
-                    except Exception:
-                        pass  # Panel might not be mounted yet
-                        
-                except Exception as e:
-                    logger.debug(f"OSC send error: {e}")
-            
-            # Create analyzer
-            self.audio_analyzer = AudioAnalyzer(
-                audio_config,
-                self.audio_device_manager,
-                osc_callback=osc_callback
-            )
-            
-            # Create watchdog for self-healing
-            self.audio_watchdog = AudioAnalyzerWatchdog(self.audio_analyzer)
-            
-            logger.info("Audio analyzer initialized")
-            
-        except Exception as e:
-            logger.exception(f"Audio analyzer initialization failed: {e}")
-            self.audio_analyzer = None
-            self.audio_device_manager = None
-            self.audio_watchdog = None
-    
+        """Setup audio analyzer (removed - use Synesthesia)."""
+        pass
+
     def _setup_shader_indexer(self) -> None:
         """Initialize shader indexer and analysis worker."""
         if not SHADER_MATCHER_AVAILABLE:
@@ -1674,28 +1605,9 @@ class VJConsoleApp(App):
             logger.exception(f"Karaoke start error: {e}")
     
     def _start_audio_analyzer(self) -> None:
-        """Start the audio analyzer thread."""
-        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
-            return
-        
-        try:
-            # Start analyzer thread
-            self.audio_analyzer.start()
-            logger.info("Audio analyzer started")
-            
-            # Update enhanced panel status
-            try:
-                panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
-                panel.set_connection_status("Connected")
-            except Exception:
-                pass
-            
-            # Update devices list
-            self._update_audio_devices()
-            
-        except Exception as e:
-            logger.exception(f"Audio analyzer start error: {e}")
-    
+        """Start audio analyzer (removed - use Synesthesia)."""
+        pass
+
     def _update_audio_devices(self) -> None:
         """Update available audio devices list."""
         if not AUDIO_ANALYZER_AVAILABLE or not self.audio_device_manager:
@@ -1857,45 +1769,9 @@ class VJConsoleApp(App):
         self._update_shader_panels()
 
     def _update_audio_panels(self) -> None:
-        """Update audio analyzer panels."""
-        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
-            return
-        
-        try:
-            # Update watchdog for self-healing (only if analyzer was started)
-            if self.audio_watchdog and self.audio_analyzer.is_alive():
-                self.audio_watchdog.update()
-            
-            # Get analyzer stats
-            stats = self.audio_analyzer.get_stats()
-            
-            # Update status panel
-            try:
-                status_panel = self.query_one("#audio-status", AudioAnalyzerStatusPanel)
-                status_panel.status = stats
-            except Exception:
-                pass
-            
-            # Get latest features
-            features = self.audio_analyzer.latest_features.copy()
-            
-            # Update features panel
-            try:
-                features_panel = self.query_one("#audio-features", AudioFeaturesPanel)
-                features_panel.features = features
-            except Exception:
-                pass
-            
-            # Update action panel button labels
-            try:
-                actions_panel = self.query_one("#audio-actions", AudioActionsPanel)
-                actions_panel.analyzer_running = self.audio_analyzer.is_alive()
-            except Exception:
-                pass
-            
-        except Exception as e:
-            logger.debug(f"Failed to update audio panels: {e}")
-    
+        """Update audio analyzer panels (removed - use Synesthesia)."""
+        pass
+
     def _update_shader_panels(self) -> None:
         """Update shader indexer/matcher panels."""
         if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
@@ -2034,39 +1910,13 @@ class VJConsoleApp(App):
         self._check_apps()
     
     def action_toggle_audio_analyzer(self) -> None:
-        """Toggle audio analyzer on/off (a key)."""
-        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
-            self.notify("Audio analyzer not available", severity="warning")
-            return
-        
-        if self.audio_analyzer.is_alive():
-            self._stop_audio_analyzer()
-            self.notify("Audio analyzer stopped", severity="information")
-        else:
-            self._start_audio_analyzer()
-            self.notify("Audio analyzer started", severity="information")
-    
+        """Toggle audio analyzer (removed - use Synesthesia)."""
+        pass
+
     def _stop_audio_analyzer(self) -> None:
-        """Stop the audio analyzer thread."""
-        if not AUDIO_ANALYZER_AVAILABLE or not self.audio_analyzer:
-            return
-        
-        try:
-            self.audio_analyzer.stop()
-            logger.info("Audio analyzer stopped")
-            
-            # Update enhanced panel status
-            try:
-                panel = self.query_one("#enhanced-audio-analytics", EnhancedAudioAnalyticsPanel)
-                panel.set_connection_status("Disconnected")
-            except Exception:
-                pass
-                
-        except Exception as e:
-            logger.exception(f"Audio analyzer stop error: {e}")
-    
-    # === Shader analysis actions ===
-    
+        """Stop audio analyzer (removed - use Synesthesia)."""
+        pass
+
     def action_shader_toggle_analysis(self) -> None:
         """Toggle shader analysis pause/resume (p key)."""
         if not self.shader_analysis_worker:

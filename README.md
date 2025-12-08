@@ -80,9 +80,7 @@ python midi_router_cli.py run # Launch MIDI router
 - Spectral features (centroid, flux)
 - Low-latency OSC output (~10-30ms)
 
-**Python Analyzer**: `python-vj/audio_analyzer.py` provides supplementary analysis for specific workflows (Essentia-based)
-
-**Note**: Processing-based audio analyzers have been archived in favor of Synesthesia's superior engine.
+**Note**: Python/Essentia-based audio analyzer has been removed. Use Synesthesia for all audio analysis needs.
 
 ### MIDI Controllers
 This project uses:
