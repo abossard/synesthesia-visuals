@@ -1,0 +1,444 @@
+# Launchpad Synesthesia Control - AI Assistant Guide
+
+## Overview
+
+This is a Python Textual TUI app that creates a bi-directional bridge between:
+- **Launchpad Mini Mk3** (MIDI controller with LED feedback)
+- **Synesthesia Pro** (VJ software via OSC)
+
+**Architecture**: Functional core (pure functions) + imperative shell (I/O)
+**Language**: Python 3.11+ with type hints
+**Key Libraries**: textual, mido, python-osc, PyYAML
+
+## Quick Navigation
+
+- **Entry Point**: `python-vj/launchpad_synesthesia_control/__main__.py`
+- **Main TUI**: `app/ui/tui.py` - LaunchpadSynesthesiaApp
+- **Domain Logic**: `app/domain/fsm.py` - All state transitions (pure functions)
+- **Models**: `app/domain/model.py` - Immutable dataclasses
+- **MIDI Driver**: `app/io/midi_launchpad.py` - Launchpad control
+- **OSC Driver**: `app/io/osc_synesthesia.py` - Synesthesia communication
+- **Config**: `app/io/config.py` - YAML persistence
+
+## Synesthesia OSC Default Ports
+
+**Standard Configuration**:
+- **Send to Synesthesia**: Port 9000 (Synesthesia Input)
+- **Receive from Synesthesia**: Port 8000 (Synesthesia Output)
+
+**Synesthesia Settings**:
+- OSC Input Port: 9000 (receives commands from this app)
+- OSC Output Port: 8000 (sends state/audio to this app)
+
+## OSC Messages Reference
+
+### Controllable Addresses (Can be mapped to pads)
+
+These addresses can be learned and mapped to Launchpad pads:
+
+#### Scene Control
+```
+/scenes/{scene_name}          - Activate a scene
+Example: /scenes/AlienCavern
+Example: /scenes/Kaleidoscope
+```
+
+#### Preset Control
+```
+/presets/{preset_name}        - Activate a preset
+/favslots/{slot_number}       - Favorite slot (0-7)
+Example: /presets/BlueDream
+Example: /favslots/0
+```
+
+#### Playlist Control
+```
+/playlist/{command}           - Playlist navigation
+Example: /playlist/next
+Example: /playlist/previous
+```
+
+#### Meta Controls (Global Effects)
+```
+/controls/meta/hue {float}    - Master hue shift (0.0-1.0)
+/controls/meta/saturation {float}
+/controls/meta/brightness {float}
+/controls/meta/contrast {float}
+Example: /controls/meta/hue 0.5
+```
+
+#### Global Controls
+```
+/controls/global/{param} {value}
+Example: /controls/global/opacity 0.8
+Example: /controls/global/blend_mode 0
+```
+
+### Non-Controllable Addresses (Received for state sync)
+
+These are received from Synesthesia but NOT mapped to pads:
+
+#### Audio Analysis
+```
+/audio/beat/onbeat {int}      - Beat pulse (0 or 1)
+/audio/bpm {float}            - Current BPM
+/audio/time/position {float}  - Playback position
+/audio/level {float}          - Overall audio level
+/audio/bass {float}           - Bass level (0.0-1.0)
+/audio/mid {float}            - Mid level (0.0-1.0)
+/audio/high {float}           - High level (0.0-1.0)
+```
+
+#### Time/State
+```
+/time/elapsed {float}         - Time since start
+/playback/state {int}         - Play state (0=stopped, 1=playing)
+```
+
+## YAML Configuration Format
+
+**Location**: `~/.config/launchpad-synesthesia/config.yaml`
+
+### Structure
+
+```yaml
+version: "1.0"
+pads:
+  "0,0":                        # PadId format: "x,y"
+    mode: SELECTOR              # SELECTOR | TOGGLE | ONE_SHOT
+    group: scenes               # scenes | presets | colors | custom
+    idle_color: 0               # Launchpad color index (0-127)
+    active_color: 5             # Launchpad color index (red=5, green=21, blue=45)
+    label: "Alien Cavern"       # Human-readable name
+    osc_action:                 # For SELECTOR and ONE_SHOT modes
+      address: "/scenes/AlienCavern"
+      args: []                  # Optional arguments
+  
+  "1,0":
+    mode: TOGGLE
+    idle_color: 0
+    active_color: 21
+    label: "Strobe Toggle"
+    osc_on:                     # Command when toggling ON
+      address: "/controls/global/strobe"
+      args: [1]
+    osc_off:                    # Command when toggling OFF (optional)
+      address: "/controls/global/strobe"
+      args: [0]
+  
+  "2,0":
+    mode: ONE_SHOT
+    idle_color: 0
+    active_color: 45
+    label: "Next Scene"
+    osc_action:
+      address: "/playlist/next"
+      args: []
+
+# Special pad positions:
+# Grid pads: "x,y" where x=0-7, y=0-7
+# Top row: "x,-1" where x=0-7
+# Right column: "8,y" where y=0-7
+```
+
+### Pad Modes Explained
+
+**SELECTOR** (Radio button behavior)
+- Only one pad active per group at a time
+- Pressing a pad deactivates previous pad in group
+- Active pads BLINK with beat on hardware (not in TUI)
+- Use for: Scenes, presets, color palettes, banks
+
+**TOGGLE** (On/Off switch)
+- Press once: ON → sends osc_on
+- Press again: OFF → sends osc_off (if defined)
+- Does NOT blink
+- Use for: Effects, strobes, filters
+
+**ONE_SHOT** (Momentary button)
+- Sends OSC command on press
+- No persistent state
+- Brief flash on hardware
+- Use for: Playlist navigation, bangs, triggers
+
+### Color Palette (Launchpad Mini Mk3)
+
+Standard colors defined in `midi_launchpad.py`:
+```python
+LP_OFF = 0
+LP_RED = 5
+LP_RED_DIM = 1
+LP_ORANGE = 9
+LP_YELLOW = 13
+LP_GREEN = 21
+LP_GREEN_DIM = 17
+LP_CYAN = 37
+LP_BLUE = 45
+LP_BLUE_DIM = 41
+LP_PURPLE = 53
+LP_PINK = 57
+LP_WHITE = 3
+```
+
+## How to Check and Debug
+
+### 1. Check Configuration File
+
+```bash
+# View current config
+cat ~/.config/launchpad-synesthesia/config.yaml
+
+# Validate YAML syntax
+python -c "import yaml; yaml.safe_load(open('~/.config/launchpad-synesthesia/config.yaml'))"
+```
+
+### 2. Test Standalone App
+
+```bash
+cd python-vj
+python -m launchpad_synesthesia_control
+```
+
+**What to verify**:
+- Connection status panel shows Launchpad/OSC state
+- Event log shows OSC messages received
+- Grid shows mapped pads as `○` (inactive) or `●` (active)
+- Unmapped pads show as `·`
+
+### 3. Test Learn Mode Workflow
+
+1. Press `L` → Enter learn mode
+2. Press a pad → Status shows "Waiting for controllable OSC message"
+3. Trigger action in Synesthesia (click scene/preset/control)
+4. Timer starts on FIRST controllable message
+5. Wait 5 seconds → See candidate commands
+6. Select command and configure (WIP - manual config for now)
+
+### 4. Check OSC Communication
+
+```bash
+# Monitor OSC messages (requires oscpy or similar)
+# In another terminal:
+python -c "
+from pythonosc import dispatcher, osc_server
+def print_handler(unused_addr, *args):
+    print(f'{unused_addr}: {args}')
+disp = dispatcher.Dispatcher()
+disp.set_default_handler(print_handler)
+server = osc_server.ThreadingOSCUDPServer(('127.0.0.1', 9001), disp)
+print('OSC Monitor listening on :9001')
+server.serve_forever()
+"
+```
+
+### 5. Manual Config Editing
+
+To manually add mappings without Learn Mode:
+
+```yaml
+# Example: Add scene selector pads in top row
+pads:
+  "0,-1":  # Top-left button
+    mode: SELECTOR
+    group: scenes
+    idle_color: 0
+    active_color: 5
+    label: "Scene 1"
+    osc_action:
+      address: "/scenes/MyScene1"
+      args: []
+  
+  "1,-1":  # Second from left
+    mode: SELECTOR
+    group: scenes
+    idle_color: 0
+    active_color: 9  # Orange
+    label: "Scene 2"
+    osc_action:
+      address: "/scenes/MyScene2"
+      args: []
+```
+
+**After editing**: Restart the app or reload config (if implemented)
+
+## Testing Individual Components
+
+### Test MIDI (without OSC)
+```python
+from launchpad_synesthesia_control.app.io.midi_launchpad import *
+
+config = LaunchpadConfig(auto_detect=True)
+device = LaunchpadDevice(config)
+await device.connect()
+
+# Set LED
+device.set_led(PadId(0, 0), LP_RED)
+device.set_led(PadId(1, 1), LP_GREEN)
+
+# Listen for presses
+def on_pad(pad_id, velocity):
+    print(f"Pressed: {pad_id}")
+device.set_pad_callback(on_pad)
+await device.start_listening()
+```
+
+### Test OSC (without MIDI)
+```python
+from launchpad_synesthesia_control.app.io.osc_synesthesia import *
+
+config = OscConfig(send_port=9000, receive_port=9001)
+osc = OscManager(config)
+await osc.connect()
+
+# Send command
+osc.send(OscCommand("/scenes/TestScene", []))
+
+# Receive
+def on_osc(event):
+    print(f"Received: {event.address} {event.args}")
+osc.set_osc_callback(on_osc)
+```
+
+### Test FSM Logic (pure functions)
+```python
+from launchpad_synesthesia_control.app.domain.fsm import *
+from launchpad_synesthesia_control.app.domain.model import *
+
+# Test pad press
+state = ControllerState()
+state, effects = handle_pad_press(state, PadId(0, 0))
+
+# Test OSC event
+event = OscEvent(time.time(), "/scenes/Test", [])
+state, effects = handle_osc_event(state, event)
+```
+
+## Common Issues & Solutions
+
+### Issue: Launchpad not detected
+**Check**: Is it in Programmer mode?
+- Hold Session → Press orange pad → Release
+**Check**: MIDI permissions on Linux
+```bash
+sudo usermod -a -G audio $USER
+# Re-login required
+```
+
+### Issue: OSC not connecting
+**Check**: Synesthesia OSC settings
+- Input port should be 9000 (default - receives our commands)
+- Output port should be 8000 (default - sends state to us)
+**Check**: Firewall not blocking localhost UDP
+
+### Issue: Config not saving
+**Check**: PyYAML installed
+```bash
+pip install PyYAML
+```
+**Check**: Config directory writable
+```bash
+mkdir -p ~/.config/launchpad-synesthesia
+chmod 755 ~/.config/launchpad-synesthesia
+```
+
+### Issue: Pads not responding
+**Check**: Pad is mapped in config
+**Check**: OSC address is correct (watch Event Log)
+**Check**: Connection status shows green
+
+## AI Assistant Quick Tasks
+
+### Add a new scene mapping
+1. Edit `~/.config/launchpad-synesthesia/config.yaml`
+2. Add under `pads:` with format `"x,y":`
+3. Set mode: SELECTOR, group: scenes
+4. Set osc_action.address to actual scene name from Synesthesia
+5. Choose color (5=red, 21=green, 45=blue, etc.)
+
+### Add a toggle effect
+1. Use mode: TOGGLE
+2. Define osc_on with value for ON state
+3. Define osc_off with value for OFF state (or null)
+4. Don't set group
+
+### Debug OSC messages
+1. Check Event Log panel in TUI
+2. Use /audio/beat/onbeat to verify OSC is working
+3. Controllable messages start with /scenes/, /presets/, /controls/
+
+### Change colors
+- Refer to color palette constants
+- idle_color = color when not active
+- active_color = color when active (blinks with beat for selectors)
+
+## File Structure Quick Reference
+
+```
+launchpad_synesthesia_control/
+├── __init__.py
+├── __main__.py              # Entry point
+├── app/
+│   ├── domain/              # Pure functions, no I/O
+│   │   ├── model.py         # Dataclasses (PadId, PadBehavior, etc.)
+│   │   ├── fsm.py           # State machine (handle_pad_press, etc.)
+│   │   └── blink.py         # Beat sync logic
+│   ├── io/                  # Imperative shell, all I/O
+│   │   ├── midi_launchpad.py  # MIDI driver
+│   │   ├── osc_synesthesia.py # OSC driver
+│   │   └── config.py        # YAML persistence
+│   └── ui/                  # Textual TUI
+│       ├── tui.py           # Main app
+│       └── learn_ui.py      # Learn mode widgets
+```
+
+## Type Signatures Reference
+
+```python
+# Core types
+PadId = dataclass with x: int, y: int
+PadMode = Enum: SELECTOR | TOGGLE | ONE_SHOT
+PadGroupName = Enum: SCENES | PRESETS | BANKS | COLORS | CUSTOM
+
+# Functions
+handle_pad_press(state: ControllerState, pad_id: PadId) 
+    -> Tuple[ControllerState, List[Effect]]
+
+handle_osc_event(state: ControllerState, event: OscEvent)
+    -> Tuple[ControllerState, List[Effect]]
+
+# Effects (side effect descriptions)
+SendOscEffect(command: OscCommand)
+SetLedEffect(pad_id: PadId, color: int, blink: bool)
+SaveConfigEffect()
+LogEffect(message: str, level: str)
+```
+
+## Dependencies
+
+```txt
+textual>=0.50.0      # TUI framework
+python-osc>=1.8.3    # OSC communication
+mido>=1.3.0          # MIDI library
+python-rtmidi>=1.5.0 # MIDI backend
+PyYAML>=6.0          # Config persistence
+```
+
+Install: `cd python-vj && pip install -r requirements.txt`
+
+## Testing Checklist
+
+- [ ] MIDI device auto-detects or shows graceful error
+- [ ] OSC connects or shows graceful error
+- [ ] Config loads or creates default
+- [ ] Learn mode: Press L → select pad → wait for OSC → 5s timer → candidates shown
+- [ ] Pad press sends OSC command
+- [ ] OSC received updates pad state
+- [ ] Beat messages cause LEDs to blink (hardware only)
+- [ ] Config saves after learning
+- [ ] App works without hardware (all features accessible)
+
+---
+
+Last Updated: 2024-12-08
+Version: 1.0.0
+
