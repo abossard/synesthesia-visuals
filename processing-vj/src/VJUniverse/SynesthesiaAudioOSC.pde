@@ -56,12 +56,17 @@ float presenceAll = 0;
 float beatOnSmooth = 0;
 float beatRandom = 0;
 float beatBarPhase = 0;
+float beatHold = 0;
 
 float bpmTwitcher = 0;
 float bpmSin4 = 0;
 float bpmConfidence = 0;
 
 boolean showAudioBars = false;
+boolean audioControlsDirty = true;
+float lastSpeedMixDisplayed = -1;
+float lastSpeedGainDisplayed = -1;
+float lastKickBoostDisplayed = -1;
 
 // Internal helpers
 long lastKickPulseMs = 0;
@@ -80,6 +85,25 @@ final int KICK_COOLDOWN_MS = 140;
 final float BEAT_PHASE_DECAY = 0.87;
 final float BEAT_ON_THRESHOLD = 0.75;
 final float TIMEOUT_DECAY = 0.90;
+final float PRESENCE_SMOOTHING = 0.92;
+final float BPM_LFO_SMOOTHING = 0.85;
+final float BEAT_RANDOM_SMOOTHING = 0.70;
+final float BEAT_ON_SMOOTHING = 0.60;
+final float BEAT_HOLD_DECAY = 0.88f;
+final float BASE_SPEED_FLOOR_MIN = 0.30f;
+final float BASE_SPEED_FLOOR_MAX = 0.45f;
+final float AUDIO_SPEED_GAIN = 0.75f;
+final float AUDIO_SPEED_CURVE = 1.0f;
+final float AUDIO_SPEED_MAX = 1.30f;
+final float AUDIO_KICK_BOOST = 1.00f;
+final float AUDIO_SPEED_IDLE = 1.0f;
+final float AUDIO_DYNAMIC_MIX = 0.70f;
+
+// Live tweak controls
+float uiSpeedMix = AUDIO_DYNAMIC_MIX;
+float uiSpeedGain = AUDIO_SPEED_GAIN;
+float uiKickBoost = AUDIO_KICK_BOOST;
+boolean showAudioControls = false;
 
 // ============================================
 // AUDIO BINDINGS (same interface as legacy AudioManager)
@@ -121,7 +145,7 @@ class AudioBinding {
       case "level": return smoothAudioLevel;
       case "kickEnv": return kickEnv;
       case "kickPulse": return (float)kickPulse;
-      case "beat4": return beat4 / 3.0;
+      case "beat4": return beat4 / 3.0f;
       case "beatPhase": return beatPhaseAudio;
       case "energyFast": return energyFast;
       case "energySlow": return energySlow;
@@ -145,7 +169,7 @@ class AudioBinding {
         result = smoothedValue * multiplier;
         break;
       case "threshold":
-        result = smoothedValue > multiplier ? 1.0 : 0.0;
+        result = smoothedValue > multiplier ? 1.0f : 0.0f;
         break;
       default:
         result = baseValue + smoothedValue * multiplier;
@@ -208,9 +232,18 @@ void handleAudioControlMessage(OscMessage msg) {
   if (addr.equals("/audio/song_style")) {
     songStyle = constrain(getFirstArgAsFloat(msg), 0, 1);
   }
+  else if (addr.equals("/audio/speed_mix")) {
+    uiSpeedMix = constrain(getFirstArgAsFloat(msg), 0.0f, 1.0f);
+  }
+  else if (addr.equals("/audio/speed_gain")) {
+    uiSpeedGain = constrain(getFirstArgAsFloat(msg), 0.1f, 2.0f);
+  }
+  else if (addr.equals("/audio/speed_kick")) {
+    uiKickBoost = constrain(getFirstArgAsFloat(msg), 0.0f, 0.6f);
+  }
   else if (addr.equals("/audio/kick_threshold")) {
     // Threshold kept for compatibility but mapped to envelope multiplier instead
-    float override = constrain(getFirstArgAsFloat(msg), 0.05, 1.0);
+    float override = constrain(getFirstArgAsFloat(msg), 0.05f, 1.0f);
     synAudioValues.put("__kick_threshold", override);
   }
   else if (addr.equals("/audio/show_bars")) {
@@ -293,7 +326,7 @@ void updateSynesthesiaAudio() {
   
   float hitsBass = getAudioValue("/audio/hits/bass", 0);
   float envelopeOverride = getAudioValue("__kick_threshold", KICK_PULSE_THRESHOLD);
-  float threshold = constrain(envelopeOverride, 0.05, 1.0);
+  float threshold = constrain(envelopeOverride, 0.05f, 1.0f);
   kickEnv = lerp(kickEnv, hitsBass, 1 - KICK_ENV_SMOOTHING);
   kickPulse = 0;
   int nowMs = millis();
@@ -304,23 +337,45 @@ void updateSynesthesiaAudio() {
   
   float onBeat = getAudioValue("/audio/beat/onbeat", 0);
   if (onBeat >= BEAT_ON_THRESHOLD && lastOnBeatValue < BEAT_ON_THRESHOLD) {
-    beatPhaseAudio = 1.0;
+    beatPhaseAudio = 1.0f;
   } else {
     beatPhaseAudio *= BEAT_PHASE_DECAY;
   }
+  beatOnSmooth = lerp(beatOnSmooth, onBeat, 1 - BEAT_ON_SMOOTHING);
   lastOnBeatValue = onBeat;
-  
-  float beatTime = getAudioValue("/audio/beat/beattime", 0);
-  int beatCycle = ((int)round(beatTime)) % 8;
+
+  float beatTimeRaw = getAudioValue("/audio/beat/beattime", beatBarPhase * 4.0f);
+  float wrappedBeatTime = beatTimeRaw % 4.0f;
+  if (wrappedBeatTime < 0) wrappedBeatTime += 4.0f;
+  beatBarPhase = wrappedBeatTime / 4.0f;
+
+  int beatCycle = ((int)round(beatTimeRaw)) % 8;
   if (beatCycle < 0) beatCycle += 8;
   beat4 = beatCycle % 4;
-  
-  float presenceBass = getAudioValue("/audio/presence/bass", 0);
-  float presenceHigh = getAudioValue("/audio/presence/high", 0);
+
+  float randomBeat = getAudioValue("/audio/beat/randomonbeat", beatRandom);
+  beatRandom = lerp(beatRandom, randomBeat, 1 - BEAT_RANDOM_SMOOTHING);
+
+  float presenceBassTarget = getAudioValue("/audio/presence/bass", presenceBass);
+  float presenceMidTarget = getAudioValue("/audio/presence/mid", presenceMid);
+  float presenceHighTarget = getAudioValue("/audio/presence/high", presenceHigh);
+  float presenceAllTarget = getAudioValue("/audio/presence/all", presenceAll);
+  presenceBass = lerp(presenceBass, presenceBassTarget, 1 - PRESENCE_SMOOTHING);
+  presenceMid = lerp(presenceMid, presenceMidTarget, 1 - PRESENCE_SMOOTHING);
+  presenceHigh = lerp(presenceHigh, presenceHighTarget, 1 - PRESENCE_SMOOTHING);
+  presenceAll = lerp(presenceAll, presenceAllTarget, 1 - PRESENCE_SMOOTHING);
+
   float presenceSum = presenceBass + presenceHigh;
-  if (presenceSum > 0.0001) {
+  if (presenceSum > 0.0001f) {
     songStyle = constrain(presenceHigh / presenceSum, 0, 1);
   }
+
+  float bpmTwitcherTarget = getAudioValue("/audio/bpm/bpmtwitcher", bpmTwitcher);
+  float bpmSin4Target = getAudioValue("/audio/bpm/bpmsin4", bpmSin4);
+  float bpmConfidenceTarget = getAudioValue("/audio/bpm/bpmconfidence", bpmConfidence);
+  bpmTwitcher = lerp(bpmTwitcher, bpmTwitcherTarget, 1 - BPM_LFO_SMOOTHING);
+  bpmSin4 = lerp(bpmSin4, bpmSin4Target, 1 - BPM_LFO_SMOOTHING);
+  bpmConfidence = lerp(bpmConfidence, bpmConfidenceTarget, 1 - BPM_LFO_SMOOTHING);
   
   if (!active) {
     smoothAudioBass *= TIMEOUT_DECAY;
@@ -332,6 +387,16 @@ void updateSynesthesiaAudio() {
     energySlow *= TIMEOUT_DECAY;
     kickEnv *= TIMEOUT_DECAY;
     beatPhaseAudio *= TIMEOUT_DECAY;
+    presenceBass *= TIMEOUT_DECAY;
+    presenceMid *= TIMEOUT_DECAY;
+    presenceHigh *= TIMEOUT_DECAY;
+    presenceAll *= TIMEOUT_DECAY;
+    beatOnSmooth *= TIMEOUT_DECAY;
+    beatRandom *= TIMEOUT_DECAY;
+    beatBarPhase *= TIMEOUT_DECAY;
+    bpmTwitcher *= TIMEOUT_DECAY;
+    bpmSin4 *= TIMEOUT_DECAY;
+    bpmConfidence *= TIMEOUT_DECAY;
   }
   
   updateBoundUniforms();
@@ -367,6 +432,34 @@ float getBoundUniformValue(String uniformName, float defaultValue) {
   return val != null ? val : defaultValue;
 }
 
+float computeAudioReactiveSpeed() {
+  if (!isSynAudioActive()) {
+    return AUDIO_SPEED_IDLE;
+  }
+
+  float energyDriver = constrain(max(max(energyFast, energySlow), presenceAll), 0, 1);
+  float beatPulse = max(max((float)kickPulse, beatOnSmooth), beatPhaseAudio);
+  beatHold = max(beatHold * BEAT_HOLD_DECAY, beatPulse);
+
+  float baseFloor = BASE_SPEED_FLOOR_MIN + presenceAll * 0.05f;
+  baseFloor = constrain(baseFloor, BASE_SPEED_FLOOR_MIN, BASE_SPEED_FLOOR_MAX);
+
+  float offbeatLift = energyDriver * 0.16f;
+
+  float beatBaseBoost = 0.85f;
+  float beatEnergyBonus = energyDriver * 0.55f;
+  float beatScale = 1.00f + 0.30f * (uiKickBoost / AUDIO_KICK_BOOST);
+  float beatContribution = beatHold * (beatBaseBoost + beatEnergyBonus) * beatScale;
+
+  float tempoBreathe = (0.5f + 0.5f * sin(TWO_PI * beatBarPhase)) * 0.04f * (1.0f - uiSpeedMix);
+
+  float dynamic = offbeatLift + beatContribution;
+  float audioSpeed = baseFloor + uiSpeedGain * dynamic + tempoBreathe;
+
+  audioSpeed = constrain(audioSpeed, baseFloor, AUDIO_SPEED_MAX);
+  return audioSpeed;
+}
+
 void setupDefaultAudioBindings() {
   audioBindings.clear();
   boundUniformValues.clear();
@@ -381,77 +474,77 @@ void setupDefaultAudioBindings() {
       continue;
     }
     if (lower.contains("speed") || lower.contains("rate") || lower.contains("velocity")) {
-      addAudioBinding(name, "energyFast", "multiply", 2.0, 0.8, baseVal, 0.1, baseVal * 3);
+      addAudioBinding(name, "energyFast", "multiply", 2.0f, 0.8f, baseVal, 0.1f, baseVal * 3.0f);
       continue;
     }
     if (lower.contains("scale") || lower.contains("zoom") || lower.contains("size")) {
-      addAudioBinding(name, "bass", "add", 0.5, 0.7, baseVal, baseVal * 0.5, baseVal * 2);
+      addAudioBinding(name, "bass", "add", 0.5f, 0.7f, baseVal, baseVal * 0.5f, baseVal * 2.0f);
       continue;
     }
     if (lower.contains("intensity") || lower.contains("brightness") || lower.contains("amount") ||
         lower.contains("strength") || lower.contains("power")) {
-      addAudioBinding(name, "level", "multiply", 1.5, 0.6, baseVal, 0.0, 1.0);
+      addAudioBinding(name, "level", "multiply", 1.5f, 0.6f, baseVal, 0.0f, 1.0f);
       continue;
     }
     if (lower.contains("distort") || lower.contains("warp") || lower.contains("noise") ||
         lower.contains("glitch") || lower.contains("chaos")) {
-      addAudioBinding(name, "kickEnv", "add", 0.8, 0.5, baseVal * 0.3, 0.0, 1.0);
+      addAudioBinding(name, "kickEnv", "add", 0.8f, 0.5f, baseVal * 0.3f, 0.0f, 1.0f);
       continue;
     }
     if (lower.contains("rotat") || lower.contains("angle") || lower.contains("spin")) {
-      addAudioBinding(name, "mid", "add", 0.5, 0.75, baseVal, baseVal - 0.5, baseVal + 0.5);
+      addAudioBinding(name, "mid", "add", 0.5f, 0.75f, baseVal, baseVal - 0.5f, baseVal + 0.5f);
       continue;
     }
     if (lower.contains("offset") || lower.contains("shift") || lower.contains("displace")) {
-      addAudioBinding(name, "highs", "add", 0.3, 0.6, baseVal, baseVal - 0.3, baseVal + 0.3);
+      addAudioBinding(name, "highs", "add", 0.3f, 0.6f, baseVal, baseVal - 0.3f, baseVal + 0.3f);
       continue;
     }
     if (lower.contains("freq") || lower.contains("wave")) {
-      addAudioBinding(name, "bass", "multiply", 1.5, 0.7, baseVal, baseVal * 0.5, baseVal * 2);
+      addAudioBinding(name, "bass", "multiply", 1.5f, 0.7f, baseVal, baseVal * 0.5f, baseVal * 2.0f);
       continue;
     }
     if (lower.contains("blend") || lower.contains("mix") || lower.contains("fade") ||
         lower.contains("alpha") || lower.contains("opacity")) {
-      addAudioBinding(name, "energySlow", "replace", 1.0, 0.9, 0.5, 0.0, 1.0);
+      addAudioBinding(name, "energySlow", "replace", 1.0f, 0.9f, 0.5f, 0.0f, 1.0f);
       continue;
     }
     if (lower.contains("iter") || lower.contains("step") || lower.contains("detail") ||
         lower.contains("octave")) {
-      addAudioBinding(name, "level", "multiply", 1.0, 0.8, baseVal, baseVal * 0.5, baseVal * 1.5);
+      addAudioBinding(name, "level", "multiply", 1.0f, 0.8f, baseVal, baseVal * 0.5f, baseVal * 1.5f);
       continue;
     }
     if (lower.contains("glow") || lower.contains("bloom") || lower.contains("bright") ||
         lower.contains("lumi") || lower.contains("emit")) {
-      addAudioBinding(name, "level", "multiply", 2.0, 0.7, baseVal, baseVal * 0.3, baseVal * 3);
+      addAudioBinding(name, "level", "multiply", 2.0f, 0.7f, baseVal, baseVal * 0.3f, baseVal * 3.0f);
       continue;
     }
     if (lower.contains("radius") || lower.contains("width") || lower.contains("thick") ||
         lower.contains("stroke") || lower.contains("line")) {
-      addAudioBinding(name, "bass", "add", 0.4, 0.75, baseVal, baseVal * 0.5, baseVal * 2);
+      addAudioBinding(name, "bass", "add", 0.4f, 0.75f, baseVal, baseVal * 0.5f, baseVal * 2.0f);
       continue;
     }
     if (lower.contains("pulse") || lower.contains("beat") || lower.contains("kick") ||
         lower.contains("hit") || lower.contains("impact")) {
-      addAudioBinding(name, "kickEnv", "replace", 1.0, 0.4, 0.0, 0.0, 1.0);
+      addAudioBinding(name, "kickEnv", "replace", 1.0f, 0.4f, 0.0f, 0.0f, 1.0f);
       continue;
     }
     if (lower.contains("morph") || lower.contains("transform") || lower.contains("evolve") ||
         lower.contains("mutate")) {
-      addAudioBinding(name, "energySlow", "replace", 1.0, 0.85, 0.5, 0.0, 1.0);
+      addAudioBinding(name, "energySlow", "replace", 1.0f, 0.85f, 0.5f, 0.0f, 1.0f);
       continue;
     }
     if (lower.contains("turb") || lower.contains("complex") || lower.contains("density") ||
         lower.contains("rough")) {
-      addAudioBinding(name, "mid", "multiply", 1.5, 0.7, baseVal, baseVal * 0.5, baseVal * 2);
+      addAudioBinding(name, "mid", "multiply", 1.5f, 0.7f, baseVal, baseVal * 0.5f, baseVal * 2.0f);
       continue;
     }
     if (lower.equals("seed") || lower.equals("rnd") || lower.contains("random") ||
         lower.contains("jitter")) {
-      addAudioBinding(name, "highs", "add", 0.5, 0.5, baseVal, baseVal * 0.5, baseVal * 1.5);
+      addAudioBinding(name, "highs", "add", 0.5f, 0.5f, baseVal, baseVal * 0.5f, baseVal * 1.5f);
       continue;
     }
     if (lower.contains("contrast") || lower.contains("gamma") || lower.contains("curve")) {
-      addAudioBinding(name, "level", "multiply", 1.2, 0.8, baseVal, baseVal * 0.8, baseVal * 1.5);
+      addAudioBinding(name, "level", "multiply", 1.2f, 0.8f, baseVal, baseVal * 0.8f, baseVal * 1.5f);
       continue;
     }
   }
@@ -466,15 +559,17 @@ void setupDefaultAudioBindings() {
 
 void drawAudioBars() {
   if (!showAudioBars && !debugMode) return;
-  int startX = width - 300;
+  int startX = width - 360;
   int startY = 20;
   int barWidth = 30;
   int barHeight = 150;
   int barSpacing = 5;
+  int barCount = 10;
+  int panelWidth = barCount * (barWidth + barSpacing) - barSpacing + 20;
   
   fill(0, 180);
   noStroke();
-  rect(startX - 10, startY - 10, 290, barHeight + 60);
+  rect(startX - 10, startY - 10, panelWidth, barHeight + 60);
   
   drawBarSegment(startX, startY, barWidth, barHeight, "BASS", smoothAudioBass, color(255, 70, 50));
   drawBarSegment(startX + (barWidth + barSpacing), startY, barWidth, barHeight, "LOWM", smoothAudioLowMid, color(255, 150, 60));
@@ -484,6 +579,9 @@ void drawAudioBars() {
   drawBarSegment(startX + 5 * (barWidth + barSpacing), startY, barWidth, barHeight, "BEAT", kickEnv, color(255, 60, 220));
   drawBarSegment(startX + 6 * (barWidth + barSpacing), startY, barWidth, barHeight, "E-F", energyFast, color(255, 200, 90));
   drawBarSegment(startX + 7 * (barWidth + barSpacing), startY, barWidth, barHeight, "E-S", energySlow, color(90, 200, 255));
+  drawBarSegment(startX + 8 * (barWidth + barSpacing), startY, barWidth, barHeight, "PR", presenceAll, color(120, 255, 190));
+  float tempoSinValue = constrain((bpmSin4 * 0.5f) + 0.5f, 0, 1);
+  drawBarSegment(startX + 9 * (barWidth + barSpacing), startY, barWidth, barHeight, "TMP", tempoSinValue, color(160, 160, 255));
   
   int beatX = startX;
   int beatY = startY + barHeight + 20;
@@ -494,9 +592,13 @@ void drawAudioBars() {
   textAlign(LEFT, CENTER);
   text("BEAT:" + beat4, beatX + 35, beatY + 10);
   text("AGE:" + nf(synAudioAgeSeconds(), 0, 1) + "s", beatX + 120, beatY + 10);
+
+  if (showAudioControls || debugMode) {
+    drawAudioControlPanel(startX - 150, startY + barHeight + 60);
+  }
 }
 
-void drawBarSegment(int x, int y, int w, int h, String label, float value, color c) {
+void drawBarSegment(int x, int y, int w, int h, String label, float value, int c) {
   fill(40);
   rect(x, y, w, h);
   float barH = constrain(value, 0, 1) * h;
@@ -508,6 +610,56 @@ void drawBarSegment(int x, int y, int w, int h, String label, float value, color
   text(label, x + w / 2, y + h + 3);
   textSize(8);
   text(nf(value, 0, 2), x + w / 2, y + h + 15);
+}
+
+void drawAudioControlPanel(int x, int y) {
+  int panelW = 140;
+  int panelH = 110;
+  fill(0, 200);
+  stroke(80);
+  rect(x, y, panelW, panelH, 6);
+  fill(220);
+  textAlign(LEFT, TOP);
+  textSize(11);
+  text("Audio Speed Controls", x + 10, y + 8);
+  textSize(10);
+  drawSlider(x + 10, y + 30, panelW - 20, "Mix", uiSpeedMix, 0, 1);
+  drawSlider(x + 10, y + 55, panelW - 20, "Gain", uiSpeedGain, 0.1f, 2.0f);
+  drawSlider(x + 10, y + 80, panelW - 20, "Beat", uiKickBoost, 0.0f, 1.2f);
+}
+
+void drawSlider(int x, int y, int w, String label, float value, float minV, float maxV) {
+  fill(140);
+  rect(x, y, w, 10, 4);
+  float t = (value - minV) / (maxV - minV);
+  t = constrain(t, 0, 1);
+  float knobX = x + t * w;
+  fill(255);
+  ellipse(knobX, y + 5, 10, 10);
+  fill(210);
+  textAlign(LEFT, CENTER);
+  text(label + " " + nf(value, 0, 2), x, y - 8);
+}
+
+boolean handleAudioControlMouse(int mouseX, int mouseY) {
+  if (!showAudioControls && !debugMode) return false;
+  int startX = width - 360 - 150;
+  int startY = 20 + 150 + 60;
+  int panelW = 140;
+  int panelH = 110;
+  if (mouseX < startX || mouseX > startX + panelW || mouseY < startY || mouseY > startY + panelH) {
+    return false;
+  }
+  float slider1 = map(constrain(mouseX, startX + 10, startX + panelW - 10), startX + 10, startX + panelW - 10, 0, 1);
+  float sliderValue = slider1;
+  if (mouseY >= startY + 30 && mouseY <= startY + 40) {
+    uiSpeedMix = sliderValue;
+  } else if (mouseY >= startY + 55 && mouseY <= startY + 65) {
+    uiSpeedGain = 0.1f + sliderValue * (2.0f - 0.1f);
+  } else if (mouseY >= startY + 80 && mouseY <= startY + 90) {
+    uiKickBoost = sliderValue * 1.2f;
+  }
+  return true;
 }
 
 // ============================================
@@ -529,6 +681,23 @@ void applyAudioUniformsToShader(PShader s) {
     s.set("beat4", beat4 / 3.0f);
     s.set("energyFast", energyFast);
     s.set("energySlow", energySlow);
+    s.set("presenceLow", presenceBass);
+    s.set("presenceMid", presenceMid);
+    s.set("presenceHigh", presenceHigh);
+    s.set("presenceAll", presenceAll);
+    s.set("beatOn", beatOnSmooth);
+    s.set("beatRandom", beatRandom);
+    s.set("beatBarPhase", beatBarPhase);
+
+    float tempoSaw = constrain(bpmTwitcher, 0, 1);
+    float tempoSin = constrain((bpmSin4 * 0.5f) + 0.5f, 0, 1);
+    float beatGroove = max(beatPhaseAudio, beatOnSmooth);
+    float reactiveSpeed = computeAudioReactiveSpeed();
+    s.set("speed", reactiveSpeed);
+    s.set("tempoSaw", tempoSaw);
+    s.set("tempoSin", tempoSin);
+    s.set("tempoConfidence", bpmConfidence);
+    s.set("beatGroove", beatGroove);
     
     for (String uniform : boundUniformValues.keySet()) {
       s.set(uniform, boundUniformValues.get(uniform));

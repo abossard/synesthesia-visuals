@@ -48,6 +48,12 @@ ArrayList<PShader> activeShaderPipeline = new ArrayList<PShader>();
 // State
 boolean debugMode = true;
 float globalTime = 0;
+// Audio-reactive time accumulator keeps shaders synced to beat without new uniforms
+float audioTime = 0;
+float lastFrameTime = -1;
+float smoothedAudioSpeed = 1.0f;
+float lastAudioSpeedTarget = 1.0f;
+final float AUDIO_SPEED_SMOOTHING = 0.65f;
 
 // Debug console
 boolean consoleActive = false;
@@ -130,6 +136,19 @@ void draw() {
   
   // Update audio parameters from OSC feed
   updateSynesthesiaAudio();
+  float deltaTime = 0;
+  if (lastFrameTime >= 0) {
+    deltaTime = globalTime - lastFrameTime;
+  }
+  if (deltaTime <= 0 || deltaTime > 1.0f) {
+    deltaTime = 1.0f / 60.0f;
+  }
+  float targetSpeed = computeAudioReactiveSpeed();
+  lastAudioSpeedTarget = targetSpeed;
+  smoothedAudioSpeed = lerp(smoothedAudioSpeed, targetSpeed, 1 - AUDIO_SPEED_SMOOTHING);
+  float frameSpeed = constrain(smoothedAudioSpeed, BASE_SPEED_FLOOR_MIN, AUDIO_SPEED_MAX);
+  audioTime += deltaTime * frameSpeed;
+  lastFrameTime = globalTime;
   
   // Check for shader file changes (auto-reload)
   reloadShadersIfChanged();
@@ -179,7 +198,7 @@ void draw() {
   // Update shader cycling if active
   updateShaderCycling();
   
-  // Draw audio bars (AudioManager.pde)
+  // Draw audio bars (OSC listener HUD)
   drawAudioBars();
   
   // Draw debug overlay
@@ -298,12 +317,12 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
   // Set uniforms safely - Processing warns but doesn't crash if uniform unused
   // These warnings are expected and harmless
   try {
-    // Standard uniforms (most shaders use these)
-    s.set("time", globalTime);
+    // Standard uniforms (most shaders use these) - time now follows audio-reactive clock
+    s.set("time", audioTime);
     s.set("resolution", w, h);
     
     // ISF compatibility uniforms
-    s.set("TIME", globalTime);
+    s.set("TIME", audioTime);
     s.set("RENDERSIZE", w, h);
     
     // Mouse uniform (for Shadertoy-style GLSL shaders)
@@ -323,10 +342,15 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     // Key hook for GLSL shader audio reactivity
     // Uses energyFast which responds well to music dynamics
     // Adaptive tempo: ensure motion never fully stops and swells with energy + kick dynamics
-    float baseSpeedFloor = 0.15f + energySlow * 0.15f;   // 0.15 – 0.30 based on long envelope
+    float tempoSaw = constrain(bpmTwitcher, 0, 1);
+    float tempoSin = constrain((bpmSin4 * 0.5f) + 0.5f, 0, 1);
+    float beatGroove = max(beatPhaseAudio, beatOnSmooth);
+    float slowDriver = lerp(energySlow, max(tempoSin, beatGroove), 0.5f);
+    float dynamicDriver = max(max(energyFast, slowDriver), tempoSaw);
+    float baseSpeedFloor = 0.15f + energySlow * 0.20f;   // 0.15 – 0.35 based on long envelope
     float speedRange = max(0.0f, 1.0f - baseSpeedFloor);
-    float audioSpeed = baseSpeedFloor + (energyFast * speedRange);
-    audioSpeed += 0.08f * kickEnv;  // Gentle beat accent, keeps impact without spikes
+    float audioSpeed = baseSpeedFloor + (dynamicDriver * speedRange);
+    audioSpeed += 0.05f * kickEnv;  // Gentle beat accent, keeps impact without spikes
     audioSpeed = constrain(audioSpeed, baseSpeedFloor, 1.0f);
     s.set("speed", audioSpeed);
     
@@ -558,6 +582,11 @@ void keyPressed() {
     case 'B':
       showAudioBars = !showAudioBars;  // Toggle audio bars visibility
       break;
+    case 'c':
+    case 'C':
+      showAudioControls = !showAudioControls;
+      println("Audio controls: " + (showAudioControls ? "ON" : "OFF"));
+      break;
     case 'z':
       shaderZoom = max(0.1, shaderZoom - 0.1);  // Zoom out
       println("Shader zoom: " + nf(shaderZoom, 1, 2));
@@ -600,6 +629,13 @@ void keyPressed() {
         println("Pan DOWN: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
         break;
     }
+  }
+}
+
+void mousePressed() {
+  if (consoleActive) return;
+  if (handleAudioControlMouse(mouseX, mouseY)) {
+    println("Speed mix=" + nf(uiSpeedMix,0,2) + " gain=" + nf(uiSpeedGain,0,2) + " kick=" + nf(uiKickBoost,0,2));
   }
 }
 
@@ -646,6 +682,12 @@ void drawDebugOverlay() {
   text("  Energy: " + nf(energyFast, 0, 2) + " (slow: " + nf(energySlow, 0, 2) + ")", 20, y); y += lineHeight;
   text("  Kick: " + nf(kickEnv, 0, 2) + " | Beat: " + beat4, 20, y); y += lineHeight;
   text("  Bindings: " + audioBindings.size(), 20, y); y += lineHeight;
+  float tempoSawDbg = constrain(bpmTwitcher, 0, 1);
+  float tempoSinDbg = constrain((bpmSin4 * 0.5f) + 0.5f, 0, 1);
+  text("  Tempo: sin=" + nf(tempoSinDbg, 0, 2) + " saw=" + nf(tempoSawDbg, 0, 2) + " rand=" + nf(beatRandom, 0, 2), 20, y); y += lineHeight;
+  text("  Presence: low=" + nf(presenceBass, 0, 2) + " mid=" + nf(presenceMid, 0, 2) + " high=" + nf(presenceHigh, 0, 2), 20, y); y += lineHeight;
+  text("  Time: t=" + nf(audioTime, 0, 2) + " speed=" + nf(smoothedAudioSpeed, 0, 2) + " tgt=" + nf(lastAudioSpeedTarget, 0, 2), 20, y); y += lineHeight;
+  text("  Controls: mix=" + nf(uiSpeedMix, 0, 2) + " gain=" + nf(uiSpeedGain, 0, 2) + " kick=" + nf(uiKickBoost, 0, 2), 20, y); y += lineHeight;
   y += 5;
   
   // Shader info with type filter
