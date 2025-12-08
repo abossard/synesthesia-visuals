@@ -255,37 +255,6 @@ class TestSettings(unittest.TestCase):
             self.assertAlmostEqual(settings.timing_offset_sec, -0.3)
 
 
-class TestAudioSetup(unittest.TestCase):
-    """Tests for audio_setup module."""
-    
-    def test_imports(self):
-        """All classes should be importable."""
-        from audio_setup import AudioSetup, AudioDevice, print_status
-    
-    def test_audio_device_dataclass(self):
-        """AudioDevice should store device info."""
-        from audio_setup import AudioDevice
-        
-        dev = AudioDevice(
-            name="Test Device",
-            uid="test-123",
-            device_id=1,
-            is_input=True,
-            is_output=False
-        )
-        
-        self.assertEqual(dev.name, "Test Device")
-        self.assertEqual(dev.uid, "test-123")
-        self.assertTrue(dev.is_input)
-        self.assertFalse(dev.is_output)
-    
-    def test_audio_setup_instantiation(self):
-        """AudioSetup should instantiate without errors."""
-        from audio_setup import AudioSetup
-        
-        setup = AudioSetup()
-        self.assertIsNotNone(setup)
-
 
 class TestVJConsole(unittest.TestCase):
     """Tests for process_manager module."""
@@ -344,18 +313,6 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("vj_console.py", result.stdout)  # Should recommend main script
     
-    def test_audio_setup_help(self):
-        """audio_setup.py --help should work."""
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "audio_setup.py", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("--fix", result.stdout)
-
 
 class TestConfig(unittest.TestCase):
     """Tests for Config class."""

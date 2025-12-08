@@ -12,7 +12,7 @@
 - **Domain**: immutable dataclasses and helpers already isolated in [python-vj/domain.py](python-vj/domain.py).
 - **Infrastructure**: settings/backoff/pipeline state in [python-vj/infrastructure.py](python-vj/infrastructure.py) bridging `.env`, macOS defaults, and telemetry.
 - **Adapters & Services**: third-party integrations concentrated in [python-vj/adapters.py](python-vj/adapters.py) and [python-vj/ai_services.py](python-vj/ai_services.py).
-- **Audio Stack**: Essentia analyzer, watchdog, and diagnostics in [python-vj/Synesthesia (removed)](python-vj/Synesthesia (removed)) plus system setup helpers in [python-vj/audio_setup.py](python-vj/audio_setup.py).
+- **Audio Stack**: Audio analysis now handled by Synesthesia (external). Python audio analyzer removed.
 - **Orchestration**: lyric/AI pipelines in [python-vj/orchestrators.py](python-vj/orchestrators.py) and coordination glue in [python-vj/karaoke_engine.py](python-vj/karaoke_engine.py).
 - **Runtime Shells**: OSC transport ([python-vj/osc_manager.py](python-vj/osc_manager.py)), Processing supervisor ([python-vj/process_manager.py](python-vj/process_manager.py)), and the Textual UI ([python-vj/vj_console.py](python-vj/vj_console.py)).
 
