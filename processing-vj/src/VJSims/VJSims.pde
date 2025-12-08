@@ -1,7 +1,7 @@
 /**
  * VJSims — Processing VJ Simulation Framework
  * 
- * Framework for interactive VJ simulations with Synesthesia Audio OSC support.
+ * Non-interactive visual framework with Synesthesia Audio OSC support.
  * Outputs via Syphon for compositing in Magic/Synesthesia.
  * 
  * Requirements:
@@ -12,7 +12,7 @@
  * Audio Reactivity:
  * - Synesthesia Audio OSC: Receive real-time audio analysis from Synesthesia
  *   (bass, mid, high levels, BPM, spectrum, etc.)
- * - Keyboard fallback: Simulate audio hits for testing without Synesthesia
+ * - Auto-running visual simulation driven by audio
  */
 
 import codeanticode.syphon.*;
@@ -21,17 +21,18 @@ import codeanticode.syphon.*;
 // CORE COMPONENTS
 // ============================================
 
-// Shared context (framebuffer, syphon, audio, config)
-SharedContext ctx;
+// Syphon output
+SyphonServer syphon;
 
-// Level management
-LevelManager levelManager;
+// Framebuffer
+PGraphics canvas;
 
-// Input collection
-Inputs inputs;
+// Audio simulation (for testing without Synesthesia)
+AudioEnvelope bassEnv, midEnv, highEnv;
 
 // Timing
 int lastFrameTime;
+float time = 0;
 
 // ============================================
 // SETTINGS
@@ -48,63 +49,24 @@ void settings() {
 void setup() {
   frameRate(60);
   
-  // Initialize shared context
-  ctx = new SharedContext(this);
+  // Initialize framebuffer
+  canvas = createGraphics(width, height, P3D);
   
-  // Initialize inputs collector
-  inputs = new Inputs();
+  // Initialize Syphon
+  syphon = new SyphonServer(this, "VJSims");
   
-  // Initialize level manager
-  levelManager = new LevelManager(ctx);
+  // Initialize audio envelopes for simulation
+  bassEnv = new AudioEnvelope(0.1, 0.3);  // Fast attack, medium decay
+  midEnv = new AudioEnvelope(0.15, 0.4);
+  highEnv = new AudioEnvelope(0.05, 0.2); // Very fast
   
-  // Register levels
-  registerLevels();
-  
-  // Start first level
-  levelManager.start();
-
-  println("VJSims initialized");
+  println("VJSims initialized (non-interactive mode)");
   println("  Syphon server: VJSims");
   println("  Resolution: " + width + "x" + height);
-  println("  Levels: " + levelManager.getLevelCount());
   println("  Audio: Synesthesia OSC (TODO: implement OSC listener)");
-  println();
-  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  println("  KEYBOARD CONTROLS");
-  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  println("  Level Selection:");
-  println("    1-8          Switch to level 1-8");
-  println("    ← →          Previous/Next level");
-  println();
-  println("  Level Control:");
-  println("    S            Start level");
-  println("    R            Reset level");
-  println("    P            Pause/Resume");
-  println();
-  println("  Audio Simulation:");
-  println("    SPACE        Trigger beat (all bands)");
-  println("    B            Bass hit");
-  println("    M            Mid hit");
-  println("    H            High hit");
-  println();
-  println("  System:");
-  println("    ESC          Quit");
-  println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  println();
+  println("  Mode: Auto-running visual simulation");
   
   lastFrameTime = millis();
-}
-
-// ============================================
-// LEVEL REGISTRATION
-// ============================================
-
-void registerLevels() {
-  // Add simulation levels here
-  // levelManager.addLevel(new MyCustomLevel());
-  
-  // Default empty level
-  levelManager.addLevel(new EmptyLevel());
 }
 
 // ============================================
@@ -116,98 +78,93 @@ void draw() {
   int currentTime = millis();
   float dt = (currentTime - lastFrameTime) / 1000.0;
   lastFrameTime = currentTime;
+  time += dt;
   
-  // Begin framebuffer
-  ctx.canvas.beginDraw();
+  // Update audio envelopes
+  bassEnv.update(dt);
+  midEnv.update(dt);
+  highEnv.update(dt);
   
-  // Update level manager
-  levelManager.update(dt);
+  // Auto-trigger audio simulation (simulates beats at ~120 BPM)
+  if (frameCount % 30 == 0) {  // Every 0.5 seconds at 60fps
+    bassEnv.trigger();
+  }
+  if (frameCount % 15 == 0) {  // Every 0.25 seconds
+    midEnv.trigger();
+  }
+  if (frameCount % 7 == 0) {   // Faster
+    highEnv.trigger();
+  }
   
-  // Render active level
-  levelManager.render();
-  
-  // End framebuffer
-  ctx.canvas.endDraw();
+  // Render to framebuffer
+  canvas.beginDraw();
+  renderSimulation(canvas, dt);
+  canvas.endDraw();
   
   // Display on screen
-  image(ctx.canvas, 0, 0);
+  image(canvas, 0, 0);
   
   // Send to Syphon
-  ctx.syphon.sendImage(ctx.canvas);
-  
-  // Optional: Display info overlay
-  if (ctx.showInfo) {
-    fill(255);
-    textAlign(LEFT, TOP);
-    text("FPS: " + int(frameRate), 20, 20);
-    text("Level: " + levelManager.getCurrentLevelName(), 20, 40);
-    text("Audio: Synesthesia OSC (TODO)", 20, 60);
-  }
+  syphon.sendImage(canvas);
 }
 
 // ============================================
-// KEYBOARD HANDLING
+// RENDERING
 // ============================================
 
-void keyPressed() {
-  // Level selection (1-8)
-  if (key >= '1' && key <= '8') {
-    int levelIndex = key - '1';
-    levelManager.switchToLevel(levelIndex);
-    return;
+void renderSimulation(PGraphics pg, float dt) {
+  // Simple audio-reactive visual
+  pg.background(0);
+  
+  // Audio-reactive colors
+  float bassLevel = bassEnv.getLevel();
+  float midLevel = midEnv.getLevel();
+  float highLevel = highEnv.getLevel();
+  
+  // Draw audio-reactive gradient
+  pg.noStroke();
+  for (int y = 0; y < pg.height; y++) {
+    float t = map(y, 0, pg.height, 0, 1);
+    pg.fill(
+      bassLevel * 255 * (1 - t),
+      midLevel * 255 * t,
+      highLevel * 255
+    );
+    pg.rect(0, y, pg.width, 1);
   }
   
-  // Level navigation
-  if (keyCode == LEFT) {
-    levelManager.previousLevel();
-    return;
-  }
-  if (keyCode == RIGHT) {
-    levelManager.nextLevel();
-    return;
-  }
+  // Draw pulsing circles
+  pg.pushMatrix();
+  pg.translate(pg.width/2, pg.height/2);
   
-  // Level control
-  if (key == 's' || key == 'S') {
-    levelManager.start();
-    return;
-  }
-  if (key == 'r' || key == 'R') {
-    levelManager.reset();
-    return;
-  }
-  if (key == 'p' || key == 'P') {
-    levelManager.togglePause();
-    return;
-  }
+  // Bass circle
+  float bassSize = 100 + bassLevel * 200;
+  pg.noFill();
+  pg.strokeWeight(3);
+  pg.stroke(255, 100, 100, 200);
+  pg.ellipse(0, 0, bassSize, bassSize);
   
-  // Audio simulation (for testing without Synesthesia)
-  if (key == ' ') {
-    // Trigger all bands
-    ctx.audio.triggerBeat();
-    ctx.audio.bass.trigger();
-    ctx.audio.mid.trigger();
-    ctx.audio.high.trigger();
-    return;
-  }
-  if (key == 'b' || key == 'B') {
-    ctx.audio.bass.trigger();
-    return;
-  }
-  if (key == 'm' || key == 'M') {
-    ctx.audio.mid.trigger();
-    return;
-  }
-  if (key == 'h' || key == 'H') {
-    ctx.audio.high.trigger();
-    return;
-  }
+  // Mid circle
+  float midSize = 150 + midLevel * 150;
+  pg.stroke(100, 255, 100, 200);
+  pg.ellipse(0, 0, midSize, midSize);
   
-  // System
-  if (key == 'i' || key == 'I') {
-    ctx.showInfo = !ctx.showInfo;
-    return;
-  }
+  // High circle
+  float highSize = 200 + highLevel * 100;
+  pg.stroke(100, 100, 255, 200);
+  pg.ellipse(0, 0, highSize, highSize);
+  
+  pg.popMatrix();
+  
+  // Rotating elements driven by time
+  pg.pushMatrix();
+  pg.translate(pg.width/2, pg.height/2);
+  pg.rotate(time * 0.5);
+  pg.stroke(255, 150);
+  pg.strokeWeight(2);
+  pg.noFill();
+  pg.rect(-100, -100, 200, 200);
+  pg.popMatrix();
 }
 
 // ============================================
