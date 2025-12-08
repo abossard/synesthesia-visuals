@@ -52,6 +52,7 @@ class LyricsFetcher:
     BASE_URL = "https://lrclib.net/api"
     LM_STUDIO_URL = "http://localhost:1234"
     CACHE_TTL_SECONDS = 86400 * 7  # 7 days
+    LM_RECHECK_INTERVAL = 30  # seconds between availability retries when offline
     
     def __init__(self, cache_dir: Optional[Path] = None):
         self._cache_dir = cache_dir or Config.DEFAULT_LYRICS_CACHE_DIR
@@ -60,6 +61,7 @@ class LyricsFetcher:
         self._session.headers["User-Agent"] = "KaraokeEngine/1.0"
         self._lmstudio_available = None
         self._lmstudio_model = None
+        self._lmstudio_last_check = 0.0
     
     # =========================================================================
     # PUBLIC API
@@ -161,8 +163,13 @@ class LyricsFetcher:
     
     def _check_lmstudio(self) -> bool:
         """Check if LM Studio is available."""
+        now = time.time()
         if self._lmstudio_available is not None:
-            return self._lmstudio_available
+            if self._lmstudio_available:
+                return True
+            # If previously offline, recheck after interval
+            if (now - self._lmstudio_last_check) < self.LM_RECHECK_INTERVAL:
+                return False
         
         try:
             resp = self._session.get(f"{self.LM_STUDIO_URL}/v1/models", timeout=2)
@@ -171,12 +178,14 @@ class LyricsFetcher:
                 if models:
                     self._lmstudio_model = models[0].get('id', 'local-model')
                     self._lmstudio_available = True
+                    self._lmstudio_last_check = now
                     logger.debug(f"LM Studio available: {self._lmstudio_model}")
                     return True
         except Exception:
             pass
         
         self._lmstudio_available = False
+        self._lmstudio_last_check = now
         return False
     
     def _ask_lmstudio(self, system_prompt: str, user_prompt: str, timeout: int = 90) -> Optional[str]:

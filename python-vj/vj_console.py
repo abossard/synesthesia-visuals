@@ -1391,7 +1391,7 @@ class VJConsoleApp(App):
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         
-        # MIDI Router
+        # MIDI Router (lazy start)
         self.midi_router: Optional[MidiRouter] = None
         self.midi_messages: List[Tuple[float, str, Any]] = []  # (timestamp, direction, message)
         self._setup_midi_router()
@@ -1436,14 +1436,9 @@ class VJConsoleApp(App):
                 )
                 config_manager.save(config)
             
-            # Create router
+            # Create router but do not auto-start; user can start via UI/CLI when needed
             self.midi_router = MidiRouter(config_manager)
-            
-            # Try to start (will fail gracefully if no MIDI devices)
-            if self.midi_router.start(config):
-                logger.info("MIDI router started successfully")
-            else:
-                logger.warning("MIDI router failed to start (no devices?)")
+            logger.info("MIDI router initialized (start deferred)")
                 
         except Exception as e:
             logger.warning(f"MIDI router initialization failed: {e}")

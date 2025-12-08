@@ -1,0 +1,146 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "fade_to_color",
+			"PARAMS" : 0.05,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "shading",
+			"PARAMS" : 0.25,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "fog",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : -5,
+			"MIN" : 0,
+			"NAME" : "fuzz",
+			"PARAMS" : 0.125,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "autofuzz",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "electrify",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scratch",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "effects"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bump_up",
+			"PARAMS" : 0.2,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "beat"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 0,
+			"MIN" : 2,
+			"NAME" : "size",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "object"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "simplify",
+			"PARAMS" : 0.1,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "object"
+		}
+	],
+	"CREDIT" : "Nimitz",
+	"DESCRIPTION" : "",
+	"GPU" : 2,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "glob_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"SMOOTH_TRANSITIONS" : 
+	[
+		{
+			"DURATION" : 0.5,
+			"UNIFORMS" : 
+			[
+				"c0",
+				"c1",
+				"c2",
+				"c3"
+			]
+		},
+		{
+			"DURATION" : 0.5,
+			"UNIFORMS" : 
+			[
+				"b0",
+				"b1",
+				"b2",
+				"b3"
+			]
+		}
+	],
+	"TAGS" : 
+	[
+		"3d",
+		"raymarching",
+		"dark",
+		"glitchy",
+		"morphing"
+	],
+	"TITLE" : "Glob_dup",
+	"WIDTH" : 1920
+}
