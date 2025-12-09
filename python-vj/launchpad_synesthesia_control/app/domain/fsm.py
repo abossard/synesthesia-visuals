@@ -60,16 +60,17 @@ def handle_pad_press(
         (new_state, effects_to_execute)
     """
     if state.app_mode == AppMode.LEARN_WAIT_PAD:
-        # Select this pad for learning
-        new_learn_state = replace(state.learn_state, selected_pad=pad_id)
+        # Select this pad for learning and start recording timer
+        new_learn_state = replace(
+            state.learn_state,
+            selected_pad=pad_id,
+            record_start_time=get_current_time()
+        )
         new_state = replace(
             state,
             learn_state=new_learn_state,
             app_mode=AppMode.LEARN_RECORD_OSC
         )
-        # Start recording timer (use injectable time function)
-        new_learn_state = replace(new_learn_state, record_start_time=get_current_time())
-        new_state = replace(state, learn_state=new_learn_state, app_mode=AppMode.LEARN_RECORD_OSC)
         
         effects = [
             LogEffect(f"Learning mode: Selected pad {pad_id}, recording OSC for 5 seconds..."),

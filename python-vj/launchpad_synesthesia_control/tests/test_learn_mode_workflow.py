@@ -429,5 +429,75 @@ class TestLearnModeTimerIntegration:
         assert any("First controllable message" in e.message for e in effects if hasattr(e, "message"))
 
 
+class TestMultiplePadLearning:
+    """Test learning multiple pads sequentially."""
+
+    def test_can_learn_second_pad_after_completing_first(self):
+        """
+        Bug regression test: After learning one pad successfully,
+        should be able to learn another pad without issues.
+        """
+        state = ControllerState()
+        
+        # --- FIRST PAD ---
+        # Step 1: Enter learn mode
+        state, _ = enter_learn_mode(state)
+        assert state.app_mode == AppMode.LEARN_WAIT_PAD
+        
+        # Step 2: Select first pad
+        pad1 = PadId(0, 0)
+        state, _ = handle_pad_press(state, pad1)
+        assert state.app_mode == AppMode.LEARN_RECORD_OSC
+        assert state.learn_state.selected_pad == pad1
+        
+        # Step 3: Record OSC
+        state, _ = handle_osc_event(state, OscEvent(0.0, "/scenes/Scene1", []))
+        
+        # Step 4: Finish recording
+        state, _ = finish_osc_recording(state)
+        
+        # Step 5: Complete configuration
+        state, _ = select_learn_command(
+            state, command_index=0, pad_mode=PadMode.SELECTOR,
+            group=PadGroupName.SCENES, idle_color=3, active_color=21, label="Scene1"
+        )
+        
+        # VERIFY: Back to NORMAL mode
+        assert state.app_mode == AppMode.NORMAL
+        assert pad1 in state.pads
+        
+        # --- SECOND PAD ---
+        # Step 1: Enter learn mode AGAIN
+        state, effects = enter_learn_mode(state)
+        assert state.app_mode == AppMode.LEARN_WAIT_PAD
+        # Should NOT have warning about "already in learn mode"
+        assert not any("Already" in str(getattr(e, 'message', '')) for e in effects)
+        
+        # Step 2: Select second pad
+        pad2 = PadId(1, 0)
+        state, _ = handle_pad_press(state, pad2)
+        assert state.app_mode == AppMode.LEARN_RECORD_OSC
+        assert state.learn_state.selected_pad == pad2
+        
+        # Step 3: Record different OSC
+        state, _ = handle_osc_event(state, OscEvent(0.0, "/scenes/Scene2", []))
+        
+        # Step 4: Finish recording
+        state, _ = finish_osc_recording(state)
+        
+        # Step 5: Complete configuration
+        state, _ = select_learn_command(
+            state, command_index=0, pad_mode=PadMode.SELECTOR,
+            group=PadGroupName.SCENES, idle_color=3, active_color=45, label="Scene2"
+        )
+        
+        # VERIFY: Both pads configured
+        assert state.app_mode == AppMode.NORMAL
+        assert pad1 in state.pads
+        assert pad2 in state.pads
+        assert state.pads[pad1].label == "Scene1"
+        assert state.pads[pad2].label == "Scene2"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
