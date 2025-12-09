@@ -3,9 +3,12 @@ Finite State Machine Logic - Pure Functions
 
 All functions are pure: same input = same output, no side effects.
 Returns new state and list of effects to be executed by imperative shell.
+
+Note: The time.time() call in handle_pad_press is the ONE impurity in this module.
+For testing, use the time_func parameter or mock time.time directly.
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Callable
 from dataclasses import replace
 import time
 
@@ -15,6 +18,26 @@ from .model import (
     OscEvent, OscCommand,
     Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect
 )
+
+# Default time function (can be overridden for testing)
+_time_func: Callable[[], float] = time.time
+
+
+def set_time_func(func: Callable[[], float]) -> None:
+    """Set the time function used by FSM (for testing)."""
+    global _time_func
+    _time_func = func
+
+
+def reset_time_func() -> None:
+    """Reset time function to default (time.time)."""
+    global _time_func
+    _time_func = time.time
+
+
+def get_current_time() -> float:
+    """Get current time using configured time function."""
+    return _time_func()
 
 
 # =============================================================================
@@ -44,8 +67,8 @@ def handle_pad_press(
             learn_state=new_learn_state,
             app_mode=AppMode.LEARN_RECORD_OSC
         )
-        # Start recording timer will be set by imperative shell
-        new_learn_state = replace(new_learn_state, record_start_time=time.time())
+        # Start recording timer (use injectable time function)
+        new_learn_state = replace(new_learn_state, record_start_time=get_current_time())
         new_state = replace(state, learn_state=new_learn_state, app_mode=AppMode.LEARN_RECORD_OSC)
         
         effects = [
