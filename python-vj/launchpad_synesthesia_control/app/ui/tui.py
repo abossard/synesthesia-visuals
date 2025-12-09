@@ -18,7 +18,8 @@ from textual.reactive import reactive
 
 from ..domain.model import (
     ControllerState, PadId, AppMode, OscEvent, PadMode, PadGroupName,
-    Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect
+    Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
+    OscCommand, COLOR_PALETTE,
 )
 from ..domain.fsm import (
     handle_pad_press, handle_osc_event,
@@ -26,8 +27,10 @@ from ..domain.fsm import (
     select_learn_command
 )
 from ..domain.blink import compute_blink_phase, compute_all_led_states, get_dimmed_color
-from ..io.midi_launchpad import LaunchpadDevice, LaunchpadConfig, COLOR_PALETTE
-from ..io.osc_synesthesia import OscManager, OscConfig
+# Use library's SmartLaunchpad (auto-selects real or emulator)
+from launchpad_osc_lib import SmartLaunchpad, LaunchpadConfig
+from ..io.osc_synesthesia import OscManager
+from launchpad_osc_lib import OscConfig
 from ..io.config import ConfigManager, get_default_config_path
 from .command_selection_screen import CommandSelectionScreen
 
@@ -391,7 +394,7 @@ class LaunchpadSynesthesiaApp(App):
     def __init__(self):
         super().__init__()
         self.state = ControllerState()
-        self.launchpad: Optional[LaunchpadDevice] = None
+        self.launchpad: Optional[SmartLaunchpad] = None
         self.osc: Optional[OscManager] = None
         self.config_manager = ConfigManager(get_default_config_path())
         self._blink_task: Optional[asyncio.Task] = None
@@ -458,8 +461,8 @@ class LaunchpadSynesthesiaApp(App):
             pass
     
     async def _init_launchpad(self):
-        """Initialize Launchpad connection."""
-        self.launchpad = LaunchpadDevice(LaunchpadConfig(auto_detect=True))
+        """Initialize Launchpad connection using SmartLaunchpad."""
+        self.launchpad = SmartLaunchpad(LaunchpadConfig(auto_detect=True))
         
         connected = await self.launchpad.connect()
         if connected:
@@ -468,7 +471,8 @@ class LaunchpadSynesthesiaApp(App):
             asyncio.create_task(self.launchpad.start_listening())
             self.add_log("Launchpad connected", "INFO")
         else:
-            self.add_log("Launchpad not found - will retry", "WARNING")
+            self.add_log("Launchpad not found - using emulator", "WARNING")
+            # SmartLaunchpad falls back to emulator automatically
         
         self._update_connection_status()
     

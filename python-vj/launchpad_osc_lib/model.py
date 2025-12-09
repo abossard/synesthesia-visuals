@@ -54,6 +54,16 @@ class OscCommand:
     def __str__(self) -> str:
         args_str = " ".join(str(a) for a in self.args) if self.args else ""
         return f"{self.address} {args_str}".strip()
+    
+    @staticmethod
+    def is_controllable(address: str) -> bool:
+        """
+        Check if this OSC address is controllable (can be mapped to pads).
+        
+        Delegates to synesthesia_config.is_controllable().
+        """
+        from .synesthesia_config import is_controllable
+        return is_controllable(address)
 
 
 # =============================================================================

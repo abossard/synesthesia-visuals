@@ -23,7 +23,7 @@ class TestLearnModeModalIntegration:
         """Modal should appear when transitioning to LEARN_SELECT_MSG."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             # Mock devices to avoid connection attempts
@@ -72,7 +72,7 @@ class TestLearnModeModalIntegration:
         """Modal cancellation should return to NORMAL mode."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -105,7 +105,7 @@ class TestLearnModeModalIntegration:
         """Edge case: No OSC messages should show warning and cancel."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -130,10 +130,10 @@ class TestLearnModeModalIntegration:
 
             await app._show_command_selection_modal()
 
-            # Should log warning
-            app.add_log.assert_called_once()
-            assert "No controllable OSC messages" in app.add_log.call_args[0][0]
-            assert app.add_log.call_args[0][1] == "WARNING"
+            # Should log warning (may also log cancellation)
+            warning_calls = [c for c in app.add_log.call_args_list
+                            if "No controllable OSC messages" in str(c)]
+            assert len(warning_calls) == 1
 
             # Should return to normal mode
             assert app.state.app_mode == AppMode.NORMAL
@@ -144,7 +144,7 @@ class TestLearnModeModalIntegration:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
         from launchpad_synesthesia_control.app.domain.model import PadBehavior
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -268,11 +268,12 @@ class TestCommandSelectionScreen:
 class TestLearnModeKeyboardShortcuts:
     """Test keyboard shortcuts in learn mode."""
 
-    def test_l_key_enters_learn_mode(self):
+    @pytest.mark.asyncio
+    async def test_l_key_enters_learn_mode(self):
         """Pressing L should enter learn mode."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -283,15 +284,18 @@ class TestLearnModeKeyboardShortcuts:
             app = LaunchpadSynesthesiaApp()
             assert app.state.app_mode == AppMode.NORMAL
 
+            # Mock _execute_effects to avoid async issues
+            app._execute_effects = AsyncMock()
             app.action_learn()
 
             assert app.state.app_mode == AppMode.LEARN_WAIT_PAD
 
-    def test_escape_cancels_learn_mode(self):
+    @pytest.mark.asyncio
+    async def test_escape_cancels_learn_mode(self):
         """Pressing ESC should cancel learn mode."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
-        with patch('launchpad_synesthesia_control.app.ui.tui.LaunchpadDevice') as mock_lp, \
+        with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -302,6 +306,8 @@ class TestLearnModeKeyboardShortcuts:
             app = LaunchpadSynesthesiaApp()
             app.state = replace(app.state, app_mode=AppMode.LEARN_WAIT_PAD)
 
+            # Mock _execute_effects to avoid async issues
+            app._execute_effects = AsyncMock()
             app.action_cancel_learn()
 
             assert app.state.app_mode == AppMode.NORMAL

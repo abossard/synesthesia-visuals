@@ -2,16 +2,17 @@
 Tests for MIDI Launchpad driver.
 
 Tests the Programmer Mode implementation and coordinate mapping.
+Uses launchpad_osc_lib for Launchpad functionality.
 """
 
 import pytest
-from app.io.midi_launchpad import (
+from launchpad_osc_lib import (
     pad_to_note,
     note_to_pad,
+    PadId,
     LP_OFF, LP_RED, LP_GREEN, LP_BLUE,
     LP_ORANGE, LP_YELLOW, LP_CYAN, LP_PURPLE, LP_PINK, LP_WHITE
 )
-from app.domain.model import PadId
 
 
 class TestProgrammerModeConstants:

@@ -12,7 +12,7 @@ from textual.containers import Container, Vertical, Horizontal, VerticalScroll
 from textual.binding import Binding
 from textual import on
 
-from ..domain.model import OscCommand, PadMode, PadGroupName
+from ..domain.model import OscCommand, PadMode, PadGroupName, COLOR_PALETTE as LP_COLORS
 
 
 # Color palette: name -> (display_name, launchpad_color_index)

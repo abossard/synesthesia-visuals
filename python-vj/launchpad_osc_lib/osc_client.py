@@ -9,7 +9,10 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Callable, Any, List
+from typing import Optional, Callable, Any, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .model import OscCommand
 
 try:
     from pythonosc import dispatcher, udp_client
@@ -41,6 +44,15 @@ class OscEvent:
     timestamp: float
     address: str
     args: List[Any] = field(default_factory=list)
+    
+    def to_command(self) -> "OscCommand":
+        """
+        Convert to OscCommand (without timestamp).
+        
+        Useful for transforming received events into sendable commands.
+        """
+        from .model import OscCommand
+        return OscCommand(address=self.address, args=list(self.args))
 
 
 # =============================================================================

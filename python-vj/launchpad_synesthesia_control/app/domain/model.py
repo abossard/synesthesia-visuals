@@ -1,190 +1,48 @@
 """
-Domain Models - Immutable Data Structures
+Domain Models - App-Specific Types
 
-Pure domain models following Grokking Simplicity principles.
-All data structures are immutable (frozen dataclasses).
+App-specific models for learn mode, FSM, and effects.
+Shared types (PadId, PadMode, etc.) are imported from launchpad_osc_lib.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict
 from enum import Enum, auto
 
-
 # =============================================================================
-# PAD IDENTIFIERS AND LAYOUT
-# =============================================================================
-
-@dataclass(frozen=True)
-class PadId:
-    """
-    Unique identifier for a Launchpad pad.
-    
-    For 8x8 grid: x, y in range 0-7
-    For top row: x in range 0-7, y = -1
-    For right column: x = 8, y in range 0-7
-    """
-    x: int
-    y: int
-    
-    def is_grid(self) -> bool:
-        """Check if this is a main grid pad (8x8)."""
-        return 0 <= self.x <= 7 and 0 <= self.y <= 7
-    
-    def is_top_row(self) -> bool:
-        """Check if this is a top row button."""
-        return 0 <= self.x <= 7 and self.y == -1
-    
-    def is_right_column(self) -> bool:
-        """Check if this is a right column button."""
-        return self.x == 8 and 0 <= self.y <= 7
-    
-    def __str__(self) -> str:
-        if self.is_top_row():
-            return f"Top{self.x}"
-        elif self.is_right_column():
-            return f"Right{self.y}"
-        else:
-            return f"({self.x},{self.y})"
-
-
-# =============================================================================
-# PAD MODES AND GROUPS
+# RE-EXPORT LIBRARY TYPES FOR CONVENIENCE
 # =============================================================================
 
-class PadMode(Enum):
-    """Pad interaction mode."""
-    SELECTOR = auto()  # Radio button behavior within a group
-    TOGGLE = auto()    # On/Off toggle with two OSC commands
-    ONE_SHOT = auto()  # Single action on press
+from launchpad_osc_lib import (
+    # Core types
+    PadId,
+    PadMode,
+    OscCommand,
+    PadBehavior,
+    PadRuntimeState,
+    # Group types - alias for backward compatibility
+    ButtonGroupType,
+    # OSC
+    OscEvent,
+    # Colors
+    LP_OFF,
+    LP_RED,
+    LP_RED_DIM,
+    LP_ORANGE,
+    LP_YELLOW,
+    LP_GREEN,
+    LP_GREEN_DIM,
+    LP_CYAN,
+    LP_BLUE,
+    LP_BLUE_DIM,
+    LP_PURPLE,
+    LP_PINK,
+    LP_WHITE,
+    COLOR_PALETTE,
+)
 
-
-class PadGroupName(str, Enum):
-    """Predefined pad groups for selectors."""
-    SCENES = "scenes"
-    PRESETS = "presets"
-    COLORS = "colors"
-    CUSTOM = "custom"
-
-
-# =============================================================================
-# OSC COMMANDS
-# =============================================================================
-
-@dataclass(frozen=True)
-class OscCommand:
-    """
-    OSC command to send to Synesthesia.
-    
-    address: OSC address pattern (e.g., "/scenes/AlienCavern")
-    args: List of arguments (strings, floats, ints)
-    """
-    address: str
-    args: List[Any] = field(default_factory=list)
-    
-    def __str__(self) -> str:
-        args_str = " ".join(str(a) for a in self.args) if self.args else ""
-        return f"{self.address} {args_str}".strip()
-    
-    @staticmethod
-    def is_controllable(address: str) -> bool:
-        """Check if this OSC address is controllable (can be mapped to pads)."""
-        controllable_prefixes = [
-            "/scenes/",
-            "/presets/",
-            "/favslots/",
-            "/playlist/",
-            "/controls/meta/",
-            "/controls/global/"
-        ]
-        return any(address.startswith(prefix) for prefix in controllable_prefixes)
-
-
-@dataclass(frozen=True)
-class OscEvent:
-    """
-    Received OSC event with timestamp.
-    
-    timestamp: Unix timestamp when received
-    address: OSC address
-    args: List of arguments
-    """
-    timestamp: float
-    address: str
-    args: List[Any] = field(default_factory=list)
-    
-    def to_command(self) -> OscCommand:
-        """Convert to OscCommand (without timestamp)."""
-        return OscCommand(address=self.address, args=self.args)
-
-
-# =============================================================================
-# PAD BEHAVIOR CONFIGURATION
-# =============================================================================
-
-@dataclass(frozen=True)
-class PadBehavior:
-    """
-    Configuration for how a pad behaves.
-    
-    pad_id: Pad identifier
-    mode: Interaction mode (selector/toggle/one-shot)
-    group: Optional group name (only for selectors)
-    idle_color: Launchpad color index when inactive
-    active_color: Launchpad color index when active
-    label: Optional human-readable label
-    
-    For TOGGLE mode:
-        osc_on: Command to send when toggling ON
-        osc_off: Optional command to send when toggling OFF
-    
-    For SELECTOR and ONE_SHOT modes:
-        osc_action: Command to send on press
-    """
-    pad_id: PadId
-    mode: PadMode
-    group: Optional[PadGroupName] = None
-    idle_color: int = 0  # Off
-    active_color: int = 5  # Red
-    label: str = ""
-    
-    # Toggle-specific
-    osc_on: Optional[OscCommand] = None
-    osc_off: Optional[OscCommand] = None
-    
-    # Selector/One-shot specific
-    osc_action: Optional[OscCommand] = None
-    
-    def __post_init__(self):
-        """Validate configuration."""
-        if self.mode == PadMode.TOGGLE:
-            if self.osc_on is None:
-                raise ValueError("TOGGLE mode requires osc_on")
-        elif self.mode in (PadMode.SELECTOR, PadMode.ONE_SHOT):
-            if self.osc_action is None:
-                raise ValueError(f"{self.mode.name} mode requires osc_action")
-        
-        if self.mode == PadMode.SELECTOR and self.group is None:
-            raise ValueError("SELECTOR mode requires group")
-
-
-# =============================================================================
-# PAD RUNTIME STATE
-# =============================================================================
-
-@dataclass(frozen=True)
-class PadRuntimeState:
-    """
-    Runtime state of a pad (can change frequently).
-    
-    is_active: Whether pad is currently highlighted/active
-    is_on: Current toggle state (for TOGGLE mode)
-    current_color: Current LED color index
-    blink_enabled: Whether this pad should blink with beat
-    """
-    is_active: bool = False
-    is_on: bool = False
-    current_color: int = 0
-    blink_enabled: bool = False
+# Alias for backward compatibility with existing code
+PadGroupName = ButtonGroupType
 
 
 # =============================================================================
