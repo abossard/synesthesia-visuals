@@ -480,6 +480,123 @@ class LearnModePanel(Container):
 
 
 # =============================================================================
+# OSC MONITOR PANEL - Shows sent and received OSC messages
+# =============================================================================
+
+# Noisy OSC addresses to filter out (high-frequency audio/beat messages)
+OSC_NOISE_PREFIXES = (
+    "/audio/",       # All audio messages (beat, level, bpm, etc.)
+    "/transport/",   # Transport messages
+    "/sync/",        # Sync messages
+)
+
+
+class OscMessage:
+    """Represents an OSC message for display."""
+
+    def __init__(self, direction: str, address: str, args: list, timestamp: float):
+        self.direction = direction  # "TX" or "RX"
+        self.address = address
+        self.args = args
+        self.timestamp = timestamp
+
+    def format(self) -> str:
+        """Format message for display."""
+        time_str = time.strftime("%H:%M:%S", time.localtime(self.timestamp))
+
+        # Direction indicator with color
+        if self.direction == "TX":
+            dir_str = "[bold magenta]→[/]"  # Sent
+        else:
+            dir_str = "[bold green]←[/]"    # Received
+
+        # Format address (truncate if needed)
+        addr = self.address
+        if len(addr) > 28:
+            addr = addr[:25] + "..."
+
+        # Format args
+        if self.args:
+            args_str = " ".join(str(a)[:8] for a in self.args[:3])
+            if len(self.args) > 3:
+                args_str += "..."
+            return f"[dim]{time_str}[/] {dir_str} [cyan]{addr}[/] [dim]{args_str}[/]"
+        else:
+            return f"[dim]{time_str}[/] {dir_str} [cyan]{addr}[/]"
+
+
+class OscMonitorPanel(Static):
+    """Panel showing sent and received OSC messages."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.messages: List[OscMessage] = []
+        self.max_messages = 50
+        self.show_all = False  # If True, show noisy messages too
+
+    def add_message(self, direction: str, address: str, args: list = None):
+        """Add an OSC message to the monitor."""
+        # Filter out noisy messages unless show_all is True
+        if not self.show_all and address.startswith(OSC_NOISE_PREFIXES):
+            return
+
+        msg = OscMessage(
+            direction=direction,
+            address=address,
+            args=args or [],
+            timestamp=time.time()
+        )
+
+        self.messages.append(msg)
+
+        # Keep only max_messages
+        if len(self.messages) > self.max_messages:
+            self.messages.pop(0)
+
+        self.refresh()
+
+    def add_sent(self, address: str, args: list = None):
+        """Add a sent (TX) message."""
+        self.add_message("TX", address, args)
+
+    def add_received(self, address: str, args: list = None):
+        """Add a received (RX) message."""
+        self.add_message("RX", address, args)
+
+    def clear(self):
+        """Clear all messages."""
+        self.messages.clear()
+        self.refresh()
+
+    def render(self) -> str:
+        """Render the OSC monitor panel."""
+        lines = [
+            "[bold cyan]╔════ OSC MONITOR ═════════════════════════╗[/]",
+            "│ [dim]→ Sent[/]  [dim]← Received[/]  [dim](noisy filtered)[/]",
+            "├──────────────────────────────────────────┤",
+        ]
+
+        if not self.messages:
+            lines.append("│ [dim]No OSC messages yet...[/]")
+            lines.append("│")
+            lines.append("│ [dim]Waiting for OSC traffic.[/]")
+            lines.append("│ [dim]Trigger actions in Synesthesia[/]")
+            lines.append("│ [dim]or press mapped pads.[/]")
+        else:
+            # Show last N messages that fit
+            display_messages = self.messages[-12:]  # Show last 12
+            for msg in display_messages:
+                lines.append(f"│ {msg.format()}")
+
+        # Pad to consistent height
+        while len(lines) < 15:
+            lines.append("│")
+
+        lines.append("[bold cyan]╚════════════════════════════════════════╝[/]")
+        return "\n".join(lines)
+
+
+# =============================================================================
 # LOG PANEL
 # =============================================================================
 
@@ -512,7 +629,7 @@ class LogPanel(VerticalScroll):
     def update_display(self):
         """Update log display."""
         self.remove_children()
-        for log in self.logs[-15:]:  # Show last 15
+        for log in self.logs[-10:]:  # Show last 10 (reduced for space)
             self.mount(Label(log))
 
 
@@ -529,12 +646,17 @@ class LaunchpadSynesthesiaApp(App):
     CSS = """
     Screen {
         layout: grid;
-        grid-size: 2 2;
-        grid-columns: 3fr 1fr;
+        grid-size: 3 2;
+        grid-columns: 2fr 2fr 1fr;
         grid-rows: 2fr 1fr;
     }
 
     #main_container {
+        row-span: 2;
+        padding: 0 1;
+    }
+
+    #osc_monitor_container {
         row-span: 2;
         padding: 0 1;
     }
@@ -545,6 +667,7 @@ class LaunchpadSynesthesiaApp(App):
     }
 
     #right_panel {
+        row-span: 2;
         padding: 0 1;
     }
 
@@ -561,6 +684,10 @@ class LaunchpadSynesthesiaApp(App):
     }
 
     LogPanel {
+        height: 100%;
+    }
+
+    OscMonitorPanel {
         height: 100%;
     }
     """
@@ -607,13 +734,15 @@ class LaunchpadSynesthesiaApp(App):
 
             yield LearnModePanel(id="learn_panel")
 
+        with Vertical(id="osc_monitor_container"):
+            yield OscMonitorPanel(id="osc_monitor")
+            with Container(id="log_container"):
+                yield Label("[bold cyan]═══ EVENT LOG ═══[/]", classes="panel-title")
+                yield LogPanel(id="log_panel")
+
         with Vertical(id="right_panel"):
             yield StatusPanel(id="status_panel")
             yield HelpPanel(id="help_panel")
-
-        with Container(id="log_container"):
-            yield Label("[bold cyan]═══ EVENT LOG ═══[/]", classes="panel-title")
-            yield LogPanel(id="log_panel")
 
         yield Footer()
 
@@ -767,10 +896,8 @@ class LaunchpadSynesthesiaApp(App):
 
     async def _handle_osc_event_async(self, event: OscEvent):
         """Handle OSC event in async context."""
-        # Log controllable messages
-        from ..domain.model import OscCommand
-        if OscCommand.is_controllable(event.address):
-            self.add_log(f"OSC: {event.address}", "DEBUG")
+        # Log to OSC monitor (received message)
+        self._add_osc_received(event.address, event.args)
 
         # Process through FSM
         new_state, effects = handle_osc_event(self.state, event)
@@ -789,6 +916,8 @@ class LaunchpadSynesthesiaApp(App):
                 if isinstance(effect, SendOscEffect):
                     if self.osc:
                         self.osc.send(effect.command)
+                        # Log to OSC monitor (sent message)
+                        self._add_osc_sent(effect.command.address, effect.command.args)
 
                 elif isinstance(effect, SetLedEffect):
                     if self.launchpad and self.launchpad.is_connected():
@@ -871,6 +1000,22 @@ class LaunchpadSynesthesiaApp(App):
         try:
             log_panel = self.query_one("#log_panel", LogPanel)
             log_panel.add_log(message, level)
+        except Exception:
+            pass  # UI not ready yet
+
+    def _add_osc_sent(self, address: str, args: list = None):
+        """Add sent OSC message to monitor."""
+        try:
+            monitor = self.query_one("#osc_monitor", OscMonitorPanel)
+            monitor.add_sent(address, args or [])
+        except Exception:
+            pass  # UI not ready yet
+
+    def _add_osc_received(self, address: str, args: list = None):
+        """Add received OSC message to monitor."""
+        try:
+            monitor = self.query_one("#osc_monitor", OscMonitorPanel)
+            monitor.add_received(address, args or [])
         except Exception:
             pass  # UI not ready yet
 
