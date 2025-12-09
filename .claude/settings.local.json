@@ -10,7 +10,12 @@
       "Bash(../.venv/bin/pip install textual)",
       "Bash(.venv/bin/pip install textual)",
       "Bash(.venv/bin/python:*)",
-      "Bash(timeout 10 ../.venv/bin/python:*)"
+      "Bash(timeout 10 ../.venv/bin/python:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(ls:*)",
+      "Bash(/Users/abossard/Desktop/projects/synesthesia-visuals/.venv/bin/python:*)",
+      "Bash(chmod:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []
