@@ -85,7 +85,7 @@ class OscClient:
     Features:
     - UDP client for sending messages
     - Async server for receiving messages
-    - Callback-based message handling
+    - Multi-callback message handling
     - Graceful degradation when python-osc unavailable
     - Auto-reconnection support
     """
@@ -95,9 +95,11 @@ class OscClient:
         self._client: Any = None
         self._server: Any = None
         self._dispatcher: Any = None
-        self._callback: Optional[Callable[[OscEvent], None]] = None
+        self._callbacks: List[Callable[[OscEvent], None]] = []
         self._connected = False
         self._running = False
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._reconnect_interval: float = 10.0
     
     async def connect(self) -> bool:
         """
@@ -140,27 +142,53 @@ class OscClient:
             self._connected = False
             return False
     
-    def set_callback(self, callback: Callable[[OscEvent], None]):
+    def add_callback(self, callback: Callable[[OscEvent], None]):
         """
-        Set callback for incoming OSC messages.
+        Add callback for incoming OSC messages.
+        
+        Multiple callbacks can be registered; all will be called.
         
         Args:
             callback: Function called with OscEvent on message receive
         """
-        self._callback = callback
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+    
+    def remove_callback(self, callback: Callable[[OscEvent], None]):
+        """
+        Remove a previously registered callback.
+        
+        Args:
+            callback: Function to remove
+        """
+        if callback in self._callbacks:
+            self._callbacks.remove(callback)
+    
+    def set_callback(self, callback: Callable[[OscEvent], None]):
+        """
+        Set single callback for incoming OSC messages.
+        
+        DEPRECATED: Use add_callback() for multi-callback support.
+        This replaces all existing callbacks with the single one.
+        
+        Args:
+            callback: Function called with OscEvent on message receive
+        """
+        self._callbacks = [callback]
     
     def _handle_osc_message(self, address: str, *args):
         """Handle incoming OSC message."""
-        if self._callback:
+        if self._callbacks:
             event = OscEvent(
                 timestamp=time.time(),
                 address=address,
                 args=list(args)
             )
-            try:
-                self._callback(event)
-            except Exception as e:
-                logger.error(f"Error in OSC callback: {e}")
+            for callback in self._callbacks:
+                try:
+                    callback(event)
+                except Exception as e:
+                    logger.error(f"Error in OSC callback: {e}")
     
     def send(self, address: str, args: Optional[List[Any]] = None):
         """
@@ -181,9 +209,42 @@ class OscClient:
             logger.error(f"Failed to send OSC: {e}")
             self._connected = False
     
+    def start_auto_reconnect(self, interval: float = 10.0):
+        """
+        Start auto-reconnection task.
+        
+        Will periodically check connection and reconnect if needed.
+        
+        Args:
+            interval: Seconds between reconnection attempts (default 10s)
+        """
+        self._reconnect_interval = interval
+        if self._reconnect_task is None or self._reconnect_task.done():
+            self._running = True
+            self._reconnect_task = asyncio.create_task(self._reconnect_loop())
+            logger.info(f"Started OSC auto-reconnect (interval={interval}s)")
+    
+    def stop_auto_reconnect(self):
+        """Stop auto-reconnection task."""
+        self._running = False
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+            logger.info("Stopped OSC auto-reconnect")
+    
+    async def _reconnect_loop(self):
+        """Internal reconnection loop."""
+        while self._running:
+            if not self._connected:
+                logger.info("Attempting to reconnect OSC...")
+                await self.connect()
+            await asyncio.sleep(self._reconnect_interval)
+    
     async def reconnect_loop(self, interval: float = 5.0):
         """
         Periodically try to reconnect if disconnected.
+        
+        DEPRECATED: Use start_auto_reconnect() instead.
         
         Args:
             interval: Seconds between reconnection attempts
@@ -200,6 +261,7 @@ class OscClient:
     async def stop(self):
         """Stop OSC server and client."""
         self._running = False
+        self.stop_auto_reconnect()
         
         if self._server:
             self._server = None

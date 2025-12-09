@@ -28,9 +28,7 @@ from ..domain.fsm import (
 )
 from ..domain.blink import compute_blink_phase, compute_all_led_states, get_dimmed_color
 # Use library's SmartLaunchpad (auto-selects real or emulator)
-from launchpad_osc_lib import SmartLaunchpad, LaunchpadConfig
-from ..io.osc_synesthesia import OscManager
-from launchpad_osc_lib import OscConfig
+from launchpad_osc_lib import SmartLaunchpad, LaunchpadConfig, SynesthesiaOscManager
 from ..io.config import ConfigManager, get_default_config_path
 from .command_selection_screen import CommandSelectionScreen
 
@@ -395,7 +393,7 @@ class LaunchpadSynesthesiaApp(App):
         super().__init__()
         self.state = ControllerState()
         self.launchpad: Optional[SmartLaunchpad] = None
-        self.osc: Optional[OscManager] = None
+        self.osc: Optional[SynesthesiaOscManager] = None
         self.config_manager = ConfigManager(get_default_config_path())
         self._blink_task: Optional[asyncio.Task] = None
         self._reconnect_task: Optional[asyncio.Task] = None
@@ -477,28 +475,23 @@ class LaunchpadSynesthesiaApp(App):
         self._update_connection_status()
     
     async def _init_osc(self):
-        """Initialize OSC connection with fixed ports."""
-        send_port = 7777  # Synesthesia receives here
-        receive_port = 9999  # Synesthesia sends here
-
+        """Initialize OSC connection using library's SynesthesiaOscManager."""
         if self.osc:
             try:
                 await self.osc.stop()
             except Exception:
                 pass
 
-        self.osc = OscManager(OscConfig(
-            host="127.0.0.1",
-            send_port=send_port,
-            receive_port=receive_port
-        ))
+        # SynesthesiaOscManager uses default ports (7777/9999) and auto-reconnect
+        self.osc = SynesthesiaOscManager(auto_reconnect_interval=10.0)
         
         connected = await self.osc.connect()
         if connected:
-            self.osc.set_osc_callback(self._on_osc_event)
-            self.add_log(f"OSC connected: :{send_port} → :{receive_port}", "INFO")
+            # Register for all messages (for OSC monitor and beat sync)
+            self.osc.add_all_listener(self._on_osc_event)
+            self.add_log(f"OSC connected: {self.osc.status}", "INFO")
         else:
-            self.add_log("OSC not available - will retry", "WARNING")
+            self.add_log("OSC not available - auto-reconnect enabled", "WARNING")
         
         self._update_connection_status()
     
@@ -507,13 +500,12 @@ class LaunchpadSynesthesiaApp(App):
         while True:
             await asyncio.sleep(5)
             
-            # Try to reconnect Launchpad
+            # Try to reconnect Launchpad (OSC auto-reconnect is handled by library)
             if self.launchpad and not self.launchpad.is_connected():
                 await self._init_launchpad()
             
-            # Try to reconnect OSC
-            if self.osc and not self.osc.is_connected():
-                await self._init_osc()
+            # Update connection status display
+            self._update_connection_status()
     
     async def _learn_timer_loop(self):
         """Check learn mode recording timer."""

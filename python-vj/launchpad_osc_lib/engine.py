@@ -23,6 +23,11 @@ from .synesthesia_config import (
     BEAT_ADDRESS,
 )
 
+# Import SynesthesiaOscManager for type checking only
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .synesthesia_osc import SynesthesiaOscManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,11 +91,25 @@ class PadMapper:
         self,
         launchpad: Optional[LaunchpadDevice] = None,
         osc: Optional[OscClient] = None,
+        osc_manager: Optional["SynesthesiaOscManager"] = None,
     ):
+        """
+        Initialize PadMapper.
+        
+        Args:
+            launchpad: LaunchpadDevice for LED control
+            osc: Low-level OscClient (deprecated, use osc_manager)
+            osc_manager: SynesthesiaOscManager for OSC communication
+        """
         self.launchpad = launchpad
         self.osc = osc
+        self._osc_manager: Optional["SynesthesiaOscManager"] = osc_manager
         self.state = PadMapperState()
         self._on_state_change: Optional[Callable[[PadMapperState], None]] = None
+        
+        # If osc_manager provided, register as listener
+        if self._osc_manager:
+            self._osc_manager.add_all_listener(self.handle_osc_event)
     
     def set_state_callback(self, callback: Callable[[PadMapperState], None]):
         """Set callback for state changes (for UI updates)."""
@@ -349,7 +368,10 @@ class PadMapper:
     
     def _send_osc(self, command: OscCommand):
         """Send OSC command."""
-        if self.osc:
+        # Prefer SynesthesiaOscManager if available
+        if self._osc_manager:
+            self._osc_manager.send(command)
+        elif self.osc:
             self.osc.send(command.address, command.args)
     
     # =========================================================================

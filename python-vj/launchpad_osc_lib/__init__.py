@@ -68,6 +68,7 @@ from .banks import (
     BankManagerState,
     create_default_banks,
 )
+from .synesthesia_osc import SynesthesiaOscManager
 
 __all__ = [
     # Launchpad
@@ -92,6 +93,7 @@ __all__ = [
     "OscClient",
     "OscConfig",
     "OscEvent",
+    "SynesthesiaOscManager",
     # Mapping
     "PadMode",
     "ButtonGroupType",

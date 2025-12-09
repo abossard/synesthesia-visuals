@@ -24,7 +24,7 @@ class TestLearnModeModalIntegration:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             # Mock devices to avoid connection attempts
             mock_lp.return_value.connect = AsyncMock(return_value=False)
@@ -73,7 +73,7 @@ class TestLearnModeModalIntegration:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
             mock_lp.return_value.is_connected.return_value = False
@@ -106,7 +106,7 @@ class TestLearnModeModalIntegration:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
             mock_lp.return_value.is_connected.return_value = False
@@ -145,7 +145,7 @@ class TestLearnModeModalIntegration:
         from launchpad_synesthesia_control.app.domain.model import PadBehavior
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
             mock_lp.return_value.is_connected.return_value = False
@@ -274,7 +274,7 @@ class TestLearnModeKeyboardShortcuts:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
             mock_lp.return_value.is_connected.return_value = False
@@ -296,7 +296,7 @@ class TestLearnModeKeyboardShortcuts:
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
-             patch('launchpad_synesthesia_control.app.ui.tui.OscManager') as mock_osc:
+             patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
 
             mock_lp.return_value.connect = AsyncMock(return_value=False)
             mock_lp.return_value.is_connected.return_value = False
