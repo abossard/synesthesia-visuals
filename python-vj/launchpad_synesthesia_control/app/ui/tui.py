@@ -460,7 +460,7 @@ class LaunchpadSynesthesiaApp(App):
     
     async def _init_launchpad(self):
         """Initialize Launchpad connection using SmartLaunchpad."""
-        self.launchpad = SmartLaunchpad(LaunchpadConfig(auto_detect=True))
+        self.launchpad = SmartLaunchpad(config=LaunchpadConfig(auto_detect=True))
         
         connected = await self.launchpad.connect()
         if connected:

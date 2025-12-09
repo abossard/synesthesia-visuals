@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Optional, Protocol
 from .launchpad import PadId, LP_OFF
 
 if TYPE_CHECKING:
-    from .launchpad import LaunchpadDevice
+    from .launchpad import LaunchpadDevice, LaunchpadConfig
 
 
 # =============================================================================
@@ -310,12 +310,26 @@ class SmartLaunchpad:
     
     For TUI access, use get_view() - works whether using real device or emulator.
     LED state is always tracked in the emulator for visualization.
+    
+    Usage:
+        # Simple: emulator only
+        lp = SmartLaunchpad()
+        
+        # With config: tries to connect real device
+        lp = SmartLaunchpad(config=LaunchpadConfig(auto_detect=True))
     """
 
+    config: Optional["LaunchpadConfig"] = None
     _emulator: LaunchpadEmulator = field(default_factory=LaunchpadEmulator)
     _real_device: Optional["LaunchpadDevice"] = None
     _pad_callback: Optional[Callable[[PadId, int], None]] = None
     _use_real: bool = False  # True when real device is active
+    
+    def __post_init__(self):
+        """Initialize real device from config if provided."""
+        if self.config is not None:
+            from .launchpad import LaunchpadDevice
+            self._real_device = LaunchpadDevice(self.config)
 
     # =========================================================================
     # LaunchpadInterface implementation
