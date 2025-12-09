@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Optional, List
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Header, Footer, Static, Label, Button
@@ -527,15 +528,21 @@ class LaunchpadSynesthesiaApp(App):
                         await self._execute_effects(effects)
                         self._update_ui()
 
-            # Detect transition to LEARN_SELECT_MSG and show modal
+            # Detect transition to LEARN_SELECT_MSG and show modal via worker
             if self.state.app_mode == AppMode.LEARN_SELECT_MSG and previous_mode != AppMode.LEARN_SELECT_MSG:
-                await self._show_command_selection_modal()
+                # Must use run_worker for push_screen_wait to work
+                self._show_command_selection_worker()
 
             previous_mode = self.state.app_mode
 
             # Update learn panel timer display
             if self.state.app_mode in (AppMode.LEARN_RECORD_OSC, AppMode.LEARN_WAIT_PAD, AppMode.LEARN_SELECT_MSG):
                 self._update_ui()
+
+    @work(exclusive=True)
+    async def _show_command_selection_worker(self):
+        """Worker wrapper for showing command selection modal."""
+        await self._show_command_selection_modal()
     
     def _on_pad_press(self, pad_id: PadId, velocity: int):
         """Handle Launchpad pad press (called from MIDI thread)."""
