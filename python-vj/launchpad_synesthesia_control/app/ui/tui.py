@@ -6,6 +6,7 @@ Main application with async event handling and graceful degradation.
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Optional, List
 
@@ -51,9 +52,48 @@ class LaunchpadGrid(Static):
     
     def on_click(self, event) -> None:
         """Handle clicks on the grid to select pads."""
-        # Calculate which pad was clicked based on position
-        # This will be implemented when we handle the click event
-        pass
+        event.stop()
+        
+        pad_id = self._pad_from_click(event.x, event.y)
+        if not pad_id:
+            return
+        
+        handler = getattr(self.app, "_handle_pad_press_async", None)
+        if handler:
+            asyncio.create_task(handler(pad_id))
+    
+    def _pad_from_click(self, x: int, y: int) -> Optional[PadId]:
+        """Map click coordinates to a pad id based on ASCII grid layout."""
+        # Skip the hint line
+        if y == 1:
+            pad_x = self._column_to_pad(x, include_right_column=False)
+            if pad_x is not None and 0 <= pad_x < 8:
+                return PadId(pad_x, -1)
+            return None
+        
+        # Each row occupies two lines: pad row then separator
+        if y < 2 or y > 16 or y % 2 != 0:
+            return None
+        
+        pad_y = (y - 2) // 2
+        pad_x = self._column_to_pad(x, include_right_column=True)
+        if pad_x is None or not (0 <= pad_x <= 8):
+            return None
+        
+        return PadId(pad_x, pad_y)
+    
+    def _column_to_pad(self, x: int, include_right_column: bool) -> Optional[int]:
+        """Convert horizontal click position into pad column index."""
+        if x < 2:
+            return None
+        
+        if include_right_column and x >= 33:
+            return 8  # Right column pads have narrower cell
+        
+        pad_x = (x - 2) // 4
+        if 0 <= pad_x < 8:
+            return pad_x
+        return None
     
     def render(self) -> str:
         """Render the Launchpad grid as ASCII art with clickable indicators."""
