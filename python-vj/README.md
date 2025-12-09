@@ -126,6 +126,7 @@ Press `5` for MIDI screen, then `C` to select your controller.
 
 - [MIDI Router Quick Reference](MIDI_ROUTER_QUICK_REF.md) - Essential commands and workflow
 - [Full MIDI Router Guide](MIDI_ROUTER.md) - Complete documentation
+- [Launchpad Programming Mode](LAUNCHPAD_PROGRAMMING_MODE.md) - Comprehensive Launchpad Mini MK3 reference
 
 ## Architecture
 

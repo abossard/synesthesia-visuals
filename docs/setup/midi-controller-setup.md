@@ -73,6 +73,19 @@ In your VJ software:
 
 ## Launchpad Mini Mk3 for Processing Games
 
+> **📖 Complete Reference:** For detailed Programmer Mode documentation including full color palette, SysEx commands, and Python integration, see [Launchpad Programming Mode Guide](../../python-vj/LAUNCHPAD_PROGRAMMING_MODE.md)
+
+### MIDI Interfaces
+
+The Launchpad Mini MK3 provides two MIDI interfaces:
+
+| Interface | Port Name | Purpose |
+|-----------|-----------|---------|
+| **DAW Port** | `LPMiniMK3 DAW In/Out` | For DAW integration (Ableton, Logic) |
+| **MIDI Port** | `LPMiniMK3 MIDI In/Out` | **Use this for Programmer Mode** |
+
+**Important:** Always connect to the **MIDI In/Out** port for custom applications, not the DAW port.
+
 ### Available Modes
 
 The Mini Mk3 has only two device states:

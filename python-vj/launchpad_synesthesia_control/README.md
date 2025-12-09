@@ -48,6 +48,8 @@ A bi-directional controller bridge between Novation Launchpad Mini Mk3 and Synes
 
 ## Quick Start
 
+> **📖 For detailed Programmer Mode documentation, see [Launchpad Programming Mode Guide](../LAUNCHPAD_PROGRAMMING_MODE.md)**
+
 ### Installation
 
 ```bash
