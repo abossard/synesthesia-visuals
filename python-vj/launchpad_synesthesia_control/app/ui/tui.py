@@ -635,16 +635,22 @@ class LaunchpadSynesthesiaApp(App):
     
     def _update_ui(self):
         """Update all UI widgets with current state."""
-        # Update grid
-        grid = self.query_one("#launchpad_grid", LaunchpadGrid)
-        grid.state = self.state
+        try:
+            # Update grid
+            grid = self.query_one("#launchpad_grid", LaunchpadGrid)
+            grid.state = self.state
+        except Exception:
+            pass  # Grid not mounted yet (e.g., during modal screens)
         
-        # Update status
-        status = self.query_one("#status_panel", StatusPanel)
-        status.app_mode = self.state.app_mode
-        status.active_scene = self.state.active_scene
-        status.active_preset = self.state.active_preset
-        status.beat_pulse = self.state.beat_pulse
+        try:
+            # Update status
+            status = self.query_one("#status_panel", StatusPanel)
+            status.app_mode = self.state.app_mode
+            status.active_scene = self.state.active_scene
+            status.active_preset = self.state.active_preset
+            status.beat_pulse = self.state.beat_pulse
+        except Exception:
+            pass  # Status panel not mounted yet
         
         # Update learn panel
         try:
@@ -657,10 +663,13 @@ class LaunchpadSynesthesiaApp(App):
     
     def _update_connection_status(self):
         """Update connection status in UI."""
-        status = self.query_one("#status_panel", StatusPanel)
-        status.launchpad_connected = self.launchpad.is_connected() if self.launchpad else False
-        status.osc_connected = self.osc.is_connected() if self.osc else False
-        status.osc_status = self.osc.status if self.osc else "Not initialized"
+        try:
+            status = self.query_one("#status_panel", StatusPanel)
+            status.launchpad_connected = self.launchpad.is_connected() if self.launchpad else False
+            status.osc_connected = self.osc.is_connected() if self.osc else False
+            status.osc_status = self.osc.status if self.osc else "Not initialized"
+        except Exception:
+            pass  # Status panel not mounted yet
     
     def add_log(self, message: str, level: str = "INFO"):
         """Add log message."""
