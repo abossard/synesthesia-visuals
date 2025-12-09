@@ -1,28 +1,61 @@
 # Launchpad Synesthesia Control
 
-A bi-directional controller bridge between Launchpad Mini Mk3 and Synesthesia Pro with beat-synced LED feedback and easy Learn Mode.
+A bi-directional controller bridge between Novation Launchpad Mini Mk3 and Synesthesia Pro VJ software with beat-synced LED feedback, colorful terminal UI, and intuitive Learn Mode.
 
 ## Features
 
-- 🎛️ **8x8 Grid Control**: Full Launchpad grid + top row + right column (82 buttons)
-- 🎨 **LED Feedback**: Active pads blink in sync with Synesthesia's beat
-- 🎓 **Learn Mode**: 5-second OSC recording for easy pad mapping
-- 🔄 **Bi-directional Sync**: Launchpad → Synesthesia → Launchpad state sync
-- 📊 **Terminal UI**: Beautiful Textual-based dashboard
-- 🛡️ **Graceful Degradation**: Works without hardware, auto-reconnects
-- ⚡ **Low Latency**: Async I/O throughout, 20 FPS LED updates
-- 🎯 **Functional Core**: Type-safe, testable, pure functions
+- **Colorful Terminal UI**: Rich terminal colors representing actual Launchpad LED colors
+- **8x8 Grid Control**: Full Launchpad grid + top row + right column (82 buttons)
+- **LED Feedback**: Active pads blink in sync with Synesthesia's beat
+- **Learn Mode**: 5-second OSC recording for easy pad mapping
+- **Bi-directional Sync**: Launchpad → Synesthesia → Launchpad state sync
+- **Graceful Degradation**: Works without hardware using virtual grid
+- **Auto-Reconnect**: Automatically reconnects when devices become available
+- **Low Latency**: Async I/O throughout, 20 FPS LED updates
+- **Comprehensive Tests**: 118 unit tests covering all domain logic
+
+## Terminal UI Screenshot
+
+```
+╔═══ LAUNCHPAD MINI MK3 ════════════════════╗
+│ · │ · │ · │ · │ · │ · │ · │ · │    │  <- Top Row
+├────────────────────────────────────────────┤
+│ ● │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │  <- Grid with colors
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+│ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │ ○ │
+╚══════════════════════════════════════════╝
+
+╔════ STATUS ═════════════════╗    ╔════ HELP ═══════════════════╗
+│ Launchpad: ● CONNECTED      │    │ Keyboard Shortcuts:         │
+│ OSC:       ● CONNECTED      │    │  L   Enter Learn Mode       │
+│                             │    │  Q   Quit Application       │
+│ Mode:  ● NORMAL             │    │  Esc Cancel / Exit          │
+│ Beat:  ♫                    │    │                             │
+│                             │    │ Mouse:                      │
+│ Scene:  AlienCavern         │    │  Click pads to activate     │
+│ Preset: None                │    │                             │
+│                             │    │ Status:                     │
+│ Mapped Pads: 15/82          │    │  ● Active selector          │
+╚═════════════════════════════╝    │  ◉ Toggle ON                │
+                                   │  ○ Inactive/OFF             │
+                                   ╚═════════════════════════════╝
+```
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-cd python-vj
-pip install -r requirements.txt
+cd python-vj/launchpad_synesthesia_control
+pip install textual mido python-rtmidi python-osc pyyaml
 ```
 
-### Run Standalone
+### Run
 
 ```bash
 python -m launchpad_synesthesia_control
@@ -32,58 +65,68 @@ python -m launchpad_synesthesia_control
 
 1. **Launchpad**: Put in Programmer mode (hold Session → press orange → release)
 2. **Synesthesia**: Configure OSC
-   - Output Port: 9001 (sends to our app)
-   - Input Port: 9000 (receives from our app)
+   - Output Port: 8000 (sends state to our app)
+   - Input Port: 9000 (receives commands from our app)
 3. **Learn Your First Pad**:
    - Press `L` to enter Learn Mode
-   - Press any Launchpad pad
+   - Click any pad on the grid (or press on hardware)
    - Click a scene/preset in Synesthesia
-   - Wait 5 seconds
-   - Select the OSC command (WIP - manual config for now)
+   - Wait for 5-second recording to complete
+   - Press 1-9 to select the OSC command
 
 ## Usage
 
 ### Key Bindings
 
-- `L` - Enter Learn Mode
-- `ESC` - Cancel Learn Mode
-- `Q` - Quit
-- `TAB` - Cycle focus between panels
+| Key | Action |
+|-----|--------|
+| `L` | Enter Learn Mode |
+| `Esc` | Cancel Learn Mode |
+| `Q` | Quit Application |
+| `1-9` | Select OSC command (in Learn Mode) |
 
-### UI Panels
+### Pad Visual Indicators
 
-```
-┌─────────────────────────┬──────────────┬──────────────┐
-│                         │ Connection   │              │
-│   Launchpad Grid        │ Status       │              │
-│   (8x8 + top + right)   ├──────────────┤              │
-│                         │              │              │
-│   ● = Active/On         │ Learn Mode   │              │
-│   ○ = Inactive/Off      │ Panel        │              │
-│   · = Unmapped          │              │              │
-├─────────────────────────┼──────────────┴──────────────┤
-│                         │                             │
-│ OSC Configuration       │  Event Log                  │
-│                         │                             │
-└─────────────────────────┴─────────────────────────────┘
-```
+| Symbol | Meaning |
+|--------|---------|
+| `●` | Active selector (blinking with beat) |
+| `◉` | Toggle ON |
+| `○` | Inactive/Off (mapped) |
+| `·` | Unmapped pad |
+| `▶` | Selected pad (Learn Mode) |
 
-### Pad Modes
+### Color Mapping
 
-**SELECTOR (Radio Buttons)**
+The terminal UI shows actual Launchpad colors:
+
+| Velocity | Color | Terminal |
+|----------|-------|----------|
+| 0 | Off | Dark gray |
+| 5 | Red | #ff0000 |
+| 9 | Orange | #ff6600 |
+| 13 | Yellow | #ffff00 |
+| 21 | Green | #00ff00 |
+| 37 | Cyan | #00ffff |
+| 45 | Blue | #0066ff |
+| 53 | Purple | #9900ff |
+| 57 | Pink | #ff00ff |
+| 3 | White | #ffffff |
+
+## Pad Modes
+
+### SELECTOR (Radio Buttons)
 - Only one active per group (scenes, presets, colors)
 - Active pad blinks with beat
-- Example: Scene selection pads
+- Perfect for: Scene selection, preset banks
 
-**TOGGLE (On/Off Switch)**
-- Press to toggle between two states
-- No blinking
-- Example: Strobe effect, filters
+### TOGGLE (On/Off Switch)
+- Press to toggle between on/off states
+- Sends different OSC for each state
+- Perfect for: Strobe, filters, effects
 
-**ONE-SHOT (Momentary)**
-- Triggers action on press
-- No persistent state
-- Example: Next/previous buttons, bangs
+### ONE-SHOT (Momentary)
+- Triggers action on press, no persistent state
+- Perfect for: Next/previous, triggers, bangs
 
 ## Configuration
 
@@ -94,20 +137,20 @@ Config file: `~/.config/launchpad-synesthesia/config.yaml`
 ```yaml
 version: "1.0"
 pads:
-  "0,0":  # Bottom-left pad
+  "0,0":
     mode: SELECTOR
     group: scenes
-    idle_color: 0    # Off
-    active_color: 5  # Red
+    idle_color: 0
+    active_color: 21  # Green
     label: "Alien Cavern"
     osc_action:
       address: "/scenes/AlienCavern"
       args: []
-  
+
   "1,0":
     mode: TOGGLE
     idle_color: 0
-    active_color: 21  # Green
+    active_color: 5  # Red
     label: "Strobe"
     osc_on:
       address: "/controls/global/strobe"
@@ -115,8 +158,8 @@ pads:
     osc_off:
       address: "/controls/global/strobe"
       args: [0]
-  
-  "7,-1":  # Top-right button
+
+  "7,-1":
     mode: ONE_SHOT
     active_color: 45  # Blue
     label: "Next Scene"
@@ -125,116 +168,149 @@ pads:
       args: []
 ```
 
-### Color Palette
+## Learn Mode Workflow
 
-```python
-0  = Off           17 = Green Dim
-1  = Red Dim       21 = Green
-3  = White         37 = Cyan
-5  = Red           41 = Blue Dim
-9  = Orange        45 = Blue
-13 = Yellow        53 = Purple
-                   57 = Pink
+```
+┌─────────────────────────────────────────────────────────────┐
+│  NORMAL                                                      │
+│    │                                                         │
+│    │ Press L                                                 │
+│    ▼                                                         │
+│  LEARN_WAIT_PAD  ─────────────────────────────────────────┐ │
+│    │                                                       │ │
+│    │ Click/press a pad                                     │ │
+│    ▼                                                       │ │
+│  LEARN_RECORD_OSC                                          │ │
+│    │                                                       │ │
+│    │ 5 seconds recording                                   │ │
+│    │ (starts on first OSC)                                 │ │
+│    ▼                                                       │ │
+│  LEARN_SELECT_MSG                                          │ │
+│    │                                                       │ │
+│    │ Press 1-9 to select command                           │ │
+│    ▼                                                       │ │
+│  NORMAL (config saved!)                                    │ │
+│                                               ┌────────────┘ │
+│                              Press Esc ──────▶│              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## OSC Messages
 
-### Controllable (Can be mapped)
+### Controllable (Can be mapped to pads)
 
 ```
-/scenes/{name}                 - Activate scene
-/presets/{name}                - Activate preset
-/favslots/{0-7}                - Favorite slots
-/playlist/next                 - Next scene
-/playlist/previous             - Previous scene
-/controls/meta/hue {0.0-1.0}   - Master hue
-/controls/meta/saturation
-/controls/meta/brightness
-/controls/global/{param} {val} - Global controls
+/scenes/{name}               - Activate scene
+/presets/{name}              - Activate preset
+/favslots/{0-7}              - Favorite slots
+/playlist/next               - Next scene
+/playlist/previous           - Previous scene
+/controls/meta/hue           - Master hue (0.0-1.0)
+/controls/meta/saturation    - Master saturation
+/controls/meta/brightness    - Master brightness
+/controls/global/{param}     - Global controls
 ```
 
-### State Sync (Received only)
+### State Sync (Received from Synesthesia)
 
 ```
-/audio/beat/onbeat {0|1}       - Beat pulse for LED sync
-/audio/bpm {float}             - Current BPM
-/audio/level {float}           - Audio level
+/audio/beat/onbeat {0|1}     - Beat pulse for LED sync
+/audio/bpm {float}           - Current BPM
+/audio/level {float}         - Audio level
 ```
 
-## Learn Mode Workflow
+## Testing
 
-1. **Press `L`** → Enter learn mode
-2. **Press a pad** → Selected for configuration
-3. **Trigger in Synesthesia** → Click scene/preset/control
-4. **Timer starts** → On first controllable OSC message
-5. **Wait 5 seconds** → Recording captures all OSC
-6. **Select command** → Choose from filtered candidates
-7. **Configure pad** → Type (selector/toggle/one-shot), group, colors
-8. **Save** → Config persisted to YAML
-
-## Advanced Usage
-
-### Manual Config Editing
-
-Edit `~/.config/launchpad-synesthesia/config.yaml` directly for bulk changes.
-
-### Troubleshooting
-
-**Launchpad not detected**:
-- Ensure it's in Programmer mode
-- Linux: Check user in `audio` group
-
-**OSC not connecting**:
-- Check Synesthesia OSC settings match (9000 in, 9001 out)
-- Firewall blocking localhost UDP?
-
-**Pads not responding**:
-- Check Event Log for OSC messages
-- Verify OSC address matches Synesthesia exactly
-- Check connection status panel
-
-### Running Tests
+### Run All Tests
 
 ```bash
-cd python-vj
-python -m pytest launchpad_synesthesia_control/tests/
+cd python-vj/launchpad_synesthesia_control
+pip install pytest pytest-asyncio
+python -m pytest tests/ -v
 ```
 
-### Type Checking
+### Test Coverage
 
-```bash
-mypy launchpad_synesthesia_control/
-```
+| Module | Tests | Description |
+|--------|-------|-------------|
+| `test_model.py` | 36 | Data structures, immutability |
+| `test_fsm.py` | 27 | State machine transitions |
+| `test_blink.py` | 22 | Beat sync logic |
+| `test_config.py` | 22 | YAML persistence |
+| `test_tui.py` | 11 | UI components (requires textual.testing) |
+
+### Test Architecture
+
+Tests use pytest with:
+- **Fixtures** for common state setups
+- **Parametrized tests** for boundary conditions
+- **Pure function testing** - no mocks needed for domain logic
+- **Injectable time function** for timer testing
 
 ## Architecture
 
 ### Functional Core / Imperative Shell
 
-**Pure Functions** (`app/domain/`):
-- `model.py` - Immutable dataclasses
-- `fsm.py` - State transitions (handle_pad_press, handle_osc_event)
-- `blink.py` - Beat sync calculations
-
-**Imperative Shell** (`app/io/`, `app/ui/`):
-- `midi_launchpad.py` - MIDI I/O
-- `osc_synesthesia.py` - OSC I/O
-- `config.py` - File I/O
-- `tui.py` - UI rendering
-
-Benefits: Easy testing, no side effects in logic, clear boundaries
-
-## VJ Console Integration (Coming Soon)
-
-Will be integrated as Screen #8 in the main VJ Console:
-
-```bash
-python vj_console.py
-# Press 8 to access Launchpad config
 ```
+┌────────────────────────────────────────────────────────────┐
+│                      Imperative Shell                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
+│  │ tui.py      │  │ midi_       │  │ osc_synesthesia.py  │ │
+│  │ (UI)        │  │ launchpad.py│  │ (OSC I/O)           │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘ │
+│         │                │                     │            │
+│         └────────────────┼─────────────────────┘            │
+│                          │                                  │
+│                   Effects│& Events                          │
+│                          │                                  │
+│  ┌───────────────────────┼────────────────────────────────┐ │
+│  │                Functional Core                         │ │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐             │ │
+│  │  │ model.py │  │ fsm.py   │  │ blink.py │             │ │
+│  │  │ (Data)   │  │ (Logic)  │  │ (Calc)   │             │ │
+│  │  └──────────┘  └──────────┘  └──────────┘             │ │
+│  │                                                        │ │
+│  │  - Immutable dataclasses                              │ │
+│  │  - Pure functions: (state, event) → (state, effects)  │ │
+│  │  - No I/O, no side effects                            │ │
+│  └────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- Domain logic is fully testable without mocks
+- Clear separation of concerns
+- Effects are data, executed by shell
+- Easy to reason about state transitions
+
+## Troubleshooting
+
+### Launchpad not detected
+- Ensure it's in Programmer mode (hold Session → press orange → release)
+- Linux: Check user is in `audio` group (`sudo usermod -aG audio $USER`)
+- Check USB connection
+
+### OSC not connecting
+- Verify Synesthesia OSC ports: Send 8000, Receive 9000
+- Check firewall isn't blocking localhost UDP
+- Look for "OSC connected" in status panel
+
+### Pads not responding
+- Check Event Log panel for incoming OSC
+- Verify OSC address matches exactly
+- Ensure pad is mapped (not showing `·`)
+
+### Colors not showing
+- Requires terminal with true color support
+- Try: `export COLORTERM=truecolor`
+- Works best in modern terminals (iTerm2, Windows Terminal, etc.)
 
 ## Contributing
 
-See `LLMS.txt` for AI assistant guidelines on editing mappings and extending functionality.
+1. Run tests before submitting: `python -m pytest tests/ -v`
+2. Follow functional core pattern for domain logic
+3. Keep UI code in imperative shell
+4. See `LLMS.txt` for AI assistant guidelines
 
 ## License
 
@@ -243,4 +319,3 @@ See main repository LICENSE
 ## Credits
 
 Part of the [Synesthesia Visuals](https://github.com/abossard/synesthesia-visuals) project.
-

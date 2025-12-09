@@ -5,7 +5,7 @@ Interactive widgets for the learn mode workflow.
 """
 
 import time
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 from textual.widgets import Static, ListView, ListItem, Label, Button, Input
 from textual.containers import Container, Vertical, Horizontal
@@ -13,6 +13,20 @@ from textual.reactive import reactive
 from textual.binding import Binding
 
 from ..domain.model import OscCommand, OscEvent, PadMode, PadGroupName, AppMode, LearnState
+
+# Default time function (can be overridden for testing)
+_time_func: Callable[[], float] = time.time
+
+
+def set_time_func(func: Callable[[], float]) -> None:
+    """Set the time function used by learn UI (for testing)."""
+    global _time_func
+    _time_func = func
+
+
+def get_current_time() -> float:
+    """Get current time using configured time function."""
+    return _time_func()
 
 
 class LearnModePanel(Container):
@@ -55,7 +69,7 @@ class LearnModePanel(Container):
             
             elif self.app_mode == AppMode.LEARN_RECORD_OSC:
                 if self.learn_state.record_start_time:
-                    elapsed = time.time() - self.learn_state.record_start_time
+                    elapsed = get_current_time() - self.learn_state.record_start_time
                     remaining = max(0, 5.0 - elapsed)
                     status_widget.update(f"[yellow]Recording OSC for pad {self.learn_state.selected_pad}[/]")
                     timer_widget.update(f"[cyan]Time remaining: {remaining:.1f}s[/]")
