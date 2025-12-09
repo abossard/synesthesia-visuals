@@ -11,7 +11,7 @@ from typing import Optional, List
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.widgets import Header, Footer, Static, Label, Button, Input
+from textual.widgets import Header, Footer, Static, Label, Button
 from textual.binding import Binding
 from textual.reactive import reactive
 
@@ -189,27 +189,6 @@ class LogPanel(VerticalScroll):
             self.mount(Label(log))
 
 
-class OscConfigPanel(Container):
-    """OSC configuration panel."""
-    
-    def compose(self) -> ComposeResult:
-        yield Label("OSC Configuration", classes="panel-title")
-        yield Label("Host: localhost (fixed)")
-        yield Horizontal(
-            Label("Send Port:"),
-            Input(value="9000", id="osc_send_port", classes="port-input"),
-            classes="config-row"
-        )
-        yield Label("[dim]Synesthesia Input (default 9000)[/]")
-        yield Horizontal(
-            Label("Receive Port:"),
-            Input(value="8000", id="osc_receive_port", classes="port-input"),
-            classes="config-row"
-        )
-        yield Label("[dim]Synesthesia Output (default 8000)[/]")
-        yield Button("Apply", id="apply_osc", variant="primary")
-
-
 # =============================================================================
 # MAIN APPLICATION
 # =============================================================================
@@ -242,11 +221,6 @@ class LaunchpadSynesthesiaApp(App):
         padding: 1;
     }
     
-    #osc_config_container {
-        border: solid magenta;
-        padding: 1;
-    }
-    
     #log_container {
         column-span: 2;
         border: solid blue;
@@ -258,15 +232,6 @@ class LaunchpadSynesthesiaApp(App):
         text-align: center;
         text-style: bold;
         color: cyan;
-    }
-    
-    .config-row {
-        height: 3;
-        margin: 1 0;
-    }
-    
-    .port-input {
-        width: 10;
     }
     """
     
@@ -301,9 +266,6 @@ class LaunchpadSynesthesiaApp(App):
         with Container(id="learn_mode_container"):
             yield LearnModePanel(id="learn_panel")
         
-        with Container(id="osc_config_container"):
-            yield OscConfigPanel()
-        
         with Container(id="log_container"):
             yield Label("Event Log", classes="panel-title")
             yield LogPanel(id="log_panel")
@@ -337,6 +299,12 @@ class LaunchpadSynesthesiaApp(App):
         
         # Update UI
         self._update_ui()
+
+        # Default focus away from port inputs so app doesn't feel stuck there
+        try:
+            self.set_focus("#launchpad_grid")
+        except Exception:
+            pass
     
     async def _init_launchpad(self):
         """Initialize Launchpad connection."""
@@ -354,11 +322,16 @@ class LaunchpadSynesthesiaApp(App):
         self._update_connection_status()
     
     async def _init_osc(self):
-        """Initialize OSC connection."""
-        # Get port from inputs (or use Synesthesia defaults)
-        send_port = 9000  # Synesthesia receives on 9000
-        receive_port = 8000  # Synesthesia sends on 8000
-        
+        """Initialize OSC connection with fixed ports."""
+        send_port = 9000
+        receive_port = 8000
+
+        if self.osc:
+            try:
+                await self.osc.stop()
+            except Exception:
+                pass
+
         self.osc = OscManager(OscConfig(
             host="127.0.0.1",
             send_port=send_port,
@@ -524,7 +497,7 @@ class LaunchpadSynesthesiaApp(App):
         except:
             # UI not ready yet
             pass
-    
+
     def action_learn(self):
         """Enter learn mode."""
         new_state, effects = enter_learn_mode(self.state)
@@ -541,9 +514,8 @@ class LaunchpadSynesthesiaApp(App):
     
     async def on_button_pressed(self, event: Button.Pressed):
         """Handle button press."""
-        if event.button.id == "apply_osc":
-            # Reload OSC with new ports
-            await self._init_osc()
+        # No buttons now
+        return
 
 
 def run_app():
