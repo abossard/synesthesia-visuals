@@ -1,18 +1,20 @@
 """
 Tests for Synesthesia OSC configuration.
 
-Tests is_controllable, get_default_button_type, categorize_address.
+Tests is_controllable, get_default_button_type, categorize_address, is_noisy_audio.
 """
 
 import pytest
 from launchpad_osc_lib.synesthesia_config import (
     is_controllable,
+    is_noisy_audio,
     categorize_address,
     get_default_button_type,
     get_button_type_description,
     get_suggested_colors,
     OscAddressCategory,
     CONTROLLABLE_PREFIXES,
+    NOISY_AUDIO_PREFIXES,
     BEAT_ADDRESS,
     BPM_ADDRESS,
 )
@@ -198,6 +200,34 @@ class TestConstants:
         assert len(CONTROLLABLE_PREFIXES) > 0
         assert "/scenes/" in CONTROLLABLE_PREFIXES
         assert "/presets/" in CONTROLLABLE_PREFIXES
+
+
+class TestIsNoisyAudio:
+    """Test is_noisy_audio function."""
+
+    @pytest.mark.parametrize("address,expected", [
+        # Noisy audio (high-frequency spam)
+        ("/audio/level", True),
+        ("/audio/level/bass", True),
+        ("/audio/fft/bin0", True),
+        ("/audio/fft/", True),
+        ("/audio/timecode", True),
+        # Non-noisy audio (sparse events)
+        ("/audio/beat/onbeat", False),
+        ("/audio/bpm", False),
+        # Non-audio
+        ("/scenes/Test", False),
+        ("/presets/Cool", False),
+        ("/global/strobe", False),
+    ])
+    def test_is_noisy_audio(self, address: str, expected: bool):
+        """Test is_noisy_audio classification."""
+        assert is_noisy_audio(address) == expected
+
+    def test_noisy_prefixes_exist(self):
+        """Noisy audio prefixes are defined."""
+        assert len(NOISY_AUDIO_PREFIXES) > 0
+        assert "/audio/level" in NOISY_AUDIO_PREFIXES
 
 
 if __name__ == "__main__":

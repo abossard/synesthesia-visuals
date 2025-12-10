@@ -299,6 +299,40 @@ AUDIO_LEVEL_ADDRESSES = [
     "/audio/level/high",
 ]
 
+# Noisy audio prefixes - high-frequency messages that spam the OSC stream
+# These are sent continuously and should be filtered from UI displays
+NOISY_AUDIO_PREFIXES: List[str] = [
+    "/audio/level",      # Audio levels (sent every frame)
+    "/audio/fft/",       # FFT data (sent every frame)
+    "/audio/timecode",   # Timecode (sent continuously)
+]
+
+
+def is_noisy_audio(address: str) -> bool:
+    """
+    Check if an OSC address is a noisy audio message.
+    
+    Noisy audio messages are sent at high frequency (every frame) and 
+    spam the OSC stream. They should be filtered from UI displays but
+    may still be processed for beat sync, etc.
+    
+    NOT noisy (keep):
+    - /audio/beat/onbeat - beat pulses (sparse, useful for LED blink)
+    - /audio/bpm - BPM updates (sparse)
+    
+    Noisy (filter):
+    - /audio/level* - audio levels (every frame)
+    - /audio/fft/* - FFT data (every frame)
+    - /audio/timecode - playback position (every frame)
+    
+    Args:
+        address: OSC address path
+        
+    Returns:
+        True if the address is a noisy audio message
+    """
+    return any(address.startswith(prefix) for prefix in NOISY_AUDIO_PREFIXES)
+
 
 # =============================================================================
 # STATE SYNC - OSC addresses that update internal state

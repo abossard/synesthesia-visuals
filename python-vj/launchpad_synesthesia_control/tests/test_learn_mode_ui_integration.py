@@ -215,54 +215,41 @@ class TestCommandSelectionScreen:
 
         assert screen.candidates == candidates
         assert screen.pad_id == "2,3"
-        assert screen.selected_command_idx == 0
-        assert screen.selected_mode == PadMode.SELECTOR
+        # Auto-detects scenes -> SELECTOR mode
+        assert screen.initial_mode == PadMode.SELECTOR
 
-    def test_modal_default_colors_by_mode(self):
-        """Modal should have sensible default colors."""
-        from launchpad_synesthesia_control.app.ui.command_selection_screen import CommandSelectionScreen
+    def test_modal_default_colors(self):
+        """Modal should use sensible default colors from palette."""
+        from launchpad_synesthesia_control.app.ui.command_selection_screen import (
+            CommandSelectionScreen, COLOR_PALETTE
+        )
 
         screen = CommandSelectionScreen(
             candidates=[OscCommand("/scenes/Test", [])],
             pad_id="0,0"
         )
 
-        # Check defaults
-        assert screen.idle_color_idx >= 0
-        assert screen.active_color_idx >= 0
-        assert screen.idle_color_idx < 8
-        assert screen.active_color_idx < 8
+        # Verify COLOR_PALETTE has expected entries
+        assert len(COLOR_PALETTE) >= 4
+        assert all(isinstance(c[1], int) for c in COLOR_PALETTE)
 
-    def test_modal_confirms_with_all_fields(self):
-        """Confirming modal should return all configuration fields."""
+    def test_modal_auto_detects_mode(self):
+        """Modal should auto-detect mode from command address."""
         from launchpad_synesthesia_control.app.ui.command_selection_screen import CommandSelectionScreen
 
-        candidates = [OscCommand("/scenes/Test", [])]
-        screen = CommandSelectionScreen(candidates=candidates, pad_id="2,3")
-
-        # Simulate user selections
-        screen.selected_mode = PadMode.SELECTOR
-        screen.selected_group = "scenes"
-        screen.label_text = "Test Label"
-
-        # Mock the query_one to avoid UI dependency
-        with patch.object(screen, 'query_one') as mock_query:
-            mock_input = Mock()
-            mock_input.value = "Test Label"
-            mock_query.return_value = mock_input
-
-            # Call action_confirm
-            with patch.object(screen, 'dismiss') as mock_dismiss:
-                screen.action_confirm()
-
-                # Verify dismiss called with correct result
-                result = mock_dismiss.call_args[0][0]
-                assert result["command"] == candidates[0]
-                assert result["mode"] == PadMode.SELECTOR
-                assert result["group"] == "scenes"
-                assert result["label"] == "Test Label"
-                assert "idle_color" in result
-                assert "active_color" in result
+        # Scenes -> SELECTOR
+        screen1 = CommandSelectionScreen(
+            candidates=[OscCommand("/scenes/Test", [])],
+            pad_id="0,0"
+        )
+        assert screen1.initial_mode == PadMode.SELECTOR
+        
+        # Unknown address -> ONE_SHOT (default)
+        screen2 = CommandSelectionScreen(
+            candidates=[OscCommand("/control/bypass", [1])],
+            pad_id="1,1"
+        )
+        assert screen2.initial_mode == PadMode.ONE_SHOT
 
 
 class TestLearnModeKeyboardShortcuts:

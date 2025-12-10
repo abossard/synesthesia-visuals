@@ -16,6 +16,7 @@ from .model import OscCommand
 from .synesthesia_config import (
     DEFAULT_OSC_PORTS,
     is_controllable,
+    is_noisy_audio,
     BEAT_ADDRESS,
 )
 
@@ -69,6 +70,7 @@ class SynesthesiaOscManager:
         
         # Callback lists
         self._controllable_listeners: List[Callable[[OscEvent], None]] = []
+        self._monitor_listeners: List[Callable[[OscEvent], None]] = []
         self._all_listeners: List[Callable[[OscEvent], None]] = []
         
         # Beat pulse state (for LED blinking)
@@ -134,14 +136,41 @@ class SynesthesiaOscManager:
         if callback in self._controllable_listeners:
             self._controllable_listeners.remove(callback)
     
-    def add_all_listener(self, callback: Callable[[OscEvent], None]):
+    def add_monitor_listener(self, callback: Callable[[OscEvent], None]):
         """
-        Add listener for ALL OSC messages.
+        Add listener for OSC messages suitable for UI monitoring.
+        
+        Filters out noisy high-frequency messages:
+        - /audio/level* (sent every frame)
+        - /audio/fft/* (FFT data every frame)
+        - /audio/timecode (continuous)
         
         Use this for:
         - OSC monitor/debug display
+        - UI event logging
+        
+        Args:
+            callback: Function called with filtered OscEvents
+        """
+        if callback not in self._monitor_listeners:
+            self._monitor_listeners.append(callback)
+    
+    def remove_monitor_listener(self, callback: Callable[[OscEvent], None]):
+        """Remove a monitor listener."""
+        if callback in self._monitor_listeners:
+            self._monitor_listeners.remove(callback)
+    
+    def add_all_listener(self, callback: Callable[[OscEvent], None]):
+        """
+        Add listener for ALL OSC messages (unfiltered).
+        
+        WARNING: This includes high-frequency audio messages (levels, FFT).
+        For UI monitoring, use add_monitor_listener() instead.
+        
+        Use this for:
         - Beat sync (/audio/beat/*)
         - BPM tracking (/audio/bpm)
+        - Raw audio analysis
         
         Args:
             callback: Function called with every OscEvent
@@ -189,12 +218,20 @@ class SynesthesiaOscManager:
         if address == BEAT_ADDRESS:
             self._beat_pulse = bool(event.args[0]) if event.args else False
         
-        # Dispatch to all-message listeners
+        # Dispatch to all-message listeners (unfiltered)
         for callback in self._all_listeners:
             try:
                 callback(event)
             except Exception as e:
                 logger.error(f"Error in OSC all-listener: {e}")
+        
+        # Dispatch to monitor listeners (filtered - no noisy audio)
+        if not is_noisy_audio(address):
+            for callback in self._monitor_listeners:
+                try:
+                    callback(event)
+                except Exception as e:
+                    logger.error(f"Error in OSC monitor-listener: {e}")
         
         # Dispatch to controllable listeners (filtered)
         if is_controllable(address):

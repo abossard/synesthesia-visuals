@@ -486,8 +486,8 @@ class LaunchpadSynesthesiaApp(App):
         
         connected = await self.osc.connect()
         if connected:
-            # Register for all messages (for OSC monitor and beat sync)
-            self.osc.add_all_listener(self._on_osc_event)
+            # Register for monitor messages (filtered - no noisy audio spam)
+            self.osc.add_monitor_listener(self._on_osc_event)
             self.add_log(f"OSC connected: {self.osc.status}", "INFO")
         else:
             self.add_log("OSC not available - auto-reconnect enabled", "WARNING")
@@ -587,8 +587,7 @@ class LaunchpadSynesthesiaApp(App):
         """
         Handle OSC event in async context.
 
-        Performance note: This is called for EVERY OSC message.
-        At high rates (1000+ msg/sec), we:
+        Performance note: Uses monitor_listener which filters noisy audio.
         - Skip debug logging (expensive string formatting)
         - Use fast O(1) dictionary updates in monitor panel
         - Throttle UI updates to 2x per second
