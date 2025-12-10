@@ -176,7 +176,6 @@ class StandaloneApp:
         """Execute side effects."""
         for effect in effects:
             if isinstance(effect, SendOscEffect):
-                logger.debug(f"OSC TX: {effect.command}")
                 self.osc.send(effect.command)
             
             elif isinstance(effect, SaveConfigEffect):

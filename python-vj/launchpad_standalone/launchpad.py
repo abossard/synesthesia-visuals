@@ -187,13 +187,16 @@ class LaunchpadDevice:
             pad_id = note_to_pad("note", msg.note)
             if pad_id:
                 if msg.velocity > 0 and self._press_callback:
+                    logger.info(f"MIDI RX: Press {pad_id} (note={msg.note}, vel={msg.velocity})")
                     self._press_callback(pad_id, msg.velocity)
                 elif msg.velocity == 0 and self._release_callback:
+                    logger.info(f"MIDI RX: Release {pad_id} (note={msg.note})")
                     self._release_callback(pad_id)
         
         elif msg.type == 'note_off':
             pad_id = note_to_pad("note", msg.note)
             if pad_id and self._release_callback:
+                logger.info(f"MIDI RX: Release {pad_id} (note={msg.note})")
                 self._release_callback(pad_id)
     
     def set_led(self, pad_id: PadId, color: int):
@@ -209,6 +212,7 @@ class LaunchpadDevice:
         _, note = pad_to_note(pad_id)
         
         try:
+            logger.info(f"MIDI TX: LED {pad_id} → color={color} (note={note})")
             self._output_port.send(Message('note_on', note=note, velocity=color))
         except Exception as e:
             logger.error(f"LED error: {e}")
