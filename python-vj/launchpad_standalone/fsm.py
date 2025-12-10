@@ -13,13 +13,18 @@ from .model import (
     AppState, LearnState, LearnPhase, LearnRegister, PadId, PadConfig,
     OscCommand, OscEvent, PadMode, ControllerConfig,
     LedEffect, SendOscEffect, SaveConfigEffect, LogEffect,
-    LP_OFF, LP_GREEN, LP_GREEN_DIM, COLOR_PREVIEW_PALETTE,
+    LP_OFF, LP_GREEN, LP_GREEN_DIM,
+    # Brightness utilities
+    BrightnessLevel, BASE_COLOR_NAMES, get_color_at_brightness,
 )
 from .osc_categories import categorize_osc, should_stop_recording, is_controllable
 from .display import (
     LEARN_BUTTON, SAVE_PAD, TEST_PAD, CANCEL_PAD,
     REGISTER_OSC_PAD, REGISTER_MODE_PAD, REGISTER_COLOR_PAD,
     OSC_PAGE_PREV, OSC_PAGE_NEXT,
+    # Brightness control pads
+    IDLE_BRIGHTNESS_DOWN, IDLE_BRIGHTNESS_UP,
+    ACTIVE_BRIGHTNESS_DOWN, ACTIVE_BRIGHTNESS_UP,
 )
 
 
@@ -205,24 +210,145 @@ def _handle_mode_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[
 
 
 def _handle_color_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
-    """Handle pad press in color selection register."""
-    learn = state.learn
+    """
+    Handle pad press in color selection register.
     
-    # Left 4x4 grid: Idle color (cols 0-3, rows 2-5)
-    if 0 <= pad_id.x <= 3 and 2 <= pad_id.y <= 5:
+    Layout:
+    - Row 5: Brightness level indicators (cols 0-2 for idle, 5-7 for active)
+    - Rows 2-4: Color selection grids (cols 0-3 for idle, 4-7 for active)
+    - Row 1: Brightness adjustment buttons (cols 0-1 for idle, 6-7 for active)
+    """
+    learn = state.learn
+    base_colors_to_show = BASE_COLOR_NAMES[:10]  # Same 10 colors as display
+    
+    # ---- Brightness level selection (row 5) ----
+    # Idle brightness levels (cols 0-2)
+    if pad_id.y == 5 and 0 <= pad_id.x <= 2:
+        new_brightness = BrightnessLevel(pad_id.x)
+        # Recalculate selected color at new brightness
+        color_name, _ = _find_base_color_for_velocity(learn.selected_idle_color, base_colors_to_show, learn.idle_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            # Keep same color index, just update brightness
+            new_color = learn.selected_idle_color
+        new_learn = replace(learn, idle_brightness=new_brightness, selected_idle_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    # Active brightness levels (cols 5-7)
+    if pad_id.y == 5 and 5 <= pad_id.x <= 7:
+        new_brightness = BrightnessLevel(pad_id.x - 5)
+        color_name, _ = _find_base_color_for_velocity(learn.selected_active_color, base_colors_to_show, learn.active_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            new_color = learn.selected_active_color
+        new_learn = replace(learn, active_brightness=new_brightness, selected_active_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    # ---- Brightness adjustment buttons (row 1) ----
+    if pad_id == IDLE_BRIGHTNESS_DOWN:
+        new_level = max(0, learn.idle_brightness.value - 1)
+        new_brightness = BrightnessLevel(new_level)
+        color_name, _ = _find_base_color_for_velocity(learn.selected_idle_color, base_colors_to_show, learn.idle_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            new_color = learn.selected_idle_color
+        new_learn = replace(learn, idle_brightness=new_brightness, selected_idle_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    if pad_id == IDLE_BRIGHTNESS_UP:
+        new_level = min(2, learn.idle_brightness.value + 1)
+        new_brightness = BrightnessLevel(new_level)
+        color_name, _ = _find_base_color_for_velocity(learn.selected_idle_color, base_colors_to_show, learn.idle_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            new_color = learn.selected_idle_color
+        new_learn = replace(learn, idle_brightness=new_brightness, selected_idle_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    if pad_id == ACTIVE_BRIGHTNESS_DOWN:
+        new_level = max(0, learn.active_brightness.value - 1)
+        new_brightness = BrightnessLevel(new_level)
+        color_name, _ = _find_base_color_for_velocity(learn.selected_active_color, base_colors_to_show, learn.active_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            new_color = learn.selected_active_color
+        new_learn = replace(learn, active_brightness=new_brightness, selected_active_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    if pad_id == ACTIVE_BRIGHTNESS_UP:
+        new_level = min(2, learn.active_brightness.value + 1)
+        new_brightness = BrightnessLevel(new_level)
+        color_name, _ = _find_base_color_for_velocity(learn.selected_active_color, base_colors_to_show, learn.active_brightness)
+        if color_name:
+            new_color = get_color_at_brightness(color_name, new_brightness)
+        else:
+            new_color = learn.selected_active_color
+        new_learn = replace(learn, active_brightness=new_brightness, selected_active_color=new_color)
+        return replace(state, learn=new_learn), []
+    
+    # ---- Color selection grids (rows 2-4) ----
+    # Left side: Idle colors (cols 0-3, rows 2-4) - 8 colors + 2 more in row 4
+    if 0 <= pad_id.x <= 3 and 2 <= pad_id.y <= 3:
+        # Main 8 colors (4 per row)
         idx = (pad_id.y - 2) * 4 + pad_id.x
-        if idx < len(COLOR_PREVIEW_PALETTE):
-            new_learn = replace(learn, selected_idle_color=COLOR_PREVIEW_PALETTE[idx])
+        if idx < len(base_colors_to_show):
+            color_name = base_colors_to_show[idx]
+            new_color = get_color_at_brightness(color_name, learn.idle_brightness)
+            new_learn = replace(learn, selected_idle_color=new_color)
             return replace(state, learn=new_learn), []
     
-    # Right 4x4 grid: Active color (cols 4-7, rows 2-5)
-    if 4 <= pad_id.x <= 7 and 2 <= pad_id.y <= 5:
+    # Row 4 extras for idle (cols 0-1)
+    if pad_id.y == 4 and 0 <= pad_id.x <= 1:
+        idx = 8 + pad_id.x
+        if idx < len(base_colors_to_show):
+            color_name = base_colors_to_show[idx]
+            new_color = get_color_at_brightness(color_name, learn.idle_brightness)
+            new_learn = replace(learn, selected_idle_color=new_color)
+            return replace(state, learn=new_learn), []
+    
+    # Right side: Active colors (cols 4-7, rows 2-3)
+    if 4 <= pad_id.x <= 7 and 2 <= pad_id.y <= 3:
         idx = (pad_id.y - 2) * 4 + (pad_id.x - 4)
-        if idx < len(COLOR_PREVIEW_PALETTE):
-            new_learn = replace(learn, selected_active_color=COLOR_PREVIEW_PALETTE[idx])
+        if idx < len(base_colors_to_show):
+            color_name = base_colors_to_show[idx]
+            new_color = get_color_at_brightness(color_name, learn.active_brightness)
+            new_learn = replace(learn, selected_active_color=new_color)
+            return replace(state, learn=new_learn), []
+    
+    # Row 4 extras for active (cols 6-7)
+    if pad_id.y == 4 and 6 <= pad_id.x <= 7:
+        idx = 8 + (pad_id.x - 6)
+        if idx < len(base_colors_to_show):
+            color_name = base_colors_to_show[idx]
+            new_color = get_color_at_brightness(color_name, learn.active_brightness)
+            new_learn = replace(learn, selected_active_color=new_color)
             return replace(state, learn=new_learn), []
     
     return state, []
+
+
+def _find_base_color_for_velocity(velocity: int, base_colors: list, current_brightness: BrightnessLevel) -> Tuple[Optional[str], Optional[BrightnessLevel]]:
+    """
+    Find which base color matches a velocity value at the current brightness.
+    
+    Returns (color_name, brightness_level) or (None, None) if not found.
+    """
+    for color_name in base_colors:
+        if get_color_at_brightness(color_name, current_brightness) == velocity:
+            return color_name, current_brightness
+    
+    # Try all brightness levels as fallback
+    for color_name in base_colors:
+        for level in BrightnessLevel:
+            if get_color_at_brightness(color_name, level) == velocity:
+                return color_name, level
+    
+    return None, None
 
 
 def test_config(state: AppState) -> Tuple[AppState, List[Effect]]:

@@ -67,9 +67,47 @@ After recording, you enter the config phase:
 ## Color Preview
 
 When in Color Selection register, the grid shows:
-- **Left 4x4**: Idle color palette (16 colors)
-- **Right 4x4**: Active color palette (16 colors)
-- **Row 6**: Preview of selected idle (left) and active (right)
+
+```
+Row 7: [OSC] [Mode] [Color] [ ] [ ] [ ] [◄] [►]  ← Register tabs
+Row 6: [ ] [IDLE] [ ] [ ]    [ ] [ACT] [ ] [ ]   ← Preview of selected colors
+Row 5: [D] [N] [B] [ ]       [ ] [D] [N] [B]     ← Brightness level indicator (DIM/NORMAL/BRIGHT)
+Row 4: [Pk][Wh][ ] [ ]       [ ] [ ] [Pk][Wh]    ← Extra colors (pink, white)
+Row 3: [Cy][Bl][Pu][ ]       [ ] [Cy][Bl][Pu]    ← Colors row 2
+Row 2: [Rd][Or][Yw][Li][Gr]  [Rd][Or][Yw][Li]    ← Colors row 1 (10 base colors each side)
+Row 1: [▼] [▲] [ ] [ ]       [ ] [ ] [▼] [▲]     ← Brightness ▼/▲ buttons
+Row 0: [SAVE] [TEST] ...     ... [CANCEL]        ← Action buttons
+       └─── Idle side ───┘   └─── Active side ──┘
+```
+
+### Color Selection Features
+
+- **10 Base Colors**: Red, Orange, Yellow, Lime, Green, Cyan, Blue, Purple, Pink, White
+- **3 Brightness Levels**: DIM (33%), NORMAL (66%), BRIGHT (100%)
+- **Independent Brightness**: Idle and Active colors have separate brightness controls
+
+### Brightness Controls (Row 1)
+
+| Position | Function |
+|----------|----------|
+| Col 0 (▼) | Decrease idle brightness |
+| Col 1 (▲) | Increase idle brightness |
+| Col 6 (▼) | Decrease active brightness |
+| Col 7 (▲) | Increase active brightness |
+
+- Brightness buttons show **bright blue** when adjustment is available
+- Buttons show **dim blue** when at limit (can't go lower/higher)
+
+### Brightness Level Indicator (Row 5)
+
+- Three pads per side showing current brightness level
+- **Green** = current level, **Dim green** = other levels
+- Click any level pad to jump directly to that brightness
+
+### Default Brightness
+
+- **Idle**: NORMAL (66%) - visible but not distracting
+- **Active**: BRIGHT (100%) - stands out when triggered
 
 ## OSC Smart Detection
 

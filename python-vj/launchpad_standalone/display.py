@@ -10,8 +10,9 @@ from .model import (
     AppState, LearnState, LearnPhase, LearnRegister, PadId,
     LedEffect, PadMode,
     LP_OFF, LP_RED, LP_RED_DIM, LP_ORANGE, LP_YELLOW, LP_GREEN,
-    LP_GREEN_DIM, LP_CYAN, LP_BLUE, LP_PURPLE, LP_PINK, LP_WHITE,
-    COLOR_PREVIEW_PALETTE,
+    LP_GREEN_DIM, LP_CYAN, LP_BLUE, LP_BLUE_DIM, LP_PURPLE, LP_PINK, LP_WHITE,
+    # Brightness utilities
+    BrightnessLevel, BASE_COLOR_NAMES, get_color_at_brightness,
 )
 
 
@@ -35,6 +36,14 @@ REGISTER_COLOR_PAD = PadId(2, 7)
 # OSC pagination (in top row)
 OSC_PAGE_PREV = PadId(6, 7)
 OSC_PAGE_NEXT = PadId(7, 7)
+
+# Brightness controls (row 1 in color selection)
+# Idle brightness: cols 0-1 (down/up)
+IDLE_BRIGHTNESS_DOWN = PadId(0, 1)
+IDLE_BRIGHTNESS_UP = PadId(1, 1)
+# Active brightness: cols 6-7 (down/up)
+ACTIVE_BRIGHTNESS_DOWN = PadId(6, 1)
+ACTIVE_BRIGHTNESS_UP = PadId(7, 1)
 
 
 # =============================================================================
@@ -203,26 +212,55 @@ def _render_mode_select(learn: LearnState) -> List[LedEffect]:
 
 def _render_color_select(learn: LearnState) -> List[LedEffect]:
     """
-    Render color selection.
+    Render color selection with brightness controls.
     
-    - 4x4 color grid (rows 2-5, cols 0-3) for idle color
-    - 4x4 color grid (rows 2-5, cols 4-7) for active color
-    - Selected colors highlighted
+    Layout:
+    - Row 6: Preview of selected idle (col 1) and active (col 5) colors
+    - Rows 2-5: 4x4 color grid for idle (cols 0-3) and active (cols 4-7)
+    - Row 1: Brightness controls
+      - Cols 0-1: Idle brightness ▼/▲
+      - Cols 6-7: Active brightness ▼/▲
+    
+    Colors are displayed at the currently selected brightness level.
+    Brightness buttons show: dim if at limit, bright if can adjust.
     """
     effects = []
     
-    # Left 4x4: Idle color selection
-    for i, color_vel in enumerate(COLOR_PREVIEW_PALETTE):
+    # Get 10 base colors (first 10 from BASE_COLOR_NAMES)
+    # We'll display them in a 2x5 grid on each side, fitting in 4x4 area
+    # Actually let's use a 4x3 subset (12 colors) to fit nicely
+    base_colors_to_show = BASE_COLOR_NAMES[:10]  # red, orange, yellow, lime, green, cyan, blue, purple, pink, white
+    
+    # Left 4x4 area: Idle color selection (use first 10 colors in 2 rows of 5)
+    # Map: row 2-3 (4 cols each) = 8 colors + 2 more on row 4
+    for i, color_name in enumerate(base_colors_to_show[:8]):
         x = i % 4
-        y = 2 + (i // 4)
+        y = 2 + (i // 4)  # rows 2-3
+        color_vel = get_color_at_brightness(color_name, learn.idle_brightness)
         is_selected = color_vel == learn.selected_idle_color
-        # Show the color itself, with white ring if selected
         effects.append(LedEffect(pad_id=PadId(x, y), color=LP_WHITE if is_selected else color_vel))
     
-    # Right 4x4: Active color selection
-    for i, color_vel in enumerate(COLOR_PREVIEW_PALETTE):
+    # Remaining 2 colors on row 4 (cols 0-1)
+    for i, color_name in enumerate(base_colors_to_show[8:10]):
+        x = i
+        y = 4
+        color_vel = get_color_at_brightness(color_name, learn.idle_brightness)
+        is_selected = color_vel == learn.selected_idle_color
+        effects.append(LedEffect(pad_id=PadId(x, y), color=LP_WHITE if is_selected else color_vel))
+    
+    # Right 4x4 area: Active color selection
+    for i, color_name in enumerate(base_colors_to_show[:8]):
         x = 4 + (i % 4)
-        y = 2 + (i // 4)
+        y = 2 + (i // 4)  # rows 2-3
+        color_vel = get_color_at_brightness(color_name, learn.active_brightness)
+        is_selected = color_vel == learn.selected_active_color
+        effects.append(LedEffect(pad_id=PadId(x, y), color=LP_WHITE if is_selected else color_vel))
+    
+    # Remaining 2 colors on row 4 (cols 6-7)
+    for i, color_name in enumerate(base_colors_to_show[8:10]):
+        x = 6 + i
+        y = 4
+        color_vel = get_color_at_brightness(color_name, learn.active_brightness)
         is_selected = color_vel == learn.selected_active_color
         effects.append(LedEffect(pad_id=PadId(x, y), color=LP_WHITE if is_selected else color_vel))
     
@@ -230,6 +268,33 @@ def _render_color_select(learn: LearnState) -> List[LedEffect]:
     # "I" for idle on left, "A" for active on right
     effects.append(LedEffect(pad_id=PadId(1, 6), color=learn.selected_idle_color))
     effects.append(LedEffect(pad_id=PadId(5, 6), color=learn.selected_active_color))
+    
+    # Row 5: Brightness level indicator (show current level)
+    # Idle side: show 3 pads (cols 0-2) representing DIM/NORMAL/BRIGHT
+    for level in BrightnessLevel:
+        x = level.value  # 0, 1, 2
+        is_current = learn.idle_brightness == level
+        # Show in green: bright if current, dim otherwise
+        effects.append(LedEffect(pad_id=PadId(x, 5), color=LP_GREEN if is_current else LP_GREEN_DIM))
+    
+    # Active side: show 3 pads (cols 5-7) representing DIM/NORMAL/BRIGHT
+    for level in BrightnessLevel:
+        x = 5 + level.value  # 5, 6, 7
+        is_current = learn.active_brightness == level
+        effects.append(LedEffect(pad_id=PadId(x, 5), color=LP_GREEN if is_current else LP_GREEN_DIM))
+    
+    # Row 1: Brightness adjustment buttons
+    # Idle: ▼ (col 0), ▲ (col 1)
+    can_decrease_idle = learn.idle_brightness.value > BrightnessLevel.DIM.value
+    can_increase_idle = learn.idle_brightness.value < BrightnessLevel.BRIGHT.value
+    effects.append(LedEffect(pad_id=IDLE_BRIGHTNESS_DOWN, color=LP_BLUE if can_decrease_idle else LP_BLUE_DIM))
+    effects.append(LedEffect(pad_id=IDLE_BRIGHTNESS_UP, color=LP_BLUE if can_increase_idle else LP_BLUE_DIM))
+    
+    # Active: ▼ (col 6), ▲ (col 7)
+    can_decrease_active = learn.active_brightness.value > BrightnessLevel.DIM.value
+    can_increase_active = learn.active_brightness.value < BrightnessLevel.BRIGHT.value
+    effects.append(LedEffect(pad_id=ACTIVE_BRIGHTNESS_DOWN, color=LP_BLUE if can_decrease_active else LP_BLUE_DIM))
+    effects.append(LedEffect(pad_id=ACTIVE_BRIGHTNESS_UP, color=LP_BLUE if can_increase_active else LP_BLUE_DIM))
     
     return effects
 

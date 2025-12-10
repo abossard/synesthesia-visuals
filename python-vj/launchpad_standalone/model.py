@@ -8,6 +8,27 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, List, Dict, Any
 
+# Import shared brightness utilities from launchpad_osc_lib
+try:
+    from launchpad_osc_lib.model import (
+        BrightnessLevel,
+        BASE_COLORS,
+        BASE_COLOR_NAMES,
+        get_color_at_brightness,
+        get_base_color_from_velocity,
+    )
+except ImportError:
+    # Fallback if launchpad_osc_lib not available (shouldn't happen in normal use)
+    import sys
+    sys.path.insert(0, str(__file__).replace('/launchpad_standalone/model.py', ''))
+    from launchpad_osc_lib.model import (
+        BrightnessLevel,
+        BASE_COLORS,
+        BASE_COLOR_NAMES,
+        get_color_at_brightness,
+        get_base_color_from_velocity,
+    )
+
 
 # =============================================================================
 # PAD AND COLOR DEFINITIONS
@@ -79,6 +100,7 @@ LP_GREEN = 21
 LP_GREEN_DIM = 19
 LP_CYAN = 37
 LP_BLUE = 45
+LP_BLUE_DIM = 41
 LP_PURPLE = 53
 LP_PINK = 57
 LP_WHITE = 3
@@ -169,6 +191,11 @@ class LearnState:
     selected_mode: PadMode = PadMode.TOGGLE
     selected_idle_color: int = LP_GREEN_DIM
     selected_active_color: int = LP_GREEN
+    
+    # Brightness levels for color selection (DIM=0, NORMAL=1, BRIGHT=2)
+    # Default: idle at normal brightness, active at full brightness
+    idle_brightness: BrightnessLevel = BrightnessLevel.NORMAL
+    active_brightness: BrightnessLevel = BrightnessLevel.BRIGHT
     
     # Pagination for OSC commands (8 per page)
     osc_page: int = 0

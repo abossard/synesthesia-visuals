@@ -13,6 +13,73 @@ from .launchpad import PadId
 
 
 # =============================================================================
+# BRIGHTNESS AND COLOR UTILITIES (shared across launchpad apps)
+# =============================================================================
+
+class BrightnessLevel(Enum):
+    """Brightness levels for Launchpad LEDs."""
+    DIM = 0      # ~33% brightness
+    NORMAL = 1   # ~66% brightness
+    BRIGHT = 2   # 100% brightness
+
+
+# Base colors with 3 brightness levels each: [DIM, NORMAL, BRIGHT]
+# Velocity values for Launchpad Mini MK3
+BASE_COLORS: Dict[str, tuple] = {
+    "red":    (1, 5, 6),
+    "orange": (7, 9, 10),
+    "yellow": (11, 13, 14),
+    "lime":   (15, 17, 18),
+    "green":  (19, 21, 22),
+    "cyan":   (33, 37, 38),
+    "blue":   (41, 45, 46),
+    "purple": (49, 53, 54),
+    "pink":   (55, 57, 58),
+    "white":  (1, 3, 119),
+}
+
+# Base color indices for palette display (maps index 0-9 to color name)
+BASE_COLOR_NAMES = list(BASE_COLORS.keys())
+
+
+def get_color_at_brightness(base_color: str, level: BrightnessLevel) -> int:
+    """
+    Get Launchpad velocity for a base color at a specific brightness level.
+    
+    Args:
+        base_color: Color name ("red", "green", "blue", etc.)
+        level: BrightnessLevel enum value
+    
+    Returns:
+        Launchpad velocity value (0-127)
+    
+    Example:
+        get_color_at_brightness("green", BrightnessLevel.DIM) -> 19
+        get_color_at_brightness("green", BrightnessLevel.BRIGHT) -> 22
+    """
+    if base_color not in BASE_COLORS:
+        return 0  # Off for unknown colors
+    return BASE_COLORS[base_color][level.value]
+
+
+def get_base_color_from_velocity(velocity: int) -> tuple:
+    """
+    Find base color name and brightness level from a velocity value.
+    
+    Args:
+        velocity: Launchpad velocity value
+    
+    Returns:
+        Tuple of (base_color_name, BrightnessLevel) or ("unknown", BrightnessLevel.NORMAL)
+    """
+    for color_name, velocities in BASE_COLORS.items():
+        for level_idx, vel in enumerate(velocities):
+            if vel == velocity:
+                return (color_name, BrightnessLevel(level_idx))
+    return ("unknown", BrightnessLevel.NORMAL)
+
+
+# =============================================================================
 # PAD MODES AND GROUP TYPES
 # =============================================================================
 
