@@ -88,6 +88,10 @@ class OscClient:
         """Handle incoming OSC message."""
         event = enrich_event(address, list(args), time.time())
         
+        # Format args for logging
+        args_str = " ".join(str(a) for a in args) if args else "(no args)"
+        logger.info(f"OSC RX: {address} {args_str} [priority={event.priority}]")
+        
         for callback in self._callbacks:
             try:
                 callback(event)
@@ -100,8 +104,9 @@ class OscClient:
             return
         
         try:
+            args_str = " ".join(str(a) for a in command.args) if command.args else "(no args)"
+            logger.info(f"OSC TX: {command.address} {args_str}")
             self._client.send_message(command.address, command.args)
-            logger.debug(f"OSC TX: {command}")
         except Exception as e:
             logger.error(f"OSC send failed: {e}")
     
