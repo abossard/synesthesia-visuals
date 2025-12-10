@@ -6,7 +6,7 @@ OscEvent, AppMode, LearnState, ControllerState, and Effect types.
 """
 
 import pytest
-from launchpad_osc_lib.launchpad import PadId
+from launchpad_osc_lib.button_id import ButtonId
 from launchpad_osc_lib.osc_client import OscEvent
 from launchpad_osc_lib.model import (
     PadMode,
@@ -26,15 +26,15 @@ from launchpad_osc_lib.model import (
 
 
 # =============================================================================
-# PadId Tests
+# ButtonId Tests
 # =============================================================================
 
-class TestPadId:
-    """Test PadId identifier class."""
+class TestButtonId:
+    """Test ButtonId identifier class."""
 
     def test_grid_pad_creation(self):
         """Grid pads have x,y in range 0-7."""
-        pad = PadId(3, 4)
+        pad = ButtonId(3, 4)
         assert pad.x == 3
         assert pad.y == 4
         assert pad.is_grid()
@@ -43,7 +43,7 @@ class TestPadId:
 
     def test_top_row_pad(self):
         """Top row pads have y=-1."""
-        pad = PadId(5, -1)
+        pad = ButtonId(5, -1)
         assert pad.is_top_row()
         assert not pad.is_grid()
         assert not pad.is_right_column()
@@ -51,7 +51,7 @@ class TestPadId:
 
     def test_right_column_pad(self):
         """Right column pads have x=8."""
-        pad = PadId(8, 3)
+        pad = ButtonId(8, 3)
         assert pad.is_right_column()
         assert not pad.is_grid()
         assert not pad.is_top_row()
@@ -59,24 +59,24 @@ class TestPadId:
 
     def test_grid_pad_str(self):
         """Grid pads show as (x,y)."""
-        pad = PadId(2, 5)
+        pad = ButtonId(2, 5)
         assert str(pad) == "(2,5)"
 
     def test_pad_equality(self):
-        """PadIds with same coords are equal."""
-        pad1 = PadId(3, 4)
-        pad2 = PadId(3, 4)
+        """ButtonIds with same coords are equal."""
+        pad1 = ButtonId(3, 4)
+        pad2 = ButtonId(3, 4)
         assert pad1 == pad2
 
     def test_pad_as_dict_key(self):
-        """PadIds can be used as dictionary keys."""
-        pads = {PadId(0, 0): "first", PadId(1, 1): "second"}
-        assert pads[PadId(0, 0)] == "first"
-        assert pads[PadId(1, 1)] == "second"
+        """ButtonIds can be used as dictionary keys."""
+        pads = {ButtonId(0, 0): "first", ButtonId(1, 1): "second"}
+        assert pads[ButtonId(0, 0)] == "first"
+        assert pads[ButtonId(1, 1)] == "second"
 
     def test_pad_immutability(self):
-        """PadIds are immutable (frozen dataclass)."""
-        pad = PadId(0, 0)
+        """ButtonIds are immutable (frozen dataclass)."""
+        pad = ButtonId(0, 0)
         with pytest.raises(AttributeError):
             pad.x = 1
 
@@ -86,7 +86,7 @@ class TestPadId:
     ])
     def test_is_grid_bounds(self, x, y, expected):
         """Test grid boundary detection."""
-        pad = PadId(x, y)
+        pad = ButtonId(x, y)
         assert pad.is_grid() == expected
 
 
@@ -119,7 +119,7 @@ class TestPadBehavior:
     def test_selector_behavior(self):
         """Selector mode requires group and osc_action."""
         behavior = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.SELECTOR,
             group=ButtonGroupType.SCENES,
             osc_action=OscCommand("/scenes/Test")
@@ -130,7 +130,7 @@ class TestPadBehavior:
     def test_toggle_behavior(self):
         """Toggle mode requires osc_on."""
         behavior = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.TOGGLE,
             osc_on=OscCommand("/toggle/on"),
             osc_off=OscCommand("/toggle/off")
@@ -141,7 +141,7 @@ class TestPadBehavior:
     def test_one_shot_behavior(self):
         """One-shot mode requires osc_action."""
         behavior = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.ONE_SHOT,
             osc_action=OscCommand("/playlist/next")
         )
@@ -151,7 +151,7 @@ class TestPadBehavior:
         """Selector mode without group raises error."""
         with pytest.raises(ValueError, match="SELECTOR mode requires group"):
             PadBehavior(
-                pad_id=PadId(0, 0),
+                pad_id=ButtonId(0, 0),
                 mode=PadMode.SELECTOR,
                 osc_action=OscCommand("/test")
             )
@@ -160,7 +160,7 @@ class TestPadBehavior:
         """Toggle mode without osc_on raises error."""
         with pytest.raises(ValueError, match="TOGGLE mode requires osc_on"):
             PadBehavior(
-                pad_id=PadId(0, 0),
+                pad_id=ButtonId(0, 0),
                 mode=PadMode.TOGGLE
             )
 
@@ -168,14 +168,14 @@ class TestPadBehavior:
         """One-shot mode without osc_action raises error."""
         with pytest.raises(ValueError, match="ONE_SHOT mode requires osc_action"):
             PadBehavior(
-                pad_id=PadId(0, 0),
+                pad_id=ButtonId(0, 0),
                 mode=PadMode.ONE_SHOT
             )
 
     def test_color_defaults(self):
         """Default colors are off (0) and red (5)."""
         behavior = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.ONE_SHOT,
             osc_action=OscCommand("/test")
         )
@@ -295,8 +295,8 @@ class TestEffects:
 
     def test_set_led_effect(self):
         """SetLedEffect holds pad, color, blink."""
-        effect = SetLedEffect(PadId(0, 0), 21, blink=True)
-        assert effect.pad_id == PadId(0, 0)
+        effect = SetLedEffect(ButtonId(0, 0), 21, blink=True)
+        assert effect.pad_id == ButtonId(0, 0)
         assert effect.color == 21
         assert effect.blink
 
@@ -328,8 +328,8 @@ class TestLearnState:
 
     def test_learn_state_with_pad(self):
         """Learn state with selected pad."""
-        state = LearnState(selected_pad=PadId(3, 4))
-        assert state.selected_pad == PadId(3, 4)
+        state = LearnState(selected_pad=ButtonId(3, 4))
+        assert state.selected_pad == ButtonId(3, 4)
 
 
 # =============================================================================

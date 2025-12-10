@@ -8,7 +8,7 @@ import pytest
 from dataclasses import replace
 
 from launchpad_osc_lib import (
-    PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
+    ButtonId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
     OscCommand, OscEvent, AppMode, LearnState, ControllerState,
     SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
     handle_pad_press, handle_pad_release, handle_osc_event,
@@ -30,7 +30,7 @@ def empty_state():
 @pytest.fixture
 def state_with_selector():
     """State with a selector pad configured."""
-    pad_id = PadId(0, 0)
+    pad_id = ButtonId(0, 0)
     behavior = PadBehavior(
         pad_id=pad_id,
         mode=PadMode.SELECTOR,
@@ -51,7 +51,7 @@ def state_with_selector():
 @pytest.fixture
 def state_with_toggle():
     """State with a toggle pad configured."""
-    pad_id = PadId(1, 1)
+    pad_id = ButtonId(1, 1)
     behavior = PadBehavior(
         pad_id=pad_id,
         mode=PadMode.TOGGLE,
@@ -72,7 +72,7 @@ def state_with_toggle():
 @pytest.fixture
 def state_with_one_shot():
     """State with a one-shot pad configured."""
-    pad_id = PadId(2, 2)
+    pad_id = ButtonId(2, 2)
     behavior = PadBehavior(
         pad_id=pad_id,
         mode=PadMode.ONE_SHOT,
@@ -98,7 +98,7 @@ class TestHandlePadPressNormal:
 
     def test_unmapped_pad_returns_warning(self, empty_state):
         """Pressing unmapped pad logs warning."""
-        new_state, effects = handle_pad_press(empty_state, PadId(0, 0))
+        new_state, effects = handle_pad_press(empty_state, ButtonId(0, 0))
 
         assert new_state == empty_state  # State unchanged
         assert len(effects) == 1
@@ -108,7 +108,7 @@ class TestHandlePadPressNormal:
 
     def test_selector_press_activates_pad(self, state_with_selector):
         """Selector press activates pad and sends OSC."""
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         new_state, effects = handle_pad_press(state_with_selector, pad_id)
 
         # Check state updated
@@ -128,7 +128,7 @@ class TestHandlePadPressNormal:
 
     def test_toggle_press_turns_on(self, state_with_toggle):
         """Toggle press turns on from off state."""
-        pad_id = PadId(1, 1)
+        pad_id = ButtonId(1, 1)
         new_state, effects = handle_pad_press(state_with_toggle, pad_id)
 
         runtime = new_state.pad_runtime[pad_id]
@@ -141,7 +141,7 @@ class TestHandlePadPressNormal:
 
     def test_toggle_press_turns_off(self, state_with_toggle):
         """Toggle press turns off from on state."""
-        pad_id = PadId(1, 1)
+        pad_id = ButtonId(1, 1)
 
         # First turn on
         state, _ = handle_pad_press(state_with_toggle, pad_id)
@@ -158,7 +158,7 @@ class TestHandlePadPressNormal:
 
     def test_one_shot_sends_osc_and_flashes(self, state_with_one_shot):
         """One-shot press sends OSC and flashes LED."""
-        pad_id = PadId(2, 2)
+        pad_id = ButtonId(2, 2)
         new_state, effects = handle_pad_press(state_with_one_shot, pad_id)
 
         osc_effects = [e for e in effects if isinstance(e, SendOscEffect)]
@@ -176,8 +176,8 @@ class TestSelectorGroupBehavior:
     def test_selector_deactivates_previous_in_group(self):
         """Pressing new selector in group deactivates previous."""
         # Create state with two selectors in same group
-        pad1 = PadId(0, 0)
-        pad2 = PadId(1, 0)
+        pad1 = ButtonId(0, 0)
+        pad2 = ButtonId(1, 0)
 
         behavior1 = PadBehavior(
             pad_id=pad1, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
@@ -222,7 +222,7 @@ class TestHandlePadPressLearnMode:
     def test_pad_press_in_learn_wait_selects_pad(self, empty_state):
         """Pressing pad in LEARN_WAIT_PAD selects it for learning."""
         state = replace(empty_state, app_mode=AppMode.LEARN_WAIT_PAD)
-        pad_id = PadId(3, 4)
+        pad_id = ButtonId(3, 4)
 
         new_state, effects = handle_pad_press(state, pad_id)
 
@@ -239,10 +239,10 @@ class TestHandlePadPressLearnMode:
         state = replace(
             empty_state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
-        new_state, effects = handle_pad_press(state, PadId(1, 1))
+        new_state, effects = handle_pad_press(state, ButtonId(1, 1))
 
         assert new_state == state  # No change
         assert effects == []
@@ -289,7 +289,7 @@ class TestHandleOscEvent:
         state = replace(
             empty_state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
         event = OscEvent(1234.5, "/scenes/Test")
@@ -303,7 +303,7 @@ class TestHandleOscEvent:
         state = replace(
             empty_state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
         event = OscEvent(1234.5, "/audio/beat/onbeat", [1])
@@ -316,7 +316,7 @@ class TestActivateMatchingSelector:
 
     def test_matching_selector_activated(self):
         """Selector matching OSC address is activated via handle_osc_event."""
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
             osc_action=OscCommand("/scenes/Test"), active_color=21
@@ -366,7 +366,7 @@ class TestLearnModeFSM:
         state = replace(
             empty_state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
         new_state, effects = cancel_learn_mode(state)
@@ -394,7 +394,7 @@ class TestLearnModeFSM:
             empty_state,
             app_mode=AppMode.LEARN_RECORD_OSC,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 recorded_osc_events=events
             )
         )
@@ -416,7 +416,7 @@ class TestLearnModeFSM:
             empty_state,
             app_mode=AppMode.LEARN_SELECT_MSG,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 candidate_commands=candidates
             )
         )
@@ -432,8 +432,8 @@ class TestLearnModeFSM:
         )
 
         assert new_state.app_mode == AppMode.NORMAL
-        assert PadId(0, 0) in new_state.pads
-        assert new_state.pads[PadId(0, 0)].osc_action.address == "/scenes/Test"
+        assert ButtonId(0, 0) in new_state.pads
+        assert new_state.pads[ButtonId(0, 0)].osc_action.address == "/scenes/Test"
 
         # Should save config
         save_effects = [e for e in effects if isinstance(e, SaveConfigEffect)]
@@ -445,7 +445,7 @@ class TestLearnModeFSM:
             empty_state,
             app_mode=AppMode.LEARN_SELECT_MSG,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 candidate_commands=[OscCommand("/test")]
             )
         )
@@ -472,7 +472,7 @@ class TestPureFunctions:
         original_mode = state_with_selector.app_mode
         original_pads = dict(state_with_selector.pads)
 
-        handle_pad_press(state_with_selector, PadId(0, 0))
+        handle_pad_press(state_with_selector, ButtonId(0, 0))
 
         assert state_with_selector.app_mode == original_mode
         assert state_with_selector.pads == original_pads
@@ -495,7 +495,7 @@ class TestPureFunctions:
 
     def test_same_input_same_output(self, state_with_selector):
         """Same input always produces same output."""
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         result1 = handle_pad_press(state_with_selector, pad_id)
         result2 = handle_pad_press(state_with_selector, pad_id)

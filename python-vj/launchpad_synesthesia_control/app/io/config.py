@@ -17,7 +17,7 @@ except ImportError:
     yaml = None
 
 from launchpad_osc_lib import (
-    ControllerState, PadId, PadBehavior, PadMode, PadGroupName,
+    ControllerState, ButtonId, PadBehavior, PadMode, PadGroupName,
     OscCommand, PadRuntimeState
 )
 
@@ -28,15 +28,15 @@ logger = logging.getLogger(__name__)
 # SERIALIZATION HELPERS
 # =============================================================================
 
-def pad_id_to_str(pad_id: PadId) -> str:
-    """Convert PadId to string key."""
+def pad_id_to_str(pad_id: ButtonId) -> str:
+    """Convert ButtonId to string key."""
     return f"{pad_id.x},{pad_id.y}"
 
 
-def str_to_pad_id(s: str) -> PadId:
-    """Convert string key to PadId."""
+def str_to_pad_id(s: str) -> ButtonId:
+    """Convert string key to ButtonId."""
     x, y = map(int, s.split(','))
-    return PadId(x, y)
+    return ButtonId(x, y)
 
 
 def serialize_pad_behavior(behavior: PadBehavior) -> Dict[str, Any]:
@@ -72,7 +72,7 @@ def serialize_pad_behavior(behavior: PadBehavior) -> Dict[str, Any]:
     return data
 
 
-def deserialize_pad_behavior(pad_id: PadId, data: Dict[str, Any]) -> PadBehavior:
+def deserialize_pad_behavior(pad_id: ButtonId, data: Dict[str, Any]) -> PadBehavior:
     """Deserialize PadBehavior from dict."""
     mode = PadMode[data["mode"]]
     group = PadGroupName(data["group"]) if "group" in data else None

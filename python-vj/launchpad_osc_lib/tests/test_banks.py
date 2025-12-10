@@ -9,16 +9,18 @@ from launchpad_osc_lib import (
     Bank,
     BankManager,
     create_default_banks,
-    PadId,
+    ButtonId,
     PadMode,
     ButtonGroupType,
     PadBehavior,
     OscCommand,
-    LP_OFF,
-    LP_BLUE,
-    LP_GREEN,
-    LP_RED,
 )
+
+# Color constants
+LP_OFF = 0
+LP_BLUE = 40
+LP_GREEN = 17
+LP_RED = 72
 
 
 # =============================================================================
@@ -39,21 +41,21 @@ class TestBank:
         """Can add pads in the 8x8 grid."""
         bank = Bank(name="Test")
         behavior = PadBehavior(
-            pad_id=PadId(3, 4),
+            pad_id=ButtonId(3, 4),
             mode=PadMode.ONE_SHOT,
             idle_color=LP_BLUE,
             osc_action=OscCommand(address="/test", args=[]),
         )
         bank.add_pad(behavior)
         
-        assert PadId(3, 4) in bank.pads
-        assert bank.get_pad(PadId(3, 4)) == behavior
+        assert ButtonId(3, 4) in bank.pads
+        assert bank.get_pad(ButtonId(3, 4)) == behavior
     
     def test_add_right_column_pad(self):
         """Can add pads in the right column (x=8)."""
         bank = Bank(name="Test")
         behavior = PadBehavior(
-            pad_id=PadId(8, 3),
+            pad_id=ButtonId(8, 3),
             mode=PadMode.TOGGLE,
             idle_color=LP_GREEN,
             osc_on=OscCommand(address="/toggle/on", args=[1]),
@@ -61,13 +63,13 @@ class TestBank:
         )
         bank.add_pad(behavior)
         
-        assert PadId(8, 3) in bank.pads
+        assert ButtonId(8, 3) in bank.pads
     
     def test_cannot_add_top_row_pad(self):
         """Top row pads (y=-1) cannot be added to banks."""
         bank = Bank(name="Test")
         behavior = PadBehavior(
-            pad_id=PadId(2, -1),
+            pad_id=ButtonId(2, -1),
             mode=PadMode.ONE_SHOT,
             idle_color=LP_BLUE,
             osc_action=OscCommand(address="/test", args=[]),
@@ -79,7 +81,7 @@ class TestBank:
     def test_remove_pad(self):
         """Can remove pads from bank."""
         bank = Bank(name="Test")
-        pad_id = PadId(1, 1)
+        pad_id = ButtonId(1, 1)
         bank.add_pad(PadBehavior(
             pad_id=pad_id,
             mode=PadMode.ONE_SHOT,
@@ -95,7 +97,7 @@ class TestBank:
         bank = Bank(name="Test")
         for i in range(5):
             bank.add_pad(PadBehavior(
-                pad_id=PadId(i, 0),
+                pad_id=ButtonId(i, 0),
                 mode=PadMode.ONE_SHOT,
                 idle_color=LP_BLUE,
                 osc_action=OscCommand(address=f"/test/{i}", args=[]),
@@ -107,7 +109,7 @@ class TestBank:
     def test_get_nonexistent_pad(self):
         """Getting unmapped pad returns None."""
         bank = Bank(name="Test")
-        assert bank.get_pad(PadId(0, 0)) is None
+        assert bank.get_pad(ButtonId(0, 0)) is None
 
 
 # =============================================================================
@@ -182,7 +184,7 @@ class TestBankManagerTopRow:
         manager.add_bank(Bank(name="Bank 2"))
         
         # Press top row button 2 (y=-1)
-        result = manager.handle_top_row_press(PadId(2, -1))
+        result = manager.handle_top_row_press(ButtonId(2, -1))
         
         assert result is True
         assert manager.get_active_bank_index() == 2
@@ -192,7 +194,7 @@ class TestBankManagerTopRow:
         manager = BankManager()
         manager.add_bank(Bank(name="Only Bank"))
         
-        result = manager.handle_top_row_press(PadId(5, -1))
+        result = manager.handle_top_row_press(ButtonId(5, -1))
         
         assert result is False
         assert manager.get_active_bank_index() == 0
@@ -202,7 +204,7 @@ class TestBankManagerTopRow:
         manager = BankManager()
         manager.add_bank(Bank(name="Bank"))
         
-        result = manager.handle_top_row_press(PadId(3, 3))
+        result = manager.handle_top_row_press(ButtonId(3, 3))
         
         assert result is False
 
@@ -217,7 +219,7 @@ class TestBankManagerSharedGroups:
         manager.add_bank(Bank(name="Bank B"))
         
         # Set active scene in group
-        scene_pad = PadId(0, 0)
+        scene_pad = ButtonId(0, 0)
         manager.set_active_for_group(ButtonGroupType.SCENES, scene_pad)
         
         # Switch banks
@@ -231,8 +233,8 @@ class TestBankManagerSharedGroups:
         manager = BankManager()
         manager.add_bank(Bank(name="Test"))
         
-        pad1 = PadId(0, 0)
-        pad2 = PadId(1, 0)
+        pad1 = ButtonId(0, 0)
+        pad2 = ButtonId(1, 0)
         
         manager.set_active_for_group(ButtonGroupType.SCENES, pad1)
         
@@ -281,7 +283,7 @@ class TestBankManagerPadAccess:
         manager = BankManager()
         
         bank_a = Bank(name="A")
-        pad_id = PadId(2, 2)
+        pad_id = ButtonId(2, 2)
         behavior_a = PadBehavior(
             pad_id=pad_id,
             mode=PadMode.ONE_SHOT,
@@ -316,7 +318,7 @@ class TestBankManagerPadAccess:
         manager = BankManager()
         manager.add_bank(Bank(name="Test"))
         
-        assert manager.get_pad_behavior(PadId(3, -1)) is None
+        assert manager.get_pad_behavior(ButtonId(3, -1)) is None
 
 
 # =============================================================================
@@ -333,7 +335,7 @@ class TestBankManagerPersistence:
         
         bank = Bank(name="My Bank", color=LP_RED, active_color=LP_GREEN)
         bank.add_pad(PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.SELECTOR,
             group=ButtonGroupType.SCENES,
             idle_color=LP_BLUE,
@@ -342,7 +344,7 @@ class TestBankManagerPersistence:
             osc_action=OscCommand(address="/scenes/1", args=[1.0]),
         ))
         bank.add_pad(PadBehavior(
-            pad_id=PadId(1, 0),
+            pad_id=ButtonId(1, 0),
             mode=PadMode.TOGGLE,
             idle_color=LP_BLUE,
             active_color=LP_RED,
@@ -352,7 +354,7 @@ class TestBankManagerPersistence:
         ))
         
         manager.add_bank(bank)
-        manager.set_active_for_group(ButtonGroupType.SCENES, PadId(0, 0))
+        manager.set_active_for_group(ButtonGroupType.SCENES, ButtonId(0, 0))
         
         # Save
         save_path = tmp_path / "banks.json"
@@ -370,14 +372,14 @@ class TestBankManagerPersistence:
         assert len(restored_bank.pads) == 2
         
         # Check pad details
-        pad = restored_bank.get_pad(PadId(0, 0))
+        pad = restored_bank.get_pad(ButtonId(0, 0))
         assert pad.label == "Scene 1"
         assert pad.mode == PadMode.SELECTOR
         assert pad.group == ButtonGroupType.SCENES
         assert pad.osc_action.address == "/scenes/1"
         
         # Check group state
-        assert manager2.get_active_for_group(ButtonGroupType.SCENES) == PadId(0, 0)
+        assert manager2.get_active_for_group(ButtonGroupType.SCENES) == ButtonId(0, 0)
     
     def test_load_nonexistent_file(self):
         """Loading missing file returns False."""

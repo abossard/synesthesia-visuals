@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from launchpad_osc_lib import (
-    PadId, AppMode, LearnState, OscCommand,
+    ButtonId, AppMode, LearnState, OscCommand,
     PadMode, PadBehavior, PadRuntimeState, PadGroupName
 )
 
@@ -134,7 +134,7 @@ class TestTuiSnapshots:
                 app.state,
                 app_mode=AppMode.LEARN_RECORD_OSC,
                 learn_state=LearnState(
-                    selected_pad=PadId(2, 3),
+                    selected_pad=ButtonId(2, 3),
                     recorded_osc_events=[],
                     record_start_time=0.0,  # Will show timer
                 )
@@ -165,8 +165,8 @@ class TestTuiSnapshots:
             
             # Configure some pads
             pads = {
-                PadId(0, 0): PadBehavior(
-                    pad_id=PadId(0, 0),
+                ButtonId(0, 0): PadBehavior(
+                    pad_id=ButtonId(0, 0),
                     mode=PadMode.SELECTOR,
                     group=PadGroupName.SCENES,
                     idle_color=21,  # Green
@@ -174,8 +174,8 @@ class TestTuiSnapshots:
                     label="Scene 1",
                     osc_action=OscCommand("/scenes/Scene1", [])
                 ),
-                PadId(1, 0): PadBehavior(
-                    pad_id=PadId(1, 0),
+                ButtonId(1, 0): PadBehavior(
+                    pad_id=ButtonId(1, 0),
                     mode=PadMode.SELECTOR,
                     group=PadGroupName.SCENES,
                     idle_color=21,
@@ -183,8 +183,8 @@ class TestTuiSnapshots:
                     label="Scene 2",
                     osc_action=OscCommand("/scenes/Scene2", [])
                 ),
-                PadId(0, 1): PadBehavior(
-                    pad_id=PadId(0, 1),
+                ButtonId(0, 1): PadBehavior(
+                    pad_id=ButtonId(0, 1),
                     mode=PadMode.TOGGLE,
                     group=None,
                     idle_color=45,  # Blue
@@ -193,8 +193,8 @@ class TestTuiSnapshots:
                     osc_on=OscCommand("/controls/global/strobe", [1]),
                     osc_off=OscCommand("/controls/global/strobe", [0])
                 ),
-                PadId(7, 7): PadBehavior(
-                    pad_id=PadId(7, 7),
+                ButtonId(7, 7): PadBehavior(
+                    pad_id=ButtonId(7, 7),
                     mode=PadMode.ONE_SHOT,
                     group=None,
                     idle_color=9,  # Orange
@@ -205,10 +205,10 @@ class TestTuiSnapshots:
             }
             
             pad_runtime = {
-                PadId(0, 0): PadRuntimeState(is_active=True, current_color=5, blink_enabled=True),
-                PadId(1, 0): PadRuntimeState(is_active=False, current_color=21),
-                PadId(0, 1): PadRuntimeState(is_active=False, is_on=False, current_color=45),
-                PadId(7, 7): PadRuntimeState(is_active=False, current_color=9),
+                ButtonId(0, 0): PadRuntimeState(is_active=True, current_color=5, blink_enabled=True),
+                ButtonId(1, 0): PadRuntimeState(is_active=False, current_color=21),
+                ButtonId(0, 1): PadRuntimeState(is_active=False, is_on=False, current_color=45),
+                ButtonId(7, 7): PadRuntimeState(is_active=False, current_color=9),
             }
             
             app.state = replace(
@@ -299,7 +299,7 @@ class TestTuiInteractions:
         
         # Configure a pad first
         pad = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.ONE_SHOT,
             group=None,
             idle_color=21,
@@ -313,8 +313,8 @@ class TestTuiInteractions:
             
             app.state = replace(
                 app.state,
-                pads={PadId(0, 0): pad},
-                pad_runtime={PadId(0, 0): PadRuntimeState(is_active=False, current_color=21)}
+                pads={ButtonId(0, 0): pad},
+                pad_runtime={ButtonId(0, 0): PadRuntimeState(is_active=False, current_color=21)}
             )
             app._update_ui()
             await pilot.pause()

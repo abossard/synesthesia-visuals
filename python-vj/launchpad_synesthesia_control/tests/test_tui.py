@@ -27,7 +27,7 @@ from launchpad_synesthesia_control.app.ui.tui import (
     NAMED_COLORS
 )
 from launchpad_osc_lib import (
-    PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
+    ButtonId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
     ControllerState, AppMode, LearnState, OscCommand
 )
 
@@ -156,7 +156,7 @@ class TestColorfulLaunchpadGrid:
     def test_grid_renders_mapped_pads(self):
         """Grid renders mapped pads with indicators."""
         # Create state with a pad
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.ONE_SHOT,
             osc_action=OscCommand("/test"), active_color=21

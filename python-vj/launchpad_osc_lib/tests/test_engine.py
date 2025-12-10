@@ -5,7 +5,7 @@ Tests selector, toggle, and one-shot button behaviors.
 """
 
 import pytest
-from launchpad_osc_lib.launchpad import PadId
+from launchpad_osc_lib.button_id import ButtonId
 from launchpad_osc_lib.model import (
     PadMode,
     ButtonGroupType,
@@ -22,7 +22,7 @@ class TestPadMapperConfiguration:
     def test_add_pad(self):
         """Adding a pad stores config and initializes runtime."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         behavior = PadBehavior(
             pad_id=pad_id,
@@ -40,7 +40,7 @@ class TestPadMapperConfiguration:
     def test_remove_pad(self):
         """Removing a pad clears config and runtime."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_oneshot(pad_id, "/test")
         assert pad_id in mapper.state.pads
@@ -52,8 +52,8 @@ class TestPadMapperConfiguration:
     def test_clear_all_pads(self):
         """Clear all removes everything."""
         mapper = PadMapper()
-        mapper.add_oneshot(PadId(0, 0), "/test1")
-        mapper.add_oneshot(PadId(1, 1), "/test2")
+        mapper.add_oneshot(ButtonId(0, 0), "/test1")
+        mapper.add_oneshot(ButtonId(1, 1), "/test2")
 
         mapper.clear_all_pads()
 
@@ -67,7 +67,7 @@ class TestAddHelpers:
     def test_add_selector(self):
         """add_selector creates SELECTOR pad."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_selector(
             pad_id,
@@ -88,7 +88,7 @@ class TestAddHelpers:
     def test_add_toggle(self):
         """add_toggle creates TOGGLE pad."""
         mapper = PadMapper()
-        pad_id = PadId(1, 1)
+        pad_id = ButtonId(1, 1)
 
         mapper.add_toggle(
             pad_id,
@@ -106,7 +106,7 @@ class TestAddHelpers:
     def test_add_oneshot(self):
         """add_oneshot creates ONE_SHOT pad."""
         mapper = PadMapper()
-        pad_id = PadId(2, 2)
+        pad_id = ButtonId(2, 2)
 
         mapper.add_oneshot(
             pad_id,
@@ -125,7 +125,7 @@ class TestSelectorBehavior:
     def test_selector_press_activates_pad(self):
         """Pressing selector activates it."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_selector(pad_id, "/scenes/Test", ButtonGroupType.SCENES, active_color=21)
         mapper.handle_pad_press(pad_id)
@@ -138,7 +138,7 @@ class TestSelectorBehavior:
     def test_selector_updates_group_tracking(self):
         """Pressing selector updates active_by_group."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_selector(pad_id, "/scenes/Test", ButtonGroupType.SCENES)
         mapper.handle_pad_press(pad_id)
@@ -148,8 +148,8 @@ class TestSelectorBehavior:
     def test_selector_deactivates_previous_in_group(self):
         """Pressing new selector deactivates previous in same group."""
         mapper = PadMapper()
-        pad1 = PadId(0, 0)
-        pad2 = PadId(1, 0)
+        pad1 = ButtonId(0, 0)
+        pad2 = ButtonId(1, 0)
 
         mapper.add_selector(pad1, "/scenes/A", ButtonGroupType.SCENES, active_color=21)
         mapper.add_selector(pad2, "/scenes/B", ButtonGroupType.SCENES, active_color=21)
@@ -166,8 +166,8 @@ class TestSelectorBehavior:
     def test_different_groups_independent(self):
         """Selectors in different groups are independent."""
         mapper = PadMapper()
-        scene_pad = PadId(0, 0)
-        preset_pad = PadId(1, 0)
+        scene_pad = ButtonId(0, 0)
+        preset_pad = ButtonId(1, 0)
 
         mapper.add_selector(scene_pad, "/scenes/A", ButtonGroupType.SCENES)
         mapper.add_selector(preset_pad, "/presets/B", ButtonGroupType.PRESETS)
@@ -186,7 +186,7 @@ class TestToggleBehavior:
     def test_toggle_turns_on(self):
         """Toggle press turns on from off state."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_toggle(pad_id, "/strobe", active_color=5)
         mapper.handle_pad_press(pad_id)
@@ -198,7 +198,7 @@ class TestToggleBehavior:
     def test_toggle_turns_off(self):
         """Toggle press turns off from on state."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_toggle(pad_id, "/strobe", idle_color=0, active_color=5)
 
@@ -217,7 +217,7 @@ class TestOneShotBehavior:
     def test_oneshot_flashes(self):
         """One-shot press shows active color (flash)."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_oneshot(pad_id, "/random", active_color=9)
         mapper.handle_pad_press(pad_id)
@@ -241,7 +241,7 @@ class TestOscEventHandling:
     def test_scene_syncs_selector(self):
         """Scene OSC syncs matching selector."""
         mapper = PadMapper()
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
 
         mapper.add_selector(pad_id, "/scenes/Test", ButtonGroupType.SCENES, active_color=21)
 
@@ -259,7 +259,7 @@ class TestUnmappedPads:
         """Pressing unmapped pad does nothing."""
         mapper = PadMapper()
 
-        mapper.handle_pad_press(PadId(5, 5))
+        mapper.handle_pad_press(ButtonId(5, 5))
 
         # State should be essentially unchanged
         assert len(mapper.state.pads) == 0
@@ -277,8 +277,8 @@ class TestStateCallback:
             callback_called.append(state)
 
         mapper.set_state_callback(on_change)
-        mapper.add_oneshot(PadId(0, 0), "/test")
-        mapper.handle_pad_press(PadId(0, 0))
+        mapper.add_oneshot(ButtonId(0, 0), "/test")
+        mapper.handle_pad_press(ButtonId(0, 0))
 
         assert len(callback_called) == 1
 

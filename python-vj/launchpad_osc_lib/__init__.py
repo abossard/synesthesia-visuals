@@ -1,48 +1,54 @@
 """
 Launchpad OSC Library
 
-A reusable library for Launchpad MIDI control with OSC integration.
-Supports button behaviors: SELECTOR (radio), TOGGLE (on/off), ONE_SHOT (trigger), PUSH (momentary).
+Modern library for Launchpad Mini MK3 control with OSC integration using lpminimk3.
 
-Architecture:
-- Pure FSM functions for state transitions (fsm.py)
-- Immutable state (ControllerState)
-- Effect descriptions (Effect subclasses) for imperative shell
-- Learn mode for dynamic pad configuration
+Features:
+- Button behaviors: SELECTOR (radio), TOGGLE (on/off), ONE_SHOT (trigger), PUSH (momentary)
+- Pure FSM functions for state transitions
+- Immutable state management
+- Learn mode for dynamic configuration
 
 Usage:
+    import lpminimk3
     from launchpad_osc_lib import (
-        ControllerState, PadId, ButtonGroupType, PadMode,
+        ControllerState, ButtonId, ButtonGroupType, PadMode,
         handle_pad_press, handle_osc_event, enter_learn_mode,
         SendOscEffect, SetLedEffect
     )
-
+    
+    # Connect to Launchpad
+    lp = lpminimk3.find_launchpads()[0]
+    lp.open()
+    lp.mode = lpminimk3.Mode.PROG
+    
     # Initialize state
     state = ControllerState()
     
     # Handle events (pure functions return new state + effects)
-    state, effects = handle_pad_press(state, PadId(0, 0))
+    state, effects = handle_pad_press(state, ButtonId(0, 0))
     
-    # Execute effects in imperative shell
+    # Execute effects
     for effect in effects:
         if isinstance(effect, SendOscEffect):
             osc.send(effect.command)
         elif isinstance(effect, SetLedEffect):
-            launchpad.set_led(effect.pad_id, effect.color)
+            button = lp.grid.led(effect.pad_id.x, effect.pad_id.y)
+            button.color = effect.color
 """
 
-from .launchpad import (
-    LaunchpadDevice,
-    LaunchpadConfig,
-    find_launchpad_ports,
-    PadId,
-    pad_to_note,
-    note_to_pad,
-    LP_OFF, LP_RED, LP_RED_DIM, LP_ORANGE, LP_YELLOW, LP_GREEN, LP_GREEN_DIM,
-    LP_CYAN, LP_BLUE, LP_BLUE_DIM, LP_PURPLE, LP_PINK, LP_WHITE,
-    COLOR_PALETTE,
-    LedMode,
+# Re-export lpminimk3 for convenience
+from lpminimk3 import (
+    LaunchpadMiniMk3,
+    find_launchpads,
+    Mode,
+    ButtonEvent,
 )
+from lpminimk3.components import Led, Button
+from lpminimk3.colors import ColorPalette
+
+from .button_id import ButtonId
+from .model import LedMode, COLOR_PALETTE
 from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
     # Pad configuration types
@@ -80,16 +86,7 @@ from .fsm import (
     clear_all_pads,
     refresh_all_leds,
 )
-from .engine import PadMapper, PadMapperState  # Legacy - keep for backward compat
-from .emulator import (
-    LaunchpadInterface,
-    LaunchpadEmulator,
-    SmartLaunchpad,
-    LedState,
-    EmulatorView,
-    FullGridLayout,
-    create_launchpad,
-)
+# Emulator has been moved to launchpad_synesthesia_control/app/io/emulator.py
 from .synesthesia_config import (
     SynesthesiaOscPorts,
     DEFAULT_OSC_PORTS,
@@ -120,36 +117,20 @@ from .blink import (
     get_dimmed_color,
 )
 from .synesthesia_osc import SynesthesiaOscManager
-from .demo import (
-    LaunchpadDemo,
-    run_demo,
-    run_startup_demo,
-    build_scroll_text_sysex,
-    build_stop_scroll_sysex,
-    DEMO_COLORS,
-    RAINBOW,
-)
+# Demo has been removed - use lpminimk3 examples directly
 
 __all__ = [
-    # Launchpad
-    "LaunchpadDevice",
-    "LaunchpadConfig",
-    "find_launchpad_ports",
-    "PadId",
-    "pad_to_note",
-    "note_to_pad",
-    "LP_OFF", "LP_RED", "LP_RED_DIM", "LP_ORANGE", "LP_YELLOW", "LP_GREEN", "LP_GREEN_DIM",
-    "LP_CYAN", "LP_BLUE", "LP_BLUE_DIM", "LP_PURPLE", "LP_PINK", "LP_WHITE",
+    # Launchpad (lpminimk3)
+    "LaunchpadMiniMk3",
+    "find_launchpads",
+    "Mode",
+    "ButtonEvent",
+    "Led",
+    "Button",
+    "ColorPalette",
     "COLOR_PALETTE",
+    "ButtonId",
     "LedMode",
-    # Emulator / Smart Launchpad
-    "LaunchpadInterface",
-    "LaunchpadEmulator",
-    "SmartLaunchpad",
-    "LedState",
-    "EmulatorView",
-    "FullGridLayout",
-    "create_launchpad",
     # OSC
     "OscClient",
     "OscConfig",
@@ -184,9 +165,7 @@ __all__ = [
     "remove_pad",
     "clear_all_pads",
     "refresh_all_leds",
-    # Legacy (backward compat)
-    "PadMapper",
-    "PadMapperState",
+
     # Synesthesia config
     "SynesthesiaOscPorts",
     "DEFAULT_OSC_PORTS",
@@ -213,14 +192,6 @@ __all__ = [
     "should_led_be_lit",
     "compute_all_led_states",
     "get_dimmed_color",
-    # Demo / Showcase
-    "LaunchpadDemo",
-    "run_demo",
-    "run_startup_demo",
-    "build_scroll_text_sysex",
-    "build_stop_scroll_sysex",
-    "DEMO_COLORS",
-    "RAINBOW",
 ]
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"  # Major version - lpminimk3 integration

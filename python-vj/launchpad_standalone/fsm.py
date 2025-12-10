@@ -9,7 +9,7 @@ from dataclasses import replace
 from typing import List, Tuple, Union, Optional
 
 from .model import (
-    AppState, LearnState, LearnPhase, LearnRegister, PadId, PadConfig,
+    AppState, LearnState, LearnPhase, LearnRegister, ButtonId, PadConfig,
     OscCommand, OscEvent, PadMode, ControllerConfig,
     LedEffect, SendOscEffect, SaveConfigEffect, LogEffect,
     LP_OFF, LP_GREEN, LP_GREEN_DIM,
@@ -52,7 +52,7 @@ def exit_learn_mode(state: AppState) -> Tuple[AppState, List[Effect]]:
     return new_state, effects
 
 
-def select_pad(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def select_pad(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """User selected a pad to configure - start recording OSC."""
     new_learn = replace(
         state.learn,
@@ -128,7 +128,7 @@ def finish_recording(state: AppState) -> Tuple[AppState, List[Effect]]:
     return new_state, effects
 
 
-def handle_config_pad_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def handle_config_pad_press(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """Handle pad press during config phase."""
     learn = state.learn
     
@@ -162,7 +162,7 @@ def handle_config_pad_press(state: AppState, pad_id: PadId) -> Tuple[AppState, L
     return state, []
 
 
-def _handle_osc_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def _handle_osc_select(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """Handle pad press in OSC selection register."""
     learn = state.learn
     
@@ -193,7 +193,7 @@ def _handle_osc_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[E
     return state, []
 
 
-def _handle_mode_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def _handle_mode_select(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """Handle pad press in mode selection register."""
     learn = state.learn
     
@@ -206,7 +206,7 @@ def _handle_mode_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[
     return state, []
 
 
-def _handle_color_select(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def _handle_color_select(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """
     Handle pad press in color selection register.
     
@@ -448,7 +448,7 @@ def toggle_blink(state: AppState) -> AppState:
 # MAIN EVENT HANDLERS
 # =============================================================================
 
-def handle_pad_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def handle_pad_press(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """
     Main pad press handler.
     
@@ -483,7 +483,7 @@ def handle_pad_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Eff
     return state, []
 
 
-def handle_normal_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def handle_normal_press(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """Handle pad press during normal operation."""
     if not state.config:
         return state, []
@@ -548,7 +548,7 @@ def handle_normal_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[
     return state, effects
 
 
-def handle_pad_release(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Effect]]:
+def handle_pad_release(state: AppState, pad_id: ButtonId) -> Tuple[AppState, List[Effect]]:
     """Handle pad release (for PUSH mode)."""
     if not state.config or state.learn.phase != LearnPhase.IDLE:
         return state, []

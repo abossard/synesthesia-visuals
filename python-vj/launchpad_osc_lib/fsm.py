@@ -8,7 +8,7 @@ Returns new state and list of effects to be executed by imperative shell.
 from typing import List, Tuple, Optional
 from dataclasses import replace
 
-from .launchpad import PadId
+from .button_id import ButtonId
 from .osc_client import OscEvent
 from .model import (
     ControllerState, PadBehavior, PadRuntimeState,
@@ -27,7 +27,7 @@ PadGroupName = ButtonGroupType
 
 def handle_pad_press(
     state: ControllerState,
-    pad_id: PadId
+    pad_id: ButtonId
 ) -> Tuple[ControllerState, List[Effect]]:
     """
     Handle a pad press event (pure function).
@@ -83,7 +83,7 @@ def handle_pad_press(
 
 def _handle_selector_press(
     state: ControllerState,
-    pad_id: PadId,
+    pad_id: ButtonId,
     behavior: PadBehavior
 ) -> Tuple[ControllerState, List[Effect]]:
     """Handle SELECTOR pad press."""
@@ -134,7 +134,7 @@ def _handle_selector_press(
 
 def _handle_toggle_press(
     state: ControllerState,
-    pad_id: PadId,
+    pad_id: ButtonId,
     behavior: PadBehavior
 ) -> Tuple[ControllerState, List[Effect]]:
     """Handle TOGGLE pad press."""
@@ -174,7 +174,7 @@ def _handle_toggle_press(
 
 def _handle_one_shot_press(
     state: ControllerState,
-    pad_id: PadId,
+    pad_id: ButtonId,
     behavior: PadBehavior
 ) -> Tuple[ControllerState, List[Effect]]:
     """Handle ONE_SHOT pad press."""
@@ -203,7 +203,7 @@ def _handle_one_shot_press(
 
 def _handle_push_press(
     state: ControllerState,
-    pad_id: PadId,
+    pad_id: ButtonId,
     behavior: PadBehavior
 ) -> Tuple[ControllerState, List[Effect]]:
     """
@@ -240,7 +240,7 @@ def _handle_push_press(
 
 def handle_pad_release(
     state: ControllerState,
-    pad_id: PadId
+    pad_id: ButtonId
 ) -> Tuple[ControllerState, List[Effect]]:
     """
     Handle pad release event (pure function).
@@ -727,7 +727,7 @@ def add_pad_behavior(
 
 def remove_pad(
     state: ControllerState,
-    pad_id: PadId
+    pad_id: ButtonId
 ) -> Tuple[ControllerState, List[Effect]]:
     """
     Remove a pad configuration (pure function).
