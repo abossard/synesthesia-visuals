@@ -1,18 +1,93 @@
 """
 Tests for domain models.
 
-Tests PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState.
+Tests PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState,
+OscEvent, AppMode, LearnState, ControllerState, and Effect types.
 """
 
 import pytest
 from launchpad_osc_lib.launchpad import PadId
+from launchpad_osc_lib.osc_client import OscEvent
 from launchpad_osc_lib.model import (
     PadMode,
     ButtonGroupType,
     OscCommand,
     PadBehavior,
     PadRuntimeState,
+    AppMode,
+    LearnState,
+    ControllerState,
+    Effect,
+    SendOscEffect,
+    SetLedEffect,
+    SaveConfigEffect,
+    LogEffect,
 )
+
+
+# =============================================================================
+# PadId Tests
+# =============================================================================
+
+class TestPadId:
+    """Test PadId identifier class."""
+
+    def test_grid_pad_creation(self):
+        """Grid pads have x,y in range 0-7."""
+        pad = PadId(3, 4)
+        assert pad.x == 3
+        assert pad.y == 4
+        assert pad.is_grid()
+        assert not pad.is_top_row()
+        assert not pad.is_right_column()
+
+    def test_top_row_pad(self):
+        """Top row pads have y=-1."""
+        pad = PadId(5, -1)
+        assert pad.is_top_row()
+        assert not pad.is_grid()
+        assert not pad.is_right_column()
+        assert str(pad) == "Top5"
+
+    def test_right_column_pad(self):
+        """Right column pads have x=8."""
+        pad = PadId(8, 3)
+        assert pad.is_right_column()
+        assert not pad.is_grid()
+        assert not pad.is_top_row()
+        assert str(pad) == "Right3"
+
+    def test_grid_pad_str(self):
+        """Grid pads show as (x,y)."""
+        pad = PadId(2, 5)
+        assert str(pad) == "(2,5)"
+
+    def test_pad_equality(self):
+        """PadIds with same coords are equal."""
+        pad1 = PadId(3, 4)
+        pad2 = PadId(3, 4)
+        assert pad1 == pad2
+
+    def test_pad_as_dict_key(self):
+        """PadIds can be used as dictionary keys."""
+        pads = {PadId(0, 0): "first", PadId(1, 1): "second"}
+        assert pads[PadId(0, 0)] == "first"
+        assert pads[PadId(1, 1)] == "second"
+
+    def test_pad_immutability(self):
+        """PadIds are immutable (frozen dataclass)."""
+        pad = PadId(0, 0)
+        with pytest.raises(AttributeError):
+            pad.x = 1
+
+    @pytest.mark.parametrize("x,y,expected", [
+        (0, 0, True), (7, 7, True), (0, 7, True), (7, 0, True),
+        (-1, 0, False), (8, 0, False), (0, -1, False), (0, 8, False),
+    ])
+    def test_is_grid_bounds(self, x, y, expected):
+        """Test grid boundary detection."""
+        pad = PadId(x, y)
+        assert pad.is_grid() == expected
 
 
 class TestOscCommand:
@@ -155,6 +230,131 @@ class TestPadMode:
     def test_modes_are_distinct(self):
         """All modes have distinct values."""
         modes = [PadMode.SELECTOR, PadMode.TOGGLE, PadMode.ONE_SHOT]
+        assert len(modes) == len(set(modes))
+
+
+# =============================================================================
+# OscEvent Tests
+# =============================================================================
+
+class TestOscEvent:
+    """Test OscEvent data structure."""
+
+    def test_event_creation(self):
+        """Create event with timestamp."""
+        event = OscEvent(1234567890.123, "/scenes/Test", [1])
+        assert event.timestamp == 1234567890.123
+        assert event.address == "/scenes/Test"
+        assert event.args == [1]
+
+    def test_event_to_command(self):
+        """Convert event to command (drops timestamp)."""
+        event = OscEvent(1234567890.123, "/scenes/Test", [1])
+        cmd = event.to_command()
+        assert isinstance(cmd, OscCommand)
+        assert cmd.address == "/scenes/Test"
+        assert cmd.args == [1]
+
+
+# =============================================================================
+# ControllerState Tests
+# =============================================================================
+
+class TestControllerState:
+    """Test ControllerState (full app state)."""
+
+    def test_default_state(self):
+        """Default state is empty and normal mode."""
+        state = ControllerState()
+        assert state.pads == {}
+        assert state.pad_runtime == {}
+        assert state.app_mode == AppMode.NORMAL
+        assert state.active_scene is None
+        assert state.active_preset is None
+        assert not state.beat_pulse
+
+    def test_state_immutability(self):
+        """ControllerState is immutable."""
+        state = ControllerState()
+        with pytest.raises(AttributeError):
+            state.app_mode = AppMode.LEARN_WAIT_PAD
+
+
+# =============================================================================
+# Effect Tests
+# =============================================================================
+
+class TestEffects:
+    """Test Effect classes."""
+
+    def test_send_osc_effect(self):
+        """SendOscEffect holds command."""
+        cmd = OscCommand("/test")
+        effect = SendOscEffect(cmd)
+        assert effect.command == cmd
+
+    def test_set_led_effect(self):
+        """SetLedEffect holds pad, color, blink."""
+        effect = SetLedEffect(PadId(0, 0), 21, blink=True)
+        assert effect.pad_id == PadId(0, 0)
+        assert effect.color == 21
+        assert effect.blink
+
+    def test_save_config_effect(self):
+        """SaveConfigEffect is a marker."""
+        effect = SaveConfigEffect()
+        assert isinstance(effect, Effect)
+
+    def test_log_effect(self):
+        """LogEffect holds message and level."""
+        effect = LogEffect("Test message", "WARNING")
+        assert effect.message == "Test message"
+        assert effect.level == "WARNING"
+
+
+# =============================================================================
+# LearnState Tests
+# =============================================================================
+
+class TestLearnState:
+    """Test LearnState for learn mode."""
+
+    def test_default_learn_state(self):
+        """Default learn state is empty."""
+        state = LearnState()
+        assert state.selected_pad is None
+        assert state.recorded_osc_events == []
+        assert state.record_start_time is None
+        assert state.candidate_commands == []
+
+    def test_learn_state_with_pad(self):
+        """Learn state with selected pad."""
+        state = LearnState(selected_pad=PadId(3, 4))
+        assert state.selected_pad == PadId(3, 4)
+
+
+# =============================================================================
+# AppMode Tests
+# =============================================================================
+
+class TestAppMode:
+    """Test AppMode enumeration."""
+
+    def test_all_modes_exist(self):
+        """All expected modes are defined."""
+        assert AppMode.NORMAL
+        assert AppMode.LEARN_WAIT_PAD
+        assert AppMode.LEARN_RECORD_OSC
+        assert AppMode.LEARN_SELECT_MSG
+
+    def test_modes_are_distinct(self):
+        """All modes have distinct values."""
+        modes = [
+            AppMode.NORMAL,
+            AppMode.LEARN_WAIT_PAD,
+            AppMode.LEARN_RECORD_OSC,
+            AppMode.LEARN_SELECT_MSG
+        ]
         assert len(modes) == len(set(modes))
 
 
