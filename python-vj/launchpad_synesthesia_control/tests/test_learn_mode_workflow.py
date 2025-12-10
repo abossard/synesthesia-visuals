@@ -9,11 +9,9 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from dataclasses import replace
 
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     ControllerState, PadId, AppMode, LearnState, OscEvent, OscCommand,
-    PadMode, PadGroupName, PadBehavior
-)
-from launchpad_synesthesia_control.app.domain.fsm import (
+    PadMode, PadGroupName, PadBehavior,
     enter_learn_mode, cancel_learn_mode, handle_pad_press,
     handle_osc_event, finish_osc_recording, select_learn_command
 )

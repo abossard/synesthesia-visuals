@@ -5,14 +5,13 @@ These tests verify blink phase calculations work correctly.
 """
 
 import pytest
-from launchpad_synesthesia_control.app.domain.blink import (
+from launchpad_osc_lib import (
     compute_blink_phase,
     should_led_be_lit,
     compute_all_led_states,
-    get_dimmed_color
-)
-from launchpad_osc_lib import (
-    PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState, ControllerState
+    get_dimmed_color,
+    PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState, ControllerState,
+    OscCommand
 )
 
 
@@ -230,7 +229,3 @@ class TestBlinkIntegration:
         led_states_off = compute_all_led_states(state, phase_off)
         color, is_lit = led_states_off[pad_id]
         assert is_lit is False  # Dimmed off beat
-
-
-# Need to import OscCommand for fixtures
-from launchpad_osc_lib import OscCommand

@@ -16,7 +16,7 @@ except ImportError:
     YAML_AVAILABLE = False
     yaml = None
 
-from ..domain.model import (
+from launchpad_osc_lib import (
     ControllerState, PadId, PadBehavior, PadMode, PadGroupName,
     OscCommand, PadRuntimeState
 )

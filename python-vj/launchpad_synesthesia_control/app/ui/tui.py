@@ -17,19 +17,16 @@ from textual.widgets import Header, Footer, Static, Label, Button
 from textual.binding import Binding
 from textual.reactive import reactive
 
-from ..domain.model import (
+from launchpad_osc_lib import (
     ControllerState, PadId, AppMode, OscEvent, PadMode, PadGroupName,
     Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
     OscCommand, COLOR_PALETTE,
-)
-from ..domain.fsm import (
     handle_pad_press, handle_pad_release, handle_osc_event,
     enter_learn_mode, cancel_learn_mode, finish_osc_recording,
-    select_learn_command
+    select_learn_command,
+    SmartLaunchpad, LaunchpadConfig, SynesthesiaOscManager,
+    compute_blink_phase, compute_all_led_states, get_dimmed_color,
 )
-from ..domain.blink import compute_blink_phase, compute_all_led_states, get_dimmed_color
-# Use library's SmartLaunchpad (auto-selects real or emulator)
-from launchpad_osc_lib import SmartLaunchpad, LaunchpadConfig, SynesthesiaOscManager
 from ..io.config import ConfigManager, get_default_config_path
 from .command_selection_screen import CommandSelectionScreen
 
@@ -231,7 +228,7 @@ class OscMonitorPanel(VerticalScroll):
         UI updates are throttled and batched.
         """
         import time
-        from ..domain.model import OscCommand
+        # OscCommand is already imported at module level from launchpad_osc_lib
 
         # Increment total counter (fast)
         self.total_message_count += 1
@@ -511,7 +508,7 @@ class LaunchpadSynesthesiaApp(App):
     
     async def _learn_timer_loop(self):
         """Check learn mode recording timer."""
-        from ..domain.fsm import finish_osc_recording
+        # finish_osc_recording is already imported at module level from launchpad_osc_lib
 
         previous_mode = AppMode.NORMAL
 

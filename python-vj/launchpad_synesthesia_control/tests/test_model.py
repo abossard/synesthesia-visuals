@@ -5,7 +5,7 @@ These tests verify the core data structures work correctly.
 """
 
 import pytest
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
     OscCommand, OscEvent, AppMode, LearnState, ControllerState,
     Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect

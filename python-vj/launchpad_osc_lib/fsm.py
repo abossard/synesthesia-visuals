@@ -12,12 +12,17 @@ from typing import List, Tuple, Optional, Callable
 from dataclasses import replace
 import time
 
+from .launchpad import PadId
+from .osc_client import OscEvent
 from .model import (
-    ControllerState, PadId, PadBehavior, PadRuntimeState,
-    PadMode, PadGroupName, AppMode, LearnState,
-    OscEvent, OscCommand,
+    ControllerState, PadBehavior, PadRuntimeState,
+    PadMode, ButtonGroupType, AppMode, LearnState,
+    OscCommand,
     Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect
 )
+
+# Alias for backward compatibility
+PadGroupName = ButtonGroupType
 
 # Default time function (can be overridden for testing)
 _time_func: Callable[[], float] = time.time
@@ -326,7 +331,7 @@ def handle_osc_event(
     - /controls/meta/hue: Update color selector
     
     If in LEARN_RECORD_OSC mode, also records the event.
-    **NEW: Timer starts on FIRST CONTROLLABLE OSC message received**
+    Timer starts on FIRST CONTROLLABLE OSC message received.
     
     Returns:
         (new_state, effects_to_execute)
@@ -360,17 +365,17 @@ def handle_osc_event(
         scene_name = event.address.split("/")[-1]
         state = replace(state, active_scene=scene_name)
         # Find and activate matching selector pad
-        state, led_effects = _activate_matching_selector(state, event.to_command(), PadGroupName.SCENES)
+        state, led_effects = _activate_matching_selector(state, event.to_command(), ButtonGroupType.SCENES)
         effects.extend(led_effects)
         
         # Reset PRESETS group when scene changes (presets are per-scene in Synesthesia)
-        state, reset_effects = _reset_subgroup(state, PadGroupName.SCENES)
+        state, reset_effects = _reset_subgroup(state, ButtonGroupType.SCENES)
         effects.extend(reset_effects)
     
     elif event.address.startswith("/presets/") or event.address.startswith("/favslots/"):
         preset_name = event.address.split("/")[-1]
         state = replace(state, active_preset=preset_name)
-        state, led_effects = _activate_matching_selector(state, event.to_command(), PadGroupName.PRESETS)
+        state, led_effects = _activate_matching_selector(state, event.to_command(), ButtonGroupType.PRESETS)
         effects.extend(led_effects)
     
     elif event.address == "/controls/meta/hue":
@@ -378,7 +383,7 @@ def handle_osc_event(
             hue = float(event.args[0])
             state = replace(state, active_color_hue=hue)
             # Find and activate matching color pad
-            state, led_effects = _activate_matching_selector(state, event.to_command(), PadGroupName.COLORS)
+            state, led_effects = _activate_matching_selector(state, event.to_command(), ButtonGroupType.COLORS)
             effects.extend(led_effects)
     
     return state, effects
@@ -387,7 +392,7 @@ def handle_osc_event(
 def _activate_matching_selector(
     state: ControllerState,
     command: OscCommand,
-    group: PadGroupName
+    group: ButtonGroupType
 ) -> Tuple[ControllerState, List[Effect]]:
     """
     Find and activate a selector pad matching the given OSC command.
@@ -447,7 +452,7 @@ def _activate_matching_selector(
 
 def _reset_subgroup(
     state: ControllerState,
-    parent_group: PadGroupName
+    parent_group: ButtonGroupType
 ) -> Tuple[ControllerState, List[Effect]]:
     """
     Reset all child groups when parent group changes.
@@ -463,7 +468,7 @@ def _reset_subgroup(
     new_active_selectors = dict(state.active_selector_by_group)
     
     # Find child groups
-    for group_type in PadGroupName:
+    for group_type in ButtonGroupType:
         if group_type.parent_group == parent_group:
             # Reset this child group
             # Clear active selector
@@ -610,7 +615,7 @@ def select_learn_command(
     state: ControllerState,
     command_index: int,
     pad_mode: PadMode,
-    group: Optional[PadGroupName],
+    group: Optional[ButtonGroupType],
     idle_color: int,
     active_color: int,
     label: str = ""
@@ -652,7 +657,6 @@ def select_learn_command(
         )
     elif pad_mode == PadMode.TOGGLE:
         # For toggle, use command as osc_on
-        # Could enhance to derive osc_off
         behavior = PadBehavior(
             pad_id=pad_id,
             mode=pad_mode,
@@ -661,6 +665,15 @@ def select_learn_command(
             label=label,
             osc_on=osc_command,
             osc_off=None  # TODO: Could derive from pattern
+        )
+    elif pad_mode == PadMode.PUSH:
+        behavior = PadBehavior(
+            pad_id=pad_id,
+            mode=pad_mode,
+            idle_color=idle_color,
+            active_color=active_color,
+            label=label,
+            osc_action=osc_command
         )
     else:  # ONE_SHOT
         behavior = PadBehavior(
@@ -699,3 +712,127 @@ def select_learn_command(
     ]
     
     return new_state, effects
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def add_pad_behavior(
+    state: ControllerState,
+    behavior: PadBehavior
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Add or update a pad configuration (pure function).
+    
+    Returns:
+        (new_state, effects)
+    """
+    new_pads = dict(state.pads)
+    new_pads[behavior.pad_id] = behavior
+    
+    new_pad_runtime = dict(state.pad_runtime)
+    new_pad_runtime[behavior.pad_id] = PadRuntimeState(
+        is_active=False,
+        current_color=behavior.idle_color,
+        blink_enabled=False
+    )
+    
+    new_state = replace(
+        state,
+        pads=new_pads,
+        pad_runtime=new_pad_runtime
+    )
+    
+    effects = [
+        SetLedEffect(behavior.pad_id, behavior.idle_color, blink=False),
+        LogEffect(f"Added pad {behavior.pad_id}: {behavior.mode.name}")
+    ]
+    
+    return new_state, effects
+
+
+def remove_pad(
+    state: ControllerState,
+    pad_id: PadId
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Remove a pad configuration (pure function).
+    
+    Returns:
+        (new_state, effects)
+    """
+    if pad_id not in state.pads:
+        return state, []
+    
+    new_pads = dict(state.pads)
+    del new_pads[pad_id]
+    
+    new_pad_runtime = dict(state.pad_runtime)
+    if pad_id in new_pad_runtime:
+        del new_pad_runtime[pad_id]
+    
+    # Remove from active selectors if needed
+    new_active_selectors = dict(state.active_selector_by_group)
+    for group, active_pad in list(new_active_selectors.items()):
+        if active_pad == pad_id:
+            new_active_selectors[group] = None
+    
+    new_state = replace(
+        state,
+        pads=new_pads,
+        pad_runtime=new_pad_runtime,
+        active_selector_by_group=new_active_selectors
+    )
+    
+    effects = [
+        SetLedEffect(pad_id, 0, blink=False),  # Turn off LED
+        LogEffect(f"Removed pad {pad_id}")
+    ]
+    
+    return new_state, effects
+
+
+def clear_all_pads(
+    state: ControllerState
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Remove all pad configurations (pure function).
+    
+    Returns:
+        (new_state, effects)
+    """
+    effects: List[Effect] = []
+    
+    # Turn off all LEDs
+    for pad_id in state.pads:
+        effects.append(SetLedEffect(pad_id, 0, blink=False))
+    
+    new_state = replace(
+        state,
+        pads={},
+        pad_runtime={},
+        active_selector_by_group={}
+    )
+    
+    effects.append(LogEffect("Cleared all pads"))
+    
+    return new_state, effects
+
+
+def refresh_all_leds(
+    state: ControllerState
+) -> List[Effect]:
+    """
+    Generate effects to refresh all LEDs based on current state.
+    
+    Returns:
+        List of SetLedEffect
+    """
+    effects: List[Effect] = []
+    
+    for pad_id, behavior in state.pads.items():
+        runtime = state.pad_runtime.get(pad_id, PadRuntimeState())
+        effects.append(SetLedEffect(pad_id, runtime.current_color, blink=runtime.blink_enabled))
+    
+    return effects

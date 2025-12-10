@@ -26,7 +26,7 @@ from launchpad_synesthesia_control.app.ui.tui import (
     LAUNCHPAD_TO_TERMINAL_COLOR,
     NAMED_COLORS
 )
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
     ControllerState, AppMode, LearnState, OscCommand
 )

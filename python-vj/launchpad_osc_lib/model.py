@@ -1,12 +1,13 @@
 """
 Domain Models for Pad Mapping
 
-Immutable data structures for pad configuration and runtime state.
+Immutable data structures for pad configuration, runtime state,
+application state, and FSM effects.
 """
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from .launchpad import PadId
 
@@ -55,6 +56,10 @@ class ButtonGroupType(str, Enum):
     def resets_on_parent_change(self) -> bool:
         """Whether this group resets when parent group changes."""
         return self.parent_group is not None
+
+
+# Alias for backward compatibility
+PadGroupName = ButtonGroupType
 
 
 # =============================================================================
@@ -158,3 +163,132 @@ class PadRuntimeState:
     is_on: bool = False
     current_color: int = 0
     blink_enabled: bool = False
+
+
+# =============================================================================
+# APPLICATION MODES (FSM States)
+# =============================================================================
+
+class AppMode(Enum):
+    """
+    Application mode state machine.
+    
+    NORMAL: Normal operation - pads execute their configured behaviors
+    LEARN_WAIT_PAD: Waiting for user to press a pad to configure
+    LEARN_RECORD_OSC: Recording OSC messages for 5 seconds
+    LEARN_SELECT_MSG: User selecting from recorded messages
+    """
+    NORMAL = auto()
+    LEARN_WAIT_PAD = auto()
+    LEARN_RECORD_OSC = auto()
+    LEARN_SELECT_MSG = auto()
+
+
+@dataclass(frozen=True)
+class LearnState:
+    """
+    State for Learn Mode FSM.
+    
+    Attributes:
+        selected_pad: Pad being configured (set in LEARN_WAIT_PAD)
+        recorded_osc_events: OSC events captured during recording
+        record_start_time: When recording started
+        candidate_commands: Filtered/deduped commands for selection
+        selected_command_index: User's selection from candidates
+        selected_mode: User's selected pad mode
+        selected_group: User's selected group (for SELECTOR)
+        selected_idle_color: User's selected idle color
+        selected_active_color: User's selected active color
+    """
+    selected_pad: Optional[PadId] = None
+    recorded_osc_events: List[Any] = field(default_factory=list)  # List[OscEvent]
+    record_start_time: Optional[float] = None
+    candidate_commands: List[OscCommand] = field(default_factory=list)
+    selected_command_index: Optional[int] = None
+    selected_mode: Optional[PadMode] = None
+    selected_group: Optional[ButtonGroupType] = None
+    selected_idle_color: int = 0
+    selected_active_color: int = 5
+
+
+# =============================================================================
+# CONTROLLER STATE (FULL APPLICATION STATE)
+# =============================================================================
+
+@dataclass(frozen=True)
+class ControllerState:
+    """
+    Complete controller state (immutable).
+    
+    Updated by pure functions, never mutated.
+    All state transitions return a new ControllerState instance.
+    
+    Attributes:
+        pads: Configuration for each pad
+        pad_runtime: Runtime state for each pad
+        active_selector_by_group: Currently active pad ID for each selector group
+        active_scene: Current active scene name
+        active_preset: Current active preset name
+        active_color_hue: Current meta color hue
+        beat_phase: Beat phase 0-1 from OSC
+        beat_pulse: Current beat pulse state
+        last_osc_messages: Recent OSC messages for diagnostics
+        learn_state: Current learn mode state
+        app_mode: Current application mode
+    """
+    pads: Dict[PadId, PadBehavior] = field(default_factory=dict)
+    pad_runtime: Dict[PadId, PadRuntimeState] = field(default_factory=dict)
+    active_selector_by_group: Dict[ButtonGroupType, Optional[PadId]] = field(default_factory=dict)
+    
+    # Synesthesia state
+    active_scene: Optional[str] = None
+    active_preset: Optional[str] = None
+    active_color_hue: Optional[float] = None
+    
+    # Audio/beat state
+    beat_phase: float = 0.0
+    beat_pulse: bool = False
+    
+    # Diagnostics
+    last_osc_messages: List[Any] = field(default_factory=list)  # List[OscEvent]
+    
+    # FSM state
+    learn_state: LearnState = field(default_factory=LearnState)
+    app_mode: AppMode = AppMode.NORMAL
+
+
+# =============================================================================
+# EFFECTS (Side effect descriptions for imperative shell)
+# =============================================================================
+
+@dataclass(frozen=True)
+class Effect:
+    """Base class for side effects."""
+    pass
+
+
+@dataclass(frozen=True)
+class SendOscEffect(Effect):
+    """Effect: Send an OSC command."""
+    command: OscCommand
+
+
+@dataclass(frozen=True)
+class SetLedEffect(Effect):
+    """Effect: Set a Launchpad LED."""
+    pad_id: PadId
+    color: int
+    blink: bool = False
+
+
+@dataclass(frozen=True)
+class SaveConfigEffect(Effect):
+    """Effect: Save configuration to disk."""
+    pass
+
+
+@dataclass(frozen=True)
+class LogEffect(Effect):
+    """Effect: Log a message."""
+    message: str
+    level: str = "INFO"  # INFO, WARNING, ERROR

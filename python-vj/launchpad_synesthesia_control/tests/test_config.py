@@ -13,7 +13,7 @@ from launchpad_synesthesia_control.app.io.config import (
     pad_id_to_str, str_to_pad_id,
     serialize_pad_behavior, deserialize_pad_behavior
 )
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     PadId, PadMode, PadGroupName, PadBehavior, OscCommand, ControllerState,
     PadRuntimeState
 )

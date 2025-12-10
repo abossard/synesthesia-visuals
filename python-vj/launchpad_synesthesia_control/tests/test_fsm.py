@@ -7,17 +7,13 @@ These tests verify state transitions are correct and pure.
 import pytest
 from dataclasses import replace
 
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState,
     OscCommand, OscEvent, AppMode, LearnState, ControllerState,
-    SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect
-)
-from launchpad_synesthesia_control.app.domain.fsm import (
-    handle_pad_press, handle_osc_event,
+    SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
+    handle_pad_press, handle_pad_release, handle_osc_event,
     enter_learn_mode, cancel_learn_mode, finish_osc_recording,
-    select_learn_command,
-    _handle_selector_press, _handle_toggle_press, _handle_one_shot_press,
-    _activate_matching_selector
+    select_learn_command, set_time_func, reset_time_func,
 )
 
 
@@ -334,7 +330,7 @@ class TestActivateMatchingSelector:
     """Test automatic selector activation from OSC."""
 
     def test_matching_selector_activated(self):
-        """Selector matching OSC address is activated."""
+        """Selector matching OSC address is activated via handle_osc_event."""
         pad_id = PadId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
@@ -346,8 +342,9 @@ class TestActivateMatchingSelector:
             pad_runtime={pad_id: PadRuntimeState()}
         )
 
-        cmd = OscCommand("/scenes/Test")
-        new_state, effects = _activate_matching_selector(state, cmd, PadGroupName.SCENES)
+        # Use public API - handle_osc_event will activate matching selector
+        event = OscEvent(1234.5, "/scenes/Test")
+        new_state, effects = handle_osc_event(state, event)
 
         assert new_state.pad_runtime[pad_id].is_active
         assert new_state.active_selector_by_group[PadGroupName.SCENES] == pad_id

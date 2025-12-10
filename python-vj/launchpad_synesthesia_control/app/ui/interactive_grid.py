@@ -9,7 +9,7 @@ from textual.containers import Container, Grid as GridContainer
 from textual.reactive import reactive
 from textual.message import Message
 
-from ..domain.model import PadId, ControllerState
+from launchpad_osc_lib import PadId, ControllerState
 
 
 class PadButton(Button):

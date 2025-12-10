@@ -12,7 +12,7 @@ from textual.containers import Container, Vertical, Horizontal
 from textual.reactive import reactive
 from textual.binding import Binding
 
-from ..domain.model import OscCommand, OscEvent, PadMode, PadGroupName, AppMode, LearnState
+from launchpad_osc_lib import OscCommand, OscEvent, PadMode, PadGroupName, AppMode, LearnState
 
 # Default time function (can be overridden for testing)
 _time_func: Callable[[], float] = time.time

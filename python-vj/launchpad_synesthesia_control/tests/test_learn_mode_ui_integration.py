@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from dataclasses import replace
 
-from launchpad_synesthesia_control.app.domain.model import (
+from launchpad_osc_lib import (
     ControllerState, PadId, AppMode, LearnState, OscCommand,
     PadMode, PadGroupName
 )
@@ -142,7 +142,7 @@ class TestLearnModeModalIntegration:
     async def test_modal_warns_about_existing_pad_configuration(self):
         """Edge case: Reconfiguring existing pad should show warning."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadSynesthesiaApp
-        from launchpad_synesthesia_control.app.domain.model import PadBehavior
+        from launchpad_osc_lib import PadBehavior
 
         with patch('launchpad_synesthesia_control.app.ui.tui.SmartLaunchpad') as mock_lp, \
              patch('launchpad_synesthesia_control.app.ui.tui.SynesthesiaOscManager') as mock_osc:
@@ -338,7 +338,7 @@ class TestLearnModeUIUpdates:
     def test_grid_updates_when_pad_configured(self):
         """Grid should update to show newly configured pads."""
         from launchpad_synesthesia_control.app.ui.tui import LaunchpadGrid
-        from launchpad_synesthesia_control.app.domain.model import PadBehavior, PadRuntimeState
+        from launchpad_osc_lib import PadBehavior, PadRuntimeState
 
         grid = LaunchpadGrid()
 

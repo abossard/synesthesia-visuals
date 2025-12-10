@@ -2,20 +2,33 @@
 Launchpad OSC Library
 
 A reusable library for Launchpad MIDI control with OSC integration.
-Supports button behaviors: SELECTOR (radio), TOGGLE (on/off), ONE_SHOT (trigger).
+Supports button behaviors: SELECTOR (radio), TOGGLE (on/off), ONE_SHOT (trigger), PUSH (momentary).
+
+Architecture:
+- Pure FSM functions for state transitions (fsm.py)
+- Immutable state (ControllerState)
+- Effect descriptions (Effect subclasses) for imperative shell
+- Learn mode for dynamic pad configuration
 
 Usage:
-    from launchpad_osc_lib import LaunchpadDevice, OscClient, PadMapper, PadId, ButtonGroupType
+    from launchpad_osc_lib import (
+        ControllerState, PadId, ButtonGroupType, PadMode,
+        handle_pad_press, handle_osc_event, enter_learn_mode,
+        SendOscEffect, SetLedEffect
+    )
 
-    # Setup devices
-    launchpad = LaunchpadDevice()
-    osc = OscClient()
-    mapper = PadMapper(launchpad, osc)
+    # Initialize state
+    state = ControllerState()
     
-    # Configure pads
-    mapper.add_selector(PadId(0, 0), "/scenes/Scene1", ButtonGroupType.SCENES, label="Scene 1")
-    mapper.add_toggle(PadId(0, 1), "/controls/global/strobe", label="Strobe")
-    mapper.add_oneshot(PadId(0, 2), "/playlist/random", label="Random")
+    # Handle events (pure functions return new state + effects)
+    state, effects = handle_pad_press(state, PadId(0, 0))
+    
+    # Execute effects in imperative shell
+    for effect in effects:
+        if isinstance(effect, SendOscEffect):
+            osc.send(effect.command)
+        elif isinstance(effect, SetLedEffect):
+            launchpad.set_led(effect.pad_id, effect.color)
 """
 
 from .launchpad import (
@@ -31,13 +44,46 @@ from .launchpad import (
 )
 from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
+    # Pad configuration types
     PadMode,
     ButtonGroupType,
+    PadGroupName,  # Alias for ButtonGroupType
     OscCommand,
     PadBehavior,
     PadRuntimeState,
+    # FSM state types
+    AppMode,
+    LearnState,
+    ControllerState,
+    # Effect types
+    Effect,
+    SendOscEffect,
+    SetLedEffect,
+    SaveConfigEffect,
+    LogEffect,
 )
-from .engine import PadMapper, PadMapperState
+from .fsm import (
+    # Time functions (for testing)
+    set_time_func,
+    reset_time_func,
+    get_current_time,
+    # Pad interaction
+    handle_pad_press,
+    handle_pad_release,
+    # OSC handling
+    handle_osc_event,
+    # Learn mode
+    enter_learn_mode,
+    cancel_learn_mode,
+    finish_osc_recording,
+    select_learn_command,
+    # Utility functions
+    add_pad_behavior,
+    remove_pad,
+    clear_all_pads,
+    refresh_all_leds,
+)
+from .engine import PadMapper, PadMapperState  # Legacy - keep for backward compat
 from .emulator import (
     LaunchpadInterface,
     LaunchpadEmulator,
@@ -68,6 +114,12 @@ from .banks import (
     BankManagerState,
     create_default_banks,
 )
+from .blink import (
+    compute_blink_phase,
+    should_led_be_lit,
+    compute_all_led_states,
+    get_dimmed_color,
+)
 from .synesthesia_osc import SynesthesiaOscManager
 
 __all__ = [
@@ -94,12 +146,39 @@ __all__ = [
     "OscConfig",
     "OscEvent",
     "SynesthesiaOscManager",
-    # Mapping
+    # Pad configuration types
     "PadMode",
     "ButtonGroupType",
+    "PadGroupName",
     "OscCommand",
     "PadBehavior",
     "PadRuntimeState",
+    # FSM state types
+    "AppMode",
+    "LearnState",
+    "ControllerState",
+    # Effect types
+    "Effect",
+    "SendOscEffect",
+    "SetLedEffect",
+    "SaveConfigEffect",
+    "LogEffect",
+    # FSM functions
+    "set_time_func",
+    "reset_time_func",
+    "get_current_time",
+    "handle_pad_press",
+    "handle_pad_release",
+    "handle_osc_event",
+    "enter_learn_mode",
+    "cancel_learn_mode",
+    "finish_osc_recording",
+    "select_learn_command",
+    "add_pad_behavior",
+    "remove_pad",
+    "clear_all_pads",
+    "refresh_all_leds",
+    # Legacy (backward compat)
     "PadMapper",
     "PadMapperState",
     # Synesthesia config
@@ -121,6 +200,11 @@ __all__ = [
     "BankManager",
     "BankManagerState",
     "create_default_banks",
+    # Blink / Beat sync
+    "compute_blink_phase",
+    "should_led_be_lit",
+    "compute_all_led_states",
+    "get_dimmed_color",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

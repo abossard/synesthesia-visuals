@@ -4,9 +4,9 @@ Beat-Synced Blinking Logic - Pure Functions
 Computes LED blink states synchronized with Synesthesia's audio beat.
 """
 
-import math
 from typing import Dict, Tuple
-from .model import ControllerState, PadId, PadRuntimeState
+from .model import ControllerState, PadRuntimeState
+from .launchpad import PadId
 
 
 def compute_blink_phase(beat_pulse: bool, beat_phase: float) -> float:

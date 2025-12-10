@@ -12,8 +12,7 @@ from textual.containers import Container, Vertical, Horizontal, VerticalScroll
 from textual.binding import Binding
 from textual import on
 
-from ..domain.model import OscCommand, PadMode, PadGroupName, COLOR_PALETTE as LP_COLORS
-from launchpad_osc_lib import get_default_button_type
+from launchpad_osc_lib import OscCommand, PadMode, PadGroupName, COLOR_PALETTE as LP_COLORS, get_default_button_type
 
 
 # Color palette: name -> (display_name, launchpad_color_index)
