@@ -13,9 +13,90 @@ from textual.binding import Binding
 from launchpad_osc_lib import OscCommand, PadMode, PadGroupName, get_default_button_type
 
 
+# Full Launchpad Mini MK3 color palette (128 colors, velocity 0-127)
+# Organized by color family for easier selection
+# Format: (name, velocity, hex_color_for_preview)
 COLOR_PALETTE = [
-    ("Red", 5), ("Orange", 9), ("Yellow", 13), ("Green", 21),
-    ("Cyan", 37), ("Blue", 45), ("Purple", 53), ("White", 3),
+    # Row 0: Off and basics
+    ("Off", 0, "#000000"),
+    ("DkGray", 1, "#1E1E1E"),
+    ("Gray", 2, "#7F7F7F"),
+    ("White", 3, "#FFFFFF"),
+    # Row 1: Reds
+    ("Red1", 4, "#FF4C4C"),
+    ("Red", 5, "#FF0000"),
+    ("Red3", 6, "#590000"),
+    ("Red4", 7, "#190000"),
+    # Row 2: Oranges
+    ("Org1", 8, "#FFBD6C"),
+    ("Orange", 9, "#FF5400"),
+    ("Org3", 10, "#591D00"),
+    ("Org4", 11, "#271B00"),
+    # Row 3: Yellows
+    ("Yel1", 12, "#FFFF4C"),
+    ("Yellow", 13, "#FFFF00"),
+    ("Yel3", 14, "#595900"),
+    ("Yel4", 15, "#191900"),
+    # Row 4: Lime/Chartreuse
+    ("Lime1", 16, "#88FF4C"),
+    ("Lime", 17, "#54FF00"),
+    ("Lime3", 18, "#1D5900"),
+    ("Lime4", 19, "#142B00"),
+    # Row 5: Greens
+    ("Grn1", 20, "#4CFF4C"),
+    ("Green", 21, "#00FF00"),
+    ("Grn3", 22, "#005900"),
+    ("Grn4", 23, "#001900"),
+    # Row 6: Spring greens
+    ("Spg1", 24, "#4CFF5E"),
+    ("Spring", 25, "#00FF36"),
+    ("Spg3", 26, "#00590D"),
+    ("Spg4", 27, "#001902"),
+    # Row 7: Teals
+    ("Teal1", 28, "#4CFF88"),
+    ("Teal", 29, "#00FF54"),
+    ("Teal3", 30, "#00591D"),
+    ("Teal4", 31, "#001F12"),
+    # Row 8: Cyans
+    ("Cyn1", 32, "#4CFFB7"),
+    ("Cyan", 37, "#00FFFF"),
+    ("Cyn3", 34, "#005932"),
+    ("Cyn4", 35, "#001912"),
+    # Row 9: Sky blues
+    ("Sky1", 36, "#4CC3FF"),
+    ("Sky", 33, "#00A9FF"),
+    ("Sky3", 38, "#004152"),
+    ("Sky4", 39, "#001019"),
+    # Row 10: Blues
+    ("Blu1", 40, "#4C88FF"),
+    ("Blue", 45, "#0000FF"),
+    ("Blu3", 42, "#001D59"),
+    ("Blu4", 43, "#000819"),
+    # Row 11: Indigos
+    ("Ind1", 44, "#4C4CFF"),
+    ("Indigo", 41, "#0054FF"),
+    ("Ind3", 46, "#090059"),
+    ("Ind4", 47, "#020019"),
+    # Row 12: Purples
+    ("Pur1", 48, "#874CFF"),
+    ("Purple", 53, "#5400FF"),
+    ("Pur3", 50, "#190059"),
+    ("Pur4", 51, "#0F0030"),
+    # Row 13: Violets
+    ("Vio1", 52, "#BC4CFF"),
+    ("Violet", 49, "#9400FF"),
+    ("Vio3", 54, "#2E0059"),
+    ("Vio4", 55, "#140019"),
+    # Row 14: Magentas
+    ("Mag1", 56, "#FF4CFF"),
+    ("Magenta", 57, "#FF00FF"),
+    ("Mag3", 58, "#590059"),
+    ("Mag4", 59, "#190019"),
+    # Row 15: Pinks
+    ("Pnk1", 60, "#FF4C87"),
+    ("Pink", 61, "#FF0054"),
+    ("Pnk3", 62, "#59001D"),
+    ("Pnk4", 63, "#220013"),
 ]
 
 MODES = [
@@ -103,19 +184,18 @@ class CommandSelectionScreen(Screen):
             f"[bold green]{i+1}:{m.name}[/]" if m == self.selected_mode else f"{i+1}:{m.name}"
             for i, (m, _) in enumerate(MODES)
         )
-        # Build color lines with selection highlight
-        idle_line = " ".join(
-            f"[bold on {name.lower()}]{name}[/]" if i == self.selected_color_idle else f"[{name.lower()}]{name}[/]"
-            for i, (name, _) in enumerate(COLOR_PALETTE)
-        )
-        active_line = " ".join(
-            f"[bold on {name.lower()}]{name}[/]" if i == self.selected_color_active else f"[{name.lower()}]{name}[/]"
-            for i, (name, _) in enumerate(COLOR_PALETTE)
-        )
+        # Show current color with preview block
+        idle_name, idle_val, idle_hex = COLOR_PALETTE[self.selected_color_idle]
+        active_name, active_val, active_hex = COLOR_PALETTE[self.selected_color_active]
+        
+        # Create color preview blocks using Rich markup
+        idle_block = f"[on {idle_hex}]      [/]"
+        active_block = f"[on {active_hex}]      [/]"
+        
         return (
             f"Mode (1-4): {mode_line}\n"
-            f"Idle (Q/W): {idle_line}\n"
-            f"Active (A/D): {active_line}"
+            f"Idle (Q/W):   {idle_block} [{self.selected_color_idle:2d}] {idle_name}\n"
+            f"Active (A/D): {active_block} [{self.selected_color_active:2d}] {active_name}"
         )
     
     def action_idle_prev(self):
@@ -178,8 +258,8 @@ class CommandSelectionScreen(Screen):
             "command": self.candidates[idx],
             "mode": self.selected_mode,
             "group": group_enum,
-            "idle_color": COLOR_PALETTE[self.selected_color_idle][1],
-            "active_color": COLOR_PALETTE[self.selected_color_active][1],
+            "idle_color": COLOR_PALETTE[self.selected_color_idle][1],  # velocity value
+            "active_color": COLOR_PALETTE[self.selected_color_active][1],  # velocity value
             "label": f"Pad {self.pad_id}",
         }
         self.dismiss(result)
