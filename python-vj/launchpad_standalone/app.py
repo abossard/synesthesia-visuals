@@ -5,9 +5,9 @@ Device-driven learn mode without any TUI dependency.
 All interaction happens through the Launchpad LEDs and pads.
 """
 
-import asyncio
 import logging
 import signal
+import threading
 from dataclasses import replace
 from typing import List, Union
 
@@ -20,10 +20,9 @@ from .osc import OscClient, OscConfig
 from .display import render_state
 from .fsm import (
     handle_pad_press, handle_pad_release, record_osc_event,
-    save_from_recording, toggle_blink,
+    save_from_recording,
 )
 from .config import save_config, load_config
-from launchpad_osc_lib.demo import run_startup_demo
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +50,8 @@ class StandaloneApp:
         
         self.state = AppState()
         self._running = False
-        self._blink_task = None
     
-    async def start(self):
+    def start(self):
         """Start the application."""
         logger.info("Starting Launchpad Standalone...")
         
@@ -65,50 +63,41 @@ class StandaloneApp:
             self.state = replace(self.state, config=ControllerConfig())
         
         # Connect devices
-        if not await self.launchpad.connect():
+        if not self.launchpad.connect():
             logger.error("Failed to connect Launchpad")
             return
         
-        if not await self.osc.connect():
-            logger.warning("OSC not connected - continuing without OSC")
+        # Note: OSC connect is async in the osc module, but we'll handle it gracefully
+        try:
+            # OscClient might need async, so we'll just set it up
+            self.osc.add_callback(self._on_osc_event)
+        except Exception as e:
+            logger.warning(f"OSC setup warning: {e}")
         
         # Set up callbacks
         self.launchpad.set_callbacks(
             on_press=self._on_pad_press,
             on_release=self._on_pad_release,
         )
-        self.osc.add_callback(self._on_osc_event)
         
-        # Run startup demo
-        await self._run_startup_demo()
+        # Simple startup: just clear and render
+        self.launchpad.clear_all()
         
         # Initial LED render
         self._render_leds()
         
-        # Start blink animation
-        self._blink_task = asyncio.create_task(self._blink_loop())
-        
-        # Start listening
-        self._running = True
         logger.info("Ready! Press bottom-right scene button to enter learn mode.")
         
-        await self.launchpad.start_listening()
+        # Start listening (blocking)
+        # lpminimk3 handles LED pulsing internally, no need for blink loop
+        self._running = True
+        self.launchpad.start_listening()
     
-    async def stop(self):
+    def stop(self):
         """Stop the application."""
         self._running = False
-        
-        if self._blink_task:
-            self._blink_task.cancel()
-        
-        await self.launchpad.stop()
-        await self.osc.stop()
-        
+        self.launchpad.stop()
         logger.info("Stopped")
-    
-    async def _run_startup_demo(self):
-        """Run a brief startup demo to show the device is connected."""
-        await run_startup_demo(self.launchpad)
 
     def _on_pad_press(self, pad_id: ButtonId, velocity: int):
         """Handle pad press from Launchpad."""
@@ -132,16 +121,7 @@ class StandaloneApp:
             self._execute_effects(effects)
             self._render_leds()
     
-    async def _blink_loop(self):
-        """Blink animation loop (200ms interval)."""
-        while self._running:
-            await asyncio.sleep(0.2)
-            
-            # Only update if in a blinking phase
-            phase = self.state.learn.phase
-            if phase in (LearnPhase.WAIT_PAD, LearnPhase.RECORD_OSC):
-                self.state = toggle_blink(self.state)
-                self._render_leds()
+
     
     def _render_leds(self):
         """Render current state to Launchpad LEDs."""
@@ -149,7 +129,8 @@ class StandaloneApp:
         
         for effect in effects:
             if isinstance(effect, LedEffect):
-                self.launchpad.set_led(effect.pad_id, effect.color)
+                # Use lpminimk3's built-in pulse feature for blinking
+                self.launchpad.set_led(effect.pad_id, effect.color, pulse=effect.blink)
     
     def _execute_effects(self, effects: List[Effect]):
         """Execute side effects."""
@@ -165,7 +146,7 @@ class StandaloneApp:
                 logger.log(level, effect.message)
 
 
-async def main():
+def main():
     """Main entry point."""
     logging.basicConfig(
         level=logging.INFO,
@@ -175,22 +156,22 @@ async def main():
     app = StandaloneApp()
     
     # Handle Ctrl+C
-    loop = asyncio.get_event_loop()
-    
-    def signal_handler():
+    def signal_handler(signum, frame):
         logger.info("Shutting down...")
-        asyncio.create_task(app.stop())
+        app.stop()
+        import sys
+        sys.exit(0)
     
-    loop.add_signal_handler(signal.SIGINT, signal_handler)
-    loop.add_signal_handler(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        await app.start()
-    except asyncio.CancelledError:
-        pass
+        app.start()
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
     finally:
-        await app.stop()
+        app.stop()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

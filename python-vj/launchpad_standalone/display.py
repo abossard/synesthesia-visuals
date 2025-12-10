@@ -74,12 +74,11 @@ def render_learn_wait_pad(state: AppState) -> List[LedEffect]:
     """
     Render 'waiting for pad selection' phase.
     
-    - Unconfigured pads blink red (available for recording)
+    - Unconfigured pads pulse red (available for recording)
     - Configured pads show their idle color (already assigned)
     - Scene buttons show learn active
     """
     effects = []
-    blink_color = LP_RED if state.blink_on else LP_RED_DIM
     
     # 8x8 grid pads
     for y in range(8):
@@ -89,10 +88,11 @@ def render_learn_wait_pad(state: AppState) -> List[LedEffect]:
             
             if pad_config:
                 # Configured pad: show idle color (solid)
-                effects.append(LedEffect(pad_id=pad_id, color=pad_config.idle_color))
+                effects.append(LedEffect(pad_id=pad_id, color=pad_config.idle_color, blink=False))
             else:
-                # Unconfigured pad: blink red (available for recording)
-                effects.append(LedEffect(pad_id=pad_id, color=blink_color))
+                # Unconfigured pad: pulse red (available for recording)
+                # Use lpminimk3's built-in pulse feature
+                effects.append(LedEffect(pad_id=pad_id, color=LP_RED, blink=True))
     
     # Learn button shows we're in learn mode
     effects.append(LedEffect(pad_id=LEARN_BUTTON, color=LP_ORANGE))
@@ -118,10 +118,9 @@ def render_learn_record_osc(state: AppState) -> List[LedEffect]:
         for x in range(8):
             effects.append(LedEffect(pad_id=ButtonId(x, y), color=LP_OFF))
     
-    # Selected pad blinks orange
+    # Selected pad pulses orange
     if learn.selected_pad:
-        color = LP_ORANGE if state.blink_on else LP_YELLOW
-        effects.append(LedEffect(pad_id=learn.selected_pad, color=color))
+        effects.append(LedEffect(pad_id=learn.selected_pad, color=LP_ORANGE, blink=True))
     
     # Learn button shows recording (also acts as cancel)
     effects.append(LedEffect(pad_id=LEARN_BUTTON, color=LP_ORANGE))

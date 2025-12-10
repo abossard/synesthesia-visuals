@@ -1,149 +1,61 @@
 """
-Launchpad Mini Mk3 MIDI Driver
+Launchpad Mini Mk3 Driver using lpminimk3
 
-Self-contained driver for the standalone app.
+Thin wrapper around lpminimk3 for the standalone app.
 """
 
-import asyncio
 import logging
-from dataclasses import dataclass
-from typing import Optional, Callable, Tuple, Any
+import threading
+from typing import Optional, Callable
 
 from .model import ButtonId
 
 try:
-    import mido
-    from mido import Message
-    MIDO_AVAILABLE = True
+    import lpminimk3
+    from lpminimk3 import LaunchpadMiniMk3, Mode, ButtonEvent
+    LPMINIMK3_AVAILABLE = True
 except ImportError:
-    MIDO_AVAILABLE = False
-    mido = None
-    Message = None
+    LPMINIMK3_AVAILABLE = False
+    lpminimk3 = None
+    LaunchpadMiniMk3 = None
+    Mode = None
+    ButtonEvent = None
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# COORDINATE MAPPING
-# =============================================================================
-
-def pad_to_note(pad_id: ButtonId) -> Tuple[str, int]:
-    """Convert ButtonId to MIDI message type and number."""
-    if pad_id.is_scene_button():
-        # Scene buttons: notes 19, 29, ..., 89
-        return ("note", (pad_id.y + 1) * 10 + 9)
-    else:
-        # Grid: notes 11-88
-        return ("note", (pad_id.y + 1) * 10 + (pad_id.x + 1))
-
-
-def note_to_pad(msg_type: str, number: int) -> Optional[ButtonId]:
-    """Convert MIDI note to ButtonId."""
-    if msg_type != "note":
-        return None
-    
-    row = (number // 10) - 1
-    col = (number % 10) - 1
-    
-    # Scene button (column 8)
-    if col == 8 and 0 <= row <= 7:
-        return ButtonId(x=8, y=row)
-    # Grid pad
-    elif 0 <= row <= 7 and 0 <= col <= 7:
-        return ButtonId(x=col, y=row)
-    
-    return None
-
-
-# =============================================================================
-# DEVICE DETECTION
-# =============================================================================
-
-def find_launchpad_ports() -> Tuple[Optional[str], Optional[str]]:
-    """Auto-detect Launchpad Mini Mk3 MIDI ports."""
-    if not MIDO_AVAILABLE:
-        logger.error("mido not available")
-        return None, None
-    
-    try:
-        input_ports = mido.get_input_names()
-        output_ports = mido.get_output_names()
-    except Exception as e:
-        logger.warning(f"Could not query MIDI ports: {e}")
-        return None, None
-    
-    patterns = ["Launchpad Mini MK3", "LPMiniMK3", "MIDIIN2", "MIDIOUT2"]
-    
-    input_port = None
-    output_port = None
-    
-    for pattern in patterns:
-        for port in input_ports:
-            if pattern.lower() in port.lower():
-                input_port = port
-                break
-        if input_port:
-            break
-    
-    for pattern in patterns:
-        for port in output_ports:
-            if pattern.lower() in port.lower():
-                output_port = port
-                break
-        if output_port:
-            break
-    
-    return input_port, output_port
-
-
-# =============================================================================
-# LAUNCHPAD DEVICE
-# =============================================================================
-
-@dataclass
-class LaunchpadConfig:
-    """Configuration for Launchpad connection."""
-    input_port: Optional[str] = None
-    output_port: Optional[str] = None
-    auto_detect: bool = True
-
-
 class LaunchpadDevice:
-    """Async Launchpad Mini Mk3 driver."""
+    """
+    Launchpad Mini Mk3 driver using lpminimk3.
     
-    def __init__(self, config: Optional[LaunchpadConfig] = None):
-        self.config = config or LaunchpadConfig()
-        self._input_port: Any = None
-        self._output_port: Any = None
+    Provides simple synchronous interface compatible with the standalone app.
+    """
+    
+    def __init__(self):
+        self._lp: Optional[LaunchpadMiniMk3] = None
         self._running = False
         self._press_callback: Optional[Callable[[ButtonId, int], None]] = None
         self._release_callback: Optional[Callable[[ButtonId], None]] = None
+        self._listen_thread: Optional[threading.Thread] = None
         self._led_cache: dict = {}
     
-    async def connect(self) -> bool:
-        """Connect and enter Programmer mode."""
-        if not MIDO_AVAILABLE:
-            logger.error("mido not available")
-            return False
-        
-        input_name, output_name = self.config.input_port, self.config.output_port
-        
-        if self.config.auto_detect or not (input_name and output_name):
-            input_name, output_name = find_launchpad_ports()
-        
-        if not (input_name and output_name):
-            logger.error("Launchpad not found")
+    def connect(self) -> bool:
+        """Connect to Launchpad and enter Programmer mode."""
+        if not LPMINIMK3_AVAILABLE:
+            logger.error("lpminimk3 not available - install with: pip install lpminimk3")
             return False
         
         try:
-            self._input_port = mido.open_input(input_name)
-            self._output_port = mido.open_output(output_name)
+            devices = lpminimk3.find_launchpads()
+            if not devices:
+                logger.error("No Launchpad Mini MK3 found")
+                return False
             
-            # Enter Programmer mode
-            programmer_mode = [0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01]
-            self._output_port.send(Message('sysex', data=programmer_mode))
+            self._lp = devices[0]
+            self._lp.open()
+            self._lp.mode = Mode.PROG
             
-            logger.info(f"Connected to Launchpad: {input_name}")
+            logger.info(f"Connected to Launchpad: {self._lp.id}")
             return True
             
         except Exception as e:
@@ -155,94 +67,119 @@ class LaunchpadDevice:
         on_press: Optional[Callable[[ButtonId, int], None]] = None,
         on_release: Optional[Callable[[ButtonId], None]] = None
     ):
-        """Set pad press/release callbacks."""
+        """Set button press/release callbacks."""
         self._press_callback = on_press
         self._release_callback = on_release
     
-    async def start_listening(self):
-        """Start MIDI input loop."""
-        if not self._input_port:
+    def start_listening(self):
+        """Start listening for button events (blocking)."""
+        if not self._lp:
+            logger.error("Not connected to Launchpad")
             return
         
         self._running = True
         logger.info("Listening for Launchpad input")
         
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._listen_loop)
+        # Start in a separate thread to not block
+        self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
+        self._listen_thread.start()
+        
+        # Keep main thread alive
+        try:
+            while self._running:
+                threading.Event().wait(1)
+        except KeyboardInterrupt:
+            logger.info("Interrupted")
+            self.stop()
     
     def _listen_loop(self):
-        """Blocking MIDI input loop."""
+        """Event polling loop."""
         while self._running:
             try:
-                msg = self._input_port.receive(block=True, timeout=0.1)
-                if msg:
-                    self._process_message(msg)
+                event = self._lp.panel.buttons().poll_for_event(timeout=0.1)
+                if event:
+                    self._process_event(event)
             except Exception as e:
                 if self._running:
-                    logger.error(f"MIDI error: {e}")
+                    logger.error(f"Event error: {e}")
     
-    def _process_message(self, msg: Any):
-        """Process MIDI message."""
-        if msg.type == 'note_on':
-            pad_id = note_to_pad("note", msg.note)
-            if pad_id:
-                if msg.velocity > 0 and self._press_callback:
-                    logger.info(f"MIDI RX: Press {pad_id} (note={msg.note}, vel={msg.velocity})")
-                    self._press_callback(pad_id, msg.velocity)
-                elif msg.velocity == 0 and self._release_callback:
-                    logger.info(f"MIDI RX: Release {pad_id} (note={msg.note})")
-                    self._release_callback(pad_id)
+    def _process_event(self, event):
+        """Process button event from lpminimk3."""
+        try:
+            button_id = ButtonId(x=event.button.x, y=event.button.y)
+            
+            if event.type == ButtonEvent.PRESS:
+                if self._press_callback:
+                    logger.info(f"Button press: {button_id}")
+                    self._press_callback(button_id, 127)  # lpminimk3 doesn't provide velocity
+            
+            elif event.type == ButtonEvent.RELEASE:
+                if self._release_callback:
+                    logger.info(f"Button release: {button_id}")
+                    self._release_callback(button_id)
+                    
+        except Exception as e:
+            logger.error(f"Error processing event: {e}")
+    
+    def set_led(self, pad_id: ButtonId, color: int, pulse: bool = False):
+        """
+        Set LED color for a button.
         
-        elif msg.type == 'note_off':
-            pad_id = note_to_pad("note", msg.note)
-            if pad_id and self._release_callback:
-                logger.info(f"MIDI RX: Release {pad_id} (note={msg.note})")
-                self._release_callback(pad_id)
-    
-    def set_led(self, pad_id: ButtonId, color: int):
-        """Set LED color."""
-        if not self._output_port:
+        Args:
+            pad_id: Button identifier
+            color: Color value (0-127)
+            pulse: If True, LED will pulse/breathe
+        """
+        if not self._lp:
             return
         
-        cache_key = (pad_id.x, pad_id.y)
+        # Check cache to avoid redundant updates (include pulse in cache key)
+        cache_key = (pad_id.x, pad_id.y, pulse)
         if self._led_cache.get(cache_key) == color:
             return
+        # Clear old cache entry if mode changed
+        old_key = (pad_id.x, pad_id.y, not pulse)
+        self._led_cache.pop(old_key, None)
         self._led_cache[cache_key] = color
         
-        _, note = pad_to_note(pad_id)
-        
         try:
-            logger.info(f"MIDI TX: LED {pad_id} → color={color} (note={note})")
-            self._output_port.send(Message('note_on', note=note, velocity=color))
+            # Get LED with appropriate mode
+            mode = lpminimk3.Led.PULSE if pulse else lpminimk3.Led.STATIC
+            led = self._lp.grid.led(pad_id.x, pad_id.y, mode=mode)
+            led.color = color
+            logger.debug(f"LED {pad_id} → color={color} (pulse={pulse})")
         except Exception as e:
-            logger.error(f"LED error: {e}")
+            logger.error(f"LED error for {pad_id}: {e}")
     
     def clear_all(self):
         """Turn off all LEDs."""
-        if not self._output_port:
+        if not self._lp:
             return
         
-        for y in range(8):
-            for x in range(9):  # Include scene buttons
-                self.set_led(ButtonId(x, y), 0)
-        
-        self._led_cache.clear()
+        try:
+            self._lp.grid.reset()
+            self._led_cache.clear()
+            logger.info("Cleared all LEDs")
+        except Exception as e:
+            logger.error(f"Clear error: {e}")
     
-    async def stop(self):
-        """Stop and disconnect."""
+    def stop(self):
+        """Stop listening and disconnect."""
         self._running = False
         
-        if self._output_port:
-            self.clear_all()
-            self._output_port.close()
+        if self._listen_thread:
+            self._listen_thread.join(timeout=2.0)
         
-        if self._input_port:
-            self._input_port.close()
+        if self._lp:
+            try:
+                self.clear_all()
+                self._lp.close()
+                logger.info("Disconnected from Launchpad")
+            except Exception as e:
+                logger.error(f"Disconnect error: {e}")
         
-        self._input_port = None
-        self._output_port = None
-        logger.info("Disconnected from Launchpad")
+        self._lp = None
     
     def is_connected(self) -> bool:
-        """Check connection status."""
-        return self._input_port is not None
+        """Check if connected to Launchpad."""
+        return self._lp is not None and self._lp.is_open()
