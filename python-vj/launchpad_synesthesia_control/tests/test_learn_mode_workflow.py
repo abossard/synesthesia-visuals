@@ -10,7 +10,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from dataclasses import replace
 
 from launchpad_osc_lib import (
-    ControllerState, PadId, AppMode, LearnState, OscEvent, OscCommand,
+    ControllerState, ButtonId, AppMode, LearnState, OscEvent, OscCommand,
     PadMode, PadGroupName, PadBehavior,
     enter_learn_mode, cancel_learn_mode, handle_pad_press,
     handle_osc_event, finish_osc_recording, select_learn_command
@@ -45,7 +45,7 @@ class TestLearnModeBasicFlow:
         """Clicking a pad in LEARN_WAIT_PAD should select it."""
         state = ControllerState()
         state = replace(state, app_mode=AppMode.LEARN_WAIT_PAD)
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
 
         new_state, effects = handle_pad_press(state, pad_id)
 
@@ -54,7 +54,7 @@ class TestLearnModeBasicFlow:
 
     def test_osc_recording_captures_controllable_messages(self):
         """OSC messages should be recorded during LEARN_RECORD_OSC."""
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
         state = ControllerState()
         state = replace(
             state,
@@ -76,7 +76,7 @@ class TestLearnModeBasicFlow:
 
     def test_finish_recording_creates_candidate_commands(self):
         """After 5s, recorded OSC should become candidate commands."""
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
         events = [
             OscEvent(0.0, "/scenes/Scene1", []),
             OscEvent(1.0, "/scenes/Scene2", []),
@@ -109,7 +109,7 @@ class TestLearnModeEdgeCases:
             state,
             app_mode=AppMode.LEARN_RECORD_OSC,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 recorded_osc_events=[]
             )
         )
@@ -122,7 +122,7 @@ class TestLearnModeEdgeCases:
 
     def test_pad_already_configured_can_be_overwritten(self):
         """Selecting a configured pad should work (overwrite warning given by UI)."""
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
         existing_behavior = PadBehavior(
             pad_id=pad_id,
             mode=PadMode.SELECTOR,
@@ -151,7 +151,7 @@ class TestLearnModeEdgeCases:
         state = replace(
             state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
         # Send non-controllable messages
@@ -180,7 +180,7 @@ class TestLearnModeCompleteWorkflow:
         assert state.app_mode == AppMode.LEARN_WAIT_PAD
 
         # Step 2: Select pad
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
         state, _ = handle_pad_press(state, pad_id)
         assert state.app_mode == AppMode.LEARN_RECORD_OSC
 
@@ -221,7 +221,7 @@ class TestLearnModeCompleteWorkflow:
         state = ControllerState()
         state, _ = enter_learn_mode(state)
 
-        pad_id = PadId(0, 7)
+        pad_id = ButtonId(0, 7)
         state, _ = handle_pad_press(state, pad_id)
 
         # Record ON command (use controllable address)
@@ -252,7 +252,7 @@ class TestLearnModeCompleteWorkflow:
         state = ControllerState()
         state, _ = enter_learn_mode(state)
 
-        pad_id = PadId(1, 7)
+        pad_id = ButtonId(1, 7)
         state, _ = handle_pad_press(state, pad_id)
 
         event = OscEvent(0.0, "/playlist/next", [])
@@ -279,7 +279,7 @@ class TestLearnModeCompleteWorkflow:
         """Test canceling learn mode during OSC recording."""
         state = ControllerState()
         state, _ = enter_learn_mode(state)
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         state, _ = handle_pad_press(state, pad_id)
 
         # In recording mode
@@ -296,7 +296,7 @@ class TestLearnModeCompleteWorkflow:
         state = ControllerState()
         state, _ = enter_learn_mode(state)
 
-        pad_id = PadId(4, 4)
+        pad_id = ButtonId(4, 4)
         state, _ = handle_pad_press(state, pad_id)
 
         # Capture multiple commands
@@ -335,7 +335,7 @@ class TestLearnModeValidation:
             state,
             app_mode=AppMode.LEARN_SELECT_MSG,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 candidate_commands=[OscCommand("/test", [])]
             )
         )
@@ -361,7 +361,7 @@ class TestLearnModeValidation:
             state,
             app_mode=AppMode.LEARN_SELECT_MSG,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 candidate_commands=[OscCommand("/scenes/Test", [])]
             )
         )
@@ -385,7 +385,7 @@ class TestLearnModeValidation:
         state = replace(
             state,
             app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0))
+            learn_state=LearnState(selected_pad=ButtonId(0, 0))
         )
 
         # Send same command multiple times
@@ -409,7 +409,7 @@ class TestLearnModeTimerIntegration:
             state,
             app_mode=AppMode.LEARN_RECORD_OSC,
             learn_state=LearnState(
-                selected_pad=PadId(0, 0),
+                selected_pad=ButtonId(0, 0),
                 record_start_time=None  # Timer not started
             )
         )
@@ -443,7 +443,7 @@ class TestMultiplePadLearning:
         assert state.app_mode == AppMode.LEARN_WAIT_PAD
         
         # Step 2: Select first pad
-        pad1 = PadId(0, 0)
+        pad1 = ButtonId(0, 0)
         state, _ = handle_pad_press(state, pad1)
         assert state.app_mode == AppMode.LEARN_RECORD_OSC
         assert state.learn_state.selected_pad == pad1
@@ -472,7 +472,7 @@ class TestMultiplePadLearning:
         assert not any("Already" in str(getattr(e, 'message', '')) for e in effects)
         
         # Step 2: Select second pad
-        pad2 = PadId(1, 0)
+        pad2 = ButtonId(1, 0)
         state, _ = handle_pad_press(state, pad2)
         assert state.app_mode == AppMode.LEARN_RECORD_OSC
         assert state.learn_state.selected_pad == pad2

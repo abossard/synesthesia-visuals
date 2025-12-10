@@ -9,13 +9,13 @@ from textual.containers import Container, Grid as GridContainer
 from textual.reactive import reactive
 from textual.message import Message
 
-from launchpad_osc_lib import PadId, ControllerState
+from launchpad_osc_lib import ButtonId, ControllerState
 
 
 class PadButton(Button):
     """A single pad button in the grid."""
     
-    def __init__(self, pad_id: PadId, *args, **kwargs):
+    def __init__(self, pad_id: ButtonId, *args, **kwargs):
         super().__init__("·", *args, **kwargs)
         self.pad_id = pad_id
         self.add_class("pad-button")
@@ -46,7 +46,7 @@ class InteractiveLaunchpadGrid(Container):
     class PadPressed(Message):
         """Message sent when a pad is pressed."""
         
-        def __init__(self, pad_id: PadId):
+        def __init__(self, pad_id: ButtonId):
             super().__init__()
             self.pad_id = pad_id
     
@@ -57,14 +57,14 @@ class InteractiveLaunchpadGrid(Container):
         with GridContainer(id="pad_grid"):
             # Top row (y=-1)
             for x in range(8):
-                yield PadButton(PadId(x, -1), id=f"pad_{x}_-1")
+                yield PadButton(ButtonId(x, -1), id=f"pad_{x}_-1")
             
             # Main grid (8x8) + right column
             for y in range(8):
                 for x in range(8):
-                    yield PadButton(PadId(x, y), id=f"pad_{x}_{y}")
+                    yield PadButton(ButtonId(x, y), id=f"pad_{x}_{y}")
                 # Right column
-                yield PadButton(PadId(8, y), id=f"pad_8_{y}")
+                yield PadButton(ButtonId(8, y), id=f"pad_8_{y}")
     
     def watch_state(self, new_state: ControllerState):
         """Update all pad buttons when state changes."""

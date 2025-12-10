@@ -18,7 +18,7 @@ from textual.binding import Binding
 from textual.reactive import reactive
 
 from launchpad_osc_lib import (
-    ControllerState, PadId, AppMode, OscEvent, PadMode, PadGroupName,
+    ControllerState, ButtonId, AppMode, OscEvent, PadMode, PadGroupName,
     Effect, SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
     OscCommand, COLOR_PALETTE,
     handle_pad_press, handle_pad_release, handle_osc_event,
@@ -62,13 +62,13 @@ class LaunchpadGrid(Static):
         if handler:
             asyncio.create_task(handler(pad_id))
     
-    def _pad_from_click(self, x: int, y: int) -> Optional[PadId]:
+    def _pad_from_click(self, x: int, y: int) -> Optional[ButtonId]:
         """Map click coordinates to a pad id based on ASCII grid layout."""
         # Skip the hint line
         if y == 1:
             pad_x = self._column_to_pad(x, include_right_column=False)
             if pad_x is not None and 0 <= pad_x < 8:
-                return PadId(pad_x, -1)
+                return ButtonId(pad_x, -1)
             return None
         
         # Each row occupies two lines: pad row then separator
@@ -80,7 +80,7 @@ class LaunchpadGrid(Static):
         if pad_x is None or not (0 <= pad_x <= 8):
             return None
         
-        return PadId(pad_x, pad_y)
+        return ButtonId(pad_x, pad_y)
     
     def _column_to_pad(self, x: int, include_right_column: bool) -> Optional[int]:
         """Convert horizontal click position into pad column index."""
@@ -105,7 +105,7 @@ class LaunchpadGrid(Static):
         # Top row (y=-1)
         top_row = "╔"
         for x in range(8):
-            pad_id = PadId(x, -1)
+            pad_id = ButtonId(x, -1)
             char = self._get_pad_char(pad_id)
             top_row += f"═{char}═╦" if x < 7 else f"═{char}═╗"
         lines.append(top_row)
@@ -114,12 +114,12 @@ class LaunchpadGrid(Static):
         for y in range(8):
             row = "║"
             for x in range(8):
-                pad_id = PadId(x, y)
+                pad_id = ButtonId(x, y)
                 char = self._get_pad_char(pad_id)
                 row += f" {char} ║"
             
             # Right column
-            right_pad = PadId(8, y)
+            right_pad = ButtonId(8, y)
             right_char = self._get_pad_char(right_pad)
             row += f" {right_char}"
             
@@ -140,7 +140,7 @@ class LaunchpadGrid(Static):
         
         return "\n".join(lines)
     
-    def _get_pad_char(self, pad_id: PadId) -> str:
+    def _get_pad_char(self, pad_id: ButtonId) -> str:
         """Get character for pad based on state (no blinking in TUI)."""
         if pad_id not in self.state.pads:
             return "·"  # Unmapped pad
@@ -542,17 +542,17 @@ class LaunchpadSynesthesiaApp(App):
         """Worker wrapper for showing command selection modal."""
         await self._show_command_selection_modal()
     
-    def _on_pad_press(self, pad_id: PadId, velocity: int):
+    def _on_pad_press(self, pad_id: ButtonId, velocity: int):
         """Handle Launchpad pad press (called from MIDI thread)."""
         # Schedule in main event loop
         asyncio.create_task(self._handle_pad_press_async(pad_id))
     
-    def _on_pad_release(self, pad_id: PadId):
+    def _on_pad_release(self, pad_id: ButtonId):
         """Handle Launchpad pad release (called from MIDI thread)."""
         # Schedule in main event loop
         asyncio.create_task(self._handle_pad_release_async(pad_id))
     
-    async def _handle_pad_press_async(self, pad_id: PadId):
+    async def _handle_pad_press_async(self, pad_id: ButtonId):
         """Handle pad press in async context."""
         self.add_log(f"Pad pressed: {pad_id}", "DEBUG")
         
@@ -566,7 +566,7 @@ class LaunchpadSynesthesiaApp(App):
         # Update UI
         self._update_ui()
     
-    async def _handle_pad_release_async(self, pad_id: PadId):
+    async def _handle_pad_release_async(self, pad_id: ButtonId):
         """Handle pad release in async context (for PUSH mode)."""
         # Process through FSM - only PUSH mode pads respond to release
         new_state, effects = handle_pad_release(self.state, pad_id)

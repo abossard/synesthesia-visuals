@@ -10,7 +10,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from dataclasses import replace
 
 from launchpad_osc_lib import (
-    ControllerState, PadId, AppMode, LearnState, OscCommand,
+    ControllerState, ButtonId, AppMode, LearnState, OscCommand,
     PadMode, PadGroupName
 )
 
@@ -39,7 +39,7 @@ class TestLearnModeModalIntegration:
                 app.state,
                 app_mode=AppMode.LEARN_SELECT_MSG,
                 learn_state=LearnState(
-                    selected_pad=PadId(2, 3),
+                    selected_pad=ButtonId(2, 3),
                     candidate_commands=[
                         OscCommand("/scenes/Test", [])
                     ]
@@ -64,7 +64,7 @@ class TestLearnModeModalIntegration:
             app.push_screen_wait.assert_called_once()
 
             # Verify configuration was saved
-            assert PadId(2, 3) in app.state.pads
+            assert ButtonId(2, 3) in app.state.pads
             assert app.state.app_mode == AppMode.NORMAL
 
     @pytest.mark.asyncio
@@ -86,7 +86,7 @@ class TestLearnModeModalIntegration:
                 app.state,
                 app_mode=AppMode.LEARN_SELECT_MSG,
                 learn_state=LearnState(
-                    selected_pad=PadId(2, 3),
+                    selected_pad=ButtonId(2, 3),
                     candidate_commands=[OscCommand("/scenes/Test", [])]
                 )
             )
@@ -98,7 +98,7 @@ class TestLearnModeModalIntegration:
 
             # Should return to normal mode without saving
             assert app.state.app_mode == AppMode.NORMAL
-            assert PadId(2, 3) not in app.state.pads
+            assert ButtonId(2, 3) not in app.state.pads
 
     @pytest.mark.asyncio
     async def test_modal_handles_no_osc_messages(self):
@@ -120,7 +120,7 @@ class TestLearnModeModalIntegration:
                 app.state,
                 app_mode=AppMode.LEARN_SELECT_MSG,
                 learn_state=LearnState(
-                    selected_pad=PadId(0, 0),
+                    selected_pad=ButtonId(0, 0),
                     candidate_commands=[]  # Empty!
                 )
             )
@@ -154,7 +154,7 @@ class TestLearnModeModalIntegration:
 
             app = LaunchpadSynesthesiaApp()
 
-            pad_id = PadId(2, 3)
+            pad_id = ButtonId(2, 3)
 
             # Configure pad first
             existing_behavior = PadBehavior(
@@ -329,7 +329,7 @@ class TestLearnModeUIUpdates:
 
         grid = LaunchpadGrid()
 
-        pad_id = PadId(2, 3)
+        pad_id = ButtonId(2, 3)
         behavior = PadBehavior(
             pad_id=pad_id,
             mode=PadMode.SELECTOR,

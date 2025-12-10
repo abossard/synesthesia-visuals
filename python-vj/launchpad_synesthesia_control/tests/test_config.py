@@ -14,35 +14,35 @@ from launchpad_synesthesia_control.app.io.config import (
     serialize_pad_behavior, deserialize_pad_behavior
 )
 from launchpad_osc_lib import (
-    PadId, PadMode, PadGroupName, PadBehavior, OscCommand, ControllerState,
+    ButtonId, PadMode, PadGroupName, PadBehavior, OscCommand, ControllerState,
     PadRuntimeState
 )
 
 
 # =============================================================================
-# PadId Serialization Tests
+# ButtonId Serialization Tests
 # =============================================================================
 
-class TestPadIdSerialization:
-    """Test PadId string conversion."""
+class TestButtonIdSerialization:
+    """Test ButtonId string conversion."""
 
     def test_pad_id_to_str(self):
-        """PadId converts to comma-separated string."""
-        assert pad_id_to_str(PadId(0, 0)) == "0,0"
-        assert pad_id_to_str(PadId(3, 5)) == "3,5"
-        assert pad_id_to_str(PadId(8, 7)) == "8,7"
-        assert pad_id_to_str(PadId(2, -1)) == "2,-1"
+        """ButtonId converts to comma-separated string."""
+        assert pad_id_to_str(ButtonId(0, 0)) == "0,0"
+        assert pad_id_to_str(ButtonId(3, 5)) == "3,5"
+        assert pad_id_to_str(ButtonId(8, 7)) == "8,7"
+        assert pad_id_to_str(ButtonId(2, -1)) == "2,-1"
 
     def test_str_to_pad_id(self):
-        """String converts back to PadId."""
-        assert str_to_pad_id("0,0") == PadId(0, 0)
-        assert str_to_pad_id("3,5") == PadId(3, 5)
-        assert str_to_pad_id("8,7") == PadId(8, 7)
-        assert str_to_pad_id("2,-1") == PadId(2, -1)
+        """String converts back to ButtonId."""
+        assert str_to_pad_id("0,0") == ButtonId(0, 0)
+        assert str_to_pad_id("3,5") == ButtonId(3, 5)
+        assert str_to_pad_id("8,7") == ButtonId(8, 7)
+        assert str_to_pad_id("2,-1") == ButtonId(2, -1)
 
     def test_roundtrip(self):
-        """PadId survives roundtrip conversion."""
-        pads = [PadId(0, 0), PadId(7, 7), PadId(8, 3), PadId(5, -1)]
+        """ButtonId survives roundtrip conversion."""
+        pads = [ButtonId(0, 0), ButtonId(7, 7), ButtonId(8, 3), ButtonId(5, -1)]
         for pad in pads:
             assert str_to_pad_id(pad_id_to_str(pad)) == pad
 
@@ -57,7 +57,7 @@ class TestPadBehaviorSerialization:
     def test_serialize_selector(self):
         """Selector behavior serializes correctly."""
         behavior = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.SELECTOR,
             group=PadGroupName.SCENES,
             idle_color=0,
@@ -78,7 +78,7 @@ class TestPadBehaviorSerialization:
     def test_serialize_toggle(self):
         """Toggle behavior serializes correctly."""
         behavior = PadBehavior(
-            pad_id=PadId(1, 1),
+            pad_id=ButtonId(1, 1),
             mode=PadMode.TOGGLE,
             idle_color=0,
             active_color=5,
@@ -99,7 +99,7 @@ class TestPadBehaviorSerialization:
     def test_serialize_one_shot(self):
         """One-shot behavior serializes correctly."""
         behavior = PadBehavior(
-            pad_id=PadId(2, 2),
+            pad_id=ButtonId(2, 2),
             mode=PadMode.ONE_SHOT,
             idle_color=0,
             active_color=9,
@@ -123,7 +123,7 @@ class TestPadBehaviorSerialization:
             "osc_action": {"address": "/scenes/Test", "args": []}
         }
 
-        behavior = deserialize_pad_behavior(PadId(0, 0), data)
+        behavior = deserialize_pad_behavior(ButtonId(0, 0), data)
 
         assert behavior.mode == PadMode.SELECTOR
         assert behavior.group == PadGroupName.SCENES
@@ -140,7 +140,7 @@ class TestPadBehaviorSerialization:
             "osc_off": {"address": "/off"}
         }
 
-        behavior = deserialize_pad_behavior(PadId(1, 1), data)
+        behavior = deserialize_pad_behavior(ButtonId(1, 1), data)
 
         assert behavior.mode == PadMode.TOGGLE
         assert behavior.osc_on.address == "/on"
@@ -149,7 +149,7 @@ class TestPadBehaviorSerialization:
     def test_roundtrip_selector(self):
         """Selector survives serialization roundtrip."""
         original = PadBehavior(
-            pad_id=PadId(0, 0),
+            pad_id=ButtonId(0, 0),
             mode=PadMode.SELECTOR,
             group=PadGroupName.PRESETS,
             idle_color=1,
@@ -159,7 +159,7 @@ class TestPadBehaviorSerialization:
         )
 
         data = serialize_pad_behavior(original)
-        restored = deserialize_pad_behavior(PadId(0, 0), data)
+        restored = deserialize_pad_behavior(ButtonId(0, 0), data)
 
         assert restored.mode == original.mode
         assert restored.group == original.group
@@ -186,9 +186,9 @@ class TestConfigManager:
     @pytest.fixture
     def sample_state(self):
         """Create a sample state with configured pads."""
-        pad1 = PadId(0, 0)
-        pad2 = PadId(1, 1)
-        pad3 = PadId(2, 2)
+        pad1 = ButtonId(0, 0)
+        pad2 = ButtonId(1, 1)
+        pad3 = ButtonId(2, 2)
 
         behavior1 = PadBehavior(
             pad_id=pad1, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
@@ -344,7 +344,7 @@ class TestConfigEdgeCases:
 
     def test_special_characters_in_label(self, temp_config_path):
         """Labels with special characters are preserved."""
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.ONE_SHOT,
             osc_action=OscCommand("/test"),
@@ -364,7 +364,7 @@ class TestConfigEdgeCases:
 
     def test_osc_command_with_float_args(self, temp_config_path):
         """OSC commands with float args are preserved."""
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.SELECTOR,
             group=PadGroupName.COLORS,
