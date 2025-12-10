@@ -23,6 +23,7 @@ from .fsm import (
     finish_recording, toggle_blink,
 )
 from .config import save_config, load_config
+from launchpad_osc_lib.demo import run_startup_demo
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,9 @@ class StandaloneApp:
         )
         self.osc.add_callback(self._on_osc_event)
         
+        # Run startup demo
+        await self._run_startup_demo()
+        
         # Initial LED render
         self._render_leds()
         
@@ -105,6 +109,10 @@ class StandaloneApp:
         
         logger.info("Stopped")
     
+    async def _run_startup_demo(self):
+        """Run a brief startup demo to show the device is connected."""
+        await run_startup_demo(self.launchpad)
+
     def _on_pad_press(self, pad_id: PadId, velocity: int):
         """Handle pad press from Launchpad."""
         new_state, effects = handle_pad_press(self.state, pad_id)

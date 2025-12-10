@@ -124,6 +124,15 @@ from .blink import (
     get_dimmed_color,
 )
 from .synesthesia_osc import SynesthesiaOscManager
+from .demo import (
+    LaunchpadDemo,
+    run_demo,
+    run_startup_demo,
+    build_scroll_text_sysex,
+    build_stop_scroll_sysex,
+    DEMO_COLORS,
+    RAINBOW,
+)
 
 __all__ = [
     # Launchpad
@@ -211,6 +220,14 @@ __all__ = [
     "should_led_be_lit",
     "compute_all_led_states",
     "get_dimmed_color",
+    # Demo / Showcase
+    "LaunchpadDemo",
+    "run_demo",
+    "run_startup_demo",
+    "build_scroll_text_sysex",
+    "build_stop_scroll_sysex",
+    "DEMO_COLORS",
+    "RAINBOW",
 ]
 
 __version__ = "0.2.0"
