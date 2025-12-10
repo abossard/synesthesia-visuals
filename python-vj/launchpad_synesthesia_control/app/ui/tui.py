@@ -615,7 +615,10 @@ class LaunchpadSynesthesiaApp(App):
         for effect in effects:
             if isinstance(effect, SendOscEffect):
                 if self.osc:
+                    self.add_log(f"OSC TX: {effect.command.address} {effect.command.args}", "DEBUG")
                     self.osc.send(effect.command)
+                else:
+                    self.add_log(f"OSC not connected - would send: {effect.command.address}", "WARNING")
             
             elif isinstance(effect, SetLedEffect):
                 if self.launchpad and self.launchpad.is_connected():
