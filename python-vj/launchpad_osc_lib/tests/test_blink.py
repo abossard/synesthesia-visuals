@@ -10,7 +10,7 @@ from launchpad_osc_lib import (
     should_led_be_lit,
     compute_all_led_states,
     get_dimmed_color,
-    PadId, PadMode, PadGroupName, PadBehavior, PadRuntimeState, ControllerState,
+    ButtonId, PadMode, PadGroupName, PadBehavior, PadRuntimeState, ControllerState,
     OscCommand
 )
 
@@ -94,8 +94,8 @@ class TestComputeAllLedStates:
     @pytest.fixture
     def state_with_pads(self):
         """State with multiple pad configurations."""
-        pad1 = PadId(0, 0)  # Blinking
-        pad2 = PadId(1, 0)  # Not blinking
+        pad1 = ButtonId(0, 0)  # Blinking
+        pad2 = ButtonId(1, 0)  # Not blinking
 
         behavior1 = PadBehavior(
             pad_id=pad1, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
@@ -119,14 +119,14 @@ class TestComputeAllLedStates:
         led_states = compute_all_led_states(state_with_pads, blink_phase=1.0)
 
         assert isinstance(led_states, dict)
-        assert PadId(0, 0) in led_states
-        assert PadId(1, 0) in led_states
+        assert ButtonId(0, 0) in led_states
+        assert ButtonId(1, 0) in led_states
 
     def test_blinking_pad_lit_at_high_phase(self, state_with_pads):
         """Blinking pad is lit when phase is high."""
         led_states = compute_all_led_states(state_with_pads, blink_phase=1.0)
 
-        color, is_lit = led_states[PadId(0, 0)]
+        color, is_lit = led_states[ButtonId(0, 0)]
         assert is_lit is True
         assert color == 21
 
@@ -134,7 +134,7 @@ class TestComputeAllLedStates:
         """Blinking pad is dimmed when phase is low."""
         led_states = compute_all_led_states(state_with_pads, blink_phase=0.3)
 
-        color, is_lit = led_states[PadId(0, 0)]
+        color, is_lit = led_states[ButtonId(0, 0)]
         assert is_lit is False
         assert color == 21  # Color unchanged, dimming applied separately
 
@@ -142,7 +142,7 @@ class TestComputeAllLedStates:
         """Non-blinking pad is always lit regardless of phase."""
         for phase in [0.0, 0.3, 0.5, 1.0]:
             led_states = compute_all_led_states(state_with_pads, blink_phase=phase)
-            color, is_lit = led_states[PadId(1, 0)]
+            color, is_lit = led_states[ButtonId(1, 0)]
             assert is_lit is True
 
 
@@ -204,7 +204,7 @@ class TestBlinkIntegration:
     def test_beat_sync_workflow(self):
         """Test typical beat sync workflow."""
         # Setup: Active selector pad with blinking
-        pad_id = PadId(0, 0)
+        pad_id = ButtonId(0, 0)
         behavior = PadBehavior(
             pad_id=pad_id, mode=PadMode.SELECTOR, group=PadGroupName.SCENES,
             osc_action=OscCommand("/scenes/Test"), active_color=21

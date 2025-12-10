@@ -13,7 +13,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Callable, Any
 
-from .launchpad import PadId, LaunchpadDevice, LP_OFF
+from .button_id import ButtonId
+try:
+    from lpminimk3 import LaunchpadMiniMk3 as LaunchpadDevice
+except ImportError:
+    LaunchpadDevice = None
+
+# Color constant
+LP_OFF = 0
 from .osc_client import OscClient, OscEvent
 from .model import PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState
 from .synesthesia_config import (
@@ -45,7 +52,7 @@ class SendOscEffect:
 @dataclass(frozen=True)
 class SetLedEffect:
     """Effect: Set a Launchpad LED."""
-    pad_id: PadId
+    pad_id: ButtonId
     color: int
     blink: bool = False
 
@@ -65,9 +72,9 @@ class PadMapperState:
         active_by_group: Currently active pad for each selector group
         beat_pulse: Current beat state (for LED blinking)
     """
-    pads: Dict[PadId, PadBehavior] = field(default_factory=dict)
-    runtime: Dict[PadId, PadRuntimeState] = field(default_factory=dict)
-    active_by_group: Dict[ButtonGroupType, Optional[PadId]] = field(default_factory=dict)
+    pads: Dict[ButtonId, PadBehavior] = field(default_factory=dict)
+    runtime: Dict[ButtonId, PadRuntimeState] = field(default_factory=dict)
+    active_by_group: Dict[ButtonGroupType, Optional[ButtonId]] = field(default_factory=dict)
     beat_pulse: bool = False
 
 
@@ -141,7 +148,7 @@ class PadMapper:
         
         logger.debug(f"Added pad {behavior.pad_id}: {behavior.mode.name} -> {behavior.osc_action or behavior.osc_on}")
     
-    def remove_pad(self, pad_id: PadId):
+    def remove_pad(self, pad_id: ButtonId):
         """Remove a pad configuration."""
         if pad_id in self.state.pads:
             del self.state.pads[pad_id]
@@ -161,7 +168,7 @@ class PadMapper:
     # PAD PRESS HANDLING
     # =========================================================================
     
-    def handle_pad_press(self, pad_id: PadId, velocity: int = 127):
+    def handle_pad_press(self, pad_id: ButtonId, velocity: int = 127):
         """
         Handle a pad press event.
         
@@ -186,7 +193,7 @@ class PadMapper:
         
         self._notify_state_change()
     
-    def _handle_selector_press(self, pad_id: PadId, behavior: PadBehavior):
+    def _handle_selector_press(self, pad_id: ButtonId, behavior: PadBehavior):
         """Handle SELECTOR pad press - radio button behavior."""
         group = behavior.group
         if group is None:
@@ -218,7 +225,7 @@ class PadMapper:
         
         logger.debug(f"Selector {group.value}: {behavior.label or pad_id}")
     
-    def _handle_toggle_press(self, pad_id: PadId, behavior: PadBehavior):
+    def _handle_toggle_press(self, pad_id: ButtonId, behavior: PadBehavior):
         """Handle TOGGLE pad press - flip on/off state."""
         current = self.state.runtime.get(pad_id, PadRuntimeState())
         new_is_on = not current.is_on
@@ -240,7 +247,7 @@ class PadMapper:
         
         logger.debug(f"Toggle {behavior.label or pad_id}: {'ON' if new_is_on else 'OFF'}")
     
-    def _handle_oneshot_press(self, pad_id: PadId, behavior: PadBehavior):
+    def _handle_oneshot_press(self, pad_id: ButtonId, behavior: PadBehavior):
         """Handle ONE_SHOT pad press - trigger once, no persistent state."""
         # Flash the pad briefly (will reset on next beat or manually)
         self.state.runtime[pad_id] = PadRuntimeState(
@@ -338,7 +345,7 @@ class PadMapper:
     # LED MANAGEMENT
     # =========================================================================
     
-    def _apply_led(self, pad_id: PadId, color: int, blink: bool = False):
+    def _apply_led(self, pad_id: ButtonId, color: int, blink: bool = False):
         """Apply LED color to Launchpad."""
         if self.launchpad:
             self.launchpad.set_led(pad_id, color, blink)
@@ -389,7 +396,7 @@ class PadMapper:
     
     def add_selector(
         self,
-        pad_id: PadId,
+        pad_id: ButtonId,
         osc_address: str,
         group: ButtonGroupType,
         label: str = "",
@@ -421,7 +428,7 @@ class PadMapper:
     
     def add_toggle(
         self,
-        pad_id: PadId,
+        pad_id: ButtonId,
         osc_on_address: str,
         osc_off_address: Optional[str] = None,
         label: str = "",
@@ -455,7 +462,7 @@ class PadMapper:
     
     def add_oneshot(
         self,
-        pad_id: PadId,
+        pad_id: ButtonId,
         osc_address: str,
         label: str = "",
         idle_color: int = 0,

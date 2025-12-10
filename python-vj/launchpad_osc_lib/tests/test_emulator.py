@@ -5,7 +5,13 @@ Tests transparent replacement behavior and full grid support.
 """
 
 import pytest
-from launchpad_osc_lib.launchpad import PadId, LP_RED, LP_GREEN, LP_OFF, LP_BLUE
+from launchpad_osc_lib.button_id import ButtonId
+
+# Color constants
+LP_RED = 72
+LP_GREEN = 17
+LP_OFF = 0
+LP_BLUE = 40
 from launchpad_osc_lib.emulator import (
     LaunchpadEmulator,
     SmartLaunchpad,
@@ -45,24 +51,24 @@ class TestFullGridLayout:
         """Returns 64 grid pads."""
         pads = FullGridLayout.all_grid_pads()
         assert len(pads) == 64
-        assert PadId(0, 0) in pads
-        assert PadId(7, 7) in pads
+        assert ButtonId(0, 0) in pads
+        assert ButtonId(7, 7) in pads
 
     def test_all_top_row_pads(self):
         """Returns 8 top row pads."""
         pads = FullGridLayout.all_top_row_pads()
         assert len(pads) == 8
         assert all(p.y == -1 for p in pads)
-        assert PadId(0, -1) in pads
-        assert PadId(7, -1) in pads
+        assert ButtonId(0, -1) in pads
+        assert ButtonId(7, -1) in pads
 
     def test_all_right_column_pads(self):
         """Returns 8 right column pads."""
         pads = FullGridLayout.all_right_column_pads()
         assert len(pads) == 8
         assert all(p.x == 8 for p in pads)
-        assert PadId(8, 0) in pads
-        assert PadId(8, 7) in pads
+        assert ButtonId(8, 0) in pads
+        assert ButtonId(8, 7) in pads
 
     def test_all_pads(self):
         """Returns all 80 pads (64 grid + 8 top + 8 right)."""
@@ -94,30 +100,30 @@ class TestLaunchpadEmulatorInterface:
         emu = LaunchpadEmulator()
         
         # Grid pad
-        emu.set_led(PadId(3, 4), LP_RED)
+        emu.set_led(ButtonId(3, 4), LP_RED)
         # Top row
-        emu.set_led(PadId(5, -1), LP_GREEN)
+        emu.set_led(ButtonId(5, -1), LP_GREEN)
         # Right column
-        emu.set_led(PadId(8, 2), LP_BLUE)
+        emu.set_led(ButtonId(8, 2), LP_BLUE)
         
         view = emu.get_view()
-        assert view.get_led_color(PadId(3, 4)) == LP_RED
-        assert view.get_led_color(PadId(5, -1)) == LP_GREEN
-        assert view.get_led_color(PadId(8, 2)) == LP_BLUE
+        assert view.get_led_color(ButtonId(3, 4)) == LP_RED
+        assert view.get_led_color(ButtonId(5, -1)) == LP_GREEN
+        assert view.get_led_color(ButtonId(8, 2)) == LP_BLUE
 
     def test_clear_all_leds(self):
         """clear_all_leds resets all LED states."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(0, 0), LP_RED)
-        emu.set_led(PadId(5, -1), LP_GREEN)
-        emu.set_led(PadId(8, 3), LP_BLUE)
+        emu.set_led(ButtonId(0, 0), LP_RED)
+        emu.set_led(ButtonId(5, -1), LP_GREEN)
+        emu.set_led(ButtonId(8, 3), LP_BLUE)
         
         emu.clear_all_leds()
         
         view = emu.get_view()
-        assert view.get_led_color(PadId(0, 0)) == LP_OFF
-        assert view.get_led_color(PadId(5, -1)) == LP_OFF
-        assert view.get_led_color(PadId(8, 3)) == LP_OFF
+        assert view.get_led_color(ButtonId(0, 0)) == LP_OFF
+        assert view.get_led_color(ButtonId(5, -1)) == LP_OFF
+        assert view.get_led_color(ButtonId(8, 3)) == LP_OFF
 
     def test_set_pad_callback(self):
         """Callback is registered and callable via view.simulate_press."""
@@ -125,9 +131,9 @@ class TestLaunchpadEmulatorInterface:
         presses = []
         
         emu.set_pad_callback(lambda p, v: presses.append((p, v)))
-        emu.get_view().simulate_press(PadId(2, 3), 100)
+        emu.get_view().simulate_press(ButtonId(2, 3), 100)
         
-        assert presses == [(PadId(2, 3), 100)]
+        assert presses == [(ButtonId(2, 3), 100)]
 
 
 class TestEmulatorView:
@@ -136,10 +142,10 @@ class TestEmulatorView:
     def test_get_led_state(self):
         """get_led_state returns LedState with color and blink."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(0, 0), LP_RED, blink=True)
+        emu.set_led(ButtonId(0, 0), LP_RED, blink=True)
         
         view = emu.get_view()
-        state = view.get_led_state(PadId(0, 0))
+        state = view.get_led_state(ButtonId(0, 0))
         
         assert state.color == LP_RED
         assert state.blink is True
@@ -149,14 +155,14 @@ class TestEmulatorView:
         emu = LaunchpadEmulator()
         view = emu.get_view()
         
-        state = view.get_led_state(PadId(5, 5))
+        state = view.get_led_state(ButtonId(5, 5))
         assert state.color == LP_OFF
         assert state.blink is False
 
     def test_get_8x8_grid(self):
         """get_8x8_grid returns 2D list for main grid."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(2, 3), LP_RED)
+        emu.set_led(ButtonId(2, 3), LP_RED)
         
         view = emu.get_view()
         grid = view.get_8x8_grid()
@@ -168,7 +174,7 @@ class TestEmulatorView:
     def test_get_top_row(self):
         """get_top_row returns top row buttons."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(3, -1), LP_GREEN)
+        emu.set_led(ButtonId(3, -1), LP_GREEN)
         
         view = emu.get_view()
         top_row = view.get_top_row()
@@ -179,7 +185,7 @@ class TestEmulatorView:
     def test_get_right_column(self):
         """get_right_column returns right column buttons."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(8, 5), LP_BLUE)
+        emu.set_led(ButtonId(8, 5), LP_BLUE)
         
         view = emu.get_view()
         right_col = view.get_right_column()
@@ -190,9 +196,9 @@ class TestEmulatorView:
     def test_get_full_grid(self):
         """get_full_grid returns all pad regions."""
         emu = LaunchpadEmulator()
-        emu.set_led(PadId(0, 0), LP_RED)      # Grid
-        emu.set_led(PadId(4, -1), LP_GREEN)   # Top row
-        emu.set_led(PadId(8, 6), LP_BLUE)     # Right column
+        emu.set_led(ButtonId(0, 0), LP_RED)      # Grid
+        emu.set_led(ButtonId(4, -1), LP_GREEN)   # Top row
+        emu.set_led(ButtonId(8, 6), LP_BLUE)     # Right column
         
         view = emu.get_view()
         full = view.get_full_grid()
@@ -216,13 +222,13 @@ class TestEmulatorView:
         emu.set_pad_callback(lambda p, v: presses.append(p))
         
         view = emu.get_view()
-        view.simulate_press(PadId(1, 2))       # Grid
-        view.simulate_press(PadId(3, -1))      # Top row
-        view.simulate_press(PadId(8, 4))       # Right column
+        view.simulate_press(ButtonId(1, 2))       # Grid
+        view.simulate_press(ButtonId(3, -1))      # Top row
+        view.simulate_press(ButtonId(8, 4))       # Right column
         
-        assert PadId(1, 2) in presses
-        assert PadId(3, -1) in presses
-        assert PadId(8, 4) in presses
+        assert ButtonId(1, 2) in presses
+        assert ButtonId(3, -1) in presses
+        assert ButtonId(8, 4) in presses
 
     def test_state_changed_callback(self):
         """State changed callback fires on set_led."""
@@ -232,8 +238,8 @@ class TestEmulatorView:
         view = emu.get_view()
         view.set_state_changed_callback(lambda: changes.append(1))
         
-        emu.set_led(PadId(0, 0), LP_RED)
-        emu.set_led(PadId(1, -1), LP_GREEN)
+        emu.set_led(ButtonId(0, 0), LP_RED)
+        emu.set_led(ButtonId(1, -1), LP_GREEN)
         emu.clear_all_leds()
         
         assert len(changes) == 3
@@ -256,10 +262,10 @@ class TestSmartLaunchpad:
         """set_led updates emulator state (visible via view)."""
         smart = SmartLaunchpad()
         
-        smart.set_led(PadId(2, 3), LP_RED, blink=True)
+        smart.set_led(ButtonId(2, 3), LP_RED, blink=True)
         
         view = smart.get_view()
-        state = view.get_led_state(PadId(2, 3))
+        state = view.get_led_state(ButtonId(2, 3))
         assert state.color == LP_RED
         assert state.blink is True
 
@@ -267,24 +273,24 @@ class TestSmartLaunchpad:
         """set_led works for all pad types."""
         smart = SmartLaunchpad()
         
-        smart.set_led(PadId(0, 0), LP_RED)
-        smart.set_led(PadId(7, -1), LP_GREEN)
-        smart.set_led(PadId(8, 7), LP_BLUE)
+        smart.set_led(ButtonId(0, 0), LP_RED)
+        smart.set_led(ButtonId(7, -1), LP_GREEN)
+        smart.set_led(ButtonId(8, 7), LP_BLUE)
         
         view = smart.get_view()
-        assert view.get_led_color(PadId(0, 0)) == LP_RED
-        assert view.get_led_color(PadId(7, -1)) == LP_GREEN
-        assert view.get_led_color(PadId(8, 7)) == LP_BLUE
+        assert view.get_led_color(ButtonId(0, 0)) == LP_RED
+        assert view.get_led_color(ButtonId(7, -1)) == LP_GREEN
+        assert view.get_led_color(ButtonId(8, 7)) == LP_BLUE
 
     def test_clear_all_leds(self):
         """clear_all_leds clears emulator."""
         smart = SmartLaunchpad()
-        smart.set_led(PadId(0, 0), LP_RED)
+        smart.set_led(ButtonId(0, 0), LP_RED)
         
         smart.clear_all_leds()
         
         view = smart.get_view()
-        assert view.get_led_state(PadId(0, 0)).color == LP_OFF
+        assert view.get_led_state(ButtonId(0, 0)).color == LP_OFF
 
     def test_simulate_press_via_view(self):
         """simulate_press on view triggers callback."""
@@ -292,9 +298,9 @@ class TestSmartLaunchpad:
         presses = []
         
         smart.set_pad_callback(lambda p, v: presses.append((p, v)))
-        smart.get_view().simulate_press(PadId(5, 6), velocity=80)
+        smart.get_view().simulate_press(ButtonId(5, 6), velocity=80)
         
-        assert presses == [(PadId(5, 6), 80)]
+        assert presses == [(ButtonId(5, 6), 80)]
 
     def test_get_view_returns_emulator_view(self):
         """get_view returns EmulatorView instance."""
@@ -305,8 +311,8 @@ class TestSmartLaunchpad:
     def test_get_full_grid(self):
         """get_view().get_full_grid() returns complete state."""
         smart = SmartLaunchpad()
-        smart.set_led(PadId(1, 2), LP_GREEN)
-        smart.set_led(PadId(6, -1), LP_RED)
+        smart.set_led(ButtonId(1, 2), LP_GREEN)
+        smart.set_led(ButtonId(6, -1), LP_RED)
         
         full = smart.get_view().get_full_grid()
         
@@ -372,9 +378,9 @@ class TestTransparency:
         launchpad.set_pad_callback(lambda p, v: events.append((p, v)))
         
         # Consumer sets LEDs
-        launchpad.set_led(PadId(0, 0), LP_RED)
-        launchpad.set_led(PadId(4, -1), LP_GREEN)  # Top row
-        launchpad.set_led(PadId(8, 3), LP_BLUE)    # Right column
+        launchpad.set_led(ButtonId(0, 0), LP_RED)
+        launchpad.set_led(ButtonId(4, -1), LP_GREEN)  # Top row
+        launchpad.set_led(ButtonId(8, 3), LP_BLUE)    # Right column
         
         # Consumer checks connection
         assert launchpad.is_connected() is True

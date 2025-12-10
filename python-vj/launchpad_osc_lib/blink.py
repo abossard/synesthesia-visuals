@@ -6,7 +6,7 @@ Computes LED blink states synchronized with Synesthesia's audio beat.
 
 from typing import Dict, Tuple
 from .model import ControllerState, PadRuntimeState
-from .launchpad import PadId
+from .button_id import ButtonId
 
 
 def compute_blink_phase(beat_pulse: bool, beat_phase: float) -> float:
@@ -55,7 +55,7 @@ def should_led_be_lit(
 def compute_all_led_states(
     state: ControllerState,
     blink_phase: float
-) -> Dict[PadId, Tuple[int, bool]]:
+) -> Dict[ButtonId, Tuple[int, bool]]:
     """
     Compute desired LED state for all pads (pure function).
     
@@ -64,10 +64,10 @@ def compute_all_led_states(
         blink_phase: Current blink phase 0.0-1.0
     
     Returns:
-        Dict mapping PadId to (color, is_lit)
+        Dict mapping ButtonId to (color, is_lit)
         is_lit: True = show color, False = show dimmed/off
     """
-    led_states: Dict[PadId, Tuple[int, bool]] = {}
+    led_states: Dict[ButtonId, Tuple[int, bool]] = {}
     
     for pad_id, behavior in state.pads.items():
         runtime = state.pad_runtime.get(pad_id, PadRuntimeState())

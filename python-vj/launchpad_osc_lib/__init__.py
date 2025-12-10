@@ -31,18 +31,28 @@ Usage:
             launchpad.set_led(effect.pad_id, effect.color)
 """
 
-from .launchpad import (
-    LaunchpadDevice,
-    LaunchpadConfig,
-    find_launchpad_ports,
-    PadId,
-    pad_to_note,
-    note_to_pad,
-    LP_OFF, LP_RED, LP_RED_DIM, LP_ORANGE, LP_YELLOW, LP_GREEN, LP_GREEN_DIM,
-    LP_CYAN, LP_BLUE, LP_BLUE_DIM, LP_PURPLE, LP_PINK, LP_WHITE,
-    COLOR_PALETTE,
-    LedMode,
-)
+# Import lpminimk3 directly
+try:
+    from lpminimk3 import (
+        LaunchpadMiniMk3 as LaunchpadDevice,
+        find_launchpads,
+        Mode,
+        ButtonEvent,
+        Led,
+        Button,
+    )
+    from lpminimk3.colors import ColorPalette
+except ImportError:
+    LaunchpadDevice = None
+    find_launchpads = None
+    Mode = None
+    ButtonEvent = None
+    Led = None
+    Button = None
+    ColorPalette = None
+
+from .button_id import ButtonId
+from .model import LedMode
 from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
     # Pad configuration types
@@ -131,16 +141,15 @@ from .demo import (
 )
 
 __all__ = [
-    # Launchpad
+    # Launchpad (lpminimk3)
     "LaunchpadDevice",
-    "LaunchpadConfig",
-    "find_launchpad_ports",
-    "PadId",
-    "pad_to_note",
-    "note_to_pad",
-    "LP_OFF", "LP_RED", "LP_RED_DIM", "LP_ORANGE", "LP_YELLOW", "LP_GREEN", "LP_GREEN_DIM",
-    "LP_CYAN", "LP_BLUE", "LP_BLUE_DIM", "LP_PURPLE", "LP_PINK", "LP_WHITE",
-    "COLOR_PALETTE",
+    "find_launchpads",
+    "Mode",
+    "ButtonEvent",
+    "Led",
+    "Button",
+    "ColorPalette",
+    "ButtonId",
     "LedMode",
     # Emulator / Smart Launchpad
     "LaunchpadInterface",

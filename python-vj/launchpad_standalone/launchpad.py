@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Callable, Tuple, Any
 
-from .model import PadId
+from .model import ButtonId
 
 try:
     import mido
@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # COORDINATE MAPPING
 # =============================================================================
 
-def pad_to_note(pad_id: PadId) -> Tuple[str, int]:
-    """Convert PadId to MIDI message type and number."""
+def pad_to_note(pad_id: ButtonId) -> Tuple[str, int]:
+    """Convert ButtonId to MIDI message type and number."""
     if pad_id.is_scene_button():
         # Scene buttons: notes 19, 29, ..., 89
         return ("note", (pad_id.y + 1) * 10 + 9)
@@ -37,8 +37,8 @@ def pad_to_note(pad_id: PadId) -> Tuple[str, int]:
         return ("note", (pad_id.y + 1) * 10 + (pad_id.x + 1))
 
 
-def note_to_pad(msg_type: str, number: int) -> Optional[PadId]:
-    """Convert MIDI note to PadId."""
+def note_to_pad(msg_type: str, number: int) -> Optional[ButtonId]:
+    """Convert MIDI note to ButtonId."""
     if msg_type != "note":
         return None
     
@@ -47,10 +47,10 @@ def note_to_pad(msg_type: str, number: int) -> Optional[PadId]:
     
     # Scene button (column 8)
     if col == 8 and 0 <= row <= 7:
-        return PadId(x=8, y=row)
+        return ButtonId(x=8, y=row)
     # Grid pad
     elif 0 <= row <= 7 and 0 <= col <= 7:
-        return PadId(x=col, y=row)
+        return ButtonId(x=col, y=row)
     
     return None
 
@@ -116,8 +116,8 @@ class LaunchpadDevice:
         self._input_port: Any = None
         self._output_port: Any = None
         self._running = False
-        self._press_callback: Optional[Callable[[PadId, int], None]] = None
-        self._release_callback: Optional[Callable[[PadId], None]] = None
+        self._press_callback: Optional[Callable[[ButtonId, int], None]] = None
+        self._release_callback: Optional[Callable[[ButtonId], None]] = None
         self._led_cache: dict = {}
     
     async def connect(self) -> bool:
@@ -152,8 +152,8 @@ class LaunchpadDevice:
     
     def set_callbacks(
         self,
-        on_press: Optional[Callable[[PadId, int], None]] = None,
-        on_release: Optional[Callable[[PadId], None]] = None
+        on_press: Optional[Callable[[ButtonId, int], None]] = None,
+        on_release: Optional[Callable[[ButtonId], None]] = None
     ):
         """Set pad press/release callbacks."""
         self._press_callback = on_press
@@ -199,7 +199,7 @@ class LaunchpadDevice:
                 logger.info(f"MIDI RX: Release {pad_id} (note={msg.note})")
                 self._release_callback(pad_id)
     
-    def set_led(self, pad_id: PadId, color: int):
+    def set_led(self, pad_id: ButtonId, color: int):
         """Set LED color."""
         if not self._output_port:
             return
@@ -224,7 +224,7 @@ class LaunchpadDevice:
         
         for y in range(8):
             for x in range(9):  # Include scene buttons
-                self.set_led(PadId(x, y), 0)
+                self.set_led(ButtonId(x, y), 0)
         
         self._led_cache.clear()
     

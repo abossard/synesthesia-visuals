@@ -22,18 +22,36 @@ import random
 import time
 from typing import Optional, List, Dict, Any
 
-from .launchpad import (
-    LaunchpadDevice,
-    LaunchpadConfig,
-    PadId,
-    LedMode,
-    LP_OFF, LP_RED, LP_ORANGE, LP_YELLOW, LP_GREEN,
-    LP_CYAN, LP_BLUE, LP_PURPLE, LP_PINK, LP_WHITE,
-    MIDO_AVAILABLE,
-)
+from .button_id import ButtonId
+from .model import LedMode
 
-if MIDO_AVAILABLE:
+try:
+    from lpminimk3 import LaunchpadMiniMk3 as LaunchpadDevice
+    LPMINIMK3_AVAILABLE = True
+except ImportError:
+    LaunchpadDevice = None
+    LPMINIMK3_AVAILABLE = False
+
+# Color constants for demos
+LP_OFF = 0
+LP_RED = 72
+LP_ORANGE = 83
+LP_YELLOW = 73
+LP_GREEN = 17
+LP_CYAN = 40
+LP_BLUE = 40
+LP_PURPLE = 48
+LP_PINK = 48
+LP_WHITE = 118
+
+try:
+    import mido
     from mido import Message
+    MIDO_AVAILABLE = True
+except ImportError:
+    MIDO_AVAILABLE = False
+    mido = None
+    Message = None
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +182,8 @@ class LaunchpadDemo:
             for y in range(8):
                 for x in range(8):
                     color = random.choice(DEMO_COLORS)
-                    self.device._led_cache.pop(PadId(x, y), None)
-                    self.device.set_led(PadId(x, y), color, LedMode.STATIC)
+                    self.device._led_cache.pop(ButtonId(x, y), None)
+                    self.device.set_led(ButtonId(x, y), color, LedMode.STATIC)
             await asyncio.sleep(0.15)
         
         await self.clear()
@@ -185,8 +203,8 @@ class LaunchpadDemo:
                         else:
                             diag = ((7 - x) + (7 - y) + offset) % len(RAINBOW)
                         
-                        self.device._led_cache.pop(PadId(x, y), None)
-                        self.device.set_led(PadId(x, y), RAINBOW[diag], LedMode.STATIC)
+                        self.device._led_cache.pop(ButtonId(x, y), None)
+                        self.device.set_led(ButtonId(x, y), RAINBOW[diag], LedMode.STATIC)
                 await asyncio.sleep(speed)
     
     async def rainbow_rush(self):
@@ -258,7 +276,7 @@ class LaunchpadDemo:
                     if pixel_on:
                         screen_y = 7 - row
                         if 0 <= screen_y < 8:
-                            self.device.set_led(PadId(screen_x, screen_y), color, LedMode.STATIC)
+                            self.device.set_led(ButtonId(screen_x, screen_y), color, LedMode.STATIC)
         else:
             for char_idx, char in enumerate(text):
                 for col in range(5):
@@ -268,7 +286,7 @@ class LaunchpadDemo:
                             if pixel_on:
                                 screen_y = 7 - row
                                 if 0 <= screen_y < 8:
-                                    self.device.set_led(PadId(screen_x, screen_y), color, LedMode.STATIC)
+                                    self.device.set_led(ButtonId(screen_x, screen_y), color, LedMode.STATIC)
     
     async def final_flash(self):
         """Final phase: All white flash then fade to black."""
@@ -277,8 +295,8 @@ class LaunchpadDemo:
         # Bright white flash
         for y in range(8):
             for x in range(8):
-                self.device._led_cache.pop(PadId(x, y), None)
-                self.device.set_led(PadId(x, y), LP_WHITE, LedMode.STATIC)
+                self.device._led_cache.pop(ButtonId(x, y), None)
+                self.device.set_led(ButtonId(x, y), LP_WHITE, LedMode.STATIC)
         
         await asyncio.sleep(0.5)
         
@@ -287,8 +305,8 @@ class LaunchpadDemo:
         for fade_color in fade_colors:
             for y in range(8):
                 for x in range(8):
-                    self.device._led_cache.pop(PadId(x, y), None)
-                    self.device.set_led(PadId(x, y), fade_color, LedMode.STATIC)
+                    self.device._led_cache.pop(ButtonId(x, y), None)
+                    self.device.set_led(ButtonId(x, y), fade_color, LedMode.STATIC)
             await asyncio.sleep(0.3)
         
         await self.clear()
@@ -344,7 +362,7 @@ async def run_startup_demo(device):
                 if hasattr(device, '_led_cache'):
                     device._led_cache.pop((x, y), None)
                 # Use simple set_led (works with both device types)
-                pad = PadId(x, y) if hasattr(PadId, '__init__') else type('PadId', (), {'x': x, 'y': y})()
+                pad = ButtonId(x, y) if hasattr(ButtonId, '__init__') else type('ButtonId', (), {'x': x, 'y': y})()
                 device.set_led(pad, RAINBOW[diag])
         await asyncio.sleep(0.12)
     
@@ -360,7 +378,7 @@ async def run_startup_demo(device):
         for x in range(8):
             if hasattr(device, '_led_cache'):
                 device._led_cache.pop((x, y), None)
-            pad = PadId(x, y) if hasattr(PadId, '__init__') else type('PadId', (), {'x': x, 'y': y})()
+            pad = ButtonId(x, y) if hasattr(ButtonId, '__init__') else type('ButtonId', (), {'x': x, 'y': y})()
             device.set_led(pad, LP_WHITE)
     await asyncio.sleep(0.2)
     

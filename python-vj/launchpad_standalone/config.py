@@ -11,7 +11,7 @@ from typing import Optional
 import yaml
 
 from .model import (
-    ControllerConfig, PadConfig, PadId, PadMode, OscCommand
+    ControllerConfig, PadConfig, ButtonId, PadMode, OscCommand
 )
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def load_config(path: Optional[Path] = None) -> Optional[ControllerConfig]:
         
         for key, pad_data in data["pads"].items():
             pad_config = PadConfig(
-                pad_id=PadId(x=pad_data["x"], y=pad_data["y"]),
+                pad_id=ButtonId(x=pad_data["x"], y=pad_data["y"]),
                 mode=PadMode[pad_data["mode"]],
                 osc_command=OscCommand(
                     address=pad_data["address"],

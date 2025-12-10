@@ -13,7 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Protocol
 
-from .launchpad import PadId, LP_OFF
+from .button_id import ButtonId
+
+# Color constant
+LP_OFF = 0
 
 if TYPE_CHECKING:
     from .launchpad import LaunchpadDevice, LaunchpadConfig
@@ -37,11 +40,11 @@ class LaunchpadInterface(Protocol):
         """Connect to device."""
         ...
 
-    def set_pad_callback(self, callback: Callable[[PadId, int], None]) -> None:
+    def set_pad_callback(self, callback: Callable[[ButtonId, int], None]) -> None:
         """Register callback for pad press events."""
         ...
 
-    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+    def set_pad_release_callback(self, callback: Callable[[ButtonId], None]) -> None:
         """Register callback for pad release events (for PUSH mode)."""
         ...
 
@@ -49,7 +52,7 @@ class LaunchpadInterface(Protocol):
         """Start listening for pad presses."""
         ...
 
-    def set_led(self, pad_id: PadId, color: int, blink: bool = False) -> None:
+    def set_led(self, pad_id: ButtonId, color: int, blink: bool = False) -> None:
         """Set LED color for a pad."""
         ...
 
@@ -113,22 +116,22 @@ class FullGridLayout:
     RIGHT_COL_COUNT: int = 8
     
     @staticmethod
-    def all_grid_pads() -> list[PadId]:
+    def all_grid_pads() -> list[ButtonId]:
         """Get all 8x8 grid pads."""
-        return [PadId(x, y) for y in range(8) for x in range(8)]
+        return [ButtonId(x, y) for y in range(8) for x in range(8)]
     
     @staticmethod
-    def all_top_row_pads() -> list[PadId]:
+    def all_top_row_pads() -> list[ButtonId]:
         """Get all top row pads (y=-1)."""
-        return [PadId(x, -1) for x in range(8)]
+        return [ButtonId(x, -1) for x in range(8)]
     
     @staticmethod
-    def all_right_column_pads() -> list[PadId]:
+    def all_right_column_pads() -> list[ButtonId]:
         """Get all right column pads (x=8)."""
-        return [PadId(8, y) for y in range(8)]
+        return [ButtonId(8, y) for y in range(8)]
     
     @staticmethod
-    def all_pads() -> list[PadId]:
+    def all_pads() -> list[ButtonId]:
         """Get all pads on the Launchpad."""
         pads = []
         pads.extend(FullGridLayout.all_top_row_pads())
@@ -153,16 +156,16 @@ class EmulatorView:
     def __init__(self, emulator: "LaunchpadEmulator"):
         self._emulator = emulator
 
-    def get_led_state(self, pad_id: PadId) -> LedState:
+    def get_led_state(self, pad_id: ButtonId) -> LedState:
         """Get current LED state for a pad (color and blink)."""
         return self._emulator._led_states.get(pad_id, LedState())
 
-    def get_led_color(self, pad_id: PadId) -> int:
+    def get_led_color(self, pad_id: ButtonId) -> int:
         """Get current LED color for a pad."""
         return self._emulator._led_states.get(pad_id, LedState()).color
 
-    def get_led_grid(self) -> Dict[PadId, LedState]:
-        """Get dict mapping PadId -> LedState for all pads with non-default state."""
+    def get_led_grid(self) -> Dict[ButtonId, LedState]:
+        """Get dict mapping ButtonId -> LedState for all pads with non-default state."""
         return dict(self._emulator._led_states)
 
     def get_8x8_grid(self) -> list[list[LedState]]:
@@ -175,17 +178,17 @@ class EmulatorView:
         for y in range(8):
             row: list[LedState] = []
             for x in range(8):
-                row.append(self.get_led_state(PadId(x, y)))
+                row.append(self.get_led_state(ButtonId(x, y)))
             grid.append(row)
         return grid
 
     def get_top_row(self) -> list[LedState]:
         """Get top row buttons (y=-1) as list."""
-        return [self.get_led_state(PadId(x, -1)) for x in range(8)]
+        return [self.get_led_state(ButtonId(x, -1)) for x in range(8)]
 
     def get_right_column(self) -> list[LedState]:
         """Get right column buttons (x=8) as list, bottom to top."""
-        return [self.get_led_state(PadId(8, y)) for y in range(8)]
+        return [self.get_led_state(ButtonId(8, y)) for y in range(8)]
 
     def get_full_grid(self) -> dict:
         """
@@ -208,7 +211,7 @@ class EmulatorView:
         """Register callback to be notified when LED state changes."""
         self._emulator._state_changed_callback = callback
 
-    def simulate_press(self, pad_id: PadId, velocity: int = 127) -> None:
+    def simulate_press(self, pad_id: ButtonId, velocity: int = 127) -> None:
         """
         Inject a simulated pad press.
         
@@ -240,8 +243,8 @@ class LaunchpadEmulator:
     For TUI access to LED state, use get_view() to get an EmulatorView.
     """
 
-    _led_states: Dict[PadId, LedState] = field(default_factory=dict)
-    _callback: Optional[Callable[[PadId, int], None]] = None
+    _led_states: Dict[ButtonId, LedState] = field(default_factory=dict)
+    _callback: Optional[Callable[[ButtonId, int], None]] = None
     _connected: bool = False
     _listening: bool = False
     _state_changed_callback: Optional[Callable[[], None]] = None
@@ -255,11 +258,11 @@ class LaunchpadEmulator:
         self._connected = True
         return True
 
-    def set_pad_callback(self, callback: Callable[[PadId, int], None]) -> None:
+    def set_pad_callback(self, callback: Callable[[ButtonId, int], None]) -> None:
         """Register callback for pad press events."""
         self._callback = callback
 
-    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+    def set_pad_release_callback(self, callback: Callable[[ButtonId], None]) -> None:
         """Register callback for pad release events (for PUSH mode)."""
         self._release_callback = callback
 
@@ -267,7 +270,7 @@ class LaunchpadEmulator:
         """Start listening (no-op for emulator, state is reactive)."""
         self._listening = True
 
-    def set_led(self, pad_id: PadId, color: int, blink: bool = False) -> None:
+    def set_led(self, pad_id: ButtonId, color: int, blink: bool = False) -> None:
         """Set LED color for a pad (stores in memory)."""
         self._led_states[pad_id] = LedState(color=color, blink=blink)
         if self._state_changed_callback:
@@ -330,7 +333,7 @@ class SmartLaunchpad:
     config: Optional["LaunchpadConfig"] = None
     _emulator: LaunchpadEmulator = field(default_factory=LaunchpadEmulator)
     _real_device: Optional["LaunchpadDevice"] = None
-    _pad_callback: Optional[Callable[[PadId, int], None]] = None
+    _pad_callback: Optional[Callable[[ButtonId, int], None]] = None
     _use_real: bool = False  # True when real device is active
     
     def __post_init__(self):
@@ -354,7 +357,7 @@ class SmartLaunchpad:
 
         return True  # Emulator is always available
 
-    def set_pad_callback(self, callback: Callable[[PadId, int], None]) -> None:
+    def set_pad_callback(self, callback: Callable[[ButtonId, int], None]) -> None:
         """Register callback for pad press events."""
         self._pad_callback = callback
         self._emulator.set_pad_callback(callback)
@@ -362,7 +365,7 @@ class SmartLaunchpad:
         if self._real_device:
             self._real_device.set_pad_callback(callback)
 
-    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+    def set_pad_release_callback(self, callback: Callable[[ButtonId], None]) -> None:
         """Register callback for pad release events (for PUSH mode)."""
         self._release_callback = callback
         self._emulator.set_pad_release_callback(callback)
@@ -377,7 +380,7 @@ class SmartLaunchpad:
         if self._real_device and self._use_real:
             await self._real_device.start_listening()
 
-    def set_led(self, pad_id: PadId, color: int, blink: bool = False) -> None:
+    def set_led(self, pad_id: ButtonId, color: int, blink: bool = False) -> None:
         """Set LED color - mirrors to emulator, sends to real device if connected."""
         # Always update emulator (for TUI state)
         self._emulator.set_led(pad_id, color, blink)

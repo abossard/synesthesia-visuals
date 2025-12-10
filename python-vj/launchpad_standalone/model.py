@@ -35,7 +35,7 @@ except ImportError:
 # =============================================================================
 
 @dataclass(frozen=True)
-class PadId:
+class ButtonId:
     """Unique identifier for a Launchpad pad."""
     x: int
     y: int
@@ -179,7 +179,7 @@ class LearnState:
     phase: LearnPhase = LearnPhase.IDLE
     
     # Pad selection
-    selected_pad: Optional[PadId] = None
+    selected_pad: Optional[ButtonId] = None
     
     # OSC recording
     recorded_events: List[OscEvent] = field(default_factory=list)
@@ -208,7 +208,7 @@ class LearnState:
 @dataclass(frozen=True)
 class PadConfig:
     """Configuration for a single pad (persisted)."""
-    pad_id: PadId
+    pad_id: ButtonId
     mode: PadMode
     osc_command: OscCommand
     idle_color: int = LP_GREEN_DIM
@@ -227,12 +227,12 @@ class ControllerConfig:
         key = f"{config.pad_id.x},{config.pad_id.y}"
         self.pads[key] = config
     
-    def get_pad(self, pad_id: PadId) -> Optional[PadConfig]:
+    def get_pad(self, pad_id: ButtonId) -> Optional[PadConfig]:
         """Get configuration for a pad."""
         key = f"{pad_id.x},{pad_id.y}"
         return self.pads.get(key)
     
-    def remove_pad(self, pad_id: PadId):
+    def remove_pad(self, pad_id: ButtonId):
         """Remove configuration for a pad."""
         key = f"{pad_id.x},{pad_id.y}"
         if key in self.pads:
@@ -259,7 +259,7 @@ class AppState:
     pad_runtime: Dict[str, PadRuntimeState] = field(default_factory=dict)
     
     # Selector group state (which pad is active in each group)
-    active_by_group: Dict[str, PadId] = field(default_factory=dict)
+    active_by_group: Dict[str, ButtonId] = field(default_factory=dict)
     
     # Blink state for learn mode
     blink_on: bool = False
@@ -272,7 +272,7 @@ class AppState:
 @dataclass(frozen=True)
 class LedEffect:
     """Set a single LED."""
-    pad_id: PadId
+    pad_id: ButtonId
     color: int
     blink: bool = False
 

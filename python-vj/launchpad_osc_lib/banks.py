@@ -16,7 +16,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .launchpad import PadId, LP_OFF, LP_GREEN, LP_BLUE
+from .button_id import ButtonId
+
+# Color constants
+LP_OFF = 0
+LP_GREEN = 17
+LP_BLUE = 40
 from .model import PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState
 
 logger = logging.getLogger(__name__)
@@ -41,7 +46,7 @@ class Bank:
         active_color: LED color when this bank is active
     """
     name: str
-    pads: Dict[PadId, PadBehavior] = field(default_factory=dict)
+    pads: Dict[ButtonId, PadBehavior] = field(default_factory=dict)
     color: int = LP_BLUE  # Dim color when not active
     active_color: int = LP_GREEN  # Bright color when active
     
@@ -55,12 +60,12 @@ class Bank:
         
         self.pads[pad_id] = behavior
     
-    def remove_pad(self, pad_id: PadId) -> None:
+    def remove_pad(self, pad_id: ButtonId) -> None:
         """Remove a pad configuration from this bank."""
         if pad_id in self.pads:
             del self.pads[pad_id]
     
-    def get_pad(self, pad_id: PadId) -> Optional[PadBehavior]:
+    def get_pad(self, pad_id: ButtonId) -> Optional[PadBehavior]:
         """Get pad configuration if it exists."""
         return self.pads.get(pad_id)
     
@@ -85,8 +90,8 @@ class BankManagerState:
     """
     banks: List[Bank] = field(default_factory=list)
     active_bank_index: int = 0
-    runtime: Dict[PadId, PadRuntimeState] = field(default_factory=dict)
-    active_by_group: Dict[ButtonGroupType, Optional[PadId]] = field(default_factory=dict)
+    runtime: Dict[ButtonId, PadRuntimeState] = field(default_factory=dict)
+    active_by_group: Dict[ButtonGroupType, Optional[ButtonId]] = field(default_factory=dict)
     beat_pulse: bool = False
 
 
@@ -125,7 +130,7 @@ class BankManager:
     def __init__(self):
         self.state = BankManagerState()
         self._on_bank_switch: Optional[Callable[[int, Bank], None]] = None
-        self._on_led_update: Optional[Callable[[PadId, int, bool], None]] = None
+        self._on_led_update: Optional[Callable[[ButtonId, int, bool], None]] = None
     
     # =========================================================================
     # CALLBACKS
@@ -135,7 +140,7 @@ class BankManager:
         """Set callback for bank switch events."""
         self._on_bank_switch = callback
     
-    def set_led_update_callback(self, callback: Callable[[PadId, int, bool], None]) -> None:
+    def set_led_update_callback(self, callback: Callable[[ButtonId, int, bool], None]) -> None:
         """Set callback for LED updates (pad_id, color, blink)."""
         self._on_led_update = callback
     
@@ -221,7 +226,7 @@ class BankManager:
     # TOP ROW HANDLING
     # =========================================================================
     
-    def handle_top_row_press(self, pad_id: PadId) -> bool:
+    def handle_top_row_press(self, pad_id: ButtonId) -> bool:
         """
         Handle top row button press for bank switching.
         
@@ -245,7 +250,7 @@ class BankManager:
     def _update_top_row_leds(self) -> None:
         """Update top row LEDs to show bank status."""
         for i in range(self.MAX_BANKS):
-            pad_id = PadId(i, -1)
+            pad_id = ButtonId(i, -1)
             
             if i < len(self.state.banks):
                 bank = self.state.banks[i]
@@ -262,7 +267,7 @@ class BankManager:
     # PAD HANDLING (Grid + Right Column)
     # =========================================================================
     
-    def get_pad_behavior(self, pad_id: PadId) -> Optional[PadBehavior]:
+    def get_pad_behavior(self, pad_id: ButtonId) -> Optional[PadBehavior]:
         """
         Get pad behavior for current bank.
         
@@ -278,11 +283,11 @@ class BankManager:
             return bank.get_pad(pad_id)
         return None
     
-    def get_runtime_state(self, pad_id: PadId) -> PadRuntimeState:
+    def get_runtime_state(self, pad_id: ButtonId) -> PadRuntimeState:
         """Get runtime state for a pad."""
         return self.state.runtime.get(pad_id, PadRuntimeState())
     
-    def set_runtime_state(self, pad_id: PadId, runtime: PadRuntimeState) -> None:
+    def set_runtime_state(self, pad_id: ButtonId, runtime: PadRuntimeState) -> None:
         """Set runtime state for a pad."""
         self.state.runtime[pad_id] = runtime
     
@@ -290,15 +295,15 @@ class BankManager:
     # GROUP STATE (Shared across banks)
     # =========================================================================
     
-    def get_active_for_group(self, group: ButtonGroupType) -> Optional[PadId]:
+    def get_active_for_group(self, group: ButtonGroupType) -> Optional[ButtonId]:
         """Get currently active pad for a selector group."""
         return self.state.active_by_group.get(group)
     
-    def set_active_for_group(self, group: ButtonGroupType, pad_id: Optional[PadId]) -> None:
+    def set_active_for_group(self, group: ButtonGroupType, pad_id: Optional[ButtonId]) -> None:
         """Set currently active pad for a selector group."""
         self.state.active_by_group[group] = pad_id
     
-    def is_pad_active_in_group(self, pad_id: PadId, group: ButtonGroupType) -> bool:
+    def is_pad_active_in_group(self, pad_id: ButtonId, group: ButtonGroupType) -> bool:
         """Check if pad is the active one in its group."""
         return self.state.active_by_group.get(group) == pad_id
     
@@ -306,7 +311,7 @@ class BankManager:
     # LED MANAGEMENT
     # =========================================================================
     
-    def _apply_led(self, pad_id: PadId, color: int, blink: bool = False) -> None:
+    def _apply_led(self, pad_id: ButtonId, color: int, blink: bool = False) -> None:
         """Apply LED color via callback."""
         if self._on_led_update:
             self._on_led_update(pad_id, color, blink)
@@ -320,12 +325,12 @@ class BankManager:
         # Clear grid and right column first
         for y in range(8):
             for x in range(8):
-                pad_id = PadId(x, y)
+                pad_id = ButtonId(x, y)
                 if pad_id not in bank.pads:
                     self._apply_led(pad_id, LP_OFF)
             
             # Right column
-            right_pad = PadId(8, y)
+            right_pad = ButtonId(8, y)
             if right_pad not in bank.pads:
                 self._apply_led(right_pad, LP_OFF)
         
@@ -407,7 +412,7 @@ class BankManager:
                 try:
                     group = ButtonGroupType(group_str)
                     if pad_coords:
-                        self.state.active_by_group[group] = PadId(pad_coords[0], pad_coords[1])
+                        self.state.active_by_group[group] = ButtonId(pad_coords[0], pad_coords[1])
                 except ValueError:
                     pass
             
@@ -443,7 +448,7 @@ class BankManager:
         
         for pad_key, behavior_data in data.get("pads", {}).items():
             x, y = map(int, pad_key.split(","))
-            behavior = self._dict_to_behavior(PadId(x, y), behavior_data)
+            behavior = self._dict_to_behavior(ButtonId(x, y), behavior_data)
             bank.pads[behavior.pad_id] = behavior
         
         return bank
@@ -480,7 +485,7 @@ class BankManager:
         
         return data
     
-    def _dict_to_behavior(self, pad_id: PadId, data: dict) -> PadBehavior:
+    def _dict_to_behavior(self, pad_id: ButtonId, data: dict) -> PadBehavior:
         """Convert dictionary to PadBehavior."""
         mode = PadMode(data.get("mode", "one_shot"))
         

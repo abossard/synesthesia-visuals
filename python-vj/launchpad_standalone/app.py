@@ -12,7 +12,7 @@ from dataclasses import replace
 from typing import List, Union
 
 from .model import (
-    AppState, LearnState, LearnPhase, PadId, OscEvent,
+    AppState, LearnState, LearnPhase, ButtonId, OscEvent,
     LedEffect, SendOscEffect, SaveConfigEffect, LogEffect, ControllerConfig,
 )
 from .launchpad import LaunchpadDevice
@@ -110,14 +110,14 @@ class StandaloneApp:
         """Run a brief startup demo to show the device is connected."""
         await run_startup_demo(self.launchpad)
 
-    def _on_pad_press(self, pad_id: PadId, velocity: int):
+    def _on_pad_press(self, pad_id: ButtonId, velocity: int):
         """Handle pad press from Launchpad."""
         new_state, effects = handle_pad_press(self.state, pad_id)
         self.state = new_state
         self._execute_effects(effects)
         self._render_leds()
     
-    def _on_pad_release(self, pad_id: PadId):
+    def _on_pad_release(self, pad_id: ButtonId):
         """Handle pad release from Launchpad."""
         new_state, effects = handle_pad_release(self.state, pad_id)
         self.state = new_state

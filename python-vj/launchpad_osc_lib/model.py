@@ -9,7 +9,18 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, List, Any, Dict
 
-from .launchpad import PadId, LedMode
+from .button_id import ButtonId
+
+
+# =============================================================================
+# LED MODE (for lpminimk3 compatibility)
+# =============================================================================
+
+class LedMode(Enum):
+    """LED modes matching lpminimk3.Led constants."""
+    STATIC = auto()
+    PULSE = auto()
+    FLASH = auto()
 
 
 # =============================================================================
@@ -184,7 +195,7 @@ class PadBehavior:
     For SELECTOR and ONE_SHOT modes:
         osc_action: Command to send on press
     """
-    pad_id: PadId
+    pad_id: ButtonId
     mode: PadMode
     group: Optional[ButtonGroupType] = None
     idle_color: int = 0
@@ -268,7 +279,7 @@ class LearnState:
         selected_idle_color: User's selected idle color
         selected_active_color: User's selected active color
     """
-    selected_pad: Optional[PadId] = None
+    selected_pad: Optional[ButtonId] = None
     recorded_osc_events: List[Any] = field(default_factory=list)  # List[OscEvent]
     candidate_commands: List[OscCommand] = field(default_factory=list)
     selected_command_index: Optional[int] = None
@@ -303,9 +314,9 @@ class ControllerState:
         learn_state: Current learn mode state
         app_mode: Current application mode
     """
-    pads: Dict[PadId, PadBehavior] = field(default_factory=dict)
-    pad_runtime: Dict[PadId, PadRuntimeState] = field(default_factory=dict)
-    active_selector_by_group: Dict[ButtonGroupType, Optional[PadId]] = field(default_factory=dict)
+    pads: Dict[ButtonId, PadBehavior] = field(default_factory=dict)
+    pad_runtime: Dict[ButtonId, PadRuntimeState] = field(default_factory=dict)
+    active_selector_by_group: Dict[ButtonGroupType, Optional[ButtonId]] = field(default_factory=dict)
     
     # Synesthesia state
     active_scene: Optional[str] = None
@@ -343,7 +354,7 @@ class SendOscEffect(Effect):
 @dataclass(frozen=True)
 class SetLedEffect(Effect):
     """Effect: Set a Launchpad LED."""
-    pad_id: PadId
+    pad_id: ButtonId
     color: int
     blink: bool = False
     led_mode: LedMode = LedMode.STATIC
