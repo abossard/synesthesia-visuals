@@ -1,0 +1,572 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adjusts the mix of the raw pattern over the whole screen (pick pattern color to the right >>>)",
+			"MAX" : 1.5,
+			"MIN" : -1.5,
+			"NAME" : "pattern",
+			"TYPE" : "slider",
+			"UI_GROUP" : "logo_mixer"
+		},
+		{
+			"DEFAULT" : -0.1,
+			"DESCRIPTION" : "Adjusts how much the logo will be mixed in (pick logo color to the right >>>)",
+			"MAX" : 1.5,
+			"MIN" : -1.5,
+			"NAME" : "raw_logo",
+			"TYPE" : "slider",
+			"UI_GROUP" : "logo_mixer"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Displace the media by the pattern, then choose how much to mix (pick displace color to the right >>>). Displace group controls only affect this mix.",
+			"MAX" : 1.5,
+			"MIN" : -1.5,
+			"NAME" : "displace_logo",
+			"TYPE" : "slider",
+			"UI_GROUP" : "logo_mixer"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Multiply the user media with the black and white pattern output (pick mask color to the right >>>) ",
+			"MAX" : 1.5,
+			"MIN" : -1.5,
+			"NAME" : "mask_logo",
+			"TYPE" : "slider",
+			"UI_GROUP" : "logo_mixer"
+		},
+		{
+			"DEFAULT" : 
+			[
+				1,
+				0.8,
+				0.2
+			],
+			"DESCRIPTION" : "Color of the base pattern. Amount of mix controlled by pattern slider to the left <<<",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "pattern_col",
+			"TYPE" : "color",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 
+			[
+				1,
+				1,
+				1
+			],
+			"DESCRIPTION" : "Color of the raw logo. Amount of mix controlled by raw logo slider to the left <<<",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "logo_col",
+			"TYPE" : "color",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				1,
+				1
+			],
+			"DESCRIPTION" : "Color of the displaced logo. Amount of mix controlled by 'displace slider' to the left <<<",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "displace_col",
+			"TYPE" : "color",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 
+			[
+				1,
+				0.8,
+				0.1
+			],
+			"DESCRIPTION" : "Color of the masked logo. Amount of mix controlled by 'mask logo' slider to the left <<<",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "mask_col",
+			"TYPE" : "color",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "Add a bright bloom effect when the bass hits",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bloom_mixer",
+			"TYPE" : "knob",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Amount of logo displacement on the X axis ('displace logo' mix must be on)",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "displace_x",
+			"PARAMS" : 0.05,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "displace_logo"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Amount of logo displacement on the Y axis ('displace logo' mix must be on)",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "displace_y",
+			"PARAMS" : 0.05,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "displace_logo"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Evenly displaces the media so it morphs without 'wiggling' back and forth.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "displace_mirror",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "displace_logo"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Makes it so you'll only where the logo did get displaced, instead of base logo and its displaced form.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "show_displaced_only",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "displace_logo"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Brightens the overall color on beat.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "flasher",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "flasher_invert",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "beat_jump",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "more_reactivity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "speed",
+			"TYPE" : "knob",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "add a bright bloom effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bloom_bass",
+			"TYPE" : "knob",
+			"UI_GROUP" : "audio_reactivity"
+		},
+		{
+			"DEFAULT" : 
+			[
+				5,
+				5
+			],
+			"DESCRIPTION" : "Scaling of the grid cells",
+			"MAX" : 
+			[
+				10,
+				10
+			],
+			"MIN" : 
+			[
+				0.01,
+				0.01
+			],
+			"NAME" : "grid_size",
+			"PARAMS" : 0.15,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "grid_size"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Hit this after playing with the grid_size XY to force the grid back into perfect squares.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "squarize_grid",
+			"TYPE" : "bang",
+			"UI_GROUP" : "grid_size"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "This stacks an extra layer of pattern over the top for more detail and more chaos. If you are getting too many 'negative' or grungy colors, turn this back down to zero.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_2x_stack",
+			"TYPE" : "slider",
+			"UI_GROUP" : "grid_size"
+		},
+		{
+			"DEFAULT" : 4,
+			"DESCRIPTION" : "Choose the grid mode pattern. Each mode uses the output from pulse to fill the grid cells in a different way.",
+			"LABELS" : 
+			[
+				"user_media",
+				"fading_stripes",
+				"rotating_x",
+				"expanding_circle",
+				"diagonal_lines",
+				"fill_up",
+				"rotating_square",
+				"spinning_heart",
+				"pulsating_cross",
+				"pulsating_box",
+				"starburst",
+				"ripples",
+				"checker_wave",
+				"heart_wave",
+				"circle_pulses",
+				"soft_bulb"
+			],
+			"MAX" : 15,
+			"MIN" : 0,
+			"NAME" : "grid_mode",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "grid",
+			"VALUES" : 
+			[
+				19,
+				4,
+				7,
+				2,
+				8,
+				1,
+				5,
+				9,
+				10,
+				3,
+				11,
+				12,
+				13,
+				15,
+				16,
+				17
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Used by some grid modes to control the complexity of the grid fill pattern.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_param_a",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Used by some grid modes to control the fill amount of the grid fill pattern.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_param_b",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "Automatically switches to random grid modes. Higher = more frequent, 0 = off",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_auto_transition",
+			"TYPE" : "knob",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Scaling of the grid cells",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "no_grid",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "invert_grid",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 4,
+			"DESCRIPTION" : "Choose the underlying pulse pattern that drives the grid animations. Each interacts with the pulse controls in its own way.",
+			"LABELS" : 
+			[
+				"user_media",
+				"diagonal_waves",
+				"expanding_waves",
+				"peaceful_waves",
+				"zigzag",
+				"spiral_fan",
+				"spinning_star",
+				"simple_bpm_osc",
+				"hexagon",
+				"expanding_heart",
+				"twisting_layers",
+				"fade_up"
+			],
+			"MAX" : 11,
+			"MIN" : 0,
+			"NAME" : "pulse_mode",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "pulse",
+			"VALUES" : 
+			[
+				21,
+				18,
+				3,
+				5,
+				4,
+				6,
+				11,
+				10,
+				14,
+				16,
+				19,
+				20
+			]
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Used by some pulse modes to control the complexity of the underlying pulse pattern.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "pulse_param_a",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Used by some pulse modes to control the strength of the underlying pulse pattern.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "pulse_param_b",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Boost or reduce the overall pulse value, effectively fading the grid patterns fully in or out.",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "pulse_boost_cut",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically switches to random pulse pattern modes. Higher = more frequent, 0 = off",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_pulse_offset",
+			"TYPE" : "knob",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "Automatically switches to random pulse pattern modes. Higher = more frequent, 0 = off",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "pulse_auto_transition",
+			"TYPE" : "knob",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This blurs the input media to create smoother pulse interactions with media. Especially useful with user_media option in pulses!!!",
+			"MAX" : 8,
+			"MIN" : 0,
+			"NAME" : "media_blur",
+			"TYPE" : "knob",
+			"UI_GROUP" : "pulse"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Amount of feedback. Values around 0.9 are where you get the best trails.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "feedback",
+			"TYPE" : "slider",
+			"UI_GROUP" : "feedback_fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Moves the feedback on the Y axis.",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "feedback_rise_fall",
+			"TYPE" : "knob",
+			"UI_GROUP" : "feedback_fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Zoom the feedback effect in or out.",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "feedback_zoom",
+			"TYPE" : "knob",
+			"UI_GROUP" : "feedback_fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This interacts with the feedback slider. It lets you add extra beef to the feedback effect when dealing with low color values, but quickly maxes out if you have bright ones.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "feedback_gain",
+			"TYPE" : "knob",
+			"UI_GROUP" : "feedback_fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "run the output through an edge detection algorithm",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "edge_detect",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "feedback_fx"
+		}
+	],
+	"CREDIT" : "UFFFD x Meebs",
+	"DESCRIPTION" : "Grid pattern generator with hundreds of unique pattern combinations. Excellent when used with black and white logos.",
+	"GPU" : 2,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "logo_grid_pulses_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "mipmap",
+			"WRAP" : "clamp"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 2160,
+			"TARGET" : "gen",
+			"WIDTH" : 3840,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 2160,
+			"TARGET" : "fbFix",
+			"WIDTH" : 3840,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "mipmap",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "composite",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "bloomed",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : 
+	[
+		"media",
+		"logo",
+		"2D",
+		"grid",
+		"patterns",
+		"glitchy",
+		"minimal"
+	],
+	"TITLE" : "Logo Grid Pulses_dup",
+	"WIDTH" : 1920
+}
