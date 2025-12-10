@@ -1,93 +1,66 @@
 """
-Command Selection Screen - Modal for Learn Mode Configuration
-
-Uses Textual's built-in widgets for reliable selection.
+Command Selection Screen - Simple full screen config
 """
 
 from typing import List
 from textual.app import ComposeResult
-from textual.screen import ModalScreen
-from textual.widgets import Label, Button, Select, RadioButton, RadioSet
-from textual.containers import Container, Vertical, Horizontal
+from textual.screen import Screen
+from textual.widgets import Static, Button, OptionList, Header, Footer
+from textual.widgets.option_list import Option
+from textual.containers import Horizontal
 from textual.binding import Binding
 
 from launchpad_osc_lib import OscCommand, PadMode, PadGroupName, get_default_button_type
 
 
-# Color palette: name -> launchpad_color_index
 COLOR_PALETTE = [
-    ("Red", 5),
-    ("Orange", 9),
-    ("Yellow", 13),
-    ("Green", 21),
-    ("Cyan", 37),
-    ("Blue", 45),
-    ("Purple", 53),
-    ("White", 3),
+    ("Red", 5), ("Orange", 9), ("Yellow", 13), ("Green", 21),
+    ("Cyan", 37), ("Blue", 45), ("Purple", 53), ("White", 3),
 ]
 
 MODES = [
-    (PadMode.TOGGLE, "Toggle - On/Off switch"),
-    (PadMode.PUSH, "Push - Momentary (while held)"),
-    (PadMode.ONE_SHOT, "One-Shot - Trigger once"),
-    (PadMode.SELECTOR, "Selector - Radio button group"),
+    (PadMode.TOGGLE, "Toggle"),
+    (PadMode.PUSH, "Push"),
+    (PadMode.ONE_SHOT, "One-Shot"),
+    (PadMode.SELECTOR, "Selector"),
 ]
 
 GROUPS = ["scenes", "presets", "colors", "custom"]
 
 
-class CommandSelectionScreen(ModalScreen):
-    """Modal screen for configuring a pad."""
+class CommandSelectionScreen(Screen):
+    """Full screen for configuring a pad - simple layout."""
     
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-        Binding("enter", "confirm", "Save"),
+        Binding("escape", "cancel", "Cancel", show=True),
+        Binding("s", "confirm", "Save", show=True),
+        Binding("1", "mode_toggle", "Toggle"),
+        Binding("2", "mode_push", "Push"),
+        Binding("3", "mode_oneshot", "One-Shot"),
+        Binding("4", "mode_selector", "Selector"),
     ]
     
     CSS = """
-    CommandSelectionScreen {
-        align: center middle;
+    #info {
+        height: 3;
+        padding: 1;
+        background: $primary;
+        color: $text;
     }
     
-    #dialog {
-        width: 70;
-        height: auto;
-        max-height: 90%;
-        border: thick $accent;
-        background: $surface;
-        padding: 1 2;
+    #commands {
+        height: 1fr;
+        border: solid $accent;
     }
     
-    .title {
-        text-align: center;
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
+    #options {
+        height: 10;
+        padding: 1;
     }
     
-    .section-label {
-        margin-top: 1;
-        color: $text-muted;
-    }
-    
-    Select {
-        width: 100%;
-        margin-bottom: 1;
-    }
-    
-    RadioSet {
-        width: 100%;
-        height: auto;
-        margin-bottom: 1;
-    }
-    
-    .button-row {
-        margin-top: 2;
-        align: center middle;
-    }
-    
-    .button-row Button {
-        margin: 0 2;
+    #actions {
+        dock: bottom;
+        height: 3;
     }
     """
     
@@ -95,48 +68,62 @@ class CommandSelectionScreen(ModalScreen):
         super().__init__(**kwargs)
         self.candidates = candidates
         self.pad_id = pad_id
+        self.selected_mode = PadMode.TOGGLE
+        self.selected_color_idle = 0
+        self.selected_color_active = 3
         
-        # Auto-detect from first candidate
         if candidates:
             auto_mode, auto_group = get_default_button_type(candidates[0].address)
-            self.initial_mode = auto_mode
-            self.initial_group = auto_group.value if auto_group else "scenes"
+            self.selected_mode = auto_mode
+            self.selected_group = auto_group.value if auto_group else "scenes"
         else:
-            self.initial_mode = PadMode.TOGGLE
-            self.initial_group = "scenes"
+            self.selected_group = "scenes"
     
     def compose(self) -> ComposeResult:
-        with Container(id="dialog"):
-            yield Label(f"Configure Pad {self.pad_id}", classes="title")
-            
-            # Command selection
-            yield Label("OSC Command:")
-            cmd_options = [(f"{cmd.address} {cmd.args}", i) for i, cmd in enumerate(self.candidates[:20])]
-            yield Select(cmd_options, id="cmd_select", value=0)
-            
-            # Mode selection
-            yield Label("Button Mode:", classes="section-label")
-            with RadioSet(id="mode_select"):
-                for mode, label in MODES:
-                    yield RadioButton(label, value=mode == self.initial_mode, name=mode.name)
-            
-            # Group selection
-            yield Label("Group (for Selector mode):", classes="section-label")
-            group_options = [(g.title(), g) for g in GROUPS]
-            yield Select(group_options, id="group_select", value=self.initial_group)
-            
-            # Color selection
-            yield Label("Idle Color:", classes="section-label")
-            color_options = [(name, i) for i, (name, _) in enumerate(COLOR_PALETTE)]
-            yield Select(color_options, id="idle_color", value=0)
-            
-            yield Label("Active Color:", classes="section-label")
-            yield Select(color_options, id="active_color", value=3)  # Default green
-            
-            # Buttons
-            with Horizontal(classes="button-row"):
-                yield Button("Save", id="save", variant="success")
-                yield Button("Cancel", id="cancel", variant="error")
+        yield Header()
+        yield Static(f"Configure Pad {self.pad_id} | Mode: [bold]{self.selected_mode.name}[/] | Press 1-4 to change mode, S to save", id="info")
+        
+        options = [Option(f"{cmd.address} {cmd.args}", id=str(i)) for i, cmd in enumerate(self.candidates[:50])]
+        yield OptionList(*options, id="commands")
+        
+        yield Static(self._build_options_text(), id="options")
+        
+        with Horizontal(id="actions"):
+            yield Button("Save [S]", id="save", variant="success")
+            yield Button("Cancel [Esc]", id="cancel", variant="error")
+        
+        yield Footer()
+    
+    def _build_options_text(self) -> str:
+        mode_line = " | ".join(
+            f"[bold green]{i+1}:{m.name}[/]" if m == self.selected_mode else f"{i+1}:{m.name}"
+            for i, (m, _) in enumerate(MODES)
+        )
+        color_idle = COLOR_PALETTE[self.selected_color_idle][0]
+        color_active = COLOR_PALETTE[self.selected_color_active][0]
+        return f"Mode: {mode_line}\nIdle: {color_idle} | Active: {color_active}"
+    
+    def _update_info(self):
+        self.query_one("#info", Static).update(
+            f"Configure Pad {self.pad_id} | Mode: [bold]{self.selected_mode.name}[/] | Press 1-4 to change mode, S to save"
+        )
+        self.query_one("#options", Static).update(self._build_options_text())
+    
+    def action_mode_toggle(self):
+        self.selected_mode = PadMode.TOGGLE
+        self._update_info()
+    
+    def action_mode_push(self):
+        self.selected_mode = PadMode.PUSH
+        self._update_info()
+    
+    def action_mode_oneshot(self):
+        self.selected_mode = PadMode.ONE_SHOT
+        self._update_info()
+    
+    def action_mode_selector(self):
+        self.selected_mode = PadMode.SELECTOR
+        self._update_info()
     
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
@@ -151,37 +138,17 @@ class CommandSelectionScreen(ModalScreen):
         self._confirm()
     
     def _confirm(self):
-        """Gather selections and dismiss with result."""
-        # Get command
-        cmd_select = self.query_one("#cmd_select", Select)
-        cmd_idx = cmd_select.value if cmd_select.value is not None else 0
+        cmd_list = self.query_one("#commands", OptionList)
+        idx = cmd_list.highlighted if cmd_list.highlighted is not None else 0
         
-        # Get mode from RadioSet
-        mode_set = self.query_one("#mode_select", RadioSet)
-        selected_mode = PadMode.TOGGLE
-        for btn in mode_set.query(RadioButton):
-            if btn.value:
-                selected_mode = PadMode[btn.name]
-                break
-        
-        # Get group
-        group_select = self.query_one("#group_select", Select)
-        selected_group = group_select.value if group_select.value else "scenes"
-        
-        # Get colors
-        idle_select = self.query_one("#idle_color", Select)
-        active_select = self.query_one("#active_color", Select)
-        idle_idx = idle_select.value if idle_select.value is not None else 0
-        active_idx = active_select.value if active_select.value is not None else 3
-        
-        group_enum = PadGroupName(selected_group) if selected_mode == PadMode.SELECTOR else None
+        group_enum = PadGroupName(self.selected_group) if self.selected_mode == PadMode.SELECTOR else None
         
         result = {
-            "command": self.candidates[cmd_idx],
-            "mode": selected_mode,
+            "command": self.candidates[idx],
+            "mode": self.selected_mode,
             "group": group_enum,
-            "idle_color": COLOR_PALETTE[idle_idx][1],
-            "active_color": COLOR_PALETTE[active_idx][1],
+            "idle_color": COLOR_PALETTE[self.selected_color_idle][1],
+            "active_color": COLOR_PALETTE[self.selected_color_active][1],
             "label": f"Pad {self.pad_id}",
         }
         self.dismiss(result)
