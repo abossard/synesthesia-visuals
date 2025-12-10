@@ -16,10 +16,18 @@ from .launchpad import PadId
 # =============================================================================
 
 class PadMode(Enum):
-    """Pad interaction mode."""
+    """
+    Pad interaction mode.
+    
+    SELECTOR: Radio button behavior within a group (only one active at a time)
+    TOGGLE: On/Off toggle - alternates between osc_on and osc_off commands
+    ONE_SHOT: Single action on press only - sends osc_action once
+    PUSH: Momentary - sends 1.0 on press, 0.0 on release (like a sustain pedal)
+    """
     SELECTOR = auto()  # Radio button behavior within a group (only one active)
     TOGGLE = auto()    # On/Off toggle with two OSC commands
     ONE_SHOT = auto()  # Single action on press, no persistent state
+    PUSH = auto()      # Momentary: send 1.0 on press, 0.0 on release
 
 
 class ButtonGroupType(str, Enum):
@@ -28,11 +36,25 @@ class ButtonGroupType(str, Enum):
     
     Groups determine radio-button behavior for SELECTOR mode pads.
     When a pad in a group is pressed, all other pads in that group are deselected.
+    
+    PRESETS is a subgroup of SCENES - when scene changes, presets reset to default.
     """
     SCENES = "scenes"
-    PRESETS = "presets"
+    PRESETS = "presets"  # Subgroup: resets when SCENES changes
     COLORS = "colors"
     CUSTOM = "custom"
+
+    @property
+    def parent_group(self) -> Optional["ButtonGroupType"]:
+        """Get parent group if this is a subgroup."""
+        if self == ButtonGroupType.PRESETS:
+            return ButtonGroupType.SCENES
+        return None
+    
+    @property
+    def resets_on_parent_change(self) -> bool:
+        """Whether this group resets when parent group changes."""
+        return self.parent_group is not None
 
 
 # =============================================================================

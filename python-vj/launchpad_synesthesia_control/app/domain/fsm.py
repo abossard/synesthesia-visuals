@@ -95,6 +95,8 @@ def handle_pad_press(
         return _handle_toggle_press(state, pad_id, behavior)
     elif behavior.mode == PadMode.ONE_SHOT:
         return _handle_one_shot_press(state, pad_id, behavior)
+    elif behavior.mode == PadMode.PUSH:
+        return _handle_push_press(state, pad_id, behavior)
     else:
         return state, [LogEffect(f"Unknown pad mode: {behavior.mode}", level="ERROR")]
 
@@ -219,6 +221,93 @@ def _handle_one_shot_press(
     return new_state, effects
 
 
+def _handle_push_press(
+    state: ControllerState,
+    pad_id: PadId,
+    behavior: PadBehavior
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Handle PUSH pad press (momentary button).
+    
+    Sends 1.0 on press, pad lights up while held.
+    Release handler sends 0.0.
+    """
+    effects: List[Effect] = []
+    
+    # Light up the pad
+    new_pad_runtime = dict(state.pad_runtime)
+    new_pad_runtime[pad_id] = PadRuntimeState(
+        is_active=True,  # Active while held
+        is_on=True,
+        current_color=behavior.active_color,
+        blink_enabled=False
+    )
+    
+    effects.append(SetLedEffect(pad_id, behavior.active_color, blink=False))
+    
+    # Send OSC with value 1.0 (press)
+    if behavior.osc_action:
+        # Clone command with 1.0 argument
+        press_cmd = OscCommand(behavior.osc_action.address, [1.0])
+        effects.append(SendOscEffect(press_cmd))
+    
+    new_state = replace(state, pad_runtime=new_pad_runtime)
+    
+    effects.append(LogEffect(f"Push pressed: {behavior.label or pad_id}"))
+    
+    return new_state, effects
+
+
+def handle_pad_release(
+    state: ControllerState,
+    pad_id: PadId
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Handle pad release event (pure function).
+    
+    Only affects PUSH mode pads - sends 0.0 on release.
+    Other modes ignore release events.
+    
+    Returns:
+        (new_state, effects_to_execute)
+    """
+    if state.app_mode != AppMode.NORMAL:
+        return state, []
+    
+    if pad_id not in state.pads:
+        return state, []
+    
+    behavior = state.pads[pad_id]
+    
+    # Only PUSH mode responds to release
+    if behavior.mode != PadMode.PUSH:
+        return state, []
+    
+    effects: List[Effect] = []
+    
+    # Turn off the pad LED
+    new_pad_runtime = dict(state.pad_runtime)
+    new_pad_runtime[pad_id] = PadRuntimeState(
+        is_active=False,
+        is_on=False,
+        current_color=behavior.idle_color,
+        blink_enabled=False
+    )
+    
+    effects.append(SetLedEffect(pad_id, behavior.idle_color, blink=False))
+    
+    # Send OSC with value 0.0 (release)
+    if behavior.osc_action:
+        release_cmd = OscCommand(behavior.osc_action.address, [0.0])
+        effects.append(SendOscEffect(release_cmd))
+    
+    new_state = replace(state, pad_runtime=new_pad_runtime)
+    
+    effects.append(LogEffect(f"Push released: {behavior.label or pad_id}"))
+    
+    return new_state, effects
+
+
 # =============================================================================
 # OSC EVENT HANDLING
 # =============================================================================
@@ -273,6 +362,10 @@ def handle_osc_event(
         # Find and activate matching selector pad
         state, led_effects = _activate_matching_selector(state, event.to_command(), PadGroupName.SCENES)
         effects.extend(led_effects)
+        
+        # Reset PRESETS group when scene changes (presets are per-scene in Synesthesia)
+        state, reset_effects = _reset_subgroup(state, PadGroupName.SCENES)
+        effects.extend(reset_effects)
     
     elif event.address.startswith("/presets/") or event.address.startswith("/favslots/"):
         preset_name = event.address.split("/")[-1]
@@ -347,6 +440,64 @@ def _activate_matching_selector(
         state,
         pad_runtime=new_pad_runtime,
         active_selector_by_group=new_active_selectors
+    )
+    
+    return new_state, effects
+
+
+def _reset_subgroup(
+    state: ControllerState,
+    parent_group: PadGroupName
+) -> Tuple[ControllerState, List[Effect]]:
+    """
+    Reset all child groups when parent group changes.
+    
+    In Synesthesia, presets are per-scene, so when scene changes,
+    all preset pads should reset to idle state.
+    
+    Returns:
+        (new_state, led_effects)
+    """
+    effects: List[Effect] = []
+    new_pad_runtime = dict(state.pad_runtime)
+    new_active_selectors = dict(state.active_selector_by_group)
+    
+    # Find child groups
+    for group_type in PadGroupName:
+        if group_type.parent_group == parent_group:
+            # Reset this child group
+            # Clear active selector
+            previous_active = new_active_selectors.get(group_type)
+            if previous_active and previous_active in state.pads:
+                prev_behavior = state.pads[previous_active]
+                new_pad_runtime[previous_active] = PadRuntimeState(
+                    is_active=False,
+                    current_color=prev_behavior.idle_color,
+                    blink_enabled=False
+                )
+                effects.append(SetLedEffect(previous_active, prev_behavior.idle_color, blink=False))
+            
+            new_active_selectors[group_type] = None
+            
+            # Reset ALL pads in this group to idle
+            for pad_id, behavior in state.pads.items():
+                if behavior.mode == PadMode.SELECTOR and behavior.group == group_type:
+                    if pad_id != previous_active:  # Already handled above
+                        new_pad_runtime[pad_id] = PadRuntimeState(
+                            is_active=False,
+                            current_color=behavior.idle_color,
+                            blink_enabled=False
+                        )
+                        effects.append(SetLedEffect(pad_id, behavior.idle_color, blink=False))
+    
+    if effects:
+        effects.append(LogEffect(f"Reset child groups of {parent_group.value}"))
+    
+    new_state = replace(
+        state,
+        pad_runtime=new_pad_runtime,
+        active_selector_by_group=new_active_selectors,
+        active_preset=None  # Clear preset tracking
     )
     
     return new_state, effects

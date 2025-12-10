@@ -290,6 +290,15 @@ class LaunchpadDevice:
         """
         self._callback = callback
     
+    def set_pad_release_callback(self, callback: Callable[[PadId], None]):
+        """
+        Set callback for pad release events.
+        
+        Args:
+            callback: Function called with (pad_id) on pad release
+        """
+        self._release_callback = callback
+    
     async def start_listening(self):
         """Start listening for MIDI input (async loop)."""
         if not self._input_port:
@@ -317,8 +326,18 @@ class LaunchpadDevice:
         """Process incoming MIDI message."""
         if msg.type == 'note_on':
             pad_id = note_to_pad("note", msg.note)
-            if pad_id and msg.velocity > 0 and self._callback:
-                self._callback(pad_id, msg.velocity)
+            if pad_id:
+                if msg.velocity > 0 and self._callback:
+                    self._callback(pad_id, msg.velocity)
+                elif msg.velocity == 0 and hasattr(self, '_release_callback') and self._release_callback:
+                    # Note-on with velocity 0 = note-off (common MIDI pattern)
+                    self._release_callback(pad_id)
+        
+        elif msg.type == 'note_off':
+            # Explicit note-off message
+            pad_id = note_to_pad("note", msg.note)
+            if pad_id and hasattr(self, '_release_callback') and self._release_callback:
+                self._release_callback(pad_id)
         
         elif msg.type == 'control_change':
             pad_id = note_to_pad("cc", msg.control)

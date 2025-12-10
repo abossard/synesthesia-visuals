@@ -13,6 +13,7 @@ from textual.binding import Binding
 from textual import on
 
 from ..domain.model import OscCommand, PadMode, PadGroupName, COLOR_PALETTE as LP_COLORS
+from launchpad_osc_lib import get_default_button_type
 
 
 # Color palette: name -> (display_name, launchpad_color_index)
@@ -42,6 +43,7 @@ class CommandSelectionScreen(ModalScreen):
         Binding("s", "mode_selector", "Selector", show=False),
         Binding("t", "mode_toggle", "Toggle", show=False),
         Binding("o", "mode_oneshot", "One-Shot", show=False),
+        Binding("p", "mode_push", "Push", show=False),
         Binding("1,2,3,4,5,6,7,8,9", "number_select", "Select", show=False),
     ]
     
@@ -104,8 +106,16 @@ class CommandSelectionScreen(ModalScreen):
         self.candidates = candidates
         self.pad_id = pad_id
         self.selected_command_idx = 0
-        self.selected_mode = PadMode.SELECTOR
-        self.selected_group = "scenes"
+        
+        # Auto-detect mode and group from first candidate
+        if candidates:
+            auto_mode, auto_group = get_default_button_type(candidates[0].address)
+            self.selected_mode = auto_mode
+            self.selected_group = auto_group.value if auto_group else "scenes"
+        else:
+            self.selected_mode = PadMode.SELECTOR
+            self.selected_group = "scenes"
+        
         self.idle_color_idx = 0  # Index into COLOR_NAMES
         self.active_color_idx = 3  # Default to green for active
         self.label_text = ""
@@ -124,11 +134,12 @@ class CommandSelectionScreen(ModalScreen):
                     yield Label(f"{marker}{i+1}. {cmd.address} {cmd.args}")
             
             # Pad type selection
-            yield Label("Pad Type (Tab or S/T/O):", classes="section-title")
+            yield Label("Pad Type (Tab or S/T/O/P):", classes="section-title")
             with Horizontal(classes="option-row"):
                 yield Static("Selector", id="mode_selector", classes="selected" if self.selected_mode == PadMode.SELECTOR else "")
                 yield Static("Toggle", id="mode_toggle", classes="selected" if self.selected_mode == PadMode.TOGGLE else "")
                 yield Static("One-Shot", id="mode_oneshot", classes="selected" if self.selected_mode == PadMode.ONE_SHOT else "")
+                yield Static("Push", id="mode_push", classes="selected" if self.selected_mode == PadMode.PUSH else "")
             
             # Group selection (only for selector)
             yield Label("Group (for Selector, Tab to cycle):", classes="section-title", id="group_label")
@@ -157,13 +168,25 @@ class CommandSelectionScreen(ModalScreen):
         """Move selection up in command list."""
         if self.current_field == "command" and self.selected_command_idx > 0:
             self.selected_command_idx -= 1
+            self._auto_detect_for_current_command()
             self.update_command_list()
     
     def action_cursor_down(self):
         """Move selection down in command list."""
         if self.current_field == "command" and self.selected_command_idx < len(self.candidates) - 1:
             self.selected_command_idx += 1
+            self._auto_detect_for_current_command()
             self.update_command_list()
+    
+    def _auto_detect_for_current_command(self):
+        """Auto-detect mode and group from current selected command."""
+        if self.candidates:
+            address = self.candidates[self.selected_command_idx].address
+            auto_mode, auto_group = get_default_button_type(address)
+            self.selected_mode = auto_mode
+            self.selected_group = auto_group.value if auto_group else "scenes"
+            self.update_mode_display()
+            self.update_group_display()
     
     def action_next_field(self):
         """Cycle to next field with Tab."""
@@ -174,8 +197,8 @@ class CommandSelectionScreen(ModalScreen):
         # Apply field-specific actions
         if self.current_field == "mode":
             # Cycle mode
-            modes = [PadMode.SELECTOR, PadMode.TOGGLE, PadMode.ONE_SHOT]
-            current_mode_idx = modes.index(self.selected_mode)
+            modes = [PadMode.SELECTOR, PadMode.TOGGLE, PadMode.ONE_SHOT, PadMode.PUSH]
+            current_mode_idx = modes.index(self.selected_mode) if self.selected_mode in modes else 0
             self.selected_mode = modes[(current_mode_idx + 1) % len(modes)]
             self.update_mode_display()
         elif self.current_field == "group":
@@ -196,7 +219,7 @@ class CommandSelectionScreen(ModalScreen):
             # Focus label input
             try:
                 self.query_one("#label_input", Input).focus()
-            except:
+            except Exception:
                 pass
     
     def action_mode_selector(self):
@@ -214,12 +237,18 @@ class CommandSelectionScreen(ModalScreen):
         self.selected_mode = PadMode.ONE_SHOT
         self.update_mode_display()
     
+    def action_mode_push(self):
+        """Set mode to PUSH."""
+        self.selected_mode = PadMode.PUSH
+        self.update_mode_display()
+    
     def action_number_select(self, key: str):
         """Handle number key press for direct selection."""
         try:
             num = int(key) - 1
             if self.current_field == "command" and 0 <= num < len(self.candidates):
                 self.selected_command_idx = num
+                self._auto_detect_for_current_command()
                 self.update_command_list()
             elif self.current_field in ("idle_color", "active_color") and 0 <= num < len(COLOR_NAMES):
                 if self.current_field == "idle_color":
@@ -240,14 +269,15 @@ class CommandSelectionScreen(ModalScreen):
         try:
             label_input = self.query_one("#label_input", Input)
             self.label_text = label_input.value.strip()
-        except:
+        except Exception:
             self.label_text = ""
         
-        # Build result
+        # Build result - convert group string to PadGroupName enum
+        group_enum = PadGroupName(self.selected_group) if self.selected_mode == PadMode.SELECTOR else None
         result = {
             "command": self.candidates[self.selected_command_idx],
             "mode": self.selected_mode,
-            "group": self.selected_group if self.selected_mode == PadMode.SELECTOR else None,
+            "group": group_enum,
             "idle_color": COLOR_PALETTE[COLOR_NAMES[self.idle_color_idx]][1],
             "active_color": COLOR_PALETTE[COLOR_NAMES[self.active_color_idx]][1],
             "label": self.label_text or f"Pad {self.pad_id}",
@@ -271,7 +301,8 @@ class CommandSelectionScreen(ModalScreen):
         try:
             for mode_val, mode_id in [(PadMode.SELECTOR, "mode_selector"), 
                                        (PadMode.TOGGLE, "mode_toggle"), 
-                                       (PadMode.ONE_SHOT, "mode_oneshot")]:
+                                       (PadMode.ONE_SHOT, "mode_oneshot"),
+                                       (PadMode.PUSH, "mode_push")]:
                 widget = self.query_one(f"#{mode_id}", Static)
                 if mode_val == self.selected_mode:
                     widget.add_class("selected")

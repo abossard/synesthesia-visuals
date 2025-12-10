@@ -23,7 +23,7 @@ from ..domain.model import (
     OscCommand, COLOR_PALETTE,
 )
 from ..domain.fsm import (
-    handle_pad_press, handle_osc_event,
+    handle_pad_press, handle_pad_release, handle_osc_event,
     enter_learn_mode, cancel_learn_mode, finish_osc_recording,
     select_learn_command
 )
@@ -466,6 +466,7 @@ class LaunchpadSynesthesiaApp(App):
         connected = await self.launchpad.connect()
         if connected:
             self.launchpad.set_pad_callback(self._on_pad_press)
+            self.launchpad.set_pad_release_callback(self._on_pad_release)
             # Start listening in background
             asyncio.create_task(self.launchpad.start_listening())
             self.add_log("Launchpad connected", "INFO")
@@ -549,12 +550,29 @@ class LaunchpadSynesthesiaApp(App):
         # Schedule in main event loop
         asyncio.create_task(self._handle_pad_press_async(pad_id))
     
+    def _on_pad_release(self, pad_id: PadId):
+        """Handle Launchpad pad release (called from MIDI thread)."""
+        # Schedule in main event loop
+        asyncio.create_task(self._handle_pad_release_async(pad_id))
+    
     async def _handle_pad_press_async(self, pad_id: PadId):
         """Handle pad press in async context."""
         self.add_log(f"Pad pressed: {pad_id}", "DEBUG")
         
         # Process through FSM
         new_state, effects = handle_pad_press(self.state, pad_id)
+        self.state = new_state
+        
+        # Execute effects
+        await self._execute_effects(effects)
+        
+        # Update UI
+        self._update_ui()
+    
+    async def _handle_pad_release_async(self, pad_id: PadId):
+        """Handle pad release in async context (for PUSH mode)."""
+        # Process through FSM - only PUSH mode pads respond to release
+        new_state, effects = handle_pad_release(self.state, pad_id)
         self.state = new_state
         
         # Execute effects

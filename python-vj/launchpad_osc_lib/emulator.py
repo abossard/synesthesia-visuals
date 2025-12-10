@@ -41,6 +41,10 @@ class LaunchpadInterface(Protocol):
         """Register callback for pad press events."""
         ...
 
+    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+        """Register callback for pad release events (for PUSH mode)."""
+        ...
+
     async def start_listening(self) -> None:
         """Start listening for pad presses."""
         ...
@@ -255,6 +259,10 @@ class LaunchpadEmulator:
         """Register callback for pad press events."""
         self._callback = callback
 
+    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+        """Register callback for pad release events (for PUSH mode)."""
+        self._release_callback = callback
+
     async def start_listening(self) -> None:
         """Start listening (no-op for emulator, state is reactive)."""
         self._listening = True
@@ -353,6 +361,14 @@ class SmartLaunchpad:
 
         if self._real_device:
             self._real_device.set_pad_callback(callback)
+
+    def set_pad_release_callback(self, callback: Callable[[PadId], None]) -> None:
+        """Register callback for pad release events (for PUSH mode)."""
+        self._release_callback = callback
+        self._emulator.set_pad_release_callback(callback)
+
+        if self._real_device:
+            self._real_device.set_pad_release_callback(callback)
 
     async def start_listening(self) -> None:
         """Start listening for pad presses."""
