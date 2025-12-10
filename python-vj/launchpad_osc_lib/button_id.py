@@ -1,33 +1,34 @@
 """
-Button identifier for use with lpminimk3.
+Button identification - type-safe (x, y) coordinates.
 
-Simple (x, y) coordinate tuple that can be used as dictionary keys
-and matches lpminimk3's Button.x, Button.y properties.
+Uses NamedTuple for type safety while remaining compatible with
+lpminimk3.components.Button which has .x and .y properties.
 """
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import NamedTuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from lpminimk3 import Button
+    from lpminimk3.components import Button
 
 
-@dataclass(frozen=True)
-class ButtonId:
+class ButtonId(NamedTuple):
     """
-    Button identifier using (x, y) coordinates.
+    Type-safe button identifier using (x, y) coordinates.
     
     Compatible with lpminimk3's Button.x and Button.y properties.
     - Main 8x8 grid: x, y in range 0-7
     - Top row buttons: x in range 0-7, y = -1
     - Right column buttons: x = 8, y in range 0-7
+    
+    Can be used as dictionary keys and compared for equality.
+    Immutable and hashable.
     """
     x: int
     y: int
     
     @classmethod
     def from_button(cls, button: 'Button') -> 'ButtonId':
-        """Create ButtonId from lpminimk3 Button."""
+        """Create ButtonId from lpminimk3 Button object."""
         return cls(x=button.x, y=button.y)
     
     def is_grid(self) -> bool:
