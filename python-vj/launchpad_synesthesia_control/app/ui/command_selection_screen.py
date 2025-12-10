@@ -38,6 +38,10 @@ class CommandSelectionScreen(Screen):
         Binding("2", "mode_push", "Push"),
         Binding("3", "mode_oneshot", "One-Shot"),
         Binding("4", "mode_selector", "Selector"),
+        Binding("q", "idle_prev", "Idle-"),
+        Binding("w", "idle_next", "Idle+"),
+        Binding("a", "active_prev", "Active-"),
+        Binding("d", "active_next", "Active+"),  # Changed from 's' to avoid conflict
     ]
     
     CSS = """
@@ -99,9 +103,36 @@ class CommandSelectionScreen(Screen):
             f"[bold green]{i+1}:{m.name}[/]" if m == self.selected_mode else f"{i+1}:{m.name}"
             for i, (m, _) in enumerate(MODES)
         )
-        color_idle = COLOR_PALETTE[self.selected_color_idle][0]
-        color_active = COLOR_PALETTE[self.selected_color_active][0]
-        return f"Mode: {mode_line}\nIdle: {color_idle} | Active: {color_active}"
+        # Build color lines with selection highlight
+        idle_line = " ".join(
+            f"[bold on {name.lower()}]{name}[/]" if i == self.selected_color_idle else f"[{name.lower()}]{name}[/]"
+            for i, (name, _) in enumerate(COLOR_PALETTE)
+        )
+        active_line = " ".join(
+            f"[bold on {name.lower()}]{name}[/]" if i == self.selected_color_active else f"[{name.lower()}]{name}[/]"
+            for i, (name, _) in enumerate(COLOR_PALETTE)
+        )
+        return (
+            f"Mode (1-4): {mode_line}\n"
+            f"Idle (Q/W): {idle_line}\n"
+            f"Active (A/D): {active_line}"
+        )
+    
+    def action_idle_prev(self):
+        self.selected_color_idle = (self.selected_color_idle - 1) % len(COLOR_PALETTE)
+        self._update_info()
+    
+    def action_idle_next(self):
+        self.selected_color_idle = (self.selected_color_idle + 1) % len(COLOR_PALETTE)
+        self._update_info()
+    
+    def action_active_prev(self):
+        self.selected_color_active = (self.selected_color_active - 1) % len(COLOR_PALETTE)
+        self._update_info()
+    
+    def action_active_next(self):
+        self.selected_color_active = (self.selected_color_active + 1) % len(COLOR_PALETTE)
+        self._update_info()
     
     def _update_info(self):
         self.query_one("#info", Static).update(

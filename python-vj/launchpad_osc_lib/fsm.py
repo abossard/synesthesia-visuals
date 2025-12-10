@@ -656,15 +656,19 @@ def select_learn_command(
             osc_action=osc_command
         )
     elif pad_mode == PadMode.TOGGLE:
-        # For toggle, use command as osc_on
+        # For toggle, derive ON (1.0) and OFF (0.0) commands from base address
+        # Replace any existing float arg with 1.0/0.0
+        base_address = osc_command.address
+        osc_on = OscCommand(base_address, [1.0])
+        osc_off = OscCommand(base_address, [0.0])
         behavior = PadBehavior(
             pad_id=pad_id,
             mode=pad_mode,
             idle_color=idle_color,
             active_color=active_color,
             label=label,
-            osc_on=osc_command,
-            osc_off=None  # TODO: Could derive from pattern
+            osc_on=osc_on,
+            osc_off=osc_off
         )
     elif pad_mode == PadMode.PUSH:
         behavior = PadBehavior(
