@@ -24,9 +24,10 @@ from launchpad_osc_lib import (
     handle_pad_press, handle_pad_release, handle_osc_event,
     enter_learn_mode, cancel_learn_mode, finish_osc_recording,
     select_learn_command,
-    SmartLaunchpad, LaunchpadConfig, SynesthesiaOscManager,
+    SynesthesiaOscManager,
     compute_blink_phase, compute_all_led_states, get_dimmed_color,
 )
+from ..io.emulator import SmartLaunchpad, LaunchpadConfig
 from ..io.config import ConfigManager, get_default_config_path
 from .command_selection_screen import CommandSelectionScreen
 

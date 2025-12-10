@@ -52,6 +52,9 @@ BASE_COLORS: Dict[str, tuple] = {
 # Base color indices for palette display (maps index 0-9 to color name)
 BASE_COLOR_NAMES = list(BASE_COLORS.keys())
 
+# Alias for TUI compatibility
+COLOR_PALETTE = BASE_COLORS
+
 
 def get_color_at_brightness(base_color: str, level: BrightnessLevel) -> int:
     """

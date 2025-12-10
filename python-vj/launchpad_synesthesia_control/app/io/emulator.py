@@ -13,13 +13,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, Optional, Protocol
 
-from .button_id import ButtonId
+from launchpad_osc_lib.button_id import ButtonId
 
 # Color constant
 LP_OFF = 0
 
-if TYPE_CHECKING:
-    from .launchpad import LaunchpadDevice, LaunchpadConfig
+
+@dataclass
+class LaunchpadConfig:
+    """Configuration for Launchpad connection."""
+    auto_detect: bool = True
+    input_port: Optional[str] = None
+    output_port: Optional[str] = None
 
 
 # =============================================================================

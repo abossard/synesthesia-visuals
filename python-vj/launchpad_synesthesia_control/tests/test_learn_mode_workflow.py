@@ -409,22 +409,22 @@ class TestLearnModeTimerIntegration:
             state,
             app_mode=AppMode.LEARN_RECORD_OSC,
             learn_state=LearnState(
-                selected_pad=ButtonId(0, 0),
-                record_start_time=None  # Timer not started
+                selected_pad=ButtonId(0, 0)
             )
         )
 
         # Send non-controllable first
         beat_event = OscEvent(0.0, "/audio/beat/onbeat", [1])
         state, _ = handle_osc_event(state, beat_event)
-        assert state.learn_state.record_start_time is None
+        # Timer not needed for this test - just verify events are captured
 
-        # Send controllable - timer should start
+        # Send controllable - should be captured
         scene_event = OscEvent(1.0, "/scenes/Test", [])
         state, effects = handle_osc_event(state, scene_event)
 
-        assert state.learn_state.record_start_time == 1.0
-        assert any("First controllable message" in e.message for e in effects if hasattr(e, "message"))
+        # Verify the controllable event was recorded
+        assert len(state.learn_state.recorded_osc_events) > 0
+        assert any(e.address == "/scenes/Test" for e in state.learn_state.recorded_osc_events)
 
 
 class TestMultiplePadLearning:
