@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, List, Any, Dict
 
-from .launchpad import PadId
+from .launchpad import PadId, LedMode
 
 
 # =============================================================================
@@ -224,12 +224,14 @@ class PadRuntimeState:
         is_active: Whether pad is currently highlighted/active (for SELECTOR)
         is_on: Current toggle state (for TOGGLE mode)
         current_color: Current LED color index
-        blink_enabled: Whether this pad should blink with beat
+        blink_enabled: Whether this pad should blink with beat (software-based)
+        led_mode: Hardware LED mode (STATIC, PULSE, FLASH) - uses Launchpad's native pulsing
     """
     is_active: bool = False
     is_on: bool = False
     current_color: int = 0
     blink_enabled: bool = False
+    led_mode: LedMode = LedMode.STATIC
 
 
 # =============================================================================
@@ -346,6 +348,7 @@ class SetLedEffect(Effect):
     pad_id: PadId
     color: int
     blink: bool = False
+    led_mode: LedMode = LedMode.STATIC
 
 
 @dataclass(frozen=True)

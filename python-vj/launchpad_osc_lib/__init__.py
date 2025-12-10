@@ -41,6 +41,7 @@ from .launchpad import (
     LP_OFF, LP_RED, LP_RED_DIM, LP_ORANGE, LP_YELLOW, LP_GREEN, LP_GREEN_DIM,
     LP_CYAN, LP_BLUE, LP_BLUE_DIM, LP_PURPLE, LP_PINK, LP_WHITE,
     COLOR_PALETTE,
+    LedMode,
 )
 from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
@@ -135,6 +136,7 @@ __all__ = [
     "LP_OFF", "LP_RED", "LP_RED_DIM", "LP_ORANGE", "LP_YELLOW", "LP_GREEN", "LP_GREEN_DIM",
     "LP_CYAN", "LP_BLUE", "LP_BLUE_DIM", "LP_PURPLE", "LP_PINK", "LP_WHITE",
     "COLOR_PALETTE",
+    "LedMode",
     # Emulator / Smart Launchpad
     "LaunchpadInterface",
     "LaunchpadEmulator",

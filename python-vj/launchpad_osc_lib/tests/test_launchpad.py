@@ -12,6 +12,7 @@ from launchpad_osc_lib.launchpad import (
     LP_OFF, LP_RED, LP_GREEN, LP_BLUE,
     LP_ORANGE, LP_YELLOW, LP_CYAN, LP_PURPLE, LP_PINK, LP_WHITE,
     COLOR_PALETTE,
+    LedMode,
 )
 
 
@@ -204,6 +205,22 @@ class TestNoteGridFormula:
 
         for note in valid_notes:
             assert 1 <= (note % 10) <= 8
+
+
+class TestLedMode:
+    """Test LED mode enum and its values."""
+
+    def test_led_mode_values(self):
+        """Test that LedMode enum has expected values."""
+        assert LedMode.STATIC is not None
+        assert LedMode.PULSE is not None
+        assert LedMode.FLASH is not None
+
+    def test_led_modes_are_distinct(self):
+        """Test that LED modes are distinct."""
+        assert LedMode.STATIC != LedMode.PULSE
+        assert LedMode.STATIC != LedMode.FLASH
+        assert LedMode.PULSE != LedMode.FLASH
 
 
 if __name__ == "__main__":

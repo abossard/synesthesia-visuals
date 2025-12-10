@@ -12,7 +12,9 @@ No application-specific logic - pure hardware abstraction.
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Optional, Callable, Tuple, Any
 
 try:
@@ -99,6 +101,23 @@ COLOR_PALETTE = {
     "pink": LP_PINK,
     "white": LP_WHITE,
 }
+
+
+# =============================================================================
+# LED MODES (Static, Pulse, Flash)
+# =============================================================================
+
+class LedMode(Enum):
+    """
+    LED display mode on Launchpad Mini Mk3.
+    
+    STATIC: Normal solid color (Note On channel 1)
+    PULSE: Pulsing/breathing effect at BPM rate (Note On channel 3)
+    FLASH: Alternates between two colors at BPM rate (Note On channel 2)
+    """
+    STATIC = auto()
+    PULSE = auto()
+    FLASH = auto()
 
 
 # =============================================================================
@@ -275,11 +294,45 @@ class LaunchpadDevice:
             self._output_port.send(Message('sysex', data=programmer_mode_sysex))
             
             logger.info("Connected to Launchpad in Programmer mode")
+            
+            # Set default pulse BPM (120 BPM)
+            self.set_bpm(120)
             return True
             
         except Exception as e:
             logger.error(f"Failed to connect to Launchpad: {e}")
             return False
+    
+    def set_bpm(self, bpm: int = 120):
+        """
+        Set the pulse/flash rate via MIDI beat clock.
+        
+        The Launchpad derives LED pulsing frequency from MIDI beat clock messages.
+        This method sends 28 clock messages with appropriate timing to establish
+        the tempo. Call once at startup or when changing BPM.
+        
+        NOTE: This method BLOCKS for approximately 2500/bpm * 28 / 1000 seconds
+        (e.g., ~580ms at 120 BPM).
+        
+        Args:
+            bpm: Beats per minute (40-240 range, default 120)
+        """
+        if not self._output_port:
+            logger.warning("Cannot set BPM: not connected")
+            return
+        
+        bpm = max(40, min(240, int(bpm)))
+        delay_ms = 2500 / bpm  # Time between clock messages in ms
+        
+        logger.info(f"Setting Launchpad pulse BPM to {bpm} (blocking for ~{int(delay_ms * 28)}ms)")
+        
+        try:
+            for _ in range(28):
+                self._output_port.send(Message('clock'))
+                time.sleep(delay_ms / 1000.0)
+            logger.debug(f"BPM set to {bpm}")
+        except Exception as e:
+            logger.error(f"Failed to set BPM: {e}")
     
     def set_pad_callback(self, callback: Callable[[PadId, int], None]):
         """
@@ -344,34 +397,103 @@ class LaunchpadDevice:
             if pad_id and msg.value > 0 and self._callback:
                 self._callback(pad_id, msg.value)
     
-    def set_led(self, pad_id: PadId, color: int, blink: bool = False):
+    def set_led(self, pad_id: PadId, color: int, mode: LedMode = LedMode.STATIC):
         """
-        Set LED color for a pad.
+        Set LED color for a pad with optional pulse/flash mode.
         
         Uses caching to avoid redundant MIDI messages.
         
         Args:
             pad_id: Pad to update
             color: Color index 0-127 (see LP_* constants)
-            blink: Reserved for future pulse mode support
+            mode: LedMode.STATIC (solid), LedMode.PULSE (breathing), or LedMode.FLASH (alternating)
         """
         if not self._output_port:
             return
         
-        cache_key = (pad_id, color, blink)
+        cache_key = (pad_id, color, mode)
         if self._led_cache.get(pad_id) == cache_key:
             return
         self._led_cache[pad_id] = cache_key
         
         msg_type, number = pad_to_note(pad_id)
         
+        # MIDI channels for different LED modes:
+        # Channel 1 (0) = Static
+        # Channel 2 (1) = Flash (alternates with previously set color)
+        # Channel 3 (2) = Pulse (breathing effect)
+        channel_map = {
+            LedMode.STATIC: 0,
+            LedMode.FLASH: 1,
+            LedMode.PULSE: 2,
+        }
+        channel = channel_map.get(mode, 0)
+        
         try:
             if msg_type == "note":
-                self._output_port.send(Message('note_on', note=number, velocity=color))
+                self._output_port.send(Message('note_on', channel=channel, note=number, velocity=color))
             elif msg_type == "cc":
+                # CC messages don't support pulse/flash - always static
                 self._output_port.send(Message('control_change', control=number, value=color))
         except Exception as e:
             logger.error(f"Failed to set LED {pad_id}: {e}")
+    
+    def set_led_pulse(self, pad_id: PadId, color: int):
+        """
+        Set LED to pulsing/breathing mode with given color.
+        
+        The pulse rate is determined by the BPM set via set_bpm().
+        
+        Args:
+            pad_id: Pad to update
+            color: Color index 0-127 (see LP_* constants)
+        """
+        self.set_led(pad_id, color, LedMode.PULSE)
+    
+    def set_led_flash(self, pad_id: PadId, color: int, base_color: Optional[int] = None):
+        """
+        Set LED to flashing mode, alternating between two colors.
+        
+        The flash rate is determined by the BPM set via set_bpm().
+        
+        Args:
+            pad_id: Pad to update
+            color: Second color to flash to
+            base_color: First color (if provided, sets static color first)
+        """
+        if base_color is not None:
+            # Set the base color first (static mode)
+            self._led_cache.pop(pad_id, None)  # Clear cache to force update
+            self.set_led(pad_id, base_color, LedMode.STATIC)
+            self._led_cache.pop(pad_id, None)  # Clear cache again for flash
+        
+        self.set_led(pad_id, color, LedMode.FLASH)
+    
+    def set_all_pads_pulse(self, color: int):
+        """
+        Set all 8x8 grid pads to pulsing mode with the same color.
+        
+        Convenience method for global beat-synced effects.
+        
+        Args:
+            color: Color index 0-127 (see LP_* constants)
+        """
+        for y in range(8):
+            for x in range(8):
+                self.set_led_pulse(PadId(x, y), color)
+    
+    def set_all_pads_static(self, color: int):
+        """
+        Set all 8x8 grid pads to static mode with the same color.
+        
+        Convenience method to stop pulsing and return to solid colors.
+        
+        Args:
+            color: Color index 0-127 (see LP_* constants)
+        """
+        for y in range(8):
+            for x in range(8):
+                self.set_led(PadId(x, y), color, LedMode.STATIC)
     
     def clear_all_leds(self):
         """Turn off all LEDs."""
