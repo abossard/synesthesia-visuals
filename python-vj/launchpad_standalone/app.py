@@ -20,7 +20,7 @@ from .osc import OscClient, OscConfig
 from .display import render_state
 from .fsm import (
     handle_pad_press, handle_pad_release, record_osc_event,
-    finish_recording, toggle_blink,
+    save_from_recording, toggle_blink,
 )
 from .config import save_config, load_config
 from launchpad_osc_lib.demo import run_startup_demo
@@ -52,7 +52,6 @@ class StandaloneApp:
         self.state = AppState()
         self._running = False
         self._blink_task = None
-        self._record_timeout_task = None
     
     async def start(self):
         """Start the application."""
@@ -101,8 +100,6 @@ class StandaloneApp:
         
         if self._blink_task:
             self._blink_task.cancel()
-        if self._record_timeout_task:
-            self._record_timeout_task.cancel()
         
         await self.launchpad.stop()
         await self.osc.stop()
@@ -119,13 +116,6 @@ class StandaloneApp:
         self.state = new_state
         self._execute_effects(effects)
         self._render_leds()
-        
-        # Start recording timeout if entering record phase
-        if (self.state.learn.phase == LearnPhase.RECORD_OSC and
-            self._record_timeout_task is None):
-            self._record_timeout_task = asyncio.create_task(
-                self._recording_timeout(5.0)
-            )
     
     def _on_pad_release(self, pad_id: PadId):
         """Handle pad release from Launchpad."""
@@ -141,25 +131,6 @@ class StandaloneApp:
             self.state = new_state
             self._execute_effects(effects)
             self._render_leds()
-            
-            # If recording finished (high-priority event), cancel timeout
-            if self.state.learn.phase != LearnPhase.RECORD_OSC:
-                if self._record_timeout_task:
-                    self._record_timeout_task.cancel()
-                    self._record_timeout_task = None
-    
-    async def _recording_timeout(self, seconds: float):
-        """Auto-finish recording after timeout."""
-        await asyncio.sleep(seconds)
-        
-        if self.state.learn.phase == LearnPhase.RECORD_OSC:
-            logger.info("Recording timeout - finishing")
-            new_state, effects = finish_recording(self.state)
-            self.state = new_state
-            self._execute_effects(effects)
-            self._render_leds()
-        
-        self._record_timeout_task = None
     
     async def _blink_loop(self):
         """Blink animation loop (200ms interval)."""

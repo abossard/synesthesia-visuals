@@ -74,15 +74,25 @@ def render_learn_wait_pad(state: AppState) -> List[LedEffect]:
     """
     Render 'waiting for pad selection' phase.
     
-    All grid pads blink red, scene buttons show learn active.
+    - Unconfigured pads blink red (available for recording)
+    - Configured pads show their idle color (already assigned)
+    - Scene buttons show learn active
     """
     effects = []
     blink_color = LP_RED if state.blink_on else LP_RED_DIM
     
-    # All 8x8 grid pads blink
+    # 8x8 grid pads
     for y in range(8):
         for x in range(8):
-            effects.append(LedEffect(pad_id=PadId(x, y), color=blink_color))
+            pad_id = PadId(x, y)
+            pad_config = state.config.get_pad(pad_id) if state.config else None
+            
+            if pad_config:
+                # Configured pad: show idle color (solid)
+                effects.append(LedEffect(pad_id=pad_id, color=pad_config.idle_color))
+            else:
+                # Unconfigured pad: blink red (available for recording)
+                effects.append(LedEffect(pad_id=pad_id, color=blink_color))
     
     # Learn button shows we're in learn mode
     effects.append(LedEffect(pad_id=LEARN_BUTTON, color=LP_ORANGE))
@@ -97,7 +107,8 @@ def render_learn_record_osc(state: AppState) -> List[LedEffect]:
     """
     Render 'recording OSC' phase.
     
-    Selected pad blinks, others off, status shown.
+    Selected pad blinks, shows event count, save/cancel buttons visible.
+    Recording continues until user presses save (green) or cancel (red).
     """
     effects = []
     learn = state.learn
@@ -112,13 +123,21 @@ def render_learn_record_osc(state: AppState) -> List[LedEffect]:
         color = LP_ORANGE if state.blink_on else LP_YELLOW
         effects.append(LedEffect(pad_id=learn.selected_pad, color=color))
     
-    # Learn button shows recording
+    # Learn button shows recording (also acts as cancel)
     effects.append(LedEffect(pad_id=LEARN_BUTTON, color=LP_ORANGE))
     
-    # Show number of recorded events on scene buttons
-    num_events = len(learn.recorded_events)
-    for i in range(min(num_events, 7)):
+    # Show number of unique recorded events on scene buttons (cols 1-6)
+    unique_addresses = set(e.address for e in learn.recorded_events)
+    num_unique = len(unique_addresses)
+    for i in range(min(num_unique, 6)):
         effects.append(LedEffect(pad_id=PadId(8, i + 1), color=LP_CYAN))
+    
+    # Save button (green) - only show if we have recorded events
+    if learn.recorded_events:
+        effects.append(LedEffect(pad_id=SAVE_PAD, color=LP_GREEN))
+    
+    # Cancel button (red) - always visible
+    effects.append(LedEffect(pad_id=CANCEL_PAD, color=LP_RED))
     
     return effects
 

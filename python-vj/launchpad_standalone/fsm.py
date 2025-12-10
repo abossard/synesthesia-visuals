@@ -17,7 +17,7 @@ from .model import (
     # Brightness utilities
     BrightnessLevel, BASE_COLOR_NAMES, get_color_at_brightness,
 )
-from .osc_categories import categorize_osc, should_stop_recording, is_controllable
+from .osc_categories import categorize_osc, is_controllable
 from .display import (
     LEARN_BUTTON, SAVE_PAD, TEST_PAD, CANCEL_PAD,
     REGISTER_OSC_PAD, REGISTER_MODE_PAD, REGISTER_COLOR_PAD,
@@ -76,16 +76,14 @@ def record_osc_event(state: AppState, event: OscEvent) -> Tuple[AppState, List[E
     if not is_controllable(event.address):
         return state, []
     
-    # Add to recorded events
+    # Add to recorded events (keeps all for display, last one will be used)
     new_events = list(state.learn.recorded_events) + [event]
     new_learn = replace(state.learn, recorded_events=new_events)
     new_state = replace(state, learn=new_learn)
     
-    effects: List[Effect] = [LogEffect(f"Recorded: {event.address}", "DEBUG")]
-    
-    # Check if this event should stop recording
-    if should_stop_recording(event):
-        return finish_recording(new_state)
+    # Log the event (shows in console)
+    unique_count = len(set(e.address for e in new_events))
+    effects: List[Effect] = [LogEffect(f"Recorded ({unique_count}): {event.address}")]
     
     return new_state, effects
 
@@ -373,8 +371,45 @@ def test_config(state: AppState) -> Tuple[AppState, List[Effect]]:
     return state, []
 
 
+def save_from_recording(state: AppState) -> Tuple[AppState, List[Effect]]:
+    """Save directly from recording phase using the last recorded OSC event."""
+    learn = state.learn
+    events = learn.recorded_events
+    
+    if not learn.selected_pad or not events:
+        return exit_learn_mode(state)
+    
+    # Use the LAST recorded controllable event
+    last_event = events[-1]
+    cmd = last_event.to_command()
+    
+    # Auto-detect mode from the command
+    _, suggested_mode, group = categorize_osc(cmd.address)
+    
+    pad_config = PadConfig(
+        pad_id=learn.selected_pad,
+        mode=suggested_mode,
+        osc_command=cmd,
+        idle_color=learn.selected_idle_color,
+        active_color=learn.selected_active_color,
+        label=cmd.address.split("/")[-1],
+        group=group,
+    )
+    
+    # Update config
+    config = state.config or ControllerConfig()
+    config.add_pad(pad_config)
+    
+    new_state, effects = exit_learn_mode(replace(state, config=config))
+    
+    effects.append(SaveConfigEffect(config))
+    effects.append(LogEffect(f"Saved: {cmd.address} for pad {learn.selected_pad}"))
+    
+    return new_state, effects
+
+
 def save_config(state: AppState) -> Tuple[AppState, List[Effect]]:
-    """Save the current configuration."""
+    """Save the current configuration (from CONFIG phase)."""
     learn = state.learn
     
     if not learn.selected_pad or not learn.candidate_commands:
@@ -436,7 +471,12 @@ def handle_pad_press(state: AppState, pad_id: PadId) -> Tuple[AppState, List[Eff
         if pad_id.is_grid():
             return select_pad(state, pad_id)
     elif phase == LearnPhase.RECORD_OSC:
-        # During recording, pad presses don't do anything
+        # Allow save (green) or cancel (red) during recording
+        if pad_id == SAVE_PAD:
+            return save_from_recording(state)
+        elif pad_id == CANCEL_PAD:
+            return exit_learn_mode(state)
+        # Other pads ignored during recording
         return state, []
     elif phase == LearnPhase.CONFIG:
         return handle_config_pad_press(state, pad_id)
