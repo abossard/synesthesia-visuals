@@ -1,0 +1,144 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 1.5,
+			"DESCRIPTION" : "The X position of where the camera is looking.",
+			"MAX" : 15,
+			"MIN" : 0.2,
+			"NAME" : "lookatme_x",
+			"PARAMS" : 0.06601,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : -32,
+			"DESCRIPTION" : "The X position of where the camera is located.",
+			"MAX" : 50,
+			"MIN" : -75,
+			"NAME" : "cam_x",
+			"PARAMS" : 0.09401,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "The Y position of where the camera is looking.",
+			"MAX" : 10,
+			"MIN" : -10,
+			"NAME" : "lookatme_y",
+			"PARAMS" : 0.02901,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : -11,
+			"DESCRIPTION" : "The Y position of where the camera is.",
+			"MAX" : 50,
+			"MIN" : -65,
+			"NAME" : "cam_y",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.13,
+			"DESCRIPTION" : "A toggle for a white glow on the edges of the geometry.",
+			"MAX" : 0.13,
+			"MIN" : 0,
+			"NAME" : "EdgeGlow",
+			"PARAMS" : 0.13001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 2,
+			"DESCRIPTION" : "Toggle for background fog.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "fogmix",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Toggle for a white background. Blends with EdgeGlow",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "lightbackground",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0.11,
+			"DESCRIPTION" : "Changes which direction the entire fractal is twisting.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "twistdirection",
+			"PARAMS" : 0.05801,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "shapes"
+		},
+		{
+			"DEFAULT" : 0.08,
+			"DESCRIPTION" : "Changes the intestity of the twist.",
+			"MAX" : 0.08,
+			"MIN" : -0.08,
+			"NAME" : "twistamount",
+			"PARAMS" : 0.05801,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "shapes"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Fractal position gymnastics control.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "fractalmorph",
+			"PARAMS" : 0.01101,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "shapes"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "Adjust the sensitivity of the sound-reactive movement.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "reactivetime",
+			"PARAMS" : 0.06501,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "default"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "displace the media based on the geometery position.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_displacement",
+			"PARAMS" : 0.07801,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "media"
+		}
+	],
+	"CREDIT" : "Dewpoint",
+	"DESCRIPTION" : "A raymarched fractal with sound-reactive movement and a moving camera!",
+	"GPU" : 4,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "vortex_flythrough_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "mirror"
+		}
+	],
+	"TAGS" : 
+	[
+		"3d",
+		"raymarching",
+		"colorful",
+		"abstract"
+	],
+	"TITLE" : "Vortex Flythrough_dup",
+	"WIDTH" : 1920
+}

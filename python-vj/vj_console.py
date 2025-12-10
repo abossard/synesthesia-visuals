@@ -181,11 +181,12 @@ def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Di
     if analysis:
         pipeline_data['analysis_summary'] = {
             'summary': analysis.get('summary') or analysis.get('lyric_summary') or analysis.get('mood'),
-            'keywords': [str(k) for k in (analysis.get('keywords') or []) if str(k).strip()][:6],
+            'keywords': [str(k) for k in (analysis.get('keywords') or []) if str(k).strip()][:8],
             'themes': [str(t) for t in (analysis.get('themes') or []) if str(t).strip()][:4],
-            'refrain_lines': [str(r) for r in (analysis.get('refrain_lines') or []) if str(r).strip()][:2],
-            'visuals': [str(v) for v in (analysis.get('visual_adjectives') or []) if str(v).strip()][:4],
-            'tempo': analysis.get('tempo')
+            'refrain_lines': [str(r) for r in (analysis.get('refrain_lines') or []) if str(r).strip()][:3],
+            'visuals': [str(v) for v in (analysis.get('visual_adjectives') or []) if str(v).strip()][:5],
+            'tempo': analysis.get('tempo'),
+            'emotions': [str(e) for e in (analysis.get('emotions') or []) if str(e).strip()][:3]
         }
     return pipeline_data
 
@@ -423,28 +424,32 @@ class PipelinePanel(ReactivePanel):
         
         if self.pipeline_data.get('current_lyric'):
             lyric = self.pipeline_data['current_lyric']
-            lines.append(f"\n[bold white]♪ {lyric.get('text', '')}[/]")
+            refrain_tag = " [magenta][REFRAIN][/]" if lyric.get('is_refrain') else ""
+            lines.append(f"\n[bold white]♪ {lyric.get('text', '')}{refrain_tag}[/]")
             if lyric.get('keywords'):
-                lines.append(f"[yellow]  Keywords: {lyric['keywords']}[/]")
-            if lyric.get('is_refrain'):
-                lines.append("[magenta]  [REFRAIN][/]")
+                lines.append(f"[yellow]   🔑 {lyric['keywords']}[/]")
             has_content = True
 
         summary = self.pipeline_data.get('analysis_summary')
         if summary:
-            lines.append("\n[bold cyan]AI Insights[/]")
+            lines.append("\n[bold cyan]═══ AI Analysis ═══[/]")
             if summary.get('summary'):
-                lines.append(f"[cyan]{truncate(str(summary['summary']), 180)}[/]")
+                lines.append(f"[cyan]💭 {truncate(str(summary['summary']), 180)}[/]")
             if summary.get('keywords'):
-                lines.append(f"[yellow]Keywords:[/] {', '.join(summary['keywords'])}")
+                kw = ', '.join(summary['keywords'][:8])
+                lines.append(f"[yellow]🔑 {kw}[/]")
             if summary.get('themes'):
-                lines.append(f"[green]Themes:[/] {', '.join(summary['themes'])}")
+                th = ' · '.join(summary['themes'][:4])
+                lines.append(f"[green]🎭 {th}[/]")
             if summary.get('visuals'):
-                lines.append(f"[magenta]Visuals:[/] {', '.join(summary['visuals'])}")
+                vis = ' · '.join(summary['visuals'][:5])
+                lines.append(f"[magenta]🎨 {vis}[/]")
             if summary.get('refrain_lines'):
-                lines.append(f"[dim]Hooks:[/] | {' | '.join(summary['refrain_lines'])}")
+                hooks = summary['refrain_lines'][:3]
+                for hook in hooks:
+                    lines.append(f"[dim]♫ \"{truncate(str(hook), 60)}\"[/]")
             if summary.get('tempo'):
-                lines.append(f"[dim]Tempo:[/] {summary['tempo']}")
+                lines.append(f"[dim]⏱️  {summary['tempo']}[/]")
             has_content = True
 
         if self.pipeline_data.get('error'):

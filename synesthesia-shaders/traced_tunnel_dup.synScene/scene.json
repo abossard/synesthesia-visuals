@@ -1,0 +1,175 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically swing the camera back and forth",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_camera",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Remove depth of field for fully focused scene",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "focused",
+			"PARAMS" : 0.1,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0
+			],
+			"DESCRIPTION" : "Control where the camera is pointed",
+			"MAX" : 
+			[
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				-1,
+				-1
+			],
+			"NAME" : "cam_look",
+			"PARAMS" : 0.005,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Field of View of the perspective of the camera",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "FOV",
+			"PARAMS" : 0.05,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Quick 'zoom in' field of view hit",
+			"MAX" : 0.4,
+			"MIN" : 0,
+			"NAME" : "FOV_bump",
+			"PARAMS" : 0.075,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Add flashes scanning along X-axis in scene",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scan_x",
+			"PARAMS" : 0.2,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "walls_coloration"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Add flashes scanning along Z-axis in scene",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scan_z",
+			"PARAMS" : 0.02,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "walls_coloration"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adjust the size of the pixels that form the walls",
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "pixelation",
+			"TYPE" : "slider",
+			"UI_GROUP" : "walls_coloration"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Whether media that paints the pixel walls is scrolling or not",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_scrolling",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "walls_coloration"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds flashes to the media on the walls",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_flasher",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "walls_coloration"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Remove side walls for a flat plane above and below",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "flat_space",
+			"PARAMS" : 0.04,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "geometry"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Rotate the planes around the camera",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "rotate_planes",
+			"PARAMS" : 0.04,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "geometry"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Make the wall pixels circles instead of squares",
+			"MAX" : 1.5,
+			"MIN" : 0,
+			"NAME" : "small_circles",
+			"PARAMS" : 0.1,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "geometry"
+		}
+	],
+	"CREDIT" : "Shane",
+	"DESCRIPTION" : "A multipass reflective box tunnel with some random reflective ray scattering thrown in. Basically, it's just a remake of W23's \"Path Racer\" and NuSan's \"Corridor Travel\" examples.",
+	"GPU" : 5,
+	"HEIGHT" : 1080,
+	"IMAGES" : 
+	[
+		{
+			"NAME" : "image3",
+			"PATH" : "images/3.jpg"
+		},
+		{
+			"NAME" : "image48",
+			"PATH" : "images/48.jpg"
+		}
+	],
+	"IMAGE_PATH" : "traced_tunnel_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : 
+	[
+		"3d",
+		"realistic",
+		"raymarching",
+		"tunnel"
+	],
+	"TITLE" : "Traced Tunnel_dup",
+	"WIDTH" : 1920
+}

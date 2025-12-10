@@ -1,0 +1,132 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Choose from one of four different patterns for the scene.",
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "pattern",
+			"PARAMS" : 0.05,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "pattern"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0
+			],
+			"DESCRIPTION" : "Relocate the camera position to be off-center.",
+			"MAX" : 
+			[
+				300,
+				300
+			],
+			"MIN" : 
+			[
+				-300,
+				-300
+			],
+			"NAME" : "move_xy",
+			"PARAMS" : 0.04,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "motion"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Reverse direction of zoom, to be traveling in or out.",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "reverse",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "motion"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "How fast to zoom in or out.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "zoom_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "motion"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Really intense spin effect. Default: 50%.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "spin",
+			"PARAMS" : 0.02,
+			"TYPE" : "slider traveler",
+			"UI_GROUP" : "motion"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Barrel distortion in or out.",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "distortion",
+			"PARAMS" : 0.05,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "geometry"
+		},
+		{
+			"DEFAULT" : 4,
+			"DESCRIPTION" : "Number of axes of symmetry. Careful, increasing this can lower FPS.",
+			"MAX" : 7,
+			"MIN" : 0,
+			"NAME" : "stacked_layers",
+			"TYPE" : "slider",
+			"UI_GROUP" : "geometry"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "pearlescence",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "colorize"
+		}
+	],
+	"CREDIT" : "Meebs",
+	"DESCRIPTION" : "",
+	"GPU" : 2,
+	"HEIGHT" : 1080,
+	"IMAGES" : 
+	[
+		{
+			"NAME" : "colorNoise",
+			"PATH" : "images/colornoise.jpg"
+		}
+	],
+	"IMAGE_PATH" : "stained_glass_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 720,
+			"TARGET" : "firstBuff",
+			"WIDTH" : 1280,
+			"WRAP" : "repeat"
+		}
+	],
+	"TAGS" : 
+	[
+		"media",
+		"psychedelic",
+		"abstract"
+	],
+	"TITLE" : "Stained Glass_dup",
+	"WIDTH" : 1920
+}
