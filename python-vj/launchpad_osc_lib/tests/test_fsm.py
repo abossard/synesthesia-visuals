@@ -13,7 +13,7 @@ from launchpad_osc_lib import (
     SendOscEffect, SetLedEffect, SaveConfigEffect, LogEffect,
     handle_pad_press, handle_pad_release, handle_osc_event,
     enter_learn_mode, cancel_learn_mode, finish_osc_recording,
-    select_learn_command, set_time_func, reset_time_func,
+    select_learn_command,
 )
 
 
@@ -228,7 +228,6 @@ class TestHandlePadPressLearnMode:
 
         assert new_state.app_mode == AppMode.LEARN_RECORD_OSC
         assert new_state.learn_state.selected_pad == pad_id
-        assert new_state.learn_state.record_start_time is not None
 
         # Should have LED effect to show recording
         led_effects = [e for e in effects if isinstance(e, SetLedEffect)]
@@ -311,20 +310,6 @@ class TestHandleOscEvent:
         new_state, effects = handle_osc_event(state, event)
 
         assert len(new_state.learn_state.recorded_osc_events) == 0
-
-    def test_first_controllable_osc_starts_timer(self, empty_state):
-        """First controllable OSC message starts recording timer."""
-        state = replace(
-            empty_state,
-            app_mode=AppMode.LEARN_RECORD_OSC,
-            learn_state=LearnState(selected_pad=PadId(0, 0), record_start_time=None)
-        )
-
-        event = OscEvent(1234.5, "/scenes/Test")
-        new_state, effects = handle_osc_event(state, event)
-
-        assert new_state.learn_state.record_start_time == 1234.5
-
 
 class TestActivateMatchingSelector:
     """Test automatic selector activation from OSC."""

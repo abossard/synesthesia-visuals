@@ -244,7 +244,7 @@ class AppMode(Enum):
     
     NORMAL: Normal operation - pads execute their configured behaviors
     LEARN_WAIT_PAD: Waiting for user to press a pad to configure
-    LEARN_RECORD_OSC: Recording OSC messages for 5 seconds
+    LEARN_RECORD_OSC: Recording OSC messages until user saves/cancels
     LEARN_SELECT_MSG: User selecting from recorded messages
     """
     NORMAL = auto()
@@ -261,7 +261,6 @@ class LearnState:
     Attributes:
         selected_pad: Pad being configured (set in LEARN_WAIT_PAD)
         recorded_osc_events: OSC events captured during recording
-        record_start_time: When recording started
         candidate_commands: Filtered/deduped commands for selection
         selected_command_index: User's selection from candidates
         selected_mode: User's selected pad mode
@@ -271,7 +270,6 @@ class LearnState:
     """
     selected_pad: Optional[PadId] = None
     recorded_osc_events: List[Any] = field(default_factory=list)  # List[OscEvent]
-    record_start_time: Optional[float] = None
     candidate_commands: List[OscCommand] = field(default_factory=list)
     selected_command_index: Optional[int] = None
     selected_mode: Optional[PadMode] = None

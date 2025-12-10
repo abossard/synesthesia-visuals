@@ -3,14 +3,10 @@ Finite State Machine Logic - Pure Functions
 
 All functions are pure: same input = same output, no side effects.
 Returns new state and list of effects to be executed by imperative shell.
-
-Note: The time.time() call in handle_pad_press is the ONE impurity in this module.
-For testing, use the time_func parameter or mock time.time directly.
 """
 
-from typing import List, Tuple, Optional, Callable
+from typing import List, Tuple, Optional
 from dataclasses import replace
-import time
 
 from .launchpad import PadId
 from .osc_client import OscEvent
@@ -23,26 +19,6 @@ from .model import (
 
 # Alias for backward compatibility
 PadGroupName = ButtonGroupType
-
-# Default time function (can be overridden for testing)
-_time_func: Callable[[], float] = time.time
-
-
-def set_time_func(func: Callable[[], float]) -> None:
-    """Set the time function used by FSM (for testing)."""
-    global _time_func
-    _time_func = func
-
-
-def reset_time_func() -> None:
-    """Reset time function to default (time.time)."""
-    global _time_func
-    _time_func = time.time
-
-
-def get_current_time() -> float:
-    """Get current time using configured time function."""
-    return _time_func()
 
 
 # =============================================================================
@@ -65,11 +41,10 @@ def handle_pad_press(
         (new_state, effects_to_execute)
     """
     if state.app_mode == AppMode.LEARN_WAIT_PAD:
-        # Select this pad for learning and start recording timer
+        # Select this pad for learning - recording continues until user saves/cancels
         new_learn_state = replace(
             state.learn_state,
-            selected_pad=pad_id,
-            record_start_time=get_current_time()
+            selected_pad=pad_id
         )
         new_state = replace(
             state,
@@ -78,7 +53,7 @@ def handle_pad_press(
         )
         
         effects = [
-            LogEffect(f"Learning mode: Selected pad {pad_id}, recording OSC for 5 seconds..."),
+            LogEffect(f"Learning mode: Selected pad {pad_id}, recording OSC... Press save when done."),
             SetLedEffect(pad_id, color=45, blink=True)  # Blue blinking during record
         ]
         return new_state, effects
@@ -331,7 +306,7 @@ def handle_osc_event(
     - /controls/meta/hue: Update color selector
     
     If in LEARN_RECORD_OSC mode, also records the event.
-    Timer starts on FIRST CONTROLLABLE OSC message received.
+    Recording continues until user explicitly saves or cancels.
     
     Returns:
         (new_state, effects_to_execute)
@@ -344,12 +319,6 @@ def handle_osc_event(
         if OscCommand.is_controllable(event.address):
             new_recorded = list(state.learn_state.recorded_osc_events) + [event]
             new_learn_state = replace(state.learn_state, recorded_osc_events=new_recorded)
-            
-            # Start timer on FIRST CONTROLLABLE message
-            if state.learn_state.record_start_time is None:
-                new_learn_state = replace(new_learn_state, record_start_time=event.timestamp)
-                effects.append(LogEffect(f"Learn mode: First controllable message received ({event.address}), starting 5s timer"))
-            
             state = replace(state, learn_state=new_learn_state)
     
     # Update diagnostics

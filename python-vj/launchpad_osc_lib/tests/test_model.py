@@ -324,7 +324,6 @@ class TestLearnState:
         state = LearnState()
         assert state.selected_pad is None
         assert state.recorded_osc_events == []
-        assert state.record_start_time is None
         assert state.candidate_commands == []
 
     def test_learn_state_with_pad(self):

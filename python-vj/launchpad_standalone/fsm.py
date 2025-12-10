@@ -7,7 +7,6 @@ All transitions return (new_state, effects_list).
 
 from dataclasses import replace
 from typing import List, Tuple, Union, Optional
-import time
 
 from .model import (
     AppState, LearnState, LearnPhase, LearnRegister, PadId, PadConfig,

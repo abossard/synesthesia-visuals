@@ -64,10 +64,6 @@ from .model import (
     LogEffect,
 )
 from .fsm import (
-    # Time functions (for testing)
-    set_time_func,
-    reset_time_func,
-    get_current_time,
     # Pad interaction
     handle_pad_press,
     handle_pad_release,
@@ -177,9 +173,6 @@ __all__ = [
     "SaveConfigEffect",
     "LogEffect",
     # FSM functions
-    "set_time_func",
-    "reset_time_func",
-    "get_current_time",
     "handle_pad_press",
     "handle_pad_release",
     "handle_osc_event",
