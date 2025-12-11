@@ -5,27 +5,41 @@ Interactive Device Test for Launchpad Mini MK3
 This test requires a physical Launchpad connected and runs through
 various scenarios, waiting for keypress between each phase.
 
-Run with: python -m launchpad_osc_lib.tests.test_device_interactive
+Run manually: python -m launchpad_osc_lib.tests.test_device_interactive
+
+These tests are SKIPPED by pytest unless a Launchpad is connected.
+To run interactively, execute the module directly.
 """
 
 import sys
 import time
 from typing import Optional
 
+import pytest
+
 try:
     import lpminimk3
     from lpminimk3 import Mode
+    LPMINIMK3_AVAILABLE = True
 except ImportError:
-    print("❌ lpminimk3 not installed. Run: pip install lpminimk3")
-    sys.exit(1)
+    LPMINIMK3_AVAILABLE = False
+    lpminimk3 = None
+    Mode = None
 
-from launchpad_osc_lib import (
-    ButtonId, PadMode, ButtonGroupType, PadBehavior, PadRuntimeState,
-    OscCommand, LearnPhase, LearnState, ControllerState, LedEffect,
-    LP_RED, LP_GREEN, LP_BLUE, LP_YELLOW, LP_CYAN, LP_PURPLE, LP_PINK, LP_ORANGE, LP_WHITE,
-    render_idle, render_learn_wait_pad, render_learn_record_osc, render_learn_config,
+# Skip all tests in this module if lpminimk3 not available or no device connected
+pytestmark = pytest.mark.skipif(
+    not LPMINIMK3_AVAILABLE,
+    reason="lpminimk3 not installed or no Launchpad connected"
 )
-from typing import List
+
+if LPMINIMK3_AVAILABLE:
+    from launchpad_osc_lib import (
+        ButtonId, PadMode, ButtonGroupType, PadBehavior, PadRuntimeState,
+        OscCommand, LearnPhase, LearnState, ControllerState, LedEffect,
+        LP_RED, LP_GREEN, LP_BLUE, LP_YELLOW, LP_CYAN, LP_PURPLE, LP_PINK, LP_ORANGE, LP_WHITE,
+        render_idle, render_learn_wait_pad, render_learn_record_osc, render_learn_config,
+    )
+    from typing import List
 
 
 def wait_for_key(prompt: str = "Press Enter to continue..."):

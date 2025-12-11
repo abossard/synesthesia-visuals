@@ -154,7 +154,10 @@ from .controller import (
     OscInterface,
 )
 from .synesthesia_osc import SynesthesiaOscManager
-# Demo has been removed - use lpminimk3 examples directly
+from .launchpad_device import LaunchpadDevice
+from .osc_sync import SyncOscClient
+from .config import save_config, load_config, DEFAULT_CONFIG_PATH
+from .cli import LaunchpadApp, main as cli_main
 
 __all__ = [
     # Launchpad (lpminimk3)
@@ -254,6 +257,16 @@ __all__ = [
     "LaunchpadController",
     "LaunchpadInterface",
     "OscInterface",
+    # Device and OSC
+    "LaunchpadDevice",
+    "SyncOscClient",
+    # Config persistence
+    "save_config",
+    "load_config",
+    "DEFAULT_CONFIG_PATH",
+    # CLI
+    "LaunchpadApp",
+    "cli_main",
     # Blink / Beat sync
     "compute_blink_phase",
     "should_led_be_lit",

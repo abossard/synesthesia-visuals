@@ -1,14 +1,15 @@
 """
-Launchpad Mini Mk3 Driver using lpminimk3
+Launchpad Mini Mk3 Device Driver
 
-Thin wrapper around lpminimk3 for the standalone app.
+Synchronous wrapper around lpminimk3 for the Launchpad Mini MK3.
+Provides a simple interface for button events and LED control.
 """
 
 import logging
 import threading
 from typing import Optional, Callable
 
-from .model import ButtonId
+from .button_id import ButtonId
 
 try:
     import lpminimk3
@@ -16,10 +17,10 @@ try:
     LPMINIMK3_AVAILABLE = True
 except ImportError:
     LPMINIMK3_AVAILABLE = False
-    lpminimk3 = None
-    LaunchpadMiniMk3 = None
-    Mode = None
-    ButtonEvent = None
+    lpminimk3 = None  # type: ignore
+    LaunchpadMiniMk3 = None  # type: ignore
+    Mode = None  # type: ignore
+    ButtonEvent = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,13 @@ class LaunchpadDevice:
     """
     Launchpad Mini Mk3 driver using lpminimk3.
     
-    Provides simple synchronous interface compatible with the standalone app.
+    Provides synchronous interface with threaded event polling.
+    
+    Example:
+        device = LaunchpadDevice()
+        if device.connect():
+            device.set_callbacks(on_press=my_handler)
+            device.start_listening()  # Blocks until stop()
     """
     
     def __init__(self):
@@ -40,7 +47,12 @@ class LaunchpadDevice:
         self._led_cache: dict = {}
     
     def connect(self) -> bool:
-        """Connect to Launchpad and enter Programmer mode."""
+        """
+        Connect to Launchpad and enter Programmer mode.
+        
+        Returns:
+            True if connected successfully
+        """
         if not LPMINIMK3_AVAILABLE:
             logger.error("lpminimk3 not available - install with: pip install lpminimk3")
             return False
@@ -67,12 +79,23 @@ class LaunchpadDevice:
         on_press: Optional[Callable[[ButtonId, int], None]] = None,
         on_release: Optional[Callable[[ButtonId], None]] = None
     ):
-        """Set button press/release callbacks."""
+        """
+        Set button press/release callbacks.
+        
+        Args:
+            on_press: Called with (ButtonId, velocity) on button press
+            on_release: Called with (ButtonId) on button release
+        """
         self._press_callback = on_press
         self._release_callback = on_release
     
     def start_listening(self):
-        """Start listening for button events (blocking)."""
+        """
+        Start listening for button events (blocking).
+        
+        Spawns a background thread for event polling and blocks
+        the main thread until stop() is called or KeyboardInterrupt.
+        """
         if not self._lp:
             logger.error("Not connected to Launchpad")
             return
@@ -80,11 +103,11 @@ class LaunchpadDevice:
         self._running = True
         logger.info("Listening for Launchpad input")
         
-        # Start in a separate thread to not block
+        # Start event polling in background thread
         self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
         self._listen_thread.start()
         
-        # Keep main thread alive
+        # Block main thread
         try:
             while self._running:
                 threading.Event().wait(1)
@@ -93,7 +116,7 @@ class LaunchpadDevice:
             self.stop()
     
     def _listen_loop(self):
-        """Event polling loop."""
+        """Internal event polling loop."""
         while self._running:
             try:
                 event = self._lp.panel.buttons().poll_for_event(timeout=0.1)
@@ -104,18 +127,28 @@ class LaunchpadDevice:
                     logger.error(f"Event error: {e}")
     
     def _process_event(self, event):
-        """Process button event from lpminimk3."""
+        """Process button event from lpminimk3.
+        
+        Note: lpminimk3 button events report y+1 compared to LED coordinates.
+        LEDs use y=0-7, but button events report y=1-8 for the same grid.
+        We convert to LED coordinates (y-1) for consistency.
+        """
         try:
-            button_id = ButtonId(x=event.button.x, y=event.button.y)
+            if event.button is None:
+                return
+            
+            # Convert button event coordinates to LED coordinates
+            # lpminimk3 quirk: button y = LED y + 1
+            button_id = ButtonId(x=event.button.x, y=event.button.y - 1)
             
             if event.type == ButtonEvent.PRESS:
                 if self._press_callback:
-                    logger.info(f"Button press: {button_id}")
-                    self._press_callback(button_id, 127)  # lpminimk3 doesn't provide velocity
+                    logger.debug(f"Button press: {button_id}")
+                    self._press_callback(button_id, 127)
             
             elif event.type == ButtonEvent.RELEASE:
                 if self._release_callback:
-                    logger.info(f"Button release: {button_id}")
+                    logger.debug(f"Button release: {button_id}")
                     self._release_callback(button_id)
                     
         except Exception as e:
@@ -127,27 +160,28 @@ class LaunchpadDevice:
         
         Args:
             pad_id: Button identifier
-            color: Color value (0-127)
-            pulse: If True, LED will pulse/breathe
+            color: Launchpad color value (0-127)
+            pulse: If True, LED will flash (lpminimk3 uses 'flash' mode for blinking)
         """
         if not self._lp:
             return
         
-        # Check cache to avoid redundant updates (include pulse in cache key)
+        # Cache check to avoid redundant updates
         cache_key = (pad_id.x, pad_id.y, pulse)
         if self._led_cache.get(cache_key) == color:
             return
+        
         # Clear old cache entry if mode changed
         old_key = (pad_id.x, pad_id.y, not pulse)
         self._led_cache.pop(old_key, None)
         self._led_cache[cache_key] = color
         
         try:
-            # Get LED with appropriate mode
-            mode = lpminimk3.Led.PULSE if pulse else lpminimk3.Led.STATIC
+            # lpminimk3 supports 'static' and 'flash' modes
+            mode = 'flash' if pulse else 'static'
             led = self._lp.grid.led(pad_id.x, pad_id.y, mode=mode)
             led.color = color
-            logger.debug(f"LED {pad_id} → color={color} (pulse={pulse})")
+            logger.debug(f"LED {pad_id} → color={color} (mode={mode})")
         except Exception as e:
             logger.error(f"LED error for {pad_id}: {e}")
     
