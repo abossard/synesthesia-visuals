@@ -500,6 +500,387 @@ def test_7_bank_switching(lp):
 
 
 # =============================================================================
+# TEST 8: Full Programming Workflow Simulation
+# =============================================================================
+def test_8_full_programming(lp):
+    """
+    Full programming workflow simulation with:
+    - OSC message selection (simulated)
+    - Pad mode selection (SELECTOR, TOGGLE, ONE_SHOT)
+    - Color selection with brightness levels
+    - Blink/flash mode testing
+    - Bank-aware configuration
+    """
+    import time
+    
+    print("\n" + "=" * 50)
+    print("TEST 8: Full Programming Workflow")
+    print("=" * 50)
+    print()
+    
+    # Simulated OSC messages (what would come from Synesthesia)
+    SIMULATED_OSC = [
+        "/scenes/AlienCavern",
+        "/scenes/NeonGiza",
+        "/scenes/FluidNoise",
+        "/presets/Warm",
+        "/presets/Cool",
+        "/presets/Intense",
+        "/global/strobe",
+        "/global/mirror",
+        "/meta/color/hue",
+        "/playlist/random",
+    ]
+    
+    # Pad modes
+    PAD_MODES = ["SELECTOR", "TOGGLE", "ONE_SHOT", "PUSH"]
+    
+    # Color options (base colors with brightness)
+    COLORS = {
+        "red": (1, 5, 6),       # dim, normal, bright
+        "orange": (7, 9, 10),
+        "yellow": (11, 13, 14),
+        "green": (19, 21, 22),
+        "cyan": (33, 37, 38),
+        "blue": (41, 45, 46),
+        "purple": (49, 53, 54),
+        "pink": (55, 57, 58),
+    }
+    COLOR_NAMES = list(COLORS.keys())
+    
+    # State
+    state = {
+        "phase": "IDLE",  # IDLE, SELECT_PAD, SELECT_OSC, SELECT_MODE, SELECT_COLOR, TEST_PAD
+        "selected_pad": None,
+        "configured_pads": {},  # {(x,y): {osc, mode, idle_color, active_color, blink}}
+        "current_bank": 0,
+        "osc_page": 0,
+        "selected_osc": None,
+        "selected_mode": None,
+        "idle_color": 21,  # green
+        "active_color": 5,  # red
+        "blink_enabled": False,
+    }
+    
+    def show_help():
+        """Show current phase instructions."""
+        print()
+        print("-" * 40)
+        if state["phase"] == "IDLE":
+            print("IDLE MODE - Press Scene button to enter Learn Mode")
+            print("  Scene 0 (bottom right) = Enter Learn Mode")
+            print("  Scene 7 (top right) = Exit Test")
+        elif state["phase"] == "SELECT_PAD":
+            print("SELECT PAD - Press any grid pad to configure")
+            print("  Scene 0 = Cancel / Back to IDLE")
+        elif state["phase"] == "SELECT_OSC":
+            print(f"SELECT OSC - Page {state['osc_page']+1} (O pattern shown)")
+            print("  Bottom row (row 0): OSC options")
+            print("  Scene 0 = Back | Scene 1 = Next Page")
+        elif state["phase"] == "SELECT_MODE":
+            print("SELECT MODE - Choose pad behavior (M pattern shown)")
+            print("  Bottom row (row 0): SELECTOR | TOGGLE | ONE_SHOT | PUSH")
+            print("  Scene 0 = Back")
+        elif state["phase"] == "SELECT_COLOR":
+            print("SELECT COLOR - Choose colors (colorful C shown)")
+            print("  Row 1: Idle color options")
+            print("  Row 2: Active color options")
+            print("  Row 0: [0]=Toggle Blink [7]=Confirm")
+            print("  Scene 0 = Back")
+        elif state["phase"] == "TEST_PAD":
+            print("TEST PAD - Test the configured pad")
+            print("  Press the configured pad to see it work")
+            print("  Scene 0 = Back | Scene 1 = Save & Done")
+        print("-" * 40)
+    
+    def refresh_display():
+        """Update LEDs based on current state."""
+        lp.grid.reset()
+        
+        # Show configured pads in current bank
+        for (x, y), config in state["configured_pads"].items():
+            if config.get("bank", 0) == state["current_bank"]:
+                color = config.get("idle_color", 21)
+                lp.grid.led(x, y).color = color
+        
+        # Phase-specific display
+        if state["phase"] == "IDLE":
+            # Show "READY" pattern
+            for col in range(8):
+                lp.grid.led(col, 3).color = GREEN
+                lp.grid.led(col, 4).color = GREEN
+            # Light scene button 0 for "Enter Learn"
+            try:
+                lp.panel.led(8, 1).color = GREEN  # Scene 0 (raw y=1)
+                lp.panel.led(8, 8).color = RED    # Scene 7 (raw y=8)
+            except Exception:
+                pass
+                
+        elif state["phase"] == "SELECT_PAD":
+            # Flash all unconfigured pads
+            for row in range(8):
+                for col in range(8):
+                    if (col, row) not in state["configured_pads"]:
+                        lp.grid.led(col, row, mode='flash').color = YELLOW
+            # Highlight configured pads
+            for (x, y), config in state["configured_pads"].items():
+                lp.grid.led(x, y).color = config.get("idle_color", 21)
+                
+        elif state["phase"] == "SELECT_OSC":
+            # Draw "O" pattern on top right (cols 4-7, rows 4-7)
+            o_pattern = [
+                "  OO  ",
+                " O  O ",
+                "O    O",
+                "O    O",
+                "O    O",
+                " O  O ",
+                "  OO  ",
+            ]
+            for row_idx, row_str in enumerate(o_pattern):
+                for col_idx, char in enumerate(row_str):
+                    if char == 'O':
+                        lp.grid.led(col_idx + 2, 7 - row_idx).color = CYAN
+            
+            # Show OSC options on bottom rows (8 per page)
+            start = state["osc_page"] * 8
+            for i in range(8):
+                idx = start + i
+                if idx < len(SIMULATED_OSC):
+                    lp.grid.led(i, 0).color = YELLOW  # Selection row at bottom
+            # Navigation
+            try:
+                lp.panel.led(8, 1).color = RED    # Back
+                lp.panel.led(8, 2).color = YELLOW  # Next page
+            except Exception:
+                pass
+                
+        elif state["phase"] == "SELECT_MODE":
+            # Draw "M" pattern on top (cols 1-6, rows 3-7)
+            m_pattern = [
+                "M    M",
+                "MM  MM",
+                "M MM M",
+                "M    M",
+                "M    M",
+                "M    M",
+            ]
+            for row_idx, row_str in enumerate(m_pattern):
+                for col_idx, char in enumerate(row_str):
+                    if char == 'M':
+                        lp.grid.led(col_idx + 1, 7 - row_idx).color = MAGENTA
+            
+            # Mode buttons on row 0 (bottom)
+            mode_colors = [BLUE, GREEN, ORANGE, CYAN]
+            for i, color in enumerate(mode_colors):
+                lp.grid.led(i, 0).color = color
+            # Labels on row 1
+            lp.grid.led(0, 1).color = 1  # SELECTOR
+            lp.grid.led(1, 1).color = 1  # TOGGLE
+            lp.grid.led(2, 1).color = 1  # ONE_SHOT
+            lp.grid.led(3, 1).color = 1  # PUSH
+            
+        elif state["phase"] == "SELECT_COLOR":
+            # Draw colorful "C" pattern on top right
+            c_colors = [RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, MAGENTA]
+            c_pattern = [
+                (4, 7), (5, 7), (6, 7),  # Top of C
+                (3, 6),                   # Left upper
+                (3, 5),                   # Left middle
+                (3, 4),                   # Left lower
+                (4, 3), (5, 3), (6, 3),  # Bottom of C
+            ]
+            for i, (cx, cy) in enumerate(c_pattern):
+                lp.grid.led(cx, cy).color = c_colors[i % len(c_colors)]
+            
+            # Idle colors (row 1) - bottom area
+            for i, name in enumerate(COLOR_NAMES):
+                if i < 8:
+                    lp.grid.led(i, 1).color = COLORS[name][1]  # Normal brightness
+            # Active colors (row 2)
+            for i, name in enumerate(COLOR_NAMES):
+                if i < 8:
+                    lp.grid.led(i, 2).color = COLORS[name][2]  # Bright
+            
+            # Blink toggle and confirm (row 0)
+            blink_color = WHITE if state["blink_enabled"] else 1
+            lp.grid.led(0, 0, mode='flash' if state["blink_enabled"] else 'static').color = blink_color
+            # Confirm button
+            lp.grid.led(7, 0).color = GREEN
+            
+        elif state["phase"] == "TEST_PAD":
+            # Show the configured pad
+            if state["selected_pad"]:
+                x, y = state["selected_pad"]
+                mode = 'flash' if state["blink_enabled"] else 'static'
+                lp.grid.led(x, y, mode=mode).color = state["idle_color"]
+            # Instructions
+            lp.grid.led(0, 0).color = RED   # Back
+            lp.grid.led(7, 0).color = GREEN  # Save
+    
+    def transition_to(new_phase):
+        """Transition to a new phase."""
+        old_phase = state["phase"]
+        state["phase"] = new_phase
+        print(f"\n→ {old_phase} → {new_phase}")
+        refresh_display()
+        show_help()
+    
+    # Initial display
+    refresh_display()
+    show_help()
+    print()
+    print("Starting full programming simulation...")
+    print("Configured pads will be saved to memory (not persisted).")
+    print()
+    
+    running = True
+    while running:
+        event = lp.panel.buttons().poll_for_event()
+        if not event or event.type != lpminimk3.ButtonEvent.PRESS or not event.button:
+            continue
+        
+        raw_x, raw_y = event.button.x, event.button.y
+        x, y = raw_x, raw_y - 1  # Apply y-1 fix
+        
+        # Scene buttons (x=8)
+        if raw_x == 8:
+            scene_idx = y  # 0-7 after fix
+            
+            if state["phase"] == "IDLE":
+                if scene_idx == 0:
+                    transition_to("SELECT_PAD")
+                elif scene_idx == 7:
+                    print("\n👋 Exiting test")
+                    running = False
+                    
+            elif state["phase"] == "SELECT_PAD":
+                if scene_idx == 0:
+                    transition_to("IDLE")
+                    
+            elif state["phase"] == "SELECT_OSC":
+                if scene_idx == 0:
+                    transition_to("SELECT_PAD")
+                elif scene_idx == 1:
+                    # Next page
+                    max_pages = (len(SIMULATED_OSC) + 7) // 8
+                    state["osc_page"] = (state["osc_page"] + 1) % max_pages
+                    print(f"  OSC Page {state['osc_page']+1}/{max_pages}")
+                    refresh_display()
+                    
+            elif state["phase"] == "SELECT_MODE":
+                if scene_idx == 0:
+                    transition_to("SELECT_OSC")
+                    
+            elif state["phase"] == "SELECT_COLOR":
+                if scene_idx == 0:
+                    transition_to("SELECT_MODE")
+                    
+            elif state["phase"] == "TEST_PAD":
+                if scene_idx == 0:
+                    transition_to("SELECT_COLOR")
+                elif scene_idx == 1:
+                    # Save configuration
+                    if state["selected_pad"]:
+                        px, py = state["selected_pad"]
+                        state["configured_pads"][(px, py)] = {
+                            "osc": state["selected_osc"],
+                            "mode": state["selected_mode"],
+                            "idle_color": state["idle_color"],
+                            "active_color": state["active_color"],
+                            "blink": state["blink_enabled"],
+                            "bank": state["current_bank"],
+                        }
+                        print(f"\n✅ SAVED pad ({px},{py}):")
+                        print(f"   OSC: {state['selected_osc']}")
+                        print(f"   Mode: {state['selected_mode']}")
+                        print(f"   Colors: idle={state['idle_color']}, active={state['active_color']}")
+                        print(f"   Blink: {state['blink_enabled']}")
+                    transition_to("IDLE")
+            continue
+        
+        # Top row buttons (y=-1) - Bank switching
+        if y == -1 and x < 8:
+            state["current_bank"] = x
+            print(f"\n🏦 Switched to Bank {x} ({TOP_ROW_BUTTONS[x]})")
+            refresh_display()
+            continue
+        
+        # Grid buttons (x=0-7, y=0-7)
+        if 0 <= x <= 7 and 0 <= y <= 7:
+            
+            if state["phase"] == "SELECT_PAD":
+                state["selected_pad"] = (x, y)
+                state["osc_page"] = 0
+                print(f"\n🎯 Selected pad ({x},{y})")
+                transition_to("SELECT_OSC")
+                
+            elif state["phase"] == "SELECT_OSC":
+                if y == 0:  # OSC selection row at BOTTOM
+                    idx = state["osc_page"] * 8 + x
+                    if idx < len(SIMULATED_OSC):
+                        state["selected_osc"] = SIMULATED_OSC[idx]
+                        print(f"\n📨 Selected OSC: {state['selected_osc']}")
+                        transition_to("SELECT_MODE")
+                        
+            elif state["phase"] == "SELECT_MODE":
+                if y == 0 and x < 4:  # Mode buttons at BOTTOM
+                    state["selected_mode"] = PAD_MODES[x]
+                    print(f"\n⚙️ Selected mode: {state['selected_mode']}")
+                    transition_to("SELECT_COLOR")
+                    
+            elif state["phase"] == "SELECT_COLOR":
+                if y == 1 and x < len(COLOR_NAMES):
+                    # Idle color (row 1)
+                    state["idle_color"] = COLORS[COLOR_NAMES[x]][1]
+                    print(f"  Idle color: {COLOR_NAMES[x]}")
+                    refresh_display()
+                elif y == 2 and x < len(COLOR_NAMES):
+                    # Active color (row 2)
+                    state["active_color"] = COLORS[COLOR_NAMES[x]][2]  # Bright
+                    print(f"  Active color: {COLOR_NAMES[x]}")
+                    refresh_display()
+                elif y == 0:
+                    if x == 0:
+                        # Toggle blink
+                        state["blink_enabled"] = not state["blink_enabled"]
+                        print(f"  Blink: {'ON' if state['blink_enabled'] else 'OFF'}")
+                        refresh_display()
+                    elif x == 7:
+                        # Confirm - go to test
+                        transition_to("TEST_PAD")
+                        
+            elif state["phase"] == "TEST_PAD":
+                if (x, y) == state["selected_pad"]:
+                    # Test the pad!
+                    print(f"\n🔔 PAD PRESSED! Would send: {state['selected_osc']}")
+                    # Flash active color
+                    lp.grid.led(x, y).color = state["active_color"]
+                    time.sleep(0.3)
+                    mode = 'flash' if state["blink_enabled"] else 'static'
+                    lp.grid.led(x, y, mode=mode).color = state["idle_color"]
+                elif y == 0:
+                    if x == 0:
+                        transition_to("SELECT_COLOR")
+                    elif x == 7:
+                        # Save (handled above in scene button section)
+                        pass
+    
+    # Summary
+    lp.grid.reset()
+    lp.panel.reset()
+    print()
+    print("=" * 40)
+    print("PROGRAMMING SESSION SUMMARY")
+    print("=" * 40)
+    print(f"Configured {len(state['configured_pads'])} pads:")
+    for (px, py), config in state["configured_pads"].items():
+        print(f"  ({px},{py}): {config['osc']} [{config['mode']}]")
+    print()
+    print("✅ Full programming test complete!")
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 def run_all_tests():
@@ -514,6 +895,7 @@ def run_all_tests():
         test_5_scene_buttons(lp)
         test_6_learn_mode_simulation(lp)
         test_7_bank_switching(lp)
+        test_8_full_programming(lp)
         
         print("\n" + "=" * 50)
         print("ALL TESTS COMPLETE!")
@@ -532,6 +914,7 @@ def main():
         "5": ("Scene Buttons", test_5_scene_buttons),
         "6": ("Learn Mode Simulation", test_6_learn_mode_simulation),
         "7": ("Bank Switching", test_7_bank_switching),
+        "8": ("Full Programming Workflow", test_8_full_programming),
     }
     
     if len(sys.argv) > 1:
