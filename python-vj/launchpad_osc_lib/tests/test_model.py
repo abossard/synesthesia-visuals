@@ -2,7 +2,7 @@
 Tests for domain models.
 
 Tests PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState,
-OscEvent, AppMode, LearnState, ControllerState, and Effect types.
+OscEvent, LearnPhase, LearnState, ControllerState, and Effect types.
 """
 
 import pytest
@@ -14,7 +14,7 @@ from launchpad_osc_lib.model import (
     OscCommand,
     PadBehavior,
     PadRuntimeState,
-    AppMode,
+    LearnPhase,
     LearnState,
     ControllerState,
     Effect,
@@ -55,7 +55,7 @@ class TestButtonId:
         assert pad.is_right_column()
         assert not pad.is_grid()
         assert not pad.is_top_row()
-        assert str(pad) == "Right3"
+        assert str(pad) == "Scene3"
 
     def test_grid_pad_str(self):
         """Grid pads show as (x,y)."""
@@ -264,11 +264,11 @@ class TestControllerState:
     """Test ControllerState (full app state)."""
 
     def test_default_state(self):
-        """Default state is empty and normal mode."""
+        """Default state is empty and idle learn phase."""
         state = ControllerState()
         assert state.pads == {}
         assert state.pad_runtime == {}
-        assert state.app_mode == AppMode.NORMAL
+        assert state.learn_state.phase == LearnPhase.IDLE
         assert state.active_scene is None
         assert state.active_preset is None
         assert not state.beat_pulse
@@ -277,7 +277,7 @@ class TestControllerState:
         """ControllerState is immutable."""
         state = ControllerState()
         with pytest.raises(AttributeError):
-            state.app_mode = AppMode.LEARN_WAIT_PAD
+            state.learn_state = LearnState(phase=LearnPhase.WAIT_PAD)
 
 
 # =============================================================================
@@ -323,7 +323,7 @@ class TestLearnState:
         """Default learn state is empty."""
         state = LearnState()
         assert state.selected_pad is None
-        assert state.recorded_osc_events == []
+        assert state.recorded_events == []
         assert state.candidate_commands == []
 
     def test_learn_state_with_pad(self):
@@ -333,28 +333,28 @@ class TestLearnState:
 
 
 # =============================================================================
-# AppMode Tests
+# LearnPhase Tests
 # =============================================================================
 
-class TestAppMode:
-    """Test AppMode enumeration."""
+class TestLearnPhase:
+    """Test LearnPhase enumeration."""
 
-    def test_all_modes_exist(self):
-        """All expected modes are defined."""
-        assert AppMode.NORMAL
-        assert AppMode.LEARN_WAIT_PAD
-        assert AppMode.LEARN_RECORD_OSC
-        assert AppMode.LEARN_SELECT_MSG
+    def test_all_phases_exist(self):
+        """All expected phases are defined."""
+        assert LearnPhase.IDLE
+        assert LearnPhase.WAIT_PAD
+        assert LearnPhase.RECORD_OSC
+        assert LearnPhase.CONFIG
 
-    def test_modes_are_distinct(self):
-        """All modes have distinct values."""
-        modes = [
-            AppMode.NORMAL,
-            AppMode.LEARN_WAIT_PAD,
-            AppMode.LEARN_RECORD_OSC,
-            AppMode.LEARN_SELECT_MSG
+    def test_phases_are_distinct(self):
+        """All phases have distinct values."""
+        phases = [
+            LearnPhase.IDLE,
+            LearnPhase.WAIT_PAD,
+            LearnPhase.RECORD_OSC,
+            LearnPhase.CONFIG
         ]
-        assert len(modes) == len(set(modes))
+        assert len(phases) == len(set(phases))
 
 
 if __name__ == "__main__":
