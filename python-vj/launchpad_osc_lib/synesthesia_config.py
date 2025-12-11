@@ -6,15 +6,19 @@ Single source of truth for all Synesthesia-specific constants:
 - Button type mappings (which OSC paths map to which button behavior)
 - Default ports
 - Controllable vs informational message categorization
+- Priority-based OSC recording (from standalone's osc_categories.py)
 
 This is the ONLY place where Synesthesia-specific knowledge should live.
 """
 
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from .model import PadMode, ButtonGroupType
+
+if TYPE_CHECKING:
+    from .model import OscEvent
 
 
 # =============================================================================
@@ -54,6 +58,16 @@ class OscAddressCategory(Enum):
     TIMECODE = auto()        # /audio/timecode - Playback position
     
     UNKNOWN = auto()         # Not recognized
+
+
+# =============================================================================
+# PRIORITY LEVELS (for OSC recording - lower = higher priority)
+# =============================================================================
+
+PRIORITY_SCENE = 1      # Scenes - highest priority, stops recording immediately
+PRIORITY_PRESET = 2     # Presets - high priority, stops recording immediately
+PRIORITY_CONTROL = 3    # Toggle/Push controls - stops recording immediately
+PRIORITY_NOISE = 99     # Ignore completely (audio levels, etc.)
 
 
 # =============================================================================
@@ -122,6 +136,86 @@ def categorize_address(address: str) -> OscAddressCategory:
         return OscAddressCategory.TIMECODE
     else:
         return OscAddressCategory.UNKNOWN
+
+
+def categorize_osc(address: str) -> Tuple[int, PadMode, Optional[str]]:
+    """
+    Categorize an OSC address with priority and suggested mode.
+    
+    This is the unified categorization function used by the FSM for
+    smart recording and auto-mode detection.
+    
+    Returns:
+        (priority, suggested_mode, group_name)
+        - priority: 1-99 (lower = higher priority)
+        - suggested_mode: PadMode for this address type
+        - group_name: Group for SELECTOR mode, None otherwise
+    """
+    # Scenes - highest priority, selector mode
+    if address.startswith("/scenes/"):
+        return (PRIORITY_SCENE, PadMode.SELECTOR, "scenes")
+    
+    # Presets - high priority, selector mode
+    if address.startswith("/presets/"):
+        return (PRIORITY_PRESET, PadMode.SELECTOR, "presets")
+    
+    # Favorite slots - similar to presets
+    if address.startswith("/favslots/"):
+        return (PRIORITY_PRESET, PadMode.SELECTOR, "favslots")
+    
+    # Playlist controls - one-shot
+    if address.startswith("/playlist/"):
+        return (PRIORITY_CONTROL, PadMode.ONE_SHOT, None)
+    
+    # Global controls - toggle
+    if address.startswith("/controls/global/"):
+        return (PRIORITY_CONTROL, PadMode.TOGGLE, None)
+    
+    # Meta controls - toggle (or selector for hue)
+    if address.startswith("/controls/meta/"):
+        if "hue" in address:
+            return (PRIORITY_CONTROL, PadMode.SELECTOR, "colors")
+        return (PRIORITY_CONTROL, PadMode.TOGGLE, None)
+    
+    # Audio/beat messages - noise, ignore
+    if address.startswith("/audio/"):
+        return (PRIORITY_NOISE, PadMode.ONE_SHOT, None)
+    
+    # Unknown - default to toggle
+    return (50, PadMode.TOGGLE, None)
+
+
+def should_stop_recording(address: str) -> bool:
+    """
+    Check if receiving this address should stop OSC recording.
+    
+    High-priority events (scenes, presets, controls) stop recording
+    immediately - no need to wait for timeout.
+    """
+    priority, _, _ = categorize_osc(address)
+    return priority <= PRIORITY_CONTROL
+
+
+def enrich_event(address: str, args: list, timestamp: float) -> 'OscEvent':
+    """
+    Create an OscEvent with priority metadata.
+    
+    Args:
+        address: OSC address
+        args: OSC arguments
+        timestamp: Event timestamp
+    
+    Returns:
+        OscEvent with priority set based on categorization
+    """
+    from .model import OscEvent
+    priority, _, _ = categorize_osc(address)
+    return OscEvent(
+        timestamp=timestamp,
+        address=address,
+        args=args,
+        priority=priority
+    )
 
 
 # =============================================================================

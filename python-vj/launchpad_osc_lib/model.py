@@ -3,6 +3,8 @@ Domain Models for Pad Mapping
 
 Immutable data structures for pad configuration, runtime state,
 application state, and FSM effects.
+
+Unified model for both library and standalone app.
 """
 
 from dataclasses import dataclass, field
@@ -54,6 +56,21 @@ BASE_COLOR_NAMES = list(BASE_COLORS.keys())
 
 # Alias for TUI compatibility
 COLOR_PALETTE = BASE_COLORS
+
+# Common color shortcuts (Launchpad velocity values)
+LP_OFF = 0
+LP_RED = 5
+LP_RED_DIM = 1
+LP_ORANGE = 9
+LP_YELLOW = 13
+LP_GREEN = 21
+LP_GREEN_DIM = 19
+LP_CYAN = 37
+LP_BLUE = 45
+LP_BLUE_DIM = 41
+LP_PURPLE = 53
+LP_PINK = 57
+LP_WHITE = 3
 
 
 def get_color_at_brightness(base_color: str, level: BrightnessLevel) -> int:
@@ -252,19 +269,43 @@ class PadRuntimeState:
 # APPLICATION MODES (FSM States)
 # =============================================================================
 
-class AppMode(Enum):
+class LearnPhase(Enum):
     """
-    Application mode state machine.
+    Phases within learn mode.
     
-    NORMAL: Normal operation - pads execute their configured behaviors
-    LEARN_WAIT_PAD: Waiting for user to press a pad to configure
-    LEARN_RECORD_OSC: Recording OSC messages until user saves/cancels
-    LEARN_SELECT_MSG: User selecting from recorded messages
+    IDLE: Normal operation - pads execute their configured behaviors
+    WAIT_PAD: Blinking all pads, waiting for user to press a pad to configure
+    RECORD_OSC: Recording OSC messages after pad selected
+    CONFIG: Configuration phase - selecting OSC/mode/colors
     """
-    NORMAL = auto()
-    LEARN_WAIT_PAD = auto()
-    LEARN_RECORD_OSC = auto()
-    LEARN_SELECT_MSG = auto()
+    IDLE = auto()
+    WAIT_PAD = auto()
+    RECORD_OSC = auto()
+    CONFIG = auto()
+
+
+class LearnRegister(Enum):
+    """Register (configuration section) in learn config phase."""
+    OSC_SELECT = auto()     # Selecting which OSC command
+    MODE_SELECT = auto()    # Selecting button mode
+    COLOR_SELECT = auto()   # Selecting colors
+
+
+# Backward compatibility alias
+AppMode = LearnPhase
+
+
+@dataclass(frozen=True)
+class OscEvent:
+    """Received OSC event with timestamp and priority."""
+    timestamp: float
+    address: str
+    args: List[Any] = field(default_factory=list)
+    priority: int = 99  # Lower = higher priority (scene=1, preset=2, etc.)
+    
+    def to_command(self) -> 'OscCommand':
+        """Convert to OscCommand (without timestamp)."""
+        return OscCommand(address=self.address, args=list(self.args))
 
 
 @dataclass(frozen=True)
@@ -273,23 +314,39 @@ class LearnState:
     State for Learn Mode FSM.
     
     Attributes:
-        selected_pad: Pad being configured (set in LEARN_WAIT_PAD)
-        recorded_osc_events: OSC events captured during recording
+        phase: Current learn phase
+        selected_pad: Pad being configured (set in WAIT_PAD)
+        recorded_events: OSC events captured during recording
         candidate_commands: Filtered/deduped commands for selection
-        selected_command_index: User's selection from candidates
+        active_register: Current config register (OSC/Mode/Color)
+        selected_osc_index: Index into candidate_commands
         selected_mode: User's selected pad mode
         selected_group: User's selected group (for SELECTOR)
         selected_idle_color: User's selected idle color
         selected_active_color: User's selected active color
+        idle_brightness: Brightness level for idle color
+        active_brightness: Brightness level for active color
+        osc_page: Pagination for OSC commands (8 per page)
     """
+    phase: LearnPhase = LearnPhase.IDLE
     selected_pad: Optional[ButtonId] = None
-    recorded_osc_events: List[Any] = field(default_factory=list)  # List[OscEvent]
-    candidate_commands: List[OscCommand] = field(default_factory=list)
-    selected_command_index: Optional[int] = None
-    selected_mode: Optional[PadMode] = None
-    selected_group: Optional[ButtonGroupType] = None
-    selected_idle_color: int = 0
-    selected_active_color: int = 5
+    recorded_events: List[OscEvent] = field(default_factory=list)
+    candidate_commands: List['OscCommand'] = field(default_factory=list)
+    
+    # CONFIG phase state
+    active_register: LearnRegister = LearnRegister.OSC_SELECT
+    selected_osc_index: int = 0
+    selected_mode: Optional['PadMode'] = None
+    selected_group: Optional['ButtonGroupType'] = None
+    selected_idle_color: int = LP_GREEN_DIM
+    selected_active_color: int = LP_GREEN
+    
+    # Brightness levels for color selection
+    idle_brightness: BrightnessLevel = BrightnessLevel.NORMAL
+    active_brightness: BrightnessLevel = BrightnessLevel.BRIGHT
+    
+    # Pagination for OSC commands (8 per page)
+    osc_page: int = 0
 
 
 # =============================================================================
@@ -315,7 +372,7 @@ class ControllerState:
         beat_pulse: Current beat pulse state
         last_osc_messages: Recent OSC messages for diagnostics
         learn_state: Current learn mode state
-        app_mode: Current application mode
+        blink_on: Animation blink state for learn mode
     """
     pads: Dict[ButtonId, PadBehavior] = field(default_factory=dict)
     pad_runtime: Dict[ButtonId, PadRuntimeState] = field(default_factory=dict)
@@ -335,7 +392,13 @@ class ControllerState:
     
     # FSM state
     learn_state: LearnState = field(default_factory=LearnState)
-    app_mode: AppMode = AppMode.NORMAL
+    
+    # Animation state
+    blink_on: bool = False
+
+
+# Alias for standalone app compatibility
+AppState = ControllerState
 
 
 # =============================================================================
@@ -355,12 +418,15 @@ class SendOscEffect(Effect):
 
 
 @dataclass(frozen=True)
-class SetLedEffect(Effect):
+class LedEffect(Effect):
     """Effect: Set a Launchpad LED."""
     pad_id: ButtonId
     color: int
     blink: bool = False
-    led_mode: LedMode = LedMode.STATIC
+
+
+# Alias for backward compatibility
+SetLedEffect = LedEffect
 
 
 @dataclass(frozen=True)

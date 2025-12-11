@@ -51,6 +51,15 @@ from .button_id import ButtonId
 from .model import LedMode, COLOR_PALETTE
 from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
+    # Brightness and colors
+    BrightnessLevel,
+    BASE_COLORS,
+    BASE_COLOR_NAMES,
+    get_color_at_brightness,
+    get_base_color_from_velocity,
+    LP_OFF, LP_RED, LP_RED_DIM, LP_ORANGE, LP_YELLOW,
+    LP_GREEN, LP_GREEN_DIM, LP_CYAN, LP_BLUE, LP_BLUE_DIM,
+    LP_PURPLE, LP_PINK, LP_WHITE,
     # Pad configuration types
     PadMode,
     ButtonGroupType,
@@ -58,14 +67,19 @@ from .model import (
     OscCommand,
     PadBehavior,
     PadRuntimeState,
-    # FSM state types
-    AppMode,
+    # FSM state types - unified
+    LearnPhase,
+    LearnRegister,
+    AppMode,  # Alias for LearnPhase
     LearnState,
+    OscEvent as OscEventModel,  # Renamed to avoid conflict with osc_client.OscEvent
     ControllerState,
+    AppState,  # Alias for ControllerState
     # Effect types
     Effect,
     SendOscEffect,
-    SetLedEffect,
+    LedEffect,
+    SetLedEffect,  # Alias for LedEffect
     SaveConfigEffect,
     LogEffect,
 )
@@ -92,9 +106,16 @@ from .synesthesia_config import (
     DEFAULT_OSC_PORTS,
     OscAddressCategory,
     CONTROLLABLE_PREFIXES,
+    PRIORITY_SCENE,
+    PRIORITY_PRESET,
+    PRIORITY_CONTROL,
+    PRIORITY_NOISE,
     is_controllable,
     is_noisy_audio,
     categorize_address,
+    categorize_osc,
+    should_stop_recording,
+    enrich_event,
     get_default_button_type,
     get_button_type_description,
     get_suggested_colors,
@@ -116,6 +137,22 @@ from .blink import (
     compute_all_led_states,
     get_dimmed_color,
 )
+from .display import (
+    render_state,
+    render_idle,
+    render_learn_wait_pad,
+    render_learn_record_osc,
+    render_learn_config,
+    LEARN_BUTTON,
+    SAVE_PAD,
+    TEST_PAD,
+    CANCEL_PAD,
+)
+from .controller import (
+    LaunchpadController,
+    LaunchpadInterface,
+    OscInterface,
+)
 from .synesthesia_osc import SynesthesiaOscManager
 # Demo has been removed - use lpminimk3 examples directly
 
@@ -131,10 +168,20 @@ __all__ = [
     "COLOR_PALETTE",
     "ButtonId",
     "LedMode",
+    # Brightness and colors
+    "BrightnessLevel",
+    "BASE_COLORS",
+    "BASE_COLOR_NAMES",
+    "get_color_at_brightness",
+    "get_base_color_from_velocity",
+    "LP_OFF", "LP_RED", "LP_RED_DIM", "LP_ORANGE", "LP_YELLOW",
+    "LP_GREEN", "LP_GREEN_DIM", "LP_CYAN", "LP_BLUE", "LP_BLUE_DIM",
+    "LP_PURPLE", "LP_PINK", "LP_WHITE",
     # OSC
     "OscClient",
     "OscConfig",
     "OscEvent",
+    "OscEventModel",
     "SynesthesiaOscManager",
     # Pad configuration types
     "PadMode",
@@ -144,12 +191,16 @@ __all__ = [
     "PadBehavior",
     "PadRuntimeState",
     # FSM state types
+    "LearnPhase",
+    "LearnRegister",
     "AppMode",
     "LearnState",
     "ControllerState",
+    "AppState",
     # Effect types
     "Effect",
     "SendOscEffect",
+    "LedEffect",
     "SetLedEffect",
     "SaveConfigEffect",
     "LogEffect",
@@ -175,9 +226,11 @@ __all__ = [
     "is_noisy_audio",
     "NOISY_AUDIO_PREFIXES",
     "categorize_address",
+    "categorize_osc",
     "get_default_button_type",
     "get_button_type_description",
     "get_suggested_colors",
+    "enrich_event",
     "BEAT_ADDRESS",
     "BPM_ADDRESS",
     "BUTTON_TYPE_MAPPINGS",
@@ -187,6 +240,20 @@ __all__ = [
     "BankManager",
     "BankManagerState",
     "create_default_banks",
+    # Display / LED rendering
+    "render_state",
+    "render_idle",
+    "render_learn_wait_pad",
+    "render_learn_record_osc",
+    "render_learn_config",
+    "LEARN_BUTTON",
+    "SAVE_PAD",
+    "TEST_PAD",
+    "CANCEL_PAD",
+    # Controller
+    "LaunchpadController",
+    "LaunchpadInterface",
+    "OscInterface",
     # Blink / Beat sync
     "compute_blink_phase",
     "should_led_be_lit",

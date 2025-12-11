@@ -6,6 +6,7 @@ Each bank holds pad configurations for the 8x8 grid and right column.
 Top row is reserved for bank switching.
 
 Groups (SCENES, PRESETS, etc.) are shared across all banks.
+Bank switching is blocked during CONFIG phase (when editing a pad).
 """
 
 from __future__ import annotations
@@ -14,15 +15,16 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from .button_id import ButtonId
+from .model import (
+    PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState,
+    LP_OFF, LP_GREEN, LP_BLUE,
+)
 
-# Color constants
-LP_OFF = 0
-LP_GREEN = 17
-LP_BLUE = 40
-from .model import PadMode, ButtonGroupType, OscCommand, PadBehavior, PadRuntimeState
+if TYPE_CHECKING:
+    from .model import ControllerState
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +133,7 @@ class BankManager:
         self.state = BankManagerState()
         self._on_bank_switch: Optional[Callable[[int, Bank], None]] = None
         self._on_led_update: Optional[Callable[[ButtonId, int, bool], None]] = None
+        self._is_in_config_phase: Optional[Callable[[], bool]] = None
     
     # =========================================================================
     # CALLBACKS
@@ -143,6 +146,21 @@ class BankManager:
     def set_led_update_callback(self, callback: Callable[[ButtonId, int, bool], None]) -> None:
         """Set callback for LED updates (pad_id, color, blink)."""
         self._on_led_update = callback
+    
+    def set_config_phase_checker(self, checker: Callable[[], bool]) -> None:
+        """
+        Set a function to check if we're in CONFIG phase.
+        
+        Bank switching is blocked during CONFIG phase to prevent
+        losing pad configuration mid-edit.
+        """
+        self._is_in_config_phase = checker
+    
+    def _can_switch_bank(self) -> bool:
+        """Check if bank switching is currently allowed."""
+        if self._is_in_config_phase is not None:
+            return not self._is_in_config_phase()
+        return True
     
     # =========================================================================
     # BANK MANAGEMENT
@@ -230,6 +248,8 @@ class BankManager:
         """
         Handle top row button press for bank switching.
         
+        Bank switching is blocked during CONFIG phase.
+        
         Args:
             pad_id: Top row pad (y=-1)
         
@@ -237,6 +257,11 @@ class BankManager:
             True if handled as bank switch
         """
         if not pad_id.is_top_row():
+            return False
+        
+        # Block bank switching during CONFIG phase
+        if not self._can_switch_bank():
+            logger.debug(f"Bank switch blocked - in CONFIG phase")
             return False
         
         bank_index = pad_id.x

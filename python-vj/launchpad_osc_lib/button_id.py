@@ -43,10 +43,15 @@ class ButtonId(NamedTuple):
         """Check if this is a right column button (scene buttons)."""
         return self.x == 8 and 0 <= self.y <= 7
     
+    # Alias for standalone app compatibility
+    def is_scene_button(self) -> bool:
+        """Alias for is_right_column() - check if this is a scene button."""
+        return self.is_right_column()
+    
     def __str__(self) -> str:
         if self.is_top_row():
             return f"Top{self.x}"
         elif self.is_right_column():
-            return f"Right{self.y}"
+            return f"Scene{self.y}"
         else:
             return f"({self.x},{self.y})"
