@@ -158,8 +158,13 @@ class LaunchpadDevice:
         """
         Set LED color for a button.
         
+        Handles all button types:
+        - Grid (x=0-7, y=0-7): Uses lp.grid.led(x, y)
+        - Top row (x=0-7, y=-1): Uses lp.panel.led(x, 0)
+        - Scene buttons (x=8, y=0-7): Uses lp.panel.led(8, y+1)
+        
         Args:
-            pad_id: Button identifier
+            pad_id: Button identifier (in our coordinate system)
             color: Launchpad color value (0-127)
             pulse: If True, LED will flash (lpminimk3 uses 'flash' mode for blinking)
         """
@@ -179,19 +184,30 @@ class LaunchpadDevice:
         try:
             # lpminimk3 supports 'static' and 'flash' modes
             mode = 'flash' if pulse else 'static'
-            led = self._lp.grid.led(pad_id.x, pad_id.y, mode=mode)
+            
+            if pad_id.is_top_row():
+                # Top row: y=-1 in our coords → panel.led(x, 0) in lpminimk3
+                led = self._lp.panel.led(pad_id.x, 0, mode=mode)
+            elif pad_id.is_right_column():
+                # Scene buttons: x=8, y=0-7 in our coords → panel.led(8, y+1) in lpminimk3
+                led = self._lp.panel.led(8, pad_id.y + 1, mode=mode)
+            else:
+                # Grid: x=0-7, y=0-7 in our coords → grid.led(x, y) in lpminimk3
+                led = self._lp.grid.led(pad_id.x, pad_id.y, mode=mode)
+            
             led.color = color
             logger.debug(f"LED {pad_id} → color={color} (mode={mode})")
         except Exception as e:
             logger.error(f"LED error for {pad_id}: {e}")
     
     def clear_all(self):
-        """Turn off all LEDs."""
+        """Turn off all LEDs (grid and panel)."""
         if not self._lp:
             return
         
         try:
             self._lp.grid.reset()
+            self._lp.panel.reset()
             self._led_cache.clear()
             logger.info("Cleared all LEDs")
         except Exception as e:

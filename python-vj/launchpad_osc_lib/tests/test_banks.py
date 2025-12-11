@@ -411,19 +411,23 @@ class TestBankManagerPersistence:
 class TestCreateDefaultBanks:
     """Tests for create_default_banks factory."""
     
-    def test_creates_4_banks(self):
-        """Factory creates 4 default banks."""
+    def test_creates_8_banks(self):
+        """Factory creates 8 default banks (one per top row button)."""
         manager = create_default_banks()
         
-        assert manager.get_bank_count() == 4
+        assert manager.get_bank_count() == 8
         assert manager.get_bank(0).name == "Scenes"
         assert manager.get_bank(1).name == "Presets"
         assert manager.get_bank(2).name == "Effects"
-        assert manager.get_bank(3).name == "Custom"
+        assert manager.get_bank(3).name == "Transitions"
+        assert manager.get_bank(4).name == "Media"
+        assert manager.get_bank(5).name == "Audio"
+        assert manager.get_bank(6).name == "Color"
+        assert manager.get_bank(7).name == "Custom"
     
     def test_banks_are_empty(self):
         """Default banks have no pad configurations."""
         manager = create_default_banks()
         
-        for i in range(4):
+        for i in range(8):
             assert len(manager.get_bank(i).pads) == 0

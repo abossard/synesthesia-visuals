@@ -15,10 +15,20 @@ class ButtonId(NamedTuple):
     """
     Type-safe button identifier using (x, y) coordinates.
     
-    Compatible with lpminimk3's Button.x and Button.y properties.
-    - Main 8x8 grid: x, y in range 0-7
-    - Top row buttons: x in range 0-7, y = -1
-    - Right column buttons: x = 8, y in range 0-7
+    Coordinate System (after y-1 fix applied to lpminimk3 events):
+    - Main 8x8 grid: x=0-7, y=0-7 (matches LED grid addressing)
+    - Top row buttons: x=0-7, y=-1 (Up, Down, Left, Right, Session, Drums, Keys, User)
+    - Right column buttons (scene launch): x=8, y=0-7
+    
+    lpminimk3 Raw Coordinates:
+    - panel.y=0 is top row control buttons
+    - panel.y=1-8 is the 8x8 grid
+    - panel.x=8 is scene launch column
+    
+    LED Control:
+    - Grid: lp.grid.led(x, y) where x=0-7, y=0-7
+    - Top row: lp.panel.led(x, 0) where x=0-7
+    - Scene launch: lp.panel.led(8, y) where y=0-7 (raw y, not fixed)
     
     Can be used as dictionary keys and compared for equality.
     Immutable and hashable.

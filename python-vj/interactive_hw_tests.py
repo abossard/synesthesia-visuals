@@ -4,9 +4,18 @@ Interactive Hardware Tests for Launchpad Mini MK3
 
 Run specific tests by number or 'all' for full suite.
 Usage: python interactive_hw_tests.py [test_number]
+
+LPMINIMK3 COORDINATE SYSTEM:
+- panel.y=0 is the TOP ROW (control buttons: up, down, left, right, session, drums, keys, user)
+- panel.y=1-8 is the 8x8 GRID (y=1 is bottom row, y=8 is top row)
+- panel.x=8 is the SCENE LAUNCH column (right edge)
+
+OUR COORDINATE SYSTEM (after y-1 fix):
+- y=-1 is the TOP ROW (control buttons)
+- y=0-7 is the 8x8 GRID (matches LED addressing)
+- x=8 is the SCENE LAUNCH column
 """
 import sys
-import time
 import lpminimk3
 
 # Color constants
@@ -21,6 +30,10 @@ WHITE = 3
 ORANGE = 9
 PINK = 57
 
+# Top row button names (x=0-7 at y=-1)
+TOP_ROW_BUTTONS = ["Up", "Down", "Left", "Right", "Session", "Drums", "Keys", "User"]
+
+
 def get_launchpad():
     """Connect to Launchpad in programmer mode."""
     lps = lpminimk3.find_launchpads()
@@ -29,23 +42,35 @@ def get_launchpad():
         sys.exit(1)
     lp = lps[0]
     lp.open()
+    
+    # Verify and set programmer mode
     lp.mode = lpminimk3.Mode.PROG
+    print("✅ Launchpad connected in PROGRAMMER mode")
+    print(f"   Panel dimensions: {lp.panel.width}x{lp.panel.height}")
+    print(f"   Grid dimensions: {lp.grid.width}x{lp.grid.height}")
+    print()
+    
     lp.grid.reset()
+    lp.panel.reset()
     return lp
 
+
 def wait_for_press(lp, count=1):
-    """Wait for N button presses, return list of (x, y) tuples (LED coordinates)."""
+    """Wait for N button presses, return list of (x, y, raw_y) tuples."""
     results = []
     while len(results) < count:
         event = lp.panel.buttons().poll_for_event()
         if event and event.type == lpminimk3.ButtonEvent.PRESS and event.button:
-            x, y = event.button.x, event.button.y - 1  # Apply y-1 fix
-            results.append((x, y))
+            raw_x, raw_y = event.button.x, event.button.y
+            fixed_y = raw_y - 1  # Apply y-1 fix
+            results.append((raw_x, fixed_y, raw_y))
     return results
+
 
 def wait_for_any_press(lp):
     """Wait for any button press, return (x, y) in LED coordinates."""
-    return wait_for_press(lp, 1)[0]
+    result = wait_for_press(lp, 1)[0]
+    return (result[0], result[1])  # Return only x, fixed_y
 
 
 # =============================================================================
@@ -151,46 +176,72 @@ def test_3_flash_mode(lp):
 
 
 # =============================================================================
-# TEST 4: Top Row Detection
+# TEST 4: Top Row Detection (Control Buttons)
 # =============================================================================
 def test_4_top_row(lp):
-    """Test top row button detection."""
+    """Test top row button detection - all 8 control buttons."""
     print("\n" + "=" * 50)
-    print("TEST 4: Top Row Detection")
+    print("TEST 4: Top Row Detection (Control Buttons)")
     print("=" * 50)
     print()
-    
-    # Light the top row (control buttons)
-    # In lpminimk3, top row is accessed differently
-    print("Note: Top row (control buttons) may have different coordinates.")
-    print("Press the 8 buttons at the very top of the Launchpad.")
-    print("We'll detect what coordinates they report.")
+    print("TOP ROW BUTTONS (above the grid):")
+    print("  x=0: Up       x=4: Session")
+    print("  x=1: Down     x=5: Drums")
+    print("  x=2: Left     x=6: Keys")
+    print("  x=3: Right    x=7: User")
+    print()
+    print("In lpminimk3, top row is y=0 (raw)")
+    print("With our y-1 fix, top row becomes y=-1")
     print()
     
-    # Light the grid top row as reference
+    # Light the top row buttons for visual feedback
+    print("Lighting top row buttons...")
     for col in range(8):
-        lp.grid.led(col, 7).color = CYAN
-    print("Top grid row (y=7) is lit cyan for reference.")
-    print()
-    print("Press 4 top control buttons to see their coordinates...")
+        try:
+            lp.panel.led(col, 0).color = [RED, ORANGE, YELLOW, GREEN, CYAN, BLUE, MAGENTA, WHITE][col]
+        except Exception as e:
+            print(f"  ⚠️ Could not light top row button {col}: {e}")
+    
+    # Also light grid row 7 as reference
+    for col in range(8):
+        lp.grid.led(col, 7).color = 1  # Dim for comparison
+    print("Grid row 7 (y=7) lit dim as reference.")
     print()
     
-    for i in range(4):
-        event = None
-        while not event or event.type != lpminimk3.ButtonEvent.PRESS:
-            event = lp.panel.buttons().poll_for_event()
+    print("Press ALL 8 top row buttons to verify detection.")
+    print("(The row ABOVE the grid, where Up/Down/Left/Right and Session/Drums/Keys/User are)")
+    print()
+    
+    detected = {}
+    while len(detected) < 8:
+        event = lp.panel.buttons().poll_for_event()
+        if not event or event.type != lpminimk3.ButtonEvent.PRESS or not event.button:
+            continue
         
-        x, y = event.button.x, event.button.y
-        fixed_y = y - 1
-        print(f"  Press #{i+1}: raw=({x},{y}) -> fixed=({x},{fixed_y})")
+        raw_x, raw_y = event.button.x, event.button.y
+        fixed_y = raw_y - 1
         
-        # If it's a top row button (y=-1 after fix), it's outside grid
-        if fixed_y == -1:
-            print(f"    → This is a TOP ROW control button (x={x})")
-        elif fixed_y >= 0 and fixed_y <= 7:
-            print(f"    → This is a GRID button")
+        if raw_x in detected:
+            continue
+        
+        if fixed_y == -1:  # Top row
+            button_name = TOP_ROW_BUTTONS[raw_x] if raw_x < 8 else f"x={raw_x}"
+            detected[raw_x] = button_name
+            print(f"  ✅ raw=({raw_x},{raw_y}) → fixed=({raw_x},{fixed_y}) = TOP ROW: {button_name}")
+            print(f"     [{len(detected)}/8 detected]")
+        elif fixed_y >= 0 and fixed_y <= 7 and raw_x <= 7:
+            print(f"  ℹ️  raw=({raw_x},{raw_y}) → fixed=({raw_x},{fixed_y}) = GRID (not top row)")
+        elif raw_x == 8:
+            print(f"  ℹ️  raw=({raw_x},{raw_y}) → fixed=({raw_x},{fixed_y}) = SCENE LAUNCH (not top row)")
+    
+    print()
+    print("All 8 top row buttons detected!")
+    print("Button mapping verified:")
+    for x in range(8):
+        print(f"  x={x}: {detected.get(x, 'NOT DETECTED')}")
     
     lp.grid.reset()
+    lp.panel.reset()
     print()
     print("✅ Top row detection complete!")
 
@@ -204,28 +255,35 @@ def test_5_scene_buttons(lp):
     print("TEST 5: Scene Buttons (Right Column)")
     print("=" * 50)
     print()
+    print("Scene launch buttons are on the RIGHT EDGE (x=8)")
+    print("They report as Note messages, not CC like top row.")
+    print()
     
     # Light rightmost grid column for reference
     for row in range(8):
         lp.grid.led(7, row).color = ORANGE
     print("Rightmost grid column (x=7) is lit orange for reference.")
     print()
-    print("Press the 4 scene launch buttons (right edge, outside the grid)...")
+    print("Press 4 scene launch buttons (the column to the RIGHT of the orange)...")
     print()
     
-    for i in range(4):
-        event = None
-        while not event or event.type != lpminimk3.ButtonEvent.PRESS:
-            event = lp.panel.buttons().poll_for_event()
+    detected = []
+    while len(detected) < 4:
+        event = lp.panel.buttons().poll_for_event()
+        if not event or event.type != lpminimk3.ButtonEvent.PRESS or not event.button:
+            continue
         
-        x, y = event.button.x, event.button.y
-        fixed_y = y - 1
-        print(f"  Press #{i+1}: raw=({x},{y}) -> fixed=({x},{fixed_y})")
+        raw_x, raw_y = event.button.x, event.button.y
+        fixed_y = raw_y - 1
         
-        if x == 8:
-            print(f"    → This is a SCENE LAUNCH button (row {fixed_y})")
-        elif x <= 7:
-            print(f"    → This is a GRID button")
+        if raw_x == 8:
+            detected.append(fixed_y)
+            print(f"  ✅ raw=({raw_x},{raw_y}) → fixed=({raw_x},{fixed_y})")
+            print(f"     SCENE LAUNCH button (row {fixed_y})")
+        elif fixed_y == -1:
+            print(f"  ℹ️  raw=({raw_x},{raw_y}) → TOP ROW (not scene launch)")
+        else:
+            print(f"  ℹ️  raw=({raw_x},{raw_y}) → GRID (not scene launch)")
     
     lp.grid.reset()
     print()
@@ -310,7 +368,7 @@ def test_6_learn_mode_simulation(lp):
                     # "Record" this pad
                     configured_pads[selected_pad] = MAGENTA
                     print(f"   ✅ Recorded OSC for pad {selected_pad}")
-                    print(f"   Pad configured! Select another or exit learn mode.")
+                    print("   Pad configured! Select another or exit learn mode.")
                     lp.grid.led(selected_pad[0], selected_pad[1]).color = MAGENTA
                     selected_pad = None
                 elif learn_mode:
@@ -341,60 +399,76 @@ def test_6_learn_mode_simulation(lp):
 
 
 # =============================================================================
-# TEST 7: Bank Switching Simulation
+# TEST 7: Bank Switching (Using Actual Top Row)
 # =============================================================================
 def test_7_bank_switching(lp):
-    """Simulate bank switching using actual top row control buttons."""
+    """Bank switching using all 8 top row control buttons (y=-1)."""
     print("\n" + "=" * 50)
-    print("TEST 7: Bank Switching (Top Row)")
+    print("TEST 7: Bank Switching (Top Row - 8 Banks)")
     print("=" * 50)
     print()
     
     banks = [
-        {"name": "Bank A", "color": RED},
-        {"name": "Bank B", "color": GREEN},
-        {"name": "Bank C", "color": BLUE},
-        {"name": "Bank D", "color": YELLOW},
+        {"name": "Bank A (Up)", "color": RED, "button": "Up"},
+        {"name": "Bank B (Down)", "color": GREEN, "button": "Down"},
+        {"name": "Bank C (Left)", "color": BLUE, "button": "Left"},
+        {"name": "Bank D (Right)", "color": YELLOW, "button": "Right"},
+        {"name": "Bank E (Session)", "color": CYAN, "button": "Session"},
+        {"name": "Bank F (Drums)", "color": MAGENTA, "button": "Drums"},
+        {"name": "Bank G (Keys)", "color": ORANGE, "button": "Keys"},
+        {"name": "Bank H (User)", "color": WHITE, "button": "User"},
     ]
     
     active_bank = 0
     
-    # Light top row bank buttons (y=-1 in our coordinate system)
-    # Top row LEDs use panel.led() not grid.led()
+    # Light top row bank buttons (panel.led at y=0 for lpminimk3)
     def light_top_row_banks():
         for i, bank in enumerate(banks):
-            # Top row uses different LED access - try via panel
             try:
-                if i == active_bank:
-                    lp.panel.led(i, 0).color = bank["color"]
-                else:
-                    lp.panel.led(i, 0).color = 1  # Dim
-            except:
-                pass  # Some top row LEDs might not be controllable
+                color = bank["color"] if i == active_bank else 1  # Active vs dim
+                lp.panel.led(i, 0).color = color
+            except Exception as e:
+                print(f"  ⚠️ Could not light top button {i}: {e}")
     
     light_top_row_banks()
     
-    # Fill bank content on the 8x8 grid
+    # Fill bank content on the 8x8 grid - unique pattern for each bank
     def show_bank_content(bank_idx):
         for row in range(8):
             for col in range(8):
-                if bank_idx == 0:
+                if bank_idx == 0:  # Checkerboard
                     color = RED if (col + row) % 2 == 0 else OFF
-                elif bank_idx == 1:
+                elif bank_idx == 1:  # X pattern
                     color = GREEN if col == row or col == 7 - row else OFF
-                elif bank_idx == 2:
+                elif bank_idx == 2:  # Left half
                     color = BLUE if col < 4 else OFF
-                else:
+                elif bank_idx == 3:  # Bottom half
                     color = YELLOW if row < 4 else OFF
+                elif bank_idx == 4:  # Border
+                    color = CYAN if row == 0 or row == 7 or col == 0 or col == 7 else OFF
+                elif bank_idx == 5:  # Center square
+                    color = MAGENTA if 2 <= col <= 5 and 2 <= row <= 5 else OFF
+                elif bank_idx == 6:  # Vertical stripes
+                    color = ORANGE if col % 2 == 0 else OFF
+                else:  # Horizontal stripes
+                    color = WHITE if row % 2 == 0 else OFF
                 lp.grid.led(col, row).color = color
     
     show_bank_content(active_bank)
     
     print(f"Active: {banks[active_bank]['name']}")
     print()
-    print("Press TOP ROW buttons (above the grid, y=-1) to switch banks.")
-    print("  Button 0-3 = Banks A-D")
-    print("Press any SCENE button (right column, x=8) to exit.")
+    print("Use ALL 8 TOP ROW buttons to switch banks:")
+    print("  Up (x=0)      = Bank A (red checkerboard)")
+    print("  Down (x=1)    = Bank B (green X)")
+    print("  Left (x=2)    = Bank C (blue left half)")
+    print("  Right (x=3)   = Bank D (yellow bottom half)")
+    print("  Session (x=4) = Bank E (cyan border)")
+    print("  Drums (x=5)   = Bank F (magenta center)")
+    print("  Keys (x=6)    = Bank G (orange stripes)")
+    print("  User (x=7)    = Bank H (white stripes)")
+    print()
+    print("Press any SCENE LAUNCH button (right column) to exit.")
     print()
     
     while True:
@@ -402,25 +476,25 @@ def test_7_bank_switching(lp):
         if not event or event.type != lpminimk3.ButtonEvent.PRESS or not event.button:
             continue
         
-        x, y = event.button.x, event.button.y - 1  # Apply y-1 fix
+        raw_x, raw_y = event.button.x, event.button.y
+        fixed_y = raw_y - 1  # Apply y-1 fix
         
         # Scene button (right column) = exit
-        if x == 8:
+        if raw_x == 8:
             print("👋 Exiting bank test")
             break
         
-        # Top row button (y=-1) = bank switch
-        if y == -1 and x < 4:
-            old_bank = active_bank
-            active_bank = x
-            
-            # Update top row bank button LEDs
+        # Top row button (y=-1 after fix, y=0 raw) = bank switch
+        if fixed_y == -1 and raw_x < 8:
+            active_bank = raw_x
             light_top_row_banks()
-            
-            print(f"Switched to {banks[active_bank]['name']}")
+            print(f"✅ Switched to {banks[active_bank]['name']} (pressed {TOP_ROW_BUTTONS[raw_x]})")
             show_bank_content(active_bank)
+        elif fixed_y >= 0:
+            print(f"  ℹ️ Grid pad ({raw_x},{fixed_y}) pressed")
     
     lp.grid.reset()
+    lp.panel.reset()
     print()
     print("✅ Bank switching test complete!")
 

@@ -560,21 +560,34 @@ class BankManager:
 # =============================================================================
 
 
+# Top row button names (x=0-7 at y=-1 in our coordinate system)
+# These map to lpminimk3 panel.led(x, 0) for LED control
+TOP_ROW_BUTTONS = ["Up", "Down", "Left", "Right", "Session", "Drums", "Keys", "User"]
+
+
 def create_default_banks() -> BankManager:
     """
     Create a BankManager with default empty banks.
     
-    Creates 4 default banks:
-    - Bank 0: Scenes
-    - Bank 1: Presets
-    - Bank 2: Effects
-    - Bank 3: Custom
+    Creates 8 default banks, one per top row button:
+    - Bank 0 (Up): Scenes
+    - Bank 1 (Down): Presets
+    - Bank 2 (Left): Effects
+    - Bank 3 (Right): Transitions
+    - Bank 4 (Session): Media
+    - Bank 5 (Drums): Audio
+    - Bank 6 (Keys): Color
+    - Bank 7 (User): Custom
     """
     manager = BankManager()
     
     manager.add_bank(Bank(name="Scenes", color=LP_BLUE, active_color=LP_GREEN))
     manager.add_bank(Bank(name="Presets", color=LP_BLUE, active_color=LP_GREEN))
     manager.add_bank(Bank(name="Effects", color=LP_BLUE, active_color=LP_GREEN))
+    manager.add_bank(Bank(name="Transitions", color=LP_BLUE, active_color=LP_GREEN))
+    manager.add_bank(Bank(name="Media", color=LP_BLUE, active_color=LP_GREEN))
+    manager.add_bank(Bank(name="Audio", color=LP_BLUE, active_color=LP_GREEN))
+    manager.add_bank(Bank(name="Color", color=LP_BLUE, active_color=LP_GREEN))
     manager.add_bank(Bank(name="Custom", color=LP_BLUE, active_color=LP_GREEN))
     
     return manager

@@ -71,6 +71,11 @@ LP_BLUE_DIM = 41
 LP_PURPLE = 53
 LP_PINK = 57
 LP_WHITE = 3
+LP_MAGENTA = 53  # Same as purple
+
+# Top row button names (x=0-7 at y=-1 in our coordinate system)
+# Maps to lpminimk3: panel.led(x, 0) for LEDs, panel y=0 for button events
+TOP_ROW_BUTTONS = ["Up", "Down", "Left", "Right", "Session", "Drums", "Keys", "User"]
 
 
 def get_color_at_brightness(base_color: str, level: BrightnessLevel) -> int:
