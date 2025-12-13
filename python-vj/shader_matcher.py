@@ -779,14 +779,21 @@ class ShaderIndexer:
             logger.debug(f"ChromaDB init skipped: {e}")
             self._use_chromadb = False
     
-    def scan_shaders(self) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
+    def scan_shaders(self, use_cache: bool = False) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
         """
         Scan shader directories for both ISF and GLSL shaders.
+        
+        Args:
+            use_cache: If True and cache exists, return cached results without I/O
         
         Returns:
             (analyzed, unanalyzed) - Lists of (shader_path, shader_type) tuples
             shader_type is 'isf' or 'glsl'
         """
+        # Return cached scan if available
+        if use_cache and hasattr(self, '_scan_cache') and self._scan_cache:
+            return self._scan_cache
+        
         analyzed = []
         unanalyzed = []
         
@@ -822,6 +829,9 @@ class ShaderIndexer:
             logger.debug(f"GLSL directory not found: {self.glsl_dir}")
         
         logger.debug(f"Scanned: {len(analyzed)} analyzed, {len(unanalyzed)} unanalyzed")
+        
+        # Cache the result
+        self._scan_cache = (analyzed, unanalyzed)
         return analyzed, unanalyzed
     
     def sync(self) -> Dict[str, int]:
@@ -1222,6 +1232,9 @@ class ShaderIndexer:
         Returns:
             True if saved successfully
         """
+        # Invalidate stats cache when analysis is saved
+        self._cached_stats = None
+        
         # Handle prefixed names
         if name.startswith('isf/'):
             shader_type = 'isf'
@@ -1515,11 +1528,19 @@ class ShaderIndexer:
         results.sort(key=lambda x: x[1])
         return results[:top_k]
     
-    def get_stats(self) -> Dict[str, Any]:
-        """Get indexer statistics."""
+    def get_stats(self, use_cache: bool = True) -> Dict[str, Any]:
+        """Get indexer statistics.
+        
+        Args:
+            use_cache: If True, return cached stats (fast). If False, rescan directories.
+        """
+        # Return cached stats if available and cache requested
+        if use_cache and hasattr(self, '_cached_stats') and self._cached_stats:
+            return self._cached_stats
+        
         analyzed, unanalyzed = self.scan_shaders()
         
-        return {
+        self._cached_stats = {
             'shaders_dir': str(self.shaders_dir),
             'total_shaders': len(analyzed) + len(unanalyzed),
             'analyzed': len(analyzed),
@@ -1528,6 +1549,12 @@ class ShaderIndexer:
             'chromadb_enabled': self._use_chromadb,
             'chromadb_count': self._collection.count() if self._collection else 0
         }
+        return self._cached_stats
+    
+    def invalidate_stats_cache(self):
+        """Clear cached stats and scan results to force rescan on next get_stats()."""
+        self._cached_stats = None
+        self._scan_cache = None
 
 
 # =============================================================================

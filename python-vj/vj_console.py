@@ -33,10 +33,23 @@ from rich.text import Text
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
-from midi_console import MidiTogglesPanel, MidiActionsPanel, MidiDebugPanel, MidiStatusPanel, ControllerSelectionModal
-from midi_router import MidiRouter, ConfigManager
-from midi_domain import RouterConfig, DeviceConfig
-from midi_infrastructure import list_controllers
+
+# Launchpad control (replaces MIDI Router)
+try:
+    from launchpad_console import (
+        LaunchpadStatusPanel, LaunchpadPadsPanel, 
+        LaunchpadInstructionsPanel, LaunchpadOscDebugPanel,
+        LaunchpadTestsPanel, LaunchpadManager,
+        LAUNCHPAD_LIB_AVAILABLE,
+    )
+except ImportError:
+    LAUNCHPAD_LIB_AVAILABLE = False
+    LaunchpadStatusPanel = None
+    LaunchpadPadsPanel = None
+    LaunchpadInstructionsPanel = None
+    LaunchpadOscDebugPanel = None
+    LaunchpadTestsPanel = None
+    LaunchpadManager = None
 
 # Shader matching
 try:
@@ -1181,11 +1194,6 @@ class VJConsoleApp(App):
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
-        Binding("l", "midi_learn", "Learn", show=False),
-        Binding("c", "midi_select_controller", "Controller", show=False),
-        Binding("r", "midi_rename", "Rename", show=False),
-        Binding("d", "midi_delete", "Delete", show=False),
-        Binding("space", "midi_test_toggle", "Toggle", show=False),
         # Shader analysis bindings (active on shaders tab)
         Binding("p", "shader_toggle_analysis", "Pause/Resume Analysis", show=False),
         Binding("slash", "shader_search_mood", "Search by Mood", show=False),
@@ -1196,7 +1204,6 @@ class VJConsoleApp(App):
     current_tab = reactive("master")
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
-    midi_selected_toggle = reactive(0)
 
     def __init__(self):
         super().__init__()
@@ -1207,10 +1214,9 @@ class VJConsoleApp(App):
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         
-        # MIDI Router (lazy start)
-        self.midi_router: Optional[MidiRouter] = None
-        self.midi_messages: List[Tuple[float, str, Any]] = []  # (timestamp, direction, message)
-        self._setup_midi_router()
+        # Launchpad controller (replaces MIDI Router)
+        self.launchpad_manager: Optional['LaunchpadManager'] = None
+        self._setup_launchpad()
         
         # Shader Indexer
         self.shader_indexer: Optional[Any] = None  # ShaderIndexer when available
@@ -1228,31 +1234,34 @@ class VJConsoleApp(App):
                 return p
         return Path.cwd()
     
-    def _setup_midi_router(self) -> None:
-        """Initialize MIDI router."""
+    def _setup_launchpad(self) -> None:
+        """Initialize Launchpad controller."""
+        if not LAUNCHPAD_LIB_AVAILABLE or LaunchpadManager is None:
+            logger.info("Launchpad library not available - skipping")
+            return
+        
         try:
-            # Try to load existing config or create default
-            config_path = Path.home() / '.midi_router' / 'config.json'
-            config_manager = ConfigManager(config_path)
+            self.launchpad_manager = LaunchpadManager(
+                osc_send_port=7777,
+                osc_receive_port=9999,
+            )
+            # Set callback for state changes (will be called from background thread)
+            self.launchpad_manager.set_state_callback(self._on_launchpad_state_change)
             
-            config = config_manager.load()
-            if not config:
-                # Create default config
-                logger.info("Creating default MIDI router config")
-                config = RouterConfig(
-                    controller=DeviceConfig(name_pattern="Launchpad"),
-                    virtual_output=DeviceConfig(name_pattern="MagicBus"),
-                    toggles={}
-                )
-                config_manager.save(config)
-            
-            # Create router but do not auto-start; user can start via UI/CLI when needed
-            self.midi_router = MidiRouter(config_manager)
-            logger.info("MIDI router initialized (start deferred)")
+            # Start the manager (non-blocking - runs in background thread)
+            if self.launchpad_manager.start():
+                logger.info("Launchpad manager started")
+            else:
+                logger.warning("Launchpad manager start failed")
                 
         except Exception as e:
-            logger.warning(f"MIDI router initialization failed: {e}")
-            self.midi_router = None
+            logger.warning(f"Launchpad initialization failed: {e}")
+            self.launchpad_manager = None
+    
+    def _on_launchpad_state_change(self, state) -> None:
+        """Handle Launchpad state change (called from background thread)."""
+        # Use call_from_thread to safely update UI from background thread
+        self.call_from_thread(self._update_launchpad_panels)
     
     def _setup_shader_indexer(self) -> None:
         """Initialize shader indexer and analysis worker."""
@@ -1341,14 +1350,22 @@ class VJConsoleApp(App):
             with TabPane("4️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
             
-            with TabPane("5️⃣ MIDI Router", id="midi"):
+            # Tab 5: Launchpad Controller
+            with TabPane("5️⃣ Launchpad", id="launchpad"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
-                        yield MidiActionsPanel(id="midi-actions", classes="panel")
-                        yield MidiStatusPanel(id="midi-status", classes="panel")
+                        if LAUNCHPAD_LIB_AVAILABLE and LaunchpadStatusPanel:
+                            yield LaunchpadStatusPanel(id="lp-status", classes="panel")
+                            yield LaunchpadPadsPanel(id="lp-pads", classes="panel")
+                        else:
+                            yield Static("[dim]launchpad_osc_lib not available[/]", classes="panel")
                     with VerticalScroll(id="right-col"):
-                        yield MidiTogglesPanel(id="midi-toggles", classes="panel")
-                        yield MidiDebugPanel(id="midi-debug", classes="panel full-height")
+                        if LAUNCHPAD_LIB_AVAILABLE and LaunchpadInstructionsPanel:
+                            yield LaunchpadInstructionsPanel(id="lp-instructions", classes="panel")
+                            yield LaunchpadTestsPanel(id="lp-tests", classes="panel")
+                            yield LaunchpadOscDebugPanel(id="lp-osc", classes="panel full-height")
+                        else:
+                            yield Static("[dim]Connect Launchpad and restart[/]", classes="panel")
             
             # Tab 6: Shader Indexer
             with TabPane("7️⃣ Shaders", id="shaders"):
@@ -1373,9 +1390,9 @@ class VJConsoleApp(App):
         self._start_karaoke()
         # Audio analyzer starts on 'a' keypress, not automatically
         
-        # Background updates
+        # Background updates - stagger intervals to reduce CPU spikes
         self.set_interval(0.5, self._update_data)
-        self.set_interval(2.0, self._check_apps)
+        self.set_interval(5.0, self._check_apps)  # Reduced from 2.0s - app status doesn't change often
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
@@ -1533,8 +1550,8 @@ class VJConsoleApp(App):
         except Exception:
             pass
         
-        # Update MIDI panels
-        self._update_midi_panels()
+        # Update Launchpad panels
+        self._update_launchpad_panels()
         
         # Update audio analyzer panels
         
@@ -1547,8 +1564,8 @@ class VJConsoleApp(App):
             return
         
         try:
-            # Update index status
-            stats = self.shader_indexer.get_stats()
+            # Use cached stats (fast) - only rescan when explicitly requested
+            stats = self.shader_indexer.get_stats(use_cache=True)
             try:
                 index_panel = self.query_one("#shader-index", ShaderIndexPanel)
                 index_panel.status = stats
@@ -1587,54 +1604,43 @@ class VJConsoleApp(App):
         except Exception as e:
             logger.debug(f"Failed to update shader panels: {e}")
     
-    def _update_midi_panels(self) -> None:
-        """Update MIDI router panels."""
-        if not self.midi_router:
+    def _update_launchpad_panels(self) -> None:
+        """Update Launchpad controller panels."""
+        if not LAUNCHPAD_LIB_AVAILABLE or not self.launchpad_manager:
             return
         
         try:
-            # Update toggles list
-            toggles = self.midi_router.get_toggle_list()
-            toggles_panel = self.query_one("#midi-toggles", MidiTogglesPanel)
-            toggles_panel.toggles = toggles
-            toggles_panel.selected = self.midi_selected_toggle
-            
-            # Update actions panel
-            actions_panel = self.query_one("#midi-actions", MidiActionsPanel)
-            actions_panel.learn_mode = self.midi_router.is_learn_mode
-            actions_panel.router_running = self.midi_router.is_running
-            
-            # Build device info
-            if self.midi_router.config:
-                controller = self.midi_router.config.controller.name_pattern
-                virtual = self.midi_router.config.virtual_output.name_pattern
-                actions_panel.device_info = f"Controller: {controller} → {virtual}"
-            
             # Update status panel
-            status_panel = self.query_one("#midi-status", MidiStatusPanel)
-            if self.midi_router.config:
-                config_path = Path.home() / '.midi_router' / 'config.json'
-                
-                # Show actual port name if available, otherwise pattern
-                controller_name = self.midi_router.config.controller.input_port
-                if not controller_name:
-                    controller_name = f"{self.midi_router.config.controller.name_pattern} (pattern)"
-                
-                virtual_name = self.midi_router.config.virtual_output.name_pattern
-                
-                status_panel.config_info = {
-                    'controller': controller_name,
-                    'virtual_port': virtual_name,
-                    'toggle_count': len(self.midi_router.config.toggles),
-                    'config_file': str(config_path),
-                }
+            try:
+                status_panel = self.query_one("#lp-status", LaunchpadStatusPanel)
+                status_panel.status = self.launchpad_manager.get_status()
+            except Exception:
+                pass
             
-            # Update debug panel
-            debug_panel = self.query_one("#midi-debug", MidiDebugPanel)
-            debug_panel.messages = self.midi_messages.copy()
+            # Update pads panel
+            try:
+                pads_panel = self.query_one("#lp-pads", LaunchpadPadsPanel)
+                pads_panel.pads_data = self.launchpad_manager.get_pads_data()
+            except Exception:
+                pass
+            
+            # Update instructions panel (based on current phase)
+            try:
+                status = self.launchpad_manager.get_status()
+                instructions_panel = self.query_one("#lp-instructions", LaunchpadInstructionsPanel)
+                instructions_panel.phase = status.get('phase', 'IDLE')
+            except Exception:
+                pass
+            
+            # Update OSC debug panel
+            try:
+                osc_panel = self.query_one("#lp-osc", LaunchpadOscDebugPanel)
+                osc_panel.messages = self.launchpad_manager.get_osc_messages()
+            except Exception:
+                pass
             
         except Exception as e:
-            logger.debug(f"Failed to update MIDI panels: {e}")
+            logger.debug(f"Failed to update Launchpad panels: {e}")
 
     # === Screen switching ===
     
@@ -1654,7 +1660,8 @@ class VJConsoleApp(App):
         self.query_one("#screens", TabbedContent).active = "audio"
     
     def action_screen_midi(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "midi"
+        """Switch to Launchpad screen (kept as 'midi' for key binding compat)."""
+        self.query_one("#screens", TabbedContent).active = "launchpad"
     
     def action_screen_shaders(self) -> None:
         self.query_one("#screens", TabbedContent).active = "shaders"
@@ -1837,6 +1844,9 @@ class VJConsoleApp(App):
         """Rescan for unanalyzed shaders (R key)."""
         if self.shader_analysis_worker:
             self.shader_analysis_worker.rescan()
+            # Invalidate stats cache to force fresh directory scan
+            if self.shader_indexer:
+                self.shader_indexer.invalidate_stats_cache()
             self.notify("Rescanning for unanalyzed shaders...", severity="information")
         else:
             self.notify("Shader analysis worker not available", severity="warning")
@@ -1848,9 +1858,6 @@ class VJConsoleApp(App):
             panel = self.query_one("#apps", AppsListPanel)
             if panel.selected > 0:
                 panel.selected -= 1
-        elif current_screen == "midi":
-            if self.midi_router and self.midi_selected_toggle > 0:
-                self.midi_selected_toggle -= 1
 
     def action_nav_down(self) -> None:
         current_screen = self.query_one("#screens", TabbedContent).active
@@ -1859,11 +1866,6 @@ class VJConsoleApp(App):
             panel = self.query_one("#apps", AppsListPanel)
             if panel.selected < len(self.process_manager.apps) - 1:
                 panel.selected += 1
-        elif current_screen == "midi":
-            if self.midi_router:
-                toggles = self.midi_router.get_toggle_list()
-                if self.midi_selected_toggle < len(toggles) - 1:
-                    self.midi_selected_toggle += 1
 
     def action_select_app(self) -> None:
         current_screen = self.query_one("#screens", TabbedContent).active
@@ -1876,12 +1878,6 @@ class VJConsoleApp(App):
                     self.process_manager.stop_app(app)
                 else:
                     self.process_manager.launch_app(app)
-    
-    def action_midi_test_toggle(self) -> None:
-        """Test toggle selected MIDI toggle (space key on MIDI screen only)."""
-        current_screen = self.query_one("#screens", TabbedContent).active
-        if current_screen == "midi":
-            self._midi_test_toggle()
 
     def action_timing_up(self) -> None:
         if self.karaoke_engine:
@@ -1891,153 +1887,35 @@ class VJConsoleApp(App):
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
     
-    # === MIDI Router Actions ===
+    # === Launchpad Test Actions ===
     
-    def action_midi_learn(self) -> None:
-        """Enter MIDI learn mode."""
-        if not self.midi_router:
-            logger.warning("MIDI router not available")
+    def on_button_pressed(self, event) -> None:
+        """Handle button presses for Launchpad test buttons."""
+        button_id = event.button.id
+        
+        # Launchpad test buttons
+        if button_id and button_id.startswith("test-"):
+            test_name = button_id.replace("test-", "")
+            if self.launchpad_manager:
+                result = self.launchpad_manager.run_test(test_name)
+                try:
+                    tests_panel = self.query_one("#lp-tests", LaunchpadTestsPanel)
+                    tests_panel.test_status = {'result': result}
+                except Exception:
+                    pass
             return
         
-        def on_learned(note: int, name: str):
-            logger.info(f"Learned toggle: {name} (note {note})")
-            self._log(f"MIDI: Learned toggle {name} (note {note})")
-        
-        self.midi_router.enter_learn_mode(callback=on_learned)
-        logger.info("Entered MIDI learn mode - press a pad")
-    
-    def action_midi_rename(self) -> None:
-        """Rename selected MIDI toggle."""
-        if not self.midi_router:
-            return
-        
-        toggles = self.midi_router.get_toggle_list()
-        if not toggles or self.midi_selected_toggle >= len(toggles):
-            return
-        
-        note, old_name, _ = toggles[self.midi_selected_toggle]
-        
-        # For now, just log - in future could show input dialog
-        logger.info(f"Rename toggle {note} ({old_name}) - use CLI for now")
-        self._log(f"MIDI: To rename, use CLI: r {note} <new_name>")
-    
-    def action_midi_delete(self) -> None:
-        """Delete selected MIDI toggle."""
-        if not self.midi_router:
-            return
-        
-        toggles = self.midi_router.get_toggle_list()
-        if not toggles or self.midi_selected_toggle >= len(toggles):
-            return
-        
-        note, name, _ = toggles[self.midi_selected_toggle]
-        
-        if self.midi_router.remove_toggle(note):
-            logger.info(f"Deleted toggle {name} (note {note})")
-            self._log(f"MIDI: Deleted toggle {name}")
-            # Adjust selection if needed
-            if self.midi_selected_toggle >= len(toggles) - 1:
-                self.midi_selected_toggle = max(0, len(toggles) - 2)
-    
-    async def action_midi_select_controller(self) -> None:
-        """Show controller selection dialog."""
-        if not self.midi_router:
-            logger.warning("MIDI router not available")
-            return
-        
-        # Get list of available controllers
-        controllers = list_controllers()
-        
-        # Get current controller from config
-        current_controller = None
-        if self.midi_router.config:
-            # Try to get the actual port name being used
-            current_controller = self.midi_router.config.controller.input_port
-            if not current_controller:
-                # Fall back to pattern
-                from midi_infrastructure import find_port_by_pattern, list_available_ports
-                input_ports, _ = list_available_ports()
-                current_controller = find_port_by_pattern(
-                    input_ports, 
-                    self.midi_router.config.controller.name_pattern
-                )
-        
-        # Show modal
-        result = await self.push_screen(ControllerSelectionModal(controllers, current_controller), wait_for_dismiss=True)
-        
-        if result:
-            # Update config with selected controller
-            logger.info(f"Selected controller: {result}")
-            self._update_midi_controller(result)
-    
-    def _update_midi_controller(self, controller_name: str) -> None:
-        """
-        Update MIDI router to use selected controller.
-        
-        Args:
-            controller_name: Full name of the controller port
-        """
-        if not self.midi_router:
-            return
-        
-        try:
-            # Stop current router
-            if self.midi_router.is_running:
-                self.midi_router.stop()
-            
-            # Update config with explicit port name
-            old_config = self.midi_router.config
-            if not old_config:
-                # Create new config
-                config = RouterConfig(
-                    controller=DeviceConfig(
-                        name_pattern="",  # Will use explicit port
-                        input_port=controller_name,
-                        output_port=controller_name
-                    ),
-                    virtual_output=DeviceConfig(name_pattern="MagicBus"),
-                    toggles={}
-                )
-            else:
-                # Update existing config
-                config = RouterConfig(
-                    controller=DeviceConfig(
-                        name_pattern="",  # Clear pattern, use explicit port
-                        input_port=controller_name,
-                        output_port=controller_name
-                    ),
-                    virtual_output=old_config.virtual_output,
-                    toggles=old_config.toggles
-                )
-            
-            # Save config
-            config_path = Path.home() / '.midi_router' / 'config.json'
-            config_manager = ConfigManager(config_path)
-            config_manager.save(config)
-            
-            # Restart router with new config
-            if self.midi_router.start(config):
-                logger.info(f"MIDI router restarted with controller: {controller_name}")
-                self._log(f"MIDI: Switched to controller: {controller_name}")
-            else:
-                logger.error(f"Failed to start MIDI router with controller: {controller_name}")
-                self._log(f"MIDI: Failed to switch controller")
-        
-        except Exception as e:
-            logger.error(f"Error updating MIDI controller: {e}")
-            self._log(f"MIDI: Error switching controller: {e}")
-    
-    def _midi_test_toggle(self) -> None:
-        """Test toggle selected MIDI toggle (for testing without hardware)."""
-        if not self.midi_router:
-            return
-        
-        toggles = self.midi_router.get_toggle_list()
-        if not toggles or self.midi_selected_toggle >= len(toggles):
-            return
-        
-        note, name, state = toggles[self.midi_selected_toggle]
-        logger.info(f"Test toggle {name}: {state} → {not state}")
+        # Shader buttons (existing handlers)
+        if button_id == "shader-pause-resume":
+            self.action_shader_toggle_analysis()
+        elif button_id == "shader-search-mood":
+            self.action_shader_search_mood()
+        elif button_id == "shader-search-energy":
+            self.action_shader_search_energy()
+        elif button_id == "shader-search-text":
+            self.action_shader_search_text()
+        elif button_id == "shader-rescan":
+            self.action_shader_rescan()
     
     def _log(self, message: str):
         """Add a message to logs."""
@@ -2048,8 +1926,28 @@ class VJConsoleApp(App):
     def on_unmount(self) -> None:
         if self.karaoke_engine:
             self.karaoke_engine.stop()
-        if self.midi_router:
-            self.midi_router.stop()
+        if self.launchpad_manager:
+            self.launchpad_manager.stop()
+        self.process_manager.cleanup()
+
+
+def main():
+    VJConsoleApp().run()
+
+
+if __name__ == '__main__':
+    main()
+    def _log(self, message: str):
+        """Add a message to logs."""
+        self._logs.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - vj_console - INFO - {message}")
+        if len(self._logs) > 500:
+            self._logs.pop(0)
+
+    def on_unmount(self) -> None:
+        if self.karaoke_engine:
+            self.karaoke_engine.stop()
+        if self.launchpad_manager:
+            self.launchpad_manager.stop()
         self.process_manager.cleanup()
 
 

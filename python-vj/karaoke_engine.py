@@ -256,6 +256,7 @@ class KaraokeEngine:
     def _run_loop(self, poll_interval: float):
         """Main loop with fast lyrics checking, slow position updates."""
         last_position_update = 0
+        last_lyrics_hash = None  # Track changes to avoid redundant sends
         lyrics_check_interval = 0.1  # Check lyrics every 100ms for precision
         
         while self._running:
@@ -283,14 +284,13 @@ class KaraokeEngine:
         state = snapshot.state
         self._handle_track_change(state.track)
         
-        if state.track and self._current_lines:
+        if state.track and self._current_lines and state.is_playing:
             offset_sec = self._settings.timing_offset_ms / 1000.0
             position = self._effective_position(state)
             active_index = get_active_line_index(self._current_lines, position + offset_sec)
-            if active_index != self._last_active_index:
+            if active_index != self._last_active_index and active_index >= 0:
                 self._last_active_index = active_index
-                if active_index >= 0:
-                    self._send_active_line(active_index)
+                self._send_active_line(active_index)
     
     def _send_position_update(self, snapshot: PlaybackSnapshot):
         """Send position update (less frequent to reduce OSC traffic)."""
