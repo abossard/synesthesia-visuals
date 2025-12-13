@@ -84,6 +84,11 @@ float shaderOffsetY = 0.0;  // Pan offset Y (-1 to 1)
 // Offscreen buffer for shader rendering (allows zoom/pan post-process)
 PGraphics shaderBuffer;
 
+// Synthetic mouse (audio-reactive figure-8 motion)
+boolean synthMouseEnabled = true;  // Default ON
+float synthMouseBlend = 0.85;      // Blend: 0 = real mouse, 1 = full synthetic
+float synthMouseSpeed = 0.3;       // Base figure-8 rotation speed
+
 // ============================================
 // SETUP
 // ============================================
@@ -327,16 +332,24 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     
     // Mouse uniform (for Shadertoy-style GLSL shaders)
     // Y is flipped to match OpenGL conventions
-    // Default to center (0.5, 0.5) normalized when mouse is at origin
-    // Many GLSL shaders use mouse for critical calculations and fail with (0,0)
-    float mx = mouseX;
-    float my = mouseY;
-    if (mx == 0 && my == 0) {
-      // Mouse hasn't moved - default to center for shader compatibility
-      mx = w * 0.5f;
-      my = h * 0.5f;
+    // Synthetic mouse: audio-reactive figure-8 Lissajous curve
+    float[] synthPos = calcSynthMousePosition(audioTime, energySlow, smoothAudioBass, presenceMid, beatPhaseAudio);
+    
+    // Real mouse position (normalized 0-1)
+    float realMouseX = mouseX / w;
+    float realMouseY = mouseY / h;
+    if (mouseX == 0 && mouseY == 0) {
+      // Mouse hasn't moved - default to center
+      realMouseX = 0.5f;
+      realMouseY = 0.5f;
     }
-    s.set("mouse", mx / w, 1.0f - (my / h));  // Normalized 0-1, Y-flipped
+    
+    // Blend real and synthetic mouse based on settings
+    float blendAmt = synthMouseEnabled ? synthMouseBlend : 0.0f;
+    float mx = lerp(realMouseX, synthPos[0], blendAmt);
+    float my = lerp(realMouseY, synthPos[1], blendAmt);
+    
+    s.set("mouse", mx, 1.0f - my);  // Normalized 0-1, Y-flipped
     
     // Speed uniform: audio-reactive time scaling (0-1)
     // Key hook for GLSL shader audio reactivity
@@ -377,6 +390,45 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
   } catch (Exception e) {
     // Silently ignore uniform errors - shader may not use all uniforms
   }
+}
+
+// ============================================
+// SYNTHETIC MOUSE - Pure calculation (Grokking Simplicity)
+// ============================================
+
+/**
+ * Calculate audio-reactive figure-8 (Lissajous) mouse position.
+ * Pure function: no side effects, returns normalized [x, y] in 0-1 range.
+ *
+ * @param time       Audio-synced time accumulator
+ * @param energySlow Slow energy envelope (0-1) - controls overall amplitude
+ * @param bass       Bass level (0-1) - widens horizontal motion
+ * @param mid        Mid presence (0-1) - affects vertical breathing
+ * @param beatPhase  Beat phase (0-1, decays after beat) - phase offset on beat
+ * @return float[2]  Normalized position [x, y] centered at 0.5
+ */
+float[] calcSynthMousePosition(float time, float energySlow, float bass, float mid, float beatPhase) {
+  // Base rotation with configurable speed
+  float t = time * synthMouseSpeed;
+  
+  // Phase shift on beat for rhythmic variation
+  float phaseOffset = beatPhase * 0.4;
+  t += phaseOffset;
+  
+  // Figure-8 Lissajous curve: x = sin(t), y = sin(2t)
+  float fig8X = sin(t);
+  float fig8Y = sin(t * 2.0);
+  
+  // Audio-modulated amplitude (smooth, avoids jitter)
+  float baseRadius = 0.12 + energySlow * 0.18;  // 0.12-0.30 range
+  float radiusX = baseRadius + bass * 0.12;      // Bass widens X
+  float radiusY = baseRadius + mid * 0.08;       // Mids affect Y
+  
+  // Final position (centered at 0.5, clamped to valid range)
+  float x = constrain(0.5 + fig8X * radiusX, 0.05, 0.95);
+  float y = constrain(0.5 + fig8Y * radiusY, 0.05, 0.95);
+  
+  return new float[] { x, y };
 }
 
 // ============================================
@@ -601,6 +653,11 @@ void keyPressed() {
       shaderOffsetX = 0.0;
       shaderOffsetY = 0.0;
       println("Shader zoom/offset reset");
+      break;
+    case 'm':
+    case 'M':
+      synthMouseEnabled = !synthMouseEnabled;
+      println("Synthetic mouse: " + (synthMouseEnabled ? "ON" : "OFF"));
       break;
   }
   

@@ -18,13 +18,18 @@ load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
+from dataclasses import dataclass
 import logging
 import subprocess
 import time
+import asyncio
+
+import psutil
+import requests
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll, Vertical
-from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label, Checkbox
 from textual.reactive import reactive
 from textual.binding import Binding
 from textual.screen import ModalScreen
@@ -33,6 +38,7 @@ from rich.text import Text
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
 from domain import PlaybackSnapshot, PlaybackState
+from infrastructure import Settings
 
 # Launchpad control (replaces MIDI Router)
 try:
@@ -215,6 +221,222 @@ def build_categories_payload(categories) -> Dict[str, Any]:
             for cat in categories.get_top(10)
         ]
     }
+
+
+# ============================================================================
+# PROCESS MONITOR - Lightweight CPU/memory tracking with cached handles
+# ============================================================================
+
+@dataclass
+class ProcessStats:
+    """Statistics for a single process."""
+    pid: int
+    name: str
+    cpu_percent: float
+    memory_mb: float
+    running: bool = True
+
+
+class ProcessMonitor:
+    """
+    Efficient process monitor that caches Process handles.
+    Call get_stats() periodically (e.g., every 5 seconds) for low overhead.
+    Uses non-blocking cpu_percent(interval=None) which compares to last call.
+    """
+    
+    def __init__(self, process_names: List[str]):
+        self.targets = {n.lower(): n for n in process_names}
+        self._cache: Dict[str, psutil.Process] = {}
+    
+    def _find_process(self, target_key: str) -> Optional[psutil.Process]:
+        """Find or return cached process handle."""
+        # Check cache first
+        if target_key in self._cache:
+            try:
+                proc = self._cache[target_key]
+                if proc.is_running():
+                    return proc
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            del self._cache[target_key]
+        
+        # Search for process by name
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                pname = proc.info['name'].lower()
+                if target_key in pname or pname in target_key:
+                    self._cache[target_key] = proc
+                    # Initialize CPU tracking (first call always returns 0)
+                    try:
+                        proc.cpu_percent()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                    return proc
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return None
+    
+    def get_stats(self) -> Dict[str, Optional[ProcessStats]]:
+        """
+        Get stats for all tracked processes.
+        Returns dict mapping original name -> ProcessStats or None if not running.
+        """
+        results = {}
+        for target_key, original_name in self.targets.items():
+            proc = self._find_process(target_key)
+            if proc:
+                try:
+                    stats = ProcessStats(
+                        pid=proc.pid,
+                        name=proc.name(),
+                        cpu_percent=proc.cpu_percent(interval=None),  # Non-blocking
+                        memory_mb=proc.memory_info().rss / (1024 * 1024),
+                        running=True
+                    )
+                    results[original_name] = stats
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    results[original_name] = None
+            else:
+                results[original_name] = None
+        return results
+
+
+# ============================================================================
+# STARTUP CONTROL PANEL - Configurable auto-start with resource display
+# ============================================================================
+
+class StartupControlPanel(Static):
+    """
+    Panel with checkboxes for startup services and resource monitoring.
+    Persists preferences to Settings and shows CPU/memory for running services.
+    """
+    
+    # Reactive data for resource stats
+    stats_data = reactive({})
+    lmstudio_status = reactive({})  # {'available': bool, 'model': str, 'warning': str}
+    
+    def __init__(self, settings: Settings, **kwargs):
+        super().__init__(**kwargs)
+        self.settings = settings
+    
+    def compose(self) -> ComposeResult:
+        """Create the startup control UI."""
+        yield Static("[bold]🚀 Startup Services[/]", classes="section-title")
+        
+        # Service checkboxes with auto-restart option
+        with Horizontal(classes="startup-row"):
+            yield Checkbox("Synesthesia", self.settings.start_synesthesia, id="chk-synesthesia")
+            yield Checkbox("Auto-restart", self.settings.autorestart_synesthesia, id="chk-ar-synesthesia")
+            yield Static("", id="stat-synesthesia", classes="stat-label")
+        
+        with Horizontal(classes="startup-row"):
+            yield Checkbox("KaraokeOverlay", self.settings.start_karaoke_overlay, id="chk-karaoke-overlay")
+            yield Checkbox("Auto-restart", self.settings.autorestart_karaoke_overlay, id="chk-ar-karaoke-overlay")
+            yield Static("", id="stat-karaoke-overlay", classes="stat-label")
+        
+        with Horizontal(classes="startup-row"):
+            yield Checkbox("LM Studio", self.settings.start_lmstudio, id="chk-lmstudio")
+            yield Checkbox("Auto-restart", self.settings.autorestart_lmstudio, id="chk-ar-lmstudio")
+            yield Static("", id="stat-lmstudio", classes="stat-label")
+        
+        with Horizontal(classes="startup-row"):
+            yield Checkbox("Music Monitor", self.settings.start_music_monitor, id="chk-music-monitor")
+            yield Checkbox("Auto-restart", self.settings.autorestart_music_monitor, id="chk-ar-music-monitor")
+            yield Static("", id="stat-music-monitor", classes="stat-label")
+        
+        # Start/Stop All buttons
+        with Horizontal(classes="startup-buttons"):
+            yield Button("▶ Start All", id="btn-start-all", variant="success")
+            yield Button("■ Stop All", id="btn-stop-all", variant="error")
+    
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Persist checkbox changes to settings."""
+        checkbox_id = event.checkbox.id
+        value = event.value
+        
+        # Map checkbox IDs to settings properties
+        mappings = {
+            "chk-synesthesia": "start_synesthesia",
+            "chk-karaoke-overlay": "start_karaoke_overlay",
+            "chk-lmstudio": "start_lmstudio",
+            "chk-music-monitor": "start_music_monitor",
+            "chk-ar-synesthesia": "autorestart_synesthesia",
+            "chk-ar-karaoke-overlay": "autorestart_karaoke_overlay",
+            "chk-ar-lmstudio": "autorestart_lmstudio",
+            "chk-ar-music-monitor": "autorestart_music_monitor",
+        }
+        
+        if checkbox_id in mappings:
+            setattr(self.settings, mappings[checkbox_id], value)
+    
+    def watch_stats_data(self, stats: dict) -> None:
+        """Update resource display when stats change."""
+        self._update_stat_labels()
+    
+    def watch_lmstudio_status(self, status: dict) -> None:
+        """Update LM Studio status display."""
+        self._update_stat_labels()
+    
+    def _update_stat_labels(self) -> None:
+        """Update all stat labels with current data."""
+        if not self.is_mounted:
+            return
+        
+        stats = self.stats_data
+        lm_status = self.lmstudio_status
+        
+        # Synesthesia stats
+        try:
+            label = self.query_one("#stat-synesthesia", Static)
+            syn_stats = stats.get("Synesthesia")
+            if syn_stats and syn_stats.running:
+                label.update(f"[green]● {syn_stats.cpu_percent:.0f}% / {syn_stats.memory_mb:.0f}MB[/]")
+            else:
+                label.update("[dim]○ Not running[/]")
+        except Exception:
+            pass
+        
+        # KaraokeOverlay stats (Processing/Java)
+        try:
+            label = self.query_one("#stat-karaoke-overlay", Static)
+            ko_stats = stats.get("java") or stats.get("Java")
+            if ko_stats and ko_stats.running:
+                label.update(f"[green]● {ko_stats.cpu_percent:.0f}% / {ko_stats.memory_mb:.0f}MB[/]")
+            else:
+                label.update("[dim]○ Not running[/]")
+        except Exception:
+            pass
+        
+        # LM Studio stats
+        try:
+            label = self.query_one("#stat-lmstudio", Static)
+            lm_stats = stats.get("LM Studio")
+            if lm_stats and lm_stats.running:
+                if lm_status.get('available'):
+                    model = lm_status.get('model', 'loaded')
+                    if lm_status.get('warning'):
+                        label.update(f"[yellow]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - ⚠ {lm_status['warning']}[/]")
+                    else:
+                        label.update(f"[green]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - {model[:20]}[/]")
+                else:
+                    label.update(f"[yellow]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - No model loaded[/]")
+            else:
+                label.update("[dim]○ Not running[/]")
+        except Exception:
+            pass
+        
+        # Music Monitor stats
+        try:
+            label = self.query_one("#stat-music-monitor", Static)
+            # Music Monitor runs in the same process, check if karaoke_engine exists
+            app = self.app if hasattr(self, 'app') else None
+            if app and hasattr(app, 'karaoke_engine') and app.karaoke_engine is not None:
+                label.update("[green]● Running[/]")
+            else:
+                label.update("[dim]○ Not running[/]")
+        except Exception:
+            pass
+
 
 # ============================================================================
 # WIDGETS - Reactive UI components
@@ -1125,6 +1347,42 @@ class VJConsoleApp(App):
     #left-col { width: 40%; }
     #right-col { width: 60%; }
     
+    /* Startup control panel */
+    #startup-control {
+        padding: 1;
+        border: solid $success;
+        margin-bottom: 1;
+    }
+    
+    .startup-row {
+        height: auto;
+        padding: 0;
+        margin: 0 0 1 0;
+    }
+    
+    .startup-row Checkbox {
+        width: auto;
+        margin-right: 2;
+    }
+    
+    .stat-label {
+        width: 1fr;
+        text-align: right;
+    }
+    
+    .startup-buttons {
+        height: auto;
+        padding-top: 1;
+    }
+    
+    .startup-buttons Button {
+        margin-right: 1;
+    }
+    
+    .section-title {
+        margin-bottom: 1;
+    }
+    
     /* Action button panels */
     .action-buttons {
         height: auto;
@@ -1204,15 +1462,31 @@ class VJConsoleApp(App):
     current_tab = reactive("master")
     synesthesia_running = reactive(False)
     milksyphon_running = reactive(False)
+    lmstudio_running = reactive(False)
+    karaoke_overlay_running = reactive(False)
 
     def __init__(self):
         super().__init__()
+        
+        # Persistent settings (includes startup preferences)
+        self.settings = Settings()
+        
+        # Process manager for Processing apps
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self._find_project_root())
+        
+        # Process monitor for CPU/memory tracking
+        self.process_monitor = ProcessMonitor([
+            "Synesthesia",
+            "LM Studio",
+            "java",  # Processing apps run as Java
+        ])
+        
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
         self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
+        self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
         
         # Launchpad controller (replaces MIDI Router)
         self.launchpad_manager: Optional['LaunchpadManager'] = None
@@ -1325,6 +1599,7 @@ class VJConsoleApp(App):
             with TabPane("1️⃣ Master Control", id="master"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
+                        yield StartupControlPanel(self.settings, id="startup-control")
                         yield MasterControlPanel(id="master-ctrl", classes="panel")
                         yield AppsListPanel(id="apps", classes="panel")
                         yield ServicesPanel(id="services", classes="panel")
@@ -1384,20 +1659,42 @@ class VJConsoleApp(App):
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-7 to switch screens"
         
-        # Initialize
+        # Initialize apps list
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
-        self._start_karaoke()
-        # Audio analyzer starts on 'a' keypress, not automatically
+        
+        # NOTE: No auto-start by default - user controls via StartupControlPanel
+        # Services are started only when "Start All" button is pressed
+        # or when auto-restart is enabled and service is not running
         
         # Background updates - stagger intervals to reduce CPU spikes
         self.set_interval(0.5, self._update_data)
-        self.set_interval(5.0, self._check_apps)  # Reduced from 2.0s - app status doesn't change often
+        self.set_interval(5.0, self._check_apps_and_autorestart)  # Combined check + restart
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
         button_id = event.button.id
         
+        # Startup control buttons
+        if button_id == "btn-start-all":
+            self._start_selected_services()
+            return
+        
+        if button_id == "btn-stop-all":
+            self._stop_all_services()
+            return
+        
+        # Launchpad test buttons
+        if button_id and button_id.startswith("test-"):
+            test_name = button_id.replace("test-", "")
+            if self.launchpad_manager:
+                result = self.launchpad_manager.run_test(test_name)
+                try:
+                    tests_panel = self.query_one("#lp-tests", LaunchpadTestsPanel)
+                    tests_panel.test_status = {'result': result}
+                except Exception:
+                    pass
+            return
         
         # Shader buttons
         if button_id == "shader-pause-resume":
@@ -1414,9 +1711,13 @@ class VJConsoleApp(App):
     # === Actions (impure, side effects) ===
     
     def _start_karaoke(self) -> None:
+        """Start the karaoke engine."""
+        if self.karaoke_engine is not None:
+            return  # Already running
         try:
             self.karaoke_engine = KaraokeEngine()
             self.karaoke_engine.start()
+            logger.info("Karaoke engine started")
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
     
@@ -1428,10 +1729,243 @@ class VJConsoleApp(App):
         except Exception:
             return False
 
-    def _check_apps(self) -> None:
-        """Check running status of external apps."""
-        self.synesthesia_running = self._run_process(['pgrep', '-x', 'Synesthesia'], 1)
+    # =========================================================================
+    # SERVICE DETECTION METHODS
+    # =========================================================================
+    
+    def _is_synesthesia_running(self) -> bool:
+        """Check if Synesthesia is running."""
+        return self._run_process(['pgrep', '-x', 'Synesthesia'], 1)
+    
+    def _is_karaoke_overlay_running(self) -> bool:
+        """Check if KaraokeOverlay Processing app is running."""
+        for app in self.process_manager.apps:
+            if 'karaoke' in app.name.lower():
+                if self.process_manager.is_running(app):
+                    return True
+        return False
+    
+    def _is_lmstudio_running(self) -> bool:
+        """Check if LM Studio process is running."""
+        return self._run_process(['pgrep', '-f', 'LM Studio'], 1)
+    
+    def _check_lmstudio_model(self) -> Dict[str, Any]:
+        """Check LM Studio API and model status. Returns status dict."""
+        try:
+            resp = requests.get("http://localhost:1234/v1/models", timeout=1)
+            if resp.status_code == 200:
+                models = resp.json().get('data', [])
+                if models:
+                    model_id = models[0].get('id', 'unknown')
+                    return {'available': True, 'model': model_id, 'warning': ''}
+                else:
+                    return {'available': False, 'model': '', 'warning': 'No model loaded'}
+        except Exception:
+            pass
+        return {'available': False, 'model': '', 'warning': ''}
+    
+    def _is_music_monitor_running(self) -> bool:
+        """Check if Music Monitor (Karaoke Engine) is running."""
+        return self.karaoke_engine is not None
+    
+    # =========================================================================
+    # SERVICE LAUNCHER METHODS
+    # =========================================================================
+    
+    def _start_synesthesia(self) -> bool:
+        """Start Synesthesia app. Returns True if launched."""
+        if self._is_synesthesia_running():
+            logger.debug("Synesthesia already running")
+            return True
+        try:
+            subprocess.Popen(['open', '-a', 'Synesthesia'])
+            logger.info("Started Synesthesia")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start Synesthesia: {e}")
+            return False
+    
+    def _start_karaoke_overlay(self) -> bool:
+        """Start KaraokeOverlay Processing app. Returns True if launched."""
+        if self._is_karaoke_overlay_running():
+            logger.debug("KaraokeOverlay already running")
+            return True
+        
+        # Validate processing-java is available
+        if not self._run_process(['which', 'processing-java'], 2):
+            logger.error("processing-java not found in PATH. Install Processing and add to PATH.")
+            self.notify("processing-java not found! Install Processing and add to PATH.", severity="error")
+            return False
+        
+        # Find and launch KaraokeOverlay
+        for app in self.process_manager.apps:
+            if 'karaoke' in app.name.lower():
+                if self.process_manager.launch_app(app):
+                    logger.info(f"Started {app.name}")
+                    return True
+                else:
+                    logger.error(f"Failed to launch {app.name}")
+                    return False
+        
+        logger.error("KaraokeOverlay app not found in processing-vj/src/")
+        return False
+    
+    def _start_lmstudio(self) -> bool:
+        """Start LM Studio app. Returns True if launched."""
+        if self._is_lmstudio_running():
+            logger.debug("LM Studio already running")
+            return True
+        try:
+            subprocess.Popen(['open', '-a', 'LM Studio'])
+            logger.info("Started LM Studio (user must load a model)")
+            self.notify("LM Studio started - please load a model manually", severity="information")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start LM Studio: {e}")
+            return False
+    
+    def _start_selected_services(self) -> None:
+        """Start all services that have checkboxes enabled."""
+        started = []
+        
+        if self.settings.start_synesthesia:
+            if self._start_synesthesia():
+                started.append("Synesthesia")
+        
+        if self.settings.start_karaoke_overlay:
+            if self._start_karaoke_overlay():
+                started.append("KaraokeOverlay")
+        
+        if self.settings.start_lmstudio:
+            if self._start_lmstudio():
+                started.append("LM Studio")
+        
+        if self.settings.start_music_monitor:
+            self._start_karaoke()
+            if self.karaoke_engine:
+                started.append("Music Monitor")
+        
+        if started:
+            self.notify(f"Started: {', '.join(started)}", severity="information")
+        else:
+            self.notify("No services selected to start", severity="warning")
+        
+        # Refresh status immediately
+        self._check_apps_and_autorestart()
+    
+    def _stop_all_services(self) -> None:
+        """Stop all running services."""
+        stopped = []
+        
+        # Stop Synesthesia
+        if self._is_synesthesia_running():
+            try:
+                subprocess.run(['pkill', '-x', 'Synesthesia'], check=False)
+                stopped.append("Synesthesia")
+            except Exception as e:
+                logger.error(f"Failed to stop Synesthesia: {e}")
+        
+        # Stop KaraokeOverlay (Processing java apps)
+        if self._is_karaoke_overlay_running():
+            try:
+                # Stop via ProcessManager
+                for app in self.process_manager.apps:
+                    if 'karaoke' in app.name.lower() and self.process_manager.is_running(app):
+                        self.process_manager.stop_app(app)
+                        stopped.append("KaraokeOverlay")
+                        break
+            except Exception as e:
+                logger.error(f"Failed to stop KaraokeOverlay: {e}")
+        
+        # Stop LM Studio
+        if self._is_lmstudio_running():
+            try:
+                subprocess.run(['pkill', '-f', 'LM Studio'], check=False)
+                stopped.append("LM Studio")
+            except Exception as e:
+                logger.error(f"Failed to stop LM Studio: {e}")
+        
+        # Stop Music Monitor (Karaoke Engine)
+        if self.karaoke_engine:
+            try:
+                self.karaoke_engine.stop()
+                self.karaoke_engine = None
+                stopped.append("Music Monitor")
+            except Exception as e:
+                logger.error(f"Failed to stop Music Monitor: {e}")
+        
+        if stopped:
+            self.notify(f"Stopped: {', '.join(stopped)}", severity="information")
+        else:
+            self.notify("No services were running", severity="warning")
+        
+        # Clear process monitor cache
+        self.process_monitor = ProcessMonitor([
+            "Synesthesia",
+            "LM Studio",
+            "java",  # Processing apps run as Java
+        ])
+        
+        # Refresh status immediately
+        self._check_apps_and_autorestart()
+
+    # =========================================================================
+    # COMBINED CHECK AND AUTO-RESTART
+    # =========================================================================
+    
+    def _check_apps_and_autorestart(self) -> None:
+        """Check running status of external apps and auto-restart if enabled."""
+        # Update running status
+        self.synesthesia_running = self._is_synesthesia_running()
         self.milksyphon_running = self._run_process(['pgrep', '-f', 'projectMilkSyphon'], 1)
+        self.lmstudio_running = self._is_lmstudio_running()
+        self.karaoke_overlay_running = self._is_karaoke_overlay_running()
+        
+        # Check LM Studio model status
+        self._lmstudio_status = self._check_lmstudio_model()
+        
+        # Get process stats for resource monitoring
+        process_stats = self.process_monitor.get_stats()
+        
+        # Add KaraokeEngine stats (self process)
+        try:
+            self_proc = psutil.Process()
+            process_stats["KaraokeEngine"] = ProcessStats(
+                pid=self_proc.pid,
+                name="KaraokeEngine",
+                cpu_percent=self_proc.cpu_percent(interval=None),
+                memory_mb=self_proc.memory_info().rss / (1024 * 1024),
+                running=self.karaoke_engine is not None
+            )
+        except Exception:
+            pass
+        
+        # Update startup panel with stats
+        try:
+            startup_panel = self.query_one("#startup-control", StartupControlPanel)
+            startup_panel.stats_data = process_stats
+            startup_panel.lmstudio_status = self._lmstudio_status
+        except Exception:
+            pass
+        
+        # Auto-restart logic
+        if self.settings.autorestart_synesthesia and not self.synesthesia_running:
+            logger.info("Auto-restarting Synesthesia")
+            self._start_synesthesia()
+        
+        if self.settings.autorestart_karaoke_overlay and not self.karaoke_overlay_running:
+            logger.info("Auto-restarting KaraokeOverlay")
+            self._start_karaoke_overlay()
+        
+        if self.settings.autorestart_lmstudio and not self.lmstudio_running:
+            logger.info("Auto-restarting LM Studio")
+            self._start_lmstudio()
+        
+        if self.settings.autorestart_music_monitor and not self._is_music_monitor_running():
+            logger.info("Auto-restarting Music Monitor")
+            self._start_karaoke()
+        
+        # Update services panel
         self._update_services()
 
     def _update_services(self) -> None:
@@ -1474,8 +2008,26 @@ class VJConsoleApp(App):
 
     def _update_data(self) -> None:
         """Update all panels with current data."""
+        # Update master control even if karaoke engine is not running
+        running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
+        try:
+            self.query_one("#master-ctrl", MasterControlPanel).status = {
+                'synesthesia': self.synesthesia_running,
+                'milksyphon': self.milksyphon_running,
+                'processing_apps': running_apps,
+                'karaoke': self.karaoke_engine is not None,
+            }
+        except Exception:
+            pass
+        
+        # If no karaoke engine, show waiting message and return
         if not self.karaoke_engine:
+            try:
+                self.query_one("#now-playing", NowPlayingPanel).track_data = {}
+            except Exception:
+                pass
             return
+        
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
         monitor_status = snapshot.monitor_status or {}
@@ -1517,18 +2069,6 @@ class VJConsoleApp(App):
                 panel.messages = osc_msgs
             except Exception:
                 pass
-
-        # Update master control
-        running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        try:
-            self.query_one("#master-ctrl", MasterControlPanel).status = {
-                'synesthesia': self.synesthesia_running,
-                'milksyphon': self.milksyphon_running,
-                'processing_apps': running_apps,
-                'karaoke': self.karaoke_engine is not None,
-            }
-        except Exception:
-            pass
 
         # Send OSC status only when it changes
         current_status = {
@@ -1887,56 +2427,6 @@ class VJConsoleApp(App):
         if self.karaoke_engine:
             self.karaoke_engine.adjust_timing(-200)
     
-    # === Launchpad Test Actions ===
-    
-    def on_button_pressed(self, event) -> None:
-        """Handle button presses for Launchpad test buttons."""
-        button_id = event.button.id
-        
-        # Launchpad test buttons
-        if button_id and button_id.startswith("test-"):
-            test_name = button_id.replace("test-", "")
-            if self.launchpad_manager:
-                result = self.launchpad_manager.run_test(test_name)
-                try:
-                    tests_panel = self.query_one("#lp-tests", LaunchpadTestsPanel)
-                    tests_panel.test_status = {'result': result}
-                except Exception:
-                    pass
-            return
-        
-        # Shader buttons (existing handlers)
-        if button_id == "shader-pause-resume":
-            self.action_shader_toggle_analysis()
-        elif button_id == "shader-search-mood":
-            self.action_shader_search_mood()
-        elif button_id == "shader-search-energy":
-            self.action_shader_search_energy()
-        elif button_id == "shader-search-text":
-            self.action_shader_search_text()
-        elif button_id == "shader-rescan":
-            self.action_shader_rescan()
-    
-    def _log(self, message: str):
-        """Add a message to logs."""
-        self._logs.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - vj_console - INFO - {message}")
-        if len(self._logs) > 500:
-            self._logs.pop(0)
-
-    def on_unmount(self) -> None:
-        if self.karaoke_engine:
-            self.karaoke_engine.stop()
-        if self.launchpad_manager:
-            self.launchpad_manager.stop()
-        self.process_manager.cleanup()
-
-
-def main():
-    VJConsoleApp().run()
-
-
-if __name__ == '__main__':
-    main()
     def _log(self, message: str):
         """Add a message to logs."""
         self._logs.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - vj_console - INFO - {message}")

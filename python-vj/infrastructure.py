@@ -152,6 +152,95 @@ class Settings:
     def all_settings(self) -> Dict[str, Any]:
         """Get all settings as dict."""
         return dict(self._data)
+    
+    # =========================================================================
+    # STARTUP PREFERENCES - Configurable auto-start behavior
+    # =========================================================================
+    
+    def _get_bool(self, key: str, default: bool = False) -> bool:
+        """Get boolean setting with default."""
+        return self._data.get(key, default)
+    
+    def _set_bool(self, key: str, value: bool) -> None:
+        """Set boolean setting and save."""
+        self._data[key] = value
+        self._save()
+    
+    # --- Start on launch checkboxes (all default False) ---
+    
+    @property
+    def start_synesthesia(self) -> bool:
+        """Whether to start Synesthesia on launch."""
+        return self._get_bool('start_synesthesia', False)
+    
+    @start_synesthesia.setter
+    def start_synesthesia(self, value: bool) -> None:
+        self._set_bool('start_synesthesia', value)
+    
+    @property
+    def start_karaoke_overlay(self) -> bool:
+        """Whether to start KaraokeOverlay on launch."""
+        return self._get_bool('start_karaoke_overlay', False)
+    
+    @start_karaoke_overlay.setter
+    def start_karaoke_overlay(self, value: bool) -> None:
+        self._set_bool('start_karaoke_overlay', value)
+    
+    @property
+    def start_lmstudio(self) -> bool:
+        """Whether to start LM Studio on launch."""
+        return self._get_bool('start_lmstudio', False)
+    
+    @start_lmstudio.setter
+    def start_lmstudio(self, value: bool) -> None:
+        self._set_bool('start_lmstudio', value)
+    
+    @property
+    def start_music_monitor(self) -> bool:
+        """Whether to start Music Monitor (lyrics sync) on launch."""
+        return self._get_bool('start_music_monitor', False)
+    
+    @start_music_monitor.setter
+    def start_music_monitor(self, value: bool) -> None:
+        self._set_bool('start_music_monitor', value)
+    
+    # --- Auto-restart checkboxes (all default False) ---
+    
+    @property
+    def autorestart_synesthesia(self) -> bool:
+        """Whether to auto-restart Synesthesia if it crashes."""
+        return self._get_bool('autorestart_synesthesia', False)
+    
+    @autorestart_synesthesia.setter
+    def autorestart_synesthesia(self, value: bool) -> None:
+        self._set_bool('autorestart_synesthesia', value)
+    
+    @property
+    def autorestart_karaoke_overlay(self) -> bool:
+        """Whether to auto-restart KaraokeOverlay if it crashes."""
+        return self._get_bool('autorestart_karaoke_overlay', False)
+    
+    @autorestart_karaoke_overlay.setter
+    def autorestart_karaoke_overlay(self, value: bool) -> None:
+        self._set_bool('autorestart_karaoke_overlay', value)
+    
+    @property
+    def autorestart_lmstudio(self) -> bool:
+        """Whether to auto-restart LM Studio if it crashes."""
+        return self._get_bool('autorestart_lmstudio', False)
+    
+    @autorestart_lmstudio.setter
+    def autorestart_lmstudio(self, value: bool) -> None:
+        self._set_bool('autorestart_lmstudio', value)
+    
+    @property
+    def autorestart_music_monitor(self) -> bool:
+        """Whether to auto-restart Music Monitor if it crashes."""
+        return self._get_bool('autorestart_music_monitor', False)
+    
+    @autorestart_music_monitor.setter
+    def autorestart_music_monitor(self, value: bool) -> None:
+        self._set_bool('autorestart_music_monitor', value)
 
 
 # =============================================================================
