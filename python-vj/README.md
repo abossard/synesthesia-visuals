@@ -26,6 +26,7 @@ python vj_console.py          # Launch terminal UI
 
 | Doc | Description |
 |-----|-------------|
+| [DJ.Studio Integration](docs/guides/djstudio-integration.md) | Complete guide for DJ.Studio playback monitoring |
 | [OSC Visual Mapping](docs/guides/osc-visual-mapping.md) | Complete VJ software mapping guide (Magic, Resolume, TouchDesigner) |
 | [Launchpad Setup](docs/guides/launchpad-setup.md) | Launchpad Mini MK3 programmer mode reference |
 
