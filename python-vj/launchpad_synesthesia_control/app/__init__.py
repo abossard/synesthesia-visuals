@@ -1,1 +1,0 @@
-"""Application core modules."""
