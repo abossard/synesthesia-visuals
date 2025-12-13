@@ -10,7 +10,7 @@ Or simply: python test_monitor_priority.py
 
 import unittest
 from unittest.mock import Mock, MagicMock
-from orchestrators import PlaybackCoordinator
+from orchestrators import PlaybackCoordinator, PlaybackSample
 
 
 class TestMonitorPriority(unittest.TestCase):

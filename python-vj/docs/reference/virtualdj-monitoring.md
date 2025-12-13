@@ -164,10 +164,10 @@ Current Source: virtualdj      # Only when Spotify is idle
 
 ## Code References
 
-- **Monitor implementation:** `adapters.py` → `VirtualDJMonitor` (lines 500-638)
-- **Priority system:** `orchestrators.py` → `PlaybackCoordinator.poll()` (lines 61-72)
-- **Monitor initialization:** `karaoke_engine.py` (lines 112-118)
-- **Configuration:** `infrastructure.py` → `Config.find_vdj_path()` (lines 63-68)
+- **Monitor implementation:** `adapters.py` → `VirtualDJMonitor` class
+- **Priority system:** `orchestrators.py` → `PlaybackCoordinator.poll()` method
+- **Monitor initialization:** `karaoke_engine.py` → monitor list setup
+- **Configuration:** `infrastructure.py` → `Config.find_vdj_path()` method
 
 ---
 
