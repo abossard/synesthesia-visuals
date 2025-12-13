@@ -53,7 +53,7 @@ Historical documents preserved for reference:
 ## Features
 
 - **🎛️ Master Control** — Start/stop Synesthesia, MilkSyphon, Processing apps
-- **🎤 Karaoke Engine** — Spotify/VirtualDJ monitoring, synced lyrics via OSC
+- **🎤 Karaoke Engine** — Spotify/VirtualDJ/DJ.Studio monitoring, synced lyrics via OSC
 - **🎧 Audio Analysis** — Beat detection, BPM, spectral features at 60 fps
 - **🎹 MIDI Router** — Toggle state management with LED feedback
 - **🏷️ Song Categorization** — AI-powered mood/theme analysis
@@ -85,6 +85,23 @@ SPOTIPY_CLIENT_ID=your_client_id
 SPOTIPY_CLIENT_SECRET=your_client_secret
 SPOTIPY_REDIRECT_URI=http://127.0.0.1:8888/callback
 ```
+
+### DJ.Studio (Optional)
+
+DJ.Studio integration works automatically via multiple strategies:
+1. **Window title monitoring** (default) - extracts track info from window title
+2. **File export** - if DJ.Studio exports to `~/Documents/DJ.Studio/current_track.txt`
+3. **AppleScript** - if DJ.Studio supports it (auto-detected)
+
+To customize:
+```env
+# .env file (optional overrides)
+DJSTUDIO_ENABLED=1                          # Enable/disable (default: 1)
+DJSTUDIO_FILE_PATH=/path/to/track/file.txt  # Custom file path
+DJSTUDIO_TIMEOUT=1.5                        # AppleScript timeout (seconds)
+```
+
+To disable DJ.Studio monitoring: `DJSTUDIO_ENABLED=0`
 
 ### Audio Analysis (macOS)
 
