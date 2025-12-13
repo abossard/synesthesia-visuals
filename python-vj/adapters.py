@@ -31,6 +31,32 @@ except ImportError:
 
 
 # =============================================================================
+# SHARED UTILITIES
+# =============================================================================
+
+def parse_track_string(content: str) -> tuple:
+    """
+    Parse 'Artist - Title' format into separate components.
+    
+    Args:
+        content: String in format "Artist - Title"
+    
+    Returns:
+        Tuple of (artist, title). If no dash found, returns ("", content).
+    
+    Examples:
+        >>> parse_track_string("Daft Punk - Get Lucky")
+        ("Daft Punk", "Get Lucky")
+        >>> parse_track_string("No Dash Here")
+        ("", "No Dash Here")
+    """
+    if " - " in content:
+        artist, title = content.split(" - ", 1)
+        return artist.strip(), title.strip()
+    return "", content.strip()
+
+
+# =============================================================================
 # LYRICS FETCHER - Deep module with LRCLIB + LM Studio web-search fallback
 # =============================================================================
 
@@ -563,7 +589,7 @@ class VirtualDJMonitor:
                 self._start_time = time.time()
             
             # Parse "Artist - Title"
-            artist, title = self._parse_track_string(current_track)
+            artist, title = parse_track_string(current_track)
             
             return {
                 'artist': artist,
@@ -623,18 +649,12 @@ class VirtualDJMonitor:
             return 0 <= hours <= 23 and 0 <= mins <= 59
         except ValueError:
             return False
-    
-    def _parse_track_string(self, content: str) -> tuple:
-        """Parse 'Artist - Title' format."""
-        if " - " in content:
-            artist, title = content.split(" - ", 1)
-            return artist.strip(), title.strip()
-        return "", content.strip()
 
     @property
     def status(self) -> Dict[str, Any]:
         """Public access to health status for UI use."""
         return self._health.get_status()
+
 
 
 # =============================================================================
@@ -806,7 +826,7 @@ class DJStudioMonitor:
                 progress_ms = int(data.get('progress_ms', 0) or 0)
             else:
                 # Plain text "Artist - Title" format
-                artist, title = self._parse_track_string(content)
+                artist, title = parse_track_string(content)
                 album = ''
                 duration_ms = 0
                 progress_ms = 0
@@ -872,7 +892,7 @@ class DJStudioMonitor:
                 return None
             
             window_title = (result.stdout or "").strip()
-            if not window_title or window_title == "":
+            if not window_title:
                 return None
             
             # Parse window title for track info
@@ -909,13 +929,6 @@ class DJStudioMonitor:
         except (subprocess.TimeoutExpired, Exception):
             return None
     
-    def _parse_track_string(self, content: str) -> tuple:
-        """Parse 'Artist - Title' format."""
-        if " - " in content:
-            parts = content.split(" - ", 1)
-            return parts[0].strip(), parts[1].strip()
-        return "", content.strip()
-    
     def _parse_window_title(self, title: str) -> tuple:
         """Extract artist and title from window title."""
         # Remove common suffixes
@@ -929,7 +942,7 @@ class DJStudioMonitor:
                 title = title[len(prefix):].strip()
         
         # Parse remaining "Artist - Title"
-        return self._parse_track_string(title)
+        return parse_track_string(title)
 
 
 # =============================================================================

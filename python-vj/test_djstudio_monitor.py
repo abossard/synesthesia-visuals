@@ -106,16 +106,14 @@ class TestDJStudioMonitor(unittest.TestCase):
     
     def test_parse_track_string(self):
         """Should correctly parse 'Artist - Title' strings."""
-        from adapters import DJStudioMonitor
+        from adapters import parse_track_string
         
-        monitor = DJStudioMonitor()
-        
-        artist, title = monitor._parse_track_string("Calvin Harris - Summer")
+        artist, title = parse_track_string("Calvin Harris - Summer")
         self.assertEqual(artist, "Calvin Harris")
         self.assertEqual(title, "Summer")
         
         # Test with multiple dashes
-        artist, title = monitor._parse_track_string("Swedish House Mafia - Don't You Worry Child")
+        artist, title = parse_track_string("Swedish House Mafia - Don't You Worry Child")
         self.assertEqual(artist, "Swedish House Mafia")
         self.assertEqual(title, "Don't You Worry Child")
     

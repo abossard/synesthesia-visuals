@@ -333,6 +333,6 @@ If you have issues with DJ.Studio integration:
 
 ## Related Documentation
 
-- [Python VJ README](../README.md) - Main documentation
-- [Architecture Guide](docs/development/architecture.md) - System design
-- [OSC Protocol](../README.md#osc-protocol) - OSC message format
+- [Python VJ README](../../README.md) - Main documentation
+- [Architecture Guide](../development/architecture.md) - System design
+- [OSC Protocol](../../README.md#osc-protocol) - OSC message format
