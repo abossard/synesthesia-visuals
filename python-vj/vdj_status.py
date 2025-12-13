@@ -131,10 +131,10 @@ def extract_deck_info(ocr_results):
             if 0.18 <= y <= 0.35 and 0.28 <= x <= 0.42:
                 result['bpm'] = text
         
-        # Key (format: 10B, 02B, etc.)
-        key_match = re.match(r'^(\d{1,2}[ABab])\s*[v▼]?$', text.strip())
+        # Key (format: 10B, 02B, etc. - may appear as "4 KEY ￿ 12A-" or just "10B v")
+        key_match = re.search(r'(\d{1,2}[ABab])', text.strip())
         if key_match:
-            if 0.20 <= y <= 0.26 and 0.35 <= x <= 0.42:
+            if 0.20 <= y <= 0.26 and 0.30 <= x <= 0.42:
                 result['key'] = key_match.group(1).upper()
         
         # Time values (format: 3:56.2 or 0:36.2)
@@ -202,7 +202,20 @@ def get_current_playing():
 
 
 def main():
+    # Debug: print OCR results to tune parsing
+    debug = '--debug' in sys.argv
     result, error = get_current_playing()
+    
+    if debug:
+        # Re-run OCR for debug output
+        window_id = find_vdj_window_id()
+        if window_id:
+            ocr_results = ocr_image("/tmp/vdj_screenshot.png")
+            print("\n=== OCR DEBUG ===")
+            for y, x, text in sorted(ocr_results):
+                if x < 0.45 and y < 0.45:  # Deck 1 region only
+                    print(f"  [{y:.2f},{x:.2f}] {text}")
+            print("=================\n")
     
     if error:
         print(f'Error: {error}')
