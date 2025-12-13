@@ -344,6 +344,11 @@ class StartupControlPanel(Static):
             yield Checkbox("Auto-restart", self.settings.autorestart_music_monitor, id="chk-ar-music-monitor")
             yield Static("", id="stat-music-monitor", classes="stat-label")
         
+        with Horizontal(classes="startup-row"):
+            yield Checkbox("Magic Music Visuals", self.settings.start_magic, id="chk-magic")
+            yield Checkbox("Auto-restart", self.settings.autorestart_magic, id="chk-ar-magic")
+            yield Static("", id="stat-magic", classes="stat-label")
+        
         # Start/Stop All buttons
         with Horizontal(classes="startup-buttons"):
             yield Button("▶ Start All", id="btn-start-all", variant="success")
@@ -360,10 +365,12 @@ class StartupControlPanel(Static):
             "chk-karaoke-overlay": "start_karaoke_overlay",
             "chk-lmstudio": "start_lmstudio",
             "chk-music-monitor": "start_music_monitor",
+            "chk-magic": "start_magic",
             "chk-ar-synesthesia": "autorestart_synesthesia",
             "chk-ar-karaoke-overlay": "autorestart_karaoke_overlay",
             "chk-ar-lmstudio": "autorestart_lmstudio",
             "chk-ar-music-monitor": "autorestart_music_monitor",
+            "chk-ar-magic": "autorestart_magic",
         }
         
         if checkbox_id in mappings:
@@ -432,6 +439,17 @@ class StartupControlPanel(Static):
             app = self.app if hasattr(self, 'app') else None
             if app and hasattr(app, 'karaoke_engine') and app.karaoke_engine is not None:
                 label.update("[green]● Running[/]")
+            else:
+                label.update("[dim]○ Not running[/]")
+        except Exception:
+            pass
+        
+        # Magic Music Visuals stats
+        try:
+            label = self.query_one("#stat-magic", Static)
+            magic_stats = stats.get("Magic")
+            if magic_stats and magic_stats.running:
+                label.update(f"[green]● {magic_stats.cpu_percent:.0f}% / {magic_stats.memory_mb:.0f}MB[/]")
             else:
                 label.update("[dim]○ Not running[/]")
         except Exception:
@@ -1479,6 +1497,7 @@ class VJConsoleApp(App):
         self.process_monitor = ProcessMonitor([
             "Synesthesia",
             "LM Studio",
+            "Magic",
             "java",  # Processing apps run as Java
         ])
         
@@ -1768,6 +1787,10 @@ class VJConsoleApp(App):
         """Check if Music Monitor (Karaoke Engine) is running."""
         return self.karaoke_engine is not None
     
+    def _is_magic_running(self) -> bool:
+        """Check if Magic Music Visuals is running."""
+        return self._run_process(['pgrep', '-x', 'Magic'], 1)
+    
     # =========================================================================
     # SERVICE LAUNCHER METHODS
     # =========================================================================
@@ -1824,6 +1847,29 @@ class VJConsoleApp(App):
             logger.error(f"Failed to start LM Studio: {e}")
             return False
     
+    def _start_magic(self) -> bool:
+        """Start Magic Music Visuals app. Returns True if launched."""
+        if self._is_magic_running():
+            logger.debug("Magic already running")
+            return True
+        
+        try:
+            # Check if a specific .magic file should be loaded
+            magic_file = self.settings.magic_file_path
+            if magic_file and Path(magic_file).exists():
+                # Open Magic with specific file
+                subprocess.Popen(['open', '-a', 'Magic', magic_file])
+                logger.info(f"Started Magic with file: {magic_file}")
+                self.notify(f"Magic started with {Path(magic_file).name}", severity="information")
+            else:
+                # Open Magic without file
+                subprocess.Popen(['open', '-a', 'Magic'])
+                logger.info("Started Magic Music Visuals")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start Magic: {e}")
+            return False
+    
     def _start_selected_services(self) -> None:
         """Start all services that have checkboxes enabled."""
         started = []
@@ -1844,6 +1890,10 @@ class VJConsoleApp(App):
             self._start_karaoke()
             if self.karaoke_engine:
                 started.append("Music Monitor")
+        
+        if self.settings.start_magic:
+            if self._start_magic():
+                started.append("Magic")
         
         if started:
             self.notify(f"Started: {', '.join(started)}", severity="information")
@@ -1894,6 +1944,14 @@ class VJConsoleApp(App):
             except Exception as e:
                 logger.error(f"Failed to stop Music Monitor: {e}")
         
+        # Stop Magic Music Visuals
+        if self._is_magic_running():
+            try:
+                subprocess.run(['pkill', '-x', 'Magic'], check=False)
+                stopped.append("Magic")
+            except Exception as e:
+                logger.error(f"Failed to stop Magic: {e}")
+        
         if stopped:
             self.notify(f"Stopped: {', '.join(stopped)}", severity="information")
         else:
@@ -1903,6 +1961,7 @@ class VJConsoleApp(App):
         self.process_monitor = ProcessMonitor([
             "Synesthesia",
             "LM Studio",
+            "Magic",
             "java",  # Processing apps run as Java
         ])
         
@@ -1920,6 +1979,7 @@ class VJConsoleApp(App):
         self.milksyphon_running = self._run_process(['pgrep', '-f', 'projectMilkSyphon'], 1)
         self.lmstudio_running = self._is_lmstudio_running()
         self.karaoke_overlay_running = self._is_karaoke_overlay_running()
+        self.magic_running = self._is_magic_running()
         
         # Check LM Studio model status
         self._lmstudio_status = self._check_lmstudio_model()
@@ -1964,6 +2024,10 @@ class VJConsoleApp(App):
         if self.settings.autorestart_music_monitor and not self._is_music_monitor_running():
             logger.info("Auto-restarting Music Monitor")
             self._start_karaoke()
+        
+        if self.settings.autorestart_magic and not self.magic_running:
+            logger.info("Auto-restarting Magic")
+            self._start_magic()
         
         # Update services panel
         self._update_services()

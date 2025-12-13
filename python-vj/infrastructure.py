@@ -204,6 +204,15 @@ class Settings:
     def start_music_monitor(self, value: bool) -> None:
         self._set_bool('start_music_monitor', value)
     
+    @property
+    def start_magic(self) -> bool:
+        """Whether to start Magic Music Visuals on launch."""
+        return self._get_bool('start_magic', False)
+    
+    @start_magic.setter
+    def start_magic(self, value: bool) -> None:
+        self._set_bool('start_magic', value)
+    
     # --- Auto-restart checkboxes (all default False) ---
     
     @property
@@ -241,6 +250,25 @@ class Settings:
     @autorestart_music_monitor.setter
     def autorestart_music_monitor(self, value: bool) -> None:
         self._set_bool('autorestart_music_monitor', value)
+    
+    @property
+    def autorestart_magic(self) -> bool:
+        """Whether to auto-restart Magic Music Visuals if it crashes."""
+        return self._get_bool('autorestart_magic', False)
+    
+    @autorestart_magic.setter
+    def autorestart_magic(self, value: bool) -> None:
+        self._set_bool('autorestart_magic', value)
+    
+    @property
+    def magic_file_path(self) -> str:
+        """Path to .magic file to open on launch (empty = no file)."""
+        return self._data.get('magic_file_path', '')
+    
+    @magic_file_path.setter
+    def magic_file_path(self, value: str) -> None:
+        self._data['magic_file_path'] = value
+        self._save()
 
 
 # =============================================================================
