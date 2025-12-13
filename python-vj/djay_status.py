@@ -61,6 +61,61 @@ def parse_time_to_seconds(time_str):
         return minutes * 60 + seconds
     return None
 
+def get_all_text_from_element(element, depth=0, max_depth=5):
+    """Recursively get all text values from an element."""
+    if depth > max_depth:
+        return []
+    texts = []
+    val = get_ax_attribute(element, 'AXValue')
+    if val:
+        texts.append(str(val))
+    children = get_ax_attribute(element, 'AXChildren')
+    if children:
+        for c in children:
+            texts.extend(get_all_text_from_element(c, depth + 1, max_depth))
+    return texts
+
+def find_song_in_automix(window, track_title):
+    """Search Automix table for song duration by title match."""
+    if not track_title:
+        return None
+    
+    track_lower = track_title.lower()
+    stack = [(window, 0)]
+    
+    while stack:
+        el, d = stack.pop()
+        if d > 4:
+            continue
+        role = get_ax_attribute(el, 'AXRole') or ''
+        title = get_ax_attribute(el, 'AXTitle') or ''
+        
+        if role == 'AXTable' and 'Automix' in title:
+            rows = get_ax_attribute(el, 'AXRows')
+            if rows:
+                for row in rows[:100]:  # Check first 100 rows
+                    texts = get_all_text_from_element(row)
+                    # texts typically: [title, artist, duration, key, bpm]
+                    if len(texts) >= 3:
+                        row_title = texts[0].lower() if texts[0] else ''
+                        if track_lower in row_title or row_title in track_lower:
+                            # Found matching song
+                            duration_str = texts[2] if len(texts) > 2 else None
+                            bpm_str = texts[4] if len(texts) > 4 else None
+                            return {
+                                'duration_str': duration_str,
+                                'duration_sec': parse_time_to_seconds(duration_str),
+                                'bpm': bpm_str
+                            }
+            break
+        
+        children = get_ax_attribute(el, 'AXChildren')
+        if children:
+            for c in children:
+                stack.append((c, d + 1))
+    
+    return None
+
 def get_current_playing():
     """Get info about the currently playing song."""
     # Find djay Pro
@@ -122,6 +177,8 @@ def get_current_playing():
         'remaining_str': None,
         'remaining_sec': None,
         'duration_sec': None,
+        'duration_str': None,
+        'bpm': None,
         'key': None,
         'crossfader': crossfader,
     }
@@ -162,6 +219,22 @@ def get_current_playing():
     for k in find_by_text(elements, f'key, deck {active_deck}')[:1]:
         result['key'] = k['value']
     
+    # Try to get duration from Automix table
+    if result['track']:
+        automix_info = find_song_in_automix(window, result['track'])
+        if automix_info:
+            if automix_info.get('duration_sec') and not result['duration_sec']:
+                result['duration_sec'] = automix_info['duration_sec']
+                result['duration_str'] = automix_info['duration_str']
+            if automix_info.get('bpm'):
+                result['bpm'] = automix_info['bpm']
+    
+    # Calculate elapsed from duration - remaining if we have duration but not elapsed
+    if result['duration_sec'] and result['remaining_sec'] and result['elapsed_sec'] is None:
+        result['elapsed_sec'] = result['duration_sec'] - result['remaining_sec']
+        mins, secs = divmod(result['elapsed_sec'], 60)
+        result['elapsed_str'] = f'{mins:02d}:{secs:02d}'
+    
     return result, None
 
 def main():
@@ -184,12 +257,15 @@ def main():
     if result['elapsed_sec'] is not None:
         print(f'  Position:  {result["elapsed_str"]} ({result["elapsed_sec"]} sec)')
     if result['duration_sec']:
-        mins, secs = divmod(result['duration_sec'], 60)
-        print(f'  Duration:  {mins}:{secs:02d} ({result["duration_sec"]} sec total)')
+        if result['duration_str']:
+            print(f'  Duration:  {result["duration_str"]} ({result["duration_sec"]} sec total)')
+        else:
+            mins, secs = divmod(result['duration_sec'], 60)
+            print(f'  Duration:  {mins}:{secs:02d} ({result["duration_sec"]} sec total)')
     if result['remaining_sec']:
         print(f'  Remaining: {result["remaining_str"]} ({result["remaining_sec"]} sec left)')
-    if result['elapsed_sec'] is None and result['remaining_sec']:
-        print(f'  (UI shows remaining time only - position unknown)')
+    if result['bpm']:
+        print(f'  BPM:       {result["bpm"]}')
     print(f'  Key:       {result["key"]}')
     print(f'  Crossfader: {result["crossfader"]}%')
 
