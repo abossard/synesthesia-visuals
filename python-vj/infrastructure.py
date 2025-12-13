@@ -47,6 +47,7 @@ class Config:
     SPOTIFY_TOKEN_CACHE = APP_DATA_DIR / "spotify_token.cache"
     SCRIPTS_DIR = Path(__file__).parent / "scripts"
     DEFAULT_SPOTIFY_APPLESCRIPT = SCRIPTS_DIR / "spotify_track.applescript"
+    DEFAULT_DJSTUDIO_APPLESCRIPT = SCRIPTS_DIR / "djstudio_track.applescript"
 
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
@@ -58,6 +59,9 @@ class Config:
     # Spotify monitor feature flags (AppleScript enabled by default)
     SPOTIFY_WEBAPI_ENABLED = os.environ.get('SPOTIFY_WEBAPI_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
     SPOTIFY_APPLESCRIPT_ENABLED = os.environ.get('SPOTIFY_APPLESCRIPT_ENABLED', '1').lower() in ('1', 'true', 'yes', 'on')
+    
+    # DJ.Studio monitor feature flag (enabled by default)
+    DJSTUDIO_ENABLED = os.environ.get('DJSTUDIO_ENABLED', '1').lower() in ('1', 'true', 'yes', 'on')
     
     @classmethod
     def find_vdj_path(cls) -> Optional[Path]:
@@ -95,6 +99,28 @@ class Config:
         return {
             'enabled': cls.SPOTIFY_APPLESCRIPT_ENABLED,
             'script_path': script_path,
+            'timeout': timeout,
+        }
+
+    @classmethod
+    def djstudio_config(cls) -> Dict[str, Any]:
+        """Return DJ.Studio monitor settings (script path, file path, timeout, enabled)."""
+        script_override = os.environ.get('DJSTUDIO_APPLESCRIPT_PATH', '')
+        script_path = Path(script_override) if script_override else cls.DEFAULT_DJSTUDIO_APPLESCRIPT
+        
+        file_override = os.environ.get('DJSTUDIO_FILE_PATH', '')
+        file_path = Path(file_override) if file_override else None
+        
+        timeout_env = os.environ.get('DJSTUDIO_TIMEOUT', '').strip()
+        try:
+            timeout = float(timeout_env) if timeout_env else 1.5
+        except ValueError:
+            timeout = 1.5
+        
+        return {
+            'enabled': cls.DJSTUDIO_ENABLED,
+            'script_path': script_path,
+            'file_path': file_path,
             'timeout': timeout,
         }
 

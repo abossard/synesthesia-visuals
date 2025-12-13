@@ -31,6 +31,32 @@ except ImportError:
 
 
 # =============================================================================
+# SHARED UTILITIES
+# =============================================================================
+
+def parse_track_string(content: str) -> tuple:
+    """
+    Parse 'Artist - Title' format into separate components.
+    
+    Args:
+        content: String in format "Artist - Title"
+    
+    Returns:
+        Tuple of (artist, title). If no dash found, returns ("", content).
+    
+    Examples:
+        >>> parse_track_string("Daft Punk - Get Lucky")
+        ("Daft Punk", "Get Lucky")
+        >>> parse_track_string("No Dash Here")
+        ("", "No Dash Here")
+    """
+    if " - " in content:
+        artist, title = content.split(" - ", 1)
+        return artist.strip(), title.strip()
+    return "", content.strip()
+
+
+# =============================================================================
 # LYRICS FETCHER - Deep module with LRCLIB + LM Studio web-search fallback
 # =============================================================================
 
@@ -563,7 +589,7 @@ class VirtualDJMonitor:
                 self._start_time = time.time()
             
             # Parse "Artist - Title"
-            artist, title = self._parse_track_string(current_track)
+            artist, title = parse_track_string(current_track)
             
             return {
                 'artist': artist,
@@ -623,18 +649,300 @@ class VirtualDJMonitor:
             return 0 <= hours <= 23 and 0 <= mins <= 59
         except ValueError:
             return False
-    
-    def _parse_track_string(self, content: str) -> tuple:
-        """Parse 'Artist - Title' format."""
-        if " - " in content:
-            artist, title = content.split(" - ", 1)
-            return artist.strip(), title.strip()
-        return "", content.strip()
 
     @property
     def status(self) -> Dict[str, Any]:
         """Public access to health status for UI use."""
         return self._health.get_status()
+
+
+
+# =============================================================================
+# DJ.STUDIO MONITOR - Multi-strategy monitor (AppleScript, file, window title)
+# =============================================================================
+
+class DJStudioMonitor:
+    """
+    Monitors DJ.Studio playback using multiple strategies.
+    
+    Deep module - simple interface, complex implementation.
+    Public interface: get_playback() -> Optional[Dict]
+    
+    Strategies (in order):
+    1. AppleScript - if DJ.Studio supports it (check window title)
+    2. File monitoring - check for exported track info files
+    3. Window title parsing - extract track info from window title
+    
+    DJ.Studio may export current track to files like:
+    - ~/Documents/DJ.Studio/current_track.txt
+    - ~/Library/Application Support/DJ.Studio/now_playing.txt
+    - Or display track info in window title
+    """
+    
+    monitor_key = "djstudio"
+    monitor_label = "DJ.Studio"
+    
+    # Possible file paths where DJ.Studio might export track info
+    DJSTUDIO_FILE_PATHS = [
+        Path.home() / "Documents" / "DJ.Studio" / "current_track.txt",
+        Path.home() / "Documents" / "DJ.Studio" / "now_playing.txt",
+        Path.home() / "Library" / "Application Support" / "DJ.Studio" / "current_track.txt",
+        Path.home() / "Library" / "Application Support" / "DJ.Studio" / "now_playing.txt",
+        Path("/tmp") / "djstudio_now_playing.txt",
+    ]
+    
+    def __init__(self, script_path: Optional[Path] = None, file_path: Optional[Path] = None, timeout: float = 1.5):
+        self._script_path = script_path or (Config.SCRIPTS_DIR / "djstudio_track.applescript")
+        self._explicit_file_path = file_path
+        self._timeout = timeout
+        self._health = ServiceHealth(self.monitor_label)
+        self._last_track = ""
+        self._start_time = 0.0
+        self._notified_online = False
+        
+        # Find file path if not explicit
+        if not self._explicit_file_path:
+            for path in self.DJSTUDIO_FILE_PATHS:
+                if path.exists():
+                    self._explicit_file_path = path
+                    logger.info(f"DJ.Studio: found track file at {path}")
+                    break
+    
+    @property
+    def is_available(self) -> bool:
+        """Check if DJ.Studio is accessible."""
+        return self._health.available
+    
+    def get_playback(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current DJ.Studio track using available strategy.
+        Tries: AppleScript → File monitoring → Window title parsing
+        """
+        # Strategy 1: AppleScript (if script exists)
+        if self._script_path.exists():
+            playback = self._try_applescript()
+            if playback:
+                return playback
+        
+        # Strategy 2: File monitoring (if file exists)
+        if self._explicit_file_path and self._explicit_file_path.exists():
+            playback = self._try_file_monitoring()
+            if playback:
+                return playback
+        
+        # Strategy 3: Window title parsing (requires osascript)
+        playback = self._try_window_title()
+        if playback:
+            return playback
+        
+        # No strategy worked
+        if self._health.available:
+            self._health.mark_unavailable("DJ.Studio not detected or not playing")
+        return None
+    
+    @property
+    def status(self) -> Dict[str, Any]:
+        """Public access to health status for UI use."""
+        return self._health.get_status()
+    
+    # Private methods - implementation details
+    
+    def _try_applescript(self) -> Optional[Dict[str, Any]]:
+        """Try to get track info via AppleScript."""
+        try:
+            result = subprocess.run(
+                ["osascript", str(self._script_path)],
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+                check=False,
+            )
+            
+            if result.returncode != 0:
+                return None
+            
+            raw_output = (result.stdout or "").strip()
+            if not raw_output:
+                return None
+            
+            payload = json.loads(raw_output)
+            
+            # Check if we got useful track info
+            if not payload.get('running'):
+                return None
+            
+            # If AppleScript worked but DJ.Studio isn't scriptable,
+            # we'll fall through to other strategies
+            if not payload.get('scriptable', False):
+                return None
+            
+            # Extract track info if available
+            artist = payload.get('artist', '').strip()
+            title = payload.get('title', '').strip()
+            
+            if not artist and not title:
+                return None
+            
+            playback = {
+                'artist': artist,
+                'title': title,
+                'album': payload.get('album', ''),
+                'duration_ms': int(payload.get('duration_ms', 0) or 0),
+                'progress_ms': int(payload.get('progress_ms', 0) or 0),
+                'is_playing': bool(payload.get('is_playing', True)),
+            }
+            
+            self._health.mark_available("AppleScript")
+            if not self._notified_online:
+                logger.info("DJ.Studio: Detected via AppleScript")
+                self._notified_online = True
+            return playback
+            
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+            return None
+    
+    def _try_file_monitoring(self) -> Optional[Dict[str, Any]]:
+        """Try to get track info from file export."""
+        if not self._explicit_file_path or not self._explicit_file_path.exists():
+            return None
+        
+        try:
+            content = self._explicit_file_path.read_text().strip()
+            if not content:
+                return None
+            
+            # Parse track info from file
+            # Support formats:
+            # - "Artist - Title"
+            # - JSON: {"artist": "...", "title": "...", ...}
+            
+            if content.startswith('{'):
+                # JSON format
+                data = json.loads(content)
+                artist = data.get('artist', '').strip()
+                title = data.get('title', '').strip()
+                album = data.get('album', '').strip()
+                duration_ms = int(data.get('duration_ms', 0) or 0)
+                progress_ms = int(data.get('progress_ms', 0) or 0)
+            else:
+                # Plain text "Artist - Title" format
+                artist, title = parse_track_string(content)
+                album = ''
+                duration_ms = 0
+                progress_ms = 0
+            
+            if not artist and not title:
+                return None
+            
+            # Track change detection for progress estimation
+            current_track = f"{artist} - {title}"
+            if current_track != self._last_track:
+                self._last_track = current_track
+                self._start_time = time.time()
+            
+            if duration_ms == 0 and progress_ms == 0:
+                # Estimate progress if not provided
+                progress_ms = int((time.time() - self._start_time) * 1000)
+            
+            playback = {
+                'artist': artist,
+                'title': title,
+                'album': album,
+                'duration_ms': duration_ms,
+                'progress_ms': progress_ms,
+                'is_playing': True,
+            }
+            
+            self._health.mark_available(f"File: {self._explicit_file_path.name}")
+            if not self._notified_online:
+                logger.info(f"DJ.Studio: Monitoring file {self._explicit_file_path}")
+                self._notified_online = True
+            return playback
+            
+        except (json.JSONDecodeError, IOError, Exception) as e:
+            logger.debug(f"DJ.Studio file read error: {e}")
+            return None
+    
+    def _try_window_title(self) -> Optional[Dict[str, Any]]:
+        """Try to extract track info from DJ.Studio window title."""
+        try:
+            # Use AppleScript to get window title
+            script = '''
+            tell application "System Events"
+                if exists process "DJ.Studio" then
+                    tell process "DJ.Studio"
+                        if (count of windows) > 0 then
+                            return name of window 1
+                        end if
+                    end tell
+                end if
+            end tell
+            return ""
+            '''
+            
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+                check=False,
+            )
+            
+            if result.returncode != 0:
+                return None
+            
+            window_title = (result.stdout or "").strip()
+            if not window_title:
+                return None
+            
+            # Parse window title for track info
+            # Common patterns:
+            # - "Artist - Title - DJ.Studio"
+            # - "Now Playing: Artist - Title"
+            # - "DJ.Studio - Artist - Title"
+            
+            artist, title = self._parse_window_title(window_title)
+            if not artist and not title:
+                return None
+            
+            # Track change detection
+            current_track = f"{artist} - {title}"
+            if current_track != self._last_track:
+                self._last_track = current_track
+                self._start_time = time.time()
+            
+            playback = {
+                'artist': artist,
+                'title': title,
+                'album': '',
+                'duration_ms': 0,
+                'progress_ms': int((time.time() - self._start_time) * 1000),
+                'is_playing': True,
+            }
+            
+            self._health.mark_available("Window title")
+            if not self._notified_online:
+                logger.info("DJ.Studio: Monitoring window title")
+                self._notified_online = True
+            return playback
+            
+        except (subprocess.TimeoutExpired, Exception):
+            return None
+    
+    def _parse_window_title(self, title: str) -> tuple:
+        """Extract artist and title from window title."""
+        # Remove common suffixes
+        for suffix in [" - DJ.Studio", " - DJ Studio", " | DJ.Studio"]:
+            if title.endswith(suffix):
+                title = title[:-len(suffix)].strip()
+        
+        # Remove common prefixes
+        for prefix in ["Now Playing: ", "DJ.Studio - ", "Playing: "]:
+            if title.startswith(prefix):
+                title = title[len(prefix):].strip()
+        
+        # Parse remaining "Artist - Title"
+        return parse_track_string(title)
 
 
 # =============================================================================

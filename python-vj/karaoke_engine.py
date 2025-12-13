@@ -40,7 +40,7 @@ __all__ = [
     'get_active_line_index', 'get_refrain_lines',
     'PipelineTracker', 'PipelineStep',
     'LLMAnalyzer', 'SongCategorizer',
-    'LyricsFetcher', 'SpotifyMonitor', 'VirtualDJMonitor', 'OSCSender',
+    'LyricsFetcher', 'SpotifyMonitor', 'VirtualDJMonitor', 'DJStudioMonitor', 'OSCSender',
     'PlaybackSnapshot', 'BackoffState',
 ]
 
@@ -49,6 +49,7 @@ from adapters import (
     AppleScriptSpotifyMonitor,
     SpotifyMonitor,
     VirtualDJMonitor,
+    DJStudioMonitor,
     LyricsFetcher,
     OSCSender,
 )
@@ -109,11 +110,19 @@ class KaraokeEngine:
         self._lyrics_fetcher = LyricsFetcher()
         
         # Playback monitors (priority order)
+        # Priority: AppleScript Spotify → Web API Spotify → DJ.Studio → VirtualDJ
         monitors = []
         if Config.SPOTIFY_APPLESCRIPT_ENABLED:
             monitors.append(AppleScriptSpotifyMonitor())
         if Config.SPOTIFY_WEBAPI_ENABLED:
             monitors.append(SpotifyMonitor())
+        if Config.DJSTUDIO_ENABLED:
+            djstudio_config = Config.djstudio_config()
+            monitors.append(DJStudioMonitor(
+                script_path=djstudio_config['script_path'],
+                file_path=djstudio_config['file_path'],
+                timeout=djstudio_config['timeout']
+            ))
         monitors.append(VirtualDJMonitor(vdj_path))
         self._playback = PlaybackCoordinator(monitors=monitors)
         

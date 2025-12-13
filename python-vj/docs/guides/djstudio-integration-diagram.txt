@@ -1,0 +1,134 @@
+DJ.Studio Integration Architecture
+===================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        DJ.Studio Application                     │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+│  │ Window Title │  │  File Export │  │  AppleScript │         │
+│  │  "Artist -   │  │  current_    │  │   (if        │         │
+│  │   Title"     │  │  track.txt   │  │  supported)  │         │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘         │
+└─────────┼──────────────────┼──────────────────┼─────────────────┘
+          │                  │                  │
+          │                  │                  │
+┌─────────┼──────────────────┼──────────────────┼─────────────────┐
+│         │   Python VJ      │                  │                 │
+│         │   Console        │                  │                 │
+│         │                  │                  │                 │
+│    ┌────▼──────────────────▼──────────────────▼─────┐          │
+│    │        DJStudioMonitor (adapters.py)           │          │
+│    │                                                 │          │
+│    │  Strategy 1: AppleScript (osascript)           │          │
+│    │  Strategy 2: File Read (Path.read_text)        │          │
+│    │  Strategy 3: Window Title (System Events)      │          │
+│    │                                                 │          │
+│    │  Returns: {artist, title, album,               │          │
+│    │            duration_ms, progress_ms}            │          │
+│    └────┬────────────────────────────────────────────┘          │
+│         │                                                        │
+│    ┌────▼─────────────────────────────────┐                    │
+│    │  PlaybackCoordinator (orchestrators) │                    │
+│    │  Priority: Spotify → DJ.Studio → VDJ │                    │
+│    └────┬─────────────────────────────────┘                    │
+│         │                                                        │
+│    ┌────▼──────────────────────────────────┐                   │
+│    │     LyricsOrchestrator               │                    │
+│    │  - Fetch lyrics from LRCLIB          │                    │
+│    │  - Parse and sync timing             │                    │
+│    └────┬─────────────────────────────────┘                    │
+│         │                                                        │
+│    ┌────▼──────────────────────────────────┐                   │
+│    │          OSCSender                    │                    │
+│    │  /karaoke/track [artist, title, ...]  │                   │
+│    │  /karaoke/lyrics/* [sync data]        │                   │
+│    └────┬─────────────────────────────────┘                    │
+└─────────┼────────────────────────────────────────────────────────┘
+          │
+          │  OSC Messages (port 9000)
+          │
+┌─────────▼────────────────────────────────────────────────────────┐
+│                VJ Output Applications                             │
+│                                                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │ Processing   │  │  Resolume    │  │   Magic      │          │
+│  │  Karaoke     │  │   Arena      │  │   Music      │          │
+│  │  Overlay     │  │              │  │   Visuals    │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+└───────────────────────────────────────────────────────────────────┘
+
+
+File Export Format Examples
+============================
+
+Plain Text (Artist - Title):
+----------------------------
+Daft Punk - Get Lucky
+
+
+JSON (Full Metadata):
+---------------------
+{
+  "artist": "Daft Punk",
+  "title": "Get Lucky",
+  "album": "Random Access Memories",
+  "duration_ms": 248000,
+  "progress_ms": 120000
+}
+
+
+Monitor Priority Logic
+======================
+
+┌─────────────────────┐
+│  Poll All Monitors  │
+│  (every 1 second)   │
+└──────────┬──────────┘
+           │
+    ┌──────▼──────┐
+    │ Spotify AS? │───Yes──► Return Spotify
+    └──────┬──────┘
+           No
+    ┌──────▼──────┐
+    │ Spotify API?│───Yes──► Return Spotify
+    └──────┬──────┘
+           No
+    ┌──────▼──────┐
+    │ DJ.Studio?  │───Yes──► Return DJ.Studio
+    └──────┬──────┘
+           No
+    ┌──────▼──────┐
+    │ VirtualDJ?  │───Yes──► Return VirtualDJ
+    └──────┬──────┘
+           No
+           │
+    ┌──────▼──────┐
+    │  Return None│
+    │   (idle)    │
+    └─────────────┘
+
+
+Configuration Flow
+==================
+
+Environment Variables (.env)
+─────────────────────────────
+DJSTUDIO_ENABLED=1
+DJSTUDIO_FILE_PATH=/path/to/file.txt
+DJSTUDIO_TIMEOUT=1.5
+           │
+           │
+    ┌──────▼──────────────┐
+    │   Config.djstudio   │
+    │     _config()       │
+    └──────┬──────────────┘
+           │
+    ┌──────▼──────────────────┐
+    │  KaraokeEngine.__init__│
+    │  creates DJStudioMon   │
+    └──────┬────────────────┘
+           │
+    ┌──────▼──────────────────┐
+    │ PlaybackCoordinator     │
+    │ adds to monitor list    │
+    └─────────────────────────┘
