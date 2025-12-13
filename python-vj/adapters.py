@@ -501,6 +501,10 @@ class VirtualDJMonitor:
     """
     Monitors VirtualDJ tracklist.txt file with smart parsing.
     
+    IMPORTANT: VirtualDJ does NOT support AppleScript (unlike Spotify).
+    This monitor uses file-based polling - the standard VirtualDJ integration method.
+    See docs/reference/virtualdj-monitoring.md for details.
+    
     Deep module - simple interface, complex implementation.
     Public interface: get_playback() -> Optional[Dict]
     Hides: File polling, path detection, tracklist parsing, timing estimation, error handling

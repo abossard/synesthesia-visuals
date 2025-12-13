@@ -34,6 +34,7 @@ python vj_console.py          # Launch terminal UI
 | Doc | Description |
 |-----|-------------|
 | [MIDI Router Visual Guide](docs/reference/midi-router-visual-guide.md) | ASCII art visual reference for MIDI Router screen |
+| [VirtualDJ Monitoring](docs/reference/virtualdj-monitoring.md) | VirtualDJ integration details and AppleScript research |
 
 ### Development
 

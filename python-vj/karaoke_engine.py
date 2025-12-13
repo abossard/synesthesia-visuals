@@ -108,13 +108,15 @@ class KaraokeEngine:
         self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
         self._lyrics_fetcher = LyricsFetcher()
         
-        # Playback monitors (priority order)
+        # Playback monitors (priority order - first successful monitor wins)
+        # VirtualDJ is ONLY active when Spotify is not playing.
+        # Note: VirtualDJ uses file polling, NOT AppleScript (see docs/reference/virtualdj-monitoring.md)
         monitors = []
         if Config.SPOTIFY_APPLESCRIPT_ENABLED:
-            monitors.append(AppleScriptSpotifyMonitor())
+            monitors.append(AppleScriptSpotifyMonitor())  # 1st: macOS desktop app
         if Config.SPOTIFY_WEBAPI_ENABLED:
-            monitors.append(SpotifyMonitor())
-        monitors.append(VirtualDJMonitor(vdj_path))
+            monitors.append(SpotifyMonitor())              # 2nd: Web API fallback
+        monitors.append(VirtualDJMonitor(vdj_path))        # 3rd: VirtualDJ fallback
         self._playback = PlaybackCoordinator(monitors=monitors)
         
         # AI services (all optional)

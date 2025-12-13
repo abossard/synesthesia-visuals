@@ -42,9 +42,13 @@ class PlaybackCoordinator:
     """
     Monitors playback from multiple sources and detects track changes.
     
-    Priority order:
-    1. Spotify (if actively playing)
-    2. VirtualDJ (fallback)
+    Priority order (first successful monitor wins):
+    1. Spotify AppleScript (macOS desktop app)
+    2. Spotify Web API (fallback if AppleScript unavailable)
+    3. VirtualDJ (fallback if Spotify not playing)
+    
+    VirtualDJ is ONLY active when Spotify monitors return None.
+    This ensures Spotify takes priority during simultaneous playback.
     
     Interface:
         poll() -> PlaybackSample
@@ -59,7 +63,13 @@ class PlaybackCoordinator:
         self._current_source = "unknown"
     
     def poll(self) -> PlaybackSample:
-        """Poll monitors respecting priority order and return sample."""
+        """
+        Poll monitors respecting priority order and return sample.
+        
+        Stops at first monitor that returns playback data.
+        This implements the priority system where VirtualDJ only
+        activates when Spotify is not playing.
+        """
         prev_key = self._state.track.key if self._state.track else ""
         error = None
 
