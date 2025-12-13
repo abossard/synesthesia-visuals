@@ -451,3 +451,21 @@ ArrayList<ShaderInfo> getHighEnergyShaders() {
   
   return matches;
 }
+
+// ============================================
+// TYPE FILTER (LEGACY - now GLSL only)
+// ============================================
+
+// No filter applied since we only support GLSL shaders now
+ShaderType currentTypeFilter = null;
+
+// Returns all available shaders (no filtering since ISF was removed)
+ArrayList<ShaderInfo> getFilteredShaderList() {
+  return availableShaders;
+}
+
+// No-op since we only support GLSL now
+void toggleShaderTypeFilter() {
+  // ISF support was removed - only GLSL shaders are used
+  println("Type filter disabled (GLSL only mode)");
+}

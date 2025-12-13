@@ -26,6 +26,7 @@ final int SYN_AUDIO_TIMEOUT_MS = 1500;
 
 OscP5 synAudioOsc;
 HashMap<String, Float> synAudioValues = new HashMap<String, Float>();
+HashMap<String, float[]> isfUniformDefaults = new HashMap<String, float[]>();
 long synAudioLastMessageMs = 0;
 String synAudioSourceLabel = "Synesthesia OSC";
 
