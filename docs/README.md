@@ -31,6 +31,8 @@ Deep technical details and copy-paste ready code patterns.
 
 ### 🔧 [Development](development/)
 **Implementation plans and future work**
+- **Shader Generation Implementation Plan** ⭐ NEW
+- Shader Generation Quick Reference
 - Processing Implementation Plan
 - Python VJ Refactor Plan
 - Shader Orchestrator Plan
@@ -64,6 +66,9 @@ Preserved for reference but not actively maintained.
 
 **Understand the system architecture**
 → [Development: Python VJ Refactor Plan](development/python-vj-refactor-plan.md)
+
+**Generate shaders dynamically with AI**
+→ [Development: Shader Generation Implementation Plan](development/SHADER_GENERATION_IMPLEMENTATION_PLAN.md)
 
 **Convert shaders to Synesthesia**
 → [Reference: ISF to Synesthesia Migration](reference/isf-to-synesthesia-migration.md)
