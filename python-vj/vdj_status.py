@@ -19,6 +19,12 @@ Fader Detection Details:
 Usage:
     python vdj_status.py           # Show current status
     python vdj_status.py --debug   # Show OCR debug output
+    python vdj_status.py --fast    # Enable all performance optimizations
+
+Performance Options (configurable via get_current_playing()):
+    use_language_correction: Enable OCR language correction (slower but more accurate)
+    crop_ratio: Crop image to top N% before OCR (0.45 = top 45%, None = full)
+    downscale: Downscale factor for image (2 = half size, 1 = full)
 """
 
 import subprocess
@@ -231,8 +237,19 @@ def find_vdj_window_id():
     return None, None
 
 
-def capture_window_direct(window_id, bounds, crop_ratio=None):
-    """Capture window directly via Quartz (faster than screencapture subprocess)."""
+def capture_window_direct(window_id, bounds, crop_ratio=None, downscale=1):
+    """
+    Capture window directly via Quartz (faster than screencapture subprocess).
+    
+    Args:
+        window_id: CGWindowID to capture
+        bounds: Window bounds dict (unused, kept for API compat)
+        crop_ratio: Crop to top N of image (0.45 = top 45%). None = full image.
+        downscale: Downscale factor (2 = half size for faster OCR). 1 = full.
+    
+    Returns:
+        CGImage or None
+    """
     # Capture the window
     cg_image = Quartz.CGWindowListCreateImage(
         Quartz.CGRectNull,  # Capture just this window
@@ -244,16 +261,34 @@ def capture_window_direct(window_id, bounds, crop_ratio=None):
     if not cg_image:
         return None
     
-    # Optional: crop to region for faster OCR (but changes coordinate system)
+    width = Quartz.CGImageGetWidth(cg_image)
+    height = Quartz.CGImageGetHeight(cg_image)
+    
+    # Optional: crop to top region for faster OCR
     if crop_ratio and crop_ratio < 1.0:
-        width = Quartz.CGImageGetWidth(cg_image)
-        height = Quartz.CGImageGetHeight(cg_image)
-        # Crop from top (y=0 in CG is bottom, so crop from height - crop_height)
+        # Crop from top (CG origin is bottom-left, so we take from height - crop_height)
         crop_height = int(height * crop_ratio)
-        crop_width = int(width * crop_ratio)
-        crop_rect = Quartz.CGRectMake(0, height - crop_height, crop_width, crop_height)
+        crop_rect = Quartz.CGRectMake(0, height - crop_height, width, crop_height)
         cropped = Quartz.CGImageCreateWithImageInRect(cg_image, crop_rect)
-        return cropped if cropped else cg_image
+        if cropped:
+            cg_image = cropped
+            height = crop_height
+    
+    # Optional: downscale for faster OCR (text still readable at 2x reduction)
+    if downscale > 1:
+        new_width = width // downscale
+        new_height = height // downscale
+        color_space = Quartz.CGImageGetColorSpace(cg_image)
+        context = Quartz.CGBitmapContextCreate(
+            None, new_width, new_height, 8, 0, color_space,
+            Quartz.kCGImageAlphaPremultipliedLast
+        )
+        if context:
+            Quartz.CGContextSetInterpolationQuality(context, Quartz.kCGInterpolationHigh)
+            Quartz.CGContextDrawImage(context, Quartz.CGRectMake(0, 0, new_width, new_height), cg_image)
+            scaled = Quartz.CGBitmapContextCreateImage(context)
+            if scaled:
+                cg_image = scaled
     
     return cg_image
 
@@ -267,14 +302,25 @@ def capture_window(window_id, output_path="/tmp/vdj_screenshot.png"):
     return result.returncode == 0
 
 
-def ocr_cgimage(cg_image):
-    """Run OCR directly on CGImage (no file I/O)."""
+def ocr_cgimage(cg_image, use_language_correction=True):
+    """
+    Run OCR directly on CGImage (no file I/O).
+    
+    Args:
+        cg_image: CGImage to process
+        use_language_correction: Enable language correction (slower but more accurate).
+                                 Disable for ~50% speed boost when reading numbers/codes.
+    
+    Returns:
+        List of (y, x, text) tuples sorted by Y position
+    """
     if not cg_image:
         return []
     
     handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
     request = Vision.VNRecognizeTextRequest.alloc().init()
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelFast)
+    request.setUsesLanguageCorrection_(use_language_correction)
     
     success, error = handler.performRequests_error_([request], None)
     if not success:
@@ -450,12 +496,26 @@ def _extract_single_deck(ocr_results, deck_num):
     return result
 
 
-def get_current_playing():
-    """Get current VirtualDJ playback info via screenshot + OCR.
-    
-    Returns dict with 'deck1', 'deck2', and 'active_deck' keys.
-    'active_deck' is a heuristic guess based on elapsed time (higher = playing).
+def get_current_playing(use_language_correction=True, crop_ratio=None, downscale=1, fast=False):
     """
+    Get current VirtualDJ playback info via screenshot + OCR.
+    
+    Args:
+        use_language_correction: Enable OCR language correction. Disable for ~50% speed boost.
+        crop_ratio: Crop to top N of image before OCR (0.45 = top 45%). None = full.
+        downscale: Downscale factor (2 = half size). 1 = full resolution.
+        fast: Shortcut to enable all optimizations (no lang correction, crop 0.5, downscale 2)
+    
+    Returns:
+        tuple: (result_dict, error_string)
+        result_dict has 'deck1', 'deck2', 'active_deck', '_master_source' keys.
+    """
+    # Fast mode presets
+    if fast:
+        use_language_correction = False
+        crop_ratio = None  # Don't crop - OCR coordinates get messed up
+        downscale = 1      # Don't downscale (OCR accuracy suffers)
+    
     # Check if VDJ is running
     ws = AppKit.NSWorkspace.sharedWorkspace()
     vdj_running = False
@@ -472,16 +532,22 @@ def get_current_playing():
     if not window_id:
         return None, "VirtualDJ window not found"
     
-    # Try direct capture (faster - no subprocess, no file I/O)
-    cg_image = capture_window_direct(window_id, bounds, crop_ratio=None)
-    if cg_image:
-        ocr_results = ocr_cgimage(cg_image)
-    else:
+    # Capture full window first (needed for fader detection)
+    full_image = capture_window_direct(window_id, bounds, crop_ratio=None, downscale=1)
+    if not full_image:
         # Fallback to subprocess capture
         screenshot_path = "/tmp/vdj_screenshot.png"
         if not capture_window(window_id, screenshot_path):
             return None, "Failed to capture screenshot"
         ocr_results = ocr_image(screenshot_path)
+        full_image = None
+    else:
+        # Use optimized image for OCR (crop/downscale)
+        if crop_ratio or downscale > 1:
+            ocr_image_opt = capture_window_direct(window_id, bounds, crop_ratio=crop_ratio, downscale=downscale)
+            ocr_results = ocr_cgimage(ocr_image_opt or full_image, use_language_correction)
+        else:
+            ocr_results = ocr_cgimage(full_image, use_language_correction)
     
     if not ocr_results:
         return None, "OCR failed or no text found"
@@ -499,10 +565,8 @@ def get_current_playing():
     deck1 = result['deck1']
     deck2 = result['deck2']
     
-    # Primary: Detect master from GAIN fader positions
-    # Capture fresh full window for fader detection (OCR may have invalidated previous image)
-    fader_image = capture_window_direct(window_id, bounds, crop_ratio=None)
-    fader_master, left_y, right_y = detect_master_from_faders(fader_image) if fader_image else (0, 0, 0)
+    # Primary: Detect master from GAIN fader positions (reuse full_image, no re-capture)
+    fader_master, left_y, right_y = detect_master_from_faders(full_image) if full_image else (0, 0, 0)
     
     if fader_master > 0:
         # Fader detection succeeded - update immediately
@@ -552,9 +616,14 @@ def _print_deck(deck_info, deck_label, is_active=False):
 
 
 def main():
-    # Debug: print OCR results to tune parsing
+    # Parse command line options
     debug = '--debug' in sys.argv
-    result, error = get_current_playing()
+    fast = '--fast' in sys.argv
+    
+    import time
+    start = time.time()
+    result, error = get_current_playing(fast=fast)
+    elapsed = time.time() - start
     
     if debug:
         # Re-run OCR for debug output
@@ -580,7 +649,7 @@ def main():
         return
     
     print('=' * 50)
-    print('NOW PLAYING (VirtualDJ)')
+    print(f'NOW PLAYING (VirtualDJ) [{elapsed*1000:.0f}ms]')
     print('=' * 50)
     
     active = result.get('active_deck', 0)

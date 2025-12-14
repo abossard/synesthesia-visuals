@@ -29,14 +29,15 @@ import requests
 
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll, Vertical
-from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label, Checkbox
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label, Checkbox, RadioButton, RadioSet
+from textual.message import Message
 from textual.reactive import reactive
 from textual.binding import Binding
 from textual.screen import ModalScreen
 from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index
+from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
 from domain import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
 
@@ -758,6 +759,75 @@ class ServicesPanel(ReactivePanel):
             extra = f" (retry in {retry:.1f}s)" if retry else ""
             lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
         self.update("\n".join(lines))
+
+
+class PlaybackSourcePanel(Static):
+    """
+    Panel for selecting playback source with radio buttons.
+    Shows: source selection, poll interval, last lookup duration.
+    """
+    
+    # Reactive data for lookup time display
+    lookup_ms = reactive(0.0)
+    
+    def __init__(self, settings: Settings, **kwargs):
+        super().__init__(**kwargs)
+        self.settings = settings
+        self._source_keys = list(PLAYBACK_SOURCES.keys())
+    
+    def compose(self) -> ComposeResult:
+        """Create the playback source UI."""
+        yield Static("[bold]🎵 Playback Source[/]", classes="section-title")
+        
+        # Radio buttons for source selection
+        current_source = self.settings.playback_source
+        with RadioSet(id="source-radio"):
+            for key in self._source_keys:
+                info = PLAYBACK_SOURCES[key]
+                label = info['label']
+                is_selected = key == current_source
+                yield RadioButton(label, value=is_selected, id=f"src-{key}")
+        
+        # Poll interval display
+        yield Static(f"[dim]Poll interval: {self.settings.playback_poll_interval_ms}ms[/]", id="poll-interval-label")
+        
+        # Last lookup time display
+        yield Static("[dim]Last lookup: --[/]", id="lookup-time-label")
+    
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        """Handle source selection change."""
+        if event.radio_set.id != "source-radio":
+            return
+        
+        # Get the selected button's id and extract source key
+        pressed = event.pressed
+        if pressed and pressed.id and pressed.id.startswith("src-"):
+            source_key = pressed.id[4:]  # Remove "src-" prefix
+            if source_key in PLAYBACK_SOURCES:
+                self.settings.playback_source = source_key
+                # Notify app to switch the monitor
+                self.post_message(PlaybackSourceChanged(source_key))
+    
+    def watch_lookup_ms(self, ms: float) -> None:
+        """Update lookup time display."""
+        if not self.is_mounted:
+            return
+        try:
+            label = self.query_one("#lookup-time-label", Static)
+            if ms > 0:
+                color = "green" if ms < 100 else ("yellow" if ms < 500 else "red")
+                label.update(f"[{color}]Last lookup: {ms:.0f}ms[/]")
+            else:
+                label.update("[dim]Last lookup: --[/]")
+        except Exception:
+            pass
+
+
+class PlaybackSourceChanged(Message):
+    """Message posted when playback source is changed."""
+    def __init__(self, source_key: str):
+        super().__init__()
+        self.source_key = source_key
 
 
 class AppsListPanel(ReactivePanel):
@@ -1619,6 +1689,7 @@ class VJConsoleApp(App):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield StartupControlPanel(self.settings, id="startup-control")
+                        yield PlaybackSourcePanel(self.settings, id="playback-source", classes="panel")
                         yield MasterControlPanel(id="master-ctrl", classes="panel")
                         yield AppsListPanel(id="apps", classes="panel")
                         yield ServicesPanel(id="services", classes="panel")
@@ -1726,6 +1797,12 @@ class VJConsoleApp(App):
             self.action_shader_search_text()
         elif button_id == "shader-rescan":
             self.action_shader_rescan()
+
+    def on_playback_source_changed(self, event: PlaybackSourceChanged) -> None:
+        """Handle playback source change from radio buttons."""
+        if self.karaoke_engine:
+            self.karaoke_engine.set_playback_source(event.source_key)
+            self._logs.append(f"Switched playback source to: {event.source_key}")
 
     # === Actions (impure, side effects) ===
     
@@ -2104,6 +2181,13 @@ class VJConsoleApp(App):
             now_playing = self.query_one("#now-playing", NowPlayingPanel)
             now_playing.track_data = track_data
             now_playing.shader_name = self.karaoke_engine.current_shader
+        except Exception:
+            pass
+        
+        # Update playback source panel with lookup time
+        try:
+            source_panel = self.query_one("#playback-source", PlaybackSourcePanel)
+            source_panel.lookup_ms = self.karaoke_engine.last_lookup_ms
         except Exception:
             pass
 

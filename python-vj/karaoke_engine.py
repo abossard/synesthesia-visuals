@@ -40,17 +40,17 @@ __all__ = [
     'get_active_line_index', 'get_refrain_lines',
     'PipelineTracker', 'PipelineStep',
     'LLMAnalyzer', 'SongCategorizer',
-    'LyricsFetcher', 'SpotifyMonitor', 'VirtualDJMonitor', 'OSCSender',
+    'LyricsFetcher', 'OSCSender',
     'PlaybackSnapshot', 'BackoffState',
+    'create_monitor', 'PLAYBACK_SOURCES',
 ]
 
 # External adapters
 from adapters import (
-    AppleScriptSpotifyMonitor,
-    SpotifyMonitor,
-    VirtualDJMonitor,
     LyricsFetcher,
     OSCSender,
+    create_monitor,
+    PLAYBACK_SOURCES,
 )
 
 # AI services
@@ -108,14 +108,10 @@ class KaraokeEngine:
         self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
         self._lyrics_fetcher = LyricsFetcher()
         
-        # Playback monitors (priority order)
-        monitors = []
-        if Config.SPOTIFY_APPLESCRIPT_ENABLED:
-            monitors.append(AppleScriptSpotifyMonitor())
-        if Config.SPOTIFY_WEBAPI_ENABLED:
-            monitors.append(SpotifyMonitor())
-        monitors.append(VirtualDJMonitor(vdj_path))
-        self._playback = PlaybackCoordinator(monitors=monitors)
+        # Playback monitor (single source from settings)
+        from adapters import create_monitor
+        monitor = create_monitor(self._settings.playback_source)
+        self._playback = PlaybackCoordinator(monitor=monitor)
         
         # AI services (all optional)
         self._llm = LLMAnalyzer()
@@ -228,15 +224,40 @@ class KaraokeEngine:
         with self._snapshot_lock:
             self._snapshot = snapshot
     
-    def start(self, poll_interval: float = 2.0):
-        """Start in background thread. Polls every 2 seconds."""
+    def start(self, poll_interval: Optional[float] = None):
+        """Start in background thread. Poll interval from settings if not provided."""
         if self._running:
             return
+        
+        # Use settings if not provided
+        if poll_interval is None:
+            poll_interval = self._settings.playback_poll_interval_ms / 1000.0
         
         self._running = True
         thread = Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Karaoke-Main")
         thread.start()
-        logger.info("Karaoke engine started")
+        logger.info(f"Karaoke engine started (poll interval: {poll_interval:.1f}s)")
+    
+    def set_playback_source(self, source_key: str):
+        """Switch playback source live. Persists to settings."""
+        from adapters import create_monitor
+        monitor = create_monitor(source_key)
+        if monitor:
+            self._playback.set_monitor(monitor)
+            self._settings.playback_source = source_key
+            logger.info(f"Switched playback source to: {source_key}")
+        else:
+            logger.warning(f"Unknown playback source: {source_key}")
+    
+    @property
+    def playback_source(self) -> str:
+        """Get current playback source key."""
+        return self._settings.playback_source
+    
+    @property
+    def last_lookup_ms(self) -> float:
+        """Get duration of last playback lookup in milliseconds."""
+        return self._playback.last_lookup_ms
     
     def stop(self):
         """Stop engine and workers."""

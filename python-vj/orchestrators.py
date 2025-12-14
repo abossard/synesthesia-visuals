@@ -25,7 +25,7 @@ logger = logging.getLogger('karaoke')
 
 
 # =============================================================================
-# PLAYBACK COORDINATOR - Monitors sources, detects track changes
+# PLAYBACK COORDINATOR - Single source monitor with timing
 # =============================================================================
 
 
@@ -36,40 +36,65 @@ class PlaybackSample:
     source: str
     track_changed: bool
     monitor_status: Dict[str, Dict[str, Any]]
+    last_lookup_ms: float = 0.0
     error: Optional[str] = None
+
 
 class PlaybackCoordinator:
     """
-    Monitors playback from multiple sources and detects track changes.
+    Monitors playback from a single user-selected source.
     
-    Priority order:
-    1. Spotify (if actively playing)
-    2. VirtualDJ (fallback)
+    No fallback logic - user explicitly selects which source to use.
+    Tracks lookup duration for performance monitoring.
     
     Interface:
         poll() -> PlaybackSample
         get_current_state() -> PlaybackState
+        set_monitor(monitor) - hot-swap the active monitor
     
-    Dependency Injection: Accepts list of monitors (Spotify, VirtualDJ, etc.)
+    Dependency Injection: Accepts single monitor instance.
     """
     
-    def __init__(self, monitors: List):
-        self._monitors = monitors
+    def __init__(self, monitor=None):
+        self._monitor = monitor
         self._state = PlaybackState()
-        self._current_source = "unknown"
+        self._current_source = "none"
+        self._last_lookup_ms = 0.0
+    
+    def set_monitor(self, monitor):
+        """Hot-swap the active monitor for live source switching."""
+        self._monitor = monitor
+        self._current_source = self._monitor_key(monitor) if monitor else "none"
+        logger.info(f"PlaybackCoordinator: switched to {self._current_source}")
+    
+    @property
+    def last_lookup_ms(self) -> float:
+        """Duration of last poll() call in milliseconds."""
+        return self._last_lookup_ms
     
     def poll(self) -> PlaybackSample:
-        """Poll monitors respecting priority order and return sample."""
+        """Poll the active monitor and return sample with timing."""
         prev_key = self._state.track.key if self._state.track else ""
         error = None
-
-        playback = None
-        self._current_source = "idle"
-        for monitor in self._monitors:
-            playback = monitor.get_playback()
-            if playback:
-                self._current_source = self._monitor_key(monitor)
-                break
+        
+        if not self._monitor:
+            self._current_source = "none"
+            self._last_lookup_ms = 0.0
+            return PlaybackSample(
+                state=self._state,
+                source="none",
+                track_changed=False,
+                monitor_status={},
+                last_lookup_ms=0.0,
+                error="No monitor configured"
+            )
+        
+        # Time the lookup
+        start = time.time()
+        playback = self._monitor.get_playback()
+        self._last_lookup_ms = (time.time() - start) * 1000.0
+        
+        self._current_source = self._monitor_key(self._monitor)
         
         # Update state if we have playback
         if playback:
@@ -92,7 +117,6 @@ class PlaybackCoordinator:
             # No playback detected
             if self._state.has_track:
                 self._state = self._state.update(is_playing=False)
-            self._current_source = "idle"
         
         current_key = self._state.track.key if self._state.track else ""
         track_changed = current_key != prev_key
@@ -101,6 +125,7 @@ class PlaybackCoordinator:
             source=self._current_source,
             track_changed=track_changed,
             monitor_status=self._collect_status(),
+            last_lookup_ms=self._last_lookup_ms,
             error=error
         )
 
@@ -114,22 +139,24 @@ class PlaybackCoordinator:
     
     @property
     def current_source(self) -> str:
-        """Return the name of the current playback source (spotify, virtualdj, etc.)."""
+        """Return the name of the current playback source."""
         return self._current_source
 
     def _collect_status(self) -> Dict[str, Dict[str, Any]]:
-        """Gather monitor ServiceHealth statuses."""
-        statuses = {}
-        for monitor in self._monitors:
-            name = self._monitor_key(monitor)
-            status_attr = getattr(monitor, 'status', None)
-            if callable(status_attr):
-                statuses[name] = status_attr()
-            elif status_attr is not None:
-                statuses[name] = status_attr
-        return statuses
+        """Gather monitor ServiceHealth status."""
+        if not self._monitor:
+            return {}
+        name = self._monitor_key(self._monitor)
+        status_attr = getattr(self._monitor, 'status', None)
+        if callable(status_attr):
+            return {name: status_attr()}
+        elif status_attr is not None:
+            return {name: status_attr}
+        return {}
 
     def _monitor_key(self, monitor) -> str:
+        if not monitor:
+            return "none"
         return getattr(monitor, 'monitor_key', monitor.__class__.__name__.replace("Monitor", "").lower())
 
 

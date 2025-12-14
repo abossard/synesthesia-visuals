@@ -845,3 +845,173 @@ class OSCSender:
         if isinstance(data, bool):
             return [1 if data else 0]
         return [data]
+
+
+# =============================================================================
+# DJAY PRO MONITOR - Uses macOS Accessibility API (fast ~50ms)
+# =============================================================================
+
+class DjayMonitor:
+    """
+    Monitors djay Pro via macOS Accessibility API.
+    
+    Fast (~50ms) - reads UI elements directly from djay's accessibility tree.
+    Requires djay Pro to be running on macOS.
+    """
+    
+    monitor_key = "djay"
+    monitor_label = "djay Pro"
+    
+    def __init__(self):
+        self._health = ServiceHealth(self.monitor_label)
+        self._djay_available = None
+    
+    def get_playback(self) -> Optional[Dict[str, Any]]:
+        """Get current djay Pro playback via accessibility API."""
+        try:
+            from djay_status import get_current_playing
+            result, error = get_current_playing()
+            
+            if error:
+                self._health.mark_unavailable(error)
+                return None
+            
+            if not result or not result.get('track'):
+                self._health.mark_unavailable("No track playing")
+                return None
+            
+            self._health.mark_available()
+            return {
+                'artist': result.get('artist', ''),
+                'title': result.get('track', ''),
+                'album': '',
+                'duration_ms': (result.get('duration_sec') or 0) * 1000,
+                'progress_ms': (result.get('elapsed_sec') or 0) * 1000,
+                'is_playing': True,
+            }
+        except ImportError:
+            self._health.mark_unavailable("djay_status.py not found")
+            return None
+        except Exception as e:
+            self._health.mark_unavailable(str(e))
+            return None
+    
+    @property
+    def status(self) -> Dict[str, Any]:
+        return self._health.get_status()
+
+
+# =============================================================================
+# VIRTUALDJ OCR MONITOR - Uses screenshot + Vision OCR (slower ~400-800ms)
+# =============================================================================
+
+class VDJOCRMonitor:
+    """
+    Monitors VirtualDJ via screenshot + OCR.
+    
+    Slower (~400ms fast mode, ~800ms normal) but works when file polling fails.
+    Uses macOS Vision framework for text recognition.
+    Detects master deck via GAIN fader position analysis.
+    """
+    
+    monitor_key = "virtualdj_ocr"
+    monitor_label = "VirtualDJ (OCR)"
+    
+    def __init__(self, fast_mode: bool = True):
+        self._health = ServiceHealth(self.monitor_label)
+        self._fast_mode = fast_mode
+    
+    def get_playback(self) -> Optional[Dict[str, Any]]:
+        """Get current VirtualDJ playback via screenshot + OCR."""
+        try:
+            from vdj_status import get_current_playing
+            result, error = get_current_playing(fast=self._fast_mode)
+            
+            if error:
+                self._health.mark_unavailable(error)
+                return None
+            
+            if not result:
+                self._health.mark_unavailable("No result")
+                return None
+            
+            # Get the active deck's info
+            active_deck = result.get('active_deck', 1)
+            deck_info = result.get(f'deck{active_deck}', result.get('deck1', {}))
+            
+            if not deck_info or not deck_info.get('track'):
+                self._health.mark_unavailable("No track on active deck")
+                return None
+            
+            self._health.mark_available()
+            return {
+                'artist': deck_info.get('artist', ''),
+                'title': deck_info.get('track', ''),
+                'album': '',
+                'duration_ms': (deck_info.get('duration_sec') or 0) * 1000,
+                'progress_ms': (deck_info.get('elapsed_sec') or 0) * 1000,
+                'is_playing': True,
+            }
+        except ImportError:
+            self._health.mark_unavailable("vdj_status.py not found")
+            return None
+        except Exception as e:
+            self._health.mark_unavailable(str(e))
+            return None
+    
+    @property
+    def status(self) -> Dict[str, Any]:
+        return self._health.get_status()
+
+
+# =============================================================================
+# PLAYBACK SOURCE REGISTRY - All available monitors
+# =============================================================================
+
+# Enum-like constants for playback sources
+PLAYBACK_SOURCES = {
+    'spotify_applescript': {
+        'key': 'spotify_applescript',
+        'label': 'Spotify (AppleScript)',
+        'description': 'Local Spotify app via AppleScript',
+        'factory': lambda: AppleScriptSpotifyMonitor(),
+    },
+    'spotify_webapi': {
+        'key': 'spotify_webapi',
+        'label': 'Spotify (Web API)',
+        'description': 'Spotify via OAuth Web API',
+        'factory': lambda: SpotifyMonitor(),
+    },
+    'virtualdj_file': {
+        'key': 'virtualdj_file',
+        'label': 'VirtualDJ (File)',
+        'description': 'VirtualDJ via tracklist.txt polling',
+        'factory': lambda: VirtualDJMonitor(),
+    },
+    'virtualdj_ocr': {
+        'key': 'virtualdj_ocr',
+        'label': 'VirtualDJ (OCR Fast)',
+        'description': 'VirtualDJ via screenshot + OCR (~400ms)',
+        'factory': lambda: VDJOCRMonitor(fast_mode=True),
+    },
+    'virtualdj_ocr_slow': {
+        'key': 'virtualdj_ocr_slow',
+        'label': 'VirtualDJ (OCR Accurate)',
+        'description': 'VirtualDJ via OCR with language correction (~800ms)',
+        'factory': lambda: VDJOCRMonitor(fast_mode=False),
+    },
+    'djay': {
+        'key': 'djay',
+        'label': 'djay Pro',
+        'description': 'djay Pro via Accessibility API (~50ms)',
+        'factory': lambda: DjayMonitor(),
+    },
+}
+
+
+def create_monitor(source_key: str):
+    """Create a monitor instance from source key."""
+    source = PLAYBACK_SOURCES.get(source_key)
+    if source:
+        return source['factory']()
+    return None

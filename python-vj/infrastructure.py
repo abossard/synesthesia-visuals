@@ -270,6 +270,55 @@ class Settings:
         self._data['magic_file_path'] = value
         self._save()
 
+    # =========================================================================
+    # PLAYBACK SOURCE SELECTION - Radio button selection, persisted
+    # =========================================================================
+    
+    # Valid playback source keys (must match PLAYBACK_SOURCES in adapters.py)
+    VALID_PLAYBACK_SOURCES = [
+        'spotify_applescript',
+        'spotify_webapi',
+        'virtualdj_file',
+        'virtualdj_ocr',
+        'virtualdj_ocr_slow',
+        'djay',
+    ]
+    
+    @property
+    def playback_source(self) -> str:
+        """
+        Get the selected playback source key.
+        Default: 'spotify_applescript'
+        """
+        source = self._data.get('playback_source', 'spotify_applescript')
+        if source not in self.VALID_PLAYBACK_SOURCES:
+            return 'spotify_applescript'
+        return source
+    
+    @playback_source.setter
+    def playback_source(self, value: str) -> None:
+        """Set the playback source. Only accepts valid source keys."""
+        if value in self.VALID_PLAYBACK_SOURCES:
+            self._data['playback_source'] = value
+            self._save()
+    
+    @property
+    def playback_poll_interval_ms(self) -> int:
+        """
+        Get playback poll interval in milliseconds.
+        Range: 1000-10000ms (1-10 seconds)
+        Default: 1000ms
+        """
+        value = self._data.get('playback_poll_interval_ms', 1000)
+        return max(1000, min(10000, int(value)))
+    
+    @playback_poll_interval_ms.setter
+    def playback_poll_interval_ms(self, value: int) -> None:
+        """Set poll interval. Clamped to 1000-10000ms."""
+        clamped = max(1000, min(10000, int(value)))
+        self._data['playback_poll_interval_ms'] = clamped
+        self._save()
+
 
 # =============================================================================
 # SERVICE HEALTH - Tracks service availability with reconnection
