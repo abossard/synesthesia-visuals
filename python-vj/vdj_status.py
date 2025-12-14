@@ -3,7 +3,22 @@
 VirtualDJ status via screenshot + OCR.
 
 Uses macOS Vision framework to read track info from VDJ window.
-Much slower than djay_status.py (~1-2 sec) but VDJ doesn't expose accessibility API.
+Slower than djay_status.py (~1-2 sec) but VDJ doesn't expose accessibility API.
+
+Master Deck Detection:
+    Primary: GAIN fader position analysis (pixel scanning for gray handles)
+    Fallback: Elapsed time progression tracking
+
+Fader Detection Details:
+    - Left fader (Deck 1): x=0.474 of window width
+    - Right fader (Deck 2): x=0.526 of window width  
+    - Y range: 0.22-0.42 of window height
+    - Handle color: gray ~RGB(114,114,114)
+    - Lower Y = fader UP = louder = master
+
+Usage:
+    python vdj_status.py           # Show current status
+    python vdj_status.py --debug   # Show OCR debug output
 """
 
 import subprocess
@@ -20,6 +35,185 @@ except ImportError:
     sys.exit(1)
 
 VDJ_BUNDLE_ID = 'com.atomixproductions.virtualdj'
+
+
+# =============================================================================
+# MASTER DECK STATE TRACKING
+# =============================================================================
+
+class MasterDeckTracker:
+    """
+    Tracks which deck is the master (active) based on elapsed time changes.
+    
+    Rules:
+    - First deck with elapsed time increasing = master
+    - Stays master until OTHER deck starts having elapsed time increase
+    - Then the other deck becomes the new master
+    """
+    
+    def __init__(self):
+        self._master_deck = None  # 1 or 2
+        self._prev_elapsed = {1: None, 2: None}
+    
+    def update(self, deck1_elapsed: float, deck2_elapsed: float) -> int:
+        """
+        Update with current elapsed times and return the master deck.
+        
+        Returns: 1 or 2 (master deck number)
+        """
+        # Detect which deck's elapsed time is increasing
+        deck1_increasing = (
+            self._prev_elapsed[1] is not None 
+            and deck1_elapsed is not None 
+            and deck1_elapsed > self._prev_elapsed[1] + 0.3  # threshold for noise
+        )
+        deck2_increasing = (
+            self._prev_elapsed[2] is not None 
+            and deck2_elapsed is not None 
+            and deck2_elapsed > self._prev_elapsed[2] + 0.3
+        )
+        
+        # Update previous values
+        if deck1_elapsed is not None:
+            self._prev_elapsed[1] = deck1_elapsed
+        if deck2_elapsed is not None:
+            self._prev_elapsed[2] = deck2_elapsed
+        
+        # Determine master deck
+        if self._master_deck is None:
+            # Initial: first deck with increasing time becomes master
+            if deck1_increasing:
+                self._master_deck = 1
+            elif deck2_increasing:
+                self._master_deck = 2
+            elif deck1_elapsed and deck1_elapsed > 0:
+                self._master_deck = 1  # fallback: deck with elapsed time
+            elif deck2_elapsed and deck2_elapsed > 0:
+                self._master_deck = 2
+            else:
+                self._master_deck = 1  # default
+        else:
+            # Transition: if OTHER deck starts increasing, it becomes master
+            if self._master_deck == 1 and deck2_increasing:
+                self._master_deck = 2
+            elif self._master_deck == 2 and deck1_increasing:
+                self._master_deck = 1
+        
+        return self._master_deck
+    
+    def reset(self):
+        """Reset state (e.g., on new session)."""
+        self._master_deck = None
+        self._prev_elapsed = {1: None, 2: None}
+
+
+# Global tracker instance
+_master_tracker = MasterDeckTracker()
+
+# Smoothing for master deck detection
+_last_master = 1
+_last_fader_master = 0  # Track last fader-based detection
+_MASTER_HOLD_THRESHOLD = 1  # Require N consecutive detections before switching (1 = immediate)
+
+
+def detect_master_from_faders(cg_image) -> tuple:
+    """
+    Detect master deck by analyzing the GAIN fader positions.
+    
+    The VDJ mixer has two vertical GAIN faders in the center.
+    The deck with fader higher up = louder = master.
+    
+    Fader Layout (VDJ default skin):
+        - Left fader (Deck 1): x ≈ 0.474 of window width
+        - Right fader (Deck 2): x ≈ 0.526 of window width
+        - Fader travel range: y ≈ 0.22 (top/loud) to 0.42 (bottom/quiet)
+        - Handle appearance: gray horizontal bar ~RGB(114,114,114)
+    
+    Detection Method:
+        1. Scan vertical strip at each fader's X position
+        2. Find row with most gray pixels (the handle)
+        3. Compare Y positions: lower Y = higher on screen = louder
+    
+    Note: Audio level METERS (blue/cyan) show deck activity but NOT output level.
+          The FADER position determines what actually goes to master output.
+    
+    Args:
+        cg_image: CGImage from window capture
+    
+    Returns:
+        tuple: (deck_num, left_fader_y, right_fader_y)
+            - deck_num: 1 (left louder), 2 (right louder), or 0 (can't determine)
+            - left_fader_y: normalized Y position (0-1) of left fader handle
+            - right_fader_y: normalized Y position (0-1) of right fader handle
+    """
+    if not cg_image:
+        return 0, 0, 0
+    
+    width = Quartz.CGImageGetWidth(cg_image)
+    height = Quartz.CGImageGetHeight(cg_image)
+    
+    data_provider = Quartz.CGImageGetDataProvider(cg_image)
+    data = Quartz.CGDataProviderCopyData(data_provider)
+    bytes_per_row = Quartz.CGImageGetBytesPerRow(cg_image)
+    bpp = Quartz.CGImageGetBitsPerPixel(cg_image) // 8
+    
+    def find_fader_handle_y(x_center_norm, y_start_norm=0.22, y_end_norm=0.42):
+        """
+        Find the Y position of the fader handle by scanning for gray pixels.
+        
+        Args:
+            x_center_norm: Normalized X position (0-1) of fader center
+            y_start_norm: Top of search region (0.22 = fader max/loud)
+            y_end_norm: Bottom of search region (0.42 = fader min/quiet)
+        
+        Returns:
+            Normalized Y position (0-1) of handle, or None if not found.
+            Lower Y = higher on screen = fader UP = louder.
+        """
+        best_y = None
+        best_score = 0
+        
+        # Narrow search band around the fader track
+        x_start = int((x_center_norm - 0.012) * width)
+        x_end = int((x_center_norm + 0.012) * width)
+        
+        for y in range(int(y_start_norm * height), int(y_end_norm * height)):
+            row_score = 0
+            for x in range(x_start, x_end):
+                offset = y * bytes_per_row + x * bpp
+                if offset + 3 < len(data):
+                    b, g, r = data[offset], data[offset+1], data[offset+2]
+                    # Fader handle is gray (~114,114,114)
+                    # Look for pixels where R≈G≈B and in range 90-140
+                    if 90 < r < 140 and 90 < g < 140 and 90 < b < 140:
+                        if abs(r - g) < 15 and abs(g - b) < 15:
+                            row_score += 1
+            
+            if row_score > best_score:
+                best_score = row_score
+                best_y = y
+        
+        return (best_y / height) if best_y and best_score > 5 else None
+    
+    # Corrected fader positions based on user measurement:
+    # Left fader (Deck 1) at x=0.474
+    # Right fader (Deck 2) at x=0.526
+    left_y = find_fader_handle_y(0.474)
+    right_y = find_fader_handle_y(0.526)
+    
+    if left_y is None or right_y is None:
+        return 0, left_y or 0, right_y or 0
+    
+    # Lower Y = higher on screen = fader UP = louder
+    # Require significant difference (1% of screen height)
+    threshold = 0.01
+    
+    if left_y < right_y - threshold:
+        return 1, left_y, right_y  # Left fader higher = Deck 1 louder
+    elif right_y < left_y - threshold:
+        return 2, left_y, right_y  # Right fader higher = Deck 2 louder
+    else:
+        return 0, left_y, right_y  # Faders approximately equal
 
 
 def find_vdj_window_id():
@@ -299,41 +493,34 @@ def get_current_playing():
     if not result['deck1']['track'] and not result['deck2']['track']:
         return None, "Could not identify playing track on either deck"
     
-    # Determine active deck heuristic:
-    # - Deck NOT at the end of track is likely playing
-    # - If both mid-song, the one with less remaining time is playing out
-    # - If only one deck has a track, that's the active one
+    # Determine active (master) deck - try fader detection first, then fallback to elapsed time tracking
+    global _last_master, _last_fader_master
+    
     deck1 = result['deck1']
     deck2 = result['deck2']
     
-    if deck1['track'] and not deck2['track']:
-        result['active_deck'] = 1
-    elif deck2['track'] and not deck1['track']:
-        result['active_deck'] = 2
+    # Primary: Detect master from GAIN fader positions
+    # Capture fresh full window for fader detection (OCR may have invalidated previous image)
+    fader_image = capture_window_direct(window_id, bounds, crop_ratio=None)
+    fader_master, left_y, right_y = detect_master_from_faders(fader_image) if fader_image else (0, 0, 0)
+    
+    if fader_master > 0:
+        # Fader detection succeeded - update immediately
+        _last_fader_master = fader_master
+        _last_master = fader_master
+        result['active_deck'] = fader_master
+        result['_master_source'] = 'faders'
+        result['_fader_positions'] = (left_y, right_y)
+    elif _last_fader_master > 0:
+        # Use last known fader-based master (fader detection temporarily failed)
+        result['active_deck'] = _last_fader_master
+        result['_master_source'] = 'faders_cached'
     else:
-        # Both have tracks - check which is actively playing (not at end)
-        remaining1 = deck1.get('remaining_sec')
-        remaining2 = deck2.get('remaining_sec')
-        elapsed1 = deck1.get('elapsed_sec') or 0
-        elapsed2 = deck2.get('elapsed_sec') or 0
-        
-        # Deck at 0:00 remaining is stopped/finished
-        deck1_at_end = remaining1 is not None and remaining1 <= 1
-        deck2_at_end = remaining2 is not None and remaining2 <= 1
-        
-        if deck1_at_end and not deck2_at_end:
-            result['active_deck'] = 2
-        elif deck2_at_end and not deck1_at_end:
-            result['active_deck'] = 1
-        elif remaining1 is not None and remaining2 is not None:
-            # Both mid-song: less remaining = further along = likely playing
-            result['active_deck'] = 1 if remaining1 < remaining2 else 2
-        elif elapsed1 > elapsed2:
-            result['active_deck'] = 1
-        elif elapsed2 > elapsed1:
-            result['active_deck'] = 2
-        else:
-            result['active_deck'] = 1  # Default
+        # Fallback: Use elapsed time progression tracking
+        elapsed1 = deck1.get('elapsed_sec')
+        elapsed2 = deck2.get('elapsed_sec')
+        result['active_deck'] = _master_tracker.update(elapsed1, elapsed2)
+        result['_master_source'] = 'elapsed_tracking'
     
     return result, None
 
