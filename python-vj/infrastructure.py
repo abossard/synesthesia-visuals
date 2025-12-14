@@ -288,17 +288,17 @@ class Settings:
     def playback_source(self) -> str:
         """
         Get the selected playback source key.
-        Default: 'spotify_applescript'
+        Default: '' (no source active - user must select explicitly)
         """
-        source = self._data.get('playback_source', 'spotify_applescript')
-        if source not in self.VALID_PLAYBACK_SOURCES:
-            return 'spotify_applescript'
+        source = self._data.get('playback_source', '')
+        if source and source not in self.VALID_PLAYBACK_SOURCES:
+            return ''
         return source
     
     @playback_source.setter
     def playback_source(self, value: str) -> None:
-        """Set the playback source. Only accepts valid source keys."""
-        if value in self.VALID_PLAYBACK_SOURCES:
+        """Set the playback source. Accepts valid source keys or empty string to disable."""
+        if value == '' or value in self.VALID_PLAYBACK_SOURCES:
             self._data['playback_source'] = value
             self._save()
     

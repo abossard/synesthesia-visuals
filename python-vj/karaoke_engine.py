@@ -108,10 +108,8 @@ class KaraokeEngine:
         self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
         self._lyrics_fetcher = LyricsFetcher()
         
-        # Playback monitor (single source from settings)
-        from adapters import create_monitor
-        monitor = create_monitor(self._settings.playback_source)
-        self._playback = PlaybackCoordinator(monitor=monitor)
+        # Playback coordinator (no monitor active by default - user must start explicitly)
+        self._playback = PlaybackCoordinator(monitor=None)
         
         # AI services (all optional)
         self._llm = LLMAnalyzer()

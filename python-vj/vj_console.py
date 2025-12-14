@@ -764,11 +764,12 @@ class ServicesPanel(ReactivePanel):
 class PlaybackSourcePanel(Static):
     """
     Panel for selecting playback source with radio buttons.
-    Shows: source selection, poll interval, last lookup duration.
+    Shows: source selection, running status with latency.
     """
     
-    # Reactive data for lookup time display
+    # Reactive data
     lookup_ms = reactive(0.0)
+    monitor_running = reactive(False)
     
     def __init__(self, settings: Settings, **kwargs):
         super().__init__(**kwargs)
@@ -778,6 +779,9 @@ class PlaybackSourcePanel(Static):
     def compose(self) -> ComposeResult:
         """Create the playback source UI."""
         yield Static("[bold]🎵 Playback Source[/]", classes="section-title")
+        
+        # Status line showing if monitor is running
+        yield Static("[dim]○ Not running[/]", id="monitor-status-label")
         
         # Radio buttons for source selection
         current_source = self.settings.playback_source
@@ -790,9 +794,38 @@ class PlaybackSourcePanel(Static):
         
         # Poll interval display
         yield Static(f"[dim]Poll interval: {self.settings.playback_poll_interval_ms}ms[/]", id="poll-interval-label")
-        
-        # Last lookup time display
-        yield Static("[dim]Last lookup: --[/]", id="lookup-time-label")
+    
+    def watch_monitor_running(self, running: bool) -> None:
+        """Update status when monitor running state changes."""
+        self._update_status_label()
+    
+    def watch_lookup_ms(self, ms: float) -> None:
+        """Update status when lookup time changes."""
+        self._update_status_label()
+    
+    def _update_status_label(self) -> None:
+        """Update the status label with running state and latency."""
+        if not self.is_mounted:
+            return
+        try:
+            label = self.query_one("#monitor-status-label", Static)
+            source = self.settings.playback_source
+            if not self.monitor_running:
+                if source:
+                    source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
+                    label.update(f"[dim]○ {source_label} (not running)[/]")
+                else:
+                    label.update("[dim]○ No source selected[/]")
+            else:
+                source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
+                ms = self.lookup_ms
+                if ms > 0:
+                    color = "green" if ms < 100 else ("yellow" if ms < 500 else "red")
+                    label.update(f"[{color}]● {source_label} ({ms:.0f}ms)[/]")
+                else:
+                    label.update(f"[green]● {source_label}[/]")
+        except Exception:
+            pass
     
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """Handle source selection change."""
@@ -808,21 +841,6 @@ class PlaybackSourcePanel(Static):
                 # Notify app to switch the monitor
                 self.post_message(PlaybackSourceChanged(source_key))
     
-    def watch_lookup_ms(self, ms: float) -> None:
-        """Update lookup time display."""
-        if not self.is_mounted:
-            return
-        try:
-            label = self.query_one("#lookup-time-label", Static)
-            if ms > 0:
-                color = "green" if ms < 100 else ("yellow" if ms < 500 else "red")
-                label.update(f"[{color}]Last lookup: {ms:.0f}ms[/]")
-            else:
-                label.update("[dim]Last lookup: --[/]")
-        except Exception:
-            pass
-
-
 class PlaybackSourceChanged(Message):
     """Message posted when playback source is changed."""
     def __init__(self, source_key: str):
@@ -1812,6 +1830,10 @@ class VJConsoleApp(App):
             return  # Already running
         try:
             self.karaoke_engine = KaraokeEngine()
+            # Activate the selected playback source if one is configured
+            source = self.settings.playback_source
+            if source:
+                self.karaoke_engine.set_playback_source(source)
             self.karaoke_engine.start()
             logger.info("Karaoke engine started")
         except Exception as e:
@@ -2167,6 +2189,13 @@ class VJConsoleApp(App):
                 self.query_one("#now-playing", NowPlayingPanel).track_data = {}
             except Exception:
                 pass
+            # Update playback source panel to show not running
+            try:
+                source_panel = self.query_one("#playback-source", PlaybackSourcePanel)
+                source_panel.monitor_running = False
+                source_panel.lookup_ms = 0.0
+            except Exception:
+                pass
             return
         
         snapshot = self.karaoke_engine.get_snapshot()
@@ -2184,10 +2213,12 @@ class VJConsoleApp(App):
         except Exception:
             pass
         
-        # Update playback source panel with lookup time
+        # Update playback source panel with lookup time and running state
         try:
             source_panel = self.query_one("#playback-source", PlaybackSourcePanel)
             source_panel.lookup_ms = self.karaoke_engine.last_lookup_ms
+            # Monitor is running if karaoke engine exists and has a source
+            source_panel.monitor_running = bool(self.karaoke_engine.playback_source)
         except Exception:
             pass
 
