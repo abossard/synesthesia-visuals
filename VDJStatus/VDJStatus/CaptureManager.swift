@@ -20,6 +20,7 @@ actor CaptureManager {
     private var cachedContent: SCShareableContent?
     private var lastContentFetch: Date?
     private let cacheTTL: TimeInterval = 30
+    private var permissionGranted = CGPreflightScreenCaptureAccess()
 
     private enum CaptureError: Error {
         case permissionDenied
