@@ -11,10 +11,8 @@ struct VDJStatusApp: App {
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                Button(app.calibrating ? "Exit Calibration" : "Enter Calibration") {
-                    app.calibrating.toggle()
-                }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+                Button("Toggle Calibrate") { app.calibrating.toggle() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
             }
         }
     }

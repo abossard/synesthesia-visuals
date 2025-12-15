@@ -21,6 +21,12 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity)
                             Button("Refresh") { app.refreshWindows() }
                         }
+                        
+                        if app.isCapturing {
+                            Label("Capturing automatically started", systemImage: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                        }
                     }
                 }
 
@@ -116,6 +122,17 @@ struct ContentView: View {
             app.refreshWindows()
             app.loadCalibration()
         }
+        .onChange(of: app.isCapturing) { capturing in
+            // Auto-start detection timer when capture starts
+            if capturing && detectionTimer == nil {
+                detectionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+                    Task { @MainActor in app.runDetectionOnce() }
+                }
+            } else if !capturing {
+                detectionTimer?.invalidate()
+                detectionTimer = nil
+            }
+        }
         .onDisappear { stopDetection() }
     }
 
@@ -133,9 +150,6 @@ struct ContentView: View {
 
     private func startDetection() {
         app.startCapture()
-        detectionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            Task { @MainActor in app.runDetectionOnce() }
-        }
     }
 
     private func stopDetection() {
