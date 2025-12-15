@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6CDAEBBB2EF0C67E00F6504C /* MiniPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */; };
 		AA0000010000000000000001 /* VDJStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000001 /* VDJStatusApp.swift */; };
 		AA0000030000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000040000000000000001 /* AppState.swift */; };
 		AA0000050000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000060000000000000001 /* ContentView.swift */; };
@@ -15,12 +16,11 @@
 		AA00000B0000000000000001 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000C0000000000000001 /* Detector.swift */; };
 		AA00000D0000000000000001 /* CalibrationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000E0000000000000001 /* CalibrationModel.swift */; };
 		AA00000F0000000000000001 /* CalibrationCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000100000000000000001 /* CalibrationCanvas.swift */; };
-		AA0000110000000000000001 /* OverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000120000000000000001 /* OverlayController.swift */; };
-		AA0000130000000000000001 /* OverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000140000000000000001 /* OverlayView.swift */; };
 		AA0000150000000000000001 /* OSC.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000160000000000000001 /* OSC.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPreviewView.swift; sourceTree = "<group>"; };
 		AA0000010000000000000000 /* VDJStatus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VDJStatus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000020000000000000001 /* VDJStatusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VDJStatusApp.swift; sourceTree = "<group>"; };
 		AA0000040000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -30,8 +30,6 @@
 		AA00000C0000000000000001 /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		AA00000E0000000000000001 /* CalibrationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationModel.swift; sourceTree = "<group>"; };
 		AA0000100000000000000001 /* CalibrationCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationCanvas.swift; sourceTree = "<group>"; };
-		AA0000120000000000000001 /* OverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayController.swift; sourceTree = "<group>"; };
-		AA0000140000000000000001 /* OverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayView.swift; sourceTree = "<group>"; };
 		AA0000160000000000000001 /* OSC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OSC.swift; sourceTree = "<group>"; };
 		AA0000180000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA0000190000000000000001 /* VDJStatus.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VDJStatus.entitlements; sourceTree = "<group>"; };
@@ -67,8 +65,7 @@
 				AA00000C0000000000000001 /* Detector.swift */,
 				AA00000E0000000000000001 /* CalibrationModel.swift */,
 				AA0000100000000000000001 /* CalibrationCanvas.swift */,
-				AA0000120000000000000001 /* OverlayController.swift */,
-				AA0000140000000000000001 /* OverlayView.swift */,
+				6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */,
 				AA0000160000000000000001 /* OSC.swift */,
 				AA0000180000000000000001 /* Info.plist */,
 				AA0000190000000000000001 /* VDJStatus.entitlements */,
@@ -160,8 +157,7 @@
 				AA00000B0000000000000001 /* Detector.swift in Sources */,
 				AA00000D0000000000000001 /* CalibrationModel.swift in Sources */,
 				AA00000F0000000000000001 /* CalibrationCanvas.swift in Sources */,
-				AA0000110000000000000001 /* OverlayController.swift in Sources */,
-				AA0000130000000000000001 /* OverlayView.swift in Sources */,
+				6CDAEBBB2EF0C67E00F6504C /* MiniPreviewView.swift in Sources */,
 				AA0000150000000000000001 /* OSC.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -304,8 +300,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = "";
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -349,8 +345,8 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = "";
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = NO;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;

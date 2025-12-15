@@ -3,27 +3,47 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    enum WizardStep: Int, CaseIterable, Identifiable {
+        case selectWindow, capturePreview, calibrate
+
+        var id: Int { rawValue }
+        var title: String {
+            switch self {
+            case .selectWindow: return "Select VirtualDJ Window"
+            case .capturePreview: return "Start Capture & Preview"
+            case .calibrate: return "Calibrate Regions"
+            }
+        }
+        var subtitle: String {
+            switch self {
+            case .selectWindow: return "Choose the VirtualDJ deck window to analyze"
+            case .capturePreview: return "Start capture to see live OCR preview"
+            case .calibrate: return "Fine-tune text/fader regions"
+            }
+        }
+    }
+
+    @Published var wizardStep: WizardStep = .selectWindow
     @Published var windows: [ShareableWindow] = []
-    @Published var selectedWindowID: UInt32? = nil
+    @Published var selectedWindowID: UInt32? = nil {
+        didSet { updateWizardAfterSelection() }
+    }
 
     @Published var latestFrame: CGImage? = nil
     @Published var frameSize: CGSize = .zero
 
     @Published var calibration = CalibrationModel()
     @Published var calibrating: Bool = false {
-        didSet { overlayController.setInteractive(calibrating) }
-    }
-    @Published var overlayEnabled: Bool = true {
-        didSet { overlayController.setVisible(overlayEnabled) }
+        didSet { wizardStep = calibrating ? .calibrate : .capturePreview }
     }
 
     @Published var detection: DetectionResult? = nil
     @Published var oscHost: String = "127.0.0.1"
     @Published var oscPort: UInt16 = 9000
     @Published var oscEnabled: Bool = true
+    @Published var isCapturing: Bool = false
 
     let capture = CaptureManager()
-    let overlayController = OverlayController()
     var osc = OSCSender()
 
     init() {
@@ -33,11 +53,6 @@ final class AppState: ObservableObject {
                     guard let self else { return }
                     self.latestFrame = cg
                     self.frameSize = size
-                    self.overlayController.updateOverlayContent(
-                        frame: cg,
-                        calibration: self.calibration,
-                        detection: self.detection
-                    )
                 }
             }
             await capture.setOnWindowsChanged { [weak self] wins in
@@ -46,9 +61,6 @@ final class AppState: ObservableObject {
                 }
             }
         }
-
-        overlayController.setVisible(true)
-        overlayController.setInteractive(false)
     }
 
     func refreshWindows() {
@@ -58,11 +70,16 @@ final class AppState: ObservableObject {
     func startCapture() {
         guard let id = selectedWindowID else { return }
         Task { await capture.startCapturing(windowID: id) }
-        overlayController.followVirtualDJWindow(ownerContains: "VirtualDJ")
+        isCapturing = true
+        wizardStep = calibrating ? .calibrate : .capturePreview
     }
 
     func stopCapture() {
         Task { await capture.stop() }
+        isCapturing = false
+        if !calibrating {
+            wizardStep = selectedWindowID == nil ? .selectWindow : .capturePreview
+        }
     }
 
     func runDetectionOnce() {
@@ -71,7 +88,6 @@ final class AppState: ObservableObject {
             let result = await Detector.detect(frame: frame, calibration: self.calibration)
             await MainActor.run {
                 self.detection = result
-                self.overlayController.updateOverlayContent(frame: frame, calibration: self.calibration, detection: result)
                 if self.oscEnabled {
                     self.osc.configure(host: self.oscHost, port: self.oscPort)
                     self.osc.send(result: result)
@@ -80,13 +96,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    func saveCalibration() {
-        calibration.saveToDisk()
-    }
+    func saveCalibration() { calibration.saveToDisk() }
 
     func loadCalibration() {
         if let loaded = CalibrationModel.loadFromDisk() {
             calibration = loaded
         }
+    }
+
+    private func updateWizardAfterSelection() {
+        guard !calibrating else { return }
+        wizardStep = selectedWindowID == nil ? .selectWindow : (isCapturing ? .capturePreview : .capturePreview)
     }
 }
