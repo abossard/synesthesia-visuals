@@ -1,5 +1,4 @@
 import Foundation
-import SwiftOSC
 
 /// Handles OSC communication from python-vj
 /// Protocol matches python-vj/adapters.py OSC messages
@@ -24,7 +23,8 @@ class OSCHandler {
     private func setupHandlers() {
         // Karaoke track info: /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
         server.setHandler("/karaoke/track") { [weak self] message in
-            guard let args = message.arguments, args.count >= 7 else {
+            let args = message.arguments
+            guard args.count >= 7 else {
                 NSLog("ERROR: Invalid /karaoke/track message")
                 return
             }
@@ -44,7 +44,8 @@ class OSCHandler {
         
         // Karaoke position: /karaoke/pos [position, playing]
         server.setHandler("/karaoke/pos") { [weak self] message in
-            guard let args = message.arguments, args.count >= 2 else { return }
+            let args = message.arguments
+            guard args.count >= 2 else { return }
             // Position updates are frequent, handled internally
         }
         
@@ -55,13 +56,15 @@ class OSCHandler {
         
         // Lyrics line: /karaoke/lyrics/line [index, time_sec, text]
         server.setHandler("/karaoke/lyrics/line") { [weak self] message in
-            guard let args = message.arguments, args.count >= 3 else { return }
+            let args = message.arguments
+            guard args.count >= 3 else { return }
             // Store lyrics lines for display (requires full state management)
         }
         
         // Active line: /karaoke/line/active [index]
         server.setHandler("/karaoke/line/active") { [weak self] message in
-            guard let args = message.arguments, args.count >= 1 else { return }
+            let args = message.arguments
+            guard args.count >= 1 else { return }
             // Highlight active line
         }
         
@@ -77,7 +80,8 @@ class OSCHandler {
         
         // Refrain active: /karaoke/refrain/active [index, text]
         server.setHandler("/karaoke/refrain/active") { [weak self] message in
-            guard let args = message.arguments, args.count >= 2 else { return }
+            let args = message.arguments
+            guard args.count >= 2 else { return }
             
             if let text = args[1] as? String {
                 NSLog("Refrain: \(text)")
@@ -87,7 +91,8 @@ class OSCHandler {
         
         // Shader load: /shader/load [name, energy, valence]
         server.setHandler("/shader/load") { [weak self] message in
-            guard let args = message.arguments, args.count >= 3 else {
+            let args = message.arguments
+            guard args.count >= 3 else {
                 NSLog("ERROR: Invalid /shader/load message")
                 return
             }
@@ -105,7 +110,8 @@ class OSCHandler {
         // Audio analysis (from Synesthesia via python-vj)
         // /audio/levels [sub_bass, bass, low_mid, mid, high_mid, presence, air, rms]
         server.setHandler("/audio/levels") { [weak self] message in
-            guard let args = message.arguments, args.count >= 8 else { return }
+            let args = message.arguments
+            guard args.count >= 8 else { return }
             
             let bass = args[1] as? Float ?? 0.0
             let mid = args[3] as? Float ?? 0.0

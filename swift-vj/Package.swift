@@ -13,20 +13,16 @@ let package = Package(
         )
     ],
     dependencies: [
-        // SwiftOSC for OSC communication
-        .package(url: "https://github.com/ExistentialAudio/SwiftOSC.git", from: "1.4.0")
+        // TODO: Add SwiftOSC once SPM support is available
+        // SwiftOSC requires manual integration via CocoaPods or source vendoring
+        // See DEVELOPMENT.md for OSC integration instructions
     ],
     targets: [
         .executableTarget(
             name: "SwiftVJ",
-            dependencies: [
-                .product(name: "SwiftOSC", package: "SwiftOSC")
-            ],
-            path: "Sources/SwiftVJ",
-            resources: [
-                .copy("Shaders"),
-                .copy("Resources")
-            ]
+            dependencies: [],
+            path: "Sources/SwiftVJ"
+            // Resources will be handled separately when Syphon integration is complete
         ),
         .testTarget(
             name: "SwiftVJTests",

@@ -80,9 +80,11 @@ swift-vj/
 ## Building
 
 ### Requirements
-- macOS 13.0+ (Ventura or later)
+- **macOS 13.0+** (Ventura or later) - This is a macOS-only application
 - Xcode 15.0+ or Swift 5.9+ command line tools
-- Syphon.framework (included or built from source)
+- Syphon.framework (for frame sharing - integration guide provided)
+
+**Note**: SwiftVJ cannot be built on Linux as it requires macOS-specific frameworks (Cocoa, Metal, AppKit).
 
 ### Build with Swift Package Manager
 ```bash
