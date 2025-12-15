@@ -1,0 +1,144 @@
+name: VDJStatus macOS Build
+
+on:
+  push:
+    branches: [ main, develop, 'copilot/**' ]
+    paths:
+      - 'VDJStatus/**'
+      - '.github/workflows/vdjstatus-macos.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'VDJStatus/**'
+      - '.github/workflows/vdjstatus-macos.yml'
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: Build VDJStatus on macOS
+    runs-on: macos-13
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
+      
+      - name: Show Xcode version
+        run: xcodebuild -version
+      
+      - name: Show available SDKs
+        run: xcodebuild -showsdks
+      
+      - name: Build VDJStatus
+        working-directory: VDJStatus
+        run: |
+          xcodebuild \
+            -project VDJStatus.xcodeproj \
+            -scheme VDJStatus \
+            -configuration Release \
+            -derivedDataPath ./build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            build
+      
+      - name: Check build artifacts
+        working-directory: VDJStatus
+        run: |
+          echo "=== Build products ==="
+          ls -la build/Build/Products/Release/
+          if [ -d "build/Build/Products/Release/VDJStatus.app" ]; then
+            echo "✓ VDJStatus.app built successfully"
+            ls -la build/Build/Products/Release/VDJStatus.app/Contents/MacOS/
+          else
+            echo "✗ VDJStatus.app not found"
+            exit 1
+          fi
+      
+      - name: Verify app structure
+        working-directory: VDJStatus
+        run: |
+          APP_PATH="build/Build/Products/Release/VDJStatus.app"
+          
+          echo "=== App structure ==="
+          find "$APP_PATH" -type f
+          
+          echo ""
+          echo "=== Verify executable ==="
+          if [ -f "$APP_PATH/Contents/MacOS/VDJStatus" ]; then
+            echo "✓ Executable exists"
+            file "$APP_PATH/Contents/MacOS/VDJStatus"
+            otool -L "$APP_PATH/Contents/MacOS/VDJStatus" | head -20
+          else
+            echo "✗ Executable not found"
+            exit 1
+          fi
+      
+      - name: Check Swift source compilation
+        working-directory: VDJStatus
+        run: |
+          echo "=== Source files ==="
+          find VDJStatus -name "*.swift" -exec echo "  {}" \;
+          
+          echo ""
+          echo "=== Build log analysis ==="
+          if [ -d "build/Logs/Build" ]; then
+            echo "Build logs directory exists"
+            find build/Logs/Build -name "*.xcactivitylog" -exec echo "  {}" \;
+          fi
+      
+      - name: Package app (optional)
+        working-directory: VDJStatus
+        run: |
+          cd build/Build/Products/Release
+          zip -r VDJStatus.app.zip VDJStatus.app
+          ls -lh VDJStatus.app.zip
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VDJStatus-macos
+          path: VDJStatus/build/Build/Products/Release/VDJStatus.app.zip
+          retention-days: 30
+      
+      - name: Build summary
+        run: |
+          echo "### Build Summary ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: macOS 13+" >> $GITHUB_STEP_SUMMARY
+          echo "- **Configuration**: Release" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: VDJStatus.app.zip" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Features" >> $GITHUB_STEP_SUMMARY
+          echo "- ScreenCaptureKit window capture" >> $GITHUB_STEP_SUMMARY
+          echo "- Vision framework OCR" >> $GITHUB_STEP_SUMMARY
+          echo "- Fader position detection" >> $GITHUB_STEP_SUMMARY
+          echo "- OSC output (UDP)" >> $GITHUB_STEP_SUMMARY
+          echo "- Interactive calibration UI" >> $GITHUB_STEP_SUMMARY
+          echo "- Live overlay" >> $GITHUB_STEP_SUMMARY
+
+  # Note: Actual testing requires Screen Recording permission and VirtualDJ running
+  # This is a placeholder for future integration tests
+  integration-test:
+    name: Integration Test (Manual)
+    runs-on: macos-13
+    needs: build-macos
+    if: false  # Disabled - requires manual setup
+    
+    steps:
+      - name: Placeholder for integration tests
+        run: |
+          echo "Integration tests require:"
+          echo "1. Screen Recording permission granted"
+          echo "2. VirtualDJ installed and running"
+          echo "3. Calibration data configured"
+          echo ""
+          echo "For manual testing:"
+          echo "1. Download artifact from build job"
+          echo "2. Unzip VDJStatus.app"
+          echo "3. Grant Screen Recording permission"
+          echo "4. Run VDJStatus"
+          echo "5. Follow README.md setup instructions"
