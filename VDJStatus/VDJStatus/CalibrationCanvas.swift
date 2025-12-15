@@ -11,27 +11,28 @@ struct CalibrationCanvas: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // Always show all stored ROIs
                 ForEach(ROIKey.allCases) { key in
                     if let rect = calibration.get(key) {
-                        ROIRectangle(
+                        ROIOverlay(
                             rect: rect,
-                            size: geo.size,
+                            containerSize: geo.size,
                             label: key.label,
                             isSelected: key == selectedROI,
-                            color: key == selectedROI ? .blue : .green,
-                            showHandles: isEditable
+                            showHandles: isEditable && key == selectedROI
                         )
                     }
                 }
 
+                // In-progress rect while dragging
                 if let rect = currentRect {
-                    ROIRectangle(
+                    ROIOverlay(
                         rect: rect,
-                        size: geo.size,
+                        containerSize: geo.size,
                         label: selectedROI.label,
                         isSelected: true,
-                        color: .orange,
-                        showHandles: true
+                        showHandles: true,
+                        color: .orange
                     )
                 }
             }
@@ -55,69 +56,88 @@ struct CalibrationCanvas: View {
                 currentRect = CGRect(x: x, y: y, width: w, height: h)
             }
             .onEnded { _ in
-                if let rect = currentRect { calibration.set(selectedROI, rect: rect) }
+                if let rect = currentRect, rect.width > 0.01, rect.height > 0.01 {
+                    calibration.set(selectedROI, rect: rect)
+                }
                 dragStart = nil
                 currentRect = nil
             }
     }
 }
 
-private struct ROIRectangle: View {
+private struct ROIOverlay: View {
     let rect: CGRect
-    let size: CGSize
+    let containerSize: CGSize
     let label: String
     let isSelected: Bool
-    let color: Color
     let showHandles: Bool
+    var color: Color = .green
 
-    private enum HandlePosition: CaseIterable, Identifiable {
-        case topLeft, topRight, bottomLeft, bottomRight, center
-        var id: Self { self }
+    private var pixelRect: CGRect {
+        CGRect(
+            x: rect.origin.x * containerSize.width,
+            y: rect.origin.y * containerSize.height,
+            width: rect.size.width * containerSize.width,
+            height: rect.size.height * containerSize.height
+        )
+    }
 
-        func point(in size: CGSize) -> CGPoint {
-            switch self {
-            case .topLeft: return .init(x: 0, y: 0)
-            case .topRight: return .init(x: size.width, y: 0)
-            case .bottomLeft: return .init(x: 0, y: size.height)
-            case .bottomRight: return .init(x: size.width, y: size.height)
-            case .center: return .init(x: size.width / 2, y: size.height / 2)
+    var body: some View {
+        let pr = pixelRect
+        let displayColor = isSelected ? Color.blue : color
+
+        ZStack {
+            // Box fill
+            Rectangle()
+                .fill(displayColor.opacity(0.15))
+                .frame(width: pr.width, height: pr.height)
+                .position(x: pr.midX, y: pr.midY)
+
+            // Box stroke
+            Rectangle()
+                .stroke(displayColor, lineWidth: isSelected ? 3 : 2)
+                .frame(width: pr.width, height: pr.height)
+                .position(x: pr.midX, y: pr.midY)
+
+            // Label badge
+            Text(label)
+                .font(.caption2.weight(.bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(displayColor)
+                .cornerRadius(4)
+                .position(x: pr.minX + 8, y: pr.minY + 10)
+
+            // Corner + center handles (only when selected and editing)
+            if showHandles {
+                ForEach(HandlePosition.allCases, id: \.self) { pos in
+                    handleCircle
+                        .position(pos.point(in: pr))
+                }
             }
         }
     }
 
-    var body: some View {
-        let x = rect.origin.x * size.width
-        let y = rect.origin.y * size.height
-        let w = rect.size.width * size.width
-        let h = rect.size.height * size.height
+    private var handleCircle: some View {
+        Circle()
+            .fill(Color.white)
+            .frame(width: 16, height: 16)
+            .overlay(Circle().stroke(Color.blue, lineWidth: 3))
+            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+    }
 
-        Rectangle()
-            .stroke(color.opacity(isSelected ? 1 : 0.7), lineWidth: isSelected ? 3 : 1.5)
-            .background(color.opacity(0.08))
-            .frame(width: w, height: h)
-            .position(x: x + w / 2, y: y + h / 2)
-            .overlay(alignment: .topLeading) {
-                Text(label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(color.opacity(0.9))
-                    .cornerRadius(5)
-                    .padding(6)
+    private enum HandlePosition: CaseIterable {
+        case topLeft, topRight, bottomLeft, bottomRight, center
+
+        func point(in rect: CGRect) -> CGPoint {
+            switch self {
+            case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
+            case .topRight: return CGPoint(x: rect.maxX, y: rect.minY)
+            case .bottomLeft: return CGPoint(x: rect.minX, y: rect.maxY)
+            case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
+            case .center: return CGPoint(x: rect.midX, y: rect.midY)
             }
-            .overlay(alignment: .topLeading) {
-                if showHandles && isSelected {
-                    GeometryReader { geo in
-                        ForEach(HandlePosition.allCases) { pos in
-                            Circle()
-                                .fill(Color.white)
-                                .overlay(Circle().stroke(color, lineWidth: 2))
-                                .frame(width: 14, height: 14)
-                                .position(pos.point(in: geo.size))
-                        }
-                    }
-                }
-            }
+        }
     }
 }

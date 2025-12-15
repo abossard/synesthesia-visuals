@@ -15,18 +15,24 @@ struct MiniPreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // ...existing code...
-            previewBody
-        }
-    }
+            HStack {
+                Text(isCalibrating ? "Calibration Preview" : "Mini Preview")
+                    .font(.headline)
+                Spacer()
+                if detection != nil {
+                    Text("Live OCR")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+            }
 
-    private var previewBody: some View {
-        ZStack(alignment: .topLeading) {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     previewLayer(size: geo.size)
+
                     detectionOverlay
                         .padding(12)
+
                     CalibrationCanvas(
                         calibration: $calibration,
                         selectedROI: selectedROI,
@@ -35,15 +41,15 @@ struct MiniPreviewView: View {
                     .allowsHitTesting(isCalibrating)
                 }
             }
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .frame(maxWidth: isCalibrating ? .infinity : 640)
+            .animation(.spring(response: 0.25, dampingFraction: 0.9), value: isCalibrating)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.4), lineWidth: isCalibrating ? 3 : 1)
+            )
         }
-        .aspectRatio(aspectRatio, contentMode: .fit)
-        .frame(maxWidth: isCalibrating ? .infinity : 640)
-        .animation(.spring(response: 0.25, dampingFraction: 0.9), value: isCalibrating)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.4), lineWidth: isCalibrating ? 3 : 1)
-        )
     }
 
     @ViewBuilder
@@ -67,7 +73,6 @@ struct MiniPreviewView: View {
                         .foregroundColor(.secondary)
                         .padding(.horizontal)
                 }
-                .frame(width: size.width, height: size.height)
             }
         }
     }

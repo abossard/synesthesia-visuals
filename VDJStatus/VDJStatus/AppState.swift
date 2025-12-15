@@ -5,37 +5,25 @@ import SwiftUI
 final class AppState: ObservableObject {
     enum WizardStep: Int, CaseIterable, Identifiable {
         case selectWindow, capturePreview, calibrate
-
         var id: Int { rawValue }
         var title: String {
             switch self {
-            case .selectWindow: return "Select VirtualDJ Window"
-            case .capturePreview: return "Start Capture & Preview"
-            case .calibrate: return "Calibrate Regions"
-            }
-        }
-        var subtitle: String {
-            switch self {
-            case .selectWindow: return "Choose the VirtualDJ deck window to analyze"
-            case .capturePreview: return "Start capture to see live OCR preview"
-            case .calibrate: return "Fine-tune text/fader regions"
+            case .selectWindow: return "Select Window"
+            case .capturePreview: return "Capture & Preview"
+            case .calibrate: return "Calibrate"
             }
         }
     }
 
     @Published var wizardStep: WizardStep = .selectWindow
     @Published var windows: [ShareableWindow] = []
-    @Published var selectedWindowID: UInt32? = nil {
-        didSet { updateWizardAfterSelection() }
-    }
+    @Published var selectedWindowID: UInt32? = nil
 
     @Published var latestFrame: CGImage? = nil
     @Published var frameSize: CGSize = .zero
 
     @Published var calibration = CalibrationModel()
-    @Published var calibrating: Bool = false {
-        didSet { wizardStep = calibrating ? .calibrate : .capturePreview }
-    }
+    @Published var calibrating: Bool = false
 
     @Published var detection: DetectionResult? = nil
     @Published var oscHost: String = "127.0.0.1"
@@ -71,15 +59,12 @@ final class AppState: ObservableObject {
         guard let id = selectedWindowID else { return }
         Task { await capture.startCapturing(windowID: id) }
         isCapturing = true
-        wizardStep = calibrating ? .calibrate : .capturePreview
+        wizardStep = .capturePreview
     }
 
     func stopCapture() {
         Task { await capture.stop() }
         isCapturing = false
-        if !calibrating {
-            wizardStep = selectedWindowID == nil ? .selectWindow : .capturePreview
-        }
     }
 
     func runDetectionOnce() {
@@ -102,10 +87,5 @@ final class AppState: ObservableObject {
         if let loaded = CalibrationModel.loadFromDisk() {
             calibration = loaded
         }
-    }
-
-    private func updateWizardAfterSelection() {
-        guard !calibrating else { return }
-        wizardStep = selectedWindowID == nil ? .selectWindow : (isCapturing ? .capturePreview : .capturePreview)
     }
 }
