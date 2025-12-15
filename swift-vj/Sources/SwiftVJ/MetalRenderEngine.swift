@@ -2,6 +2,9 @@ import Foundation
 import Metal
 import MetalKit
 import CoreText
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Main Metal rendering engine for shader + text overlay + Syphon output
 /// Handles shader compilation, rendering, and multiple Syphon channels
@@ -34,7 +37,23 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
     // Text rendering
     private var textRenderer: TextRenderer?
     
+    // Mouse state (synthetic + real mouse blending)
+    private var mousePosition: (x: Float, y: Float) = (0.5, 0.5)
+    private var synthMouseEnabled: Bool = true
+    private var synthMouseBlend: Float = 0.85  // 0 = real mouse, 1 = full synthetic
+    private var synthMouseSpeed: Float = 0.3
+    
+    // Screenshot functionality
+    private var screenshotScheduled: Bool = false
+    private var screenshotTime: Date?
+    private var screenshotShaderName: String = ""
+    private let screenshotDelay: TimeInterval = 1.0  // seconds
+    private let screenshotsDirectory: String
+    
     init?(frame: NSRect) {
+        // Setup screenshots directory
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        screenshotsDirectory = homeDir.appendingPathComponent("SwiftVJ_Screenshots").path
         // Get default Metal device
         guard let device = MTLCreateSystemDefaultDevice() else {
             NSLog("ERROR: Metal is not supported on this device")
@@ -62,6 +81,11 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
         
         // Initialize text renderer
         textRenderer = TextRenderer(device: device)
+        
+        // Create screenshots directory if needed
+        try? FileManager.default.createDirectory(atPath: screenshotsDirectory, 
+                                                  withIntermediateDirectories: true, 
+                                                  attributes: nil)
         
         // Create render targets
         createRenderTargets(width: Int(frame.width), height: Int(frame.height))
@@ -112,8 +136,14 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
         
         fragment float4 fragment_main(VertexOut in [[stage_in]],
                                      constant float &time [[buffer(0)]],
-                                     constant float2 &resolution [[buffer(1)]]) {
+                                     constant float2 &resolution [[buffer(1)]],
+                                     constant float &bass [[buffer(2)]],
+                                     constant float &mid [[buffer(3)]],
+                                     constant float &high [[buffer(4)]],
+                                     constant float2 &mouse [[buffer(5)]]) {
             float2 uv = in.texCoord;
+            float2 mouseOffset = (mouse - 0.5) * 0.2;
+            uv += mouseOffset;
             float3 color = 0.5 + 0.5 * cos(time + uv.xyx + float3(0, 2, 4));
             return float4(color, 1.0);
         }
@@ -147,6 +177,144 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
         NSLog("Loading shader: \(name) from \(glslPath)")
         currentShaderName = name
         shaderStartTime = Date()
+        
+        // Schedule screenshot for new shader
+        scheduleScreenshot(shaderName: name)
+    }
+    
+    /// Calculate synthetic mouse position (audio-reactive figure-8 Lissajous curve)
+    /// Based on VJUniverse's calcSynthMousePosition
+    private func calculateSynthMouse(time: Float, energySlow: Float, bass: Float, mid: Float, beatPhase: Float) -> (x: Float, y: Float) {
+        // Base rotation with configurable speed
+        var t = time * synthMouseSpeed
+        
+        // Phase shift on beat for rhythmic variation
+        let phaseOffset = beatPhase * 0.4
+        t += phaseOffset
+        
+        // Figure-8 Lissajous curve: x = sin(t), y = sin(2t)
+        let fig8X = sin(t)
+        let fig8Y = sin(t * 2.0)
+        
+        // Audio-modulated amplitude (smooth, avoids jitter)
+        let baseRadius: Float = 0.12 + energySlow * 0.18  // 0.12-0.30 range
+        let radiusX = baseRadius + bass * 0.12             // Bass widens X
+        let radiusY = baseRadius + mid * 0.08              // Mids affect Y
+        
+        // Final position (centered at 0.5, clamped to valid range)
+        let x = min(max(0.5 + fig8X * radiusX, 0.05), 0.95)
+        let y = min(max(0.5 + fig8Y * radiusY, 0.05), 0.95)
+        
+        return (x, y)
+    }
+    
+    /// Update mouse position (blend real and synthetic)
+    func updateMouse(realX: Float, realY: Float) {
+        let realMouseX = realX
+        let realMouseY = realY
+        
+        // Calculate synthetic mouse position
+        let elapsedTime = Float(Date().timeIntervalSince(shaderStartTime))
+        let synthPos = calculateSynthMouse(
+            time: elapsedTime,
+            energySlow: 0.5,  // TODO: Get from audio analysis
+            bass: audioUniforms.bassLevel,
+            mid: audioUniforms.midLevel,
+            beatPhase: 0.0    // TODO: Get from audio analysis
+        )
+        
+        // Blend real and synthetic mouse
+        let blendAmt = synthMouseEnabled ? synthMouseBlend : 0.0
+        let mx = realMouseX * (1.0 - blendAmt) + synthPos.x * blendAmt
+        let my = realMouseY * (1.0 - blendAmt) + synthPos.y * blendAmt
+        
+        mousePosition = (mx, my)
+    }
+    
+    /// Schedule screenshot for current shader
+    private func scheduleScreenshot(shaderName: String) {
+        // Check if screenshot already exists
+        let safeName = shaderName.replacingOccurrences(of: "/", with: "_")
+                                 .replacingOccurrences(of: "\\", with: "_")
+        let screenshotPath = "\(screenshotsDirectory)/\(safeName).png"
+        
+        if FileManager.default.fileExists(atPath: screenshotPath) {
+            NSLog("Screenshot already exists: \(screenshotPath)")
+            return
+        }
+        
+        screenshotScheduled = true
+        screenshotTime = Date().addingTimeInterval(screenshotDelay)
+        screenshotShaderName = shaderName
+        NSLog("Screenshot scheduled for shader: \(shaderName) in \(screenshotDelay)s")
+    }
+    
+    /// Take screenshot if scheduled time has passed
+    private func checkAndTakeScreenshot(texture: MTLTexture?) {
+        guard screenshotScheduled,
+              let scheduledTime = screenshotTime,
+              Date() >= scheduledTime,
+              let texture = texture else {
+            return
+        }
+        
+        takeScreenshot(texture: texture, shaderName: screenshotShaderName)
+        screenshotScheduled = false
+        screenshotTime = nil
+    }
+    
+    /// Save screenshot of rendered shader
+    private func takeScreenshot(texture: MTLTexture, shaderName: String) {
+        let safeName = shaderName.replacingOccurrences(of: "/", with: "_")
+                                 .replacingOccurrences(of: "\\", with: "_")
+        let screenshotPath = "\(screenshotsDirectory)/\(safeName).png"
+        
+        // Get texture data
+        let width = texture.width
+        let height = texture.height
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        let imageByteCount = bytesPerRow * height
+        
+        var imageBytes = [UInt8](repeating: 0, count: imageByteCount)
+        let region = MTLRegionMake2D(0, 0, width, height)
+        
+        texture.getBytes(&imageBytes,
+                        bytesPerRow: bytesPerRow,
+                        from: region,
+                        mipmapLevel: 0)
+        
+        // Create CGImage from raw bytes
+        guard let dataProvider = CGDataProvider(data: Data(imageBytes) as CFData),
+              let cgImage = CGImage(width: width,
+                                   height: height,
+                                   bitsPerComponent: 8,
+                                   bitsPerPixel: 32,
+                                   bytesPerRow: bytesPerRow,
+                                   space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                   provider: dataProvider,
+                                   decode: nil,
+                                   shouldInterpolate: false,
+                                   intent: .defaultIntent) else {
+            NSLog("ERROR: Failed to create CGImage for screenshot")
+            return
+        }
+        
+        // Save to PNG file
+        let url = URL(fileURLWithPath: screenshotPath)
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, kUTTypePNG, 1, nil) else {
+            NSLog("ERROR: Failed to create image destination")
+            return
+        }
+        
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        
+        if CGImageDestinationFinalize(destination) {
+            NSLog("📸 Screenshot saved: \(screenshotPath)")
+        } else {
+            NSLog("ERROR: Failed to save screenshot")
+        }
     }
     
     /// Update karaoke text for a specific channel
@@ -193,12 +361,25 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
         var resolutionUniform = simd_float2(Float(view.drawableSize.width), 
                                            Float(view.drawableSize.height))
         
+        // Update mouse position (blend synthetic and real)
+        updateMouse(realX: 0.5, realY: 0.5)  // TODO: Get real mouse from window events
+        var mouseUniform = simd_float2(mousePosition.x, 1.0 - mousePosition.y)  // Y-flipped
+        
+        // Audio uniforms
+        var bassUniform = audioUniforms.bassLevel
+        var midUniform = audioUniforms.midLevel
+        var highUniform = audioUniforms.highLevel
+        
         // Render shader to main view
         if let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor),
            let pipeline = currentShaderPipeline {
             renderEncoder.setRenderPipelineState(pipeline)
             renderEncoder.setFragmentBytes(&timeUniform, length: MemoryLayout<Float>.stride, index: 0)
             renderEncoder.setFragmentBytes(&resolutionUniform, length: MemoryLayout<simd_float2>.stride, index: 1)
+            renderEncoder.setFragmentBytes(&bassUniform, length: MemoryLayout<Float>.stride, index: 2)
+            renderEncoder.setFragmentBytes(&midUniform, length: MemoryLayout<Float>.stride, index: 3)
+            renderEncoder.setFragmentBytes(&highUniform, length: MemoryLayout<Float>.stride, index: 4)
+            renderEncoder.setFragmentBytes(&mouseUniform, length: MemoryLayout<simd_float2>.stride, index: 5)
             renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
             renderEncoder.endEncoding()
         }
@@ -208,6 +389,9 @@ class MetalRenderEngine: NSObject, MTKViewDelegate {
         
         commandBuffer.present(drawable)
         commandBuffer.commit()
+        
+        // Check if we need to take a screenshot
+        checkAndTakeScreenshot(texture: drawable.texture)
     }
     
     func cleanup() {

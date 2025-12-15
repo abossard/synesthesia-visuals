@@ -32,9 +32,14 @@ fragment float4 fragment_main(
     constant float2 &resolution [[buffer(1)]],
     constant float &bassLevel [[buffer(2)]],
     constant float &midLevel [[buffer(3)]],
-    constant float &highLevel [[buffer(4)]]
+    constant float &highLevel [[buffer(4)]],
+    constant float2 &mouse [[buffer(5)]]
 ) {
     float2 uv = in.texCoord;
+    
+    // Mouse influence on pattern
+    float2 mouseOffset = (mouse - 0.5) * 0.3;
+    uv += mouseOffset;
     
     // Audio-reactive parameters
     float bassPulse = 1.0 + bassLevel * 0.8;      // Bass drives overall pulse

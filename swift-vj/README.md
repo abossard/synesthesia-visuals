@@ -10,9 +10,11 @@ A high-performance macOS application for VJ performances combining:
 
 ### Shader Rendering
 - Runtime Metal shader compilation from source
-- Audio-reactive uniforms (bass, mid, high, BPM)
+- Audio-reactive uniforms (bass, mid, high, BPM, time, resolution, mouse)
+- Synthetic mouse movements (audio-reactive figure-8 Lissajous curve)
 - Hot-reload on shader file changes
 - Time-based animations synchronized to audio
+- **Screenshot functionality** - Auto-saves screenshots when shaders load
 
 ### Karaoke Channels (Syphon Output)
 1. **ShaderOutput** - Main shader visual output
@@ -123,6 +125,8 @@ cd swift-vj
 swift run SwiftVJ
 ```
 
+Screenshots are automatically saved to `~/SwiftVJ_Screenshots/` when new shaders load.
+
 ### 3. Configure VJ software (Magic Music Visuals)
 - Add Syphon input sources:
   - `SwiftVJ - ShaderOutput`
@@ -130,6 +134,21 @@ swift run SwiftVJ
   - `SwiftVJ - KaraokeRefrain`
   - `SwiftVJ - KaraokeSongInfo`
 - Mix/blend channels as desired
+
+## Advanced Features
+
+### Synthetic Mouse Movement
+SwiftVJ includes audio-reactive synthetic mouse movements (figure-8 Lissajous curve) that blend with real mouse input:
+- **Default**: 85% synthetic, 15% real mouse
+- **Audio-Reactive**: Movement responds to bass, mid frequencies, and beat phase
+- **Configurable**: Blend ratio and speed adjustable in code
+- Matches VJUniverse's `calcSynthMousePosition` behavior
+
+### Screenshot Functionality
+- **Automatic**: Screenshots taken 1 second after shader loads
+- **Location**: `~/SwiftVJ_Screenshots/shader_name.png`
+- **Deduplication**: Skips if screenshot already exists
+- Captures rendered frame before text overlays
 
 ## Shader Format
 
@@ -160,9 +179,18 @@ fragment float4 fragment_main(
     VertexOut in [[stage_in]],
     constant float &time [[buffer(0)]],
     constant float2 &resolution [[buffer(1)]],
-    constant float &bassLevel [[buffer(2)]]
+    constant float &bassLevel [[buffer(2)]],
+    constant float &midLevel [[buffer(3)]],
+    constant float &highLevel [[buffer(4)]],
+    constant float2 &mouse [[buffer(5)]]
 ) {
     float2 uv = in.texCoord;
+    
+    // Mouse influence
+    float2 mouseOffset = (mouse - 0.5) * 0.3;
+    uv += mouseOffset;
+    
+    // Audio reactivity
     float pulse = 1.0 + bassLevel * 0.5;
     float3 color = 0.5 + 0.5 * cos(time * pulse + uv.xyx + float3(0, 2, 4));
     return float4(color, 1.0);
