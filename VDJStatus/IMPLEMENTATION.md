@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully implemented a native macOS application to replace Python's `vdj_status.py` script. The new VDJStatus.app provides high-performance VirtualDJ monitoring using ScreenCaptureKit and Vision OCR, with OSC integration for the Python VJ console.
+Successfully implemented a native macOS application to replace Python's `vdj_status.py` script. The new VDJStatus.app provides high-performance VirtualDJ monitoring using ScreenCaptureKit and Vision OCR, with OSC output for external integration.
 
 ## What Was Created
 
@@ -10,7 +10,7 @@ Successfully implemented a native macOS application to replace Python's `vdj_sta
 
 **Location**: `/VDJStatus/`
 
-**Files Created** (16 total):
+**Files Created** (15 total):
 - **11 Swift source files**:
   - `VDJStatusApp.swift` - SwiftUI app entry point
   - `AppState.swift` - Main observable state (@MainActor)
@@ -29,17 +29,15 @@ Successfully implemented a native macOS application to replace Python's `vdj_sta
   - `Info.plist` - App metadata with permissions
   - `VDJStatus.entitlements` - Sandbox capabilities
 
-- **2 documentation files**:
+- **1 documentation file**:
   - `README.md` - App usage and architecture
-  - `INTEGRATION.md` - Python VJ integration guide
 
-### 2. Python Integration (adapters.py)
+### 2. OSC Monitor Script
 
-**New Class**: `VDJStatusOSCMonitor`
-- Receives OSC messages from VDJStatus.app
-- Implements same interface as other monitors
-- Registered in `PLAYBACK_SOURCES` dictionary
-- Listens on port 9001 (configurable)
+**File**: `python-vj/scripts/monitor_vdjstatus_osc.py`
+- Simple OSC listener for monitoring messages
+- Displays deck info, master deck, and performance metrics
+- Does NOT integrate with python-vj (standalone monitoring tool)
 
 ### 3. GitHub Actions Workflow
 
@@ -50,12 +48,12 @@ Successfully implemented a native macOS application to replace Python's `vdj_sta
 - Uploads build artifact (VDJStatus.app.zip)
 - Comprehensive build verification
 
-### 4. Test Script
+### 4. OSC Monitor Script
 
-**File**: `python-vj/scripts/test_vdjstatus_osc.py`
-- Simulates VDJStatus OSC messages
-- Tests Python adapter integration
-- Can run standalone or with monitor
+**File**: `python-vj/scripts/monitor_vdjstatus_osc.py`
+- Simple OSC listener for monitoring VDJStatus.app output
+- Displays received messages (deck info, master, performance)
+- Standalone tool, not integrated with python-vj
 
 ## Technical Highlights
 
@@ -101,12 +99,6 @@ Successfully implemented a native macOS application to replace Python's `vdj_sta
 - **Observable**: AppState is @ObservableObject for SwiftUI binding
 - **Minimal Dependencies**: Pure Swift, only native frameworks
 
-### Python Side
-- **Adapter Pattern**: VDJStatusOSCMonitor implements same interface
-- **Service Health**: Tracks availability and errors
-- **Registry Pattern**: PLAYBACK_SOURCES for discovery
-- **Thread Safety**: OSC server runs in background thread
-
 ## Performance Comparison
 
 | Method | Latency | CPU Usage | Accuracy | Calibration |
@@ -133,15 +125,12 @@ Successfully implemented a native macOS application to replace Python's `vdj_sta
 3. Select VDJ window
 4. Start capture
 5. Detection runs automatically
-6. OSC messages sent to Python VJ console
+6. OSC messages sent to configured host/port
 
-### Python VJ Console
-```python
-from adapters import VDJStatusOSCMonitor
-
-monitor = VDJStatusOSCMonitor(osc_port=9001)
-playback = monitor.get_playback()
-# Returns: {'artist': ..., 'title': ..., 'progress_ms': ...}
+### Monitoring OSC Output
+```bash
+# Run the OSC monitor to see messages
+python python-vj/scripts/monitor_vdjstatus_osc.py --port 9001
 ```
 
 ## Key Design Decisions
@@ -202,21 +191,18 @@ playback = monitor.get_playback()
 5. ✅ Fader detection finds gray pixels
 6. ✅ Calibration persistence
 7. ✅ OSC messages send
-8. ⏳ Python adapter receives (requires pythonosc)
+8. ✅ OSC monitor receives messages
 
 ### CI/CD Testing
 1. ✅ GitHub Actions builds on macOS-13
 2. ✅ Artifact upload
 3. ⏳ Integration tests (requires VDJ + permissions)
 
-### Integration Testing
-Use `python-vj/scripts/test_vdjstatus_osc.py`:
+### Monitoring OSC Output
+Use `python-vj/scripts/monitor_vdjstatus_osc.py`:
 ```bash
-# Test OSC messages only
-python test_vdjstatus_osc.py --send-only
-
-# Test full integration
-python test_vdjstatus_osc.py
+# Monitor OSC messages from VDJStatus.app
+python monitor_vdjstatus_osc.py --port 9001
 ```
 
 ## Migration from vdj_status.py
@@ -225,7 +211,7 @@ python test_vdjstatus_osc.py
 - **UI**: Native SwiftUI interface vs CLI
 - **Calibration**: Interactive drag vs manual coordinates
 - **Performance**: ~500ms vs ~800ms
-- **Integration**: OSC messages vs direct import
+- **Output**: OSC messages vs return values
 - **Overlay**: Live visualization vs none
 
 ### What's the Same
@@ -238,13 +224,13 @@ Keep `vdj_status.py` for:
 - Other scripts that import it directly
 - Systems without macOS 13+
 - Quick debugging without app
+- Note: File-based VDJ monitoring doesn't provide play position
 
 ## Documentation
 
 - **VDJStatus/README.md**: App usage, features, troubleshooting
-- **VDJStatus/INTEGRATION.md**: Python VJ integration guide
-- **python-vj/adapters.py**: VDJStatusOSCMonitor docstrings
-- **This file**: Implementation summary
+- **VDJStatus/IMPLEMENTATION.md**: This file - implementation summary
+- **python-vj/scripts/monitor_vdjstatus_osc.py**: OSC monitoring tool
 
 ## Deployment
 
@@ -269,7 +255,7 @@ Keep `vdj_status.py` for:
 - [x] Fader detection finds gray pixels
 - [x] Calibration persists to disk
 - [x] OSC messages encode correctly
-- [x] Python adapter receives OSC
+- [x] OSC monitor can receive messages
 - [x] GitHub Actions builds on macOS runner
 - [x] Documentation complete
 
@@ -277,10 +263,9 @@ Keep `vdj_status.py` for:
 
 - Issue guide (in problem statement)
 - VDJStatus/README.md
-- VDJStatus/INTEGRATION.md
+- VDJStatus/IMPLEMENTATION.md
 - .github/workflows/vdjstatus-macos.yml
-- python-vj/adapters.py (VDJStatusOSCMonitor)
-- python-vj/scripts/test_vdjstatus_osc.py
+- python-vj/scripts/monitor_vdjstatus_osc.py
 
 ## Conclusion
 
@@ -288,7 +273,7 @@ Successfully replaced Python's vdj_status.py with a production-ready native macO
 - ✅ Better performance (500ms vs 800ms)
 - ✅ Modern UI with live overlay
 - ✅ Interactive calibration
-- ✅ OSC integration with Python VJ console
+- ✅ OSC output for external integration
 - ✅ No external dependencies
 - ✅ CI/CD pipeline
 

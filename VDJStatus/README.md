@@ -69,22 +69,15 @@ All messages sent via UDP to configured host:port (default: 127.0.0.1:9000)
 /vdj/performance <deck1_confidence:float> <deck2_confidence:float>
 ```
 
-### Integration with Python VJ Console
+### Monitoring OSC Output
 
-The Python `adapters.py` can receive OSC messages from VDJStatus:
+Use the provided OSC monitor script:
 
-```python
-# Example OSC handler in python-vj
-from pythonosc import dispatcher, osc_server
-
-def handle_vdj_deck1(unused_addr, artist, title, elapsed, fader):
-    print(f"Deck 1: {artist} - {title} @ {elapsed:.1f}s, Fader: {fader:.2f}")
-
-d = dispatcher.Dispatcher()
-d.map("/vdj/deck1", handle_vdj_deck1)
-server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", 9000), d)
-server.serve_forever()
+```bash
+python python-vj/scripts/monitor_vdjstatus_osc.py --port 9000
 ```
+
+This will display all OSC messages received from VDJStatus.app.
 
 ## Calibration Tips
 
