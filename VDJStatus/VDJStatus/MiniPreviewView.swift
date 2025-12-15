@@ -15,17 +15,13 @@ struct MiniPreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(isCalibrating ? "Calibration Preview" : "Mini Preview")
-                    .font(.headline)
-                Spacer()
-                if detection != nil {
-                    Text("Live OCR")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-            }
+            // ...existing code...
+            previewBody
+        }
+    }
 
+    private var previewBody: some View {
+        ZStack(alignment: .topLeading) {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     previewLayer(size: geo.size)
@@ -36,34 +32,31 @@ struct MiniPreviewView: View {
                         selectedROI: selectedROI,
                         isEditable: isCalibrating
                     )
-                    .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(isCalibrating)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(aspectRatio, contentMode: .fit)
-            .frame(height: isCalibrating ? 420 : 260)
-            .clipped()
-            .background(Color.black.opacity(0.85))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.4), lineWidth: isCalibrating ? 3 : 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .frame(maxWidth: isCalibrating ? .infinity : 640)
+        .animation(.spring(response: 0.25, dampingFraction: 0.9), value: isCalibrating)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.4), lineWidth: isCalibrating ? 3 : 1)
+        )
     }
 
     @ViewBuilder
     private func previewLayer(size: CGSize) -> some View {
-        if let frame = frame {
+        if let frame {
             Image(decorative: frame, scale: 1, orientation: .up)
                 .resizable()
-                .scaledToFill()
+                .scaledToFit()
                 .frame(width: size.width, height: size.height)
                 .clipped()
         } else {
             ZStack {
-                Color.black.opacity(0.5)
+                Color.secondary.opacity(0.1)
                 VStack(spacing: 8) {
                     Image(systemName: "rectangle.dashed")
                         .font(.largeTitle)
@@ -74,13 +67,14 @@ struct MiniPreviewView: View {
                         .foregroundColor(.secondary)
                         .padding(.horizontal)
                 }
+                .frame(width: size.width, height: size.height)
             }
         }
     }
 
     private var detectionOverlay: some View {
         Group {
-            if let detection = detection {
+            if let detection {
                 VStack(alignment: .leading, spacing: 4) {
                     if let master = detection.masterDeck {
                         Text("Master Deck: \(master)")
@@ -99,8 +93,7 @@ struct MiniPreviewView: View {
                     }
                 }
                 .padding(8)
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
     }
