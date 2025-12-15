@@ -54,7 +54,7 @@ struct OverlayView: View {
                         
                         if let artist = detection.deck2.artist, let title = detection.deck2.title {
                             Text("D2: \(artist) - \(title)")
-                                .foregroundColor(.magenta)
+                                .foregroundColor(Color(red: 1, green: 0, blue: 1))
                                 .font(.caption)
                         }
                     }

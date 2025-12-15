@@ -125,7 +125,9 @@ struct ContentView: View {
         
         // Run detection every 0.5 seconds (2 fps)
         detectionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            app.runDetectionOnce()
+            Task { @MainActor in
+                app.runDetectionOnce()
+            }
         }
     }
     

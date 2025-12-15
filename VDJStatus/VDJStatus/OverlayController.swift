@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 
 @MainActor
 class OverlayController {

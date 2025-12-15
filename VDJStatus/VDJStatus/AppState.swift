@@ -27,19 +27,24 @@ final class AppState: ObservableObject {
     var osc = OSCSender()
 
     init() {
-        capture.onFrame = { [weak self] cg, size in
-            Task { @MainActor in
-                self?.latestFrame = cg
-                self?.frameSize = size
-                self?.overlayController.updateOverlayContent(
-                    frame: cg,
-                    calibration: self?.calibration ?? .init(),
-                    detection: self?.detection
-                )
+        Task {
+            await capture.setOnFrame { [weak self] cg, size in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.latestFrame = cg
+                    self.frameSize = size
+                    self.overlayController.updateOverlayContent(
+                        frame: cg,
+                        calibration: self.calibration,
+                        detection: self.detection
+                    )
+                }
             }
-        }
-        capture.onWindowsChanged = { [weak self] wins in
-            Task { @MainActor in self?.windows = wins }
+            await capture.setOnWindowsChanged { [weak self] wins in
+                Task { @MainActor [weak self] in
+                    self?.windows = wins
+                }
+            }
         }
 
         overlayController.setVisible(true)

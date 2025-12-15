@@ -2,6 +2,7 @@ import Foundation
 import ScreenCaptureKit
 import CoreMedia
 import CoreImage
+import CoreGraphics
 
 struct ShareableWindow: Identifiable {
     let id: UInt32
@@ -16,10 +17,17 @@ actor CaptureManager {
     private var stream: SCStream?
     private let ciContext = CIContext(options: nil)
     private var output: StreamOutput?
+    private var cachedContent: SCShareableContent?
+    private var lastContentFetch: Date?
+    private let cacheTTL: TimeInterval = 30
+
+    private enum CaptureError: Error {
+        case permissionDenied
+    }
 
     func refreshShareableWindows(preferBundleID: String?) async {
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let content = try await getShareableContent()
             var list: [ShareableWindow] = []
 
             for w in content.windows {
@@ -36,7 +44,11 @@ actor CaptureManager {
             }
 
             onWindowsChanged?(list)
+        } catch CaptureError.permissionDenied {
+            log("Screen recording permission denied while refreshing window list")
+            onWindowsChanged?([])
         } catch {
+            log("Failed to retrieve shareable windows: \(error.localizedDescription)")
             onWindowsChanged?([])
         }
     }
@@ -45,7 +57,7 @@ actor CaptureManager {
         await stop()
 
         do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let content = try await getShareableContent()
             guard let window = content.windows.first(where: { $0.windowID == windowID }) else { return }
 
             // Capture a single window (desktopIndependentWindow)
@@ -63,13 +75,15 @@ actor CaptureManager {
                 Task { await self?.emitFrame(cg: cg, size: size) }
             }
 
-            try stream.addStreamOutput(out, type: .screen, sampleHandlerQueue: DispatchQueue(label: "sc.output"))
+            try stream.addStreamOutput(out, type: SCStreamOutputType.screen, sampleHandlerQueue: DispatchQueue(label: "sc.output"))
             self.output = out
             self.stream = stream
 
             try await stream.startCapture()
+        } catch CaptureError.permissionDenied {
+            log("Cannot start capture without Screen Recording permission")
         } catch {
-            // ignored; user can retry after granting Screen Recording permission
+            log("startCapturing failed: \(error.localizedDescription)")
         }
     }
 
@@ -79,10 +93,40 @@ actor CaptureManager {
         }
         stream = nil
         output = nil
+        log("Capture stopped")
     }
 
     private func emitFrame(cg: CGImage, size: CGSize) {
         onFrame?(cg, size)
+    }
+
+    func setOnFrame(_ handler: @escaping (CGImage, CGSize) -> Void) {
+        onFrame = handler
+    }
+
+    func setOnWindowsChanged(_ handler: @escaping ([ShareableWindow]) -> Void) {
+        onWindowsChanged = handler
+    }
+
+    private func getShareableContent() async throws -> SCShareableContent {
+        if let cached = cachedContent,
+           let lastFetch = lastContentFetch,
+           Date().timeIntervalSince(lastFetch) < cacheTTL {
+            return cached
+        }
+
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            cachedContent = content
+            lastContentFetch = Date()
+            return content
+        } catch {
+            throw CaptureError.permissionDenied
+        }
+    }
+
+    private func log(_ message: String) {
+        print("[CaptureManager] \(message)")
     }
 }
 
