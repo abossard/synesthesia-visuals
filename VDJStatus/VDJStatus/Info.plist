@@ -24,8 +24,6 @@
 	<string>Copyright © 2024 Synesthesia Visuals. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>NSMainStoryboardFile</key>
-	<string>Main</string>
 	<key>NSCameraUsageDescription</key>
 	<string>VDJStatus needs screen recording permission to capture VirtualDJ window.</string>
 	<key>NSScreenCaptureUsageDescription</key>
