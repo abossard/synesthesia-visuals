@@ -965,6 +965,163 @@ class VDJOCRMonitor:
 
 
 # =============================================================================
+# VDJSTATUS OSC MONITOR - Native macOS app via OSC messages
+# =============================================================================
+
+class VDJStatusOSCMonitor:
+    """
+    Monitors VirtualDJ via native VDJStatus macOS app over OSC.
+    
+    High-performance native app using ScreenCaptureKit + Vision OCR.
+    Receives OSC messages from VDJStatus.app at ~2 FPS.
+    
+    OSC Messages:
+        /vdj/deck1 <artist:str> <title:str> <elapsed:float> <fader:float>
+        /vdj/deck2 <artist:str> <title:str> <elapsed:float> <fader:float>
+        /vdj/master <deck_num:int>
+        /vdj/performance <d1_confidence:float> <d2_confidence:float>
+    """
+    
+    monitor_key = "vdjstatus_osc"
+    monitor_label = "VDJStatus (OSC)"
+    
+    def __init__(self, osc_host: str = "127.0.0.1", osc_port: int = 9001):
+        self._health = ServiceHealth(self.monitor_label)
+        self._osc_host = osc_host
+        self._osc_port = osc_port
+        
+        # Cached state from OSC messages
+        self._deck1: Dict[str, Any] = {}
+        self._deck2: Dict[str, Any] = {}
+        self._master_deck: Optional[int] = None
+        self._performance: Dict[str, float] = {}
+        self._last_update = 0.0
+        self._timeout = 2.0  # Consider stale after 2 seconds
+        
+        # OSC server (lazy init)
+        self._server = None
+        self._server_thread = None
+        self._start_osc_server()
+    
+    def _start_osc_server(self):
+        """Start OSC server to receive messages from VDJStatus app."""
+        try:
+            from pythonosc import dispatcher, osc_server
+            
+            disp = dispatcher.Dispatcher()
+            disp.map("/vdj/deck1", self._handle_deck1)
+            disp.map("/vdj/deck2", self._handle_deck2)
+            disp.map("/vdj/master", self._handle_master)
+            disp.map("/vdj/performance", self._handle_performance)
+            
+            self._server = osc_server.ThreadingOSCUDPServer(
+                (self._osc_host, self._osc_port), disp
+            )
+            
+            # Start server in background thread
+            import threading
+            self._server_thread = threading.Thread(
+                target=self._server.serve_forever,
+                daemon=True,
+                name="VDJStatusOSCServer"
+            )
+            self._server_thread.start()
+            
+            logger.info(f"VDJStatus OSC server listening on {self._osc_host}:{self._osc_port}")
+            self._health.mark_available(f"OSC server {self._osc_host}:{self._osc_port}")
+            
+        except ImportError:
+            self._health.mark_unavailable("pythonosc not installed")
+            logger.warning("VDJStatusOSCMonitor requires pythonosc (pip install python-osc)")
+        except Exception as e:
+            self._health.mark_unavailable(f"OSC server failed: {e}")
+            logger.error(f"Failed to start VDJStatus OSC server: {e}")
+    
+    def _handle_deck1(self, unused_addr, artist: str, title: str, elapsed: float, fader: float):
+        """Handle /vdj/deck1 OSC message."""
+        self._deck1 = {
+            'artist': artist,
+            'title': title,
+            'elapsed_sec': elapsed,
+            'fader_pos': fader,
+        }
+        self._last_update = time.time()
+    
+    def _handle_deck2(self, unused_addr, artist: str, title: str, elapsed: float, fader: float):
+        """Handle /vdj/deck2 OSC message."""
+        self._deck2 = {
+            'artist': artist,
+            'title': title,
+            'elapsed_sec': elapsed,
+            'fader_pos': fader,
+        }
+        self._last_update = time.time()
+    
+    def _handle_master(self, unused_addr, deck_num: int):
+        """Handle /vdj/master OSC message."""
+        self._master_deck = deck_num
+        self._last_update = time.time()
+    
+    def _handle_performance(self, unused_addr, d1_conf: float, d2_conf: float):
+        """Handle /vdj/performance OSC message."""
+        self._performance = {
+            'deck1_confidence': d1_conf,
+            'deck2_confidence': d2_conf,
+        }
+    
+    def get_playback(self) -> Optional[Dict[str, Any]]:
+        """Get current VirtualDJ playback from cached OSC data."""
+        # Check if data is stale
+        if time.time() - self._last_update > self._timeout:
+            self._health.mark_unavailable("No OSC messages (check VDJStatus.app)")
+            return None
+        
+        # Get active deck's info
+        if self._master_deck == 1 and self._deck1:
+            deck_info = self._deck1
+        elif self._master_deck == 2 and self._deck2:
+            deck_info = self._deck2
+        elif self._deck1:  # Fallback to deck 1
+            deck_info = self._deck1
+        elif self._deck2:  # Fallback to deck 2
+            deck_info = self._deck2
+        else:
+            self._health.mark_unavailable("No deck data")
+            return None
+        
+        if not deck_info.get('artist') or not deck_info.get('title'):
+            self._health.mark_unavailable("Incomplete deck data")
+            return None
+        
+        self._health.mark_available()
+        return {
+            'artist': deck_info['artist'],
+            'title': deck_info['title'],
+            'album': '',
+            'duration_ms': 0,  # VDJStatus doesn't provide duration yet
+            'progress_ms': int(deck_info.get('elapsed_sec', 0) * 1000),
+            'is_playing': True,
+        }
+    
+    @property
+    def status(self) -> Dict[str, Any]:
+        status = self._health.get_status()
+        status.update({
+            'master_deck': self._master_deck,
+            'deck1_confidence': self._performance.get('deck1_confidence', 0),
+            'deck2_confidence': self._performance.get('deck2_confidence', 0),
+            'last_update': self._last_update,
+        })
+        return status
+    
+    def shutdown(self):
+        """Shutdown OSC server (cleanup)."""
+        if self._server:
+            self._server.shutdown()
+            logger.info("VDJStatus OSC server shutdown")
+
+
+# =============================================================================
 # PLAYBACK SOURCE REGISTRY - All available monitors
 # =============================================================================
 
@@ -999,6 +1156,12 @@ PLAYBACK_SOURCES = {
         'label': 'VirtualDJ (OCR Accurate)',
         'description': 'VirtualDJ via OCR with language correction (~800ms)',
         'factory': lambda: VDJOCRMonitor(fast_mode=False),
+    },
+    'vdjstatus_osc': {
+        'key': 'vdjstatus_osc',
+        'label': 'VDJStatus (Native OSC)',
+        'description': 'VirtualDJ via native VDJStatus.app over OSC (~2 FPS)',
+        'factory': lambda: VDJStatusOSCMonitor(osc_host="127.0.0.1", osc_port=9001),
     },
     'djay': {
         'key': 'djay',
