@@ -70,7 +70,8 @@ enum Detector {
     }
 
     private static func bestLine(_ lines: [String]) -> String? {
-        let cleaned = lines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count >= 2 }
+        // Allow single-char results; text may start anywhere in the ROI box
+        let cleaned = lines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         return cleaned.max(by: { $0.count < $1.count })
     }
 
@@ -101,17 +102,27 @@ enum Detector {
         return mins * 60 + secs
     }
 
-    // Crop helper: norm rect (top-left origin) -> CGImage crop (CoreGraphics bottom-left)
+    // Crop helper: norm rect (top-left origin, 0-1) -> CGImage crop
+    // Note: ScreenCaptureKit CGImages use top-left origin, same as our calibration coords
+    // Adds 5% padding on each side to capture text that may not start at the box edge
     static func crop(_ img: CGImage, normTopLeftRect r: CGRect) -> CGImage? {
         let W = CGFloat(img.width)
         let H = CGFloat(img.height)
+        
+        // Add 5% padding to each side for OCR leeway
+        let padX = r.size.width * 0.05
+        let padY = r.size.height * 0.05
+        let expanded = CGRect(
+            x: max(0, r.origin.x - padX),
+            y: max(0, r.origin.y - padY),
+            width: min(1 - max(0, r.origin.x - padX), r.size.width + padX * 2),
+            height: min(1 - max(0, r.origin.y - padY), r.size.height + padY * 2)
+        )
 
-        let x = r.origin.x * W
-        let w = r.size.width * W
-        // flip Y: top-left -> bottom-left
-        let yTop = r.origin.y * H
-        let h = r.size.height * H
-        let y = H - (yTop + h)
+        let x = expanded.origin.x * W
+        let y = expanded.origin.y * H  // No Y-flip needed: SCK images are top-left origin
+        let w = expanded.size.width * W
+        let h = expanded.size.height * H
 
         let rect = CGRect(x: x.rounded(.down), y: y.rounded(.down),
                           width: w.rounded(.down), height: h.rounded(.down))
