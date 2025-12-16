@@ -193,7 +193,7 @@ class CLIRunner {
         }
 
         if config.verbose {
-            logger.debug("OCR: \(appState.lastDetectionMs, specifier: "%.0f")ms | Avg: \(appState.avgDetectionMs, specifier: "%.0f")ms")
+            logger.debug(String(format: "OCR: %.0fms | Avg: %.0fms", appState.lastDetectionMs, appState.avgDetectionMs))
         }
 
         logger.log("")
