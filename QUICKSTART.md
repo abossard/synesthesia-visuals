@@ -15,11 +15,17 @@ Get up and running with the VDJStatus CLI tool in 5 minutes.
 xcode-select --install
 ```
 
-## Step 2: Run GUI App for Initial Calibration
+## Step 2: Calibration (Two Options)
 
-**Important**: You must calibrate ROI regions once before using the CLI tool.
+**Important**: You must calibrate ROI regions once before detection will work.
 
-1. Open and run **VDJStatus.app** (the GUI version)
+### **Option A: Calibrate from CLI (Easiest)**
+
+1. Skip this step for now - you'll calibrate in Step 5
+
+### **Option B: Calibrate from GUI App First**
+
+1. Open and run **VDJStatus.app** (the standalone GUI version)
 2. Click "Calibrate" or open calibration mode
 3. Draw 8 ROI rectangles:
    - Deck 1: Artist, Title, Elapsed, Fader
@@ -74,13 +80,27 @@ Status monitoring active (every 2.0s)
 ═══════════════════════════════════════════════════
 ```
 
-## Step 5: Try Keyboard Commands
+## Step 5: Try the Full GUI Window
 
-While the CLI is running:
+While the CLI is running in the terminal:
 
-- Press **`d`** → Toggle debug window (shows live data)
+- Press **`d`** → Opens the **COMPLETE GUI application window** (100% same as Xcode project)
+  - All features available: window selection, calibration, settings, FSM diagram
+  - **Calibrate ROIs here** if you skipped Step 2 Option B
+  - Toggle "Calibration Mode ON", select ROI, drag boxes on preview
+  - Click "Save" to persist calibration
+- Press **`d` again** → Closes GUI window, CLI continues monitoring
 - Press **`q`** → Quit gracefully
 - Press **`Ctrl+C`** → Force quit
+
+**GUI Window Features:**
+- ✅ Live frame preview with ROI overlays
+- ✅ Interactive calibration (drag to draw boxes)
+- ✅ Window selection and capture controls
+- ✅ OSC configuration
+- ✅ Detection results and performance metrics
+- ✅ FSM state diagram
+- ✅ All settings and controls fully functional
 
 ## Step 6: Customize (Optional)
 

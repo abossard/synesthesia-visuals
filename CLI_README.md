@@ -8,7 +8,7 @@ A console-based command-line tool for monitoring VirtualDJ status using ScreenCa
 - 🎵 **Real-time detection** - OCR for track info, elapsed time, and fader positions
 - 🎛️ **Master deck detection** - FSM-based intelligent state tracking
 - 📡 **OSC output** - UDP OSC messages for VJ system integration
-- 🪟 **Debug window** - Press 'd' to toggle live debug visualization
+- 🪟 **Full GUI window** - Press 'd' to open the complete application interface (100% same as Xcode GUI)
 - ⌨️ **Raw keyboard input** - No Enter key required (d=debug, q=quit)
 - 🔄 **Shared codebase** - Reuses all core logic from GUI app via symlinks
 
@@ -106,7 +106,7 @@ swift run vdjstatus-cli -- -w "VirtualDJ" -h 127.0.0.1 -p 9000 -v
 
 | Key | Action |
 |-----|--------|
-| `d` | Toggle debug window (shows live detection data) |
+| `d` | Toggle full GUI window (complete application interface with all features) |
 | `q` | Quit gracefully |
 | `Ctrl+C` | Force quit |
 
@@ -161,31 +161,82 @@ Status monitoring active (every 2.0s)
 /vdj/master   (deck_num: int)
 ```
 
-## Debug Window
+## Full GUI Window (Press 'd')
 
-Press `d` while the CLI is running to toggle a debug window:
+Press `d` while the CLI is running to open the **complete GUI application window** - 100% identical to the Xcode project with all features:
 
-- **Live detection data** for both decks
-- **FSM state** (playing/stopped/unknown)
-- **Fader positions and confidence**
-- **Master deck indication**
-- **Timestamp of last update**
+### **Window Features** (Same as GUI App)
 
-The window updates automatically as new data is detected. Press `d` again to hide.
+**Step 1: Window Selection**
+- Dropdown to select VirtualDJ window
+- Refresh button to reload window list
+- Auto-capture indicator
+
+**Step 2: Capture & Preview**
+- Start/Stop capture controls
+- Live frame preview with visual overlays:
+  - ROI rectangles (cyan for Deck 1, magenta for Deck 2)
+  - Detected text boxes (red) with OCR labels
+  - Fader position indicators (horizontal red lines)
+  - Live detection overlay (artist, title, elapsed time)
+
+**Step 3: Calibration**
+- **Interactive ROI calibration mode** - drag to draw boxes on the preview
+- ROI selector dropdown (8 regions: D1/D2 Artist/Title/Elapsed/Fader)
+- Load/Save calibration buttons
+- Language correction toggles for non-English artist names
+- Real-time coordinate display
+
+**Step 4: OSC Configuration**
+- Host/Port settings
+- Enable/Disable toggle
+
+**Detection Results Panel**
+- Master deck indicator with large elapsed time display
+- Deck 1 & Deck 2 columns showing artist, title, time, fader position
+- Performance metrics (OCR time, average, frame latency)
+
+**FSM State Diagram**
+- Visual state boxes for both decks
+- Play state indicators (Playing/Stopped/Unknown with emojis)
+- Fader position bar graphs
+- Master deck highlighting
+- Transition log with timestamps
+
+### **Key Benefits**
+
+✅ **Calibrate ROIs** while CLI monitors in background
+✅ **All settings work** - change OSC host/port, window selection, etc.
+✅ **Shared state** - Changes in GUI immediately reflected in CLI logs
+✅ **No differences** - Exact same ContentView as Xcode project
+✅ **Press 'd' again** to close window and continue CLI monitoring
+
+The window is fully functional with all controls, buttons, and settings. You can perform calibration, change configuration, and monitor state all while the CLI continues logging to the terminal.
 
 ## Calibration
 
-Before using the CLI tool, you must calibrate ROI regions:
+You can calibrate ROI regions in two ways:
 
-1. **Run the GUI app** (VDJStatus.app) once
-2. **Open calibration mode** and draw ROI rectangles for:
-   - Deck 1: Artist, Title, Elapsed Time, Fader
-   - Deck 2: Artist, Title, Elapsed Time, Fader
-3. **Save calibration** - stored at:
-   `~/Library/Application Support/VDJStatus/vdj_calibration.json`
+### **Option 1: From CLI (Recommended)**
+1. **Run the CLI tool**: `swift run vdjstatus-cli`
+2. **Press 'd'** to open the full GUI window
+3. **Toggle "Calibration Mode ON"** in Step 3
+4. **Select ROI** from dropdown (e.g., "D1 Artist")
+5. **Drag on the preview** to draw a box around the region
+6. **Repeat** for all 8 ROIs (D1/D2 Artist, Title, Elapsed, Fader)
+7. **Click "Save"** to persist calibration
+8. **Press 'd' again** to close GUI and continue CLI monitoring
+
+### **Option 2: From GUI App**
+1. **Run the standalone GUI app** (VDJStatus.app)
+2. **Open calibration mode** and draw ROI rectangles
+3. **Save calibration**
 4. **Run CLI tool** - automatically loads saved calibration
 
-**Without calibration**, the CLI will start but detection will fail (no ROIs defined).
+**Calibration file location**:
+`~/Library/Application Support/VDJStatus/vdj_calibration.json`
+
+**Without calibration**, the CLI will start but detection will fail (no ROIs defined). Press 'd' to open the GUI and calibrate.
 
 ## Troubleshooting
 
@@ -299,23 +350,23 @@ ERROR: Capture failed: SCStreamError
 
 ---
 
-### 6. Debug Window Not Appearing
+### 6. GUI Window Not Appearing
 
 **Symptom:**
 - Press 'd', but no window shows
-- Console shows "Debug window toggled" but nothing visible
+- Console shows "GUI window opened" but nothing visible
 
 **Causes:**
 1. **macOS Focus Assist** - Window opens on different space/desktop
-2. **Window off-screen** - Frame outside visible area
+2. **Window minimized** - Check Dock for minimized windows
+3. **Window off-screen** - Frame outside visible area
 
 **Solutions:**
-1. **Check all desktops/spaces** (Mission Control)
-2. **Try multiple 'd' presses** - toggles on/off
-3. **Run with verbose logging**:
-   ```bash
-   vdjstatus-cli -v
-   ```
+1. **Check all desktops/spaces** (Mission Control / Cmd+↑)
+2. **Check Dock** - Window may be minimized
+3. **Try pressing 'd' twice** - Close and reopen to reset position
+4. **Check console output** - Should say "GUI window opened" or "GUI window closed"
+5. **Restart CLI** - Window position is centered on first open
 
 ---
 
@@ -323,34 +374,45 @@ ERROR: Capture failed: SCStreamError
 
 ### Shared Source Code (Symlinked from GUI App)
 
-The CLI tool shares core business logic with the GUI app via symbolic links:
+The CLI tool shares **both core business logic AND the complete SwiftUI GUI** via symbolic links:
 
 ```
 Sources/VDJStatusCore/
-├── DeckStateMachine.swift  → VDJStatus/VDJStatus/DeckStateMachine.swift
-├── Detector.swift          → VDJStatus/VDJStatus/Detector.swift
-├── CalibrationModel.swift  → VDJStatus/VDJStatus/CalibrationModel.swift
-├── OSC.swift               → VDJStatus/VDJStatus/OSC.swift
-├── VisionOCR.swift         → VDJStatus/VDJStatus/VisionOCR.swift
-└── CaptureManager.swift    → VDJStatus/VDJStatus/CaptureManager.swift
+├── DeckStateMachine.swift    → VDJStatus/VDJStatus/DeckStateMachine.swift
+├── Detector.swift            → VDJStatus/VDJStatus/Detector.swift
+├── CalibrationModel.swift    → VDJStatus/VDJStatus/CalibrationModel.swift
+├── OSC.swift                 → VDJStatus/VDJStatus/OSC.swift
+├── VisionOCR.swift           → VDJStatus/VDJStatus/VisionOCR.swift
+├── CaptureManager.swift      → VDJStatus/VDJStatus/CaptureManager.swift
+├── AppState.swift            → VDJStatus/VDJStatus/AppState.swift (NEW)
+├── ContentView.swift         → VDJStatus/VDJStatus/ContentView.swift (NEW)
+├── CalibrationCanvas.swift   → VDJStatus/VDJStatus/CalibrationCanvas.swift (NEW)
+└── MiniPreviewView.swift     → VDJStatus/VDJStatus/MiniPreviewView.swift (NEW)
 ```
 
 **Benefits:**
-- ✅ Single source of truth
+- ✅ Single source of truth for **everything** (logic + UI)
 - ✅ Edit once, affects both projects
 - ✅ No code duplication
 - ✅ Shared unit tests
+- ✅ **Same GUI in both CLI and Xcode project** (100% identical)
 
 ### CLI-Specific Code
 
 ```
 Sources/VDJStatusCLI/
 ├── main.swift             # Entry point, argument parsing
-├── CLIRunner.swift        # Main orchestrator (capture, detection, OSC)
+├── CLIRunner.swift        # Main orchestrator using AppState
 ├── TerminalInput.swift    # Raw stdin handler (POSIX termios)
-├── DebugWindow.swift      # NSApplication debug window
-└── CLILogger.swift        # Stdout/stderr logger
+├── DebugWindow.swift      # NSHostingController wrapper for full SwiftUI GUI
+└── CLILogger.swift        # Stdout/stderr logger with flush
 ```
+
+**Key Implementation Details:**
+- `CLIRunner` uses shared `AppState` (same as GUI app)
+- `DebugWindow` hosts full `ContentView` via `NSHostingController`
+- All SwiftUI views rendered natively with AppKit integration
+- Console logs flushed immediately (visible even when GUI is open)
 
 ### Dependencies (All Native)
 

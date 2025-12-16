@@ -9,10 +9,12 @@ struct CLILogger {
 
     func log(_ message: String) {
         print(message)
+        fflush(stdout)
     }
 
     func info(_ message: String) {
         print(message)
+        fflush(stdout)
     }
 
     func error(_ message: String) {
