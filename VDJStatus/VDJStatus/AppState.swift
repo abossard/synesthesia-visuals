@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 @MainActor
 final class AppState: ObservableObject {
@@ -28,35 +29,53 @@ final class AppState: ObservableObject {
 
     let capture = CaptureManager()
     var osc = OSCSender()
-    private var callbacksConfigured = false
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Defer callback setup - will be done before first capture
+        setupSubscriptions()
     }
     
-    private func ensureCallbacksConfigured() async {
-        guard !callbacksConfigured else { return }
-        callbacksConfigured = true
-        
-        await capture.setOnFrame { [weak self] cg, size in
-            Task { @MainActor [weak self] in
+    private func setupSubscriptions() {
+        // Subscribe to frames from CaptureManager
+        capture.framePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] (cgImage, size) in
                 guard let self else { return }
-                self.latestFrame = cg
+                self.latestFrame = cgImage
                 self.frameSize = size
                 self.frameCounter += 1
                 print("[AppState] Frame \(self.frameCounter) received, size: \(size)")
             }
-        }
-        await capture.setOnWindowsChanged { [weak self] wins in
-            Task { @MainActor [weak self] in
-                self?.windows = wins
+            .store(in: &cancellables)
+        
+        // Subscribe to window list updates
+        capture.windowsPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] windows in
+                self?.windows = windows
             }
-        }
+            .store(in: &cancellables)
+        
+        // Subscribe to capture state changes
+        capture.$isCapturing
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] capturing in
+                self?.isCapturing = capturing
+            }
+            .store(in: &cancellables)
+        
+        // Log errors from capture manager
+        capture.$lastError
+            .receive(on: DispatchQueue.main)
+            .compactMap { $0 }
+            .sink { error in
+                print("[AppState] Capture error: \(error)")
+            }
+            .store(in: &cancellables)
     }
 
     func refreshWindows() {
         Task {
-            await ensureCallbacksConfigured()
             await capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
         }
     }
@@ -64,11 +83,9 @@ final class AppState: ObservableObject {
     func startCapture() {
         guard let id = selectedWindowID else { return }
         Task {
-            await ensureCallbacksConfigured()
             await capture.startCapturing(windowID: id)
             print("[AppState] Capture started for window \(id)")
         }
-        isCapturing = true
     }
 
     func stopCapture() {

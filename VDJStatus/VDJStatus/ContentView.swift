@@ -130,10 +130,26 @@ struct ContentView: View {
                 GroupBox(label: Label("Detection Results", systemImage: "text.viewfinder")) {
                     if let detection = app.detection {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Master Deck: \(detection.masterDeck.map { "Deck \($0)" } ?? "Unknown")")
+                            // Master deck info with prominent elapsed time
+                            HStack(spacing: 16) {
+                                Text("Master: \(detection.masterDeck.map { "Deck \($0)" } ?? "?")")
+                                    .font(.headline)
+                                
+                                if let master = detection.masterDeck {
+                                    let masterDeck = master == 1 ? detection.deck1 : detection.deck2
+                                    if let elapsed = masterDeck.elapsedSeconds {
+                                        Text(formatElapsed(elapsed))
+                                            .font(.system(.title2, design: .monospaced).bold())
+                                            .foregroundColor(.accentColor)
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
                             HStack(alignment: .top, spacing: 24) {
-                                deckColumn(title: "Deck 1", deck: detection.deck1)
-                                deckColumn(title: "Deck 2", deck: detection.deck2)
+                                deckColumn(title: "Deck 1", deck: detection.deck1, isMaster: detection.masterDeck == 1)
+                                deckColumn(title: "Deck 2", deck: detection.deck2, isMaster: detection.masterDeck == 2)
                             }
                         }
                     } else {
@@ -162,16 +178,31 @@ struct ContentView: View {
         .onDisappear { stopDetection() }
     }
 
-    private func deckColumn(title: String, deck: DeckDetection) -> some View {
+    private func deckColumn(title: String, deck: DeckDetection, isMaster: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.subheadline.bold())
+            HStack {
+                Text(title).font(.subheadline.bold())
+                if isMaster {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.yellow)
+                        .font(.caption)
+                }
+            }
             if let artist = deck.artist { Text("Artist: \(artist)").font(.caption) }
             if let trackTitle = deck.title { Text("Title: \(trackTitle)").font(.caption) }
             if let elapsed = deck.elapsedSeconds {
-                Text("Time: \(Int(elapsed / 60)):\(String(format: "%02d", Int(elapsed) % 60))").font(.caption)
+                Text("Time: \(formatElapsed(elapsed))")
+                    .font(.caption)
+                    .foregroundColor(isMaster ? .accentColor : .primary)
             }
             if let fader = deck.faderKnobPos { Text("Fader: \(fader, specifier: "%.2f")").font(.caption) }
         }
+    }
+    
+    private func formatElapsed(_ seconds: Double) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 
     private func startDetection() {
