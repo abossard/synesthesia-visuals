@@ -1,18 +1,35 @@
 import Foundation
 import CoreGraphics
 
+/// OCR result with text and bounding box in full-frame normalized coords (top-left origin, 0-1)
+struct OCRDetection: Codable {
+    let text: String
+    let frameRect: CGRect  // normalized 0-1, top-left origin, in full frame coords
+}
+
 struct DeckDetection: Codable {
     var artist: String?
     var title: String?
     var elapsedSeconds: Double?
     var faderKnobPos: Double?   // 0..1 within ROI (top=0)
     var faderConfidence: Double?
+    
+    // Bounding boxes for detected text (in full-frame normalized coords)
+    var artistDetections: [OCRDetection] = []
+    var titleDetections: [OCRDetection] = []
+    var elapsedDetections: [OCRDetection] = []
 }
 
 struct DetectionResult: Codable {
     var deck1: DeckDetection
     var deck2: DeckDetection
     var masterDeck: Int? // 1 or 2
+    
+    /// All detected text regions for overlay display
+    var allDetections: [OCRDetection] {
+        deck1.artistDetections + deck1.titleDetections + deck1.elapsedDetections +
+        deck2.artistDetections + deck2.titleDetections + deck2.elapsedDetections
+    }
 }
 
 enum Detector {
@@ -32,20 +49,33 @@ enum Detector {
                                    artistKey: ROIKey, titleKey: ROIKey, elapsedKey: ROIKey, faderKey: ROIKey) async -> DeckDetection {
         var out = DeckDetection()
 
-        if let r = calibration.get(artistKey), let crop = crop(frame, normTopLeftRect: r) {
-            let t = await VisionOCR.recognizeText(in: crop, fast: true, languageCorrection: false)
-            out.artist = bestLine(t)
+        if let r = calibration.get(artistKey), let croppedImg = crop(frame, normTopLeftRect: r) {
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            out.artist = bestLine(results.map { $0.0 })
+            // Convert crop-local Vision boxes to full-frame coords
+            let expandedR = expandedROI(r)
+            out.artistDetections = results.map { text, visionBox in
+                OCRDetection(text: text, frameRect: visionBoxToFrameRect(visionBox, inROI: expandedR))
+            }
         }
-        if let r = calibration.get(titleKey), let crop = crop(frame, normTopLeftRect: r) {
-            let t = await VisionOCR.recognizeText(in: crop, fast: true, languageCorrection: false)
-            out.title = bestLine(t)
+        if let r = calibration.get(titleKey), let croppedImg = crop(frame, normTopLeftRect: r) {
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            out.title = bestLine(results.map { $0.0 })
+            let expandedR = expandedROI(r)
+            out.titleDetections = results.map { text, visionBox in
+                OCRDetection(text: text, frameRect: visionBoxToFrameRect(visionBox, inROI: expandedR))
+            }
         }
-        if let r = calibration.get(elapsedKey), let crop = crop(frame, normTopLeftRect: r) {
-            let t = await VisionOCR.recognizeText(in: crop, fast: true, languageCorrection: false)
-            out.elapsedSeconds = parseElapsedSeconds(t)
+        if let r = calibration.get(elapsedKey), let croppedImg = crop(frame, normTopLeftRect: r) {
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            out.elapsedSeconds = parseElapsedSeconds(results.map { $0.0 })
+            let expandedR = expandedROI(r)
+            out.elapsedDetections = results.map { text, visionBox in
+                OCRDetection(text: text, frameRect: visionBoxToFrameRect(visionBox, inROI: expandedR))
+            }
         }
-        if let r = calibration.get(faderKey), let crop = crop(frame, normTopLeftRect: r) {
-            let (pos, conf) = detectFaderKnob(in: crop,
+        if let r = calibration.get(faderKey), let croppedImg = crop(frame, normTopLeftRect: r) {
+            let (pos, conf) = detectFaderKnob(in: croppedImg,
                                               grayLo: calibration.grayLo,
                                               grayHi: calibration.grayHi,
                                               eqTol: calibration.eqTol,
@@ -55,6 +85,20 @@ enum Detector {
         }
 
         return out
+    }
+    
+    /// Convert Vision bounding box (bottom-left origin, 0-1 within crop) to full-frame coords (top-left origin, 0-1)
+    private static func visionBoxToFrameRect(_ visionBox: CGRect, inROI roi: CGRect) -> CGRect {
+        // Vision uses bottom-left origin; flip Y
+        let flippedY = 1 - visionBox.origin.y - visionBox.height
+        
+        // Scale from crop-local (0-1) to ROI size, then offset by ROI position
+        let frameX = roi.origin.x + visionBox.origin.x * roi.width
+        let frameY = roi.origin.y + flippedY * roi.height
+        let frameW = visionBox.width * roi.width
+        let frameH = visionBox.height * roi.height
+        
+        return CGRect(x: frameX, y: frameY, width: frameW, height: frameH)
     }
 
     // Master: lower knob Y (closer to top) = louder (your rule), with confidence gate
@@ -109,15 +153,7 @@ enum Detector {
         let W = CGFloat(img.width)
         let H = CGFloat(img.height)
         
-        // Add 5% padding to each side for OCR leeway
-        let padX = r.size.width * 0.05
-        let padY = r.size.height * 0.05
-        let expanded = CGRect(
-            x: max(0, r.origin.x - padX),
-            y: max(0, r.origin.y - padY),
-            width: min(1 - max(0, r.origin.x - padX), r.size.width + padX * 2),
-            height: min(1 - max(0, r.origin.y - padY), r.size.height + padY * 2)
-        )
+        let expanded = expandedROI(r)
 
         let x = expanded.origin.x * W
         let y = expanded.origin.y * H  // No Y-flip needed: SCK images are top-left origin
@@ -127,6 +163,17 @@ enum Detector {
         let rect = CGRect(x: x.rounded(.down), y: y.rounded(.down),
                           width: w.rounded(.down), height: h.rounded(.down))
         return img.cropping(to: rect)
+    }
+    
+    /// Returns the expanded ROI rect (with 5% padding) for coordinate mapping
+    static func expandedROI(_ r: CGRect) -> CGRect {
+        let padX = r.size.width * 0.05
+        let padY = r.size.height * 0.05
+        let expandedX = max(0, r.origin.x - padX)
+        let expandedY = max(0, r.origin.y - padY)
+        let expandedW = min(r.size.width + padX * 2, 1 - expandedX)
+        let expandedH = min(r.size.height + padY * 2, 1 - expandedY)
+        return CGRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH)
     }
 
     // Fader knob detection (simple & fast on small ROI):

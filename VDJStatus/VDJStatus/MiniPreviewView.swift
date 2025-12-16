@@ -42,6 +42,11 @@ struct MiniPreviewView: View {
             GeometryReader { geo in
                 ZStack(alignment: .topLeading) {
                     previewLayer(size: geo.size)
+                    
+                    // Show detected text regions in RED during calibration
+                    if isCalibrating, let detection = detection {
+                        detectedTextOverlay(detection: detection, size: geo.size)
+                    }
 
                     detectionOverlay
                         .padding(12)
@@ -118,6 +123,36 @@ struct MiniPreviewView: View {
                 .padding(8)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
+        }
+    }
+    
+    /// Draw red rectangles around detected text during calibration
+    @ViewBuilder
+    private func detectedTextOverlay(detection: DetectionResult, size: CGSize) -> some View {
+        ForEach(Array(detection.allDetections.enumerated()), id: \.offset) { _, det in
+            let pixelRect = CGRect(
+                x: det.frameRect.origin.x * size.width,
+                y: det.frameRect.origin.y * size.height,
+                width: det.frameRect.width * size.width,
+                height: det.frameRect.height * size.height
+            )
+            
+            ZStack(alignment: .topLeading) {
+                // Red bounding box
+                Rectangle()
+                    .stroke(Color.red, lineWidth: 2)
+                    .frame(width: pixelRect.width, height: pixelRect.height)
+                
+                // Text label
+                Text(det.text)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 1)
+                    .background(Color.red)
+                    .offset(y: -14)
+            }
+            .position(x: pixelRect.midX, y: pixelRect.midY)
         }
     }
 }
