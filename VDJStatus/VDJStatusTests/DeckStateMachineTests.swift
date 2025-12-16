@@ -292,10 +292,13 @@ final class DeckStateMachineTests: XCTestCase {
     // MARK: - Epsilon Threshold Tests
     
     func testElapsedWithinEpsilonCountsAsUnchanged() {
-        // Custom config: 1.0s poll interval → epsilon = 1.0
-        let customConfig = FSMConfig(pollInterval: 1.0, stopDetectionTime: 3.0, faderEqualThreshold: 0.02)
-        XCTAssertEqual(customConfig.elapsedEpsilon, 1.0)  // Derived from pollInterval
-        XCTAssertEqual(customConfig.stableThreshold, 3)   // 3.0 / 1.0 = 3
+        // Custom config with larger epsilon to test jitter tolerance
+        let customConfig = FSMConfig(
+            pollInterval: 1.0,
+            stableThreshold: 3,
+            elapsedEpsilon: 1.0,  // Large epsilon for testing
+            faderEqualThreshold: 0.02
+        )
         
         var state = MasterState.initial
         
@@ -303,11 +306,11 @@ final class DeckStateMachineTests: XCTestCase {
         state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: customConfig)
         XCTAssertEqual(state.deck1.stableCount, 0)
         
-        // Within epsilon (0.4 < 1.0)
+        // Within epsilon (10.4 is NOT > 10.0 + 1.0)
         state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.4), config: customConfig)
         XCTAssertEqual(state.deck1.stableCount, 1)  // Counts as unchanged
         
-        // Outside epsilon
+        // Outside epsilon (12.0 > 10.4 + 1.0)
         state = transition(state, event: .elapsedReading(deck: 1, elapsed: 12.0), config: customConfig)
         XCTAssertEqual(state.deck1.stableCount, 0)  // Reset, playing
     }

@@ -49,36 +49,24 @@ enum DeckEvent: Equatable {
 // MARK: - Configuration
 
 struct FSMConfig {
-    // MARK: Base Timing
-    /// Poll interval in seconds (all other timing derives from this)
+    /// Poll interval in seconds (only affects how often we sample)
     let pollInterval: TimeInterval
     
-    // MARK: Derived Timing (computed from pollInterval)
-    /// Threshold for considering elapsed time "unchanged" (equals pollInterval)
-    var elapsedEpsilon: Double { pollInterval }
+    /// Readings with unchanged elapsed before deck is considered stopped
+    let stableThreshold: Int
     
-    /// Time in seconds before a deck is considered stopped
-    let stopDetectionTime: TimeInterval
+    /// Tolerance for OCR jitter when comparing elapsed times (fixed, not related to poll rate)
+    let elapsedEpsilon: Double
     
-    /// Readings before considered stopped (derived: stopDetectionTime / pollInterval)
-    var stableThreshold: Int { max(1, Int(stopDetectionTime / pollInterval)) }
-    
-    // MARK: Non-Timing Config
     /// Fader difference threshold for "equal" faders
     let faderEqualThreshold: Double
     
-    /// Default config: 1.0s poll, 2.0s stop detection
+    /// Default config
     static let `default` = FSMConfig(
         pollInterval: 1.0,
-        stopDetectionTime: 2.0,
-        faderEqualThreshold: 0.02
-    )
-    
-    /// Fast poll config: 0.5s poll, 1.5s stop detection
-    static let fast = FSMConfig(
-        pollInterval: 0.5,
-        stopDetectionTime: 1.5,
-        faderEqualThreshold: 0.02
+        stableThreshold: 3,        // 3 unchanged readings → stopped
+        elapsedEpsilon: 0.1,       // 100ms tolerance for OCR jitter
+        faderEqualThreshold: 0.02  // 2% fader difference threshold
     )
 }
 
@@ -101,10 +89,10 @@ func transitionDeck(_ state: DeckState, elapsed: Double?, config: FSMConfig = .d
         )
     }
     
-    let delta = abs(newElapsed - lastElapsed)
+    // Simple: if elapsed went up (beyond jitter tolerance), it's playing
+    let isProgressing = newElapsed > lastElapsed + config.elapsedEpsilon
     
-    if delta > config.elapsedEpsilon {
-        // Time changed → playing
+    if isProgressing {
         return DeckState(
             playState: .playing,
             lastElapsed: newElapsed,
@@ -112,7 +100,7 @@ func transitionDeck(_ state: DeckState, elapsed: Double?, config: FSMConfig = .d
             stableCount: 0
         )
     } else {
-        // Time unchanged → increment stable count
+        // Time not progressing → increment stable count
         let newCount = state.stableCount + 1
         let newPlayState: DeckPlayState = newCount >= config.stableThreshold ? .stopped : state.playState
         return DeckState(
@@ -139,35 +127,23 @@ func determineMaster(deck1: DeckState, deck2: DeckState, currentMaster: Int?, co
     let d1Playing = deck1.playState == .playing
     let d2Playing = deck2.playState == .playing
     
-    // Rule 1: Only one deck playing → that's master
+    // Only one playing → that's master
     if d1Playing && !d2Playing { return 1 }
     if d2Playing && !d1Playing { return 2 }
     
-    // Rule 2: Both playing → higher fader wins
+    // Both playing → higher fader wins (lower position value = higher fader)
     if d1Playing && d2Playing {
-        if let f1 = deck1.faderPosition, let f2 = deck2.faderPosition {
-            let diff = f1 - f2
-            
-            // If faders within threshold, check if one caught up to become master
-            if abs(diff) < config.faderEqualThreshold {
-                // Faders equal → keep current master
-                return currentMaster
-            }
-            
-            // Lower Y = higher fader = master
-            return f1 < f2 ? 1 : 2
+        guard let f1 = deck1.faderPosition, let f2 = deck2.faderPosition else {
+            return currentMaster  // No fader data → keep current
         }
-        // Can't determine faders → keep current
-        return currentMaster
+        if abs(f1 - f2) < config.faderEqualThreshold {
+            return currentMaster  // Faders equal → keep current
+        }
+        return f1 < f2 ? 1 : 2
     }
     
-    // Both stopped → no master
-    if deck1.playState == .stopped && deck2.playState == .stopped {
-        return nil
-    }
-    
-    // Unknown states → keep current
-    return currentMaster
+    // Neither playing → no master
+    return nil
 }
 
 /// Main FSM transition: (State, Event) -> State
@@ -268,19 +244,55 @@ final class DeckStateManager: ObservableObject {
     
     let config: FSMConfig
     private let maxLogEntries = 50
+    private let dateFormatter: DateFormatter
     
     init(config: FSMConfig = .default) {
         self.config = config
+        self.dateFormatter = DateFormatter()
+        self.dateFormatter.dateFormat = "HH:mm:ss.SSS"
+    }
+    
+    private func timestamp() -> String {
+        dateFormatter.string(from: Date())
+    }
+    
+    private func formatElapsed(_ elapsed: Double?) -> String {
+        guard let e = elapsed else { return "nil" }
+        return String(format: "%.1f", e)
     }
     
     /// Process a detection result and update state, logging changes
     func process(_ detection: DetectionResult) {
+        let oldState = state
         let result = transitionFromDetectionWithLog(state, detection: detection, config: config)
         state = result.newState
         
-        // Log changes to console and history
+        // Debug: always log elapsed readings with timestamps
+        let e1 = formatElapsed(detection.deck1.elapsedSeconds)
+        let e2 = formatElapsed(detection.deck2.elapsedSeconds)
+        let oldE1 = formatElapsed(oldState.deck1.lastElapsed)
+        let oldE2 = formatElapsed(oldState.deck2.lastElapsed)
+        
+        // Calculate deltas
+        let delta1: String
+        if let new = detection.deck1.elapsedSeconds, let old = oldState.deck1.lastElapsed {
+            delta1 = String(format: "Δ%.1f", abs(new - old))
+        } else {
+            delta1 = "Δ?"
+        }
+        
+        let delta2: String
+        if let new = detection.deck2.elapsedSeconds, let old = oldState.deck2.lastElapsed {
+            delta2 = String(format: "Δ%.1f", abs(new - old))
+        } else {
+            delta2 = "Δ?"
+        }
+        
+        print("[\(timestamp())] D1: \(oldE1)→\(e1) (\(delta1)) stable:\(state.deck1.stableCount)/\(config.stableThreshold) | D2: \(oldE2)→\(e2) (\(delta2)) stable:\(state.deck2.stableCount)/\(config.stableThreshold)")
+        
+        // Log state changes to console and history
         for change in result.changes {
-            print("[FSM] \(change)")
+            print("[\(timestamp())] [FSM] \(change)")
             transitionLog.insert(FSMLogEntry(timestamp: Date(), message: change), at: 0)
         }
         
