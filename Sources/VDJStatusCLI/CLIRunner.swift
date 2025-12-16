@@ -1,11 +1,10 @@
 // CLIRunner.swift
-// Main CLI orchestrator - coordinates capture, detection, OSC, and UI
+// Main CLI orchestrator using AppState (shared with GUI)
 
 import Foundation
 import ScreenCaptureKit
 import VDJStatusCore
 import AppKit
-import Combine
 
 /// Configuration for CLI execution
 struct CLIConfig {
@@ -16,28 +15,26 @@ struct CLIConfig {
     var verbose: Bool = false
 }
 
-/// Main CLI runner - coordinates all components
+/// Main CLI runner - uses AppState from GUI app
 @MainActor
 class CLIRunner {
     let config: CLIConfig
     let logger: CLILogger
 
-    private var captureManager: CaptureManager?
-    private var oscSender: OSCSender?
-    private var stateMachine: DeckStateManager?
-    private var calibration: CalibrationModel!
+    // Use the same AppState as the GUI app
+    private let appState: AppState
+
     private var terminalInput: TerminalInput?
     private var debugWindow: DebugWindowManager?
-    private var frameSubscription: AnyCancellable?
 
     private var detectionTask: Task<Void, Never>?
     private var running = true
-    private var latestFrame: CGImage?
-    private var lastDetectionTime: Date = .distantPast
+    private var lastLogTime: Date = .distantPast
 
     init(config: CLIConfig) {
         self.config = config
         self.logger = CLILogger(verbose: config.verbose)
+        self.appState = AppState()
     }
 
     /// Main entry point - runs until quit
@@ -50,31 +47,26 @@ class CLIRunner {
         logger.info("OSC output: \(config.oscHost):\(config.oscPort)")
         logger.info("Log interval: \(config.logInterval)s")
         logger.info("")
-        logger.info("Press 'd' to toggle debug window, 'q' to quit")
+        logger.info("Press 'd' to toggle full GUI window, 'q' to quit")
         logger.info("")
 
         // Load calibration
-        calibration = CalibrationModel.loadFromDisk() ?? CalibrationModel()
-        if calibration.rois.isEmpty {
+        appState.loadCalibration()
+        if appState.calibration.rois.isEmpty {
             logger.warning("No calibration data found!")
-            logger.warning("Run the GUI app (VDJStatus.app) first to calibrate ROIs")
+            logger.warning("Press 'd' to open the GUI and calibrate ROIs")
             logger.info("Calibration file: ~/Library/Application Support/VDJStatus/vdj_calibration.json")
             logger.info("")
         } else {
-            logger.info("✓ Calibration loaded (\(calibration.rois.count) ROIs)")
+            logger.info("✓ Calibration loaded (\(appState.calibration.rois.count) ROIs)")
         }
 
-        // Initialize OSC
-        oscSender = OSCSender()
-        oscSender?.configure(host: config.oscHost, port: config.oscPort)
+        // Configure OSC
+        appState.oscHost = config.oscHost
+        appState.oscPort = config.oscPort
+        appState.oscEnabled = true
         logger.info("✓ OSC configured")
-
-        // Initialize state machine
-        stateMachine = DeckStateManager()
         logger.info("✓ FSM initialized")
-
-        // Initialize capture manager
-        captureManager = CaptureManager()
 
         // Request screen recording permission
         logger.info("⚠️  Requesting screen recording permission...")
@@ -90,50 +82,44 @@ class CLIRunner {
 
         // Find VirtualDJ window
         logger.info("🔍 Looking for window: \(config.windowName)...")
-        let windows = try await SCShareableContent.current().windows
+        await appState.capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
 
-        guard let targetWindow = windows.first(where: {
-            $0.title?.contains(config.windowName) == true ||
-            $0.owningApplication?.applicationName.contains(config.windowName) == true
+        guard let targetWindow = appState.windows.first(where: {
+            $0.title.contains(config.windowName) ||
+            $0.appName.contains(config.windowName)
         }) else {
             logger.error("❌ Window not found: \(config.windowName)")
             logger.error("   Available windows (first 15):")
-            for w in windows.prefix(15) {
-                let title = w.title ?? "(no title)"
-                let app = w.owningApplication?.applicationName ?? "?"
-                logger.error("   - \(app): \(title)")
+            for w in appState.windows.prefix(15) {
+                logger.error("   - \(w.appName): \(w.title)")
             }
             throw CLIError.windowNotFound
         }
 
-        logger.info("✓ Found window: \(targetWindow.title ?? "(no title)")")
-        logger.info("  App: \(targetWindow.owningApplication?.applicationName ?? "?")")
-        logger.info("  Size: \(Int(targetWindow.frame.width))×\(Int(targetWindow.frame.height))")
+        logger.info("✓ Found window: \(targetWindow.title)")
+        logger.info("  App: \(targetWindow.appName)")
 
-        // Subscribe to frames from capture manager
-        frameSubscription = captureManager?.framePublisher.sink { [weak self] frame in
-            Task { @MainActor in
-                self?.latestFrame = frame
-            }
+        // Select and start capture
+        appState.selectedWindowID = targetWindow.id
+        // Capture starts automatically via AppState's didSet
+
+        // Wait a moment for capture to start
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        guard appState.isCapturing else {
+            logger.error("❌ Failed to start capture")
+            throw CLIError.captureError(NSError(domain: "VDJStatus", code: -1))
         }
 
-        // Start capture
-        do {
-            try await captureManager?.startCapture(for: targetWindow)
-            logger.info("✓ Capture started")
-        } catch {
-            logger.error("❌ Failed to start capture: \(error)")
-            throw CLIError.captureError(error)
-        }
-
+        logger.info("✓ Capture started")
         logger.info("")
         logger.info("═══════════════════════════════════════════════════")
         logger.info("Status monitoring active (every \(config.logInterval)s)")
         logger.info("═══════════════════════════════════════════════════")
         logger.info("")
 
-        // Initialize debug window manager
-        debugWindow = DebugWindowManager()
+        // Initialize debug window manager (shows full GUI on 'd' press)
+        debugWindow = DebugWindowManager(appState: appState)
 
         // Start terminal input handler
         terminalInput = TerminalInput { [weak self] char in
@@ -162,88 +148,52 @@ class CLIRunner {
         logger.info("")
         logger.info("Shutting down...")
         detectionTask?.cancel()
-        captureManager?.stopCapture()
+        appState.stopCapture()
         terminalInput?.stop()
-        frameSubscription?.cancel()
         logger.info("✓ Goodbye!")
     }
 
     /// Start background detection loop
     private func startDetectionLoop() {
         detectionTask = Task { @MainActor in
+            // Start periodic detection (same as GUI app)
             while !Task.isCancelled {
-                // Check if we have a frame
-                guard let frame = latestFrame else {
-                    try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                    continue
-                }
-
-                // Check if enough time has passed since last detection
-                let now = Date()
-                guard now.timeIntervalSince(lastDetectionTime) >= config.logInterval else {
-                    try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-                    continue
-                }
-
-                lastDetectionTime = now
-
                 // Run detection
-                do {
-                    let result = await Detector.detect(frame: frame, calibration: calibration)
+                appState.runDetectionOnce()
 
-                    // Update FSM
-                    if let elapsed1 = result.deck1.elapsedSeconds {
-                        stateMachine?.handleElapsedReading(deck: 1, elapsed: elapsed1)
-                    }
-                    if let elapsed2 = result.deck2.elapsedSeconds {
-                        stateMachine?.handleElapsedReading(deck: 2, elapsed: elapsed2)
-                    }
-                    if let fader1 = result.deck1.faderKnobPos {
-                        stateMachine?.handleFaderReading(deck: 1, position: fader1)
-                    }
-                    if let fader2 = result.deck2.faderKnobPos {
-                        stateMachine?.handleFaderReading(deck: 2, position: fader2)
-                    }
-
-                    // Get master deck from FSM
-                    let master = stateMachine?.state.master
-
-                    // Log status
-                    logStatus(result: result, master: master)
-
-                    // Update debug window with visual data
-                    debugWindow?.update(
-                        frame: frame,
-                        detection: result,
-                        calibration: calibration,
-                        fsmState: stateMachine?.state
-                    )
-
-                    // Send OSC
-                    oscSender?.send(result: result)
-                } catch {
-                    if config.verbose {
-                        logger.error("Detection error: \(error)")
-                    }
+                // Check if enough time has passed since last log
+                let now = Date()
+                if now.timeIntervalSince(lastLogTime) >= config.logInterval {
+                    lastLogTime = now
+                    logStatus()
                 }
+
+                // Wait for FSM poll interval
+                try? await Task.sleep(nanoseconds: UInt64(FSMConfig.default.pollInterval * 1_000_000_000))
             }
         }
     }
 
     /// Log current status to console
-    private func logStatus(result: DetectionResult, master: Int?) {
+    private func logStatus() {
+        guard let detection = appState.detection else { return }
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
 
         logger.log("[\(timestamp)]")
-        logger.log("  Deck 1: \(result.deck1.artist ?? "?") - \(result.deck1.title ?? "?")")
-        logger.log("          \(formatElapsed(result.deck1.elapsedSeconds)) | Fader: \(formatFader(result.deck1.faderKnobPos))")
-        logger.log("  Deck 2: \(result.deck2.artist ?? "?") - \(result.deck2.title ?? "?")")
-        logger.log("          \(formatElapsed(result.deck2.elapsedSeconds)) | Fader: \(formatFader(result.deck2.faderKnobPos))")
+        logger.log("  Deck 1: \(detection.deck1.artist ?? "?") - \(detection.deck1.title ?? "?")")
+        logger.log("          \(formatElapsed(detection.deck1.elapsedSeconds)) | Fader: \(formatFader(detection.deck1.faderKnobPos))")
+        logger.log("  Deck 2: \(detection.deck2.artist ?? "?") - \(detection.deck2.title ?? "?")")
+        logger.log("          \(formatElapsed(detection.deck2.elapsedSeconds)) | Fader: \(formatFader(detection.deck2.faderKnobPos))")
 
-        if let master = master {
+        if let master = detection.masterDeck {
             logger.log("  Master: Deck \(master) 🎵")
         } else {
             logger.log("  Master: None")
+        }
+
+        if config.verbose {
+            logger.debug("OCR: \(appState.lastDetectionMs, specifier: "%.0f")ms | Avg: \(appState.avgDetectionMs, specifier: "%.0f")ms")
         }
 
         logger.log("")
@@ -254,9 +204,7 @@ class CLIRunner {
         switch char.lowercased() {
         case "d":
             debugWindow?.toggle()
-            if config.verbose {
-                logger.debug("Debug window toggled")
-            }
+            logger.info(debugWindow?.window?.isVisible == true ? "GUI window opened" : "GUI window closed")
         case "q":
             logger.info("Quit requested")
             running = false
@@ -296,8 +244,6 @@ class CLIRunner {
 
     /// Setup signal handlers for clean shutdown
     private func setupSignalHandlers() {
-        // Note: This is a basic implementation
-        // In production, you'd use proper signal handling with sigaction
         signal(SIGINT) { _ in
             Task { @MainActor in
                 print("\nInterrupted (SIGINT)")
