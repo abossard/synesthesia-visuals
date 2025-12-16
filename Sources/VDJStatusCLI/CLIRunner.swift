@@ -30,6 +30,9 @@ class CLIRunner {
     private var detectionTask: Task<Void, Never>?
     private var running = true
     private var lastLogTime: Date = .distantPast
+    
+    // Cached ISO8601DateFormatter to avoid repeated initialization
+    private static let iso8601Formatter = ISO8601DateFormatter()
 
     init(config: CLIConfig) {
         self.config = config
@@ -178,7 +181,7 @@ class CLIRunner {
     private func logStatus() {
         guard let detection = appState.detection else { return }
 
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = Self.iso8601Formatter.string(from: Date())
 
         logger.log("[\(timestamp)]")
         logger.log("  Deck 1: \(detection.deck1.artist ?? "?") - \(detection.deck1.title ?? "?")")
