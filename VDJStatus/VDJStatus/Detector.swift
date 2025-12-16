@@ -53,7 +53,8 @@ enum Detector {
         var out = DeckDetection()
 
         if let r = calibration.get(artistKey), let croppedImg = crop(frame, normTopLeftRect: r) {
-            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            let useLangCorrection = calibration.usesLanguageCorrection(for: artistKey)
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, languageCorrection: useLangCorrection)
             out.artist = bestLine(results.map { $0.0 })
             // Convert crop-local Vision boxes to full-frame coords
             let expandedR = expandedROI(r)
@@ -62,7 +63,8 @@ enum Detector {
             }
         }
         if let r = calibration.get(titleKey), let croppedImg = crop(frame, normTopLeftRect: r) {
-            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            let useLangCorrection = calibration.usesLanguageCorrection(for: titleKey)
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, languageCorrection: useLangCorrection)
             out.title = bestLine(results.map { $0.0 })
             let expandedR = expandedROI(r)
             out.titleDetections = results.map { text, visionBox in
@@ -70,7 +72,8 @@ enum Detector {
             }
         }
         if let r = calibration.get(elapsedKey), let croppedImg = crop(frame, normTopLeftRect: r) {
-            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, fast: true, languageCorrection: false)
+            // Elapsed time: no language correction needed (numeric)
+            let results = await VisionOCR.recognizeTextWithBoxes(in: croppedImg, languageCorrection: false)
             out.elapsedSeconds = parseElapsedSeconds(results.map { $0.0 })
             let expandedR = expandedROI(r)
             out.elapsedDetections = results.map { text, visionBox in

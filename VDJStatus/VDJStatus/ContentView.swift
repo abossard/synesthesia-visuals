@@ -78,6 +78,31 @@ struct ContentView: View {
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
+                        
+                        Divider()
+                        
+                        Text("Language Correction (for non-English artist names):")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle("D1 Artist", isOn: $app.calibration.d1ArtistLangCorrection)
+                                    .toggleStyle(.checkbox)
+                                    .font(.caption)
+                                Toggle("D1 Title", isOn: $app.calibration.d1TitleLangCorrection)
+                                    .toggleStyle(.checkbox)
+                                    .font(.caption)
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle("D2 Artist", isOn: $app.calibration.d2ArtistLangCorrection)
+                                    .toggleStyle(.checkbox)
+                                    .font(.caption)
+                                Toggle("D2 Title", isOn: $app.calibration.d2TitleLangCorrection)
+                                    .toggleStyle(.checkbox)
+                                    .font(.caption)
+                            }
+                        }
 
                         Text("When calibration mode is ON, drag inside the preview above to draw a box around the selected ROI.")
                             .font(.footnote)

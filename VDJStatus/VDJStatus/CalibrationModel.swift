@@ -29,6 +29,22 @@ struct CalibrationModel: Codable {
     var grayHi: Int = 140
     var eqTol: Int = 15
     var minHits: Int = 8
+    
+    // Language correction toggles per field (helps with non-English artist names)
+    var d1ArtistLangCorrection: Bool = false
+    var d1TitleLangCorrection: Bool = false
+    var d2ArtistLangCorrection: Bool = false
+    var d2TitleLangCorrection: Bool = false
+    
+    func usesLanguageCorrection(for key: ROIKey) -> Bool {
+        switch key {
+        case .d1Artist: return d1ArtistLangCorrection
+        case .d1Title: return d1TitleLangCorrection
+        case .d2Artist: return d2ArtistLangCorrection
+        case .d2Title: return d2TitleLangCorrection
+        default: return false
+        }
+    }
 
     static let saveURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -63,6 +79,8 @@ struct CalibrationModel: Codable {
 extension CalibrationModel {
     enum CodingKeys: String, CodingKey {
         case rois, grayLo, grayHi, eqTol, minHits
+        case d1ArtistLangCorrection, d1TitleLangCorrection
+        case d2ArtistLangCorrection, d2TitleLangCorrection
     }
     
     init(from decoder: Decoder) throws {
@@ -73,6 +91,11 @@ extension CalibrationModel {
         self.grayHi = try container.decode(Int.self, forKey: .grayHi)
         self.eqTol = try container.decode(Int.self, forKey: .eqTol)
         self.minHits = try container.decode(Int.self, forKey: .minHits)
+        // Language correction settings (with defaults for backward compat)
+        self.d1ArtistLangCorrection = try container.decodeIfPresent(Bool.self, forKey: .d1ArtistLangCorrection) ?? false
+        self.d1TitleLangCorrection = try container.decodeIfPresent(Bool.self, forKey: .d1TitleLangCorrection) ?? false
+        self.d2ArtistLangCorrection = try container.decodeIfPresent(Bool.self, forKey: .d2ArtistLangCorrection) ?? false
+        self.d2TitleLangCorrection = try container.decodeIfPresent(Bool.self, forKey: .d2TitleLangCorrection) ?? false
     }
     
     func encode(to encoder: Encoder) throws {
@@ -83,6 +106,10 @@ extension CalibrationModel {
         try container.encode(grayHi, forKey: .grayHi)
         try container.encode(eqTol, forKey: .eqTol)
         try container.encode(minHits, forKey: .minHits)
+        try container.encode(d1ArtistLangCorrection, forKey: .d1ArtistLangCorrection)
+        try container.encode(d1TitleLangCorrection, forKey: .d1TitleLangCorrection)
+        try container.encode(d2ArtistLangCorrection, forKey: .d2ArtistLangCorrection)
+        try container.encode(d2TitleLangCorrection, forKey: .d2TitleLangCorrection)
     }
 }
 
