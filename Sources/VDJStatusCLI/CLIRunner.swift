@@ -211,6 +211,14 @@ class CLIRunner {
                     // Log status
                     logStatus(result: result, master: master)
 
+                    // Update debug window with visual data
+                    debugWindow?.update(
+                        frame: frame,
+                        detection: result,
+                        calibration: calibration,
+                        fsmState: stateMachine?.state
+                    )
+
                     // Send OSC
                     oscSender?.send(result: result)
                 } catch {
@@ -239,9 +247,6 @@ class CLIRunner {
         }
 
         logger.log("")
-
-        // Update debug window if visible
-        debugWindow?.updateText(formatDebugInfo(result: result, master: master))
     }
 
     /// Handle keyboard input
@@ -277,41 +282,6 @@ class CLIRunner {
     private func formatFader(_ pos: Double?) -> String {
         guard let pos = pos else { return "??%" }
         return String(format: "%3.0f%%", (1.0 - pos) * 100)
-    }
-
-    /// Format debug window content
-    private func formatDebugInfo(result: DetectionResult, master: Int?) -> String {
-        let timestamp = Date().formatted(date: .omitted, time: .standard)
-
-        return """
-        VDJStatus CLI Debug Window
-        ════════════════════════════════════════
-        Last Update: \(timestamp)
-
-        Deck 1:
-          Artist:  \(result.deck1.artist ?? "?")
-          Title:   \(result.deck1.title ?? "?")
-          Elapsed: \(formatElapsed(result.deck1.elapsedSeconds))
-          Fader:   \(formatFader(result.deck1.faderKnobPos))
-          Conf:    \(String(format: "%.1f%%", (result.deck1.faderConfidence ?? 0) * 100))
-
-        Deck 2:
-          Artist:  \(result.deck2.artist ?? "?")
-          Title:   \(result.deck2.title ?? "?")
-          Elapsed: \(formatElapsed(result.deck2.elapsedSeconds))
-          Fader:   \(formatFader(result.deck2.faderKnobPos))
-          Conf:    \(String(format: "%.1f%%", (result.deck2.faderConfidence ?? 0) * 100))
-
-        Master Deck: \(master.map { "Deck \($0)" } ?? "None")
-
-        FSM State:
-          Deck 1: \(stateMachine?.state.deck1.playState.rawValue ?? "?")
-          Deck 2: \(stateMachine?.state.deck2.playState.rawValue ?? "?")
-
-        ════════════════════════════════════════
-        Press 'd' to toggle this window
-        Press 'q' to quit
-        """
     }
 
     /// Check if screen recording permission is granted
