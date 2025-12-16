@@ -18,6 +18,9 @@ struct DeckDetection: Codable {
     var artistDetections: [OCRDetection] = []
     var titleDetections: [OCRDetection] = []
     var elapsedDetections: [OCRDetection] = []
+    
+    // Fader ROI for debug visualization (in full-frame normalized coords)
+    var faderROI: CGRect?
 }
 
 struct DetectionResult: Codable {
@@ -82,6 +85,7 @@ enum Detector {
                                               minHits: calibration.minHits)
             out.faderKnobPos = pos
             out.faderConfidence = conf
+            out.faderROI = expandedROI(r)  // Store for debug visualization
         }
 
         return out

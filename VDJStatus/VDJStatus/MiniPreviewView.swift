@@ -109,15 +109,41 @@ struct MiniPreviewView: View {
                             .font(.caption)
                             .foregroundColor(.yellow)
                     }
-                    if let artist = detection.deck1.artist, let title = detection.deck1.title {
-                        Text("D1: \(artist) – \(title)")
-                            .font(.caption2)
-                            .foregroundColor(.cyan)
+                    // Deck 1
+                    HStack(spacing: 4) {
+                        if let artist = detection.deck1.artist {
+                            Text("D1: \(artist)")
+                                .font(.caption2)
+                                .foregroundColor(.cyan)
+                        }
+                        if let title = detection.deck1.title {
+                            Text("– \(title)")
+                                .font(.caption2)
+                                .foregroundColor(.cyan)
+                        }
+                        if let elapsed = detection.deck1.elapsedSeconds {
+                            Text("[\(formatTime(elapsed))]")
+                                .font(.caption2)
+                                .foregroundColor(.cyan.opacity(0.8))
+                        }
                     }
-                    if let artist = detection.deck2.artist, let title = detection.deck2.title {
-                        Text("D2: \(artist) – \(title)")
-                            .font(.caption2)
-                            .foregroundColor(.pink)
+                    // Deck 2
+                    HStack(spacing: 4) {
+                        if let artist = detection.deck2.artist {
+                            Text("D2: \(artist)")
+                                .font(.caption2)
+                                .foregroundColor(.pink)
+                        }
+                        if let title = detection.deck2.title {
+                            Text("– \(title)")
+                                .font(.caption2)
+                                .foregroundColor(.pink)
+                        }
+                        if let elapsed = detection.deck2.elapsedSeconds {
+                            Text("[\(formatTime(elapsed))]")
+                                .font(.caption2)
+                                .foregroundColor(.pink.opacity(0.8))
+                        }
                     }
                 }
                 .padding(8)
@@ -126,9 +152,16 @@ struct MiniPreviewView: View {
         }
     }
     
+    private func formatTime(_ seconds: Double) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
+    }
+    
     /// Draw red rectangles around detected text during calibration
     @ViewBuilder
     private func detectedTextOverlay(detection: DetectionResult, size: CGSize) -> some View {
+        // OCR text detections
         ForEach(Array(detection.allDetections.enumerated()), id: \.offset) { _, det in
             let pixelRect = CGRect(
                 x: det.frameRect.origin.x * size.width,
@@ -137,22 +170,56 @@ struct MiniPreviewView: View {
                 height: det.frameRect.height * size.height
             )
             
-            ZStack(alignment: .topLeading) {
-                // Red bounding box
-                Rectangle()
-                    .stroke(Color.red, lineWidth: 2)
-                    .frame(width: pixelRect.width, height: pixelRect.height)
-                
-                // Text label
-                Text(det.text)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 3)
-                    .padding(.vertical, 1)
-                    .background(Color.red)
-                    .offset(y: -14)
-            }
-            .position(x: pixelRect.midX, y: pixelRect.midY)
+            // Red bounding box
+            Rectangle()
+                .stroke(Color.red, lineWidth: 2)
+                .frame(width: pixelRect.width, height: pixelRect.height)
+                .position(x: pixelRect.midX, y: pixelRect.midY)
+            
+            // Text label positioned ABOVE the box (never inside)
+            Text(det.text)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 1)
+                .background(Color.red)
+                .position(x: pixelRect.midX, y: pixelRect.minY - 10)
+        }
+        
+        // Fader knob detections - horizontal red line at detected position
+        faderDebugOverlay(deck: detection.deck1, label: "D1", size: size)
+        faderDebugOverlay(deck: detection.deck2, label: "D2", size: size)
+    }
+    
+    /// Draw fader knob position as a horizontal red line
+    @ViewBuilder
+    private func faderDebugOverlay(deck: DeckDetection, label: String, size: CGSize) -> some View {
+        if let faderROI = deck.faderROI, let knobPos = deck.faderKnobPos {
+            let roiPixelRect = CGRect(
+                x: faderROI.origin.x * size.width,
+                y: faderROI.origin.y * size.height,
+                width: faderROI.width * size.width,
+                height: faderROI.height * size.height
+            )
+            
+            // Knob Y position within the ROI (0 = top, 1 = bottom)
+            let knobY = roiPixelRect.origin.y + knobPos * roiPixelRect.height
+            
+            // Horizontal red line at knob position
+            Rectangle()
+                .fill(Color.red)
+                .frame(width: roiPixelRect.width + 10, height: 3)
+                .position(x: roiPixelRect.midX, y: knobY)
+            
+            // Label showing confidence
+            let confPercent = Int((deck.faderConfidence ?? 0) * 100)
+            Text("\(label) \(confPercent)%")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .padding(.horizontal, 2)
+                .padding(.vertical, 1)
+                .background(Color.red)
+                .position(x: roiPixelRect.minX - 25, y: knobY)
         }
     }
 }
