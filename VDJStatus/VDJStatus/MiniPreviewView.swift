@@ -7,6 +7,8 @@ struct MiniPreviewView: View {
     let detection: DetectionResult?
     let selectedROI: ROIKey
     let isCalibrating: Bool
+    
+    var onResetROIs: (() -> Void)?
 
     private var aspectRatio: CGFloat {
         guard let frame else { return 16.0 / 9.0 }
@@ -16,9 +18,20 @@ struct MiniPreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(isCalibrating ? "Calibration Preview" : "Mini Preview")
+                Text(isCalibrating ? "📍 CALIBRATION MODE - Drag to draw ROI" : "Mini Preview")
                     .font(.headline)
+                    .foregroundColor(isCalibrating ? .orange : .primary)
                 Spacer()
+                
+                if isCalibrating {
+                    Button("Reset Selected ROI") {
+                        let centerRect = CGRect(x: 0.3, y: 0.4, width: 0.4, height: 0.2)
+                        calibration.set(selectedROI, rect: centerRect)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                
                 if detection != nil {
                     Text("Live OCR")
                         .font(.caption)
@@ -42,13 +55,20 @@ struct MiniPreviewView: View {
                 }
             }
             .aspectRatio(aspectRatio, contentMode: .fit)
-            .frame(maxWidth: isCalibrating ? .infinity : 640)
-            .animation(.spring(response: 0.25, dampingFraction: 0.9), value: isCalibrating)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: isCalibrating ? .infinity : 700)
+            .frame(minHeight: isCalibrating ? 400 : 250)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isCalibrating)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.4), lineWidth: isCalibrating ? 3 : 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isCalibrating ? Color.orange : Color.gray.opacity(0.3), lineWidth: isCalibrating ? 4 : 1)
             )
+            
+            if isCalibrating {
+                Text("💡 Drag to draw a box around '\(selectedROI.label)'. Right-click for options. Double-click to place at center.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
         }
     }
 
@@ -62,16 +82,14 @@ struct MiniPreviewView: View {
                 .clipped()
         } else {
             ZStack {
-                Color.secondary.opacity(0.1)
-                VStack(spacing: 8) {
-                    Image(systemName: "rectangle.dashed")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("Start capture to see the VirtualDJ window preview")
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
+                Color.black.opacity(0.8)
+                VStack(spacing: 12) {
+                    Image(systemName: "video.slash")
+                        .font(.system(size: 48))
+                        .foregroundColor(.gray)
+                    Text("Select a window and start capture")
+                        .font(.headline)
+                        .foregroundColor(.gray)
                 }
             }
         }
@@ -82,7 +100,7 @@ struct MiniPreviewView: View {
             if let detection {
                 VStack(alignment: .leading, spacing: 4) {
                     if let master = detection.masterDeck {
-                        Text("Master Deck: \(master)")
+                        Text("Master: Deck \(master)")
                             .font(.caption)
                             .foregroundColor(.yellow)
                     }
@@ -94,11 +112,11 @@ struct MiniPreviewView: View {
                     if let artist = detection.deck2.artist, let title = detection.deck2.title {
                         Text("D2: \(artist) – \(title)")
                             .font(.caption2)
-                            .foregroundColor(Color(red: 1, green: 0.2, blue: 1))
+                            .foregroundColor(.pink)
                     }
                 }
                 .padding(8)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
         }
     }
