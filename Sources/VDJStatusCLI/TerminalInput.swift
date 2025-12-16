@@ -30,8 +30,8 @@ class TerminalInput {
 
         // Disable canonical mode (line buffering) and echo
         term.c_lflag &= ~tcflag_t(ICANON | ECHO)
-        term.c_cc.16 = 1  // VMIN = 1 (read at least 1 char)
-        term.c_cc.17 = 0  // VTIME = 0 (no timeout)
+        term.c_cc[Int(VMIN)] = 1  // VMIN = 1 (read at least 1 char)
+        term.c_cc[Int(VTIME)] = 0  // VTIME = 0 (no timeout)
 
         tcsetattr(STDIN_FILENO, TCSANOW, &term)
 
