@@ -134,8 +134,8 @@ class CLIRunner {
 
         // Main run loop
         while running {
-            // Process NSApp events if window exists
-            if debugWindow != nil {
+            // Process NSApp events if debug window is visible
+            if debugWindow?.window?.isVisible == true {
                 // Run event loop briefly (non-blocking)
                 NSApp.run(mode: .default, before: .distantPast)
             }
