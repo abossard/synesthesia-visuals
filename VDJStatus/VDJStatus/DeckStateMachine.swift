@@ -179,8 +179,19 @@ func transition(_ state: MasterState, event: DeckEvent, config: FSMConfig = .def
 
 // MARK: - Convenience: Batch update from detection result
 
+/// Result of a batch transition with change detection
+struct TransitionResult {
+    let newState: MasterState
+    let changes: [String]  // Human-readable change descriptions
+}
+
 func transitionFromDetection(_ state: MasterState, detection: DetectionResult, config: FSMConfig = .default) -> MasterState {
-    // Feed all events from a single detection
+    let result = transitionFromDetectionWithLog(state, detection: detection, config: config)
+    return result.newState
+}
+
+/// Batch transition with logging of changes
+func transitionFromDetectionWithLog(_ state: MasterState, detection: DetectionResult, config: FSMConfig = .default) -> TransitionResult {
     let events: [DeckEvent] = [
         .elapsedReading(deck: 1, elapsed: detection.deck1.elapsedSeconds),
         .elapsedReading(deck: 2, elapsed: detection.deck2.elapsedSeconds),
@@ -188,7 +199,25 @@ func transitionFromDetection(_ state: MasterState, detection: DetectionResult, c
         .faderReading(deck: 2, position: detection.deck2.faderKnobPos),
     ]
     
-    return events.reduce(state) { transition($0, event: $1, config: config) }
+    let newState = events.reduce(state) { transition($0, event: $1, config: config) }
+    var changes: [String] = []
+    
+    // Detect play state changes
+    if state.deck1.playState != newState.deck1.playState {
+        changes.append("D1: \(state.deck1.playState) → \(newState.deck1.playState)")
+    }
+    if state.deck2.playState != newState.deck2.playState {
+        changes.append("D2: \(state.deck2.playState) → \(newState.deck2.playState)")
+    }
+    
+    // Detect master changes
+    if state.master != newState.master {
+        let oldMaster = state.master.map { "D\($0)" } ?? "None"
+        let newMasterStr = newState.master.map { "D\($0)" } ?? "None"
+        changes.append("Master: \(oldMaster) → \(newMasterStr)")
+    }
+    
+    return TransitionResult(newState: newState, changes: changes)
 }
 
 // MARK: - Formatting Helpers
@@ -203,26 +232,50 @@ extension DeckState {
     }
 }
 
+// MARK: - Transition Log Entry
+
+struct FSMLogEntry: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let message: String
+}
+
 // MARK: - Stateful Wrapper (for AppState integration)
 
 @MainActor
 final class DeckStateManager: ObservableObject {
     @Published private(set) var state: MasterState = .initial
+    @Published private(set) var transitionLog: [FSMLogEntry] = []
     
     let config: FSMConfig
+    private let maxLogEntries = 50
     
     init(config: FSMConfig = .default) {
         self.config = config
     }
     
-    /// Process a detection result and update state
+    /// Process a detection result and update state, logging changes
     func process(_ detection: DetectionResult) {
-        state = transitionFromDetection(state, detection: detection, config: config)
+        let result = transitionFromDetectionWithLog(state, detection: detection, config: config)
+        state = result.newState
+        
+        // Log changes to console and history
+        for change in result.changes {
+            print("[FSM] \(change)")
+            transitionLog.insert(FSMLogEntry(timestamp: Date(), message: change), at: 0)
+        }
+        
+        // Trim log
+        if transitionLog.count > maxLogEntries {
+            transitionLog = Array(transitionLog.prefix(maxLogEntries))
+        }
     }
     
     /// Reset to initial state
     func reset() {
         state = .initial
+        transitionLog.removeAll()
+        print("[FSM] Reset to initial state")
     }
     
     // Convenience accessors

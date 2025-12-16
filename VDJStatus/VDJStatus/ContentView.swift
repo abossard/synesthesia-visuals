@@ -178,6 +178,11 @@ struct ContentView: View {
                         Text("No detection yet").foregroundColor(.secondary)
                     }
                 }
+                
+                // FSM State Diagram
+                GroupBox(label: Label("State Machine", systemImage: "arrow.triangle.branch")) {
+                    FSMDiagramView(state: app.deckStateManager.state, log: app.deckStateManager.transitionLog)
+                }
             }
             .padding()
         }
@@ -241,5 +246,191 @@ struct ContentView: View {
         detectionTimer?.invalidate()
         detectionTimer = nil
         app.stopCapture()
+    }
+}
+
+// MARK: - FSM Diagram View
+
+struct FSMDiagramView: View {
+    let state: MasterState
+    let log: [FSMLogEntry]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Visual state diagram
+            HStack(spacing: 40) {
+                // Deck 1 state box
+                deckStateBox(
+                    title: "Deck 1",
+                    playState: state.deck1.playState,
+                    elapsed: state.deck1.elapsedFormatted,
+                    faderPct: state.deck1.faderPercent,
+                    stableCount: state.deck1.stableCount,
+                    isMaster: state.master == 1
+                )
+                
+                // Arrow showing master flow
+                VStack(spacing: 4) {
+                    if let m = state.master {
+                        Image(systemName: m == 1 ? "arrow.left" : "arrow.right")
+                            .font(.title2)
+                            .foregroundColor(.yellow)
+                        Text("MASTER")
+                            .font(.caption2.bold())
+                            .foregroundColor(.yellow)
+                    } else {
+                        Image(systemName: "questionmark")
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                        Text("No Master")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 70)
+                
+                // Deck 2 state box
+                deckStateBox(
+                    title: "Deck 2",
+                    playState: state.deck2.playState,
+                    elapsed: state.deck2.elapsedFormatted,
+                    faderPct: state.deck2.faderPercent,
+                    stableCount: state.deck2.stableCount,
+                    isMaster: state.master == 2
+                )
+            }
+            .frame(maxWidth: .infinity)
+            
+            Divider()
+            
+            // Transition log
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Transition Log")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                
+                if log.isEmpty {
+                    Text("No transitions yet...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .italic()
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(log.prefix(10)) { entry in
+                                HStack(spacing: 8) {
+                                    Text(formatTime(entry.timestamp))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                    Text(entry.message)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.primary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 120)
+                }
+            }
+        }
+    }
+    
+    private func deckStateBox(title: String, playState: DeckPlayState, elapsed: String, faderPct: Int?, stableCount: Int, isMaster: Bool) -> some View {
+        VStack(spacing: 6) {
+            // Title with master indicator
+            HStack {
+                Text(title)
+                    .font(.headline)
+                if isMaster {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.yellow)
+                        .font(.caption)
+                }
+            }
+            
+            // State circle
+            ZStack {
+                Circle()
+                    .fill(stateColor(playState).opacity(0.2))
+                    .frame(width: 60, height: 60)
+                Circle()
+                    .stroke(stateColor(playState), lineWidth: isMaster ? 3 : 1)
+                    .frame(width: 60, height: 60)
+                
+                VStack(spacing: 2) {
+                    Text(stateEmoji(playState))
+                        .font(.title3)
+                    Text(stateLabel(playState))
+                        .font(.system(.caption2, design: .rounded))
+                }
+            }
+            
+            // Details
+            VStack(spacing: 2) {
+                Text(elapsed)
+                    .font(.system(.caption, design: .monospaced))
+                
+                if let pct = faderPct {
+                    HStack(spacing: 4) {
+                        Rectangle()
+                            .fill(pct > 50 ? Color.green : (pct > 20 ? Color.yellow : Color.red))
+                            .frame(width: CGFloat(pct) * 0.5, height: 6)
+                        Spacer()
+                    }
+                    .frame(width: 50)
+                    .background(Color.gray.opacity(0.3))
+                    .cornerRadius(3)
+                    
+                    Text("\(pct)%")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                if playState != .stopped && stableCount > 0 {
+                    Text("stable: \(stableCount)/3")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isMaster ? Color.yellow.opacity(0.1) : Color.gray.opacity(0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isMaster ? Color.yellow : Color.gray.opacity(0.3), lineWidth: isMaster ? 2 : 1)
+        )
+    }
+    
+    private func stateColor(_ state: DeckPlayState) -> Color {
+        switch state {
+        case .playing: return .green
+        case .stopped: return .red
+        case .unknown: return .gray
+        }
+    }
+    
+    private func stateEmoji(_ state: DeckPlayState) -> String {
+        switch state {
+        case .playing: return "▶️"
+        case .stopped: return "⏹"
+        case .unknown: return "❓"
+        }
+    }
+    
+    private func stateLabel(_ state: DeckPlayState) -> String {
+        switch state {
+        case .playing: return "Playing"
+        case .stopped: return "Stopped"
+        case .unknown: return "Unknown"
+        }
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
     }
 }

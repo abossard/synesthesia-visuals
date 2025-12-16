@@ -37,7 +37,7 @@ final class AppState: ObservableObject {
     @Published var oscEnabled: Bool = true
     
     // FSM-based master/deck state management
-    @Published var deckState: MasterState = .initial
+    let deckStateManager = DeckStateManager()
     
     // Performance metrics
     @Published var lastDetectionMs: Double = 0
@@ -168,11 +168,11 @@ final class AppState: ObservableObject {
                 self.detection = result
                 self.lastDetectionMs = elapsed
                 
-                // Update FSM state based on detection
-                self.deckState = transitionFromDetection(self.deckState, detection: result)
+                // Update FSM state based on detection (logs changes to console)
+                self.deckStateManager.process(result)
                 
                 // Update detection result with FSM-determined master
-                self.detection?.masterDeck = self.deckState.master
+                self.detection?.masterDeck = self.deckStateManager.master
                 
                 // Rolling average of last 20 detections
                 self.detectionTimes.append(elapsed)
