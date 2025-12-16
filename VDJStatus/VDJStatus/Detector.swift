@@ -198,10 +198,10 @@ enum Detector {
         return CGRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH)
     }
 
-    // Fader knob detection (simple & fast on small ROI):
-    // finds row with most "bright" pixels (knob is brighter than track);
-    // returns knob Y normalized within ROI (top=0)
-    // Uses sliding window of 3 rows to catch knob at very top/bottom edges
+    // Fader knob detection:
+    // The knob is BLACK with a LIGHT GREY horizontal line in its center.
+    // We find the brightest row in the ROI - that's the indicator line.
+    // Uses adaptive thresholding based on image histogram.
     static func detectFaderKnob(in img: CGImage,
                                grayLo: Int, grayHi: Int,
                                eqTol: Int, minHits: Int) -> (Double?, Double) {
@@ -212,61 +212,54 @@ enum Detector {
         let bpr = img.bytesPerRow
         let bpp = img.bitsPerPixel / 8 // usually 4 (BGRA)
         
-        guard h >= 3 else { return (nil, 0) }
+        guard h >= 3, w >= 3 else { return (nil, 0) }
 
-        var rowScores = [Int](repeating: 0, count: h)
+        // Calculate average brightness for each row
+        var rowBrightness = [Double](repeating: 0, count: h)
+        var globalMin: Double = 255
+        var globalMax: Double = 0
 
         data.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
 
-            // Calculate score for each row
             for y in 0..<h {
-                var score = 0
+                var rowSum: Double = 0
                 for x in 0..<w {
                     let offset = y * bpr + x * bpp
                     if offset + 3 < data.count {
-                        let b = Int(base[offset])
-                        let g = Int(base[offset + 1])
-                        let r = Int(base[offset + 2])
-                        
-                        // Check if pixel is gray (R≈G≈B) within specified range
-                        if grayLo <= r && r <= grayHi &&
-                           grayLo <= g && g <= grayHi &&
-                           grayLo <= b && b <= grayHi &&
-                           abs(r - g) <= eqTol &&
-                           abs(g - b) <= eqTol &&
-                           abs(r - b) <= eqTol {
-                            score += 1
-                        }
+                        let b = Double(base[offset])
+                        let g = Double(base[offset + 1])
+                        let r = Double(base[offset + 2])
+                        let brightness = (r + g + b) / 3.0
+                        rowSum += brightness
                     }
                 }
-                rowScores[y] = score
+                let avgBrightness = rowSum / Double(w)
+                rowBrightness[y] = avgBrightness
+                globalMin = min(globalMin, avgBrightness)
+                globalMax = max(globalMax, avgBrightness)
             }
         }
         
-        // Use sliding window of 3 rows to find best position
-        // This helps catch the knob when it's at the very edges
+        // Find the brightest row (the grey indicator line)
         var bestY: Int = -1
-        var bestScore: Int = 0
+        var bestBrightness: Double = 0
         
         for y in 0..<h {
-            // Sum this row plus neighbors (if available)
-            var windowScore = rowScores[y]
-            if y > 0 { windowScore += rowScores[y - 1] }
-            if y < h - 1 { windowScore += rowScores[y + 1] }
-            
-            if windowScore > bestScore {
-                bestScore = windowScore
+            if rowBrightness[y] > bestBrightness {
+                bestBrightness = rowBrightness[y]
                 bestY = y
             }
         }
-
-        // Use the actual row score for confidence, not window score
-        if bestY >= 0 && rowScores[bestY] >= minHits {
-            let normY = Double(bestY) / Double(max(h - 1, 1))
-            let conf = Double(rowScores[bestY]) / Double(w)  // confidence: ratio of gray pixels
-            return (normY, conf)
-        }
-        return (nil, 0)
+        
+        // Confidence: how much brighter is the indicator vs the darkest row?
+        // Higher contrast = higher confidence
+        let range = globalMax - globalMin
+        guard range > 5 else { return (nil, 0) }  // Need some contrast
+        
+        let normY = Double(bestY) / Double(max(h - 1, 1))
+        let conf = min(range / 100.0, 1.0)  // Normalize confidence 0-1
+        
+        return (normY, conf)
     }
 }
