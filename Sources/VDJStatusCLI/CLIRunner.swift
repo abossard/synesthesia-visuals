@@ -8,11 +8,25 @@ import AppKit
 
 /// Configuration for CLI execution
 struct CLIConfig {
-    var windowName: String = "VirtualDJ"
-    var oscHost: String = "127.0.0.1"
-    var oscPort: UInt16 = 9000
-    var logInterval: TimeInterval = 2.0
-    var verbose: Bool = false
+    let windowName: String
+    let oscHost: String
+    let oscPort: UInt16
+    let logInterval: TimeInterval
+    let verbose: Bool
+    
+    init(
+        windowName: String = "VirtualDJ",
+        oscHost: String = "127.0.0.1",
+        oscPort: UInt16 = 9000,
+        logInterval: TimeInterval = 2.0,
+        verbose: Bool = false
+    ) {
+        self.windowName = windowName
+        self.oscHost = oscHost
+        self.oscPort = oscPort
+        self.logInterval = logInterval
+        self.verbose = verbose
+    }
 }
 
 /// Main CLI runner - uses AppState from GUI app
