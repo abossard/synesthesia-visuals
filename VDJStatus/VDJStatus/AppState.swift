@@ -35,6 +35,16 @@ final class AppState: ObservableObject {
     @Published var oscHost: String = "127.0.0.1"
     @Published var oscPort: UInt16 = 9000
     @Published var oscEnabled: Bool = true
+    
+    // FSM-based master/deck state management
+    @Published var deckState: MasterState = .initial
+    
+    // Performance metrics
+    @Published var lastDetectionMs: Double = 0
+    @Published var avgDetectionMs: Double = 0
+    @Published var captureLatencyMs: Double = 0
+    private var detectionTimes: [Double] = []
+    private var lastFrameTime: Date?
 
     let capture = CaptureManager()
     var osc = OSCSender()
@@ -57,7 +67,13 @@ final class AppState: ObservableObject {
                 self.latestFrame = cgImage
                 self.frameSize = size
                 self.frameCounter += 1
-                print("[AppState] Frame \(self.frameCounter) received, size: \(size)")
+                
+                // Calculate capture latency (time between frames)
+                let now = Date()
+                if let last = self.lastFrameTime {
+                    self.captureLatencyMs = now.timeIntervalSince(last) * 1000
+                }
+                self.lastFrameTime = now
             }
             .store(in: &cancellables)
         
@@ -144,10 +160,27 @@ final class AppState: ObservableObject {
 
     func runDetectionOnce() {
         guard let frame = latestFrame else { return }
+        let startTime = Date()
         Task.detached {
             let result = await Detector.detect(frame: frame, calibration: self.calibration)
+            let elapsed = Date().timeIntervalSince(startTime) * 1000
             await MainActor.run {
                 self.detection = result
+                self.lastDetectionMs = elapsed
+                
+                // Update FSM state based on detection
+                self.deckState = transitionFromDetection(self.deckState, detection: result)
+                
+                // Update detection result with FSM-determined master
+                self.detection?.masterDeck = self.deckState.master
+                
+                // Rolling average of last 20 detections
+                self.detectionTimes.append(elapsed)
+                if self.detectionTimes.count > 20 {
+                    self.detectionTimes.removeFirst()
+                }
+                self.avgDetectionMs = self.detectionTimes.reduce(0, +) / Double(self.detectionTimes.count)
+                
                 if self.oscEnabled {
                     self.osc.configure(host: self.oscHost, port: self.oscPort)
                     self.osc.send(result: result)

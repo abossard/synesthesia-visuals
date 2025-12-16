@@ -64,14 +64,22 @@ struct CalibrationModel: Codable {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(self)
             try data.write(to: Self.saveURL, options: .atomic)
-        } catch {}
+            print("[Calibration] Saved to \(Self.saveURL.path)")
+        } catch {
+            print("[Calibration] ERROR saving: \(error.localizedDescription)")
+        }
     }
 
     static func loadFromDisk() -> CalibrationModel? {
         do {
             let data = try Data(contentsOf: saveURL)
-            return try JSONDecoder().decode(CalibrationModel.self, from: data)
-        } catch { return nil }
+            let model = try JSONDecoder().decode(CalibrationModel.self, from: data)
+            print("[Calibration] Loaded \(model.rois.count) ROIs from \(saveURL.path)")
+            return model
+        } catch {
+            print("[Calibration] No saved calibration found: \(error.localizedDescription)")
+            return nil
+        }
     }
 }
 

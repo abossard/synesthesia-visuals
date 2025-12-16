@@ -152,6 +152,27 @@ struct ContentView: View {
                                 deckColumn(title: "Deck 1", deck: detection.deck1, isMaster: detection.masterDeck == 1)
                                 deckColumn(title: "Deck 2", deck: detection.deck2, isMaster: detection.masterDeck == 2)
                             }
+                            
+                            Divider()
+                            
+                            // Performance metrics
+                            HStack(spacing: 16) {
+                                Label("OCR: \(app.lastDetectionMs, specifier: "%.0f")ms", systemImage: "gauge.with.dots.needle.bottom.50percent")
+                                    .font(.caption)
+                                    .foregroundColor(app.lastDetectionMs < 100 ? .green : (app.lastDetectionMs < 200 ? .yellow : .red))
+                                
+                                Label("Avg: \(app.avgDetectionMs, specifier: "%.0f")ms", systemImage: "chart.line.uptrend.xyaxis")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Label("Frame: \(app.captureLatencyMs, specifier: "%.0f")ms", systemImage: "video")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("(\(app.frameCounter) frames)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     } else {
                         Text("No detection yet").foregroundColor(.secondary)
@@ -196,7 +217,13 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundColor(isMaster ? .accentColor : .primary)
             }
-            if let fader = deck.faderKnobPos { Text("Fader: \(fader, specifier: "%.2f")").font(.caption) }
+            if let fader = deck.faderKnobPos {
+                // Fader: 0 = top (100%), 1 = bottom (0%)
+                let pct = Int((1.0 - fader) * 100)
+                Text("Fader: \(pct)%")
+                    .font(.caption)
+                    .foregroundColor(pct > 50 ? .green : (pct > 20 ? .yellow : .red))
+            }
         }
     }
     

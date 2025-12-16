@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		6CDAEBBB2EF0C67E00F6504C /* MiniPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */; };
+		AA0000280000000000000002 /* DeckStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000290000000000000002 /* DeckStateMachine.swift */; };
+		BB0000010000000000000001 /* DeckStateMachineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000020000000000000001 /* DeckStateMachineTests.swift */; };
 		AA0000010000000000000001 /* VDJStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000020000000000000001 /* VDJStatusApp.swift */; };
 		AA0000030000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000040000000000000001 /* AppState.swift */; };
 		AA0000050000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000060000000000000001 /* ContentView.swift */; };
@@ -19,8 +21,21 @@
 		AA0000150000000000000001 /* OSC.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000160000000000000001 /* OSC.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		BB0000030000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000220000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA00001E0000000000000001;
+			remoteInfo = VDJStatus;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPreviewView.swift; sourceTree = "<group>"; };
+		AA0000290000000000000002 /* DeckStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeckStateMachine.swift; sourceTree = "<group>"; };
+		BB0000020000000000000001 /* DeckStateMachineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeckStateMachineTests.swift; sourceTree = "<group>"; };
+		BB0000040000000000000001 /* VDJStatusTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VDJStatusTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000010000000000000000 /* VDJStatus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VDJStatus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000020000000000000001 /* VDJStatusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VDJStatusApp.swift; sourceTree = "<group>"; };
 		AA0000040000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
@@ -43,6 +58,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB0000050000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -50,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				AA00001C0000000000000001 /* VDJStatus */,
+				BB0000060000000000000001 /* VDJStatusTests */,
 				AA00001D0000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,6 +86,7 @@
 				AA0000080000000000000001 /* CaptureManager.swift */,
 				AA00000A0000000000000001 /* VisionOCR.swift */,
 				AA00000C0000000000000001 /* Detector.swift */,
+				AA0000290000000000000002 /* DeckStateMachine.swift */,
 				AA00000E0000000000000001 /* CalibrationModel.swift */,
 				AA0000100000000000000001 /* CalibrationCanvas.swift */,
 				6CDAEBBA2EF0C67E00F6504C /* MiniPreviewView.swift */,
@@ -77,8 +101,17 @@
 			isa = PBXGroup;
 			children = (
 				AA0000010000000000000000 /* VDJStatus.app */,
+				BB0000040000000000000001 /* VDJStatusTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		BB0000060000000000000001 /* VDJStatusTests */ = {
+			isa = PBXGroup;
+			children = (
+				BB0000020000000000000001 /* DeckStateMachineTests.swift */,
+			);
+			path = VDJStatusTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -101,6 +134,24 @@
 			productReference = AA0000010000000000000000 /* VDJStatus.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB0000070000000000000001 /* VDJStatusTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB00000B0000000000000001 /* Build configuration list for PBXNativeTarget "VDJStatusTests" */;
+			buildPhases = (
+				BB0000080000000000000001 /* Sources */,
+				BB0000050000000000000001 /* Frameworks */,
+				BB0000090000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB00000A0000000000000001 /* PBXTargetDependency */,
+			);
+			name = VDJStatusTests;
+			productName = VDJStatusTests;
+			productReference = BB0000040000000000000001 /* VDJStatusTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -113,6 +164,10 @@
 				TargetAttributes = {
 					AA00001E0000000000000001 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					BB0000070000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = AA00001E0000000000000001;
 					};
 				};
 			};
@@ -130,12 +185,20 @@
 			projectRoot = "";
 			targets = (
 				AA00001E0000000000000001 /* VDJStatus */,
+				BB0000070000000000000001 /* VDJStatusTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000210000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB0000090000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -155,6 +218,7 @@
 				AA0000070000000000000001 /* CaptureManager.swift in Sources */,
 				AA0000090000000000000001 /* VisionOCR.swift in Sources */,
 				AA00000B0000000000000001 /* Detector.swift in Sources */,
+				AA0000280000000000000002 /* DeckStateMachine.swift in Sources */,
 				AA00000D0000000000000001 /* CalibrationModel.swift in Sources */,
 				AA00000F0000000000000001 /* CalibrationCanvas.swift in Sources */,
 				6CDAEBBB2EF0C67E00F6504C /* MiniPreviewView.swift in Sources */,
@@ -162,7 +226,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB0000080000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB0000010000000000000001 /* DeckStateMachineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BB00000A0000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA00001E0000000000000001 /* VDJStatus */;
+			targetProxy = BB0000030000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000240000000000000001 /* Debug */ = {
@@ -377,6 +457,42 @@
 			};
 			name = Release;
 		};
+		BB00000C0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.synesthesia.VDJStatusTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VDJStatus.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VDJStatus";
+			};
+			name = Debug;
+		};
+		BB00000D0000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.synesthesia.VDJStatusTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VDJStatus.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VDJStatus";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -394,6 +510,15 @@
 			buildConfigurations = (
 				AA0000240000000000000001 /* Debug */,
 				AA0000250000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB00000B0000000000000001 /* Build configuration list for PBXNativeTarget "VDJStatusTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB00000C0000000000000001 /* Debug */,
+				BB00000D0000000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
