@@ -53,6 +53,7 @@ struct ContentView: View {
                             selectedROI: selectedROI,
                             isCalibrating: app.calibrating
                         )
+                        .id(app.frameCounter)  // Force re-render on each new frame
                     }
                 }
 

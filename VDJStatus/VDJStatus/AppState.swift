@@ -15,6 +15,7 @@ final class AppState: ObservableObject {
 
     @Published var latestFrame: CGImage? = nil
     @Published var frameSize: CGSize = .zero
+    @Published var frameCounter: UInt64 = 0  // Increments each frame to force SwiftUI updates
 
     @Published var calibration = CalibrationModel()
     @Published var calibrating: Bool = false
@@ -27,31 +28,46 @@ final class AppState: ObservableObject {
 
     let capture = CaptureManager()
     var osc = OSCSender()
+    private var callbacksConfigured = false
 
     init() {
-        Task {
-            await capture.setOnFrame { [weak self] cg, size in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.latestFrame = cg
-                    self.frameSize = size
-                }
+        // Defer callback setup - will be done before first capture
+    }
+    
+    private func ensureCallbacksConfigured() async {
+        guard !callbacksConfigured else { return }
+        callbacksConfigured = true
+        
+        await capture.setOnFrame { [weak self] cg, size in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.latestFrame = cg
+                self.frameSize = size
+                self.frameCounter += 1
+                print("[AppState] Frame \(self.frameCounter) received, size: \(size)")
             }
-            await capture.setOnWindowsChanged { [weak self] wins in
-                Task { @MainActor [weak self] in
-                    self?.windows = wins
-                }
+        }
+        await capture.setOnWindowsChanged { [weak self] wins in
+            Task { @MainActor [weak self] in
+                self?.windows = wins
             }
         }
     }
 
     func refreshWindows() {
-        Task { await capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj") }
+        Task {
+            await ensureCallbacksConfigured()
+            await capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
+        }
     }
 
     func startCapture() {
         guard let id = selectedWindowID else { return }
-        Task { await capture.startCapturing(windowID: id) }
+        Task {
+            await ensureCallbacksConfigured()
+            await capture.startCapturing(windowID: id)
+            print("[AppState] Capture started for window \(id)")
+        }
         isCapturing = true
     }
 
