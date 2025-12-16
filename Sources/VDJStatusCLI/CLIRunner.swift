@@ -30,6 +30,10 @@ class CLIRunner {
     private var detectionTask: Task<Void, Never>?
     private var running = true
     private var lastLogTime: Date = .distantPast
+    
+    // Signal sources for clean shutdown
+    private var sigintSource: DispatchSourceSignal?
+    private var sigtermSource: DispatchSourceSignal?
 
     init(config: CLIConfig) {
         self.config = config
@@ -150,6 +154,11 @@ class CLIRunner {
         detectionTask?.cancel()
         appState.stopCapture()
         terminalInput?.stop()
+        
+        // Cancel signal sources
+        sigintSource?.cancel()
+        sigtermSource?.cancel()
+        
         logger.info("✓ Goodbye!")
     }
 
@@ -244,19 +253,30 @@ class CLIRunner {
 
     /// Setup signal handlers for clean shutdown
     private func setupSignalHandlers() {
-        signal(SIGINT) { _ in
+        // Use DispatchSourceSignal for proper signal handling with context
+        // This allows us to set the running flag and trigger cleanup
+        
+        // SIGINT (Ctrl+C)
+        signal(SIGINT, SIG_IGN)  // Ignore default handler
+        sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        sigintSource?.setEventHandler { [weak self] in
             Task { @MainActor in
                 print("\nInterrupted (SIGINT)")
-                exit(0)
+                self?.running = false
             }
         }
-
-        signal(SIGTERM) { _ in
+        sigintSource?.resume()
+        
+        // SIGTERM (kill command)
+        signal(SIGTERM, SIG_IGN)  // Ignore default handler
+        sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigtermSource?.setEventHandler { [weak self] in
             Task { @MainActor in
                 print("\nTerminated (SIGTERM)")
-                exit(0)
+                self?.running = false
             }
         }
+        sigtermSource?.resume()
     }
 }
 
