@@ -111,11 +111,184 @@ This will display all OSC messages received from VDJStatus.app.
 - **VisionOCR**: Vision framework text recognition
 - **Detector**: OCR + fader detection logic
 - **CalibrationModel**: ROI data model (Codable, disk-persisted)
+- **DeckStateMachine**: Pure functional FSM for play state and master detection
 - **OverlayController**: NSPanel overlay window management
 - **OSCSender**: Minimal OSC encoder (no dependencies)
 - **ContentView**: SwiftUI main UI
 - **CalibrationCanvas**: Interactive ROI drawing
 - **OverlayView**: Live overlay visualization
+
+## Deck State Machine (FSM)
+
+The `DeckStateMachine.swift` implements a pure functional state machine for tracking deck play states and determining which deck is the master output.
+
+### Design Principles
+
+- **Pure functions**: `(State, Event) → State` with no side effects
+- **Immutable state**: All state structs use `let` properties
+- **Relative timing**: All thresholds derive from a single `pollInterval` parameter
+- **Graceful degradation**: Handles missing data without crashing
+
+### State Types
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DeckPlayState (per deck)                    │
+├─────────────────────────────────────────────────────────────────┤
+│  ❓ Unknown   - No elapsed data received yet (initial state)    │
+│  ▶️ Playing   - Elapsed time is changing                        │
+│  ⏹ Stopped   - Elapsed time unchanged for N readings           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     DeckState (per deck)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  playState: DeckPlayState     - Current play state              │
+│  lastElapsed: Double?         - Last known elapsed time (nil=no data) │
+│  faderPosition: Double?       - Fader position 0-1 (nil=no data)│
+│  stableCount: Int             - Consecutive unchanged readings  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     MasterState (global)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  deck1: DeckState             - Deck 1 state                    │
+│  deck2: DeckState             - Deck 2 state                    │
+│  master: Int?                 - 1, 2, or nil (no master)        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Deck Play State Transitions
+
+```
+                    ┌──────────────────────────────────────┐
+                    │              UNKNOWN                 │
+                    │     (initial, no elapsed data)       │
+                    └──────────────────┬───────────────────┘
+                                       │
+                         first valid elapsed reading
+                                       │
+                                       ▼
+    ┌──────────────────────────────────────────────────────────────┐
+    │                          PLAYING                             │
+    │              (elapsed time is changing)                      │
+    │                                                              │
+    │  Entry: first elapsed reading OR elapsed delta > epsilon     │
+    │  Exit:  stableCount >= stableThreshold                       │
+    └───────────────────────────┬──────────────────────────────────┘
+                                │
+          elapsed unchanged for stableThreshold readings
+                                │
+                                ▼
+    ┌──────────────────────────────────────────────────────────────┐
+    │                          STOPPED                             │
+    │           (elapsed time stable for N readings)               │
+    │                                                              │
+    │  Entry: stableCount >= stableThreshold                       │
+    │  Exit:  elapsed delta > epsilon                              │
+    └───────────────────────────┬──────────────────────────────────┘
+                                │
+                    elapsed changes (delta > epsilon)
+                                │
+                                ▼
+                         back to PLAYING
+```
+
+### Master Detection Logic
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MASTER DETECTION RULES                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Priority 1: Only one deck playing                              │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ D1 Playing, D2 Not Playing  →  Master = D1              │   │
+│  │ D2 Playing, D1 Not Playing  →  Master = D2              │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Priority 2: Both playing → fader comparison                    │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ Both Playing, F1 > F2       →  Master = D1 (higher fader)│   │
+│  │ Both Playing, F2 > F1       →  Master = D2 (higher fader)│   │
+│  │ Both Playing, F1 ≈ F2       →  Keep current master       │   │
+│  │ Both Playing, no fader data →  Keep current master       │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Priority 3: Both stopped                                       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ D1 Stopped, D2 Stopped      →  Master = nil (no master)  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Fallback: Unknown states                                       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ Any Unknown state           →  Keep current master       │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### "No Data" Scenarios
+
+The FSM gracefully handles missing data:
+
+| Scenario | playState | lastElapsed | faderPosition | master | Notes |
+|----------|-----------|-------------|---------------|--------|-------|
+| App just started | `.unknown` | `nil` | `nil` | `nil` | Initial state |
+| Never gets elapsed | `.unknown` | `nil` | may have | `nil` | Stays unknown forever |
+| Never gets fader | `.playing`/`.stopped` | has value | `nil` | uses fallback | Master determined by play state only |
+| Both decks unknown | `.unknown` | `nil` | `nil` | `nil` | No master until data arrives |
+| OCR fails mid-track | stays current | stays current | stays current | stays current | `nil` readings don't change state |
+
+### Configuration
+
+```swift
+FSMConfig {
+    pollInterval: TimeInterval      // Base timing (all others derive from this)
+    stopDetectionTime: TimeInterval // Time before deck considered stopped
+    faderEqualThreshold: Double     // Fader difference for "equal" (0.02 = 2%)
+    
+    // Computed:
+    elapsedEpsilon = pollInterval           // Time change threshold
+    stableThreshold = stopDetectionTime / pollInterval  // Readings to stop
+}
+```
+
+**Presets:**
+
+| Config | Poll Interval | Stop Detection | Stable Threshold |
+|--------|---------------|----------------|------------------|
+| `.default` | 1.0s | 2.0s | 2 readings |
+| `.fast` | 0.5s | 1.5s | 3 readings |
+
+### Events
+
+```swift
+enum DeckEvent {
+    case elapsedReading(deck: Int, elapsed: Double?)  // OCR detected time
+    case faderReading(deck: Int, position: Double?)   // Fader position 0-1
+}
+```
+
+### UI Visualization
+
+The FSM state is visualized in the app panel:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                         FSM State                              │
+├────────────────┬───────────────────────┬───────────────────────┤
+│    DECK 1      │                       │       DECK 2          │
+│  ▶️ Playing    │        ★ MASTER       │     ⏹ Stopped         │
+│  2:34          │         D1            │     3:45              │
+│  ████████░░    │          ↓            │     ██░░░░░░░░        │
+│  stable: 0     │                       │     stable: 5         │
+└────────────────┴───────────────────────┴───────────────────────┘
+
+Transition Log:
+  12:34:56  Master: None → D1
+  12:34:55  D1: ❓ Unknown → ▶️ Playing
+```
 
 ## Troubleshooting
 
@@ -147,24 +320,29 @@ This will display all OSC messages received from VDJStatus.app.
 VDJStatus/
 ├── VDJStatus.xcodeproj/
 │   └── project.pbxproj
-└── VDJStatus/
-    ├── VDJStatusApp.swift      # App entry
-    ├── AppState.swift           # Main state
-    ├── CaptureManager.swift     # ScreenCaptureKit
-    ├── VisionOCR.swift          # OCR wrapper
-    ├── Detector.swift           # Detection logic
-    ├── CalibrationModel.swift   # ROI model
-    ├── OverlayController.swift  # Overlay window
-    ├── OSC.swift                # OSC sender
-    ├── ContentView.swift        # Main UI
-    ├── CalibrationCanvas.swift  # Calibration UI
-    ├── OverlayView.swift        # Overlay UI
-    ├── Info.plist
-    └── VDJStatus.entitlements
+├── VDJStatus/
+│   ├── VDJStatusApp.swift      # App entry
+│   ├── AppState.swift           # Main state
+│   ├── CaptureManager.swift     # ScreenCaptureKit
+│   ├── VisionOCR.swift          # OCR wrapper
+│   ├── Detector.swift           # Detection logic
+│   ├── CalibrationModel.swift   # ROI model
+│   ├── DeckStateMachine.swift   # FSM for play state & master detection
+│   ├── OverlayController.swift  # Overlay window
+│   ├── OSC.swift                # OSC sender
+│   ├── ContentView.swift        # Main UI + FSM visualization
+│   ├── CalibrationCanvas.swift  # Calibration UI
+│   ├── OverlayView.swift        # Overlay UI
+│   ├── Info.plist
+│   └── VDJStatus.entitlements
+└── VDJStatusTests/
+    └── DeckStateMachineTests.swift  # 23 unit tests for FSM
 ```
 
 ### Testing
-- Unit tests: Not yet implemented
+
+- Unit tests: 23 tests in `DeckStateMachineTests.swift` (all FSM transitions)
+- Run tests: `xcodebuild test -scheme VDJStatus -destination 'platform=macOS'`
 - Manual testing: Launch VDJStatus, follow usage steps
 - CI/CD: GitHub Actions builds on macOS runner
 
