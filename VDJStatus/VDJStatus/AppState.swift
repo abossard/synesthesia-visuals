@@ -10,6 +10,10 @@ final class AppState: ObservableObject {
             // Auto-start capture when a window is selected
             if selectedWindowID != nil && selectedWindowID != oldValue {
                 startCapture()
+                // Persist the window name for auto-capture on next launch
+                if let win = windows.first(where: { $0.id == selectedWindowID }) {
+                    saveLastWindow(appName: win.appName, title: win.title)
+                }
             }
         }
     }
@@ -18,7 +22,12 @@ final class AppState: ObservableObject {
     @Published var frameSize: CGSize = .zero
     @Published var frameCounter: UInt64 = 0  // Increments each frame to force SwiftUI updates
 
-    @Published var calibration = CalibrationModel()
+    @Published var calibration = CalibrationModel() {
+        didSet {
+            // Auto-save calibration whenever it changes
+            calibration.saveToDisk()
+        }
+    }
     @Published var calibrating: Bool = false
     @Published var isCapturing: Bool = false
 
@@ -30,6 +39,10 @@ final class AppState: ObservableObject {
     let capture = CaptureManager()
     var osc = OSCSender()
     private var cancellables = Set<AnyCancellable>()
+    
+    // Persistence keys
+    private static let lastWindowAppNameKey = "lastWindowAppName"
+    private static let lastWindowTitleKey = "lastWindowTitle"
 
     init() {
         setupSubscriptions()
@@ -78,6 +91,42 @@ final class AppState: ObservableObject {
         Task {
             await capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
         }
+    }
+    
+    /// Refresh windows and auto-select last captured window if found
+    func refreshWindowsAndAutoCapture() {
+        Task {
+            await capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
+            
+            // Try to find and select the last captured window
+            if let (appName, title) = loadLastWindow() {
+                // First try exact match
+                if let match = windows.first(where: { $0.appName == appName && $0.title == title }) {
+                    print("[AppState] Auto-selecting last window: \(appName) - \(title)")
+                    selectedWindowID = match.id
+                }
+                // Fallback: match by app name only (title may change)
+                else if let match = windows.first(where: { $0.appName == appName }) {
+                    print("[AppState] Auto-selecting by app name: \(appName)")
+                    selectedWindowID = match.id
+                }
+            }
+        }
+    }
+    
+    // MARK: - Window Persistence
+    
+    private func saveLastWindow(appName: String, title: String) {
+        UserDefaults.standard.set(appName, forKey: Self.lastWindowAppNameKey)
+        UserDefaults.standard.set(title, forKey: Self.lastWindowTitleKey)
+    }
+    
+    private func loadLastWindow() -> (appName: String, title: String)? {
+        guard let appName = UserDefaults.standard.string(forKey: Self.lastWindowAppNameKey),
+              let title = UserDefaults.standard.string(forKey: Self.lastWindowTitleKey) else {
+            return nil
+        }
+        return (appName, title)
     }
 
     func startCapture() {

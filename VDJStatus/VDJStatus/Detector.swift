@@ -80,7 +80,7 @@ enum Detector {
                 OCRDetection(text: text, frameRect: visionBoxToFrameRect(visionBox, inROI: expandedR))
             }
         }
-        if let r = calibration.get(faderKey), let croppedImg = crop(frame, normTopLeftRect: r) {
+        if let r = calibration.get(faderKey), let croppedImg = cropExact(frame, normTopLeftRect: r) {
             let (pos, conf) = detectFaderKnob(in: croppedImg,
                                               grayLo: calibration.grayLo,
                                               grayHi: calibration.grayHi,
@@ -88,7 +88,7 @@ enum Detector {
                                               minHits: calibration.minHits)
             out.faderKnobPos = pos
             out.faderConfidence = conf
-            out.faderROI = expandedROI(r)  // Store for debug visualization
+            out.faderROI = r  // Store exact ROI for debug visualization (no expansion)
         }
 
         return out
@@ -172,6 +172,21 @@ enum Detector {
         return img.cropping(to: rect)
     }
     
+    // Exact crop (no padding) - for fader detection where pixel accuracy matters
+    static func cropExact(_ img: CGImage, normTopLeftRect r: CGRect) -> CGImage? {
+        let W = CGFloat(img.width)
+        let H = CGFloat(img.height)
+
+        let x = r.origin.x * W
+        let y = r.origin.y * H
+        let w = r.size.width * W
+        let h = r.size.height * H
+
+        let rect = CGRect(x: x.rounded(.down), y: y.rounded(.down),
+                          width: w.rounded(.down), height: h.rounded(.down))
+        return img.cropping(to: rect)
+    }
+    
     /// Returns the expanded ROI rect (with 5% padding) for coordinate mapping
     static func expandedROI(_ r: CGRect) -> CGRect {
         let padX = r.size.width * 0.05
@@ -184,7 +199,9 @@ enum Detector {
     }
 
     // Fader knob detection (simple & fast on small ROI):
-    // finds row with most "gray" pixels; returns knob Y normalized within ROI (top=0)
+    // finds row with most "bright" pixels (knob is brighter than track);
+    // returns knob Y normalized within ROI (top=0)
+    // Uses sliding window of 3 rows to catch knob at very top/bottom edges
     static func detectFaderKnob(in img: CGImage,
                                grayLo: Int, grayHi: Int,
                                eqTol: Int, minHits: Int) -> (Double?, Double) {
@@ -194,14 +211,15 @@ enum Detector {
         let h = img.height
         let bpr = img.bytesPerRow
         let bpp = img.bitsPerPixel / 8 // usually 4 (BGRA)
+        
+        guard h >= 3 else { return (nil, 0) }
 
-        var bestY: Int = -1
-        var bestScore: Int = 0
+        var rowScores = [Int](repeating: 0, count: h)
 
         data.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
 
-            // sample every column (ROI is narrow); could also stride x by 1..2
+            // Calculate score for each row
             for y in 0..<h {
                 var score = 0
                 for x in 0..<w {
@@ -222,16 +240,31 @@ enum Detector {
                         }
                     }
                 }
-                if score > bestScore {
-                    bestScore = score
-                    bestY = y
-                }
+                rowScores[y] = score
+            }
+        }
+        
+        // Use sliding window of 3 rows to find best position
+        // This helps catch the knob when it's at the very edges
+        var bestY: Int = -1
+        var bestScore: Int = 0
+        
+        for y in 0..<h {
+            // Sum this row plus neighbors (if available)
+            var windowScore = rowScores[y]
+            if y > 0 { windowScore += rowScores[y - 1] }
+            if y < h - 1 { windowScore += rowScores[y + 1] }
+            
+            if windowScore > bestScore {
+                bestScore = windowScore
+                bestY = y
             }
         }
 
-        if bestY >= 0 && bestScore >= minHits {
-            let normY = Double(bestY) / Double(h)
-            let conf = Double(bestScore) / Double(w)  // confidence: ratio of gray pixels
+        // Use the actual row score for confidence, not window score
+        if bestY >= 0 && rowScores[bestY] >= minHits {
+            let normY = Double(bestY) / Double(max(h - 1, 1))
+            let conf = Double(rowScores[bestY]) / Double(w)  // confidence: ratio of gray pixels
             return (normY, conf)
         }
         return (nil, 0)

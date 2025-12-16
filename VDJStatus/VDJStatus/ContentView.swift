@@ -53,7 +53,8 @@ struct ContentView: View {
                             selectedROI: selectedROI,
                             isCalibrating: app.calibrating
                         )
-                        .id(app.frameCounter)  // Force re-render on each new frame
+                        // Note: Removed .id(app.frameCounter) - it was causing drag gestures to cancel
+                        // The frame updates automatically via @Published property
                     }
                 }
 
@@ -161,7 +162,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 700, minHeight: 700)
         .onAppear {
-            app.refreshWindows()
+            app.refreshWindowsAndAutoCapture()  // Auto-select last window if found
             app.loadCalibration()
         }
         .onChange(of: app.isCapturing) { capturing in

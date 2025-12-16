@@ -184,7 +184,7 @@ private struct ROIBox: View {
                 .frame(width: pr.width, height: pr.height)
                 .position(x: pr.midX, y: pr.midY)
 
-            // Label
+            // Label - positioned ABOVE the box
             Text(label)
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white)
@@ -192,7 +192,7 @@ private struct ROIBox: View {
                 .padding(.vertical, 3)
                 .background(color)
                 .cornerRadius(4)
-                .position(x: pr.minX + 50, y: pr.minY + 12)
+                .position(x: pr.midX, y: max(pr.minY - 14, 10))
 
             // Corner handles (ALWAYS visible when selected)
             if isSelected {
