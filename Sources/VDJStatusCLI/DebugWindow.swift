@@ -21,7 +21,7 @@ class DebugWindowManager {
 
     /// Toggle window visibility (show if hidden, hide if visible)
     func toggle() {
-        if window == nil || !window!.isVisible {
+        if window?.isVisible != true {
             show()
         } else {
             hide()
