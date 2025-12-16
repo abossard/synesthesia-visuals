@@ -57,20 +57,16 @@ final class DeckStateMachineTests: XCTestCase {
         XCTAssertEqual(state.deck1.playState, .playing)  // Not stopped yet
     }
     
-    func testElapsedUnchangedThreeTimesBecomeStopped() {
+    func testElapsedUnchangedHitsThresholdBecomeStopped() {
         // Given: Deck 1 playing
         var state = MasterState.initial
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
+        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
         
-        // When: Same elapsed 3 times (hits threshold)
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        XCTAssertEqual(state.deck1.stableCount, 1)
-        
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        XCTAssertEqual(state.deck1.stableCount, 2)
-        
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        XCTAssertEqual(state.deck1.stableCount, 3)
+        // When: Same elapsed hits stableThreshold times
+        for i in 1...config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
+            XCTAssertEqual(state.deck1.stableCount, i)
+        }
         
         // Then: Now stopped
         XCTAssertEqual(state.deck1.playState, .stopped)
@@ -79,14 +75,14 @@ final class DeckStateMachineTests: XCTestCase {
     func testStoppedDeckRestartsOnElapsedChange() {
         // Given: Deck 1 stopped at 10.0
         var state = MasterState.initial
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        for _ in 0..<3 {
-            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
+        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
+        for _ in 0..<config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
         }
         XCTAssertEqual(state.deck1.playState, .stopped)
         
         // When: Elapsed changes
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 11.0))
+        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 11.0 + config.elapsedEpsilon), config: config)
         
         // Then: Playing again
         XCTAssertEqual(state.deck1.playState, .playing)
@@ -234,15 +230,15 @@ final class DeckStateMachineTests: XCTestCase {
     func testPlayingDeckStopsMasterTransfersToOther() {
         // Given: Both playing, deck 1 master
         var state = MasterState.initial
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0))
-        state = transition(state, event: .faderReading(deck: 1, position: 0.2))
-        state = transition(state, event: .faderReading(deck: 2, position: 0.8))
+        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
+        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0), config: config)
+        state = transition(state, event: .faderReading(deck: 1, position: 0.2), config: config)
+        state = transition(state, event: .faderReading(deck: 2, position: 0.8), config: config)
         XCTAssertEqual(state.master, 1)
         
-        // When: Deck 1 stops (elapsed unchanged 3 times)
-        for _ in 0..<3 {
-            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
+        // When: Deck 1 stops (elapsed unchanged stableThreshold times)
+        for _ in 0..<config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
         }
         
         // Then: Deck 2 becomes master (only one playing)
@@ -254,13 +250,13 @@ final class DeckStateMachineTests: XCTestCase {
     func testBothStoppedNoMaster() {
         // Given: Both playing
         var state = MasterState.initial
-        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0))
+        state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
+        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0), config: config)
         
-        // When: Both stop
-        for _ in 0..<3 {
-            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0))
-            state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0))
+        // When: Both stop (unchanged stableThreshold times)
+        for _ in 0..<config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: config)
+            state = transition(state, event: .elapsedReading(deck: 2, elapsed: 20.0), config: config)
         }
         
         // Then: No master
@@ -275,13 +271,13 @@ final class DeckStateMachineTests: XCTestCase {
         var state = MasterState.initial
         
         // Deck 2 starts playing
-        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 5.0))
+        state = transition(state, event: .elapsedReading(deck: 2, elapsed: 5.0), config: config)
         XCTAssertEqual(state.deck2.playState, .playing)
         XCTAssertEqual(state.deck2.lastElapsed, 5.0)
         
-        // Deck 2 stops
-        for _ in 0..<3 {
-            state = transition(state, event: .elapsedReading(deck: 2, elapsed: 5.0))
+        // Deck 2 stops (unchanged stableThreshold times)
+        for _ in 0..<config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 2, elapsed: 5.0), config: config)
         }
         XCTAssertEqual(state.deck2.playState, .stopped)
     }
@@ -296,14 +292,18 @@ final class DeckStateMachineTests: XCTestCase {
     // MARK: - Epsilon Threshold Tests
     
     func testElapsedWithinEpsilonCountsAsUnchanged() {
-        let customConfig = FSMConfig(elapsedEpsilon: 1.0, stableThreshold: 3, faderEqualThreshold: 0.02)
+        // Custom config: 1.0s poll interval → epsilon = 1.0
+        let customConfig = FSMConfig(pollInterval: 1.0, stopDetectionTime: 3.0, faderEqualThreshold: 0.02)
+        XCTAssertEqual(customConfig.elapsedEpsilon, 1.0)  // Derived from pollInterval
+        XCTAssertEqual(customConfig.stableThreshold, 3)   // 3.0 / 1.0 = 3
+        
         var state = MasterState.initial
         
         // Initial reading
         state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.0), config: customConfig)
         XCTAssertEqual(state.deck1.stableCount, 0)
         
-        // Within epsilon (0.5 < 1.0)
+        // Within epsilon (0.4 < 1.0)
         state = transition(state, event: .elapsedReading(deck: 1, elapsed: 10.4), config: customConfig)
         XCTAssertEqual(state.deck1.stableCount, 1)  // Counts as unchanged
         
@@ -344,9 +344,9 @@ final class DeckStateMachineTests: XCTestCase {
         state = transition(state, event: .faderReading(deck: 1, position: 0.9))
         XCTAssertEqual(state.master, 2)
         
-        // 7. DJ stops deck 1
-        for _ in 0..<3 {
-            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 30.0))
+        // 7. DJ stops deck 1 (unchanged stableThreshold times)
+        for _ in 0..<config.stableThreshold {
+            state = transition(state, event: .elapsedReading(deck: 1, elapsed: 30.0), config: config)
         }
         XCTAssertEqual(state.deck1.playState, .stopped)
         XCTAssertEqual(state.master, 2)  // Only deck 2 playing

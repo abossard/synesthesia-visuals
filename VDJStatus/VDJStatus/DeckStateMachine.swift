@@ -49,16 +49,35 @@ enum DeckEvent: Equatable {
 // MARK: - Configuration
 
 struct FSMConfig {
-    /// Threshold for considering elapsed time "unchanged" (seconds)
-    let elapsedEpsilon: Double
-    /// Readings before considered stopped
-    let stableThreshold: Int
+    // MARK: Base Timing
+    /// Poll interval in seconds (all other timing derives from this)
+    let pollInterval: TimeInterval
+    
+    // MARK: Derived Timing (computed from pollInterval)
+    /// Threshold for considering elapsed time "unchanged" (equals pollInterval)
+    var elapsedEpsilon: Double { pollInterval }
+    
+    /// Time in seconds before a deck is considered stopped
+    let stopDetectionTime: TimeInterval
+    
+    /// Readings before considered stopped (derived: stopDetectionTime / pollInterval)
+    var stableThreshold: Int { max(1, Int(stopDetectionTime / pollInterval)) }
+    
+    // MARK: Non-Timing Config
     /// Fader difference threshold for "equal" faders
     let faderEqualThreshold: Double
     
+    /// Default config: 1.0s poll, 2.0s stop detection
     static let `default` = FSMConfig(
-        elapsedEpsilon: 0.5,
-        stableThreshold: 3,
+        pollInterval: 1.0,
+        stopDetectionTime: 2.0,
+        faderEqualThreshold: 0.02
+    )
+    
+    /// Fast poll config: 0.5s poll, 1.5s stop detection
+    static let fast = FSMConfig(
+        pollInterval: 0.5,
+        stopDetectionTime: 1.5,
         faderEqualThreshold: 0.02
     )
 }

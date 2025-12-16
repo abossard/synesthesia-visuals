@@ -194,7 +194,7 @@ struct ContentView: View {
         .onChange(of: app.isCapturing) { capturing in
             // Auto-start detection timer when capture starts
             if capturing && detectionTimer == nil {
-                detectionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+                detectionTimer = Timer.scheduledTimer(withTimeInterval: FSMConfig.default.pollInterval, repeats: true) { _ in
                     Task { @MainActor in app.runDetectionOnce() }
                 }
             } else if !capturing {
