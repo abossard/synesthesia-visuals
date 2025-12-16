@@ -8,8 +8,14 @@ import Foundation
 
 /// Parse command-line arguments
 func parseArgs() -> CLIConfig {
-    var config = CLIConfig()
     let args = Array(CommandLine.arguments.dropFirst())  // Skip program name
+
+    // Default values
+    var windowName = "VirtualDJ"
+    var oscHost = "127.0.0.1"
+    var oscPort: UInt16 = 9000
+    var logInterval: TimeInterval = 2.0
+    var verbose = false
 
     var i = 0
     while i < args.count {
@@ -22,7 +28,7 @@ func parseArgs() -> CLIConfig {
                 exit(1)
             }
             i += 1
-            config.windowName = args[i]
+            windowName = args[i]
 
         case "--osc-host", "-h":
             guard i + 1 < args.count else {
@@ -30,7 +36,7 @@ func parseArgs() -> CLIConfig {
                 exit(1)
             }
             i += 1
-            config.oscHost = args[i]
+            oscHost = args[i]
 
         case "--osc-port", "-p":
             guard i + 1 < args.count else {
@@ -42,7 +48,7 @@ func parseArgs() -> CLIConfig {
                 printError("Invalid port number: \(args[i])")
                 exit(1)
             }
-            config.oscPort = port
+            oscPort = port
 
         case "--log-interval", "-i":
             guard i + 1 < args.count else {
@@ -54,10 +60,10 @@ func parseArgs() -> CLIConfig {
                 printError("Invalid interval: \(args[i])")
                 exit(1)
             }
-            config.logInterval = interval
+            logInterval = interval
 
         case "--verbose", "-v":
-            config.verbose = true
+            verbose = true
 
         case "--help":
             printHelp()
@@ -76,7 +82,13 @@ func parseArgs() -> CLIConfig {
         i += 1
     }
 
-    return config
+    return CLIConfig(
+        windowName: windowName,
+        oscHost: oscHost,
+        oscPort: oscPort,
+        logInterval: logInterval,
+        verbose: verbose
+    )
 }
 
 /// Print help message
