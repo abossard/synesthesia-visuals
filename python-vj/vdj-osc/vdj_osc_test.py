@@ -36,17 +36,30 @@ VDJ_OSC_PORT_BACK = 9008  # VirtualDJ oscPortBack (we receive FROM this)
 messages_received = 0
 start_time = None
 
+# For control test time capture
+control_test_times = []
+
 
 def handle_message(path: str, args: list, types: str, src: Any) -> None:
     """Generic handler for all incoming OSC messages."""
     global messages_received
     messages_received += 1
     
+    # Capture time values for control test
+    if path == "/vdj/deck/1/get_time" and args:
+        control_test_times.append(args[0])
+    
     # Format args nicely
     if len(args) == 0:
         args_str = "(no args)"
     elif len(args) == 1:
-        args_str = repr(args[0])
+        # Special formatting for time (show as seconds too)
+        if path.endswith("/get_time") and isinstance(args[0], (int, float)):
+            args_str = f"{args[0]} ms ({args[0]/1000:.1f}s)"
+        elif path.endswith("/play"):
+            args_str = "PLAYING" if args[0] else "PAUSED"
+        else:
+            args_str = repr(args[0])
     else:
         args_str = ", ".join(repr(a) for a in args)
     
@@ -83,6 +96,84 @@ def main():
     vdj_target = (VDJ_HOST, VDJ_OSC_PORT)
     
     start_time = time.time()
+    
+    # =========================================================================
+    # PHASE 0: Control test - Play, wait, verify time, stop
+    # =========================================================================
+    print("─" * 60)
+    print("Phase 0: Control test (play → wait → verify → stop)")
+    print("─" * 60)
+    
+    # Clear time captures
+    control_test_times.clear()
+    initial_msg_count = messages_received
+    
+    # Query initial state
+    print("Querying initial play state and time...")
+    liblo.send(vdj_target, "/vdj/query/deck/1/play")
+    liblo.send(vdj_target, "/vdj/query/deck/1/get_time")
+    poll_until = time.time() + 0.5
+    while time.time() < poll_until:
+        server.recv(50)
+    
+    # Send PLAY command
+    print("\n▶ Sending PLAY command to deck 1...")
+    liblo.send(vdj_target, "/vdj/deck/1/play")
+    time.sleep(0.2)
+    
+    # Query play state to confirm
+    liblo.send(vdj_target, "/vdj/query/deck/1/play")
+    poll_until = time.time() + 0.3
+    while time.time() < poll_until:
+        server.recv(50)
+    
+    # Wait 3 seconds
+    print("\n⏳ Waiting 3 seconds while playing...")
+    wait_start = time.time()
+    while time.time() - wait_start < 3.0:
+        server.recv(100)  # Keep polling to receive any updates
+    
+    # Query elapsed time AFTER waiting
+    print("\n📊 Querying elapsed time after 3 seconds...")
+    liblo.send(vdj_target, "/vdj/query/deck/1/get_time")
+    poll_until = time.time() + 0.5
+    while time.time() < poll_until:
+        server.recv(50)
+    
+    # Send PAUSE command
+    print("\n⏸ Sending PAUSE command to deck 1...")
+    liblo.send(vdj_target, "/vdj/deck/1/pause")
+    time.sleep(0.2)
+    
+    # Verify paused
+    liblo.send(vdj_target, "/vdj/query/deck/1/play")
+    poll_until = time.time() + 0.3
+    while time.time() < poll_until:
+        server.recv(50)
+    
+    # Verify time advanced using captured values
+    print()
+    if len(control_test_times) >= 2:
+        time_before = control_test_times[0]
+        time_after = control_test_times[1]
+        # Note: get_time returns REMAINING time (counts down), so we compute before - after
+        delta = time_before - time_after
+        print(f"⏱ Time verification:")
+        print(f"   Before: {time_before} ms ({time_before/1000:.1f}s remaining)")
+        print(f"   After:  {time_after} ms ({time_after/1000:.1f}s remaining)")
+        print(f"   Delta:  {delta} ms ({delta/1000:.1f}s played)")
+        if 2500 < delta < 4000:
+            print("   ✅ Playback confirmed! (~3 seconds elapsed as expected)")
+        elif delta > 0:
+            print(f"   ⚠️  Time advanced but not by expected ~3s")
+        else:
+            print("   ❌ Time did not advance (playback may not have started)")
+    else:
+        print("⚠️ Could not capture time values for verification")
+    
+    control_msgs = messages_received - initial_msg_count
+    print(f"\n✓ Control test complete ({control_msgs} messages during control phase)")
+    print()
     
     # =========================================================================
     # PHASE 1: Query current state
