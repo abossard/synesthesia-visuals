@@ -21,20 +21,58 @@ A high-performance native macOS application that monitors VirtualDJ using Screen
 
 ## Building
 
-### Xcode
+### Xcode (GUI App)
 1. Open `VDJStatus.xcodeproj` in Xcode
 2. Select target: macOS (minimum 13.0)
 3. Build & Run (⌘R)
 4. Grant Screen Recording permission when prompted
 
-### Command Line
+### Swift Package Manager (CLI)
+```bash
+cd VDJStatus
+swift build -c release
+# Binary at .build/release/vdjstatus
+```
+
+### Command Line (Xcode Build)
 ```bash
 xcodebuild -project VDJStatus.xcodeproj -scheme VDJStatus -configuration Release build
 ```
 
 ## Usage
 
-### First Time Setup
+### CLI Mode
+
+The `vdjstatus` CLI runs headless with keyboard controls:
+
+```bash
+# Default: localhost:9000
+.build/release/vdjstatus
+
+# Custom OSC target
+vdjstatus --host 192.168.1.100 --port 8000
+
+# Custom poll interval
+vdjstatus --interval 0.5
+
+# Start with GUI window
+vdjstatus --gui
+```
+
+**Keyboard Controls:**
+- `d` — Open GUI window (calibration, preview)
+- `r` — Refresh window list
+- `q` — Quit
+
+**Options:**
+```
+  -h, --host <host>       OSC target host (default: 127.0.0.1)
+  -p, --port <port>       OSC target port (default: 9000)
+  --interval <interval>   Detection poll interval in seconds (default: 1.0)
+  -g, --gui               Start with GUI window open
+```
+
+### GUI Mode (First Time Setup)
 1. Launch VDJStatus
 2. Click "Refresh" to find VirtualDJ window
 3. Select VirtualDJ window from dropdown

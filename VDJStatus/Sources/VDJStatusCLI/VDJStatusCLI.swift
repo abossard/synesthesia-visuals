@@ -7,8 +7,12 @@ import ScreenCaptureKit
 import Vision
 import Network
 import CoreImage
+import Darwin
 
-// Note: VDJStatusCore types are compiled into this target via symlinked source files
+// Note: All source files are compiled into this target via symlinks
+
+// Global for terminal restore
+private var savedTermios = termios()
 
 // MARK: - CLI State (headless mode)
 
@@ -189,17 +193,15 @@ struct VDJStatusCLI: AsyncParsableCommand {
     
     private func setupKeyboardHandler(cliState: CLIState) {
         // Set terminal to raw mode for single-key input
-        var originalTermios = termios()
-        tcgetattr(STDIN_FILENO, &originalTermios)
+        tcgetattr(STDIN_FILENO, &savedTermios)
         
-        var raw = originalTermios
+        var raw = savedTermios
         raw.c_lflag &= ~UInt(ICANON | ECHO)  // Disable canonical mode and echo
         tcsetattr(STDIN_FILENO, TCSANOW, &raw)
         
         // Restore terminal on exit
         atexit {
-            var orig = originalTermios
-            tcsetattr(STDIN_FILENO, TCSANOW, &orig)
+            tcsetattr(STDIN_FILENO, TCSANOW, &savedTermios)
         }
         
         // Background thread to read keyboard
@@ -219,7 +221,7 @@ struct VDJStatusCLI: AsyncParsableCommand {
                     print("\n[CLI] Quitting...")
                     DispatchQueue.main.async {
                         cliState.stop()
-                        exit(0)
+                        Darwin.exit(0)
                     }
                     
                 case "r", "R":

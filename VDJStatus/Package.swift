@@ -12,6 +12,7 @@ let package = Package(
     ],
     targets: [
         // CLI executable - includes all source files via symlinks
+        // Sources are symlinked from VDJStatus/ folder for code sharing with Xcode project
         .executableTarget(
             name: "VDJStatusCLI",
             dependencies: [
@@ -19,11 +20,7 @@ let package = Package(
             ],
             path: "Sources/VDJStatusCLI"
         ),
-        // Tests for core logic
-        .testTarget(
-            name: "VDJStatusCoreTests",
-            dependencies: [],
-            path: "Tests/VDJStatusCoreTests"
-        ),
+        // Note: Tests are run via Xcode project (VDJStatusTests target)
+        // The tests import the Xcode target which includes all the same source files
     ]
 )
