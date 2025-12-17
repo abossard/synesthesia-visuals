@@ -18,7 +18,8 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
-            path: "Sources/VDJStatusCLI"
+            path: "Sources/VDJStatusCLI",
+            exclude: ["Info.plist", "vdjstatus.entitlements"]
         ),
         // Note: Tests are run via Xcode project (VDJStatusTests target)
         // The tests import the Xcode target which includes all the same source files
