@@ -665,8 +665,10 @@ class OSCSender:
         osc.start()  # Ensure OSC hub is running
     
     def send(self, address: str, *args):
-        """Send a raw OSC message to karaoke channel."""
+        """Send a raw OSC message to karaoke channel and record for monitoring."""
+        from osc_hub import osc_monitor
         osc.karaoke.send(address, *args)
+        osc_monitor.record_outgoing("kar", address, list(args))
     
     def send_karaoke(self, channel: str, event: str, data: Any = None):
         """

@@ -190,6 +190,117 @@ class OSCHub:
 osc = OSCHub()
 
 
+# =============================================================================
+# OSC MONITOR - Aggregated message tracking for UI display
+# =============================================================================
+
+@dataclass
+class AggregatedMessage:
+    """Aggregated OSC message for display: groups by address, tracks count."""
+    channel: str
+    address: str
+    last_args: List[Any]
+    last_time: float
+    count: int = 1
+
+
+class OSCMonitor:
+    """
+    Monitor OSC traffic across all channels with aggregation.
+    
+    Groups messages by (channel, address), shows only latest value + count.
+    Optimized for UI display - no per-message overhead.
+    
+    Usage:
+        monitor = OSCMonitor()
+        monitor.start()  # Subscribes to osc channels
+        
+        # Get aggregated view (sorted by recency)
+        for msg in monitor.get_aggregated():
+            print(f"{msg.channel} {msg.address} = {msg.last_args} (×{msg.count})")
+    """
+    
+    def __init__(self, max_addresses: int = 100):
+        self._max = max_addresses
+        self._data: Dict[str, AggregatedMessage] = {}  # key = "channel:address"
+        self._lock = threading.Lock()
+        self._started = False
+    
+    def start(self):
+        """Subscribe to all OSC channels."""
+        if self._started:
+            return
+        osc.start()
+        osc.vdj.subscribe("/", self._on_vdj)
+        osc.synesthesia.subscribe("/", self._on_synesthesia)
+        # karaoke is send-only, no recv_port
+        self._started = True
+    
+    def stop(self):
+        """Unsubscribe from channels."""
+        if not self._started:
+            return
+        osc.vdj.unsubscribe("/", self._on_vdj)
+        osc.synesthesia.unsubscribe("/", self._on_synesthesia)
+        self._started = False
+    
+    def _on_vdj(self, path: str, args: list):
+        self._record("vdj", path, args)
+    
+    def _on_synesthesia(self, path: str, args: list):
+        self._record("syn", path, args)
+    
+    def record_outgoing(self, channel: str, address: str, args: list):
+        """Record outgoing message (call from OSCSender)."""
+        self._record(f"→{channel}", address, args)
+    
+    def _record(self, channel: str, address: str, args: list):
+        """Record a message, aggregating by channel:address."""
+        import time
+        key = f"{channel}:{address}"
+        now = time.time()
+        
+        with self._lock:
+            if key in self._data:
+                msg = self._data[key]
+                self._data[key] = AggregatedMessage(
+                    channel=channel,
+                    address=address,
+                    last_args=list(args),
+                    last_time=now,
+                    count=msg.count + 1
+                )
+            else:
+                # Evict oldest if at capacity
+                if len(self._data) >= self._max:
+                    oldest_key = min(self._data, key=lambda k: self._data[k].last_time)
+                    del self._data[oldest_key]
+                
+                self._data[key] = AggregatedMessage(
+                    channel=channel,
+                    address=address,
+                    last_args=list(args),
+                    last_time=now,
+                    count=1
+                )
+    
+    def get_aggregated(self, limit: int = 50) -> List[AggregatedMessage]:
+        """Get aggregated messages sorted by recency (newest first)."""
+        with self._lock:
+            items = list(self._data.values())
+        items.sort(key=lambda m: m.last_time, reverse=True)
+        return items[:limit]
+    
+    def clear(self):
+        """Clear all tracked messages."""
+        with self._lock:
+            self._data.clear()
+
+
+# Global monitor instance
+osc_monitor = OSCMonitor()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     

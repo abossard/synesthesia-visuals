@@ -40,6 +40,7 @@ from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
 from domain import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
+from osc_hub import osc_monitor
 
 # Launchpad control (replaces MIDI Router)
 try:
@@ -136,12 +137,41 @@ def render_category_line(name: str, score: float) -> str:
     return f"  [{color}]{name:15s} {bar} {score:.2f}[/]"
 
 def render_osc_message(msg: Tuple[float, str, Any]) -> str:
-    """Render a single OSC message with full args."""
+    """Render a single OSC message with full args (legacy format)."""
     ts, address, args = msg
     time_str = time.strftime("%H:%M:%S", time.localtime(ts))
-    args_str = str(args)  # Show full message content
+    args_str = str(args)
     color = color_by_osc_channel(address)
     return f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}"
+
+def render_aggregated_osc(msg) -> str:
+    """Render aggregated OSC message: channel, address, value, count."""
+    time_str = time.strftime("%H:%M:%S", time.localtime(msg.last_time))
+    
+    # Channel color
+    if msg.channel.startswith("→"):
+        ch_color = "cyan"
+        ch_label = msg.channel
+    elif msg.channel == "syn":
+        ch_color = "magenta"
+        ch_label = "syn"
+    elif msg.channel == "vdj":
+        ch_color = "blue"
+        ch_label = "vdj"
+    else:
+        ch_color = "white"
+        ch_label = msg.channel
+    
+    # Format args compactly
+    args_str = str(msg.last_args) if msg.last_args else ""
+    if len(args_str) > 40:
+        args_str = args_str[:37] + "..."
+    
+    # Count indicator
+    count_str = f" [dim]×{msg.count}[/]" if msg.count > 1 else ""
+    
+    color = color_by_osc_channel(msg.address)
+    return f"[dim]{time_str}[/] [{ch_color}]{ch_label:>4}[/] [{color}]{msg.address}[/] {args_str}{count_str}"
 
 def render_log_line(log: str) -> str:
     """Render a single log line with color."""
@@ -558,8 +588,8 @@ class CategoriesPanel(ReactivePanel):
 
 
 class OSCPanel(ReactivePanel):
-    """OSC messages debug view."""
-    messages = reactive([])
+    """OSC messages debug view - aggregated by address."""
+    messages = reactive([])  # List of AggregatedMessage
     full_view = reactive(False)
 
     def on_mount(self) -> None:
@@ -577,12 +607,14 @@ class OSCPanel(ReactivePanel):
         if not self.is_mounted:
             return
         limit = 50 if self.full_view else 15
-        lines = [self.render_section("OSC Debug", "═")]
+        lines = [self.render_section("OSC Debug (grouped by address)", "═")]
         
         if not self.messages:
             lines.append("[dim](no OSC messages yet)[/dim]")
         else:
-            lines.extend(render_osc_message(m) for m in reversed(self.messages[-limit:]))
+            # Messages already sorted by recency from osc_monitor
+            for msg in self.messages[:limit]:
+                lines.append(render_aggregated_osc(msg))
         
         self.update("\n".join(lines))
 
@@ -1767,6 +1799,9 @@ class VJConsoleApp(App):
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-7 to switch screens"
         
+        # Start OSC monitor for aggregated message display
+        osc_monitor.start()
+        
         # Initialize apps list
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
@@ -2239,8 +2274,8 @@ class VJConsoleApp(App):
             except Exception:
                 pass
 
-        # Update OSC panels
-        osc_msgs = self.karaoke_engine.osc_sender.get_recent_messages(50)
+        # Update OSC panels with aggregated messages from osc_monitor
+        osc_msgs = osc_monitor.get_aggregated(50)
         for panel_id in ["osc-mini", "osc-full"]:
             try:
                 panel = self.query_one(f"#{panel_id}", OSCPanel)
