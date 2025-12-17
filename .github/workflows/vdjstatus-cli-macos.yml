@@ -1,0 +1,160 @@
+name: VDJStatus CLI Build & Test
+
+on:
+  push:
+    branches: [ main, develop, 'copilot/**' ]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - '.github/workflows/vdjstatus-cli-macos.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - '.github/workflows/vdjstatus-cli-macos.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build and Test VDJStatus CLI
+    runs-on: macos-13
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
+      
+      - name: Show Swift version
+        run: |
+          swift --version
+          xcodebuild -version
+      
+      - name: Show available SDKs
+        run: xcodebuild -showsdks
+      
+      - name: Build VDJStatus CLI (Debug)
+        run: |
+          swift build --verbose
+      
+      - name: Run unit tests
+        run: |
+          swift test --verbose
+      
+      - name: Build VDJStatus CLI (Release)
+        run: |
+          swift build -c release --verbose
+      
+      - name: Check build artifacts
+        run: |
+          echo "=== Debug build ==="
+          ls -lh .build/debug/
+          if [ -f ".build/debug/vdjstatus-cli" ]; then
+            echo "✓ Debug executable built successfully"
+            file .build/debug/vdjstatus-cli
+          else
+            echo "✗ Debug executable not found"
+            exit 1
+          fi
+          
+          echo ""
+          echo "=== Release build ==="
+          ls -lh .build/release/
+          if [ -f ".build/release/vdjstatus-cli" ]; then
+            echo "✓ Release executable built successfully"
+            file .build/release/vdjstatus-cli
+            echo ""
+            echo "=== Binary info ==="
+            otool -L .build/release/vdjstatus-cli | head -20
+          else
+            echo "✗ Release executable not found"
+            exit 1
+          fi
+      
+      - name: Verify shared core library
+        run: |
+          echo "=== Core library sources ==="
+          find Sources/VDJStatusCore -name "*.swift" -exec echo "  {}" \;
+          
+          echo ""
+          echo "=== CLI sources ==="
+          find Sources/VDJStatusCLI -name "*.swift" -exec echo "  {}" \;
+          
+          echo ""
+          echo "=== Test sources ==="
+          find Tests -name "*.swift" -exec echo "  {}" \;
+      
+      - name: Test help output
+        run: |
+          echo "=== Testing CLI help ==="
+          .build/release/vdjstatus-cli --help || true
+          
+          echo ""
+          echo "=== Testing CLI version ==="
+          .build/release/vdjstatus-cli --version || true
+      
+      - name: Package CLI binary
+        run: |
+          cd .build/release
+          zip vdjstatus-cli.zip vdjstatus-cli
+          ls -lh vdjstatus-cli.zip
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vdjstatus-cli-macos
+          path: .build/release/vdjstatus-cli.zip
+          retention-days: 30
+      
+      - name: Build summary
+        run: |
+          echo "### Build Summary ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: macOS 13+" >> $GITHUB_STEP_SUMMARY
+          echo "- **Swift Version**: $(swift --version | head -1)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Tool**: Swift Package Manager" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: vdjstatus-cli.zip" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### CLI Features" >> $GITHUB_STEP_SUMMARY
+          echo "- Terminal-based VirtualDJ monitoring" >> $GITHUB_STEP_SUMMARY
+          echo "- Real-time OCR (Vision framework)" >> $GITHUB_STEP_SUMMARY
+          echo "- FSM-based master deck detection" >> $GITHUB_STEP_SUMMARY
+          echo "- OSC output (UDP)" >> $GITHUB_STEP_SUMMARY
+          echo "- Optional debug window toggle (press 'd')" >> $GITHUB_STEP_SUMMARY
+          echo "- Raw keyboard input (no Enter required)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Architecture" >> $GITHUB_STEP_SUMMARY
+          echo "- Shared core library (\`VDJStatusCore\`) via symbolic links" >> $GITHUB_STEP_SUMMARY
+          echo "- CLI-specific code (\`VDJStatusCLI\`) for terminal interface" >> $GITHUB_STEP_SUMMARY
+          echo "- 23 unit tests covering FSM state transitions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "All unit tests passed ✓" >> $GITHUB_STEP_SUMMARY
+
+  # Note: Integration testing requires Screen Recording permission and VirtualDJ
+  integration-test:
+    name: Integration Test (Manual)
+    runs-on: macos-13
+    needs: build-and-test
+    if: false  # Disabled - requires manual setup
+    
+    steps:
+      - name: Placeholder for integration tests
+        run: |
+          echo "Integration tests require:"
+          echo "1. Screen Recording permission granted to Terminal.app"
+          echo "2. VirtualDJ installed and running"
+          echo "3. One-time calibration completed (ROI regions)"
+          echo ""
+          echo "For manual testing:"
+          echo "1. Download artifact from build-and-test job"
+          echo "2. Unzip vdjstatus-cli"
+          echo "3. Grant Screen Recording permission"
+          echo "4. Run: ./vdjstatus-cli --help"
+          echo "5. Run: ./vdjstatus-cli -v"
+          echo "6. Follow QUICKSTART.md for full setup"

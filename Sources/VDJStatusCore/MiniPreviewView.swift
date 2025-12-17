@@ -1,0 +1,1 @@
+../../VDJStatus/VDJStatus/MiniPreviewView.swift
