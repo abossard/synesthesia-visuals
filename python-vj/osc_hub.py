@@ -17,6 +17,7 @@ Usage:
 import atexit
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -48,6 +49,7 @@ class Channel:
         self._handlers: Dict[str, List[Handler]] = {}
         self._query_results: Dict[str, List[Any]] = {}
         self._query_events: Dict[str, threading.Event] = {}
+        self._stopping = False
     
     @property
     def name(self) -> str:
@@ -77,10 +79,17 @@ class Channel:
             return False
     
     def stop(self):
+        self._stopping = True  # Signal handlers to exit fast
         if self._server:
-            self._server.stop()
+            # Give handlers time to see the flag
+            time.sleep(0.05)
+            try:
+                self._server.stop()
+            except Exception:
+                pass  # Ignore stop errors
             self._server = None
         self._target = None
+        self._stopping = False
         logger.info(f"[{self.name}] Stopped")
     
     def send(self, address: str, *args) -> bool:
@@ -125,13 +134,17 @@ class Channel:
             self._query_results.pop(address, None)
     
     def _dispatch(self, path: str, args: List[Any], types: str, src: liblo.Address):
+        # Exit immediately if stopping (prevents deadlock)
+        if self._stopping:
+            return
+        
         # Check for pending query first (fast path)
         if path in self._query_events:
             self._query_results[path] = list(args)
             self._query_events[path].set()
             return
         
-        # Dispatch to exact match handlers (no copy, direct access)
+        # Dispatch to exact match handlers
         handlers = self._handlers.get(path)
         if handlers:
             for handler in handlers:
@@ -139,6 +152,14 @@ class Channel:
                     handler(path, args)
                 except Exception as e:
                     logger.error(f"Handler error: {e}")
+        
+        # Also dispatch to catch-all "/" handlers (for monitoring)
+        if path != "/" and "/" in self._handlers:
+            for handler in self._handlers["/"]:
+                try:
+                    handler(path, args)
+                except Exception as e:
+                    logger.error(f"Catch-all handler error: {e}")
 
 
 class OSCHub:
@@ -255,12 +276,25 @@ class OSCMonitor:
         self._record(f"→{channel}", address, args)
     
     def _record(self, channel: str, address: str, args: list):
-        """Record a message, aggregating by channel:address."""
-        import time
+        """Record a message, aggregating by channel:address. Lock-free for existing keys."""
         key = f"{channel}:{address}"
         now = time.time()
         
+        # Fast path: update existing (no lock needed for dict update)
+        existing = self._data.get(key)
+        if existing:
+            self._data[key] = AggregatedMessage(
+                channel=channel,
+                address=address,
+                last_args=list(args),
+                last_time=now,
+                count=existing.count + 1
+            )
+            return
+        
+        # Slow path: new key, need lock for eviction
         with self._lock:
+            # Double-check after acquiring lock
             if key in self._data:
                 msg = self._data[key]
                 self._data[key] = AggregatedMessage(
@@ -271,10 +305,14 @@ class OSCMonitor:
                     count=msg.count + 1
                 )
             else:
-                # Evict oldest if at capacity
+                # Evict oldest if at capacity (simple pop, not min search)
                 if len(self._data) >= self._max:
-                    oldest_key = min(self._data, key=lambda k: self._data[k].last_time)
-                    del self._data[oldest_key]
+                    # Just pop first item (good enough for LRU-ish behavior)
+                    try:
+                        first_key = next(iter(self._data))
+                        del self._data[first_key]
+                    except StopIteration:
+                        pass
                 
                 self._data[key] = AggregatedMessage(
                     channel=channel,
