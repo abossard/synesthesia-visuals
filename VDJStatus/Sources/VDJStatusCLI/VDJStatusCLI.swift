@@ -26,25 +26,27 @@ struct VDJStatusCLI: ParsableCommand {
         UserDefaults.standard.set(host, forKey: "oscHost")
         UserDefaults.standard.set(Int(port), forKey: "oscPort")
         
-        // Launch the SwiftUI app
-        let app = NSApplication.shared
-        app.setActivationPolicy(.regular)
-        
-        let appState = AppState()
-        let contentView = ContentView().environmentObject(appState)
-        
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "VDJStatus"
-        window.contentView = NSHostingView(rootView: contentView)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        
-        app.activate(ignoringOtherApps: true)
-        app.run()
+        // Launch the SwiftUI app on main thread
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.regular)
+            
+            let appState = AppState()
+            let contentView = ContentView().environmentObject(appState)
+            
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 800, height: 800),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "VDJStatus"
+            window.contentView = NSHostingView(rootView: contentView)
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            
+            app.activate(ignoringOtherApps: true)
+            app.run()
+        }
     }
 }
