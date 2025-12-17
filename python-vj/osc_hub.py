@@ -81,8 +81,13 @@ class Channel:
     def stop(self):
         self._stopping = True  # Signal handlers to exit fast
         if self._server:
-            # Give handlers time to see the flag
-            time.sleep(0.05)
+            # Remove catch-all handler first to stop message processing
+            try:
+                self._server.del_method(None, None)
+            except Exception:
+                pass
+            # Give thread time to finish current dispatch
+            time.sleep(0.1)
             try:
                 self._server.stop()
             except Exception:
@@ -163,11 +168,30 @@ class Channel:
 
 
 class OSCHub:
+    """
+    Central OSC hub managing typed channels for VJ system.
+    
+    Channels:
+        - vdj: VirtualDJ OSC (send 9009, recv 9008)
+        - synesthesia: Synesthesia OSC (send 7777, recv 9999)
+        - karaoke: Karaoke/Processing OSC (send 9000, no recv)
+    
+    Usage:
+        osc.start()  # Start all channels
+        osc.vdj.send("/deck/1/play")
+        osc.stop()   # Stop all channels
+    """
+    
     def __init__(self):
         self._vdj = Channel(VDJ)
         self._synesthesia = Channel(SYNESTHESIA)
         self._karaoke = Channel(KARAOKE)
         self._started = False
+    
+    @property
+    def is_started(self) -> bool:
+        """Check if OSC hub is currently running."""
+        return self._started
     
     @property
     def vdj(self) -> Channel:
@@ -186,7 +210,31 @@ class OSCHub:
         """Alias for karaoke (same port 9000)."""
         return self._karaoke
     
+    def get_channel_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all channels."""
+        return {
+            "vdj": {
+                "name": "VirtualDJ",
+                "send_port": VDJ.send_port,
+                "recv_port": VDJ.recv_port,
+                "active": self._vdj._target is not None,
+            },
+            "synesthesia": {
+                "name": "Synesthesia",
+                "send_port": SYNESTHESIA.send_port,
+                "recv_port": SYNESTHESIA.recv_port,
+                "active": self._synesthesia._target is not None,
+            },
+            "karaoke": {
+                "name": "Karaoke/Processing",
+                "send_port": KARAOKE.send_port,
+                "recv_port": KARAOKE.recv_port,
+                "active": self._karaoke._target is not None,
+            },
+        }
+    
     def start(self) -> bool:
+        """Start all OSC channels."""
         if self._started:
             return True
         logger.info("OSCHub starting...")
@@ -199,6 +247,7 @@ class OSCHub:
         return True
     
     def stop(self):
+        """Stop all OSC channels."""
         if not self._started:
             return
         self._vdj.stop()
@@ -234,7 +283,7 @@ class OSCMonitor:
     
     Usage:
         monitor = OSCMonitor()
-        monitor.start()  # Subscribes to osc channels
+        monitor.start()  # Subscribes to osc channels (requires osc.start() first)
         
         # Get aggregated view (sorted by recency)
         for msg in monitor.get_aggregated():
@@ -246,16 +295,25 @@ class OSCMonitor:
         self._data: Dict[str, AggregatedMessage] = {}  # key = "channel:address"
         self._lock = threading.Lock()
         self._started = False
+        self._msg_count = 0  # Debug counter
+    
+    @property
+    def is_started(self) -> bool:
+        """Check if monitor is currently running."""
+        return self._started
     
     def start(self):
-        """Subscribe to all OSC channels."""
+        """Subscribe to all OSC channels. Starts OSC hub if not already started."""
         if self._started:
-            return
-        osc.start()
+            return True
+        if not osc.is_started:
+            osc.start()
         osc.vdj.subscribe("/", self._on_vdj)
         osc.synesthesia.subscribe("/", self._on_synesthesia)
         # karaoke is send-only, no recv_port
         self._started = True
+        logger.info(f"OSCMonitor started, synesthesia server: {osc.synesthesia._server}")
+        return True
     
     def stop(self):
         """Unsubscribe from channels."""
@@ -277,6 +335,7 @@ class OSCMonitor:
     
     def _record(self, channel: str, address: str, args: list):
         """Record a message, aggregating by channel:address. Lock-free for existing keys."""
+        self._msg_count += 1
         key = f"{channel}:{address}"
         now = time.time()
         

@@ -40,7 +40,7 @@ from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
 from domain import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
-from osc_hub import osc_monitor
+from osc_hub import osc, osc_monitor
 
 # Launchpad control (replaces MIDI Router)
 try:
@@ -71,6 +71,8 @@ except ImportError as e:
 # Audio analyzer removed - Synesthesia is the primary audio engine
 AUDIO_ANALYZER_AVAILABLE = False
 
+# Configure logging to capture INFO level messages for the log panel
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('vj_console')
 
 # ============================================================================
@@ -591,6 +593,7 @@ class OSCPanel(ReactivePanel):
     """OSC messages debug view - aggregated by address."""
     messages = reactive([])  # List of AggregatedMessage
     full_view = reactive(False)
+    osc_running = reactive(False)
 
     def on_mount(self) -> None:
         """Initialize content when mounted."""
@@ -601,6 +604,9 @@ class OSCPanel(ReactivePanel):
     
     def watch_full_view(self, _: bool) -> None:
         self._safe_render()
+    
+    def watch_osc_running(self, _: bool) -> None:
+        self._safe_render()
 
     def _safe_render(self) -> None:
         """Render only if mounted."""
@@ -609,7 +615,10 @@ class OSCPanel(ReactivePanel):
         limit = 50 if self.full_view else 15
         lines = [self.render_section("OSC Debug (grouped by address)", "═")]
         
-        if not self.messages:
+        if not self.osc_running:
+            lines.append("[dim]OSC Hub is stopped.[/dim]")
+            lines.append("[dim]Use the controls above to start OSC.[/dim]")
+        elif not self.messages:
             lines.append("[dim](no OSC messages yet)[/dim]")
         else:
             # Messages already sorted by recency from osc_monitor
@@ -617,6 +626,99 @@ class OSCPanel(ReactivePanel):
                 lines.append(render_aggregated_osc(msg))
         
         self.update("\n".join(lines))
+
+
+OSC_AUTO_STOP_SECONDS = 60  # Auto-stop OSC after 1 minute
+
+
+class OSCControlPanel(Static):
+    """
+    Panel for controlling OSC hub - start/stop and status display.
+    
+    Shows channel configuration and allows user to start/stop OSC services.
+    Auto-stops after 1 minute to save resources.
+    """
+    
+    # Reactive state
+    osc_running = reactive(False)
+    channel_status = reactive({})
+    time_remaining = reactive(0)  # Seconds until auto-stop
+    
+    def compose(self) -> ComposeResult:
+        yield Static("[bold]OSC Hub Control[/bold]", classes="section-title")
+        with Horizontal(classes="startup-buttons"):
+            yield Button("▶ Start OSC", id="btn-osc-start", variant="success")
+            yield Button("■ Stop OSC", id="btn-osc-stop", variant="error")
+            yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
+        yield Static("", id="osc-status-label")
+        yield Static("", id="osc-channels-label")
+    
+    def on_mount(self) -> None:
+        self._update_display()
+    
+    def watch_osc_running(self, running: bool) -> None:
+        self._update_display()
+    
+    def watch_channel_status(self, status: dict) -> None:
+        self._update_display()
+    
+    def watch_time_remaining(self, seconds: int) -> None:
+        self._update_display()
+    
+    def _update_display(self) -> None:
+        if not self.is_mounted:
+            return
+        
+        # Status label with countdown
+        try:
+            status_label = self.query_one("#osc-status-label", Static)
+            if self.osc_running:
+                if self.time_remaining > 0:
+                    status_label.update(f"[green]● OSC Hub Running[/green] [dim](auto-stop in {self.time_remaining}s)[/dim]")
+                else:
+                    status_label.update("[green]● OSC Hub Running[/green]")
+            else:
+                status_label.update("[dim]○ OSC Hub Stopped[/dim]")
+        except Exception:
+            pass
+        
+        # Channel details
+        try:
+            channels_label = self.query_one("#osc-channels-label", Static)
+            if self.channel_status:
+                lines = ["\n[bold]Channels:[/bold]"]
+                for key, ch in self.channel_status.items():
+                    active = "[green]●[/]" if ch.get("active") else "[dim]○[/]"
+                    recv = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
+                    lines.append(f"  {active} {ch.get('name', key)}: send={ch.get('send_port')}{recv}")
+                channels_label.update("\n".join(lines))
+            else:
+                channels_label.update("\n[dim]Configure and start OSC to see channels[/dim]")
+        except Exception:
+            pass
+    
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-osc-start":
+            self.post_message(OSCStartRequested())
+        elif event.button.id == "btn-osc-stop":
+            self.post_message(OSCStopRequested())
+        elif event.button.id == "btn-osc-clear":
+            self.post_message(OSCClearRequested())
+
+
+class OSCStartRequested(Message):
+    """Message posted when user requests to start OSC."""
+    pass
+
+
+class OSCStopRequested(Message):
+    """Message posted when user requests to stop OSC."""
+    pass
+
+
+class OSCClearRequested(Message):
+    """Message posted when user requests to clear OSC log."""
+    pass
 
 
 class LogsPanel(ReactivePanel):
@@ -1492,6 +1594,24 @@ class VJConsoleApp(App):
         margin-bottom: 1;
     }
     
+    /* OSC control panel */
+    #osc-control {
+        padding: 1;
+        border: solid $warning;
+        margin-bottom: 1;
+        height: auto;
+    }
+    
+    #osc-control .startup-buttons {
+        height: auto;
+        padding: 0;
+        margin-bottom: 1;
+    }
+    
+    #osc-control Button {
+        margin-right: 1;
+    }
+    
     .startup-row {
         height: auto;
         padding: 0;
@@ -1715,6 +1835,7 @@ class VJConsoleApp(App):
                 super().__init__()
                 self.log_list = log_list
                 self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+                self.setLevel(logging.DEBUG)  # Capture all levels
             
             def emit(self, record):
                 try:
@@ -1728,7 +1849,12 @@ class VJConsoleApp(App):
         
         # Add handler to root logger to capture all logs
         handler = ListHandler(self._logs)
-        logging.getLogger().addHandler(handler)
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)  # Ensure root accepts all levels
+        root_logger.addHandler(handler)
+        
+        # Log startup message to verify capture works
+        logger.info("VJ Console started - logging active")
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1747,10 +1873,10 @@ class VJConsoleApp(App):
                         yield NowPlayingPanel(id="now-playing", classes="panel")
                         yield CategoriesPanel(id="categories", classes="panel")
                         yield PipelinePanel(id="pipeline", classes="panel")
-                        yield OSCPanel(id="osc-mini", classes="panel")
 
             # Tab 2: OSC View
             with TabPane("2️⃣ OSC View", id="osc"):
+                yield OSCControlPanel(id="osc-control")
                 yield OSCPanel(id="osc-full", classes="panel full-height")
 
             # Tab 3: Song AI Debug  
@@ -1799,8 +1925,8 @@ class VJConsoleApp(App):
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-7 to switch screens"
         
-        # Start OSC monitor for aggregated message display
-        osc_monitor.start()
+        # NOTE: OSC is NOT started by default - user controls via OSC View tab
+        # Use the OSC Control panel to start/stop OSC services
         
         # Initialize apps list
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
@@ -1812,7 +1938,69 @@ class VJConsoleApp(App):
         
         # Background updates - stagger intervals to reduce CPU spikes
         self.set_interval(0.5, self._update_data)
+        self.set_interval(1.0, self._tick_osc_auto_stop)  # OSC auto-stop countdown
         self.set_interval(5.0, self._check_apps_and_autorestart)  # Combined check + restart
+        
+        # Initialize OSC auto-stop timer
+        self._osc_auto_stop_remaining = 0
+
+    def on_osc_start_requested(self, message: OSCStartRequested) -> None:
+        """Handle OSC start request from OSCControlPanel."""
+        if not osc.is_started:
+            osc.start()
+            osc_monitor.start()
+            # Log the port bindings for visibility
+            status = osc.get_channel_status()
+            for key, ch in status.items():
+                recv_info = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
+                logger.info(f"OSC {ch.get('name', key)}: send={ch.get('send_port')}{recv_info}")
+            logger.info(f"OSC Hub started (auto-stop in {OSC_AUTO_STOP_SECONDS}s)")
+        # Reset auto-stop timer
+        self._osc_auto_stop_remaining = OSC_AUTO_STOP_SECONDS
+        self._update_osc_control_panel()
+    
+    def on_osc_stop_requested(self, message: OSCStopRequested) -> None:
+        """Handle OSC stop request from OSCControlPanel."""
+        self._osc_auto_stop_remaining = 0
+        if osc_monitor.is_started:
+            osc_monitor.stop()
+        if osc.is_started:
+            osc.stop()
+            logger.info("OSC Hub stopped by user")
+        self._update_osc_control_panel()
+    
+    def on_osc_clear_requested(self, message: OSCClearRequested) -> None:
+        """Handle OSC clear request from OSCControlPanel."""
+        osc_monitor.clear()
+        logger.info("OSC message log cleared")
+    
+    def _update_osc_control_panel(self) -> None:
+        """Update the OSC control panel with current status."""
+        try:
+            panel = self.query_one("#osc-control", OSCControlPanel)
+            panel.osc_running = osc.is_started
+            panel.channel_status = osc.get_channel_status() if osc.is_started else {}
+            panel.time_remaining = getattr(self, '_osc_auto_stop_remaining', 0)
+        except Exception:
+            pass
+    
+    def _tick_osc_auto_stop(self) -> None:
+        """Called every second to decrement OSC auto-stop timer."""
+        if not hasattr(self, '_osc_auto_stop_remaining'):
+            self._osc_auto_stop_remaining = 0
+        
+        if self._osc_auto_stop_remaining > 0 and osc.is_started:
+            self._osc_auto_stop_remaining -= 1
+            self._update_osc_control_panel()
+            
+            if self._osc_auto_stop_remaining <= 0:
+                # Auto-stop triggered
+                if osc_monitor.is_started:
+                    osc_monitor.stop()
+                if osc.is_started:
+                    osc.stop()
+                    logger.info("OSC Hub auto-stopped after 60s")
+                self._update_osc_control_panel()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
@@ -2206,6 +2394,23 @@ class VJConsoleApp(App):
 
     def _update_data(self) -> None:
         """Update all panels with current data."""
+        # Always update logs panel (even without karaoke engine)
+        try:
+            self.query_one("#logs-panel", LogsPanel).logs = list(self._logs)
+        except Exception:
+            pass
+        
+        # Always update OSC panels (even without karaoke engine)
+        self._update_osc_control_panel()
+        try:
+            panel = self.query_one("#osc-full", OSCPanel)
+            panel.osc_running = osc.is_started
+            panel.full_view = True
+            if osc_monitor.is_started:
+                panel.messages = osc_monitor.get_aggregated(50)
+        except Exception:
+            pass
+        
         # Update master control even if karaoke engine is not running
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
         try:
@@ -2274,35 +2479,20 @@ class VJConsoleApp(App):
             except Exception:
                 pass
 
-        # Update OSC panels with aggregated messages from osc_monitor
-        osc_msgs = osc_monitor.get_aggregated(50)
-        for panel_id in ["osc-mini", "osc-full"]:
-            try:
-                panel = self.query_one(f"#{panel_id}", OSCPanel)
-                panel.full_view = panel_id == "osc-full"
-                panel.messages = osc_msgs
-            except Exception:
-                pass
-
-        # Send OSC status only when it changes
-        current_status = {
-            'karaoke_active': True,
-            'synesthesia_running': self.synesthesia_running,
-            'milksyphon_running': self.milksyphon_running,
-            'processing_apps': running_apps
-        }
-        if current_status != self._last_master_status:
-            self.karaoke_engine.osc_sender.send_master_status(
-                karaoke_active=True, synesthesia_running=self.synesthesia_running,
-                milksyphon_running=self.milksyphon_running, processing_apps=running_apps
-            )
-            self._last_master_status = current_status
-        
-        # Update logs panel
-        try:
-            self.query_one("#logs-panel", LogsPanel).logs = self._logs.copy()
-        except Exception:
-            pass
+        # Send OSC status only when it changes (only if OSC is running and karaoke engine exists)
+        if self.karaoke_engine:
+            current_status = {
+                'karaoke_active': True,
+                'synesthesia_running': self.synesthesia_running,
+                'milksyphon_running': self.milksyphon_running,
+                'processing_apps': running_apps
+            }
+            if current_status != self._last_master_status:
+                self.karaoke_engine.osc_sender.send_master_status(
+                    karaoke_active=True, synesthesia_running=self.synesthesia_running,
+                    milksyphon_running=self.milksyphon_running, processing_apps=running_apps
+                )
+                self._last_master_status = current_status
         
         # Update Launchpad panels
         self._update_launchpad_panels()

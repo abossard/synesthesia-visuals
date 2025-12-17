@@ -1,5 +1,5 @@
 # Copilot Instructions for synesthesia-visuals
-
+DONT RUN THE PYTHON TERMINAL UI IN VS CODEs
 ## Project Overview
 A VJ performance toolkit combining:
 - **Python VJ Console** (`python-vj/`) - Master control, karaoke engine, MIDI router, AI services
