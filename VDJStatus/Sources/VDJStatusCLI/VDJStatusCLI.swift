@@ -152,7 +152,7 @@ final class CLIState {
 // MARK: - Main Command
 
 @main
-struct VDJStatusCLI: AsyncParsableCommand {
+struct VDJStatusCLI: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "vdjstatus",
         abstract: "VirtualDJ status monitor via screen capture + OCR",
@@ -171,100 +171,112 @@ struct VDJStatusCLI: AsyncParsableCommand {
     @Flag(name: .shortAndLong, help: "Start with GUI window open")
     var gui: Bool = false
     
-    mutating func run() async throws {
+    mutating func run() throws {
         print("VDJStatus CLI v1.0.0")
         print("===================")
         
-        if gui {
-            // Launch GUI directly
-            await launchGUI()
-        } else {
-            // Start in headless mode with keyboard listener
-            let cliState = await CLIState()
-            await cliState.start(host: host, port: port, pollInterval: interval)
-            
-            // Set up keyboard handling for 'd' and 'q'
-            setupKeyboardHandler(cliState: cliState)
-            
-            // Run the main loop (required for ScreenCaptureKit callbacks)
-            dispatchMain()
-        }
-    }
-    
-    private func setupKeyboardHandler(cliState: CLIState) {
-        // Set terminal to raw mode for single-key input
-        tcgetattr(STDIN_FILENO, &savedTermios)
+        // Capture options for async block
+        let host = self.host
+        let port = self.port
+        let interval = self.interval
+        let showGUI = self.gui
         
-        var raw = savedTermios
-        raw.c_lflag &= ~UInt(ICANON | ECHO)  // Disable canonical mode and echo
-        tcsetattr(STDIN_FILENO, TCSANOW, &raw)
-        
-        // Restore terminal on exit
-        atexit {
-            tcsetattr(STDIN_FILENO, TCSANOW, &savedTermios)
-        }
-        
-        // Background thread to read keyboard
-        DispatchQueue.global().async {
-            while true {
-                var c: CChar = 0
-                let _ = read(STDIN_FILENO, &c, 1)
-                
-                switch Character(UnicodeScalar(UInt8(bitPattern: c))) {
-                case "d", "D":
-                    print("\n[CLI] Opening GUI...")
-                    DispatchQueue.main.async {
-                        Task { await self.launchGUI() }
-                    }
+        // Schedule async setup on main queue after dispatchMain starts
+        DispatchQueue.main.async {
+            Task {
+                if showGUI {
+                    await launchGUIWindow()
+                } else {
+                    let cliState = await CLIState()
+                    await cliState.start(host: host, port: port, pollInterval: interval)
                     
-                case "q", "Q":
-                    print("\n[CLI] Quitting...")
-                    DispatchQueue.main.async {
-                        cliState.stop()
-                        Darwin.exit(0)
-                    }
-                    
-                case "r", "R":
-                    print("\n[CLI] Refreshing windows...")
-                    Task {
-                        await cliState.capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
-                    }
-                    
-                default:
-                    break
+                    // Set up keyboard handling for 'd' and 'q'
+                    setupKeyboardHandler(cliState: cliState)
                 }
             }
         }
+        
+        // Run the main loop (required for ScreenCaptureKit callbacks)
+        dispatchMain()
+    }
+}
+
+// MARK: - Free functions for CLI operations (callable from closures)
+
+private func setupKeyboardHandler(cliState: CLIState) {
+    // Set terminal to raw mode for single-key input
+    tcgetattr(STDIN_FILENO, &savedTermios)
+    
+    var raw = savedTermios
+    raw.c_lflag &= ~UInt(ICANON | ECHO)  // Disable canonical mode and echo
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw)
+    
+    print("[CLI] Press 'd' to open GUI, 'r' to refresh, 'q' to quit")
+    
+    // Restore terminal on exit
+    atexit {
+        tcsetattr(STDIN_FILENO, TCSANOW, &savedTermios)
     }
     
-    @MainActor
-    private func launchGUI() async {
-        // Initialize the app if needed
-        let app = NSApplication.shared
-        app.setActivationPolicy(.regular)
-        
-        // Create the SwiftUI window
-        let appState = AppState()
-        let contentView = ContentView().environmentObject(appState)
-        
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "VDJStatus"
-        window.contentView = NSHostingView(rootView: contentView)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        
-        // If we're not already running the app loop, start it
-        if !app.isRunning {
-            app.run()
-        } else {
-            app.activate(ignoringOtherApps: true)
+    // Background thread to read keyboard
+    DispatchQueue.global().async {
+        while true {
+            var c: CChar = 0
+            let _ = read(STDIN_FILENO, &c, 1)
+            
+            switch Character(UnicodeScalar(UInt8(bitPattern: c))) {
+            case "d", "D":
+                print("\n[CLI] Opening GUI...")
+                    DispatchQueue.main.sync {
+                        launchGUIWindow()
+            case "q", "Q":
+                print("\n[CLI] Quitting...")
+                DispatchQueue.main.async {
+                    cliState.stop()
+                    Darwin.exit(0)
+                }
+                
+            case "r", "R":
+                print("\n[CLI] Refreshing windows...")
+                Task {
+                    await cliState.capture.refreshShareableWindows(preferBundleID: "com.atomixproductions.virtualdj")
+                }
+                
+            default:
+                break
+            }
         }
     }
+}
+
+// MARK: - Free function for GUI launch (callable from closures)
+
+@MainActor
+private func launchGUIWindow() {
+    // Must be called on main thread
+    assert(Thread.isMainThread, "launchGUIWindow must be called on main thread")
+    
+    // Initialize the app if needed
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    
+    // Create the SwiftUI window
+    let appState = AppState()
+    let contentView = ContentView().environmentObject(appState)
+    
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 800, height: 800),
+        styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        backing: .buffered,
+        defer: false
+    )
+    window.title = "VDJStatus"
+    window.contentView = NSHostingView(rootView: contentView)
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    
+    // Activate the app
+    app.activate(ignoringOtherApps: true)
 }
 
 // MARK: - Import GUI components for 'd' key functionality
