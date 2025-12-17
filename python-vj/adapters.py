@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 
 from domain import sanitize_cache_filename
 from infrastructure import ServiceHealth, Config
-from osc_manager import osc
+from osc_hub import osc
 
 logger = logging.getLogger('karaoke')
 
@@ -643,7 +643,7 @@ class VirtualDJMonitor:
 
 class OSCSender:
     """
-    Consolidated OSC sender with backward compatibility.
+    Consolidated OSC sender for karaoke messages.
     
     Sends FLAT OSC messages (arrays, no nested structures) for easy parsing:
     - /karaoke/track: [active, source, artist, title, album, duration, has_lyrics]
@@ -658,21 +658,15 @@ class OSCSender:
     All values are primitives (int, float, string) - no dicts or nested arrays.
     """
     
-    def __init__(self, host: str = "127.0.0.1", port: int = 9000):
+    def __init__(self):
         self._current_track_active = False
         self._current_source = "unknown"
         self._current_track_info = {}
-        logger.info(f"OSC: using centralized manager {osc.host}:{osc.port}")
+        osc.start()  # Ensure OSC hub is running
     
-    def send(self, address: str, args: Any = None):
-        """
-        Send a raw OSC message (passthrough to centralized manager).
-        
-        Args:
-            address: OSC address pattern (e.g., "/audio/levels")
-            args: Message arguments (single value, list, or None)
-        """
-        osc.send(address, args)
+    def send(self, address: str, *args):
+        """Send a raw OSC message to karaoke channel."""
+        osc.karaoke.send(address, *args)
     
     def send_karaoke(self, channel: str, event: str, data: Any = None):
         """
@@ -691,7 +685,7 @@ class OSCSender:
             self._current_track_info = data
             
             # Send legacy format: /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
-            osc.send("/karaoke/track", [
+            osc.karaoke.send("/karaoke/track",
                 1,  # active
                 self._current_source,
                 data.get("artist", ""),
@@ -699,20 +693,20 @@ class OSCSender:
                 data.get("album", ""),
                 data.get("duration", 0.0),
                 1  # has_lyrics (will be updated by lyrics/reset if false)
-            ])
+            )
             return
         
         elif channel == "track" and event == "none":
             # Send inactive track
             self._current_track_active = False
-            osc.send("/karaoke/track", [0, "", "", "", "", 0.0, 0])
+            osc.karaoke.send("/karaoke/track", 0, "", "", "", "", 0.0, 0)
             return
         
         elif channel == "lyrics" and event == "reset":
             has_lyrics = data.get("has_lyrics", True) if isinstance(data, dict) else True
             # Update track message with has_lyrics flag
             if self._current_track_active and not has_lyrics:
-                osc.send("/karaoke/track", [
+                osc.karaoke.send("/karaoke/track",
                     1,
                     self._current_source,
                     self._current_track_info.get("artist", ""),
@@ -720,58 +714,58 @@ class OSCSender:
                     self._current_track_info.get("album", ""),
                     self._current_track_info.get("duration", 0.0),
                     0  # has_lyrics = false
-                ])
-            osc.send("/karaoke/lyrics/reset", [])
+                )
+            osc.karaoke.send("/karaoke/lyrics/reset")
             return
         
         elif channel == "lyrics" and event == "line":
             # Send: [index, time, text]
-            osc.send("/karaoke/lyrics/line", [
+            osc.karaoke.send("/karaoke/lyrics/line",
                 data.get("index", 0),
                 data.get("time", 0.0),
                 data.get("text", "")
-            ])
+            )
             return
         
         elif channel == "position" and event == "update":
             # Send: [position_sec, is_playing]
-            osc.send("/karaoke/pos", [
+            osc.karaoke.send("/karaoke/pos",
                 data.get("time", 0.0),
                 1 if data.get("playing", True) else 0
-            ])
+            )
             return
         
         elif channel == "lyrics" and event == "active":
             # Send: [index]
             index = data.get("index", -1) if isinstance(data, dict) else data
-            osc.send("/karaoke/line/active", [index])
+            osc.karaoke.send("/karaoke/line/active", index)
             return
         
         elif channel == "refrain" and event == "reset":
-            osc.send("/karaoke/refrain/reset", [])
+            osc.karaoke.send("/karaoke/refrain/reset")
             return
         
         elif channel == "refrain" and event == "line":
             # Send: [index, time, text]
-            osc.send("/karaoke/refrain/line", [
+            osc.karaoke.send("/karaoke/refrain/line",
                 data.get("index", 0),
                 data.get("time", 0.0),
                 data.get("text", "")
-            ])
+            )
             return
         
         elif channel == "refrain" and event == "active":
             # Send: [index, text]
-            osc.send("/karaoke/refrain/active", [
+            osc.karaoke.send("/karaoke/refrain/active",
                 data.get("index", -1),
                 data.get("text", "")
-            ])
+            )
             return
         
         # Generic fallback for new-style messages
         address = f"/karaoke/{channel}/{event}"
         args = self._prepare_args(data)
-        osc.send(address, args)
+        osc.karaoke.send(address, *args)
     
     def send_vj(self, subsystem: str, event: str, data: Any = None):
         """
@@ -788,7 +782,7 @@ class OSCSender:
         """
         address = f"/vj/{subsystem}/{event}"
         args = self._prepare_args(data)
-        osc.send(address, args)
+        osc.karaoke.send(address, *args)
     
     def send_shader(self, shader_name: str, energy: float = 0.5, valence: float = 0.0):
         """
@@ -802,11 +796,11 @@ class OSCSender:
         OSC Message: /shader/load [name, energy, valence]
         """
         logger.info(f"OSC → /shader/load [{shader_name}, {energy:.2f}, {valence:.2f}]")
-        osc.send("/shader/load", [shader_name, float(energy), float(valence)])
+        osc.karaoke.send("/shader/load", shader_name, float(energy), float(valence))
     
     def get_recent_messages(self, count: int = 20) -> List[tuple]:
         """Get recent OSC messages for debug display."""
-        return osc.get_recent_messages(count)
+        return []  # No longer tracked
     
     def send_master_status(self, karaoke_active: bool = False, 
                           synesthesia_running: bool = False,

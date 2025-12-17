@@ -30,11 +30,11 @@ try:
         LP_OFF, LP_RED, LP_GREEN, LP_BLUE, LP_YELLOW, LP_ORANGE, LP_CYAN, LP_PURPLE, LP_WHITE,
     )
     from launchpad_osc_lib.launchpad_device import LaunchpadDevice
-    from launchpad_osc_lib.osc_sync import SyncOscClient
     from launchpad_osc_lib.display import render_state
     from launchpad_osc_lib.fsm import handle_pad_press, handle_pad_release, handle_osc_event
     from launchpad_osc_lib.config import load_config, save_config
-    from launchpad_osc_lib.cli import LaunchpadApp
+    from launchpad_osc_lib.synesthesia_config import enrich_event
+    from osc_hub import osc
     LAUNCHPAD_LIB_AVAILABLE = True
 except ImportError as e:
     LAUNCHPAD_LIB_AVAILABLE = False
@@ -454,17 +454,10 @@ class LaunchpadManager:
         manager.stop()
     """
     
-    def __init__(
-        self,
-        osc_send_port: int = 7777,
-        osc_receive_port: int = 9999,
-    ):
-        self.osc_send_port = osc_send_port
-        self.osc_receive_port = osc_receive_port
-        
+    def __init__(self):
         # Components
         self.device: Optional['LaunchpadDevice'] = None
-        self.osc: Optional['SyncOscClient'] = None
+        self._osc_running = False
         self.state = ControllerState() if LAUNCHPAD_LIB_AVAILABLE else None
         
         # Thread management
@@ -507,15 +500,10 @@ class LaunchpadManager:
                 logger.warning("No Launchpad connected - running in offline mode")
                 self.device = None
             
-            # Initialize OSC
-            self.osc = SyncOscClient(
-                send_port=self.osc_send_port,
-                receive_port=self.osc_receive_port,
-            )
-            if self.osc.start():
-                self.osc.add_callback(self._on_osc_event)
-            else:
-                logger.warning("OSC not available - continuing without")
+            # Initialize OSC via central hub
+            osc.start()
+            osc.synesthesia.subscribe("/", self._on_osc_raw)
+            self._osc_running = True
             
             # Load saved config
             pads = load_config()
@@ -547,9 +535,9 @@ class LaunchpadManager:
         """Stop the manager."""
         self._running = False
         
-        if self.osc:
-            self.osc.stop()
-            self.osc = None
+        if self._osc_running:
+            osc.synesthesia.unsubscribe("/", self._on_osc_raw)
+            self._osc_running = False
         
         if self.device:
             self.device.stop()
@@ -572,8 +560,8 @@ class LaunchpadManager:
             return {
                 'connected': self.device is not None,
                 'device_id': 'Launchpad Mini MK3' if self.device else '',
-                'osc_connected': self.osc is not None and self.osc._running if self.osc else False,
-                'osc_ports': f"send:{self.osc_send_port} recv:{self.osc_receive_port}",
+                'osc_connected': self._osc_running,
+                'osc_ports': f"send:7777 recv:9999",
                 'phase': phase.name,
                 'selected_pad': str(state.learn_state.selected_pad) if state.learn_state.selected_pad else '',
                 'recorded_events': len(state.learn_state.recorded_events),
@@ -749,6 +737,11 @@ class LaunchpadManager:
             self._render_leds()
             self._notify_state_change()
     
+    def _on_osc_raw(self, path: str, args: list) -> None:
+        """Adapter: convert raw OSC to OscEvent and forward."""
+        event = enrich_event(path, list(args), time.time())
+        self._on_osc_event(event)
+    
     def _on_osc_event(self, event: 'OscEvent'):
         """Handle incoming OSC from Synesthesia (background thread)."""
         # Log for debug panel
@@ -777,15 +770,16 @@ class LaunchpadManager:
         
         for effect in effects:
             if isinstance(effect, SendOscEffect):
-                if self.osc:
-                    self.osc.send(effect.command)
+                if self._osc_running:
+                    cmd = effect.command
+                    osc.synesthesia.send(cmd.address, *cmd.args)
                     # Log outgoing
                     with self._lock:
                         self._osc_messages.append({
                             'timestamp': time.time(),
                             'direction': '→',
-                            'address': effect.command.address,
-                            'args': effect.command.args,
+                            'address': cmd.address,
+                            'args': cmd.args,
                         })
             elif isinstance(effect, SaveConfigEffect):
                 save_config(self.state)

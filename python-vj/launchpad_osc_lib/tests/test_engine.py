@@ -11,9 +11,9 @@ from launchpad_osc_lib.model import (
     ButtonGroupType,
     OscCommand,
     PadBehavior,
+    OscEvent,
 )
 from launchpad_osc_lib.engine import PadMapper
-from launchpad_osc_lib.osc_client import OscEvent
 
 
 class TestPadMapperConfiguration:

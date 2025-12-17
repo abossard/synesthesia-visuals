@@ -6,13 +6,13 @@ All interaction happens through the Launchpad LEDs and pads.
 
 Usage:
     python -m launchpad_osc_lib
-    python -m launchpad_osc_lib --send-port 7777 --receive-port 9999
 """
 
 import argparse
 import logging
 import signal
 import sys
+import time
 from dataclasses import replace
 from typing import List, Union
 
@@ -22,10 +22,15 @@ from .model import (
     LedEffect, SendOscEffect, SaveConfigEffect, LogEffect,
 )
 from .launchpad_device import LaunchpadDevice
-from .osc_sync import SyncOscClient
+from .synesthesia_config import enrich_event
 from .display import render_state
 from .fsm import handle_pad_press, handle_pad_release, handle_osc_event
 from .config import save_config, load_config
+
+# Import central OSC hub
+import sys as _sys
+_sys.path.insert(0, str(__file__).rsplit('/', 2)[0])
+from osc_hub import osc
 
 logger = logging.getLogger(__name__)
 
@@ -40,16 +45,9 @@ class LaunchpadApp:
     This class only handles I/O and effect execution.
     """
     
-    def __init__(
-        self,
-        osc_send_port: int = 7777,
-        osc_receive_port: int = 9999,
-    ):
+    def __init__(self):
         self.launchpad = LaunchpadDevice()
-        self.osc = SyncOscClient(
-            send_port=osc_send_port,
-            receive_port=osc_receive_port,
-        )
+        self._osc_running = False
         
         self.state = ControllerState()
         self._running = False
@@ -68,11 +66,10 @@ class LaunchpadApp:
             logger.error("Failed to connect Launchpad")
             return
         
-        # Start OSC
-        if self.osc.start():
-            self.osc.add_callback(self._on_osc_event)
-        else:
-            logger.warning("OSC not available - continuing without OSC")
+        # Start OSC via central hub
+        osc.start()
+        osc.synesthesia.subscribe("/", self._on_osc_raw)
+        self._osc_running = True
         
         # Set up Launchpad callbacks
         self.launchpad.set_callbacks(
@@ -93,7 +90,9 @@ class LaunchpadApp:
     def stop(self):
         """Stop the application."""
         self._running = False
-        self.osc.stop()
+        if self._osc_running:
+            osc.synesthesia.unsubscribe("/", self._on_osc_raw)
+            self._osc_running = False
         self.launchpad.stop()
         logger.info("Stopped")
 
@@ -110,6 +109,11 @@ class LaunchpadApp:
         self.state = new_state
         self._execute_effects(effects)
         self._render_leds()
+    
+    def _on_osc_raw(self, path: str, args: list) -> None:
+        """Adapter: convert raw OSC to OscEvent."""
+        event = enrich_event(path, list(args), time.time())
+        self._on_osc_event(event)
     
     def _on_osc_event(self, event: OscEvent):
         """Handle incoming OSC event."""
@@ -133,7 +137,8 @@ class LaunchpadApp:
         """Execute side effects."""
         for effect in effects:
             if isinstance(effect, SendOscEffect):
-                self.osc.send(effect.command)
+                cmd = effect.command
+                osc.synesthesia.send(cmd.address, *cmd.args)
             
             elif isinstance(effect, SaveConfigEffect):
                 save_config(self.state)
@@ -149,14 +154,6 @@ def main():
         description="Launchpad OSC Controller - Device-driven configuration"
     )
     parser.add_argument(
-        "--send-port", type=int, default=7777,
-        help="OSC send port (default: 7777)"
-    )
-    parser.add_argument(
-        "--receive-port", type=int, default=9999,
-        help="OSC receive port (default: 9999)"
-    )
-    parser.add_argument(
         "-v", "--verbose", action="store_true",
         help="Enable verbose logging"
     )
@@ -170,10 +167,7 @@ def main():
         format="%(asctime)s [%(levelname)s] %(message)s"
     )
     
-    app = LaunchpadApp(
-        osc_send_port=args.send_port,
-        osc_receive_port=args.receive_port,
-    )
+    app = LaunchpadApp()
     
     # Handle Ctrl+C
     def signal_handler(signum, frame):

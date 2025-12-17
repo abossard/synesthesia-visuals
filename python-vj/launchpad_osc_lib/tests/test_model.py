@@ -7,13 +7,13 @@ OscEvent, LearnPhase, LearnState, ControllerState, and Effect types.
 
 import pytest
 from launchpad_osc_lib.button_id import ButtonId
-from launchpad_osc_lib.osc_client import OscEvent
 from launchpad_osc_lib.model import (
     PadMode,
     ButtonGroupType,
     OscCommand,
     PadBehavior,
     PadRuntimeState,
+    OscEvent,
     LearnPhase,
     LearnState,
     ControllerState,

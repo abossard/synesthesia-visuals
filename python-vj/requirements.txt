@@ -7,8 +7,8 @@ python-dotenv>=1.0.0
 # Spotify API
 spotipy>=2.23.0
 
-# OSC communication
-python-osc>=1.8.3
+# OSC communication (C bindings to liblo)
+pyliblo3>=0.16.4
 
 # Lyrics fetching
 requests>=2.31.0

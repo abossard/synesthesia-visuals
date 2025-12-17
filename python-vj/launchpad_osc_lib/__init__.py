@@ -49,7 +49,6 @@ from lpminimk3.colors import ColorPalette
 
 from .button_id import ButtonId
 from .model import LedMode, COLOR_PALETTE
-from .osc_client import OscClient, OscConfig, OscEvent
 from .model import (
     # Brightness and colors
     BrightnessLevel,
@@ -72,7 +71,7 @@ from .model import (
     LearnRegister,
     AppMode,  # Alias for LearnPhase
     LearnState,
-    OscEvent as OscEventModel,  # Renamed to avoid conflict with osc_client.OscEvent
+    OscEvent,
     ControllerState,
     AppState,  # Alias for ControllerState
     # Effect types
@@ -155,7 +154,6 @@ from .controller import (
 )
 from .synesthesia_osc import SynesthesiaOscManager
 from .launchpad_device import LaunchpadDevice
-from .osc_sync import SyncOscClient
 from .config import save_config, load_config, DEFAULT_CONFIG_PATH
 from .cli import LaunchpadApp, main as cli_main
 
@@ -181,10 +179,8 @@ __all__ = [
     "LP_GREEN", "LP_GREEN_DIM", "LP_CYAN", "LP_BLUE", "LP_BLUE_DIM",
     "LP_PURPLE", "LP_PINK", "LP_WHITE",
     # OSC
-    "OscClient",
-    "OscConfig",
     "OscEvent",
-    "OscEventModel",
+    "OscCommand",
     "SynesthesiaOscManager",
     # Pad configuration types
     "PadMode",
@@ -257,9 +253,8 @@ __all__ = [
     "LaunchpadController",
     "LaunchpadInterface",
     "OscInterface",
-    # Device and OSC
+    # Device
     "LaunchpadDevice",
-    "SyncOscClient",
     # Config persistence
     "save_config",
     "load_config",
