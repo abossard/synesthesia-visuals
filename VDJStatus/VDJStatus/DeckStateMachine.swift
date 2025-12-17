@@ -66,7 +66,7 @@ struct FSMConfig {
         pollInterval: 1.0,
         stableThreshold: 3,        // 3 unchanged readings → stopped
         elapsedEpsilon: 0.1,       // 100ms tolerance for OCR jitter
-        faderEqualThreshold: 0.02  // 2% fader difference threshold
+        faderEqualThreshold: 0.05  // 5% fader difference threshold
     )
 }
 
@@ -174,45 +174,14 @@ func transition(_ state: MasterState, event: DeckEvent, config: FSMConfig = .def
 
 // MARK: - Convenience: Batch update from detection result
 
-/// Result of a batch transition with change detection
-struct TransitionResult {
-    let newState: MasterState
-    let changes: [String]  // Human-readable change descriptions
-}
-
 func transitionFromDetection(_ state: MasterState, detection: DetectionResult, config: FSMConfig = .default) -> MasterState {
-    let result = transitionFromDetectionWithLog(state, detection: detection, config: config)
-    return result.newState
-}
-
-/// Batch transition with logging of changes
-func transitionFromDetectionWithLog(_ state: MasterState, detection: DetectionResult, config: FSMConfig = .default) -> TransitionResult {
     let events: [DeckEvent] = [
         .elapsedReading(deck: 1, elapsed: detection.deck1.elapsedSeconds),
         .elapsedReading(deck: 2, elapsed: detection.deck2.elapsedSeconds),
         .faderReading(deck: 1, position: detection.deck1.faderKnobPos),
         .faderReading(deck: 2, position: detection.deck2.faderKnobPos),
     ]
-    
-    let newState = events.reduce(state) { transition($0, event: $1, config: config) }
-    var changes: [String] = []
-    
-    // Detect play state changes
-    if state.deck1.playState != newState.deck1.playState {
-        changes.append("D1: \(state.deck1.playState) → \(newState.deck1.playState)")
-    }
-    if state.deck2.playState != newState.deck2.playState {
-        changes.append("D2: \(state.deck2.playState) → \(newState.deck2.playState)")
-    }
-    
-    // Detect master changes
-    if state.master != newState.master {
-        let oldMaster = state.master.map { "D\($0)" } ?? "None"
-        let newMasterStr = newState.master.map { "D\($0)" } ?? "None"
-        changes.append("Master: \(oldMaster) → \(newMasterStr)")
-    }
-    
-    return TransitionResult(newState: newState, changes: changes)
+    return events.reduce(state) { transition($0, event: $1, config: config) }
 }
 
 // MARK: - Formatting Helpers
@@ -243,73 +212,43 @@ final class DeckStateManager: ObservableObject {
     @Published private(set) var transitionLog: [FSMLogEntry] = []
     
     let config: FSMConfig
-    private let maxLogEntries = 50
-    private let dateFormatter: DateFormatter
     
     init(config: FSMConfig = .default) {
         self.config = config
-        self.dateFormatter = DateFormatter()
-        self.dateFormatter.dateFormat = "HH:mm:ss.SSS"
     }
     
-    private func timestamp() -> String {
-        dateFormatter.string(from: Date())
-    }
-    
-    private func formatElapsed(_ elapsed: Double?) -> String {
-        guard let e = elapsed else { return "nil" }
-        return String(format: "%.1f", e)
-    }
-    
-    /// Process a detection result and update state, logging changes
+    /// Process a detection result and update state
     func process(_ detection: DetectionResult) {
         let oldState = state
-        let result = transitionFromDetectionWithLog(state, detection: detection, config: config)
-        state = result.newState
+        state = transitionFromDetection(state, detection: detection, config: config)
         
-        // Debug: always log elapsed readings with timestamps
-        let e1 = formatElapsed(detection.deck1.elapsedSeconds)
-        let e2 = formatElapsed(detection.deck2.elapsedSeconds)
-        let oldE1 = formatElapsed(oldState.deck1.lastElapsed)
-        let oldE2 = formatElapsed(oldState.deck2.lastElapsed)
-        
-        // Calculate deltas
-        let delta1: String
-        if let new = detection.deck1.elapsedSeconds, let old = oldState.deck1.lastElapsed {
-            delta1 = String(format: "Δ%.1f", abs(new - old))
-        } else {
-            delta1 = "Δ?"
-        }
-        
-        let delta2: String
-        if let new = detection.deck2.elapsedSeconds, let old = oldState.deck2.lastElapsed {
-            delta2 = String(format: "Δ%.1f", abs(new - old))
-        } else {
-            delta2 = "Δ?"
-        }
-        
-        print("[\(timestamp())] D1: \(oldE1)→\(e1) (\(delta1)) stable:\(state.deck1.stableCount)/\(config.stableThreshold) | D2: \(oldE2)→\(e2) (\(delta2)) stable:\(state.deck2.stableCount)/\(config.stableThreshold)")
-        
-        // Log state changes to console and history
-        for change in result.changes {
-            print("[\(timestamp())] [FSM] \(change)")
-            transitionLog.insert(FSMLogEntry(timestamp: Date(), message: change), at: 0)
-        }
-        
-        // Trim log
-        if transitionLog.count > maxLogEntries {
-            transitionLog = Array(transitionLog.prefix(maxLogEntries))
+        // Log changes
+        logChange("D1", old: oldState.deck1.playState, new: state.deck1.playState)
+        logChange("D2", old: oldState.deck2.playState, new: state.deck2.playState)
+        if oldState.master != state.master {
+            let msg = "Master: \(oldState.master.map { "D\($0)" } ?? "None") → \(state.master.map { "D\($0)" } ?? "None")"
+            print("[FSM] \(msg)")
+            addLog(msg)
         }
     }
     
-    /// Reset to initial state
+    private func logChange(_ deck: String, old: DeckPlayState, new: DeckPlayState) {
+        guard old != new else { return }
+        let msg = "\(deck): \(old) → \(new)"
+        print("[FSM] \(msg)")
+        addLog(msg)
+    }
+    
+    private func addLog(_ msg: String) {
+        transitionLog.insert(FSMLogEntry(timestamp: Date(), message: msg), at: 0)
+        if transitionLog.count > 50 { transitionLog.removeLast() }
+    }
+    
     func reset() {
         state = .initial
         transitionLog.removeAll()
-        print("[FSM] Reset to initial state")
     }
     
-    // Convenience accessors
     var master: Int? { state.master }
     var deck1PlayState: DeckPlayState { state.deck1.playState }
     var deck2PlayState: DeckPlayState { state.deck2.playState }

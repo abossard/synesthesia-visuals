@@ -357,12 +357,9 @@ struct FSMDiagramView: View {
                     .stroke(stateColor(playState), lineWidth: isMaster ? 3 : 1)
                     .frame(width: 60, height: 60)
                 
-                VStack(spacing: 2) {
-                    Text(stateEmoji(playState))
-                        .font(.title3)
-                    Text(stateLabel(playState))
-                        .font(.system(.caption2, design: .rounded))
-                }
+                Text(playState.description)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
             }
             
             // Details
@@ -409,22 +406,6 @@ struct FSMDiagramView: View {
         case .playing: return .green
         case .stopped: return .red
         case .unknown: return .gray
-        }
-    }
-    
-    private func stateEmoji(_ state: DeckPlayState) -> String {
-        switch state {
-        case .playing: return "▶️"
-        case .stopped: return "⏹"
-        case .unknown: return "❓"
-        }
-    }
-    
-    private func stateLabel(_ state: DeckPlayState) -> String {
-        switch state {
-        case .playing: return "Playing"
-        case .stopped: return "Stopped"
-        case .unknown: return "Unknown"
         }
     }
     
