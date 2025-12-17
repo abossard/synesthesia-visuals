@@ -1,6 +1,5 @@
 import Foundation
 import CoreGraphics
-import AppKit
 
 enum ROIKey: String, CaseIterable, Identifiable {
     case d1Artist, d1Title, d1Elapsed, d1Fader
