@@ -444,6 +444,80 @@ os2l_cmd 42 on                   # Send numeric command
 
 ---
 
+## Python OSC Library Comparison
+
+Several Python libraries are available for OSC communication:
+
+| Library | Install | Bundles | Dependencies | Notes |
+|---------|---------|---------|--------------|-------|
+| **python-osc** | `pip install python-osc` | ✅ Yes | Pure Python | **Recommended** - Most popular (564⭐), actively maintained (Dec 2024), UDP+TCP support |
+| **oscpy** | `pip install oscpy` | ✅ Yes | Pure Python | Kivy project, has CLI tool, but stale since 2021 |
+| **pyliblo3** | `pip install pyliblo3` | ✅ Yes | liblo (C) | Fastest performance, but requires native library |
+| **aiosc** | `pip install aiosc` | ❌ No | Pure Python | Minimalist asyncio-native, no bundle support |
+
+### Recommended: python-osc
+
+```python
+from pythonosc import udp_client, dispatcher, osc_server
+```
+
+This library follows OSC 1.0 spec strictly and provides the best combination of features, community support, and ease of installation.
+
+---
+
+## Troubleshooting
+
+### Warning: "Could not identify content type of dgram"
+
+When using `python-osc` with VirtualDJ subscriptions, you may see warnings like:
+
+```
+WARNING - Could not identify content type of dgram b'...'
+WARNING - Unhandled parameter type (d)
+```
+
+**Cause:** VirtualDJ sends OSC bundle acknowledgments for subscriptions that contain non-standard or empty content. The `python-osc` library is strict about OSC spec compliance and logs warnings when it encounters unexpected data formats.
+
+**Impact:** These warnings are **cosmetic only** - your actual data (track info, BPM, levels) comes through correctly. The warnings occur during the subscription handshake, not during normal data flow.
+
+**Solutions:**
+
+1. **Suppress warnings** (recommended for production):
+   ```python
+   import logging
+   logging.getLogger('pythonosc').setLevel(logging.ERROR)
+   ```
+
+2. **Filter specific loggers:**
+   ```python
+   import logging
+   logging.getLogger('pythonosc.osc_bundle').setLevel(logging.ERROR)
+   logging.getLogger('pythonosc.osc_message').setLevel(logging.ERROR)
+   ```
+
+3. **Use a catch-all handler** to silently consume unmatched messages:
+   ```python
+   def catch_all(address, *args):
+       pass  # Ignore unknown messages
+   
+   dispatcher.set_default_handler(catch_all)
+   ```
+
+### VirtualDJ Not Responding to OSC
+
+1. **Check license:** OSC features require VirtualDJ PRO license
+2. **Verify ports:** Ensure `oscPort` and `oscPortBack` are set in VDJ Options → Internet
+3. **Firewall:** Allow UDP traffic on configured ports
+4. **VDJ running:** VirtualDJ must be running before sending OSC messages
+
+### No Subscription Updates
+
+- Subscriptions only send updates when values **change**
+- Query first to get current value: `/vdj/query/deck/1/get_bpm`
+- Then subscribe for changes: `/vdj/subscribe/deck/1/get_bpm`
+
+---
+
 ## References
 
 - [VDJScript Documentation](https://www.virtualdj.com/wiki/VDJscript.html)

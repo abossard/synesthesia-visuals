@@ -11,18 +11,19 @@ VirtualDJ Settings Required:
 
 Usage:
   python vdj_osc_test.py
+
+Library: pyliblo3 (C bindings to liblo - faster, cleaner output)
 """
 
 import sys
 import time
-import threading
 from typing import Any
 
 try:
-    from pythonosc import udp_client, dispatcher, osc_server
+    import pyliblo3 as liblo
 except ImportError:
-    print("Error: python-osc not installed")
-    print("Install with: pip install python-osc")
+    print("Error: pyliblo3 not installed")
+    print("Install with: pip install pyliblo3")
     sys.exit(1)
 
 
@@ -36,7 +37,7 @@ messages_received = 0
 start_time = None
 
 
-def handle_message(address: str, *args: Any) -> None:
+def handle_message(path: str, args: list, types: str, src: Any) -> None:
     """Generic handler for all incoming OSC messages."""
     global messages_received
     messages_received += 1
@@ -50,41 +51,36 @@ def handle_message(address: str, *args: Any) -> None:
         args_str = ", ".join(repr(a) for a in args)
     
     elapsed = time.time() - start_time if start_time else 0
-    print(f"[{elapsed:6.2f}s] {address}  →  {args_str}")
+    print(f"[{elapsed:6.2f}s] {path}  →  {args_str}")
 
 
 def main():
     global start_time
     
     print("=" * 60)
-    print("VirtualDJ OSC Test")
+    print("VirtualDJ OSC Test (using pyliblo3)")
     print("=" * 60)
     print(f"Sending to VDJ:      {VDJ_HOST}:{VDJ_OSC_PORT}")
     print(f"Listening on:        {VDJ_HOST}:{VDJ_OSC_PORT_BACK}")
     print("=" * 60)
     print()
     
-    # Create OSC client to send messages to VDJ
-    client = udp_client.SimpleUDPClient(VDJ_HOST, VDJ_OSC_PORT)
-    
-    # Create dispatcher to handle incoming messages
-    disp = dispatcher.Dispatcher()
-    disp.set_default_handler(handle_message)  # Catch all messages
-    
-    # Create and start OSC server to receive messages from VDJ
+    # Create OSC server to receive messages from VDJ
     try:
-        server = osc_server.ThreadingOSCUDPServer(
-            (VDJ_HOST, VDJ_OSC_PORT_BACK), disp
-        )
-    except OSError as e:
+        server = liblo.Server(VDJ_OSC_PORT_BACK)
+    except liblo.ServerError as e:
         print(f"Error: Could not bind to port {VDJ_OSC_PORT_BACK}: {e}")
         print("Is another application using this port?")
         sys.exit(1)
     
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
+    # Register catch-all handler (None, None = match any path/types)
+    server.add_method(None, None, handle_message)
+    
     print(f"✓ OSC server listening on port {VDJ_OSC_PORT_BACK}")
     print()
+    
+    # Target address for sending to VDJ
+    vdj_target = (VDJ_HOST, VDJ_OSC_PORT)
     
     start_time = time.time()
     
@@ -140,12 +136,14 @@ def main():
     
     print(f"Sending {len(queries)} queries...")
     for query in queries:
-        client.send_message(query, [])
+        liblo.send(vdj_target, query)
         time.sleep(0.02)  # Small delay between messages
     
-    # Wait for responses
+    # Wait for responses (poll server)
     print("Waiting for responses...")
-    time.sleep(1.0)
+    poll_until = time.time() + 1.0
+    while time.time() < poll_until:
+        server.recv(50)  # 50ms timeout per recv
     print()
     
     # =========================================================================
@@ -177,15 +175,17 @@ def main():
     
     print(f"Subscribing to {len(subscriptions)} values...")
     for sub in subscriptions:
-        client.send_message(sub, [])
+        liblo.send(vdj_target, sub)
         time.sleep(0.02)
     
     print("Listening for updates (move crossfader or change tracks to see updates)...")
     print()
     
-    # Listen for live updates
+    # Listen for live updates (poll server for 5 seconds)
     try:
-        time.sleep(5.0)
+        poll_until = time.time() + 5.0
+        while time.time() < poll_until:
+            server.recv(100)  # 100ms timeout per recv
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     
@@ -200,7 +200,7 @@ def main():
     # Unsubscribe
     for sub in subscriptions:
         unsub = sub.replace("/subscribe/", "/unsubscribe/")
-        client.send_message(unsub, [])
+        liblo.send(vdj_target, unsub)
         time.sleep(0.02)
     
     print(f"Unsubscribed from {len(subscriptions)} values")
@@ -225,8 +225,7 @@ def main():
     else:
         print("✓ Communication successful!")
     
-    # Shutdown server
-    server.shutdown()
+    # Server cleanup (no explicit shutdown needed with pyliblo3)
     print()
     print("Done.")
 
