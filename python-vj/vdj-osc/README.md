@@ -126,6 +126,134 @@ command1 && command2               # Both must be true for LED queries
 
 ---
 
+## Master Deck Detection
+
+For VJ applications, it's critical to know which deck is "on-air" — the one the audience hears. VirtualDJ provides several mechanisms to determine the active/master deck.
+
+### Key Verbs for Master Deck Detection
+
+| Verb | Description | Use Case |
+|------|-------------|----------|
+| `is_audible` | Returns true if deck is playing AND volume is up (on-air) | **Primary method** - directly answers "can the audience hear this?" |
+| `masterdeck` | Select/query this deck as the master deck for sync reference | Explicit master selection for multi-deck setups |
+| `masterdeck_auto` | Remove manual masterdeck selection, return to automatic behavior | Let VDJ decide based on crossfader/volume |
+| `get_activedeck` | Get the number of the current sync master deck | Find which deck others sync to |
+| `get_crossfader_result` | Get volume balance between deck 1 and 2 based on crossfader, levels, and play state | Precise mix position (0.0 = left, 1.0 = right) |
+| `select` | Select this deck as the "working deck" (beat display, default for shortcuts) | UI focus, not necessarily audible |
+
+### Recommended Approach: `is_audible`
+
+The `is_audible` verb is the most useful for VJ applications because it tells you if a deck is actually being heard by the audience.
+
+**OSC Subscription Pattern:**
+```
+/vdj/subscribe/deck/1/is_audible    # Get notified when deck 1 goes on/off air
+/vdj/subscribe/deck/2/is_audible    # Get notified when deck 2 goes on/off air
+```
+
+**Response:** VirtualDJ will send to `oscPortBack`:
+```
+/vdj/deck/1/is_audible  [1]    # Deck 1 is audible (on-air)
+/vdj/deck/1/is_audible  [0]    # Deck 1 is not audible
+```
+
+### Crossfader Position for Blending
+
+For smooth VJ transitions synced to the DJ's mix:
+
+```
+/vdj/subscribe/crossfader              # Crossfader position (0.0 = left, 1.0 = right)
+/vdj/subscribe/get_crossfader_result   # Actual volume balance considering levels + play state
+```
+
+**Example:** Use `get_crossfader_result` to blend between two visual sources:
+- `0.0` = Show 100% of Deck 1's visuals
+- `0.5` = Show 50/50 blend
+- `1.0` = Show 100% of Deck 2's visuals
+
+### Deck Selection Verbs
+
+| Verb | Description |
+|------|-------------|
+| `get_deck` | Get the number of this deck (1, 2, 3, 4) |
+| `get_leftdeck` | Get the number of the left deck |
+| `get_rightdeck` | Get the number of the right deck |
+| `get_activedeck` | Get the number of the sync master deck |
+| `get_defaultdeck` | Get the number of the default deck |
+| `leftdeck` / `rightdeck` | Assign a deck as left/right |
+| `invert_deck` | Swap left deck between 1↔3 or right deck between 2↔4 |
+
+### Python Example: Master Deck Detection
+
+```python
+from pythonosc import udp_client, dispatcher, osc_server
+import threading
+
+vdj = udp_client.SimpleUDPClient("127.0.0.1", 8000)
+
+# Track which deck is currently on-air
+deck1_audible = False
+deck2_audible = False
+crossfader = 0.5
+
+def on_deck1_audible(address, *args):
+    global deck1_audible
+    deck1_audible = bool(args[0]) if args else False
+    update_master_deck()
+
+def on_deck2_audible(address, *args):
+    global deck2_audible
+    deck2_audible = bool(args[0]) if args else False
+    update_master_deck()
+
+def on_crossfader(address, *args):
+    global crossfader
+    crossfader = args[0] if args else 0.5
+    print(f"Crossfader: {crossfader:.2f} (Deck 1: {1-crossfader:.0%}, Deck 2: {crossfader:.0%})")
+
+def update_master_deck():
+    if deck1_audible and not deck2_audible:
+        print("Master: Deck 1 (solo)")
+    elif deck2_audible and not deck1_audible:
+        print("Master: Deck 2 (solo)")
+    elif deck1_audible and deck2_audible:
+        print(f"Both decks audible - use crossfader position ({crossfader:.2f}) for blend")
+    else:
+        print("No deck audible")
+
+# Subscribe to audibility changes
+vdj.send_message("/vdj/subscribe/deck/1/is_audible", [])
+vdj.send_message("/vdj/subscribe/deck/2/is_audible", [])
+vdj.send_message("/vdj/subscribe/crossfader", [])
+
+# Set up receiver
+disp = dispatcher.Dispatcher()
+disp.map("/vdj/deck/1/is_audible", on_deck1_audible)
+disp.map("/vdj/deck/2/is_audible", on_deck2_audible)
+disp.map("/vdj/crossfader", on_crossfader)
+
+server = osc_server.ThreadingOSCUDPServer(("127.0.0.1", 9000), disp)
+server.serve_forever()
+```
+
+### Multi-Deck Setups (4 Decks)
+
+For 4-deck configurations:
+
+```
+/vdj/subscribe/deck/1/is_audible
+/vdj/subscribe/deck/2/is_audible
+/vdj/subscribe/deck/3/is_audible
+/vdj/subscribe/deck/4/is_audible
+/vdj/query/get_activedeck           # Which deck is the sync master
+```
+
+Use `leftcross` and `rightcross` to see which decks are assigned to crossfader sides:
+- `deck 3 leftcross` assigns deck 3 to left side
+- `deck 4 rightcross` assigns deck 4 to right side
+
+---
+
 ## Essential VDJScript Verbs for VJ Integration
 
 ### Playback Information
