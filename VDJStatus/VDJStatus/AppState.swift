@@ -183,6 +183,9 @@ final class AppState: ObservableObject {
                 
                 if self.oscEnabled {
                     self.osc.configure(host: self.oscHost, port: self.oscPort)
+                    // Pass play states to OSC sender for message payload
+                    self.osc.deck1PlayState = self.playStateToInt(self.deckStateManager.deck1PlayState)
+                    self.osc.deck2PlayState = self.playStateToInt(self.deckStateManager.deck2PlayState)
                     self.osc.send(result: result)
                 }
             }
@@ -194,6 +197,15 @@ final class AppState: ObservableObject {
     func loadCalibration() {
         if let loaded = CalibrationModel.loadFromDisk() {
             calibration = loaded
+        }
+    }
+    
+    /// Convert DeckPlayState enum to int for OSC (0=unknown, 1=playing, 2=stopped)
+    private func playStateToInt(_ state: DeckPlayState) -> Int {
+        switch state {
+        case .unknown: return 0
+        case .playing: return 1
+        case .stopped: return 2
         }
     }
 }

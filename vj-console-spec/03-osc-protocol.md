@@ -401,3 +401,98 @@ OSC sends are non-blocking UDP. The OSC manager maintains:
 - Invalid destinations: Silent fail (UDP)
 - Network errors: Logged, no retry
 - Rate limiting: None (consumer responsibility)
+
+---
+
+## VDJStatus Incoming Messages
+
+VDJStatus (macOS app) sends deck detection data to the VJ Console via OSC. Rate limited to **1 Hz max**, messages are only sent when state changes.
+
+### Network Configuration
+
+| Setting | Value |
+|---------|-------|
+| Port | 9000 (same as general VJ apps) |
+| Host | 127.0.0.1 |
+| Direction | VDJStatus → VJ Console |
+
+---
+
+### Deck Info
+
+**Address:** `/vdj/deck/1`, `/vdj/deck/2`
+
+**Arguments:**
+| Index | Type | Description |
+|-------|------|-------------|
+| 0 | string | artist |
+| 1 | string | title |
+| 2 | float | elapsed (seconds) |
+| 3 | float | fader (0.0=top/loud, 1.0=bottom/quiet) |
+| 4 | int | playState (0=unknown, 1=playing, 2=stopped) |
+
+**Example:**
+```text
+/vdj/deck/1 ["The Weeknd", "Blinding Lights", 125.5, 0.1, 1]
+/vdj/deck/2 ["Daft Punk", "One More Time", 45.0, 0.9, 2]
+```
+
+---
+
+### Master Deck (Aggregated)
+
+**Address:** `/vdj/master`
+
+Aggregated info from the currently active master deck. Allows receivers to use this directly without implementing master selection logic.
+
+**Arguments:**
+| Index | Type | Description |
+|-------|------|-------------|
+| 0 | string | artist (empty if no master) |
+| 1 | string | title (empty if no master) |
+| 2 | float | elapsed (seconds, 0 if no master) |
+| 3 | float | fader (0.5 if no master) |
+| 4 | int | activeDeck (1, 2, or 0=none) |
+
+**Example:**
+```text
+/vdj/master ["The Weeknd", "Blinding Lights", 125.5, 0.1, 1]
+```
+
+When no master is detected (both decks stopped or faders equal):
+```text
+/vdj/master ["", "", 0.0, 0.5, 0]
+```
+
+---
+
+### Status
+
+**Address:** `/vdj/status`
+
+System-level status including play states and detection confidence.
+
+**Arguments:**
+| Index | Type | Description |
+|-------|------|-------------|
+| 0 | int | deck1PlayState (0=unknown, 1=playing, 2=stopped) |
+| 1 | int | deck2PlayState (0=unknown, 1=playing, 2=stopped) |
+| 2 | int | masterDeck (1, 2, or 0=none) |
+| 3 | float | deck1FaderConfidence (0.0-1.0) |
+| 4 | float | deck2FaderConfidence (0.0-1.0) |
+
+**Example:**
+```text
+/vdj/status [1, 2, 1, 0.85, 0.92]
+```
+
+---
+
+### Master Determination Logic
+
+The master deck is determined by VDJStatus using:
+
+1. **Play state priority**: If only one deck is playing → that deck is master
+2. **Fader comparison**: If both playing → deck with higher fader (lower position value) wins
+3. **Hysteresis**: If faders are within 5% → keep previous master to avoid flicker
+4. **No master**: If neither deck is playing → no master (activeDeck=0)
