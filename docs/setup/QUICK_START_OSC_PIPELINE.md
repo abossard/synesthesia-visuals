@@ -5,7 +5,9 @@ This guide shows how to use Synesthesia for audio analysis in your VJ setup.
 ## What You Get
 
 **Synesthesia** (professional audio analysis engine)
-  ↓ OSC messages  
+  ↓ OSC messages (port 9999)
+**Python OSC Hub** (central router in python-vj)
+  ↓ OSC messages (port 9000)
 **Processing/Magic/VPT** (VJ visuals)
   ↓ Syphon frames
 **Final output** (projectors, screens, streaming)
@@ -39,19 +41,42 @@ Download from [synesthesia.live](https://synesthesia.live/)
 - Synesthesia will use default input device
 - Or select manually in Synesthesia preferences
 
-### 3. Enable OSC Output in Synesthesia
+### 3. Configure Synesthesia OSC Output
 
 1. Open Synesthesia preferences
 2. Navigate to OSC settings
 3. Enable "Send audio analysis via OSC"
-4. Set target port (default: 9000)
+4. **Set target to localhost:9999** (Python Hub receives here)
 5. Configure which features to send (bass, mid, high, spectrum, etc.)
+
+### 4. Start Python OSC Hub
+
+The Python Hub receives OSC from Synesthesia (port 9999) and routes/forwards to other applications:
+
+```bash
+cd python-vj
+python vj_console.py  # Starts OSC hub automatically
+```
+
+Or run standalone:
+```bash
+cd python-vj
+python -c "from osc_hub import osc; osc.start(); import time; time.sleep(3600)"
+```
 
 ## Using with Processing/VJ Software
 
+### Architecture Overview
+
+```
+Synesthesia (port 9999) → Python OSC Hub (port 9000) → Processing/VJ Apps
+```
+
+The Python Hub acts as a central router, receiving OSC from Synesthesia and forwarding to all VJ applications.
+
 ### Processing Integration
 
-Processing sketches can receive Synesthesia's OSC messages:
+Processing sketches receive OSC from the Python Hub on port 9000:
 
 ```processing
 import oscP5.*;

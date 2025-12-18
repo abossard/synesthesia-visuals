@@ -10,11 +10,13 @@ The VJ Console communicates with visual software via **OSC (Open Sound Control)*
 
 ### Default Ports
 
-| Application | Port | Direction |
-|-------------|------|-----------|
-| **General VJ apps** | 9000 | Send |
-| **Synesthesia** | 7777 | Send |
-| **Synesthesia** | 9999 | Receive |
+| Application | Send Port | Receive Port | Notes |
+|-------------|-----------|--------------|-------|
+| **Python Hub** | - | 9999, 9008 | Central listener for Synesthesia and VDJ |
+| **Python Hub** | 7777, 9009, 9000 | - | Sends to Synesthesia, VDJ, Processing/MMV |
+| **Synesthesia** | 9999 | 7777 | Sends audio/events to Hub, receives commands |
+| **VirtualDJ** | 9008 | 9009 | Sends status to Hub, receives commands |
+| **Processing/MMV** | - | 9000 | Receives karaoke, audio, shader messages |
 
 ### Host Configuration
 
