@@ -282,6 +282,21 @@ stateDiagram-v2
 
 ### Default Banks
 
+**Planned Allocation (See [OSC_FUTURE_PLAN.md](../OSC_FUTURE_PLAN.md) for details):**
+
+| Index | Button | Name | Target | Purpose |
+|-------|--------|------|--------|---------|
+| 0 | Up | Scenes | Synesthesia | Scene selection (8×8 grid) |
+| 1 | Down | Presets | Synesthesia | Preset selection per scene |
+| 2 | Left | Effects | Synesthesia | Global effects toggles |
+| 3 | Right | Favorites | Synesthesia | Quick access favorite scenes |
+| 4 | Session | Shaders | VJUniverse | Shader selection (8×8 grid) |
+| 5 | Drums | Audio | VJUniverse | Audio binding controls |
+| 6 | Keys | Visual | VJUniverse | Post-FX and layer controls |
+| 7 | User | Custom | Both | User-defined macros |
+
+**Current Implementation (Development):**
+
 | Index | Button | Name | Purpose |
 |-------|--------|------|---------|
 | 0 | Up | Scenes | Scene selection |
@@ -293,13 +308,26 @@ stateDiagram-v2
 | 6 | Keys | Color | Color/hue selection |
 | 7 | User | Custom | User-defined |
 
+### Bank Target Separation (Planned)
+
+**Banks 0-3: Synesthesia Control**
+- Bidirectional OSC (send to 7777, receive from 9999)
+- LED sync with Synesthesia state changes
+- Group persistence: Active scene persists across all banks
+
+**Banks 4-7: VJUniverse Control**
+- Send-only OSC (send to 9000)
+- Local state management (no callbacks from VJUniverse)
+- Group persistence: Active shader persists across VJU banks
+
 ### Bank LED Indicators
 
-| State | Color |
-|-------|-------|
-| Inactive bank | Blue (dim) |
-| Active bank | Green (bright) |
-| No bank defined | Off |
+| State | Color | Notes |
+|-------|-------|-------|
+| Active bank | Green (bright) | Currently selected |
+| Inactive Synesthesia bank (0-3) | Blue (dim) | Planned |
+| Inactive VJUniverse bank (4-7) | Purple (dim) | Planned |
+| No bank defined | Off | |
 
 ---
 
@@ -505,3 +533,13 @@ public static (ControllerState, IReadOnlyList<Effect>) HandlePadPress(
     ControllerState state, 
     ButtonId padId) { ... }
 ```
+
+---
+
+## Future Architecture
+
+See [OSC_FUTURE_PLAN.md](../OSC_FUTURE_PLAN.md) for planned enhancements:
+- **Step 04**: Dedicated bank allocation (Banks 0-3 for Synesthesia, 4-7 for VJUniverse)
+- **VJUniverse Integration**: Shader selection, audio bindings, visual controls
+- **Cross-bank persistence**: Scene and shader state shared across banks
+- **Bidirectional vs Send-only**: Synesthesia banks use bidirectional OSC, VJUniverse banks use send-only
