@@ -114,7 +114,7 @@ def test_pipeline_helper_methods():
 
 def test_pipeline_step_names():
     """Verify pipeline step names match infrastructure config."""
-    from infrastructure import PipelineTracker
+    from infra import PipelineTracker
     
     tracker = PipelineTracker()
     

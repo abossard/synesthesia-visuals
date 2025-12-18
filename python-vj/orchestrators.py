@@ -15,8 +15,8 @@ from queue import Queue, Full, Empty
 from threading import Thread, Event
 from typing import Optional, List, Dict, Any
 
-from domain import Track, PlaybackState, parse_lrc, analyze_lyrics
-from infrastructure import PipelineTracker, Config
+from domain_types import Track, PlaybackState, parse_lrc, analyze_lyrics
+from infra import PipelineTracker, Config
 from typing import Optional, List, Dict, Any
 from adapters import LyricsFetcher, OSCSender
 from ai_services import LLMAnalyzer, SongCategorizer

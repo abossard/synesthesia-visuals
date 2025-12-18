@@ -15,8 +15,8 @@ import logging
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from domain import sanitize_cache_filename, STOP_WORDS, SongCategories
-from infrastructure import ServiceHealth, Config
+from domain_types import sanitize_cache_filename, STOP_WORDS, SongCategories
+from infra import ServiceHealth, Config
 
 logger = logging.getLogger('karaoke')
 

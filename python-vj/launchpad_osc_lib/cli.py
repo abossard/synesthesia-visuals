@@ -14,6 +14,7 @@ import signal
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 from typing import List, Union
 
 from .button_id import ButtonId
@@ -27,10 +28,13 @@ from .display import render_state
 from .fsm import handle_pad_press, handle_pad_release, handle_osc_event
 from .config import save_config, load_config
 
-# Import central OSC hub
-import sys as _sys
-_sys.path.insert(0, str(__file__).rsplit('/', 2)[0])
-from osc_hub import osc
+# Import central OSC hub from parent package
+try:
+    from osc_hub import osc
+except ImportError:
+    # Fallback for standalone execution (python -m launchpad_osc_lib)
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from osc_hub import osc
 
 logger = logging.getLogger(__name__)
 

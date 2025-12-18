@@ -38,8 +38,8 @@ from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
-from domain import PlaybackSnapshot, PlaybackState
-from infrastructure import Settings
+from domain_types import PlaybackSnapshot, PlaybackState
+from infra import Settings
 from osc_hub import osc, osc_monitor
 
 # Launchpad control (replaces MIDI Router)
@@ -75,1505 +75,28 @@ AUDIO_ANALYZER_AVAILABLE = False
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('vj_console')
 
-# ============================================================================
-# PURE FUNCTIONS (Calculations) - No side effects, same input = same output
-# ============================================================================
-
-def format_time(seconds: float) -> str:
-    """Format seconds as MM:SS."""
-    try:
-        mins, secs = int(seconds // 60), int(seconds % 60)
-        return f"{mins}:{secs:02d}"
-    except (ValueError, TypeError):
-        return "0:00"
-
-def format_duration(position: float, duration: float) -> str:
-    """Format position/duration as MM:SS / MM:SS."""
-    return f"{format_time(position)} / {format_time(duration)}"
-
-def format_status_icon(active: bool, running_text: str = "● ON", stopped_text: str = "○ OFF") -> str:
-    """Format a status indicator."""
-    return f"[green]{running_text}[/]" if active else f"[dim]{stopped_text}[/]"
-
-def format_bar(value: float, width: int = 15) -> str:
-    """Create a visual bar from 0.0-1.0 value."""
-    filled = int(value * width)
-    return "█" * filled + "░" * (width - filled)
-
-def color_by_score(score: float) -> str:
-    """Get color name based on score threshold."""
-    if score >= 0.7:
-        return "green"
-    if score >= 0.4:
-        return "yellow"
-    return "dim"
-
-def color_by_level(text: str) -> str:
-    """Get color based on log level in text."""
-    if "ERROR" in text or "EXCEPTION" in text:
-        return "red"
-    if "WARNING" in text:
-        return "yellow"
-    if "INFO" in text:
-        return "green"
-    return "dim"
-
-def color_by_osc_channel(address: str) -> str:
-    """Get color based on OSC address channel."""
-    if "/karaoke/categories" in address:
-        return "yellow"
-    if "/vj/" in address:
-        return "cyan"
-    if "/karaoke/" in address:
-        return "green"
-    return "white"
-
-def truncate(text: str, max_len: int, suffix: str = "...") -> str:
-    """Truncate text with suffix if too long."""
-    return text[:max_len - len(suffix)] + suffix if len(text) > max_len else text
-
-def render_category_line(name: str, score: float) -> str:
-    """Render a single category with bar."""
-    color = color_by_score(score)
-    bar = format_bar(score)
-    return f"  [{color}]{name:15s} {bar} {score:.2f}[/]"
-
-def render_osc_message(msg: Tuple[float, str, Any]) -> str:
-    """Render a single OSC message with full args (legacy format)."""
-    ts, address, args = msg
-    time_str = time.strftime("%H:%M:%S", time.localtime(ts))
-    args_str = str(args)
-    color = color_by_osc_channel(address)
-    return f"[dim]{time_str}[/] [{color}]{address}[/] {args_str}"
-
-def render_aggregated_osc(msg) -> str:
-    """Render aggregated OSC message: channel, address, value, count."""
-    time_str = time.strftime("%H:%M:%S", time.localtime(msg.last_time))
-    
-    # Channel color
-    if msg.channel.startswith("→"):
-        ch_color = "cyan"
-        ch_label = msg.channel
-    elif msg.channel == "syn":
-        ch_color = "magenta"
-        ch_label = "syn"
-    elif msg.channel == "vdj":
-        ch_color = "blue"
-        ch_label = "vdj"
-    else:
-        ch_color = "white"
-        ch_label = msg.channel
-    
-    # Format args compactly
-    args_str = str(msg.last_args) if msg.last_args else ""
-    if len(args_str) > 40:
-        args_str = args_str[:37] + "..."
-    
-    # Count indicator
-    count_str = f" [dim]×{msg.count}[/]" if msg.count > 1 else ""
-    
-    color = color_by_osc_channel(msg.address)
-    return f"[dim]{time_str}[/] [{ch_color}]{ch_label:>4}[/] [{color}]{msg.address}[/] {args_str}{count_str}"
-
-def render_log_line(log: str) -> str:
-    """Render a single log line with color."""
-    return f"[{color_by_level(log)}]{log}[/]"
-
-
-def estimate_position(state: PlaybackState) -> float:
-    """Estimate real-time playback position from cached state."""
-    if not state.is_playing:
-        return state.position
-    return state.position + max(0.0, time.time() - state.last_update)
-
-
-def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict[str, Any]:
-    """Derive track panel data from snapshot."""
-    state = snapshot.state
-    track = state.track
-    base = {
-        'error': snapshot.error,
-        'backoff': snapshot.backoff_seconds,
-        'source': snapshot.source,
-        'connected': source_available,
-    }
-    if not track:
-        return base
-    return {
-        **base,
-        'artist': track.artist,
-        'title': track.title,
-        'duration': track.duration,
-        'position': estimate_position(state),
-    }
-
-
-def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
-    """Assemble pipeline panel payload."""
-    pipeline_data = {
-        'display_lines': engine.pipeline.get_display_lines(),
-        'image_prompt': engine.pipeline.image_prompt,
-        'error': snapshot.error,
-        'backoff': snapshot.backoff_seconds,
-    }
-    lines = engine.current_lines
-    state = snapshot.state
-    if lines and state.track:
-        offset_ms = engine.timing_offset_ms
-        position = estimate_position(state)
-        idx = get_active_line_index(lines, position + offset_ms / 1000.0)
-        if 0 <= idx < len(lines):
-            line = lines[idx]
-            pipeline_data['current_lyric'] = {
-                'text': line.text,
-                'keywords': line.keywords,
-                'is_refrain': line.is_refrain
-            }
-    analysis = engine.last_llm_result or {}
-    if analysis:
-        pipeline_data['analysis_summary'] = {
-            'summary': analysis.get('summary') or analysis.get('lyric_summary') or analysis.get('mood'),
-            'keywords': [str(k) for k in (analysis.get('keywords') or []) if str(k).strip()][:8],
-            'themes': [str(t) for t in (analysis.get('themes') or []) if str(t).strip()][:4],
-            'refrain_lines': [str(r) for r in (analysis.get('refrain_lines') or []) if str(r).strip()][:3],
-            'visuals': [str(v) for v in (analysis.get('visual_adjectives') or []) if str(v).strip()][:5],
-            'tempo': analysis.get('tempo'),
-            'emotions': [str(e) for e in (analysis.get('emotions') or []) if str(e).strip()][:3]
-        }
-    return pipeline_data
-
-
-def build_categories_payload(categories) -> Dict[str, Any]:
-    """Format categories for UI panels."""
-    if not categories:
-        return {}
-    return {
-        'primary_mood': categories.primary_mood,
-        'categories': [
-            {'name': cat.name, 'score': cat.score}
-            for cat in categories.get_top(10)
-        ]
-    }
-
-
-# ============================================================================
-# PROCESS MONITOR - Lightweight CPU/memory tracking with cached handles
-# ============================================================================
-
-@dataclass
-class ProcessStats:
-    """Statistics for a single process."""
-    pid: int
-    name: str
-    cpu_percent: float
-    memory_mb: float
-    running: bool = True
-
-
-class ProcessMonitor:
-    """
-    Efficient process monitor that caches Process handles.
-    Call get_stats() periodically (e.g., every 5 seconds) for low overhead.
-    Uses non-blocking cpu_percent(interval=None) which compares to last call.
-    """
-    
-    def __init__(self, process_names: List[str]):
-        self.targets = {n.lower(): n for n in process_names}
-        self._cache: Dict[str, psutil.Process] = {}
-    
-    def _find_process(self, target_key: str) -> Optional[psutil.Process]:
-        """Find or return cached process handle."""
-        # Check cache first
-        if target_key in self._cache:
-            try:
-                proc = self._cache[target_key]
-                if proc.is_running():
-                    return proc
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-            del self._cache[target_key]
-        
-        # Search for process by name
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                pname = proc.info['name'].lower()
-                if target_key in pname or pname in target_key:
-                    self._cache[target_key] = proc
-                    # Initialize CPU tracking (first call always returns 0)
-                    try:
-                        proc.cpu_percent()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                    return proc
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        return None
-    
-    def get_stats(self) -> Dict[str, Optional[ProcessStats]]:
-        """
-        Get stats for all tracked processes.
-        Returns dict mapping original name -> ProcessStats or None if not running.
-        """
-        results = {}
-        for target_key, original_name in self.targets.items():
-            proc = self._find_process(target_key)
-            if proc:
-                try:
-                    stats = ProcessStats(
-                        pid=proc.pid,
-                        name=proc.name(),
-                        cpu_percent=proc.cpu_percent(interval=None),  # Non-blocking
-                        memory_mb=proc.memory_info().rss / (1024 * 1024),
-                        running=True
-                    )
-                    results[original_name] = stats
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    results[original_name] = None
-            else:
-                results[original_name] = None
-        return results
-
-
-# ============================================================================
-# STARTUP CONTROL PANEL - Configurable auto-start with resource display
-# ============================================================================
-
-class StartupControlPanel(Static):
-    """
-    Panel with checkboxes for startup services and resource monitoring.
-    Persists preferences to Settings and shows CPU/memory for running services.
-    """
-    
-    # Reactive data for resource stats
-    stats_data = reactive({})
-    lmstudio_status = reactive({})  # {'available': bool, 'model': str, 'warning': str}
-    
-    def __init__(self, settings: Settings, **kwargs):
-        super().__init__(**kwargs)
-        self.settings = settings
-    
-    def compose(self) -> ComposeResult:
-        """Create the startup control UI."""
-        yield Static("[bold]🚀 Startup Services[/]", classes="section-title")
-        
-        # Service checkboxes with auto-restart option
-        with Horizontal(classes="startup-row"):
-            yield Checkbox("Synesthesia", self.settings.start_synesthesia, id="chk-synesthesia")
-            yield Checkbox("Auto-restart", self.settings.autorestart_synesthesia, id="chk-ar-synesthesia")
-            yield Static("", id="stat-synesthesia", classes="stat-label")
-        
-        with Horizontal(classes="startup-row"):
-            yield Checkbox("KaraokeOverlay", self.settings.start_karaoke_overlay, id="chk-karaoke-overlay")
-            yield Checkbox("Auto-restart", self.settings.autorestart_karaoke_overlay, id="chk-ar-karaoke-overlay")
-            yield Static("", id="stat-karaoke-overlay", classes="stat-label")
-        
-        with Horizontal(classes="startup-row"):
-            yield Checkbox("LM Studio", self.settings.start_lmstudio, id="chk-lmstudio")
-            yield Checkbox("Auto-restart", self.settings.autorestart_lmstudio, id="chk-ar-lmstudio")
-            yield Static("", id="stat-lmstudio", classes="stat-label")
-        
-        with Horizontal(classes="startup-row"):
-            yield Checkbox("Music Monitor", self.settings.start_music_monitor, id="chk-music-monitor")
-            yield Checkbox("Auto-restart", self.settings.autorestart_music_monitor, id="chk-ar-music-monitor")
-            yield Static("", id="stat-music-monitor", classes="stat-label")
-        
-        with Horizontal(classes="startup-row"):
-            yield Checkbox("Magic Music Visuals", self.settings.start_magic, id="chk-magic")
-            yield Checkbox("Auto-restart", self.settings.autorestart_magic, id="chk-ar-magic")
-            yield Static("", id="stat-magic", classes="stat-label")
-        
-        # Start/Stop All buttons
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start All", id="btn-start-all", variant="success")
-            yield Button("■ Stop All", id="btn-stop-all", variant="error")
-    
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        """Persist checkbox changes to settings."""
-        checkbox_id = event.checkbox.id
-        value = event.value
-        
-        # Map checkbox IDs to settings properties
-        mappings = {
-            "chk-synesthesia": "start_synesthesia",
-            "chk-karaoke-overlay": "start_karaoke_overlay",
-            "chk-lmstudio": "start_lmstudio",
-            "chk-music-monitor": "start_music_monitor",
-            "chk-magic": "start_magic",
-            "chk-ar-synesthesia": "autorestart_synesthesia",
-            "chk-ar-karaoke-overlay": "autorestart_karaoke_overlay",
-            "chk-ar-lmstudio": "autorestart_lmstudio",
-            "chk-ar-music-monitor": "autorestart_music_monitor",
-            "chk-ar-magic": "autorestart_magic",
-        }
-        
-        if checkbox_id in mappings:
-            setattr(self.settings, mappings[checkbox_id], value)
-    
-    def watch_stats_data(self, stats: dict) -> None:
-        """Update resource display when stats change."""
-        self._update_stat_labels()
-    
-    def watch_lmstudio_status(self, status: dict) -> None:
-        """Update LM Studio status display."""
-        self._update_stat_labels()
-    
-    def _update_stat_labels(self) -> None:
-        """Update all stat labels with current data."""
-        if not self.is_mounted:
-            return
-        
-        stats = self.stats_data
-        lm_status = self.lmstudio_status
-        
-        # Synesthesia stats
-        try:
-            label = self.query_one("#stat-synesthesia", Static)
-            syn_stats = stats.get("Synesthesia")
-            if syn_stats and syn_stats.running:
-                label.update(f"[green]● {syn_stats.cpu_percent:.0f}% / {syn_stats.memory_mb:.0f}MB[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-        
-        # KaraokeOverlay stats (Processing/Java)
-        try:
-            label = self.query_one("#stat-karaoke-overlay", Static)
-            ko_stats = stats.get("java") or stats.get("Java")
-            if ko_stats and ko_stats.running:
-                label.update(f"[green]● {ko_stats.cpu_percent:.0f}% / {ko_stats.memory_mb:.0f}MB[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-        
-        # LM Studio stats
-        try:
-            label = self.query_one("#stat-lmstudio", Static)
-            lm_stats = stats.get("LM Studio")
-            if lm_stats and lm_stats.running:
-                if lm_status.get('available'):
-                    model = lm_status.get('model', 'loaded')
-                    if lm_status.get('warning'):
-                        label.update(f"[yellow]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - ⚠ {lm_status['warning']}[/]")
-                    else:
-                        label.update(f"[green]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - {model[:20]}[/]")
-                else:
-                    label.update(f"[yellow]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - No model loaded[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-        
-        # Music Monitor stats
-        try:
-            label = self.query_one("#stat-music-monitor", Static)
-            # Music Monitor runs in the same process, check if karaoke_engine exists
-            app = self.app if hasattr(self, 'app') else None
-            if app and hasattr(app, 'karaoke_engine') and app.karaoke_engine is not None:
-                label.update("[green]● Running[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-        
-        # Magic Music Visuals stats
-        try:
-            label = self.query_one("#stat-magic", Static)
-            magic_stats = stats.get("Magic")
-            if magic_stats and magic_stats.running:
-                label.update(f"[green]● {magic_stats.cpu_percent:.0f}% / {magic_stats.memory_mb:.0f}MB[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-
-
-# ============================================================================
-# WIDGETS - Reactive UI components
-# ============================================================================
-
-class ReactivePanel(Static):
-    """Base class for reactive panels with common patterns."""
-    
-    def render_section(self, title: str, emoji: str = "═") -> str:
-        return f"[bold]{emoji * 3} {title} {emoji * 3}[/]\n"
-
-
-class NowPlayingPanel(ReactivePanel):
-    """Current track display."""
-    track_data = reactive({})
-    shader_name = reactive("")  # Current active shader
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self.update("[dim]Waiting for playback...[/dim]")
-
-    def watch_track_data(self, data: dict) -> None:
-        self._safe_render()
-    
-    def watch_shader_name(self, name: str) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        if not self.is_mounted:
-            return
-        data = self.track_data
-        if not data:
-            self.update("[dim]Waiting for playback...[/dim]")
-            return
-        
-        error = data.get('error')
-        backoff = data.get('backoff', 0.0)
-        raw_source_value = data.get('source') or ""
-        source_raw = raw_source_value.lower()
-        if source_raw.startswith("spotify"):
-            source_label = "Spotify"
-        else:
-            source_label = (raw_source_value or "Playback").replace("_", " ").title()
-        if not data.get('artist'):
-            if error:
-                msg = "[yellow]Playback paused:[/] {error}".format(error=error)
-                if backoff:
-                    msg += f" (retry in {backoff:.1f}s)"
-                self.update(msg)
-            else:
-                self.update("[dim]Waiting for playback...[/dim]")
-            return
-        
-        conn = format_status_icon(data.get('connected', False), "● Connected", "◐ Connecting...")
-        time_str = format_duration(data.get('position', 0), data.get('duration', 0))
-        icon = "🎵" if source_raw.startswith("spotify") else "🎧"
-        warning = ""
-        if error:
-            warning = f"\n[yellow]{error}"
-            if backoff:
-                warning += f" (retry in {backoff:.1f}s)"
-        
-        # Add shader info if available
-        shader_info = ""
-        if self.shader_name:
-            shader_info = f"  │  [magenta]🎨 {self.shader_name}[/]"
-        
-        self.update(
-            f"{source_label}: {conn}\n"
-            f"[bold]Now Playing:[/] [cyan]{data.get('artist', '')}[/] — {data.get('title', '')}\n"
-            f"{icon} {source_label}  │  [dim]{time_str}[/]{shader_info}{warning}"
-        )
-
-
-class CategoriesPanel(ReactivePanel):
-    """Song mood/theme categories."""
-    categories_data = reactive({})
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_categories_data(self, data: dict) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        lines = [self.render_section("Song Categories", "═")]
-        
-        if not self.categories_data.get('categories'):
-            lines.append("[dim](waiting for song analysis...)[/dim]")
-        else:
-            if self.categories_data.get('primary_mood'):
-                lines.append(f"[bold cyan]Primary Mood:[/] [bold]{self.categories_data['primary_mood'].upper()}[/]\n")
-            lines.extend(render_category_line(c['name'], c['score']) for c in self.categories_data.get('categories', [])[:10])
-        
-        self.update("\n".join(lines))
-
-
-class OSCPanel(ReactivePanel):
-    """OSC messages debug view - aggregated by address."""
-    messages = reactive([])  # List of AggregatedMessage
-    full_view = reactive(False)
-    osc_running = reactive(False)
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_messages(self, msgs: list) -> None:
-        self._safe_render()
-    
-    def watch_full_view(self, _: bool) -> None:
-        self._safe_render()
-    
-    def watch_osc_running(self, _: bool) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        limit = 50 if self.full_view else 15
-        lines = [self.render_section("OSC Debug (grouped by address)", "═")]
-        
-        if not self.osc_running:
-            lines.append("[dim]OSC Hub is stopped.[/dim]")
-            lines.append("[dim]Use the controls above to start OSC.[/dim]")
-        elif not self.messages:
-            lines.append("[dim](no OSC messages yet)[/dim]")
-        else:
-            # Messages already sorted by recency from osc_monitor
-            for msg in self.messages[:limit]:
-                lines.append(render_aggregated_osc(msg))
-        
-        self.update("\n".join(lines))
-
-
-OSC_AUTO_STOP_SECONDS = 60  # Auto-stop OSC after 1 minute
-
-
-class OSCControlPanel(Static):
-    """
-    Panel for controlling OSC hub - start/stop and status display.
-    
-    Shows channel configuration and allows user to start/stop OSC services.
-    Auto-stops after 1 minute to save resources.
-    """
-    
-    # Reactive state
-    osc_running = reactive(False)
-    channel_status = reactive({})
-    time_remaining = reactive(0)  # Seconds until auto-stop
-    
-    def compose(self) -> ComposeResult:
-        yield Static("[bold]OSC Hub Control[/bold]", classes="section-title")
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start OSC", id="btn-osc-start", variant="success")
-            yield Button("■ Stop OSC", id="btn-osc-stop", variant="error")
-            yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
-        yield Static("", id="osc-status-label")
-        yield Static("", id="osc-channels-label")
-    
-    def on_mount(self) -> None:
-        self._update_display()
-    
-    def watch_osc_running(self, running: bool) -> None:
-        self._update_display()
-    
-    def watch_channel_status(self, status: dict) -> None:
-        self._update_display()
-    
-    def watch_time_remaining(self, seconds: int) -> None:
-        self._update_display()
-    
-    def _update_display(self) -> None:
-        if not self.is_mounted:
-            return
-        
-        # Status label with countdown
-        try:
-            status_label = self.query_one("#osc-status-label", Static)
-            if self.osc_running:
-                if self.time_remaining > 0:
-                    status_label.update(f"[green]● OSC Hub Running[/green] [dim](auto-stop in {self.time_remaining}s)[/dim]")
-                else:
-                    status_label.update("[green]● OSC Hub Running[/green]")
-            else:
-                status_label.update("[dim]○ OSC Hub Stopped[/dim]")
-        except Exception:
-            pass
-        
-        # Channel details
-        try:
-            channels_label = self.query_one("#osc-channels-label", Static)
-            if self.channel_status:
-                lines = ["\n[bold]Channels:[/bold]"]
-                for key, ch in self.channel_status.items():
-                    active = "[green]●[/]" if ch.get("active") else "[dim]○[/]"
-                    recv = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
-                    lines.append(f"  {active} {ch.get('name', key)}: send={ch.get('send_port')}{recv}")
-                channels_label.update("\n".join(lines))
-            else:
-                channels_label.update("\n[dim]Configure and start OSC to see channels[/dim]")
-        except Exception:
-            pass
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-osc-start":
-            self.post_message(OSCStartRequested())
-        elif event.button.id == "btn-osc-stop":
-            self.post_message(OSCStopRequested())
-        elif event.button.id == "btn-osc-clear":
-            self.post_message(OSCClearRequested())
-
-
-class OSCStartRequested(Message):
-    """Message posted when user requests to start OSC."""
-    pass
-
-
-class OSCStopRequested(Message):
-    """Message posted when user requests to stop OSC."""
-    pass
-
-
-class OSCClearRequested(Message):
-    """Message posted when user requests to clear OSC log."""
-    pass
-
-
-class LogsPanel(ReactivePanel):
-    """Application logs view."""
-    logs = reactive([])
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_logs(self, data: list) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        lines = [self.render_section("Application Logs", "═")]
-        
-        if not self.logs:
-            lines.append("[dim](no logs yet)[/dim]")
-        else:
-            lines.extend(render_log_line(log) for log in reversed(self.logs[-100:]))
-        
-        self.update("\n".join(lines))
-
-
-class MasterControlPanel(ReactivePanel):
-    """VJ app control panel."""
-    status = reactive({})
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_status(self, data: dict) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        syn = format_status_icon(bool(self.status.get('synesthesia')), "● RUNNING", "○ stopped")
-        pms = format_status_icon(bool(self.status.get('milksyphon')), "● RUNNING", "○ stopped")
-        kar = format_status_icon(bool(self.status.get('karaoke')), "● ACTIVE", "○ inactive")
-        proc = self.status.get('processing_apps', 0)
-        
-        self.update(
-            self.render_section("Master Control", "═") +
-            f"  [S] Synesthesia     {syn}\n"
-            f"  [M] ProjMilkSyphon  {pms}\n"
-            f"  [P] Processing Apps {proc} running\n"
-            f"  [K] Karaoke Engine  {kar}\n\n"
-            "[dim]Press letter key to toggle app[/dim]"
-        )
-
-
-class PipelinePanel(ReactivePanel):
-    """Processing pipeline status."""
-    pipeline_data = reactive({})
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_pipeline_data(self, data: dict) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        lines = [self.render_section("Processing Pipeline", "═")]
-        
-        has_content = False
-        
-        # Display pipeline steps with status
-        for label, status, color, message in self.pipeline_data.get('display_lines', []):
-            status_text = f"[{color}]{status}[/] {label}"
-            if message:
-                status_text += f": [dim]{message}[/]"
-            lines.append(f"  {status_text}")
-            has_content = True
-        
-        if self.pipeline_data.get('image_prompt'):
-            prompt = self.pipeline_data['image_prompt']
-            if isinstance(prompt, dict):
-                prompt = prompt.get('description', str(prompt))
-            lines.append(f"\n[bold cyan]Image Prompt:[/]\n[cyan]{truncate(str(prompt), 200)}[/]")
-            has_content = True
-        
-        if self.pipeline_data.get('current_lyric'):
-            lyric = self.pipeline_data['current_lyric']
-            refrain_tag = " [magenta][REFRAIN][/]" if lyric.get('is_refrain') else ""
-            lines.append(f"\n[bold white]♪ {lyric.get('text', '')}{refrain_tag}[/]")
-            if lyric.get('keywords'):
-                lines.append(f"[yellow]   🔑 {lyric['keywords']}[/]")
-            has_content = True
-
-        summary = self.pipeline_data.get('analysis_summary')
-        if summary:
-            lines.append("\n[bold cyan]═══ AI Analysis ═══[/]")
-            if summary.get('summary'):
-                lines.append(f"[cyan]💭 {truncate(str(summary['summary']), 180)}[/]")
-            if summary.get('keywords'):
-                kw = ', '.join(summary['keywords'][:8])
-                lines.append(f"[yellow]🔑 {kw}[/]")
-            if summary.get('themes'):
-                th = ' · '.join(summary['themes'][:4])
-                lines.append(f"[green]🎭 {th}[/]")
-            if summary.get('visuals'):
-                vis = ' · '.join(summary['visuals'][:5])
-                lines.append(f"[magenta]🎨 {vis}[/]")
-            if summary.get('refrain_lines'):
-                hooks = summary['refrain_lines'][:3]
-                for hook in hooks:
-                    lines.append(f"[dim]♫ \"{truncate(str(hook), 60)}\"[/]")
-            if summary.get('tempo'):
-                lines.append(f"[dim]⏱️  {summary['tempo']}[/]")
-            has_content = True
-
-        if self.pipeline_data.get('error'):
-            retry = self.pipeline_data.get('backoff', 0.0)
-            extra = f" (retry in {retry:.1f}s)" if retry else ""
-            lines.append(f"[yellow]Playback warning: {self.pipeline_data['error']}{extra}[/]")
-            has_content = True
-        
-        if not has_content:
-            lines.append("[dim]No active processing...[/]")
-        
-        self.update("\n".join(lines))
-
-
-class ServicesPanel(ReactivePanel):
-    """External services status."""
-    services = reactive({})
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_services(self, s: dict) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        def svc(ok, name, detail): 
-            return f"[green]✓ {name:14s} {detail}[/]" if ok else f"[dim]○ {name:14s} {detail}[/]"
-        
-        s = self.services
-        lines = [self.render_section("Services", "═")]
-        lines.append(svc(s.get('spotify'), "Spotify API", "Credentials configured" if s.get('spotify') else "Set SPOTIPY_CLIENT_ID/SECRET"))
-        lines.append(svc(s.get('virtualdj'), "VirtualDJ", s.get('vdj_file', 'found') if s.get('virtualdj') else "Folder not found"))
-        lines.append(svc(s.get('lmstudio'), "LM Studio", s.get('lmstudio_model', '') or "Not running"))
-        lines.append(svc(s.get('comfyui'), "ComfyUI", "http://127.0.0.1:8188" if s.get('comfyui') else "Not running"))
-        lines.append(svc(s.get('openai'), "OpenAI API", "Key configured" if s.get('openai') else "OPENAI_API_KEY not set"))
-        lines.append(svc(s.get('synesthesia'), "Synesthesia", "Running" if s.get('synesthesia') else "Installed" if s.get('synesthesia_installed') else "Not installed"))
-
-        monitors = s.get('playback_monitors') or {}
-        if monitors:
-            lines.append("\n[bold]Playback Sources[/bold]")
-            for name, status in monitors.items():
-                ok = status.get('available', False)
-                detail = "OK" if ok else status.get('error', 'Unavailable')
-                color = "green" if ok else "yellow"
-                mark = "✓" if ok else "△"
-                lines.append(f"  [{color}]{mark}[/] {name.title()}: {detail}")
-        if s.get('playback_error'):
-            retry = s.get('playback_backoff', 0.0)
-            extra = f" (retry in {retry:.1f}s)" if retry else ""
-            lines.append(f"[yellow]Playback warning: {s['playback_error']}{extra}[/]")
-        self.update("\n".join(lines))
-
-
-class PlaybackSourcePanel(Static):
-    """
-    Panel for selecting playback source with radio buttons.
-    Shows: source selection, running status with latency.
-    """
-    
-    # Reactive data
-    lookup_ms = reactive(0.0)
-    monitor_running = reactive(False)
-    
-    def __init__(self, settings: Settings, **kwargs):
-        super().__init__(**kwargs)
-        self.settings = settings
-        self._source_keys = list(PLAYBACK_SOURCES.keys())
-    
-    def compose(self) -> ComposeResult:
-        """Create the playback source UI."""
-        yield Static("[bold]🎵 Playback Source[/]", classes="section-title")
-        
-        # Status line showing if monitor is running
-        yield Static("[dim]○ Not running[/]", id="monitor-status-label")
-        
-        # Radio buttons for source selection
-        current_source = self.settings.playback_source
-        with RadioSet(id="source-radio"):
-            for key in self._source_keys:
-                info = PLAYBACK_SOURCES[key]
-                label = info['label']
-                is_selected = key == current_source
-                yield RadioButton(label, value=is_selected, id=f"src-{key}")
-        
-        # Poll interval display
-        yield Static(f"[dim]Poll interval: {self.settings.playback_poll_interval_ms}ms[/]", id="poll-interval-label")
-    
-    def watch_monitor_running(self, running: bool) -> None:
-        """Update status when monitor running state changes."""
-        self._update_status_label()
-    
-    def watch_lookup_ms(self, ms: float) -> None:
-        """Update status when lookup time changes."""
-        self._update_status_label()
-    
-    def _update_status_label(self) -> None:
-        """Update the status label with running state and latency."""
-        if not self.is_mounted:
-            return
-        try:
-            label = self.query_one("#monitor-status-label", Static)
-            source = self.settings.playback_source
-            if not self.monitor_running:
-                if source:
-                    source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
-                    label.update(f"[dim]○ {source_label} (not running)[/]")
-                else:
-                    label.update("[dim]○ No source selected[/]")
-            else:
-                source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
-                ms = self.lookup_ms
-                if ms > 0:
-                    color = "green" if ms < 100 else ("yellow" if ms < 500 else "red")
-                    label.update(f"[{color}]● {source_label} ({ms:.0f}ms)[/]")
-                else:
-                    label.update(f"[green]● {source_label}[/]")
-        except Exception:
-            pass
-    
-    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
-        """Handle source selection change."""
-        if event.radio_set.id != "source-radio":
-            return
-        
-        # Get the selected button's id and extract source key
-        pressed = event.pressed
-        if pressed and pressed.id and pressed.id.startswith("src-"):
-            source_key = pressed.id[4:]  # Remove "src-" prefix
-            if source_key in PLAYBACK_SOURCES:
-                self.settings.playback_source = source_key
-                # Notify app to switch the monitor
-                self.post_message(PlaybackSourceChanged(source_key))
-    
-class PlaybackSourceChanged(Message):
-    """Message posted when playback source is changed."""
-    def __init__(self, source_key: str):
-        super().__init__()
-        self.source_key = source_key
-
-
-class AppsListPanel(ReactivePanel):
-    """Processing apps list."""
-    apps = reactive([])
-    selected = reactive(0)
-
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-
-    def watch_apps(self, _: list) -> None:
-        self._safe_render()
-    
-    def watch_selected(self, _: int) -> None:
-        self._safe_render()
-
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        lines = [self.render_section("Processing Apps", "═")]
-        
-        if not self.apps:
-            lines.append("[dim](no apps found)[/dim]")
-        else:
-            for i, app in enumerate(self.apps):
-                is_sel = i == self.selected
-                is_run = hasattr(app, 'process') and app.process and app.process.poll() is None
-                prefix = " ▸ " if is_sel else "   "
-                status = " [green][running][/]" if is_run else ""
-                name = getattr(app, 'name', 'Unknown')
-                line = f"{prefix}{name}{status}"
-                lines.append(f"[black on cyan]{line}[/]" if is_sel else line)
-        
-        self.update("\n".join(lines))
-
-
-class ShaderIndexPanel(ReactivePanel):
-    """Shader indexer status panel."""
-    status = reactive({})
-    
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-    
-    def watch_status(self, data: dict) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        
-        lines = [self.render_section("Shader Indexer", "═")]
-        
-        if not SHADER_MATCHER_AVAILABLE:
-            lines.append("[yellow]Shader matcher not available[/]")
-            lines.append("[dim]Check shader_matcher.py imports[/]")
-        else:
-            total = self.status.get('total_shaders', 0)
-            analyzed = self.status.get('analyzed', 0)
-            unanalyzed = self.status.get('unanalyzed', 0)
-            loaded = self.status.get('loaded_in_memory', 0)
-            chromadb = self.status.get('chromadb_enabled', False)
-            
-            status_icon = format_status_icon(loaded > 0, "● READY", "○ loading")
-            chromadb_icon = format_status_icon(chromadb, "● ON", "○ OFF")
-            
-            lines.append(f"  Status:        {status_icon}")
-            lines.append(f"  Total Shaders: {total}")
-            lines.append(f"  Analyzed:      [green]{analyzed}[/]")
-            
-            if unanalyzed > 0:
-                lines.append(f"  Unanalyzed:    [yellow]{unanalyzed}[/]")
-            else:
-                lines.append(f"  Unanalyzed:    {unanalyzed}")
-            
-            lines.append(f"  Loaded:        {loaded}")
-            lines.append(f"  ChromaDB:      {chromadb_icon}")
-            
-            shaders_dir = self.status.get('shaders_dir', '')
-            if shaders_dir:
-                lines.append(f"\n[dim]Path: {truncate(shaders_dir, 50)}[/]")
-        
-        self.update("\n".join(lines))
-
-
-class ShaderMatchPanel(ReactivePanel):
-    """Shader matching test panel."""
-    match_result = reactive({})
-    
-    def on_mount(self) -> None:
-        """Initialize content when mounted."""
-        self._safe_render()
-    
-    def watch_match_result(self, data: dict) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        """Render only if mounted."""
-        if not self.is_mounted:
-            return
-        
-        lines = [self.render_section("Shader Matching", "═")]
-        
-        if not SHADER_MATCHER_AVAILABLE:
-            lines.append("[dim]Shader matcher not available[/]")
-        elif not self.match_result.get('matches'):
-            lines.append("[dim](no matches yet)[/dim]")
-            lines.append("")
-            lines.append("[dim]Matches update on track change[/]")
-        else:
-            mood = self.match_result.get('mood', 'unknown')
-            energy = self.match_result.get('energy', 0.5)
-            lines.append(f"  Mood:   [cyan]{mood}[/]")
-            lines.append(f"  Energy: {format_bar(energy)} {energy:.2f}")
-            lines.append("")
-            lines.append("[bold]Top Matches:[/]")
-            
-            for match in self.match_result.get('matches', [])[:5]:
-                name = match.get('name', 'Unknown')
-                score = match.get('score', 0)
-                features = match.get('features', {})
-                
-                # Color by match quality (lower score = better match)
-                if score < 0.3:
-                    color = "green"
-                elif score < 0.6:
-                    color = "yellow"
-                else:
-                    color = "dim"
-                
-                lines.append(f"  [{color}]{name:25s} {score:.3f}[/]")
-                
-                if features:
-                    e = features.get('energy_score', 0.5)
-                    v = features.get('mood_valence', 0)
-                    lines.append(f"    [dim]energy={e:.2f} valence={v:+.2f}[/]")
-        
-        self.update("\n".join(lines))
-
-
-class ShaderAnalysisPanel(ReactivePanel):
-    """Panel showing shader analysis progress and recent results."""
-    analysis_status = reactive({})
-    
-    def on_mount(self) -> None:
-        self._safe_render()
-    
-    def watch_analysis_status(self, data: dict) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        if not self.is_mounted:
-            return
-        
-        lines = [self.render_section("Shader Analysis", "═")]
-        
-        if not SHADER_MATCHER_AVAILABLE:
-            lines.append("[yellow]Shader matcher not available[/]")
-            self.update("\n".join(lines))
-            return
-        
-        running = self.analysis_status.get('running', False)
-        current = self.analysis_status.get('current_shader', '')
-        progress = self.analysis_status.get('progress', 0)
-        total = self.analysis_status.get('total', 0)
-        analyzed = self.analysis_status.get('analyzed', 0)
-        errors = self.analysis_status.get('errors', 0)
-        last_error = self.analysis_status.get('last_error', '')
-        recent = self.analysis_status.get('recent', [])
-        
-        # Status
-        if running:
-            lines.append(f"  Status: [green]● ANALYZING[/]")
-            lines.append(f"  Current: [cyan]{truncate(current, 30)}[/]")
-        else:
-            if total > 0 and progress >= total:
-                lines.append(f"  Status: [green]● COMPLETE[/]")
-            else:
-                lines.append(f"  Status: [yellow]○ PAUSED[/] (press [bold]p[/] to start)")
-        
-        # Progress bar
-        if total > 0:
-            pct = progress / total
-            bar = format_bar(pct)
-            lines.append(f"  Progress: {bar} {progress}/{total}")
-        
-        lines.append("")
-        lines.append(f"  ✓ Analyzed: [green]{analyzed}[/]    ✗ Errors: [red]{errors}[/]")
-        
-        # Recent analyses table
-        if recent:
-            lines.append("")
-            lines.append("[bold]Recent Analyses:[/]")
-            lines.append("[dim]" + "─" * 60 + "[/]")
-            lines.append(f"  {'Shader':<22} {'Mood':<12} {'Energy':<8} {'E':>4} {'M':>4} {'G':>4}")
-            lines.append("[dim]" + "─" * 60 + "[/]")
-            
-            for r in recent[:8]:
-                name = truncate(r.get('name', '?'), 20)
-                mood = r.get('mood', '?')[:10]
-                energy = r.get('energy', '?')[:6]
-                features = r.get('features', {})
-                e_score = features.get('energy_score', 0)
-                m_speed = features.get('motion_speed', 0)
-                g_score = features.get('geometric_score', 0)
-                
-                # Color mood by type
-                mood_colors = {
-                    'energetic': 'bright_red', 'aggressive': 'red',
-                    'calm': 'bright_blue', 'peaceful': 'blue',
-                    'dark': 'dim', 'mysterious': 'magenta',
-                    'bright': 'bright_yellow', 'psychedelic': 'bright_magenta',
-                    'chaotic': 'orange1', 'dreamy': 'cyan'
-                }
-                mc = mood_colors.get(mood, 'white')
-                
-                lines.append(
-                    f"  {name:<22} [{mc}]{mood:<12}[/] {energy:<8} "
-                    f"[cyan]{e_score:.1f}[/] [green]{m_speed:.1f}[/] [yellow]{g_score:.1f}[/]"
-                )
-            
-            lines.append("[dim]" + "─" * 60 + "[/]")
-            lines.append("[dim]E=energy M=motion G=geometric[/]")
-        
-        if last_error:
-            lines.append("")
-            lines.append(f"[dim]Last error: {truncate(last_error, 50)}[/]")
-        
-        lines.append("")
-        lines.append("[dim]Keys: [p] pause/resume, [r] retry errors[/]")
-        
-        self.update("\n".join(lines))
-
-
-class ShaderSearchPanel(ReactivePanel):
-    """Panel for semantic shader search testing."""
-    search_results = reactive({})
-    
-    def on_mount(self) -> None:
-        self._safe_render()
-    
-    def watch_search_results(self, data: dict) -> None:
-        self._safe_render()
-    
-    def _safe_render(self) -> None:
-        if not self.is_mounted:
-            return
-        
-        lines = [self.render_section("Semantic Search", "═")]
-        
-        if not SHADER_MATCHER_AVAILABLE:
-            lines.append("[dim]Shader matcher not available[/]")
-            self.update("\n".join(lines))
-            return
-        
-        query = self.search_results.get('query', '')
-        results = self.search_results.get('results', [])
-        search_type = self.search_results.get('type', 'mood')
-        
-        lines.append(f"  Type: [cyan]{search_type}[/]")
-        if query:
-            lines.append(f"  Query: [bold]{query}[/]")
-        else:
-            lines.append("  [dim]Press / to search by mood[/]")
-            lines.append("  [dim]Press e to search by energy[/]")
-        
-        if results:
-            lines.append("")
-            lines.append("[bold]Results:[/]")
-            for i, result in enumerate(results[:8], 1):
-                name = result.get('name', 'Unknown')
-                score = result.get('score', 0)
-                features = result.get('features', {})
-                
-                # Color by rank
-                if i <= 2:
-                    color = "green"
-                elif i <= 5:
-                    color = "yellow"
-                else:
-                    color = "dim"
-                
-                lines.append(f"  {i}. [{color}]{name:25s}[/] [dim]dist={score:.3f}[/]")
-                
-                if features:
-                    e = features.get('energy_score', 0.5)
-                    m = features.get('motion_speed', 0.5)
-                    lines.append(f"     [dim]energy={e:.2f} motion={m:.2f}[/]")
-        elif query:
-            lines.append("")
-            lines.append("[dim]No results[/]")
-        
-        self.update("\n".join(lines))
-
-
-class ShaderActionsPanel(Static):
-    """Action buttons for Shader Indexer screen."""
-    
-    analysis_running = reactive(False)
-    
-    def compose(self) -> ComposeResult:
-        with Horizontal(classes="action-buttons"):
-            yield Button("▶ Start Analysis", variant="primary", id="shader-pause-resume")
-            yield Button("🔍 Mood", id="shader-search-mood")
-            yield Button("⚡ Energy", id="shader-search-energy")
-            yield Button("📝 Text", variant="success", id="shader-search-text")
-            yield Button("🔄 Rescan", id="shader-rescan")
-    
-    def watch_analysis_running(self, running: bool) -> None:
-        """Update button label based on analysis state."""
-        try:
-            btn = self.query_one("#shader-pause-resume", Button)
-            btn.label = "⏸ Pause Analysis" if running else "▶ Start Analysis"
-            btn.variant = "warning" if running else "primary"
-        except Exception:
-            pass
-
-
-class ShaderSearchModal(ModalScreen):
-    """Modal for text-based shader search."""
-    
-    BINDINGS = [
-        Binding("escape", "dismiss", "Cancel"),
-    ]
-    
-    def __init__(self):
-        super().__init__()
-        self.search_query = ""
-    
-    def compose(self) -> ComposeResult:
-        with Vertical(id="shader-search-modal"):
-            yield Label("[bold cyan]🔍 Search Shaders[/]")
-            yield Label("[dim]Search by: name, mood, colors, effects, description, geometry, objects, inputNames[/]\n")
-            yield Label("Examples: love, colorful, psychedelic, distortion, bloom, waves, particles")
-            yield Input(placeholder="Enter search term...", id="search-input")
-            with Horizontal(id="modal-buttons"):
-                yield Button("Search", variant="primary", id="search-btn")
-                yield Button("Cancel", variant="default", id="cancel-btn")
-    
-    def on_mount(self) -> None:
-        """Focus the input when modal opens."""
-        self.query_one("#search-input", Input).focus()
-    
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle enter key in input."""
-        self.search_query = event.value.strip()
-        if self.search_query:
-            self.dismiss(self.search_query)
-    
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button press."""
-        if event.button.id == "search-btn":
-            inp = self.query_one("#search-input", Input)
-            self.search_query = inp.value.strip()
-            if self.search_query:
-                self.dismiss(self.search_query)
-        elif event.button.id == "cancel-btn":
-            self.dismiss(None)
-
-
-# ============================================================================
-# SHADER ANALYSIS WORKER - Background thread for LLM analysis
-# ============================================================================
-
-import threading
-
-class ShaderAnalysisWorker:
-    """
-    Background worker that analyzes unanalyzed shaders using LLM.
-    
-    Scans once on start, then processes the queue. Does NOT continuously re-scan.
-    Call rescan() to refresh the queue if new shaders are added.
-    """
-    
-    MAX_RECENT = 10  # Keep last N analyses for display
-    
-    def __init__(self, indexer, llm_analyzer):
-        self.indexer = indexer
-        self.llm = llm_analyzer
-        self._thread: Optional[threading.Thread] = None
-        self._running = False
-        self._paused = True  # Start paused, user must press 'p' to begin
-        self._lock = threading.Lock()
-        self._queue: List[str] = []  # Queue of shader names to analyze
-        self._scanned = False
-        self._recent: List[dict] = []  # Recent analysis results for UI
-        
-        # Status for UI
-        self.status = {
-            'running': False,
-            'paused': True,
-            'current_shader': '',
-            'progress': 0,
-            'total': 0,
-            'analyzed': 0,
-            'errors': 0,
-            'last_error': '',
-            'queue': [],
-            'recent': []
-        }
-    
-    def start(self):
-        """Start the analysis worker thread."""
-        if self._thread and self._thread.is_alive():
-            return
-        
-        self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True, name="ShaderAnalysis")
-        self._thread.start()
-        logger.info("Shader analysis worker started")
-    
-    def stop(self):
-        """Stop the worker thread."""
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2.0)
-        logger.info("Shader analysis worker stopped")
-    
-    def toggle_pause(self):
-        """Toggle pause state."""
-        with self._lock:
-            self._paused = not self._paused
-            self.status['paused'] = self._paused
-            logger.info(f"Shader analysis {'paused' if self._paused else 'resumed'}")
-    
-    def rescan(self):
-        """Rescan for unanalyzed shaders and rebuild queue."""
-        with self._lock:
-            self._queue = self.indexer.get_unanalyzed()
-            self.status['total'] = len(self._queue) + self.status['analyzed']
-            self.status['queue'] = self._queue[:5]
-            logger.info(f"Rescanned: {len(self._queue)} shaders in queue")
-    
-    def is_paused(self) -> bool:
-        return self._paused
-    
-    def _run(self):
-        """Main worker loop - scans once, then processes queue."""
-        # Initial scan (once)
-        if not self._scanned:
-            with self._lock:
-                self._queue = self.indexer.get_unanalyzed()
-                self.status['total'] = len(self._queue)
-                self.status['queue'] = self._queue[:5]
-                self._scanned = True
-                logger.info(f"Initial scan: {len(self._queue)} unanalyzed shaders")
-        
-        while self._running:
-            # Check if paused
-            if self._paused:
-                self.status['running'] = False
-                time.sleep(0.5)
-                continue
-            
-            # Check if queue is empty
-            with self._lock:
-                if not self._queue:
-                    self.status['running'] = False
-                    self.status['current_shader'] = ''
-                    # Don't rescan - just wait. User can press 'r' to rescan.
-                    time.sleep(1.0)
-                    continue
-                
-                # Get next shader from queue
-                shader_name = self._queue[0]
-            
-            self.status['running'] = True
-            self.status['current_shader'] = shader_name
-            self.status['queue'] = self._queue[:5]
-            
-            try:
-                # Get shader source
-                source = self.indexer.get_shader_source(shader_name)
-                if not source:
-                    logger.warning(f"Could not read shader: {shader_name}")
-                    self.status['errors'] += 1
-                    self.status['last_error'] = f"Could not read {shader_name}"
-                    # Remove from queue even on error
-                    with self._lock:
-                        if shader_name in self._queue:
-                            self._queue.remove(shader_name)
-                    continue
-                
-                # Check for screenshot (most significant for analysis)
-                screenshot_path = self.indexer.get_screenshot_path(shader_name)
-                screenshot_str = str(screenshot_path) if screenshot_path else None
-                
-                # Analyze with LLM (includes screenshot if available)
-                if screenshot_path:
-                    logger.info(f"Analyzing shader with screenshot: {shader_name}")
-                else:
-                    logger.info(f"Analyzing shader (no screenshot): {shader_name}")
-                
-                result = self.llm.analyze_shader(shader_name, source, screenshot_path=screenshot_str)
-                
-                if result and 'error' not in result:
-                    # Parse ISF inputs
-                    inputs = self.indexer.parse_isf_inputs(source)
-                    
-                    # Extract features
-                    features = result.get('features', {})
-                    
-                    # Extract audio mapping
-                    audio_mapping = result.get('audioMapping', {})
-                    
-                    # Build metadata dict
-                    metadata = {
-                        'mood': result.get('mood', 'unknown'),
-                        'colors': result.get('colors', []),
-                        'effects': result.get('effects', []),
-                        'description': result.get('description', ''),
-                        'geometry': result.get('geometry', []),
-                        'objects': result.get('objects', []),
-                        'energy': result.get('energy', 'medium'),
-                        'complexity': result.get('complexity', 'medium'),
-                        'audioMapping': audio_mapping,
-                        'has_screenshot': result.get('has_screenshot', False)
-                    }
-                    
-                    # Include screenshot analysis data if present
-                    if 'screenshot' in result:
-                        metadata['screenshot'] = result['screenshot']
-                    
-                    # Save analysis
-                    success = self.indexer.save_analysis(
-                        shader_name,
-                        features,
-                        inputs,
-                        metadata
-                    )
-                    
-                    if success:
-                        self.status['analyzed'] += 1
-                        self.status['progress'] = self.status['analyzed']
-                        
-                        # Track recent analysis for UI
-                        with self._lock:
-                            self._recent.insert(0, {
-                                'name': shader_name,
-                                'mood': result.get('mood', '?'),
-                                'energy': result.get('energy', '?'),
-                                'colors': result.get('colors', [])[:2],
-                                'features': features,
-                                'has_screenshot': result.get('has_screenshot', False)
-                            })
-                            self._recent = self._recent[:self.MAX_RECENT]
-                            self.status['recent'] = self._recent.copy()
-                        
-                        # Sync to ChromaDB
-                        self.indexer.sync()
-                        logger.info(f"Analyzed and saved: {shader_name}")
-                    else:
-                        self.status['errors'] += 1
-                        self.status['last_error'] = f"Failed to save {shader_name}"
-                else:
-                    # Save error file
-                    error_msg = result.get('error', 'Unknown error') if result else 'No result'
-                    self.indexer.save_error(shader_name, error_msg, {'result': result})
-                    self.status['errors'] += 1
-                    self.status['last_error'] = f"{shader_name}: {error_msg[:50]}"
-                    logger.warning(f"Analysis failed for {shader_name}: {error_msg}")
-                    
-            except Exception as e:
-                error_msg = str(e)
-                self.indexer.save_error(shader_name, error_msg)
-                self.status['errors'] += 1
-                self.status['last_error'] = f"{shader_name}: {error_msg[:50]}"
-                logger.exception(f"Error analyzing {shader_name}: {e}")
-            
-            # Remove processed shader from queue
-            with self._lock:
-                if shader_name in self._queue:
-                    self._queue.remove(shader_name)
-            
-            # Small delay between analyses to avoid overwhelming LLM
-            time.sleep(1.0)
-        
-        self.status['running'] = False
-    
-    def get_status(self) -> dict:
-        """Get current status for UI."""
-        # Return cached status - don't call indexer.get_stats() which rescans
-        return {
-            **self.status,
-            'queue_size': len(self._queue),
-        }
-
+# Import UI components and utilities from refactored modules
+from ui import (
+    OSCStartRequested, OSCStopRequested,
+    OSCChannelStartRequested, OSCChannelStopRequested,
+    OSCClearRequested, PlaybackSourceChanged,
+    ShaderSearchModal,
+    StartupControlPanel, OSCControlPanel, OSCPanel,
+    NowPlayingPanel, PlaybackSourcePanel,
+    CategoriesPanel, PipelinePanel,
+    ServicesPanel, AppsListPanel, LogsPanel,
+    MasterControlPanel,
+    ShaderIndexPanel, ShaderMatchPanel,
+    ShaderAnalysisPanel, ShaderSearchPanel,
+    ShaderActionsPanel,
+)
+from data.builders import build_track_data, build_pipeline_data, build_categories_payload
+from services import ProcessMonitor, ShaderAnalysisWorker
 
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
+
 
 class VJConsoleApp(App):
     """Multi-screen VJ Console application."""
@@ -1924,83 +447,103 @@ class VJConsoleApp(App):
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-7 to switch screens"
-        
+
         # NOTE: OSC is NOT started by default - user controls via OSC View tab
         # Use the OSC Control panel to start/stop OSC services
-        
+
         # Initialize apps list
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
-        
+
         # NOTE: No auto-start by default - user controls via StartupControlPanel
         # Services are started only when "Start All" button is pressed
         # or when auto-restart is enabled and service is not running
-        
+
         # Background updates - stagger intervals to reduce CPU spikes
         self.set_interval(0.5, self._update_data)
-        self.set_interval(1.0, self._tick_osc_auto_stop)  # OSC auto-stop countdown
         self.set_interval(5.0, self._check_apps_and_autorestart)  # Combined check + restart
-        
-        # Initialize OSC auto-stop timer
-        self._osc_auto_stop_remaining = 0
+
+        # Fix keyboard focus: ensure TabbedContent has focus for key bindings to work
+        # Use call_after_refresh to ensure UI is fully rendered before setting focus
+        self.call_after_refresh(self._set_initial_focus)
+
+        # Log startup to verify logging is working
+        logger.info("VJ Console mounted and ready")
+        logger.info(f"Logs are being captured to panel (current count: {len(self._logs)})")
+
+    def _set_initial_focus(self) -> None:
+        """Set initial focus after UI is rendered."""
+        try:
+            tabs = self.query_one("#screens", TabbedContent)
+            tabs.focus()
+        except Exception as e:
+            logger.warning(f"Could not set initial focus: {e}")
+
+    def _safe_update_panel(self, panel_id: str, attribute: str, value: Any) -> None:
+        """Safely update a panel attribute without crashing on errors."""
+        try:
+            panel = self.query_one(panel_id)
+            setattr(panel, attribute, value)
+        except Exception:
+            # Silently ignore - panel might not be mounted yet
+            pass
 
     def on_osc_start_requested(self, message: OSCStartRequested) -> None:
-        """Handle OSC start request from OSCControlPanel."""
-        if not osc.is_started:
-            osc.start()
-            osc_monitor.start()
-            # Log the port bindings for visibility
-            status = osc.get_channel_status()
-            for key, ch in status.items():
-                recv_info = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
-                logger.info(f"OSC {ch.get('name', key)}: send={ch.get('send_port')}{recv_info}")
-            logger.info(f"OSC Hub started (auto-stop in {OSC_AUTO_STOP_SECONDS}s)")
-        # Reset auto-stop timer
-        self._osc_auto_stop_remaining = OSC_AUTO_STOP_SECONDS
+        """Handle OSC start all request from OSCControlPanel."""
+        osc.start()
+        osc_monitor.start()
+        # Log the port bindings for visibility
+        status = osc.get_channel_status()
+        for key, ch in status.items():
+            recv_info = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
+            logger.info(f"OSC {ch.get('name', key)}: send={ch.get('send_port')}{recv_info}")
+        logger.info("OSC Hub: All channels started")
         self._update_osc_control_panel()
-    
+
     def on_osc_stop_requested(self, message: OSCStopRequested) -> None:
-        """Handle OSC stop request from OSCControlPanel."""
-        self._osc_auto_stop_remaining = 0
+        """Handle OSC stop all request from OSCControlPanel."""
         if osc_monitor.is_started:
             osc_monitor.stop()
-        if osc.is_started:
-            osc.stop()
-            logger.info("OSC Hub stopped by user")
+        osc.stop()
+        logger.info("OSC Hub: All channels stopped")
         self._update_osc_control_panel()
-    
+
+    def on_osc_channel_start_requested(self, message: OSCChannelStartRequested) -> None:
+        """Handle start request for specific OSC channel."""
+        channel_name = message.channel
+        success = osc.start_channel(channel_name)
+        if success:
+            # Start monitor if not already started
+            if not osc_monitor.is_started:
+                osc_monitor.start()
+            logger.info(f"OSC channel started: {channel_name}")
+        else:
+            logger.warning(f"Failed to start OSC channel: {channel_name}")
+        self._update_osc_control_panel()
+
+    def on_osc_channel_stop_requested(self, message: OSCChannelStopRequested) -> None:
+        """Handle stop request for specific OSC channel."""
+        channel_name = message.channel
+        osc.stop_channel(channel_name)
+        logger.info(f"OSC channel stopped: {channel_name}")
+        # Check if all channels are stopped, if so stop monitor
+        if not any(ch.get('active') for ch in osc.get_channel_status().values()):
+            if osc_monitor.is_started:
+                osc_monitor.stop()
+        self._update_osc_control_panel()
+
     def on_osc_clear_requested(self, message: OSCClearRequested) -> None:
         """Handle OSC clear request from OSCControlPanel."""
         osc_monitor.clear()
         logger.info("OSC message log cleared")
-    
+
     def _update_osc_control_panel(self) -> None:
         """Update the OSC control panel with current status."""
         try:
             panel = self.query_one("#osc-control", OSCControlPanel)
-            panel.osc_running = osc.is_started
-            panel.channel_status = osc.get_channel_status() if osc.is_started else {}
-            panel.time_remaining = getattr(self, '_osc_auto_stop_remaining', 0)
+            panel.channel_status = osc.get_channel_status()
         except Exception:
             pass
-    
-    def _tick_osc_auto_stop(self) -> None:
-        """Called every second to decrement OSC auto-stop timer."""
-        if not hasattr(self, '_osc_auto_stop_remaining'):
-            self._osc_auto_stop_remaining = 0
-        
-        if self._osc_auto_stop_remaining > 0 and osc.is_started:
-            self._osc_auto_stop_remaining -= 1
-            self._update_osc_control_panel()
-            
-            if self._osc_auto_stop_remaining <= 0:
-                # Auto-stop triggered
-                if osc_monitor.is_started:
-                    osc_monitor.stop()
-                if osc.is_started:
-                    osc.stop()
-                    logger.info("OSC Hub auto-stopped after 60s")
-                self._update_osc_control_panel()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
@@ -2394,106 +937,79 @@ class VJConsoleApp(App):
 
     def _update_data(self) -> None:
         """Update all panels with current data."""
-        # Always update logs panel (even without karaoke engine)
-        try:
-            self.query_one("#logs-panel", LogsPanel).logs = list(self._logs)
-        except Exception:
-            pass
-        
-        # Always update OSC panels (even without karaoke engine)
+        # Always update logs panel
+        self._safe_update_panel("#logs-panel", "logs", list(self._logs))
+
+        # Always update OSC panels
         self._update_osc_control_panel()
-        try:
-            panel = self.query_one("#osc-full", OSCPanel)
-            panel.osc_running = osc.is_started
-            panel.full_view = True
+        if osc.is_started:
+            self._safe_update_panel("#osc-full", "osc_running", True)
+            self._safe_update_panel("#osc-full", "full_view", True)
             if osc_monitor.is_started:
-                panel.messages = osc_monitor.get_aggregated(50)
-        except Exception:
-            pass
-        
-        # Update master control even if karaoke engine is not running
+                self._safe_update_panel("#osc-full", "messages", osc_monitor.get_aggregated(50))
+
+        # Update master control panel
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        try:
-            self.query_one("#master-ctrl", MasterControlPanel).status = {
-                'synesthesia': self.synesthesia_running,
-                'milksyphon': self.milksyphon_running,
-                'processing_apps': running_apps,
-                'karaoke': self.karaoke_engine is not None,
-            }
-        except Exception:
-            pass
-        
-        # If no karaoke engine, show waiting message and return
+        master_status = {
+            'synesthesia': self.synesthesia_running,
+            'milksyphon': self.milksyphon_running,
+            'processing_apps': running_apps,
+            'karaoke': self.karaoke_engine is not None,
+        }
+        self._safe_update_panel("#master-ctrl", "status", master_status)
+
+        # If no karaoke engine, clear panels and return
         if not self.karaoke_engine:
-            try:
-                self.query_one("#now-playing", NowPlayingPanel).track_data = {}
-            except Exception:
-                pass
-            # Update playback source panel to show not running
-            try:
-                source_panel = self.query_one("#playback-source", PlaybackSourcePanel)
-                source_panel.monitor_running = False
-                source_panel.lookup_ms = 0.0
-            except Exception:
-                pass
+            self._safe_update_panel("#now-playing", "track_data", {})
+            self._safe_update_panel("#playback-source", "monitor_running", False)
+            self._safe_update_panel("#playback-source", "lookup_ms", 0.0)
             return
-        
+
+        # Get snapshot and build data
         snapshot = self.karaoke_engine.get_snapshot()
         self._latest_snapshot = snapshot
         monitor_status = snapshot.monitor_status or {}
-        if snapshot.source and snapshot.source in monitor_status:
-            source_connected = monitor_status[snapshot.source].get('available', False)
-        else:
-            source_connected = any(status.get('available', False) for status in monitor_status.values())
+        source_connected = (
+            monitor_status.get(snapshot.source, {}).get('available', False)
+            if snapshot.source in monitor_status
+            else any(s.get('available', False) for s in monitor_status.values())
+        )
+
+        # Update now playing
         track_data = build_track_data(snapshot, source_connected)
-        try:
-            now_playing = self.query_one("#now-playing", NowPlayingPanel)
-            now_playing.track_data = track_data
-            now_playing.shader_name = self.karaoke_engine.current_shader
-        except Exception:
-            pass
-        
-        # Update playback source panel with lookup time and running state
-        try:
-            source_panel = self.query_one("#playback-source", PlaybackSourcePanel)
-            source_panel.lookup_ms = self.karaoke_engine.last_lookup_ms
-            # Monitor is running if karaoke engine exists and has a source
-            source_panel.monitor_running = bool(self.karaoke_engine.playback_source)
-        except Exception:
-            pass
+        self._safe_update_panel("#now-playing", "track_data", track_data)
+        self._safe_update_panel("#now-playing", "shader_name", self.karaoke_engine.current_shader)
 
+        # Update playback source panel
+        self._safe_update_panel("#playback-source", "lookup_ms", self.karaoke_engine.last_lookup_ms)
+        self._safe_update_panel("#playback-source", "monitor_running", bool(self.karaoke_engine.playback_source))
+
+        # Update categories (both panels)
         cat_data = build_categories_payload(self.karaoke_engine.current_categories)
-        
-        # Update categories panels
-        for panel_id in ["categories", "categories-full"]:
-            try:
-                self.query_one(f"#{panel_id}", CategoriesPanel).categories_data = cat_data
-            except Exception:
-                pass
+        self._safe_update_panel("#categories", "categories_data", cat_data)
+        self._safe_update_panel("#categories-full", "categories_data", cat_data)
 
-        # Update pipeline
+        # Update pipeline (both panels)
         pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
-        for panel_id in ["pipeline", "pipeline-full"]:
-            try:
-                self.query_one(f"#{panel_id}", PipelinePanel).pipeline_data = pipeline_data
-            except Exception:
-                pass
+        self._safe_update_panel("#pipeline", "pipeline_data", pipeline_data)
+        self._safe_update_panel("#pipeline-full", "pipeline_data", pipeline_data)
 
-        # Send OSC status only when it changes (only if OSC is running and karaoke engine exists)
-        if self.karaoke_engine:
-            current_status = {
-                'karaoke_active': True,
-                'synesthesia_running': self.synesthesia_running,
-                'milksyphon_running': self.milksyphon_running,
-                'processing_apps': running_apps
-            }
-            if current_status != self._last_master_status:
-                self.karaoke_engine.osc_sender.send_master_status(
-                    karaoke_active=True, synesthesia_running=self.synesthesia_running,
-                    milksyphon_running=self.milksyphon_running, processing_apps=running_apps
-                )
-                self._last_master_status = current_status
-        
+        # Send OSC status only when it changes
+        current_status = {
+            'karaoke_active': True,
+            'synesthesia_running': self.synesthesia_running,
+            'milksyphon_running': self.milksyphon_running,
+            'processing_apps': running_apps
+        }
+        if current_status != self._last_master_status:
+            self.karaoke_engine.osc_sender.send_master_status(
+                karaoke_active=True,
+                synesthesia_running=self.synesthesia_running,
+                milksyphon_running=self.milksyphon_running,
+                processing_apps=running_apps
+            )
+            self._last_master_status = current_status
+
         # Update Launchpad panels
         self._update_launchpad_panels()
         

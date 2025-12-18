@@ -14,6 +14,9 @@ class AudioEnvelope {
   float bassLevel;
   float midLevel;
   float highLevel;
+
+  // Decay control (per second)
+  float falloffPerSecond = 1.8;
   
   // Smoothing
   float smoothing = 0.9;  // Higher = more smoothing
@@ -33,8 +36,8 @@ class AudioEnvelope {
    */
   void update(float dt) {
     if (manualMode) {
-      // Decay toward 0
-      float decay = 0.95;
+      // Frame-rate independent exponential decay
+      float decay = exp(-falloffPerSecond * dt);
       bassLevel *= decay;
       midLevel *= decay;
       highLevel *= decay;
@@ -57,7 +60,7 @@ class AudioEnvelope {
   }
   
   /**
-   * Trigger a hit (instant peak, then decay)
+   * Trigger a hit (instant peak, then decay) for simulation
    */
   void hitBass(float intensity) {
     bassLevel = max(bassLevel, constrain(intensity, 0, 1));
@@ -88,13 +91,16 @@ class AudioEnvelope {
   float getLevel() {
     return (bassLevel + midLevel + highLevel) / 3.0;
   }
-  
-  /**
-   * Copy current values to Inputs object
-   */
-  void copyTo(Inputs inputs) {
-    inputs.bassLevel = bassLevel;
-    inputs.midLevel = midLevel;
-    inputs.highLevel = highLevel;
+
+  float getBass() {
+    return bassLevel;
+  }
+
+  float getMid() {
+    return midLevel;
+  }
+
+  float getHigh() {
+    return highLevel;
   }
 }

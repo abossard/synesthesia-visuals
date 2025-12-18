@@ -1,14 +1,19 @@
 """
-OSC Hub - Backwards compatible re-export
+OSC Module - Typed OSC channels for VJ system
 
-This module re-exports from osc/ for backwards compatibility.
-New code should import from osc directly:
-
+Usage:
     from osc import osc, osc_monitor
+
+    osc.start()
+    osc.synesthesia.send("/scene/load", "my_scene")
+    osc.vdj.send("/deck/1/play")
+
+    osc_monitor.start()
+    for msg in osc_monitor.get_aggregated():
+        print(f"{msg.channel} {msg.address} = {msg.last_args}")
 """
 
-# Re-export everything from new location
-from osc import (
+from .hub import (
     Channel,
     ChannelConfig,
     OSCHub,
@@ -17,12 +22,15 @@ from osc import (
     SYNESTHESIA,
     KARAOKE,
     Handler,
+)
+from .monitor import (
     OSCMonitor,
     AggregatedMessage,
     osc_monitor,
 )
 
 __all__ = [
+    # Hub
     "Channel",
     "ChannelConfig",
     "OSCHub",
@@ -31,6 +39,7 @@ __all__ = [
     "SYNESTHESIA",
     "KARAOKE",
     "Handler",
+    # Monitor
     "OSCMonitor",
     "AggregatedMessage",
     "osc_monitor",

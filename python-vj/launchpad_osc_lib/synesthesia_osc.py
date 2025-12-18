@@ -9,10 +9,16 @@ import time
 import logging
 from typing import Callable, List
 
-# Import central OSC hub
-import sys as _sys
-_sys.path.insert(0, str(__file__).rsplit('/', 2)[0])
-from osc_hub import osc
+# Import central OSC hub from parent package
+# Works both when imported via vj_console.py and when run standalone
+try:
+    from osc_hub import osc
+except ImportError:
+    # Fallback for standalone execution (python -m launchpad_osc_lib)
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from osc_hub import osc
 
 from .model import OscCommand, OscEvent
 from .synesthesia_config import (

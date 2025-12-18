@@ -277,11 +277,6 @@ class Settings:
     # Valid playback source keys (must match PLAYBACK_SOURCES in adapters.py)
     VALID_PLAYBACK_SOURCES = [
         'spotify_applescript',
-        'spotify_webapi',
-        'virtualdj_file',
-        'virtualdj_ocr',
-        'virtualdj_ocr_slow',
-        'djay',
     ]
     
     @property

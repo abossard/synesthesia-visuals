@@ -1,40 +1,53 @@
 """
 Launchpad OSC Library
 
-Modern library for Launchpad Mini MK3 control with OSC integration using lpminimk3.
+Modern library for Launchpad Mini MK3 control with OSC integration.
 
-Features:
-- Button behaviors: SELECTOR (radio), TOGGLE (on/off), ONE_SHOT (trigger), PUSH (momentary)
-- Pure FSM functions for state transitions
-- Immutable state management
-- Learn mode for dynamic configuration
+INTEGRATION WITH VJ CONSOLE
+===========================
+This library is designed to integrate with python-vj's osc_hub.py for OSC
+communication. It does NOT duplicate OSC code - it uses osc_hub directly.
 
-Usage:
-    import lpminimk3
-    from launchpad_osc_lib import (
-        ControllerState, ButtonId, ButtonGroupType, PadMode,
-        handle_pad_press, handle_osc_event, enter_learn_mode,
-        SendOscEffect, SetLedEffect
-    )
-    
-    # Connect to Launchpad
-    lp = lpminimk3.find_launchpads()[0]
-    lp.open()
-    lp.mode = lpminimk3.Mode.PROG
-    
-    # Initialize state
-    state = ControllerState()
-    
-    # Handle events (pure functions return new state + effects)
-    state, effects = handle_pad_press(state, ButtonId(0, 0))
-    
-    # Execute effects
-    for effect in effects:
-        if isinstance(effect, SendOscEffect):
-            osc.send(effect.command)
-        elif isinstance(effect, SetLedEffect):
-            button = lp.grid.led(effect.pad_id.x, effect.pad_id.y)
-            button.color = effect.color
+RECOMMENDED API ENTRY POINTS
+============================
+
+1. For TUI Integration (vj_console.py):
+   Use LaunchpadManager from launchpad_console.py - it bridges this library
+   with Textual UI panels.
+
+2. For Standalone CLI:
+   python -m launchpad_osc_lib
+
+3. For Custom Integration (RECOMMENDED):
+   Use the immutable FSM functions directly:
+
+   from launchpad_osc_lib import (
+       ControllerState, ButtonId, handle_pad_press, handle_osc_event,
+       SendOscEffect, LedEffect
+   )
+   from osc_hub import osc
+
+   state = ControllerState()
+   new_state, effects = handle_pad_press(state, ButtonId(0, 0))
+
+   for effect in effects:
+       if isinstance(effect, SendOscEffect):
+           osc.synesthesia.send(effect.command.address, *effect.command.args)
+       elif isinstance(effect, LedEffect):
+           launchpad.set_led(effect.pad_id, effect.color)
+
+4. High-level Controller API:
+   from launchpad_osc_lib import LaunchpadController
+
+ARCHITECTURE
+============
+- button_id.py: ButtonId type for pad addressing
+- model.py: Immutable dataclasses (ControllerState, PadBehavior, Effects)
+- fsm.py: Pure state transition functions (handle_pad_press, handle_osc_event)
+- synesthesia_config.py: OSC address filtering and categorization
+- display.py: LED rendering (state -> LedEffects)
+- config.py: YAML persistence
+- controller.py: High-level API with dependency injection
 """
 
 # Re-export lpminimk3 for convenience

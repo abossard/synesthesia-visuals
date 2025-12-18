@@ -15,7 +15,10 @@
       "Bash(ls:*)",
       "Bash(/Users/abossard/Desktop/projects/synesthesia-visuals/.venv/bin/python:*)",
       "Bash(chmod:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []
