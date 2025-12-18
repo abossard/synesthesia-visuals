@@ -290,6 +290,8 @@ liblo.send(liblo.Address('127.0.0.1', 9000), '/test', 1, 2, 3)
 
 ## Related Documentation
 
+- **[OSC_FUTURE_PLAN.md](OSC_FUTURE_PLAN.md)** — 🚀 **Future Architecture Plan** (VDJ queries, message forwarding, Launchpad banks)
 - [vj-console-spec/03-osc-protocol.md](vj-console-spec/03-osc-protocol.md) — Full message specification
+- [vj-console-spec/07-launchpad-osc-lib.md](vj-console-spec/07-launchpad-osc-lib.md) — Launchpad controller integration
 - [python-vj/docs/guides/osc-visual-mapping.md](python-vj/docs/guides/osc-visual-mapping.md) — VJ software mapping guide
 - [docs/setup/live-vj-setup-guide.md](docs/setup/live-vj-setup-guide.md) — Full Syphon/Magic pipeline setup
