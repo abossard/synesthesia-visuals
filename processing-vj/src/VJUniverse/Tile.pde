@@ -164,11 +164,13 @@ abstract class Tile {
   
   /**
    * Begin drawing to buffer (convenience wrapper)
+   * Resets camera to default to prevent state accumulation across levels
    */
   void beginDraw() {
     if (buffer != null) {
       buffer.beginDraw();
       buffer.background(0);  // Default black background
+      buffer.camera();       // Reset camera to default (prevents off-center after level switches)
     }
   }
   
