@@ -12,7 +12,6 @@ Architecture:
   - karaoke: VJUniverse (port 10000)
 """
 
-import atexit
 import logging
 import threading
 from dataclasses import dataclass
@@ -113,7 +112,6 @@ class OSCHub:
         self._synesthesia = Channel(SYNESTHESIA)
         self._karaoke = Channel(KARAOKE)
         self._started = False
-        self._atexit_registered = False
 
         self._server: Optional[liblo.ServerThread] = None
         self._server_lock = threading.Lock()
@@ -124,6 +122,8 @@ class OSCHub:
 
         self._listeners: Dict[str, List[Handler]] = {}
         self._listeners_lock = threading.Lock()
+        self._listeners_snapshot: List[Tuple[str, Tuple[Handler, ...]]] = []
+        self._listener_count = 0
 
     @property
     def is_started(self) -> bool:
@@ -193,9 +193,7 @@ class OSCHub:
         self._karaoke.start()
 
         self._started = True
-        if not self._atexit_registered:
-            atexit.register(self.stop)
-            self._atexit_registered = True
+        # Do not register atexit; shutdown can block on some platforms.
         logger.info("OSCHub ready")
         return True
 
@@ -210,12 +208,20 @@ class OSCHub:
         self._karaoke.stop()
 
         with self._server_lock:
-            if self._server:
-                try:
-                    self._server.stop()
-                except Exception as exc:
-                    logger.error(f"OSCHub stop error: {exc}")
-                self._server = None
+            server = self._server
+            self._server = None
+
+        if server:
+            stop_thread = threading.Thread(
+                target=self._stop_server,
+                args=(server,),
+                name="OSCHubStop",
+                daemon=True,
+            )
+            stop_thread.start()
+            stop_thread.join(timeout=0.5)
+            if stop_thread.is_alive():
+                logger.warning("OSCHub stop timed out; continuing shutdown")
 
         self._started = False
         logger.info("OSCHub stopped")
@@ -250,6 +256,7 @@ class OSCHub:
             handlers = self._listeners.setdefault(path, [])
             if handler not in handlers:
                 handlers.append(handler)
+            self._refresh_listeners_snapshot()
 
     def unsubscribe(self, path: str, handler: Handler) -> None:
         """Unsubscribe a handler from incoming OSC messages."""
@@ -259,12 +266,14 @@ class OSCHub:
                 handlers.remove(handler)
                 if not handlers:
                     del self._listeners[path]
+                self._refresh_listeners_snapshot()
 
     def _on_message(self, path: str, args: list, _types: Any, _src: Any):
         """Internal OSC callback: forward + dispatch to subscribers."""
-        args_list = list(args)
-        self._forward(path, args_list)
-        self._dispatch(path, args_list)
+        self._forward(path, args)
+        if self._listener_count == 0:
+            return
+        self._dispatch(path, args)
 
     def _forward(self, path: str, args: List[Any]) -> None:
         """Forward a message to all configured targets."""
@@ -276,14 +285,15 @@ class OSCHub:
 
     def _dispatch(self, path: str, args: List[Any]) -> None:
         """Dispatch message to subscribed handlers."""
-        with self._listeners_lock:
-            listeners = list(self._listeners.items())
-
+        listeners = self._listeners_snapshot
+        args_list: Optional[List[Any]] = None
         for pattern, handlers in listeners:
             if self._matches(pattern, path):
-                for handler in list(handlers):
+                if args_list is None:
+                    args_list = list(args)
+                for handler in handlers:
                     try:
-                        handler(path, args)
+                        handler(path, args_list)
                     except Exception as exc:
                         logger.error(f"OSC handler error for {pattern}: {exc}")
 
@@ -294,6 +304,23 @@ class OSCHub:
         if pattern.endswith("*"):
             return path.startswith(pattern[:-1])
         return path == pattern
+
+    def _refresh_listeners_snapshot(self) -> None:
+        snapshot: List[Tuple[str, Tuple[Handler, ...]]] = []
+        total = 0
+        for pattern, handlers in self._listeners.items():
+            if handlers:
+                snapshot.append((pattern, tuple(handlers)))
+                total += len(handlers)
+        self._listeners_snapshot = snapshot
+        self._listener_count = total
+
+    @staticmethod
+    def _stop_server(server: liblo.ServerThread) -> None:
+        try:
+            server.stop()
+        except Exception as exc:
+            logger.error(f"OSCHub stop error: {exc}")
 
 
 # Global singleton instance

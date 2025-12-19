@@ -77,8 +77,6 @@ logger = logging.getLogger('vj_console')
 
 # Import UI components and utilities from refactored modules
 from ui import (
-    OSCStartRequested, OSCStopRequested,
-    OSCChannelStartRequested, OSCChannelStopRequested,
     OSCClearRequested, PlaybackSourceChanged,
     ShaderSearchModal,
     StartupControlPanel, OSCControlPanel, OSCPanel,
@@ -376,6 +374,11 @@ class VJConsoleApp(App):
         root_logger.setLevel(logging.DEBUG)  # Ensure root accepts all levels
         root_logger.addHandler(handler)
         
+        # Suppress noisy HTTP library logs
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
+        logging.getLogger('requests').setLevel(logging.WARNING)
+        logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
+        
         # Log startup message to verify capture works
         logger.info("VJ Console started - logging active")
 
@@ -400,7 +403,8 @@ class VJConsoleApp(App):
             # Tab 2: OSC View
             with TabPane("2️⃣ OSC View", id="osc"):
                 yield OSCControlPanel(id="osc-control")
-                yield OSCPanel(id="osc-full", classes="panel full-height")
+                with VerticalScroll(id="osc-scroll", classes="panel full-height"):
+                    yield OSCPanel(id="osc-full")
 
             # Tab 3: Song AI Debug  
             with TabPane("3️⃣ Song AI Debug", id="ai"):
@@ -448,8 +452,11 @@ class VJConsoleApp(App):
         self.title = "🎛 VJ Console"
         self.sub_title = "Press 1-7 to switch screens"
 
-        # NOTE: OSC is NOT started by default - user controls via OSC View tab
-        # Use the OSC Control panel to start/stop OSC services
+        # OSC hub runs continuously for the lifetime of the console
+        if osc.start():
+            logger.info("OSC Hub started (always-on)")
+        else:
+            logger.error("OSC Hub failed to start")
 
         # Initialize apps list
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
@@ -461,7 +468,7 @@ class VJConsoleApp(App):
 
         # Background updates - stagger intervals to reduce CPU spikes
         self.set_interval(0.5, self._update_data)
-        self.set_interval(5.0, self._check_apps_and_autorestart)  # Combined check + restart
+        self.set_interval(30.0, self._check_apps_and_autorestart)  # Check every 30s
 
         # Fix keyboard focus: ensure TabbedContent has focus for key bindings to work
         # Use call_after_refresh to ensure UI is fully rendered before setting focus
@@ -488,50 +495,6 @@ class VJConsoleApp(App):
             # Silently ignore - panel might not be mounted yet
             pass
 
-    def on_osc_start_requested(self, message: OSCStartRequested) -> None:
-        """Handle OSC start all request from OSCControlPanel."""
-        osc.start()
-        osc_monitor.start()
-        # Log the port bindings for visibility
-        status = osc.get_channel_status()
-        for key, ch in status.items():
-            recv_info = f", recv={ch.get('recv_port')}" if ch.get('recv_port') else ""
-            logger.info(f"OSC {ch.get('name', key)}: send={ch.get('send_port')}{recv_info}")
-        logger.info("OSC Hub: All channels started")
-        self._update_osc_control_panel()
-
-    def on_osc_stop_requested(self, message: OSCStopRequested) -> None:
-        """Handle OSC stop all request from OSCControlPanel."""
-        if osc_monitor.is_started:
-            osc_monitor.stop()
-        osc.stop()
-        logger.info("OSC Hub: All channels stopped")
-        self._update_osc_control_panel()
-
-    def on_osc_channel_start_requested(self, message: OSCChannelStartRequested) -> None:
-        """Handle start request for specific OSC channel."""
-        channel_name = message.channel
-        success = osc.start_channel(channel_name)
-        if success:
-            # Start monitor if not already started
-            if not osc_monitor.is_started:
-                osc_monitor.start()
-            logger.info(f"OSC channel started: {channel_name}")
-        else:
-            logger.warning(f"Failed to start OSC channel: {channel_name}")
-        self._update_osc_control_panel()
-
-    def on_osc_channel_stop_requested(self, message: OSCChannelStopRequested) -> None:
-        """Handle stop request for specific OSC channel."""
-        channel_name = message.channel
-        osc.stop_channel(channel_name)
-        logger.info(f"OSC channel stopped: {channel_name}")
-        # Check if all channels are stopped, if so stop monitor
-        if not any(ch.get('active') for ch in osc.get_channel_status().values()):
-            if osc_monitor.is_started:
-                osc_monitor.stop()
-        self._update_osc_control_panel()
-
     def on_osc_clear_requested(self, message: OSCClearRequested) -> None:
         """Handle OSC clear request from OSCControlPanel."""
         osc_monitor.clear()
@@ -544,6 +507,20 @@ class VJConsoleApp(App):
             panel.channel_status = osc.get_channel_status()
         except Exception:
             pass
+
+    def _is_osc_view_active(self) -> bool:
+        try:
+            return self.query_one("#screens", TabbedContent).active == "osc"
+        except Exception:
+            return False
+
+    def _sync_osc_monitor_visibility(self) -> None:
+        osc_view_active = self._is_osc_view_active()
+        if osc_view_active and osc.is_started and not osc_monitor.is_started:
+            osc_monitor.start()
+            return
+        if osc_monitor.is_started and (not osc_view_active or not osc.is_started):
+            osc_monitor.stop()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Route button clicks to actions."""
@@ -634,7 +611,7 @@ class VJConsoleApp(App):
         return self._run_process(['pgrep', '-f', 'LM Studio'], 1)
     
     def _check_lmstudio_model(self) -> Dict[str, Any]:
-        """Check LM Studio API and model status. Returns status dict."""
+        """Check LM Studio API and model status."""
         try:
             resp = requests.get("http://localhost:1234/v1/models", timeout=1)
             if resp.status_code == 200:
@@ -642,8 +619,7 @@ class VJConsoleApp(App):
                 if models:
                     model_id = models[0].get('id', 'unknown')
                     return {'available': True, 'model': model_id, 'warning': ''}
-                else:
-                    return {'available': False, 'model': '', 'warning': 'No model loaded'}
+                return {'available': False, 'model': '', 'warning': 'No model loaded'}
         except Exception:
             pass
         return {'available': False, 'model': '', 'warning': ''}
@@ -942,11 +918,34 @@ class VJConsoleApp(App):
 
         # Always update OSC panels
         self._update_osc_control_panel()
-        if osc.is_started:
-            self._safe_update_panel("#osc-full", "osc_running", True)
+        self._sync_osc_monitor_visibility()
+        self._safe_update_panel("#osc-full", "osc_running", osc.is_started)
+        if self._is_osc_view_active() and osc.is_started and osc_monitor.is_started:
+            try:
+                control_panel = self.query_one("#osc-control", OSCControlPanel)
+                filter_text = control_panel.filter_text
+            except Exception:
+                filter_text = ""
             self._safe_update_panel("#osc-full", "full_view", True)
-            if osc_monitor.is_started:
-                self._safe_update_panel("#osc-full", "messages", osc_monitor.get_aggregated(50))
+            self._safe_update_panel("#osc-full", "filter_text", filter_text)
+            self._safe_update_panel("#osc-full", "stats", osc_monitor.get_stats())
+            self._safe_update_panel(
+                "#osc-full",
+                "grouped_prefixes",
+                osc_monitor.get_grouped_prefixes(
+                    filter_text=filter_text,
+                    limit=20,
+                    child_limit=20,
+                ),
+            )
+            self._safe_update_panel(
+                "#osc-full",
+                "grouped_messages",
+                osc_monitor.get_grouped_messages(
+                    filter_text=filter_text,
+                    limit_per_channel=20,
+                ),
+            )
 
         # Update master control panel
         running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
@@ -1354,6 +1353,10 @@ class VJConsoleApp(App):
             self._logs.pop(0)
 
     def on_unmount(self) -> None:
+        if osc_monitor.is_started:
+            osc_monitor.stop()
+        if self.shader_analysis_worker:
+            self.shader_analysis_worker.stop()
         if self.karaoke_engine:
             self.karaoke_engine.stop()
         if self.launchpad_manager:

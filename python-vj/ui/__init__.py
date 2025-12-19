@@ -1,10 +1,6 @@
 """UI components for VJ Console."""
 
 from .messages import (
-    OSCStartRequested,
-    OSCStopRequested,
-    OSCChannelStartRequested,
-    OSCChannelStopRequested,
     OSCClearRequested,
     PlaybackSourceChanged,
 )
@@ -33,10 +29,6 @@ from .panels import (
 
 __all__ = [
     # Messages
-    "OSCStartRequested",
-    "OSCStopRequested",
-    "OSCChannelStartRequested",
-    "OSCChannelStopRequested",
     "OSCClearRequested",
     "PlaybackSourceChanged",
     # Modals

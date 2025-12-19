@@ -599,6 +599,9 @@ class OSCSender:
 # PLAYBACK SOURCE REGISTRY - All available monitors
 # =============================================================================
 
+# Import VDJ monitor
+from vdj_monitor import VDJMonitor
+
 # Enum-like constants for playback sources
 PLAYBACK_SOURCES = {
     'spotify_applescript': {
@@ -606,6 +609,12 @@ PLAYBACK_SOURCES = {
         'label': 'Spotify (AppleScript)',
         'description': 'Local Spotify app via AppleScript',
         'factory': lambda: AppleScriptSpotifyMonitor(),
+    },
+    'vdj_osc': {
+        'key': 'vdj_osc',
+        'label': 'VirtualDJ (OSC)',
+        'description': 'VirtualDJ via OSC (PRO license required)',
+        'factory': lambda: VDJMonitor(),
     },
 }
 

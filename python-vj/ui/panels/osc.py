@@ -1,24 +1,21 @@
 """OSC panels for VJ Console."""
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.reactive import reactive
-from textual.widgets import Button, Static
+import time
 
-from ui.messages import (
-    OSCStartRequested,
-    OSCStopRequested,
-    OSCChannelStartRequested,
-    OSCChannelStopRequested,
-    OSCClearRequested,
-)
-from utils import render_aggregated_osc
+from textual.app import ComposeResult
+from textual.reactive import reactive
+from textual.widgets import Button, Input, Static
+
+from ui.messages import OSCClearRequested
 from .base import ReactivePanel
 
 
 class OSCPanel(ReactivePanel):
-    """OSC messages debug view - aggregated by address."""
-    messages = reactive([])  # List of AggregatedMessage
+    """OSC messages debug view - grouped by channel and address."""
+    stats = reactive({})
+    grouped_prefixes = reactive({})
+    grouped_messages = reactive({})
+    filter_text = reactive("")
     full_view = reactive(False)
     osc_running = reactive(False)
 
@@ -26,7 +23,16 @@ class OSCPanel(ReactivePanel):
         """Initialize content when mounted."""
         self._safe_render()
 
-    def watch_messages(self, msgs: list) -> None:
+    def watch_stats(self, stats: dict) -> None:
+        self._safe_render()
+
+    def watch_grouped_prefixes(self, _: dict) -> None:
+        self._safe_render()
+
+    def watch_grouped_messages(self, _: dict) -> None:
+        self._safe_render()
+
+    def watch_filter_text(self, _: str) -> None:
         self._safe_render()
 
     def watch_full_view(self, _: bool) -> None:
@@ -40,57 +46,126 @@ class OSCPanel(ReactivePanel):
         if not self.is_mounted:
             return
         limit = 50 if self.full_view else 15
-        lines = [self.render_section("OSC Debug (grouped by address)", "═")]
+        lines = [self.render_section("OSC Debug (grouped by channel)", "═")]
 
         if not self.osc_running:
-            lines.append("[dim]OSC Hub is stopped.[/dim]")
-            lines.append("[dim]Use the controls above to start OSC.[/dim]")
-        elif not self.messages:
-            lines.append("[dim](no OSC messages yet)[/dim]")
+            lines.append("[dim]OSC Hub is not running.[/dim]")
+            lines.append("[dim]Check logs for startup errors.[/dim]")
         else:
-            # Messages already sorted by recency from osc_monitor
-            for msg in self.messages[:limit]:
-                lines.append(render_aggregated_osc(msg))
+            filter_label = self.filter_text.strip() or "none"
+            lines.append(f"[dim]Filter:[/dim] {filter_label}")
+            lines.append("")
+
+            if not self.stats:
+                lines.append("[dim](monitor idle)[/dim]")
+            else:
+                lines.extend(self._render_stats())
+                lines.append(self.render_section("Grouped Paths (nesting)", "─"))
+                lines.extend(self._render_grouped_prefixes())
+                lines.append(self.render_section("Grouped Messages", "─"))
+                lines.extend(self._render_grouped_messages(limit))
 
         self.update("\n".join(lines))
+
+    def _render_stats(self) -> list:
+        stats = self.stats or {}
+        total = stats.get("total", 0)
+        unique = stats.get("unique_addresses", 0)
+        rate = stats.get("rate", 0.0)
+        channels = stats.get("channels", {})
+
+        lines = [
+            self.render_section("OSC Stats", "─"),
+            f"Total: {total}  Rate: {rate:.1f}/s  Unique: {unique}",
+        ]
+
+        if channels:
+            sorted_channels = sorted(channels.items(), key=lambda item: item[1], reverse=True)
+            counts = " | ".join(f"{name}:{count}" for name, count in sorted_channels)
+            lines.append(f"By channel: {counts}")
+        else:
+            lines.append("[dim]By channel: (none)[/dim]")
+
+        return lines
+
+    def _render_grouped_prefixes(self) -> list:
+        grouped = self.grouped_prefixes or {}
+        if not grouped:
+            return ["[dim](no grouped data)[/dim]"]
+
+        lines = []
+        for channel, entries in sorted(grouped.items()):
+            lines.append(self._format_channel_header(channel))
+            if not entries:
+                lines.append("  [dim](no matches)[/dim]")
+                continue
+            for prefix, count, depth in entries:
+                indent = "  " * (depth - 1)
+                lines.append(f"{indent}{prefix} [dim]×{count}[/dim]")
+        return lines
+
+    def _render_grouped_messages(self, limit: int) -> list:
+        grouped = self.grouped_messages or {}
+        if not grouped:
+            return ["[dim](no grouped messages)[/dim]"]
+
+        lines = []
+        for channel, entries in sorted(grouped.items()):
+            lines.append(self._format_channel_header(channel))
+            if not entries:
+                lines.append("  [dim](no matches)[/dim]")
+                continue
+            for msg in entries[:limit]:
+                lines.append(self._format_message_line(msg))
+        return lines
+
+    @staticmethod
+    def _format_channel_header(channel: str) -> str:
+        label = channel or "hub"
+        if label.startswith("→"):
+            return f"[cyan]{label}[/cyan]"
+        if "vdj" in label.lower():
+            return f"[blue]{label}[/blue]"
+        if "syn" in label.lower():
+            return f"[magenta]{label}[/magenta]"
+        if "kar" in label.lower():
+            return f"[yellow]{label}[/yellow]"
+        return f"[white]{label}[/white]"
+
+    @staticmethod
+    def _format_message_line(msg) -> str:
+        time_str = time.strftime("%H:%M:%S", time.localtime(msg.last_time))
+        args_str = str(msg.last_args) if msg.last_args else ""
+        if len(args_str) > 50:
+            args_str = args_str[:47] + "..."
+        count_str = f" [dim]×{msg.count}[/]" if msg.count > 1 else ""
+        return f"  [dim]{time_str}[/] {msg.address:30s} {args_str}{count_str}"
 
 
 class OSCControlPanel(Static):
     """
-    Panel for controlling OSC hub - granular per-channel control.
+    OSC hub summary and filters.
 
-    Shows channel configuration and allows user to start/stop individual channels.
+    Hub is always on; monitor runs only while OSC View is open.
     """
 
     # Reactive state
     channel_status = reactive({})
+    filter_text = reactive("")
 
     def compose(self) -> ComposeResult:
-        yield Static("[bold]OSC Hub Control[/bold]", classes="section-title")
-        yield Static("[dim]Hub recv :9999 → fwd :10000, :11111[/dim]")
+        yield Static("[bold]OSC Hub[/bold]", classes="section-title")
+        yield Static("[dim]Always-on hub recv :9999 → fwd :10000, :11111[/dim]")
+        yield Static("[dim]Monitor runs only while OSC View tab is open[/dim]")
+        yield Static("[dim]Filter OSC addresses (substring):[/dim]")
+        yield Input(placeholder="e.g. /audio or /karaoke", id="osc-filter-input")
 
-        # Individual channel controls
-        yield Static("[bold cyan]VirtualDJ[/] (send :9009, recv :9999)", id="osc-vdj-label")
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start VDJ", id="btn-osc-vdj-start", variant="success")
-            yield Button("■ Stop VDJ", id="btn-osc-vdj-stop", variant="error")
+        yield Static("[bold]Outgoing Channels[/bold]")
+        yield Static("[bold cyan]VirtualDJ[/] (send :9009)", id="osc-vdj-label")
+        yield Static("[bold magenta]Synesthesia[/] (send :7777)", id="osc-syn-label")
+        yield Static("[bold green]Karaoke/Processing[/] (send :10000)", id="osc-kar-label")
 
-        yield Static("[bold magenta]Synesthesia[/] (send :7777, recv :9999)", id="osc-syn-label")
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start Synesthesia", id="btn-osc-syn-start", variant="success")
-            yield Button("■ Stop Synesthesia", id="btn-osc-syn-stop", variant="error")
-
-        yield Static("[bold green]Karaoke/Processing[/] (send :10000, send-only)", id="osc-kar-label")
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start Karaoke", id="btn-osc-kar-start", variant="success")
-            yield Button("■ Stop Karaoke", id="btn-osc-kar-stop", variant="error")
-
-        # Global controls
-        with Horizontal(classes="startup-buttons"):
-            yield Button("▶ Start All", id="btn-osc-start-all", variant="primary")
-            yield Button("■ Stop All", id="btn-osc-stop-all", variant="warning")
-            yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
-
+        yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
         yield Static("", id="osc-status-label")
 
     def on_mount(self) -> None:
@@ -98,6 +173,10 @@ class OSCControlPanel(Static):
 
     def watch_channel_status(self, status: dict) -> None:
         self._update_display()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "osc-filter-input":
+            self.filter_text = event.value.strip()
 
     def _update_display(self) -> None:
         if not self.is_mounted:
@@ -111,21 +190,21 @@ class OSCControlPanel(Static):
 
                 if key == "vdj":
                     label_id = "#osc-vdj-label"
-                    status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
+                    status_icon = "[green]● READY[/]" if active else "[dim]○ offline[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold cyan]VirtualDJ[/] (send :9009, recv :9999) {status_icon}"
+                        f"[bold cyan]VirtualDJ[/] (send :9009) {status_icon}"
                     )
                 elif key == "synesthesia":
                     label_id = "#osc-syn-label"
-                    status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
+                    status_icon = "[green]● READY[/]" if active else "[dim]○ offline[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold magenta]Synesthesia[/] (send :7777, recv :9999) {status_icon}"
+                        f"[bold magenta]Synesthesia[/] (send :7777) {status_icon}"
                     )
                 elif key == "karaoke":
                     label_id = "#osc-kar-label"
-                    status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
+                    status_icon = "[green]● READY[/]" if active else "[dim]○ offline[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold green]Karaoke/Processing[/] (send :10000, send-only) {status_icon}"
+                        f"[bold green]Karaoke/Processing[/] (send :10000) {status_icon}"
                     )
             except Exception:
                 pass
@@ -146,21 +225,5 @@ class OSCControlPanel(Static):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
 
-        if btn_id == "btn-osc-vdj-start":
-            self.post_message(OSCChannelStartRequested("vdj"))
-        elif btn_id == "btn-osc-vdj-stop":
-            self.post_message(OSCChannelStopRequested("vdj"))
-        elif btn_id == "btn-osc-syn-start":
-            self.post_message(OSCChannelStartRequested("synesthesia"))
-        elif btn_id == "btn-osc-syn-stop":
-            self.post_message(OSCChannelStopRequested("synesthesia"))
-        elif btn_id == "btn-osc-kar-start":
-            self.post_message(OSCChannelStartRequested("karaoke"))
-        elif btn_id == "btn-osc-kar-stop":
-            self.post_message(OSCChannelStopRequested("karaoke"))
-        elif btn_id == "btn-osc-start-all":
-            self.post_message(OSCStartRequested())
-        elif btn_id == "btn-osc-stop-all":
-            self.post_message(OSCStopRequested())
-        elif btn_id == "btn-osc-clear":
+        if btn_id == "btn-osc-clear":
             self.post_message(OSCClearRequested())

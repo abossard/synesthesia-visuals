@@ -241,6 +241,9 @@ class KaraokeEngine:
         from adapters import create_monitor
         monitor = create_monitor(source_key)
         if monitor:
+            # Start monitor if it has a start method (e.g., VDJMonitor needs OSC subscriptions)
+            if hasattr(monitor, 'start'):
+                monitor.start()
             self._playback.set_monitor(monitor)
             self._settings.playback_source = source_key
             logger.info(f"Switched playback source to: {source_key}")
