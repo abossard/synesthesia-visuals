@@ -30,11 +30,11 @@ from .config import save_config, load_config
 
 # Import central OSC hub from parent package
 try:
-    from osc_hub import osc
+    from osc import osc
 except ImportError:
     # Fallback for standalone execution (python -m launchpad_osc_lib)
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from osc_hub import osc
+    from osc import osc
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class LaunchpadApp:
         
         # Start OSC via central hub
         osc.start()
-        osc.synesthesia.subscribe("/", self._on_osc_raw)
+        osc.subscribe("/", self._on_osc_raw)
         self._osc_running = True
         
         # Set up Launchpad callbacks
@@ -95,7 +95,7 @@ class LaunchpadApp:
         """Stop the application."""
         self._running = False
         if self._osc_running:
-            osc.synesthesia.unsubscribe("/", self._on_osc_raw)
+            osc.unsubscribe("/", self._on_osc_raw)
             self._osc_running = False
         self.launchpad.stop()
         logger.info("Stopped")

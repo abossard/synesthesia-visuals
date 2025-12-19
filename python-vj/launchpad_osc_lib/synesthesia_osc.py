@@ -2,7 +2,7 @@
 Synesthesia OSC Manager
 
 High-level OSC interface with message filtering.
-Wraps osc_hub.osc.synesthesia with controllable-message filtering.
+Subscribes to the hub's inbound stream and uses osc.synesthesia for outgoing.
 """
 
 import time
@@ -12,13 +12,13 @@ from typing import Callable, List
 # Import central OSC hub from parent package
 # Works both when imported via vj_console.py and when run standalone
 try:
-    from osc_hub import osc
+    from osc import osc
 except ImportError:
     # Fallback for standalone execution (python -m launchpad_osc_lib)
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from osc_hub import osc
+    from osc import osc
 
 from .model import OscCommand, OscEvent
 from .synesthesia_config import (
@@ -36,7 +36,7 @@ class SynesthesiaOscManager:
     High-level OSC manager for Synesthesia communication.
     
     Features:
-    - Wraps osc_hub.osc.synesthesia
+    - Subscribes to hub inbound OSC stream
     - Separate callbacks for controllable vs all messages
     - Beat pulse tracking for LED sync
     """
@@ -52,13 +52,13 @@ class SynesthesiaOscManager:
         if self._running:
             return True
         osc.start()
-        osc.synesthesia.subscribe("/", self._on_osc_raw)
+        osc.subscribe("/", self._on_osc_raw)
         self._running = True
         return True
     
     def stop(self):
         if self._running:
-            osc.synesthesia.unsubscribe("/", self._on_osc_raw)
+            osc.unsubscribe("/", self._on_osc_raw)
             self._running = False
     
     def is_connected(self) -> bool:

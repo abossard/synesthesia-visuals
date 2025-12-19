@@ -2,7 +2,22 @@
 Shaders Module - Feature-based shader-to-music matching
 
 Multi-dimensional semantic matching using normalized feature vectors.
-Features: energy_score, mood_valence, color_warmth, motion_speed, geometric_score, visual_density
+
+Public API:
+    Classes:
+        ShaderIndexer - Index shaders from disk, caches features in JSON
+        ShaderMatcher - Match songs to shaders using feature vectors
+        ShaderSelector - High-level interface combining indexing + matching
+
+    Types:
+        ShaderFeatures - 6D feature vector for a shader
+        SongFeatures - Song metadata with audio features
+        ShaderMatch - Result of matching (shader, score, why)
+        AudioSource - Enum: bass, mid, high, etc.
+        ModulationType - Enum: add, multiply, etc.
+
+    Functions:
+        categories_to_song_features() - Convert SongCategories to SongFeatures
 
 Usage:
     from shaders import ShaderIndexer, ShaderSelector, SongFeatures
@@ -12,9 +27,6 @@ Usage:
 
     selector = ShaderSelector(indexer)
     match = selector.select_for_song(song_features)
-
-NOTE: Content is re-exported from shader_matcher.py for now.
-      Will be migrated to submodules incrementally.
 """
 
 # Import from original location and re-export

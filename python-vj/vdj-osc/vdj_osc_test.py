@@ -7,7 +7,7 @@ Sends queries and subscriptions, prints responses, then exits.
 
 VirtualDJ Settings Required:
   - oscPort: 9009 (VDJ listens here)
-  - oscPortBack: 9008 (VDJ sends responses here)
+  - oscPortBack: 9999 (VDJ sends responses here)
 
 Usage:
   python vdj_osc_test.py
@@ -30,7 +30,7 @@ except ImportError:
 # Configuration
 VDJ_HOST = "127.0.0.1"
 VDJ_OSC_PORT = 9009       # VirtualDJ oscPort (we send TO this)
-VDJ_OSC_PORT_BACK = 9008  # VirtualDJ oscPortBack (we receive FROM this)
+VDJ_OSC_PORT_BACK = 9999  # VirtualDJ oscPortBack (we receive FROM this)
 
 # Track received messages
 messages_received = 0

@@ -28,7 +28,7 @@ class AggregatedMessage:
 
 class OSCMonitor:
     """
-    Monitor OSC traffic across all channels with aggregation.
+    Monitor OSC traffic across the hub with aggregation.
 
     Usage:
         monitor = OSCMonitor()
@@ -50,30 +50,25 @@ class OSCMonitor:
         return self._started
 
     def start(self):
-        """Subscribe to all OSC channels."""
+        """Subscribe to all incoming OSC messages."""
         if self._started:
             return True
         if not osc.is_started:
             osc.start()
-        osc.vdj.subscribe("/", self._on_vdj)
-        osc.synesthesia.subscribe("/", self._on_synesthesia)
+        osc.subscribe("/", self._on_incoming)
         self._started = True
         logger.info(f"OSCMonitor started")
         return True
 
     def stop(self):
-        """Unsubscribe from channels."""
+        """Unsubscribe from incoming OSC messages."""
         if not self._started:
             return
-        osc.vdj.unsubscribe("/", self._on_vdj)
-        osc.synesthesia.unsubscribe("/", self._on_synesthesia)
+        osc.unsubscribe("/", self._on_incoming)
         self._started = False
 
-    def _on_vdj(self, path: str, args: list):
-        self._record("vdj", path, args)
-
-    def _on_synesthesia(self, path: str, args: list):
-        self._record("syn", path, args)
+    def _on_incoming(self, path: str, args: list):
+        self._record("hub", path, args)
 
     def record_outgoing(self, channel: str, address: str, args: list):
         """Record outgoing message (call from OSCSender)."""

@@ -1,23 +1,21 @@
 """
 AI Module - LLM and image generation services
 
-Handles:
-- LLM analysis (local LM Studio, OpenAI)
-- Song categorization
-- ComfyUI image generation
-- Text embeddings
+Handles LLM analysis, song categorization, and image generation.
+
+Public API:
+    Classes:
+        LLMAnalyzer - Analyze songs using LLM (local LM Studio or OpenAI)
+        SongCategorizer - Categorize songs by genre, mood, era, etc.
+        ComfyUIGenerator - Generate images via ComfyUI
 
 Usage:
     from ai import LLMAnalyzer, SongCategorizer
 
     analyzer = LLMAnalyzer()
     result = await analyzer.analyze_song("Artist", "Title")
-
-NOTE: Content is re-exported from ai_services.py for now.
-      Will be migrated to submodules incrementally.
 """
 
-# Re-export from original location
 import sys
 from pathlib import Path
 
@@ -30,7 +28,6 @@ from ai_services import (
     SongCategorizer,
 )
 
-# Also available in karaoke_engine for backwards compat
 try:
     from karaoke_engine import ComfyUIGenerator
 except ImportError:

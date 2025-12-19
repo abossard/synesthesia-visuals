@@ -3,7 +3,7 @@
 import time
 from typing import Dict, Any
 
-from domain_types import PlaybackSnapshot, PlaybackState
+from domain import PlaybackSnapshot, PlaybackState
 from karaoke_engine import KaraokeEngine, get_active_line_index
 
 

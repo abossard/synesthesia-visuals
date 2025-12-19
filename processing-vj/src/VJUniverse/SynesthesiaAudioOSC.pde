@@ -21,14 +21,13 @@
 // OSC CONFIGURATION
 // ============================================
 
-final int SYN_AUDIO_OSC_PORT = 7777;
+// Note: All OSC uses the single OSC_PORT (10000) defined in VJUniverse.pde
 final int SYN_AUDIO_TIMEOUT_MS = 1500;
 
-OscP5 synAudioOsc;
 HashMap<String, Float> synAudioValues = new HashMap<String, Float>();
 HashMap<String, float[]> isfUniformDefaults = new HashMap<String, float[]>();
 long synAudioLastMessageMs = 0;
-String synAudioSourceLabel = "Synesthesia OSC";
+String synAudioSourceLabel = "OSC";
 
 // ============================================
 // AUDIO STATE (SMOOTHED)
@@ -185,16 +184,12 @@ class AudioBinding {
 // ============================================
 
 void initSynesthesiaAudio() {
-  if (synAudioOsc != null) {
-    try {
-      synAudioOsc.stop();
-    } catch (Exception ignored) {}
-  }
+  // Note: Uses the main oscP5 instance from VJUniverse.pde (port 10000)
+  // No separate OscP5 needed - all messages routed via oscEvent()
   synAudioValues.clear();
   synAudioLastMessageMs = 0;
-  synAudioSourceLabel = "Synesthesia OSC";
-  synAudioOsc = new OscP5(this, SYN_AUDIO_OSC_PORT);
-  println("[AudioOSC] Listening on port " + SYN_AUDIO_OSC_PORT + " for Synesthesia audio stream");
+  synAudioSourceLabel = "OSC Port " + OSC_PORT;
+  println("[AudioOSC] Audio messages handled on main OSC port " + OSC_PORT);
 }
 
 // ============================================
@@ -223,7 +218,7 @@ boolean handleSynesthesiaAudioMessage(OscMessage msg) {
   synAudioValues.put(addr, value);
   synAudioLastMessageMs = millis();
   if (msg.netAddress() != null) {
-    synAudioSourceLabel = msg.netAddress().address() + ":" + SYN_AUDIO_OSC_PORT;
+    synAudioSourceLabel = msg.netAddress().address() + ":" + OSC_PORT;
   }
   return true;
 }

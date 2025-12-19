@@ -101,7 +101,7 @@ Download from https://lmstudio.ai/, load a model, start the local server (port 1
 
 ## OSC Protocol
 
-All messages use flat arrays (no nested structures) on port 9000.
+All messages use flat arrays (no nested structures) on port 10000 (VJUniverse).
 
 ### Karaoke
 

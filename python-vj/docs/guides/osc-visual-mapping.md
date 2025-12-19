@@ -14,7 +14,7 @@ python vj_console.py
 # Press 'A' to toggle audio analyzer
 ```
 
-Configure your VJ software to receive OSC on `127.0.0.1:9000`.
+Configure your VJ software to receive OSC on `127.0.0.1:10000`.
 
 ---
 
@@ -240,7 +240,7 @@ OscP5 osc;
 
 void setup() {
   size(1920, 1080);
-  osc = new OscP5(this, 9000);
+  osc = new OscP5(this, 10000);  // VJUniverse port
 }
 
 void oscEvent(OscMessage msg) {
@@ -259,13 +259,13 @@ void oscEvent(OscMessage msg) {
 ### Magic Music Visuals
 
 ```
-Settings → OSC → Enable Input → Port 9000
+Settings → OSC → Enable Input → Port 10000
 Use "OSC" modulator → Select address → Assign to effect
 ```
 
 ### Synesthesia
 
-Already built to receive audio analysis on port 9000.
+Already built to receive audio analysis on port 10000.
 
 Custom shaders access via:
 ```glsl
@@ -345,7 +345,7 @@ Drop Mode:
 
 | Issue | Check |
 |-------|-------|
-| No OSC received | Analyzer running? Port 9000? Firewall? |
+| No OSC received | Analyzer running? Port 10000? Firewall? |
 | Not reactive enough | Increase range, reduce smoothing, use exponential |
 | Too chaotic | Increase smoothing, add threshold (ignore < 0.2) |
 | Build-up not detecting | Music has clear build-ups? Try EDM tracks first |

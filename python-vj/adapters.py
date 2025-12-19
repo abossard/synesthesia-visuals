@@ -15,9 +15,9 @@ import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from domain_types import sanitize_cache_filename
-from infra import ServiceHealth, Config
-from osc_hub import osc
+from domain import sanitize_cache_filename
+from infrastructure import ServiceHealth, Config
+from osc import osc
 
 logger = logging.getLogger('karaoke')
 
@@ -418,7 +418,7 @@ class OSCSender:
     
     def send(self, address: str, *args):
         """Send a raw OSC message to karaoke channel and record for monitoring."""
-        from osc_hub import osc_monitor
+        from osc import osc_monitor
         osc.karaoke.send(address, *args)
         osc_monitor.record_outgoing("kar", address, list(args))
     

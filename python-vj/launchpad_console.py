@@ -34,7 +34,7 @@ try:
     from launchpad_osc_lib.fsm import handle_pad_press, handle_pad_release, handle_osc_event
     from launchpad_osc_lib.config import load_config, save_config
     from launchpad_osc_lib.synesthesia_config import enrich_event
-    from osc_hub import osc
+    from osc import osc
     LAUNCHPAD_LIB_AVAILABLE = True
 except ImportError as e:
     LAUNCHPAD_LIB_AVAILABLE = False
@@ -502,7 +502,7 @@ class LaunchpadManager:
             
             # Initialize OSC via central hub
             osc.start()
-            osc.synesthesia.subscribe("/", self._on_osc_raw)
+            osc.subscribe("/", self._on_osc_raw)
             self._osc_running = True
             
             # Load saved config
@@ -536,7 +536,7 @@ class LaunchpadManager:
         self._running = False
         
         if self._osc_running:
-            osc.synesthesia.unsubscribe("/", self._on_osc_raw)
+            osc.unsubscribe("/", self._on_osc_raw)
             self._osc_running = False
         
         if self.device:

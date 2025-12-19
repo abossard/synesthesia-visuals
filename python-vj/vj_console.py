@@ -38,9 +38,9 @@ from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
 from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
-from domain_types import PlaybackSnapshot, PlaybackState
-from infra import Settings
-from osc_hub import osc, osc_monitor
+from domain import PlaybackSnapshot, PlaybackState
+from infrastructure import Settings
+from osc import osc, osc_monitor
 
 # Launchpad control (replaces MIDI Router)
 try:

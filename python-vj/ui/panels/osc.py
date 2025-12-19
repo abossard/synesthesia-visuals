@@ -67,9 +67,10 @@ class OSCControlPanel(Static):
 
     def compose(self) -> ComposeResult:
         yield Static("[bold]OSC Hub Control[/bold]", classes="section-title")
+        yield Static("[dim]Hub recv :9999 → fwd :10000, :11111[/dim]")
 
         # Individual channel controls
-        yield Static("[bold cyan]VirtualDJ[/] (send :9009, recv :9008)", id="osc-vdj-label")
+        yield Static("[bold cyan]VirtualDJ[/] (send :9009, recv :9999)", id="osc-vdj-label")
         with Horizontal(classes="startup-buttons"):
             yield Button("▶ Start VDJ", id="btn-osc-vdj-start", variant="success")
             yield Button("■ Stop VDJ", id="btn-osc-vdj-stop", variant="error")
@@ -79,7 +80,7 @@ class OSCControlPanel(Static):
             yield Button("▶ Start Synesthesia", id="btn-osc-syn-start", variant="success")
             yield Button("■ Stop Synesthesia", id="btn-osc-syn-stop", variant="error")
 
-        yield Static("[bold green]Karaoke/Processing[/] (send :9000, send-only)", id="osc-kar-label")
+        yield Static("[bold green]Karaoke/Processing[/] (send :10000, send-only)", id="osc-kar-label")
         with Horizontal(classes="startup-buttons"):
             yield Button("▶ Start Karaoke", id="btn-osc-kar-start", variant="success")
             yield Button("■ Stop Karaoke", id="btn-osc-kar-stop", variant="error")
@@ -110,13 +111,13 @@ class OSCControlPanel(Static):
 
                 if key == "vdj":
                     label_id = "#osc-vdj-label"
-                    status_icon = "[green]● LISTENING[/]" if active else "[dim]○ stopped[/]"
+                    status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold cyan]VirtualDJ[/] (send :9009, recv :9008) {status_icon}"
+                        f"[bold cyan]VirtualDJ[/] (send :9009, recv :9999) {status_icon}"
                     )
                 elif key == "synesthesia":
                     label_id = "#osc-syn-label"
-                    status_icon = "[green]● LISTENING[/]" if active else "[dim]○ stopped[/]"
+                    status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
                     self.query_one(label_id, Static).update(
                         f"[bold magenta]Synesthesia[/] (send :7777, recv :9999) {status_icon}"
                     )
@@ -124,7 +125,7 @@ class OSCControlPanel(Static):
                     label_id = "#osc-kar-label"
                     status_icon = "[green]● READY[/]" if active else "[dim]○ stopped[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold green]Karaoke/Processing[/] (send :9000, send-only) {status_icon}"
+                        f"[bold green]Karaoke/Processing[/] (send :10000, send-only) {status_icon}"
                     )
             except Exception:
                 pass

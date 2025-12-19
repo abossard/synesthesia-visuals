@@ -1,20 +1,39 @@
 """
 Music Module - Music tracking and categorization
 
-Handles:
-- Playback monitoring (VirtualDJ, djay, Spotify)
-- Song categorization via AI
-- Lyrics fetching and parsing
-- OSC messaging for visuals
+Handles playback monitoring, song categorization, lyrics, and OSC messaging.
+
+Public API:
+    Classes:
+        KaraokeEngine - Main engine for tracking playback and syncing visuals
+        SongCategories - Song metadata container (genre, mood, era, etc.)
+        SongCategory - Individual category with confidence score
+        Track - Currently playing track info
+        PlaybackState - Playback status (playing, paused, etc.)
+        PipelineTracker - Track async processing pipeline
+        OSCSender - Send OSC messages to visual apps
+
+    Types:
+        LyricLine - Single line with timestamp
+        PipelineStep - Step in processing pipeline
+
+    Functions:
+        parse_lrc() - Parse LRC lyrics format
+        detect_refrains() - Find chorus/refrain sections
+        get_active_line_index() - Get current lyric line by timestamp
+        get_refrain_lines() - Get all refrain line indices
+        extract_keywords() - Extract keywords from lyrics
+
+    Config:
+        Config - Path configuration
+        Settings - Persistent user settings
+        PLAYBACK_SOURCES - Available playback sources dict
 
 Usage:
     from music import KaraokeEngine, SongCategories
 
     engine = KaraokeEngine()
     engine.start()
-
-NOTE: Content is re-exported from karaoke_engine.py for now.
-      Will be migrated to submodules incrementally.
 """
 
 # Re-export from original location

@@ -61,8 +61,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         type=int,
-        default=7000,
-        help="UDP port to receive OSC on (default: 7000)",
+        default=9999,
+        help="UDP port to receive OSC on (default: 9999)",
     )
     parser.add_argument(
         "--prefix",

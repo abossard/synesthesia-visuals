@@ -19,7 +19,7 @@ import codeanticode.syphon.*;
 // ============================================
 final int WINDOW_WIDTH = 1280;
 final int WINDOW_HEIGHT = 720;  // HD Ready resolution
-final int OSC_PORT = 9000;  // Match karaoke_engine default
+final int OSC_PORT = 10000;  // Single OSC port for all messages
 final String SHADERS_PATH = "shaders";
 final String SCENES_PATH = "scenes";
 
@@ -70,6 +70,11 @@ String screenshotShaderName = "";    // Shader name for scheduled screenshot
 final float SCREENSHOT_DELAY = 1.0;  // Seconds after shader load to take screenshot
 final String SCREENSHOTS_PATH = "screenshots";  // Folder for screenshots
 
+// Auto-screenshot on startup (for testing)
+final float AUTO_SCREENSHOT_DELAY = 10.0;  // Take screenshot 10 seconds after startup
+float autoScreenshotTime = -1;  // Time when auto-screenshot should be taken
+boolean autoScreenshotTaken = false;  // Prevent multiple auto-screenshots
+
 // Shader cycling mode (triggered by 'R')
 boolean shaderCyclingActive = false;
 int shaderCycleIndex = 0;
@@ -88,6 +93,17 @@ PGraphics shaderBuffer;
 boolean synthMouseEnabled = true;  // Default ON
 float synthMouseBlend = 0.85;      // Blend: 0 = real mouse, 1 = full synthetic
 float synthMouseSpeed = 0.3;       // Base figure-8 rotation speed
+
+// ============================================
+// TEXTLER SYSTEM (Multiplexed Tiles)
+// ============================================
+
+// Tile management
+TileManager tileManager;
+boolean tiledMode = true;  // true = tiled preview, false = shader only (legacy)
+
+// Text rendering framework
+TextRenderer textRenderer;
 
 // ============================================
 // SETUP
@@ -124,12 +140,40 @@ void setup() {
     loadShaderByIndex(0);
   }
   
-  // Initialize Syphon output
+  // Initialize Syphon output (legacy - will be replaced by tile Syphons)
   syphon = new SyphonServer(this, "VJUniverse");
+  
+  // Initialize Textler system
+  initTextlerSystem();
+  
+  // Schedule auto-screenshot for testing
+  autoScreenshotTime = AUTO_SCREENSHOT_DELAY;
+  println("[AUTO] Screenshot scheduled in " + AUTO_SCREENSHOT_DELAY + " seconds");
   
   println("VJUniverse initialized");
   println("Shaders found: " + availableShaders.size());
   println("OSC listening on port: " + OSC_PORT);
+  println("Tiles: " + tileManager.getTileCount());
+}
+
+/**
+ * Initialize Textler system - tiles, text renderer, and state
+ */
+void initTextlerSystem() {
+  // Create text renderer
+  textRenderer = new TextRenderer(this);
+  
+  // Create tile manager
+  tileManager = new TileManager(this);
+  
+  // Add tiles (2 tiles: Shader + Textler)
+  // 1. Shader tile (full resolution shader rendering)
+  tileManager.addTile(new ShaderTile());
+  
+  // 2. Textler tile (generic text rendering via OSC)
+  tileManager.addTile(new TextlerTile("Textler", "VJUniverse/Textler", textRenderer));
+  
+  println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
 }
 
 // ============================================
@@ -161,44 +205,65 @@ void draw() {
   // Clear background
   background(0);
   
-  // TWO-STAGE RENDERING for zoom/pan support:
-  // 1. Render shader to offscreen buffer at native resolution
-  // 2. Draw buffer to screen with zoom/pan transformation
-  
-  // Stage 1: Render shader to buffer
-  shaderBuffer.beginDraw();
-  shaderBuffer.background(0);
-  
-  if (useMultiPass && activeShaderPipeline.size() > 1) {
-    // Multi-pass renders to its own buffers, copy result
-    drawMultiPassPipeline();
-    // Note: multi-pass currently draws to main screen, would need refactor
-  } else if (activeShader != null) {
-    try {
-      applyShaderUniformsTo(activeShader, shaderBuffer);
-      shaderBuffer.shader(activeShader);
-      drawQuadTo(shaderBuffer);
-      shaderBuffer.resetShader();
-    } catch (Exception e) {
-      // Shader error - just draw plain quad
-      shaderBuffer.resetShader();
+  // ============================================
+  // TILED MODE: Render all tiles, show preview grid
+  // ============================================
+  if (tiledMode && tileManager != null) {
+    // Update all tile states
+    tileManager.update();
+    
+    // Render all tiles to their buffers
+    tileManager.render();
+    
+    // Send each tile to its own Syphon server
+    tileManager.sendToSyphon();
+    
+    // Draw preview grid on main display
+    tileManager.drawPreview(width, height);
+  }
+  // ============================================
+  // LEGACY MODE: Shader-only rendering
+  // ============================================
+  else {
+    // TWO-STAGE RENDERING for zoom/pan support:
+    // 1. Render shader to offscreen buffer at native resolution
+    // 2. Draw buffer to screen with zoom/pan transformation
+    
+    // Stage 1: Render shader to buffer
+    shaderBuffer.beginDraw();
+    shaderBuffer.background(0);
+    
+    if (useMultiPass && activeShaderPipeline.size() > 1) {
+      drawMultiPassPipeline();
+    } else if (activeShader != null) {
+      try {
+        applyShaderUniformsTo(activeShader, shaderBuffer);
+        shaderBuffer.shader(activeShader);
+        drawQuadTo(shaderBuffer);
+        shaderBuffer.resetShader();
+      } catch (Exception e) {
+        shaderBuffer.resetShader();
+        drawQuadTo(shaderBuffer);
+      }
+    } else {
       drawQuadTo(shaderBuffer);
     }
-  } else {
-    drawQuadTo(shaderBuffer);
-  }
-  shaderBuffer.endDraw();
-  
-  // Stage 2: Draw buffer to screen with zoom/pan transformation
-  drawShaderBufferWithZoomPan();
-  
-  // Send frame to Syphon
-  if (syphon != null && frameCount > 1) {
-    syphon.sendScreen();
+    shaderBuffer.endDraw();
+    
+    // Stage 2: Draw buffer to screen with zoom/pan transformation
+    drawShaderBufferWithZoomPan();
+    
+    // Send frame to legacy Syphon
+    if (syphon != null && frameCount > 1) {
+      syphon.sendScreen();
+    }
   }
   
   // Check for scheduled screenshot
   checkScheduledScreenshot();
+  
+  // Check for auto-screenshot (10s after startup)
+  checkAutoScreenshot();
   
   // Update shader cycling if active
   updateShaderCycling();
@@ -215,8 +280,6 @@ void draw() {
   if (consoleActive) {
     drawConsole();
   }
-  
-  // Device selection UI removed (OSC feed handles audio input)
 }
 
 void drawMultiPassPipeline() {
@@ -446,6 +509,24 @@ void oscEvent(OscMessage msg) {
     return;
   }
   
+  // ============================================
+  // TEXTLER OSC ROUTING
+  // ============================================
+  
+  // Route to TextRenderer for generic text messages
+  if (textRenderer != null && textRenderer.handleOSC(msg)) {
+    return;
+  }
+  
+  // Route to TileManager for tile-specific messages (including Textler)
+  if (tileManager != null && tileManager.handleOSC(msg)) {
+    return;
+  }
+  
+  // ============================================
+  // SHADER OSC
+  // ============================================
+  
   // Python shader selection: /shader/load [name, energy, valence]
   if (addr.equals("/shader/load")) {
     try {
@@ -465,7 +546,7 @@ void oscEvent(OscMessage msg) {
   }
   
   // Log non-spammy OSC messages
-  if (!addr.startsWith("/karaoke/") && !addr.contains("/active")) {
+  if (!addr.startsWith("/karaoke/") && !addr.startsWith("/textler/") && !addr.contains("/active")) {
     println("OSC: " + addr);
   }
 }
@@ -595,6 +676,17 @@ void keyPressed() {
     return;  // Don't process other keys when console is active
   }
   
+  // TextRenderer broadcast typing mode
+  if (textRenderer != null && textRenderer.handleKey(key, keyCode)) {
+    if (key == ESC) key = 0;  // Prevent sketch exit
+    return;
+  }
+  
+  // TileManager tile focus (number keys 0-9)
+  if (tileManager != null && tileManager.handleKey(key, keyCode)) {
+    return;
+  }
+  
   // Normal key handling
   if (key == ENTER || key == RETURN) {
     consoleActive = true;
@@ -621,8 +713,28 @@ void keyPressed() {
     case 'R':
       startShaderCycling();
       break;
-    case 't':
-    case 'T':
+    case 'v':
+    case 'V':
+      // Toggle tiled mode vs legacy shader-only mode
+      tiledMode = !tiledMode;
+      println("Tiled mode: " + (tiledMode ? "ON" : "OFF"));
+      break;
+    case 'f':
+    case 'F':
+      // Cycle text font
+      if (textRenderer != null) {
+        textRenderer.cycleFont();
+      }
+      break;
+    case 'g':
+    case 'G':
+      // Cycle text font size
+      if (textRenderer != null) {
+        textRenderer.cycleFontSize();
+      }
+      break;
+    case 'y':
+    case 'Y':
       toggleShaderTypeFilter();  // Toggle GLSL/ISF/All
       break;
     case ' ':
@@ -757,11 +869,19 @@ void drawDebugOverlay() {
   text("Filter: " + filterStr + " | Shader [" + (currentShaderIndex + 1) + "/" + list.size() + "]", 20, y); y += lineHeight;
   text("  " + shaderType + ": " + shaderName, 20, y); y += lineHeight;
   text("  Zoom: " + nf(shaderZoom, 1, 2) + " | Offset: " + nf(shaderOffsetX, 1, 2) + ", " + nf(shaderOffsetY, 1, 2), 20, y); y += lineHeight;
+  y += 5;
+  
+  // Tile info
+  text("Mode: " + (tiledMode ? "TILED" : "LEGACY") + " | " + (tileManager != null ? tileManager.getStatusString() : "no tiles"), 20, y); y += lineHeight;
+  if (textRenderer != null) {
+    String fontInfo = textRenderer.getFontName() + " @ " + textRenderer.getFontSize() + "px";
+    text("  Font: " + fontInfo + (textRenderer.isTypingBroadcast() ? " [TYPING...]" : ""), 20, y); y += lineHeight;
+  }
   
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader T=type z/Z=zoom arrows=pan X=reset r=reload B=bars", 20, height - 25);
+  text("D=debug N/P=shader Y=type V=tiles F/G=font T=broadcast 0-9=focus z/Z=zoom", 20, height - 25);
 }
 
 // ============================================
@@ -791,6 +911,37 @@ void checkScheduledScreenshot() {
     takeScreenshot(screenshotShaderName);
     screenshotScheduledTime = -1;  // Clear schedule
     screenshotShaderName = "";
+  }
+}
+
+/**
+ * Check for auto-screenshot (10s after startup for testing)
+ */
+void checkAutoScreenshot() {
+  if (autoScreenshotTaken) return;  // Already taken
+  if (autoScreenshotTime < 0) return;  // Not scheduled
+  
+  if (globalTime >= autoScreenshotTime) {
+    autoScreenshotTaken = true;
+    
+    // Create screenshots directory if needed
+    File screenshotsDir = new File(dataPath(SCREENSHOTS_PATH));
+    if (!screenshotsDir.exists()) {
+      screenshotsDir.mkdirs();
+    }
+    
+    // Save with timestamp for unique filename
+    String timestamp = year() + "-" + nf(month(), 2) + "-" + nf(day(), 2) + "_" + nf(hour(), 2) + "-" + nf(minute(), 2) + "-" + nf(second(), 2);
+    String screenshotPath = SCREENSHOTS_PATH + "/auto_screenshot_" + timestamp + ".png";
+    
+    saveFrame(dataPath(screenshotPath));
+    println("[AUTO] Screenshot saved: " + screenshotPath);
+    consoleLog("📸 Auto-screenshot saved!");
+    
+    // Also exit after screenshot for automated testing
+    println("[AUTO] Screenshot complete. Exiting in 2 seconds...");
+    delay(2000);
+    exit();
   }
 }
 

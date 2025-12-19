@@ -20,7 +20,7 @@ python vj_console.py   # Press 'A' to toggle analyzer, '5' to view
 
 ## OSC Output Reference
 
-All features sent to `127.0.0.1:9000` at ~60 Hz.
+All features sent to `127.0.0.1:10000` at ~60 Hz.
 
 ### Core Addresses
 
@@ -86,7 +86,7 @@ All features sent to `127.0.0.1:9000` at ~60 Hz.
 ### Resolume Arena
 
 ```
-Preferences → OSC → Input → Port 9000
+Preferences → OSC → Input → Port 10000
 Right-click parameter → OSC Input → play music to auto-map
 ```
 

@@ -142,7 +142,7 @@ When you press `l`, the status panel changes:
 │  Step 5: Python → OSC Broadcast (VJ Bus)                        │
 │  ┌──────────────┐                                               │
 │  │ 127.0.0.1    │ <--OSC-- /midi/toggle/40 ["TwisterOn", 1.0]  │
-│  │  :9000       │                                               │
+│  │  :10000      │                                               │
 │  └──────────────┘                                               │
 │         ↓                                                        │
 │  ┌───────────────────────────────────┐                          │
@@ -285,7 +285,7 @@ When you launch VJ Console:
 │  │  │  • Spectral analysis                           │  │                │
 │  │  └────────────────────────────────────────────────┘  │                │
 │  └──────┬────────────────────────────┬──────────────────┘                │
-│         │ MIDI (MagicBus)            │ OSC (127.0.0.1:9000)              │
+│         │ MIDI (MagicBus)            │ OSC (127.0.0.1:10000)             │
 │         ▼                            ▼                                   │
 │  ┌──────────────┐            ┌────────────────────────┐                  │
 │  │    Magic     │            │   Processing Sketch    │                  │

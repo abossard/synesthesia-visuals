@@ -22,11 +22,6 @@ class TestOSCModule:
         assert osc is not None
         assert osc_monitor is not None
 
-    def test_import_backwards_compat(self):
-        """Can import from osc_hub for backwards compatibility."""
-        from osc_hub import osc, osc_monitor
-        assert osc is not None
-
     def test_osc_hub_not_started_by_default(self):
         """OSC hub should not be started by default."""
         from osc import osc
@@ -37,10 +32,10 @@ class TestOSCModule:
         """Channel configs are properly defined."""
         from osc import VDJ, SYNESTHESIA, KARAOKE
         assert VDJ.send_port == 9009
-        assert VDJ.recv_port == 9008
+        assert VDJ.recv_port == 9999
         assert SYNESTHESIA.send_port == 7777
         assert SYNESTHESIA.recv_port == 9999
-        assert KARAOKE.send_port == 9000
+        assert KARAOKE.send_port == 10000  # VJUniverse
         assert KARAOKE.recv_port is None
 
     def test_channel_status(self):
@@ -167,10 +162,6 @@ class TestDomainModule:
         assert PlaybackSnapshot is not None
         assert PlaybackState is not None
 
-    def test_backwards_compat(self):
-        """Can import from domain_types directly."""
-        from domain_types import PlaybackSnapshot
-        assert PlaybackSnapshot is not None
 
 
 class TestInfrastructureModule:
@@ -186,10 +177,6 @@ class TestInfrastructureModule:
         from infrastructure import ProcessManager
         assert ProcessManager is not None
 
-    def test_backwards_compat(self):
-        """Can import from infra directly."""
-        from infra import Settings
-        assert Settings is not None
 
 
 class TestLaunchpadModule:

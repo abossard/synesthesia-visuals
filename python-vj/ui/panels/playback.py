@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual.widgets import Static, RadioSet, RadioButton
 
-from infra import Settings
+from infrastructure import Settings
 from karaoke_engine import PLAYBACK_SOURCES
 from ui.messages import PlaybackSourceChanged
 from utils import format_status_icon, format_duration

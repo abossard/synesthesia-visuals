@@ -25,7 +25,7 @@ RECOMMENDED API ENTRY POINTS
        ControllerState, ButtonId, handle_pad_press, handle_osc_event,
        SendOscEffect, LedEffect
    )
-   from osc_hub import osc
+   from osc import osc
 
    state = ControllerState()
    new_state, effects = handle_pad_press(state, ButtonId(0, 0))

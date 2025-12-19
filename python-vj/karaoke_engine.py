@@ -22,7 +22,7 @@ from threading import Lock, Event, Thread
 from typing import Optional, Dict, List
 
 # Domain and infrastructure
-from domain_types import (
+from domain import (
     LyricLine, Track, PlaybackState, SongCategory, SongCategories,
     parse_lrc, extract_keywords, detect_refrains, analyze_lyrics,
     get_active_line_index, get_refrain_lines,
@@ -30,7 +30,7 @@ from domain_types import (
     PlaybackSnapshot,
     PlaybackState,
 )
-from infra import Config, Settings, PipelineTracker, ServiceHealth, PipelineStep, BackoffState
+from infrastructure import Config, Settings, PipelineTracker, ServiceHealth, PipelineStep, BackoffState
 
 # Re-export for compatibility with vj_console.py and test_python_vj.py
 __all__ = [

@@ -27,7 +27,7 @@ class Config:
     
     # OSC defaults
     DEFAULT_OSC_HOST = "127.0.0.1"
-    DEFAULT_OSC_PORT = 9000  # Standard OSC port for Processing
+    DEFAULT_OSC_PORT = 10000  # VJUniverse OSC port
     
     # VirtualDJ paths to search (in order of priority)
     VDJ_SEARCH_PATHS = [

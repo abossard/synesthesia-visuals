@@ -5,7 +5,7 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widgets import Button, Checkbox, Static
 
-from infra import Settings
+from infrastructure import Settings
 
 
 class StartupControlPanel(Static):
