@@ -33,9 +33,9 @@ class StartupControlPanel(Static):
             yield Static("", id="stat-synesthesia", classes="stat-label")
 
         with Horizontal(classes="startup-row"):
-            yield Checkbox("KaraokeOverlay", self.settings.start_karaoke_overlay, id="chk-karaoke-overlay")
-            yield Checkbox("Auto-restart", self.settings.autorestart_karaoke_overlay, id="chk-ar-karaoke-overlay")
-            yield Static("", id="stat-karaoke-overlay", classes="stat-label")
+            yield Checkbox("VJUniverse", self.settings.start_vjuniverse, id="chk-vjuniverse")
+            yield Checkbox("Auto-restart", self.settings.autorestart_vjuniverse, id="chk-ar-vjuniverse")
+            yield Static("", id="stat-vjuniverse", classes="stat-label")
 
         with Horizontal(classes="startup-row"):
             yield Checkbox("LM Studio", self.settings.start_lmstudio, id="chk-lmstudio")
@@ -60,11 +60,11 @@ class StartupControlPanel(Static):
         # Map checkbox IDs to settings properties
         mappings = {
             "chk-synesthesia": "start_synesthesia",
-            "chk-karaoke-overlay": "start_karaoke_overlay",
+            "chk-vjuniverse": "start_vjuniverse",
             "chk-lmstudio": "start_lmstudio",
             "chk-magic": "start_magic",
             "chk-ar-synesthesia": "autorestart_synesthesia",
-            "chk-ar-karaoke-overlay": "autorestart_karaoke_overlay",
+            "chk-ar-vjuniverse": "autorestart_vjuniverse",
             "chk-ar-lmstudio": "autorestart_lmstudio",
             "chk-ar-magic": "autorestart_magic",
         }
@@ -99,12 +99,12 @@ class StartupControlPanel(Static):
         except Exception:
             pass
 
-        # KaraokeOverlay stats (Processing/Java)
+        # VJUniverse stats (Processing/Java)
         try:
-            label = self.query_one("#stat-karaoke-overlay", Static)
-            ko_stats = stats.get("java") or stats.get("Java")
-            if ko_stats and ko_stats.running:
-                label.update(f"[green]● {ko_stats.cpu_percent:.0f}% / {ko_stats.memory_mb:.0f}MB[/]")
+            label = self.query_one("#stat-vjuniverse", Static)
+            vj_stats = stats.get("java") or stats.get("Java")
+            if vj_stats and vj_stats.running:
+                label.update(f"[green]● {vj_stats.cpu_percent:.0f}% / {vj_stats.memory_mb:.0f}MB[/]")
             else:
                 label.update("[dim]○ Not running[/]")
         except Exception:

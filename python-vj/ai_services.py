@@ -18,7 +18,7 @@ from typing import Optional, Dict, Any, List
 from domain import sanitize_cache_filename, STOP_WORDS, SongCategories
 from infrastructure import ServiceHealth, Config
 
-logger = logging.getLogger('karaoke')
+logger = logging.getLogger('textler')
 
 
 # =============================================================================

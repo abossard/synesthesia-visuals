@@ -9,7 +9,7 @@ Architecture:
 - Send-only channels for outgoing messages:
   - vdj: VirtualDJ (port 9009)
   - synesthesia: Synesthesia (port 7777)
-  - karaoke: VJUniverse (port 10000)
+  - textler: VJUniverse (port 10000)
 """
 
 import logging
@@ -45,7 +45,7 @@ class ChannelConfig:
 # Channel configurations (send only; recv_port mirrors shared hub port)
 VDJ = ChannelConfig("vdj", "127.0.0.1", 9009, RECEIVE_PORT)
 SYNESTHESIA = ChannelConfig("synesthesia", "127.0.0.1", 7777, RECEIVE_PORT)
-KARAOKE = ChannelConfig("karaoke", "127.0.0.1", 10000, None)
+TEXTLER = ChannelConfig("textler", "127.0.0.1", 10000, None)
 
 
 class Channel:
@@ -104,13 +104,13 @@ class OSCHub:
 
     - Receives on port 9999
     - Forwards every message to 10000 and 11111
-    - Exposes send-only channels for vdj, synesthesia, karaoke
+    - Exposes send-only channels for vdj, synesthesia, textler
     """
 
     def __init__(self):
         self._vdj = Channel(VDJ)
         self._synesthesia = Channel(SYNESTHESIA)
-        self._karaoke = Channel(KARAOKE)
+        self._textler = Channel(TEXTLER)
         self._started = False
 
         self._server: Optional[liblo.ServerThread] = None
@@ -142,13 +142,13 @@ class OSCHub:
         return self._synesthesia
 
     @property
-    def karaoke(self) -> Channel:
-        return self._karaoke
+    def textler(self) -> Channel:
+        return self._textler
 
     @property
     def processing(self) -> Channel:
-        """Alias for karaoke (VJUniverse port 10000)."""
-        return self._karaoke
+        """Alias for textler (VJUniverse port 10000)."""
+        return self._textler
 
     def get_channel_status(self) -> Dict[str, Dict[str, Any]]:
         """Get status of all channels."""
@@ -165,11 +165,11 @@ class OSCHub:
                 "recv_port": RECEIVE_PORT,
                 "active": self._synesthesia._target is not None,
             },
-            "karaoke": {
-                "name": "Karaoke/Processing",
-                "send_port": KARAOKE.send_port,
+            "textler": {
+                "name": "Textler/Processing",
+                "send_port": TEXTLER.send_port,
                 "recv_port": None,
-                "active": self._karaoke._target is not None,
+                "active": self._textler._target is not None,
             },
         }
 
@@ -190,7 +190,7 @@ class OSCHub:
 
         self._vdj.start()
         self._synesthesia.start()
-        self._karaoke.start()
+        self._textler.start()
 
         self._started = True
         # Do not register atexit; shutdown can block on some platforms.
@@ -205,7 +205,7 @@ class OSCHub:
         logger.info("OSCHub stopping...")
         self._vdj.stop()
         self._synesthesia.stop()
-        self._karaoke.stop()
+        self._textler.stop()
 
         with self._server_lock:
             server = self._server
@@ -232,7 +232,7 @@ class OSCHub:
         channel_map = {
             "vdj": self._vdj,
             "synesthesia": self._synesthesia,
-            "karaoke": self._karaoke,
+            "textler": self._textler,
         }
         channel = channel_map.get(channel_name)
         return channel.start() if channel else False
@@ -242,7 +242,7 @@ class OSCHub:
         channel_map = {
             "vdj": self._vdj,
             "synesthesia": self._synesthesia,
-            "karaoke": self._karaoke,
+            "textler": self._textler,
         }
         channel = channel_map.get(channel_name)
         if channel:

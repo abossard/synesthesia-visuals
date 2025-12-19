@@ -4,7 +4,7 @@ import time
 from typing import Dict, Any
 
 from domain import PlaybackSnapshot, PlaybackState
-from karaoke_engine import KaraokeEngine, get_active_line_index
+from textler_engine import TextlerEngine, get_active_line_index
 
 
 def estimate_position(state: PlaybackState) -> float:
@@ -35,7 +35,7 @@ def build_track_data(snapshot: PlaybackSnapshot, source_available: bool) -> Dict
     }
 
 
-def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
+def build_pipeline_data(engine: TextlerEngine, snapshot: PlaybackSnapshot) -> Dict[str, Any]:
     """Assemble pipeline panel payload."""
     pipeline_data = {
         'display_lines': engine.pipeline.get_display_lines(),

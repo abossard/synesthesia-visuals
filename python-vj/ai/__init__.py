@@ -29,7 +29,7 @@ from ai_services import (
 )
 
 try:
-    from karaoke_engine import ComfyUIGenerator
+    from textler_engine import ComfyUIGenerator
 except ImportError:
     ComfyUIGenerator = None
 

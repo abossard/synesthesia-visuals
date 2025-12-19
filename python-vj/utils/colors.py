@@ -23,10 +23,10 @@ def color_by_level(text: str) -> str:
 
 def color_by_osc_channel(address: str) -> str:
     """Get color based on OSC address channel."""
-    if "/karaoke/categories" in address:
+    if "/textler/categories" in address:
         return "yellow"
     if "/vj/" in address:
         return "cyan"
-    if "/karaoke/" in address:
+    if "/textler/" in address:
         return "green"
     return "white"

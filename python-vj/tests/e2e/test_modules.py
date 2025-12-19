@@ -30,13 +30,13 @@ class TestOSCModule:
 
     def test_channel_config(self):
         """Channel configs are properly defined."""
-        from osc import VDJ, SYNESTHESIA, KARAOKE
+        from osc import VDJ, SYNESTHESIA, TEXTLER
         assert VDJ.send_port == 9009
         assert VDJ.recv_port == 9999
         assert SYNESTHESIA.send_port == 7777
         assert SYNESTHESIA.recv_port == 9999
-        assert KARAOKE.send_port == 10000  # VJUniverse
-        assert KARAOKE.recv_port is None
+        assert TEXTLER.send_port == 10000  # VJUniverse
+        assert TEXTLER.recv_port is None
 
     def test_channel_status(self):
         """Can get channel status without starting."""
@@ -44,7 +44,7 @@ class TestOSCModule:
         status = osc.get_channel_status()
         assert "vdj" in status
         assert "synesthesia" in status
-        assert "karaoke" in status
+        assert "textler" in status
         assert status["vdj"]["active"] is False
 
 
@@ -108,9 +108,9 @@ class TestMusicModule:
     """Test the music/ module."""
 
     def test_import_engine(self):
-        """Can import KaraokeEngine."""
-        from music import KaraokeEngine
-        assert KaraokeEngine is not None
+        """Can import TextlerEngine."""
+        from music import TextlerEngine
+        assert TextlerEngine is not None
 
     def test_import_categories(self):
         """Can import song categories."""
@@ -259,7 +259,7 @@ class TestIntegration:
         """All modules can be imported together without conflicts."""
         from osc import osc
         from shaders import ShaderIndexer
-        from music import KaraokeEngine
+        from music import TextlerEngine
         from ai import LLMAnalyzer
         from domain import PlaybackSnapshot
         from infrastructure import Settings
@@ -268,7 +268,7 @@ class TestIntegration:
         # All imports succeeded
         assert osc is not None
         assert ShaderIndexer is not None
-        assert KaraokeEngine is not None
+        assert TextlerEngine is not None
         assert LLMAnalyzer is not None
         assert PlaybackSnapshot is not None
         assert Settings is not None

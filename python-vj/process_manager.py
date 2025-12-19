@@ -54,7 +54,7 @@ class AppState:
     """Current state of the VJ Console."""
     selected_index: int = 0
     daemon_mode: bool = False
-    karaoke_enabled: bool = True
+    textler_enabled: bool = True
     running: bool = True
     message: str = ""
     message_time: float = 0

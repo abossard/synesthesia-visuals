@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field, replace
 from threading import Lock
 
-logger = logging.getLogger('karaoke')
+logger = logging.getLogger('textler')
 
 
 # =============================================================================
@@ -174,13 +174,13 @@ class Settings:
         self._set_bool('start_synesthesia', value)
     
     @property
-    def start_karaoke_overlay(self) -> bool:
-        """Whether to start KaraokeOverlay on launch."""
-        return self._get_bool('start_karaoke_overlay', False)
+    def start_vjuniverse(self) -> bool:
+        """Whether to start VJUniverse on launch."""
+        return self._get_bool('start_vjuniverse', False)
     
-    @start_karaoke_overlay.setter
-    def start_karaoke_overlay(self, value: bool) -> None:
-        self._set_bool('start_karaoke_overlay', value)
+    @start_vjuniverse.setter
+    def start_vjuniverse(self, value: bool) -> None:
+        self._set_bool('start_vjuniverse', value)
     
     @property
     def start_lmstudio(self) -> bool:
@@ -212,13 +212,13 @@ class Settings:
         self._set_bool('autorestart_synesthesia', value)
     
     @property
-    def autorestart_karaoke_overlay(self) -> bool:
-        """Whether to auto-restart KaraokeOverlay if it crashes."""
-        return self._get_bool('autorestart_karaoke_overlay', False)
+    def autorestart_vjuniverse(self) -> bool:
+        """Whether to auto-restart VJUniverse if it crashes."""
+        return self._get_bool('autorestart_vjuniverse', False)
     
-    @autorestart_karaoke_overlay.setter
-    def autorestart_karaoke_overlay(self, value: bool) -> None:
-        self._set_bool('autorestart_karaoke_overlay', value)
+    @autorestart_vjuniverse.setter
+    def autorestart_vjuniverse(self, value: bool) -> None:
+        self._set_bool('autorestart_vjuniverse', value)
     
     @property
     def autorestart_lmstudio(self) -> bool:

@@ -3,7 +3,7 @@ OSC Module - Centralized OSC hub for VJ system
 
 Public API:
     Singletons:
-        osc - OSCHub instance with send-only channels (vdj, synesthesia, karaoke)
+        osc - OSCHub instance with send-only channels (vdj, synesthesia, textler)
         osc_monitor - OSCMonitor for aggregating incoming messages for UI display
 
     Classes:
@@ -16,7 +16,7 @@ Public API:
     Channel Configs:
         VDJ - VirtualDJ channel (send: 9009, recv: 9999 shared)
         SYNESTHESIA - Synesthesia channel (send: 7777, recv: 9999 shared)
-        KARAOKE - VJUniverse channel (send: 10000, recv: None)
+        TEXTLER - VJUniverse channel (send: 10000, recv: None)
 
 Usage:
     from osc import osc, osc_monitor
@@ -38,7 +38,7 @@ from .hub import (
     osc,
     VDJ,
     SYNESTHESIA,
-    KARAOKE,
+    TEXTLER,
     Handler,
 )
 from .monitor import (
@@ -55,7 +55,7 @@ __all__ = [
     "osc",
     "VDJ",
     "SYNESTHESIA",
-    "KARAOKE",
+    "TEXTLER",
     "Handler",
     # Monitor
     "OSCMonitor",

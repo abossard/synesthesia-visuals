@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Karaoke Engine - Refactored with stratified design
+Textler Engine - Refactored with stratified design
 
 ARCHITECTURE:
 - domain.py: Pure calculations, immutable data structures
@@ -34,7 +34,7 @@ from infrastructure import Config, Settings, PipelineTracker, ServiceHealth, Pip
 
 # Re-export for compatibility with vj_console.py and test_python_vj.py
 __all__ = [
-    'KaraokeEngine', 'Config', 'Settings', 'ServiceHealth',
+    'TextlerEngine', 'Config', 'Settings', 'ServiceHealth',
     'LyricLine', 'Track', 'PlaybackState', 'SongCategory', 'SongCategories',
     'parse_lrc', 'extract_keywords', 'detect_refrains', 'analyze_lyrics',
     'get_active_line_index', 'get_refrain_lines',
@@ -70,16 +70,16 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('karaoke')
+logger = logging.getLogger('textler')
 
 
 # =============================================================================
 # KARAOKE ENGINE - Main composition with dependency injection
 # =============================================================================
 
-class KaraokeEngine:
+class TextlerEngine:
     """
-    Main karaoke engine - composes all components.
+    Main textler engine - composes all components.
     
     Refactored to use:
     - Dependency Injection for testability
@@ -232,7 +232,7 @@ class KaraokeEngine:
             poll_interval = self._settings.playback_poll_interval_ms / 1000.0
         
         self._running = True
-        thread = Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Karaoke-Main")
+        thread = Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Textler-Main")
         thread.start()
         logger.info(f"Karaoke engine started (poll interval: {poll_interval:.1f}s)")
     
@@ -281,7 +281,6 @@ class KaraokeEngine:
     
     def _run_loop(self, poll_interval: float):
         """Main loop with adaptive polling: fast when playing, slow when idle."""
-        last_position_update = 0
         last_poll = 0
         lyrics_check_interval = 0.1  # Check lyrics every 100ms for precision
         current_poll_interval = self.POLL_INTERVAL_SLOW  # Start slow until source connected
@@ -318,11 +317,6 @@ class KaraokeEngine:
                 if snapshot.state.is_playing:
                     self._check_lyrics(snapshot)
                 
-                # Slow: Update position every poll_interval
-                if current_time - last_position_update >= poll_interval:
-                    self._send_position_update(snapshot)
-                    last_position_update = current_time
-                
                 time.sleep(lyrics_check_interval)
             except KeyboardInterrupt:
                 break
@@ -342,15 +336,6 @@ class KaraokeEngine:
             if active_index != self._last_active_index and active_index >= 0:
                 self._last_active_index = active_index
                 self._send_active_line(active_index)
-    
-    def _send_position_update(self, snapshot: PlaybackSnapshot):
-        """Send position update (less frequent to reduce OSC traffic)."""
-        state = snapshot.state
-        if state.track:
-            self._osc.send_karaoke("position", "update", {
-                "time": self._effective_position(state),
-                "playing": state.is_playing
-            })
 
     def _effective_position(self, state: PlaybackState) -> float:
         """Estimate live position from latest state."""
@@ -459,16 +444,16 @@ class KaraokeEngine:
         self._last_matched_track = ""
 
         # Send track info with source
-        self._osc.send_karaoke("track", "info", {
+        self._osc.send_textler("track", "info", {
             "source": self._playback.current_source,
             "artist": track.artist,
             "title": track.title,
             "album": track.album,
             "duration": track.duration
         })
-        self._osc.send_karaoke("lyrics", "reset", {"song_id": track.key})
-        self._osc.send_karaoke("refrain", "reset", {"song_id": track.key})
-        self._osc.send_karaoke("keywords", "reset", {"song_id": track.key})
+        self._osc.send_textler("lyrics", "reset", {"song_id": track.key})
+        self._osc.send_textler("refrain", "reset", {"song_id": track.key})
+        self._osc.send_textler("keywords", "reset", {"song_id": track.key})
 
         self._start_pipeline_worker(track)
     
@@ -477,7 +462,7 @@ class KaraokeEngine:
         self._cancel_pipeline_worker()
         self._pipeline.reset()
         self._current_lines = []
-        self._osc.send_karaoke("track", "none", {})
+        self._osc.send_textler("track", "none", {})
 
     # ------------------------------------------------------------------
     # Pipeline coordination
@@ -627,7 +612,7 @@ class KaraokeEngine:
             if keyword_set:
                 consolidated = sorted(keyword_set)
                 self._pipeline.complete("extract_keywords", f"{len(consolidated)} keywords")
-                self._osc.send_karaoke("metadata", "keywords", consolidated)
+                self._osc.send_textler("metadata", "keywords", consolidated)
             else:
                 self._pipeline.skip("extract_keywords", "No keywords found")
             if cancelled():
@@ -645,7 +630,7 @@ class KaraokeEngine:
                         top = categories.get_top(5)
                         self._pipeline.complete("categorize_song", f"{len(top)} moods")
                         for cat in categories.get_top(10):
-                            self._osc.send_karaoke("categories", cat.name, cat.score)
+                            self._osc.send_textler("categories", cat.name, cat.score)
                     else:
                         self._pipeline.skip("categorize_song", "No categories returned")
                 except Exception as exc:
@@ -743,13 +728,13 @@ class KaraokeEngine:
     def _send_all_lyrics(self, song_id: str, lines):
         """Send all lyrics channels via OSC."""
         # Reset all channels
-        self._osc.send_karaoke("lyrics", "reset", {"song_id": song_id})
-        self._osc.send_karaoke("refrain", "reset", {"song_id": song_id})
-        self._osc.send_karaoke("keywords", "reset", {"song_id": song_id})
+        self._osc.send_textler("lyrics", "reset", {"song_id": song_id})
+        self._osc.send_textler("refrain", "reset", {"song_id": song_id})
+        self._osc.send_textler("keywords", "reset", {"song_id": song_id})
         
         # Send full lyrics
         for i, line in enumerate(lines):
-            self._osc.send_karaoke("lyrics", "line", {
+            self._osc.send_textler("lyrics", "line", {
                 "index": i,
                 "time": line.time_sec,
                 "text": line.text
@@ -758,7 +743,7 @@ class KaraokeEngine:
         # Send refrain channel
         refrain_lines = get_refrain_lines(lines)
         for i, line in enumerate(refrain_lines):
-            self._osc.send_karaoke("refrain", "line", {
+            self._osc.send_textler("refrain", "line", {
                 "index": i,
                 "time": line.time_sec,
                 "text": line.text
@@ -767,7 +752,7 @@ class KaraokeEngine:
         # Send keywords channel
         for i, line in enumerate(lines):
             if line.keywords:
-                self._osc.send_karaoke("keywords", "line", {
+                self._osc.send_textler("keywords", "line", {
                     "index": i,
                     "time": line.time_sec,
                     "keywords": line.keywords
@@ -779,21 +764,21 @@ class KaraokeEngine:
             line = self._current_lines[index]
             
             # Full lyrics channel
-            self._osc.send_karaoke("lyrics", "active", {"index": index})
+            self._osc.send_textler("lyrics", "active", {"index": index})
             
             # Refrain channel (if this line is refrain)
             if line.is_refrain:
                 refrain_lines = get_refrain_lines(self._current_lines)
                 refrain_index = next((i for i, rline in enumerate(refrain_lines) if rline.text == line.text), -1)
                 if refrain_index >= 0:
-                    self._osc.send_karaoke("refrain", "active", {
+                    self._osc.send_textler("refrain", "active", {
                         "index": refrain_index,
                         "text": line.text
                     })
             
             # Keywords channel
             if line.keywords:
-                self._osc.send_karaoke("keywords", "active", {
+                self._osc.send_textler("keywords", "active", {
                     "index": index,
                     "keywords": line.keywords
                 })
@@ -805,33 +790,33 @@ class KaraokeEngine:
         # Send keywords (most significant words from lyrics)
         keywords = metadata.get('keywords', [])
         if keywords:
-            self._osc.send_karaoke("metadata", "keywords", keywords if isinstance(keywords, list) else [keywords])
+            self._osc.send_textler("metadata", "keywords", keywords if isinstance(keywords, list) else [keywords])
         
         # Send themes
         themes = metadata.get('themes', [])
         if themes:
-            self._osc.send_karaoke("metadata", "themes", themes if isinstance(themes, list) else [themes])
+            self._osc.send_textler("metadata", "themes", themes if isinstance(themes, list) else [themes])
         
         # Send individual metadata fields
         if metadata.get('release_date'):
-            self._osc.send_karaoke("metadata", "release_date", str(metadata['release_date']))
+            self._osc.send_textler("metadata", "release_date", str(metadata['release_date']))
         if metadata.get('album'):
-            self._osc.send_karaoke("metadata", "album", str(metadata['album']))
+            self._osc.send_textler("metadata", "album", str(metadata['album']))
         if metadata.get('genre'):
             genre = metadata['genre']
             if isinstance(genre, list):
                 genre = ', '.join(genre)
-            self._osc.send_karaoke("metadata", "genre", genre)
+            self._osc.send_textler("metadata", "genre", genre)
         if metadata.get('label'):
-            self._osc.send_karaoke("metadata", "label", str(metadata['label']))
+            self._osc.send_textler("metadata", "label", str(metadata['label']))
         if metadata.get('writers'):
             writers = metadata['writers']
             if isinstance(writers, list):
                 writers = ', '.join(writers)
-            self._osc.send_karaoke("metadata", "writers", writers)
+            self._osc.send_textler("metadata", "writers", writers)
         
         # Send full metadata as JSON blob for advanced consumers
-        self._osc.send_karaoke("metadata", "full", json.dumps(metadata))
+        self._osc.send_textler("metadata", "full", json.dumps(metadata))
         
         kw_count = len(keywords) if keywords else 0
         logger.info(f"Song metadata sent: {kw_count} keywords, {metadata.get('release_date', 'unknown')} / {metadata.get('genre', 'unknown')}")
@@ -861,19 +846,19 @@ def main():
     print("=" * 50)
     print("  ℹ️  For full VJ control, use: python vj_console.py")
     print("=" * 50)
-    print("  Running karaoke engine in standalone mode...\n")
+    print("  Running textler engine in standalone mode...\n")
     
     parser = argparse.ArgumentParser(
-        description='Karaoke Engine - Synced lyrics via OSC (standalone mode)',
+        description='Textler Engine - Synced lyrics via OSC (standalone mode)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 For full VJ control with terminal UI, use:
     python vj_console.py
 
 OSC Channels:
-  /karaoke/lyrics/*     Full lyrics
-  /karaoke/refrain/*    Chorus/refrain only
-  /karaoke/keywords/*   Key words only
+  /textler/lyrics/*     Full lyrics
+  /textler/refrain/*    Chorus/refrain only
+  /textler/keywords/*   Key words only
 """
     )
     parser.add_argument('--osc-host', default=Config.DEFAULT_OSC_HOST)
@@ -888,7 +873,7 @@ OSC Channels:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    engine = KaraokeEngine(
+    engine = TextlerEngine(
         osc_host=args.osc_host,
         osc_port=args.osc_port,
         vdj_path=args.vdj_path,

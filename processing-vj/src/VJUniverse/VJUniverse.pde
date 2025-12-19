@@ -50,6 +50,10 @@ boolean debugMode = true;
 float globalTime = 0;
 // Audio-reactive time accumulator keeps shaders synced to beat without new uniforms
 float audioTime = 0;
+// VJSims compatibility alias
+float time = 0;
+// VJSims audio compatibility (levels access this global in render())
+AudioEnvelope audio;
 float lastFrameTime = -1;
 float smoothedAudioSpeed = 1.0f;
 float lastAudioSpeedTarget = 1.0f;
@@ -143,6 +147,10 @@ void setup() {
   // Initialize Syphon output (legacy - will be replaced by tile Syphons)
   syphon = new SyphonServer(this, "VJUniverse");
   
+  // Initialize VJSims audio envelope (uses global audio state)
+  audio = new AudioEnvelope();
+  audio.manualMode = false;
+
   // Initialize Textler system
   initTextlerSystem();
   
@@ -172,7 +180,10 @@ void initTextlerSystem() {
   
   // 2. Textler tile (generic text rendering via OSC)
   tileManager.addTile(new TextlerTile("Textler", "VJUniverse/Textler", textRenderer));
-  
+
+  // 3. VJSims tile (42 procedural levels)
+  tileManager.addTile(new VJSimsTile());
+
   println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
 }
 
@@ -182,9 +193,19 @@ void initTextlerSystem() {
 
 void draw() {
   globalTime = millis() / 1000.0;
-  
+  time = globalTime;  // VJSims compatibility alias
+
   // Update audio parameters from OSC feed
   updateSynesthesiaAudio();
+
+  // Update VJSims audio envelope with enhanced values
+  // Bass: mix in kick for punch on beats
+  audio.bassLevel = constrain(smoothAudioBass + kickEnv * 0.4, 0, 1);
+  // Mid: blend with presence for sustained richness
+  audio.midLevel = lerp(smoothAudioMid, max(smoothAudioMid, presenceMid), 0.3);
+  // High: add energy sparkle
+  audio.highLevel = constrain(smoothAudioHighs + energyFast * 0.1, 0, 1);
+
   float deltaTime = 0;
   if (lastFrameTime >= 0) {
     deltaTime = globalTime - lastFrameTime;
@@ -937,11 +958,6 @@ void checkAutoScreenshot() {
     saveFrame(dataPath(screenshotPath));
     println("[AUTO] Screenshot saved: " + screenshotPath);
     consoleLog("📸 Auto-screenshot saved!");
-    
-    // Also exit after screenshot for automated testing
-    println("[AUTO] Screenshot complete. Exiting in 2 seconds...");
-    delay(2000);
-    exit();
   }
 }
 

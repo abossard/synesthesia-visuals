@@ -93,7 +93,7 @@ class VDJMonitor:
         self._running = False
     
     def get_playback(self) -> Optional[Dict[str, Any]]:
-        """Get playback info for audible deck (KaraokeEngine interface)."""
+        """Get playback info for audible deck (TextlerEngine interface)."""
         with self._lock:
             if not self._is_connected():
                 return None

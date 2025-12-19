@@ -38,8 +38,6 @@ class TextlerState {
   String title = "";
   String album = "";
   float durationSec = 0;
-  float positionSec = 0;
-  boolean isPlaying = false;
   boolean hasSyncedLyrics = false;
   
   // === LYRICS ===
@@ -113,8 +111,7 @@ class TextlerState {
     String addr = msg.addrPattern();
     
     // /textler/track [active, source, artist, title, album, duration, has_lyrics]
-    // Also accept legacy /karaoke/track
-    if (addr.equals("/textler/track") || addr.equals("/karaoke/track")) {
+    if (addr.equals("/textler/track")) {
       if (msg.typetag().length() < 7) return false;
       
       active = safeGetInt(msg, 0, 0) == 1;
@@ -128,14 +125,14 @@ class TextlerState {
       return true;
     }
     
-    // /textler/lyrics/reset or /karaoke/lyrics/reset
-    if (addr.equals("/textler/lyrics/reset") || addr.equals("/karaoke/lyrics/reset")) {
+    // /textler/lyrics/reset
+    if (addr.equals("/textler/lyrics/reset")) {
       reset();
       return true;
     }
     
-    // /textler/lyrics/line [index, time, text] or /karaoke/lyrics/line
-    if (addr.equals("/textler/lyrics/line") || addr.equals("/karaoke/lyrics/line")) {
+    // /textler/lyrics/line [index, time, text]
+    if (addr.equals("/textler/lyrics/line")) {
       if (msg.typetag().length() < 3) return false;
       int idx = safeGetInt(msg, 0, -1);
       if (idx < 0) return false;
@@ -145,16 +142,8 @@ class TextlerState {
       return true;
     }
     
-    // /textler/pos [position, playing] or /karaoke/pos
-    if (addr.equals("/textler/pos") || addr.equals("/karaoke/pos")) {
-      if (msg.typetag().length() < 2) return false;
-      positionSec = safeGetFloat(msg, 0, 0);
-      isPlaying = safeGetInt(msg, 1, 0) == 1;
-      return true;
-    }
-    
-    // /textler/line/active [index] or /karaoke/line/active
-    if (addr.equals("/textler/line/active") || addr.equals("/karaoke/line/active")) {
+    // /textler/line/active [index]
+    if (addr.equals("/textler/line/active")) {
       if (msg.typetag().length() < 1) return false;
       int newIndex = safeGetInt(msg, 0, -1);
       if (newIndex >= 0) {
@@ -259,14 +248,14 @@ class RefrainState {
   boolean handleOSC(OscMessage msg) {
     String addr = msg.addrPattern();
     
-    // /textler/refrain/reset or /karaoke/refrain/reset
-    if (addr.equals("/textler/refrain/reset") || addr.equals("/karaoke/refrain/reset")) {
+    // /textler/refrain/reset
+    if (addr.equals("/textler/refrain/reset")) {
       reset();
       return true;
     }
     
-    // /textler/refrain/line [index, time, text] or /karaoke/refrain/line
-    if (addr.equals("/textler/refrain/line") || addr.equals("/karaoke/refrain/line")) {
+    // /textler/refrain/line [index, time, text]
+    if (addr.equals("/textler/refrain/line")) {
       if (msg.typetag().length() < 3) return false;
       int idx = safeGetInt(msg, 0, -1);
       if (idx < 0) return false;
@@ -276,8 +265,8 @@ class RefrainState {
       return true;
     }
     
-    // /textler/refrain/active [index, text] or /karaoke/refrain/active
-    if (addr.equals("/textler/refrain/active") || addr.equals("/karaoke/refrain/active")) {
+    // /textler/refrain/active [index, text]
+    if (addr.equals("/textler/refrain/active")) {
       if (msg.typetag().length() < 1) return false;
       int idx = safeGetInt(msg, 0, -1);
       String txt = (msg.typetag().length() > 1) ? safeGetString(msg, 1, "") : "";
@@ -366,8 +355,8 @@ class SongInfoState {
   boolean handleOSC(OscMessage msg) {
     String addr = msg.addrPattern();
     
-    // Song info comes from /textler/track or /karaoke/track
-    if (addr.equals("/textler/track") || addr.equals("/karaoke/track")) {
+    // Song info comes from /textler/track
+    if (addr.equals("/textler/track")) {
       if (msg.typetag().length() < 7) return false;
       
       active = safeGetInt(msg, 0, 0) == 1;

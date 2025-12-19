@@ -19,7 +19,7 @@ from domain import sanitize_cache_filename
 from infrastructure import ServiceHealth, Config
 from osc import osc
 
-logger = logging.getLogger('karaoke')
+logger = logging.getLogger('textler')
 
 # Optional Spotify support
 try:
@@ -39,7 +39,7 @@ class LyricsFetcher:
     Fetches lyrics and song metadata.
     
     Simple interface:
-        fetch_lrc(artist, title) -> Optional[str]  # Synced LRC for karaoke timing
+        fetch_lrc(artist, title) -> Optional[str]  # Synced LRC for lyrics timing
         fetch_metadata(artist, title) -> Dict      # Plain lyrics, keywords, song info, merged AI analysis
     
     Strategy:
@@ -58,7 +58,7 @@ class LyricsFetcher:
         self._cache_dir = cache_dir or Config.DEFAULT_LYRICS_CACHE_DIR
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._session = requests.Session()
-        self._session.headers["User-Agent"] = "KaraokeEngine/1.0"
+        self._session.headers["User-Agent"] = "TextlerEngine/1.0"
         self._lmstudio_available = None
         self._lmstudio_model = None
         self._lmstudio_last_check = 0.0
@@ -69,7 +69,7 @@ class LyricsFetcher:
     
     def fetch(self, artist: str, title: str, album: str = "", duration: float = 0) -> Optional[str]:
         """
-        Fetch synced LRC lyrics for karaoke timing. Returns LRC string or None.
+        Fetch synced LRC lyrics for timing. Returns LRC string or None.
         Only returns lyrics with timestamps [mm:ss.xx] - never plain lyrics.
         """
         cache = self._load_cache(artist, title)
@@ -390,22 +390,21 @@ class AppleScriptSpotifyMonitor:
 
 
 # =============================================================================
-# OSC SENDER - Consolidated send_karaoke pattern
+# OSC SENDER - Consolidated send_textler pattern
 # =============================================================================
 
 class OSCSender:
     """
-    Consolidated OSC sender for karaoke messages.
+    Consolidated OSC sender for textler messages.
     
     Sends FLAT OSC messages (arrays, no nested structures) for easy parsing:
-    - /karaoke/track: [active, source, artist, title, album, duration, has_lyrics]
-    - /karaoke/pos: [position_sec, is_playing]
-    - /karaoke/lyrics/reset: []
-    - /karaoke/lyrics/line: [index, time_sec, text]
-    - /karaoke/line/active: [index]
-    - /karaoke/refrain/reset: []
-    - /karaoke/refrain/line: [index, time_sec, text]
-    - /karaoke/refrain/active: [index, text]
+    - /textler/track: [active, source, artist, title, album, duration, has_lyrics]
+    - /textler/lyrics/reset: []
+    - /textler/lyrics/line: [index, time_sec, text]
+    - /textler/line/active: [index]
+    - /textler/refrain/reset: []
+    - /textler/refrain/line: [index, time_sec, text]
+    - /textler/refrain/active: [index, text]
     
     All values are primitives (int, float, string) - no dicts or nested arrays.
     """
@@ -417,29 +416,29 @@ class OSCSender:
         osc.start()  # Ensure OSC hub is running
     
     def send(self, address: str, *args):
-        """Send a raw OSC message to karaoke channel and record for monitoring."""
+        """Send a raw OSC message to textler channel and record for monitoring."""
         from osc import osc_monitor
-        osc.karaoke.send(address, *args)
-        osc_monitor.record_outgoing("kar", address, list(args))
+        osc.textler.send(address, *args)
+        osc_monitor.record_outgoing("txt", address, list(args))
     
-    def send_karaoke(self, channel: str, event: str, data: Any = None):
+    def send_textler(self, channel: str, event: str, data: Any = None):
         """
-        Send karaoke OSC message with backward compatibility for Processing.
+        Send textler OSC message for VJUniverse.
         
         Args:
             channel: "track", "lyrics", "refrain", "keywords", "position"
             event: "info", "reset", "line", "active", "update", "none"
             data: dict, list, or primitive value
         """
-        # Handle legacy message formats for Processing compatibility
+        # Handle message formats for VJUniverse Textler
         if channel == "track" and event == "info":
             # Store track info for later use
             self._current_track_active = True
             self._current_source = data.get("source", "spotify")
             self._current_track_info = data
             
-            # Send legacy format: /karaoke/track [active, source, artist, title, album, duration, has_lyrics]
-            osc.karaoke.send("/karaoke/track",
+            # Send: /textler/track [active, source, artist, title, album, duration, has_lyrics]
+            osc.textler.send("/textler/track",
                 1,  # active
                 self._current_source,
                 data.get("artist", ""),
@@ -453,14 +452,14 @@ class OSCSender:
         elif channel == "track" and event == "none":
             # Send inactive track
             self._current_track_active = False
-            osc.karaoke.send("/karaoke/track", 0, "", "", "", "", 0.0, 0)
+            osc.textler.send("/textler/track", 0, "", "", "", "", 0.0, 0)
             return
         
         elif channel == "lyrics" and event == "reset":
             has_lyrics = data.get("has_lyrics", True) if isinstance(data, dict) else True
             # Update track message with has_lyrics flag
             if self._current_track_active and not has_lyrics:
-                osc.karaoke.send("/karaoke/track",
+                osc.textler.send("/textler/track",
                     1,
                     self._current_source,
                     self._current_track_info.get("artist", ""),
@@ -469,39 +468,31 @@ class OSCSender:
                     self._current_track_info.get("duration", 0.0),
                     0  # has_lyrics = false
                 )
-            osc.karaoke.send("/karaoke/lyrics/reset")
+            osc.textler.send("/textler/lyrics/reset")
             return
         
         elif channel == "lyrics" and event == "line":
             # Send: [index, time, text]
-            osc.karaoke.send("/karaoke/lyrics/line",
+            osc.textler.send("/textler/lyrics/line",
                 data.get("index", 0),
                 data.get("time", 0.0),
                 data.get("text", "")
             )
             return
         
-        elif channel == "position" and event == "update":
-            # Send: [position_sec, is_playing]
-            osc.karaoke.send("/karaoke/pos",
-                data.get("time", 0.0),
-                1 if data.get("playing", True) else 0
-            )
-            return
-        
         elif channel == "lyrics" and event == "active":
             # Send: [index]
             index = data.get("index", -1) if isinstance(data, dict) else data
-            osc.karaoke.send("/karaoke/line/active", index)
+            osc.textler.send("/textler/line/active", index)
             return
         
         elif channel == "refrain" and event == "reset":
-            osc.karaoke.send("/karaoke/refrain/reset")
+            osc.textler.send("/textler/refrain/reset")
             return
         
         elif channel == "refrain" and event == "line":
             # Send: [index, time, text]
-            osc.karaoke.send("/karaoke/refrain/line",
+            osc.textler.send("/textler/refrain/line",
                 data.get("index", 0),
                 data.get("time", 0.0),
                 data.get("text", "")
@@ -510,16 +501,16 @@ class OSCSender:
         
         elif channel == "refrain" and event == "active":
             # Send: [index, text]
-            osc.karaoke.send("/karaoke/refrain/active",
+            osc.textler.send("/textler/refrain/active",
                 data.get("index", -1),
                 data.get("text", "")
             )
             return
         
         # Generic fallback for new-style messages
-        address = f"/karaoke/{channel}/{event}"
+        address = f"/textler/{channel}/{event}"
         args = self._prepare_args(data)
-        osc.karaoke.send(address, *args)
+        osc.textler.send(address, *args)
     
     def send_vj(self, subsystem: str, event: str, data: Any = None):
         """
@@ -536,7 +527,7 @@ class OSCSender:
         """
         address = f"/vj/{subsystem}/{event}"
         args = self._prepare_args(data)
-        osc.karaoke.send(address, *args)
+        osc.textler.send(address, *args)
     
     def send_shader(self, shader_name: str, energy: float = 0.5, valence: float = 0.0):
         """
@@ -550,19 +541,19 @@ class OSCSender:
         OSC Message: /shader/load [name, energy, valence]
         """
         logger.info(f"OSC → /shader/load [{shader_name}, {energy:.2f}, {valence:.2f}]")
-        osc.karaoke.send("/shader/load", shader_name, float(energy), float(valence))
+        osc.textler.send("/shader/load", shader_name, float(energy), float(valence))
     
     def get_recent_messages(self, count: int = 20) -> List[tuple]:
         """Get recent OSC messages for debug display."""
         return []  # No longer tracked
     
-    def send_master_status(self, karaoke_active: bool = False, 
+    def send_master_status(self, textler_active: bool = False, 
                           synesthesia_running: bool = False,
                           milksyphon_running: bool = False,
                           processing_apps: int = 0):
         """Send master VJ status (for vj_console.py compatibility)."""
         self.send_vj("master", "status", {
-            "karaoke": karaoke_active,
+            "textler": textler_active,
             "synesthesia": synesthesia_running,
             "milksyphon": milksyphon_running,
             "processing_apps": processing_apps

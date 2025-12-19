@@ -2,7 +2,7 @@
 """
 Orchestrators - Focused coordinators with dependency injection
 
-Splits the monolithic KaraokeEngine into specialized coordinators:
+Splits the monolithic TextlerEngine into specialized coordinators:
 - PlaybackCoordinator: Monitors music sources, detects track changes
 - LyricsOrchestrator: Fetches and processes lyrics
 - AIOrchestrator: Manages background AI tasks (LLM, categorization, image gen)
@@ -21,7 +21,7 @@ from typing import Optional, List, Dict, Any
 from adapters import LyricsFetcher, OSCSender
 from ai_services import LLMAnalyzer, SongCategorizer
 
-logger = logging.getLogger('karaoke')
+logger = logging.getLogger('textler')
 
 
 # =============================================================================
@@ -201,7 +201,7 @@ class LyricsOrchestrator:
     
     def process_track(self, track: Track, timing_offset_ms: int = 0) -> Optional[List]:
         """
-        Fetch and analyze LRC lyrics for karaoke timing.
+        Fetch and analyze LRC lyrics for lyrics timing.
         Returns list of LyricLine objects or None if no LRC lyrics found.
         """
         self._pipeline.start("fetch_lyrics")
@@ -425,7 +425,7 @@ class AIOrchestrator:
                         
                         # Send categories via OSC
                         for cat in categories.get_top(10):
-                            self._osc.send_karaoke("categories", cat.name, cat.score)
+                            self._osc.send_textler("categories", cat.name, cat.score)
                     else:
                         logger.warning("Categorization returned None")
                         self._pipeline.skip("categorize_song", "Categorization failed")

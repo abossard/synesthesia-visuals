@@ -5,7 +5,7 @@ Handles playback monitoring, song categorization, lyrics, and OSC messaging.
 
 Public API:
     Classes:
-        KaraokeEngine - Main engine for tracking playback and syncing visuals
+        TextlerEngine - Main engine for tracking playback and syncing visuals
         SongCategories - Song metadata container (genre, mood, era, etc.)
         SongCategory - Individual category with confidence score
         Track - Currently playing track info
@@ -30,9 +30,9 @@ Public API:
         PLAYBACK_SOURCES - Available playback sources dict
 
 Usage:
-    from music import KaraokeEngine, SongCategories
+    from music import TextlerEngine, SongCategories
 
-    engine = KaraokeEngine()
+    engine = TextlerEngine()
     engine.start()
 """
 
@@ -44,9 +44,9 @@ _parent = str(Path(__file__).parent.parent)
 if _parent not in sys.path:
     sys.path.insert(0, _parent)
 
-from karaoke_engine import (
+from textler_engine import (
     # Main engine
-    KaraokeEngine,
+    TextlerEngine,
     # Configuration
     Config,
     Settings,
@@ -74,7 +74,7 @@ from karaoke_engine import (
 )
 
 __all__ = [
-    "KaraokeEngine",
+    "TextlerEngine",
     "Config",
     "Settings",
     "PLAYBACK_SOURCES",

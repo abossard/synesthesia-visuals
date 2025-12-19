@@ -39,7 +39,7 @@ from textual.screen import ModalScreen
 from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
-from karaoke_engine import KaraokeEngine, Config as KaraokeConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
+from textler_engine import TextlerEngine, Config as TextlerConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
 from domain import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
 from osc import osc, osc_monitor
@@ -241,7 +241,7 @@ class VJConsoleApp(App):
     current_tab = reactive("master")
     synesthesia_running = reactive(False)
     lmstudio_running = reactive(False)
-    karaoke_overlay_running = reactive(False)
+    vjuniverse_running = reactive(False)
 
     def __init__(self):
         super().__init__()
@@ -261,7 +261,7 @@ class VJConsoleApp(App):
             "java",  # Processing apps run as Java
         ])
         
-        self.karaoke_engine: Optional[KaraokeEngine] = None
+        self.textler_engine: Optional[TextlerEngine] = None
         self._logs: List[str] = []
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
@@ -450,8 +450,8 @@ class VJConsoleApp(App):
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
 
-        # Always start KaraokeEngine - it polls slowly (10s) when no source connected
-        self._start_karaoke()
+        # Always start TextlerEngine - it polls slowly (10s) when no source connected
+        self._start_textler()
 
         # NOTE: Other services controlled via StartupControlPanel
         # Services are started only when "Start All" button is pressed
@@ -552,23 +552,23 @@ class VJConsoleApp(App):
 
     def on_playback_source_changed(self, event: PlaybackSourceChanged) -> None:
         """Handle playback source change from radio buttons."""
-        if self.karaoke_engine:
-            self.karaoke_engine.set_playback_source(event.source_key)
+        if self.textler_engine:
+            self.textler_engine.set_playback_source(event.source_key)
             self._logs.append(f"Switched playback source to: {event.source_key}")
 
     # === Actions (impure, side effects) ===
     
-    def _start_karaoke(self) -> None:
+    def _start_textler(self) -> None:
         """Start the karaoke engine."""
-        if self.karaoke_engine is not None:
+        if self.textler_engine is not None:
             return  # Already running
         try:
-            self.karaoke_engine = KaraokeEngine()
+            self.textler_engine = TextlerEngine()
             # Activate the selected playback source if one is configured
             source = self.settings.playback_source
             if source:
-                self.karaoke_engine.set_playback_source(source)
-            self.karaoke_engine.start()
+                self.textler_engine.set_playback_source(source)
+            self.textler_engine.start()
             logger.info("Karaoke engine started")
         except Exception as e:
             logger.exception(f"Karaoke start error: {e}")
@@ -589,10 +589,10 @@ class VJConsoleApp(App):
         """Check if Synesthesia is running."""
         return self._run_process(['pgrep', '-x', 'Synesthesia'], 1)
     
-    def _is_karaoke_overlay_running(self) -> bool:
-        """Check if KaraokeOverlay Processing app is running."""
+    def _is_vjuniverse_running(self) -> bool:
+        """Check if VJUniverse Processing app is running."""
         for app in self.process_manager.apps:
-            if 'karaoke' in app.name.lower():
+            if 'vjuniverse' in app.name.lower() or 'universe' in app.name.lower():
                 if self.process_manager.is_running(app):
                     return True
         return False
@@ -617,7 +617,7 @@ class VJConsoleApp(App):
     
     def _is_music_monitor_running(self) -> bool:
         """Check if Music Monitor (Karaoke Engine) is running."""
-        return self.karaoke_engine is not None
+        return self.textler_engine is not None
     
     def _is_magic_running(self) -> bool:
         """Check if Magic Music Visuals is running."""
@@ -640,10 +640,10 @@ class VJConsoleApp(App):
             logger.error(f"Failed to start Synesthesia: {e}")
             return False
     
-    def _start_karaoke_overlay(self) -> bool:
-        """Start KaraokeOverlay Processing app. Returns True if launched."""
-        if self._is_karaoke_overlay_running():
-            logger.debug("KaraokeOverlay already running")
+    def _start_vjuniverse(self) -> bool:
+        """Start VJUniverse Processing app. Returns True if launched."""
+        if self._is_vjuniverse_running():
+            logger.debug("VJUniverse already running")
             return True
         
         # Validate processing-java is available
@@ -652,9 +652,9 @@ class VJConsoleApp(App):
             self.notify("processing-java not found! Install Processing and add to PATH.", severity="error")
             return False
         
-        # Find and launch KaraokeOverlay
+        # Find and launch VJUniverse
         for app in self.process_manager.apps:
-            if 'karaoke' in app.name.lower():
+            if 'vjuniverse' in app.name.lower() or 'universe' in app.name.lower():
                 if self.process_manager.launch_app(app):
                     logger.info(f"Started {app.name}")
                     return True
@@ -662,7 +662,7 @@ class VJConsoleApp(App):
                     logger.error(f"Failed to launch {app.name}")
                     return False
         
-        logger.error("KaraokeOverlay app not found in processing-vj/src/")
+        logger.error("VJUniverse app not found in processing-vj/src/")
         return False
     
     def _start_lmstudio(self) -> bool:
@@ -710,9 +710,9 @@ class VJConsoleApp(App):
             if self._start_synesthesia():
                 started.append("Synesthesia")
         
-        if self.settings.start_karaoke_overlay:
-            if self._start_karaoke_overlay():
-                started.append("KaraokeOverlay")
+        if self.settings.start_vjuniverse:
+            if self._start_vjuniverse():
+                started.append("VJUniverse")
         
         if self.settings.start_lmstudio:
             if self._start_lmstudio():
@@ -742,17 +742,17 @@ class VJConsoleApp(App):
             except Exception as e:
                 logger.error(f"Failed to stop Synesthesia: {e}")
         
-        # Stop KaraokeOverlay (Processing java apps)
-        if self._is_karaoke_overlay_running():
+        # Stop VJUniverse (Processing java apps)
+        if self._is_vjuniverse_running():
             try:
                 # Stop via ProcessManager
                 for app in self.process_manager.apps:
-                    if 'karaoke' in app.name.lower() and self.process_manager.is_running(app):
+                    if ('vjuniverse' in app.name.lower() or 'universe' in app.name.lower()) and self.process_manager.is_running(app):
                         self.process_manager.stop_app(app)
-                        stopped.append("KaraokeOverlay")
+                        stopped.append("VJUniverse")
                         break
             except Exception as e:
-                logger.error(f"Failed to stop KaraokeOverlay: {e}")
+                logger.error(f"Failed to stop VJUniverse: {e}")
         
         # Stop LM Studio
         if self._is_lmstudio_running():
@@ -795,7 +795,7 @@ class VJConsoleApp(App):
         # Update running status
         self.synesthesia_running = self._is_synesthesia_running()
         self.lmstudio_running = self._is_lmstudio_running()
-        self.karaoke_overlay_running = self._is_karaoke_overlay_running()
+        self.vjuniverse_running = self._is_vjuniverse_running()
         self.magic_running = self._is_magic_running()
         
         # Check LM Studio model status
@@ -804,15 +804,15 @@ class VJConsoleApp(App):
         # Get process stats for resource monitoring
         process_stats = self.process_monitor.get_stats()
         
-        # Add KaraokeEngine stats (self process)
+        # Add TextlerEngine stats (self process)
         try:
             self_proc = psutil.Process()
-            process_stats["KaraokeEngine"] = ProcessStats(
+            process_stats["TextlerEngine"] = ProcessStats(
                 pid=self_proc.pid,
-                name="KaraokeEngine",
+                name="TextlerEngine",
                 cpu_percent=self_proc.cpu_percent(interval=None),
                 memory_mb=self_proc.memory_info().rss / (1024 * 1024),
-                running=self.karaoke_engine is not None
+                running=self.textler_engine is not None
             )
         except Exception:
             pass
@@ -830,9 +830,9 @@ class VJConsoleApp(App):
             logger.info("Auto-restarting Synesthesia")
             self._start_synesthesia()
         
-        if self.settings.autorestart_karaoke_overlay and not self.karaoke_overlay_running:
-            logger.info("Auto-restarting KaraokeOverlay")
-            self._start_karaoke_overlay()
+        if self.settings.autorestart_vjuniverse and not self.vjuniverse_running:
+            logger.info("Auto-restarting VJUniverse")
+            self._start_vjuniverse()
         
         if self.settings.autorestart_lmstudio and not self.lmstudio_running:
             logger.info("Auto-restarting LM Studio")
@@ -879,7 +879,7 @@ class VJConsoleApp(App):
             )
 
         # If no karaoke engine, clear panels and return
-        if not self.karaoke_engine:
+        if not self.textler_engine:
             self._safe_update_panel("#now-playing", "track_data", {})
             self._safe_update_panel("#playback-source", "monitor_running", False)
             self._safe_update_panel("#playback-source", "lookup_ms", 0.0)
@@ -887,7 +887,7 @@ class VJConsoleApp(App):
             return
 
         # Get snapshot and build data
-        snapshot = self.karaoke_engine.get_snapshot()
+        snapshot = self.textler_engine.get_snapshot()
         self._latest_snapshot = snapshot
         monitor_status = snapshot.monitor_status or {}
         source_connected = (
@@ -899,15 +899,15 @@ class VJConsoleApp(App):
         # Update now playing
         track_data = build_track_data(snapshot, source_connected)
         self._safe_update_panel("#now-playing", "track_data", track_data)
-        self._safe_update_panel("#now-playing", "shader_name", self.karaoke_engine.current_shader)
+        self._safe_update_panel("#now-playing", "shader_name", self.textler_engine.current_shader)
 
         # Update playback source panel with connection state
-        self._safe_update_panel("#playback-source", "lookup_ms", self.karaoke_engine.last_lookup_ms)
-        self._safe_update_panel("#playback-source", "monitor_running", bool(self.karaoke_engine.playback_source))
+        self._safe_update_panel("#playback-source", "lookup_ms", self.textler_engine.last_lookup_ms)
+        self._safe_update_panel("#playback-source", "monitor_running", bool(self.textler_engine.playback_source))
         
         # Determine connection state for visual feedback
         state = snapshot.state
-        if not self.karaoke_engine.playback_source:
+        if not self.textler_engine.playback_source:
             connection_state = "idle"
             current_track = ""
         elif snapshot.error:
@@ -927,11 +927,11 @@ class VJConsoleApp(App):
         self._safe_update_panel("#playback-source", "current_track", current_track)
 
         # Update categories panel
-        cat_data = build_categories_payload(self.karaoke_engine.current_categories)
+        cat_data = build_categories_payload(self.textler_engine.current_categories)
         self._safe_update_panel("#categories", "categories_data", cat_data)
 
         # Update pipeline panel
-        pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
+        pipeline_data = build_pipeline_data(self.textler_engine, snapshot)
         self._safe_update_panel("#pipeline", "pipeline_data", pipeline_data)
 
         # Update Launchpad panels
@@ -1251,12 +1251,12 @@ class VJConsoleApp(App):
                     self.process_manager.launch_app(app)
 
     def action_timing_up(self) -> None:
-        if self.karaoke_engine:
-            self.karaoke_engine.adjust_timing(+200)
+        if self.textler_engine:
+            self.textler_engine.adjust_timing(+200)
 
     def action_timing_down(self) -> None:
-        if self.karaoke_engine:
-            self.karaoke_engine.adjust_timing(-200)
+        if self.textler_engine:
+            self.textler_engine.adjust_timing(-200)
     
     def _log(self, message: str):
         """Add a message to logs."""
@@ -1290,10 +1290,10 @@ class VJConsoleApp(App):
             logger.info("Shutdown: stopping shader_analysis_worker")
             self.shader_analysis_worker.stop()
             logger.info("Shutdown: shader_analysis_worker stopped")
-        if self.karaoke_engine:
-            logger.info("Shutdown: stopping karaoke_engine")
-            self.karaoke_engine.stop()
-            logger.info("Shutdown: karaoke_engine stopped")
+        if self.textler_engine:
+            logger.info("Shutdown: stopping textler_engine")
+            self.textler_engine.stop()
+            logger.info("Shutdown: textler_engine stopped")
         if self.launchpad_manager:
             logger.info("Shutdown: stopping launchpad_manager")
             self.launchpad_manager.stop()
