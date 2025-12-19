@@ -543,6 +543,22 @@ class OSCSender:
         logger.info(f"OSC → /shader/load [{shader_name}, {energy:.2f}, {valence:.2f}]")
         osc.textler.send("/shader/load", shader_name, float(energy), float(valence))
     
+    def send_image_folder(self, folder_path: str, fit_mode: str = "cover"):
+        """
+        Send image folder path to Processing ImageTile for beat-synced cycling.
+        
+        Args:
+            folder_path: Absolute path to folder containing images
+            fit_mode: "cover" (fill, crop) or "contain" (show all)
+        
+        OSC Messages:
+            /image/fit <mode>     - Set display mode
+            /image/folder <path>  - Load folder and cycle on beat
+        """
+        logger.info(f"OSC → /image/fit [{fit_mode}], /image/folder [{folder_path}]")
+        osc.textler.send("/image/fit", fit_mode)
+        osc.textler.send("/image/folder", str(folder_path))
+    
     def get_recent_messages(self, count: int = 20) -> List[tuple]:
         """Get recent OSC messages for debug display."""
         return []  # No longer tracked

@@ -253,16 +253,7 @@ class ImageTile extends Tile {
     nextImage = newImage;
     needsRedraw = true;  // New image - force redraw
     
-    // Skip fade if no previous image (first load) - show immediately
-    if (currentImage == null) {
-      currentImage = newImage;
-      nextImage = null;
-      crossfadeProgress = 1.0;
-      fading = false;
-      return;
-    }
-    
-    // Start fade
+    // Always fade - even first image fades in from black
     crossfadeProgress = 0.0;
     fadeStartTime = millis();
     fading = true;
@@ -311,8 +302,16 @@ class ImageTile extends Tile {
       return;
     }
     
-    // Scan for image files
+    // Clear previous state completely
     folderImages.clear();
+    currentImage = null;
+    nextImage = null;
+    pendingImage = null;
+    fading = false;
+    crossfadeProgress = 1.0;
+    needsRedraw = true;
+    
+    // Scan for image files
     java.io.File[] files = folder.listFiles();
     if (files != null) {
       for (java.io.File file : files) {

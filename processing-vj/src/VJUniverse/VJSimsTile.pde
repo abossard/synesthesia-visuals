@@ -116,6 +116,9 @@ class VJSimsTile extends Tile {
     levels.add(new CapitalShipFlybyLevel());
     levels.add(new RingedPlanetLevel());
     levels.add(new SpaceFleetLevel());
+
+    // Low-poly landscape with infinite scrolling biomes
+    levels.add(new LowPolyLandscapeLevel());
   }
 
   // === LEVEL MANAGEMENT ===

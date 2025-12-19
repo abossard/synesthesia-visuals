@@ -54,6 +54,13 @@ from adapters import (
     PLAYBACK_SOURCES,
 )
 
+# Image scraper (optional, may fail if dependencies missing)
+try:
+    from image_scraper import ImageScraper
+    IMAGE_SCRAPER_AVAILABLE = True
+except ImportError:
+    IMAGE_SCRAPER_AVAILABLE = False
+
 # AI services
 from ai_services import LLMAnalyzer, SongCategorizer
 
@@ -179,6 +186,15 @@ class TextlerEngine:
         # AI services (all optional)
         self._llm = LLMAnalyzer()
         self._categorizer = SongCategorizer(llm=self._llm)
+        
+        # Image scraper (optional)
+        self._image_scraper = None
+        if IMAGE_SCRAPER_AVAILABLE:
+            try:
+                self._image_scraper = ImageScraper()
+                logger.info(f"Image scraper enabled: {self._image_scraper.get_cached_count()} songs cached")
+            except Exception as e:
+                logger.warning(f"Image scraper init failed: {e}")
         
         # Shader matching (optional)
         self._shader_indexer = None
@@ -643,6 +659,29 @@ class TextlerEngine:
                 self._current_metadata = {}
                 self._last_llm_analysis = None
                 self._pipeline.error("metadata_analysis", str(exc))
+            if cancelled():
+                return
+
+            # 3.5 Fetch images (skip if cached)
+            self._pipeline.start("fetch_images")
+            if self._image_scraper:
+                try:
+                    image_result = self._image_scraper.fetch_images(track, self._current_metadata)
+                    if image_result:
+                        folder_path = str(self._image_scraper.get_folder(track).absolute())
+                        if image_result.cached:
+                            self._pipeline.complete("fetch_images", f"{image_result.total_images} cached")
+                        else:
+                            self._pipeline.complete("fetch_images", f"{image_result.total_images} from {image_result.source}")
+                        # Send folder path to Processing ImageTile for beat-synced cycling
+                        self._osc.send_image_folder(folder_path)
+                    else:
+                        self._pipeline.skip("fetch_images", "No images found")
+                except Exception as exc:
+                    logger.debug(f"Image fetch failed: {exc}")
+                    self._pipeline.skip("fetch_images", str(exc)[:40])
+            else:
+                self._pipeline.skip("fetch_images", "Scraper unavailable")
             if cancelled():
                 return
 
