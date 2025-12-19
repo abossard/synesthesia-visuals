@@ -101,6 +101,17 @@ class TextRenderer {
   PFont currentFont;
   PFont hudFont;
   
+  // === DJ FONT PRESETS ===
+  String[] djFonts = {
+    "Avenir Next Heavy",
+    "Futura Bold",
+    "DIN Condensed Bold",
+    "Impact",
+    "Phosphate"
+  };
+  int djFontIndex = 0;
+  boolean useDJFonts = false;
+  
   // === SETTINGS PERSISTENCE ===
   final String SETTINGS_FILE = "textler_font_settings.txt";
   
@@ -172,13 +183,19 @@ class TextRenderer {
   }
   
   void applyFontSelection() {
-    fontIndex = constrain(fontIndex, 0, availableFonts.length - 1);
+    String fontName;
+    if (useDJFonts) {
+      djFontIndex = constrain(djFontIndex, 0, djFonts.length - 1);
+      fontName = djFonts[djFontIndex];
+    } else {
+      fontIndex = constrain(fontIndex, 0, availableFonts.length - 1);
+      fontName = availableFonts[fontIndex];
+    }
     fontSizeIndex = constrain(fontSizeIndex, 0, fontSizes.length - 1);
-    String fontName = availableFonts[fontIndex];
     int size = fontSizes[fontSizeIndex];
     currentFont = loadFontCached(fontName, size);
     saveSettings();
-    println("[TextRenderer] Font: " + fontName + " @ " + size + "px");
+    println("[TextRenderer] Font: " + fontName + " @ " + size + "px" + (useDJFonts ? " (DJ)" : ""));
   }
   
   void cycleFont() {
@@ -188,6 +205,46 @@ class TextRenderer {
   
   void cycleFontSize() {
     fontSizeIndex = (fontSizeIndex + 1) % fontSizes.length;
+    applyFontSelection();
+  }
+  
+  // === DJ FONT CONTROL ===
+  
+  void setDJFont(int index) {
+    useDJFonts = true;
+    djFontIndex = constrain(index, 0, djFonts.length - 1);
+    applyFontSelection();
+  }
+  
+  void cycleDJFont() {
+    useDJFonts = true;
+    djFontIndex = (djFontIndex + 1) % djFonts.length;
+    applyFontSelection();
+  }
+  
+  boolean setFontByName(String name) {
+    // First check DJ fonts
+    for (int i = 0; i < djFonts.length; i++) {
+      if (djFonts[i].equalsIgnoreCase(name) || djFonts[i].toLowerCase().contains(name.toLowerCase())) {
+        setDJFont(i);
+        return true;
+      }
+    }
+    // Then check system fonts
+    for (int i = 0; i < availableFonts.length; i++) {
+      if (availableFonts[i].equalsIgnoreCase(name) || availableFonts[i].toLowerCase().contains(name.toLowerCase())) {
+        useDJFonts = false;
+        fontIndex = i;
+        applyFontSelection();
+        return true;
+      }
+    }
+    println("[TextRenderer] Font not found: " + name);
+    return false;
+  }
+  
+  void setFontSizeByIndex(int index) {
+    fontSizeIndex = constrain(index, 0, fontSizes.length - 1);
     applyFontSelection();
   }
   
@@ -499,6 +556,41 @@ class TextRenderer {
     if (addr.equals("/textler/clear")) {
       String layer = safeGetString(msg, 0, "");
       clearMessages(layer);
+      return true;
+    }
+    
+    // /textler/font [name] - set font by name
+    if (addr.equals("/textler/font")) {
+      String fontName = safeGetString(msg, 0, "");
+      if (fontName.length() > 0) {
+        setFontByName(fontName);
+      }
+      return true;
+    }
+    
+    // /textler/font/index [int] - set DJ font by index 0-4
+    if (addr.equals("/textler/font/index")) {
+      int index = safeGetInt(msg, 0, 0);
+      setDJFont(index);
+      return true;
+    }
+    
+    // /textler/font/cycle - cycle through DJ fonts
+    if (addr.equals("/textler/font/cycle")) {
+      cycleDJFont();
+      return true;
+    }
+    
+    // /textler/fontsize [int] - set font size by index
+    if (addr.equals("/textler/fontsize")) {
+      int index = safeGetInt(msg, 0, 1);
+      setFontSizeByIndex(index);
+      return true;
+    }
+    
+    // /textler/fontsize/cycle - cycle through font sizes
+    if (addr.equals("/textler/fontsize/cycle")) {
+      cycleFontSize();
       return true;
     }
     

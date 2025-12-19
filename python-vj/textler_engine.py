@@ -43,6 +43,7 @@ __all__ = [
     'LyricsFetcher', 'OSCSender',
     'PlaybackSnapshot', 'BackoffState',
     'create_monitor', 'PLAYBACK_SOURCES',
+    'TEXT_INTENT_DEFAULTS', 'get_slot_defaults_osc',  # Intent presets
 ]
 
 # External adapters
@@ -71,6 +72,70 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('textler')
+
+
+# =============================================================================
+# TEXT INTENT PRESETS - Pure data for slot positioning/sizing
+# =============================================================================
+
+TEXT_INTENT_DEFAULTS = {
+    'track_info': {
+        'slot': 'title',
+        'y': 0.12,
+        'size': 1.8,
+        'fade_in': 0.3,
+        'hold': 5.0,
+        'fade_out': 0.5,
+    },
+    'lyrics': {
+        'slot': 'lyrics',
+        'y': 0.5,
+        'size': 1.2,
+    },
+    'refrain': {
+        'slot': 'refrain',
+        'y': 0.6,
+        'size': 1.5,
+    },
+    'keywords': {
+        'slot': 'keywords',
+        'y': 0.85,
+        'size': 0.8,
+    },
+    'subtitle': {
+        'slot': 'subtitle',
+        'y': 0.20,
+        'size': 1.0,
+    },
+    'footer': {
+        'slot': 'footer',
+        'y': 0.92,
+        'size': 0.7,
+    },
+}
+
+
+def get_slot_defaults_osc(intent: str) -> list:
+    """
+    Pure function: returns list of OSC address/value tuples for a given intent.
+    
+    Example:
+        get_slot_defaults_osc('track_info')
+        -> [('/textler/slot/title/y', 0.12), ('/textler/slot/title/size', 1.8)]
+    """
+    preset = TEXT_INTENT_DEFAULTS.get(intent, {})
+    if not preset:
+        return []
+    
+    slot = preset.get('slot', intent)
+    messages = []
+    
+    if 'y' in preset:
+        messages.append((f'/textler/slot/{slot}/y', preset['y']))
+    if 'size' in preset:
+        messages.append((f'/textler/slot/{slot}/size', preset['size']))
+    
+    return messages
 
 
 # =============================================================================
@@ -443,6 +508,14 @@ class TextlerEngine:
         self._last_active_index = -1
         self._last_matched_track = ""
 
+        # Send slot defaults for all intents
+        self._send_slot_defaults('track_info')
+        self._send_slot_defaults('lyrics')
+        self._send_slot_defaults('refrain')
+        self._send_slot_defaults('keywords')
+        self._send_slot_defaults('subtitle')
+        self._send_slot_defaults('footer')
+
         # Send track info with source
         self._osc.send_textler("track", "info", {
             "source": self._playback.current_source,
@@ -470,8 +543,7 @@ class TextlerEngine:
 
     def _handle_pipeline_update(self, step: str, status: str, message: str):
         """Broadcast pipeline state changes over OSC."""
-        payload = [step, status, message or ""]
-        self._osc.send("/pipeline/step", payload)
+        self._osc.send("/pipeline/step", step, status, message or "")
 
     def _cancel_pipeline_worker(self):
         if self._pipeline_cancel:
@@ -724,6 +796,18 @@ class TextlerEngine:
             lines.append(LyricLine(time_sec=time_cursor, text=text))
             time_cursor += 1.0
         return lines
+    
+    def _send_slot_defaults(self, intent: str):
+        """
+        Send OSC messages to configure a slot with intent-based defaults.
+        
+        Uses the pure function get_slot_defaults_osc() to get messages,
+        then sends them via the OSC adapter.
+        """
+        from osc import osc
+        messages = get_slot_defaults_osc(intent)
+        for addr, value in messages:
+            osc.textler.send(addr, value)
     
     def _send_all_lyrics(self, song_id: str, lines):
         """Send all lyrics channels via OSC."""

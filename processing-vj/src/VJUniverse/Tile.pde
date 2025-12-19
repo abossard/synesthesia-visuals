@@ -292,6 +292,18 @@ class TextlerTile extends Tile {
   TextRenderer textRenderer;
   float lastFrameTime = 0;
   
+  // Track info state
+  String currentArtist = "";
+  String currentTitle = "";
+  String currentAlbum = "";
+  float currentDuration = 0;
+  boolean hasLyrics = false;
+  boolean trackActive = false;
+  float trackDisplayTime = 0;       // How long track info has been shown
+  float trackFadeInDuration = 0.5;  // Fade in duration
+  float trackHoldDuration = 5.0;    // Hold at full opacity
+  float trackFadeOutDuration = 1.0; // Fade out duration
+  
   TextlerTile(String name, String syphonName, TextRenderer textRenderer) {
     super(name, syphonName);
     this.textRenderer = textRenderer;
@@ -303,14 +315,20 @@ class TextlerTile extends Tile {
       slots.put(slotNames[i], new TextSlot(slotNames[i], slotY[i]));
     }
     
+    // Create track info slot (bottom area, smaller text)
+    TextSlot trackSlot = new TextSlot("track", 0.92);
+    trackSlot.sizeMultiplier = 0.5;
+    trackSlot.opacity = 0;
+    slots.put("track", trackSlot);
+    
     // Configure default sizes
     slots.get("title").sizeMultiplier = 0.7;
     slots.get("sub").sizeMultiplier = 0.6;
     slots.get("center").sizeMultiplier = 1.2;
     
     setOSCAddresses(
-      new String[] {"/textler/slot", "/textler/fade", "/textler/flash", "/textler/clear", "/textler/preset"},
-      new String[] {"Set slot text/props", "Fade opacity", "Flash effect", "Clear slots", "Load preset"}
+      new String[] {"/textler/track", "/textler/slot", "/textler/fade", "/textler/flash", "/textler/clear", "/textler/preset"},
+      new String[] {"Song info (fade)", "Set slot text/props", "Fade opacity", "Flash effect", "Clear slots", "Load preset"}
     );
   }
   
@@ -322,6 +340,31 @@ class TextlerTile extends Tile {
     
     for (TextSlot slot : slots.values()) {
       slot.update(dt);
+    }
+    
+    // Update track info fade envelope
+    if (trackActive) {
+      trackDisplayTime += dt;
+      TextSlot trackSlot = slots.get("track");
+      if (trackSlot != null) {
+        float totalDuration = trackFadeInDuration + trackHoldDuration + trackFadeOutDuration;
+        
+        if (trackDisplayTime < trackFadeInDuration) {
+          // Fade in
+          trackSlot.opacity = trackDisplayTime / trackFadeInDuration;
+        } else if (trackDisplayTime < trackFadeInDuration + trackHoldDuration) {
+          // Hold
+          trackSlot.opacity = 1.0;
+        } else if (trackDisplayTime < totalDuration) {
+          // Fade out
+          float fadeProgress = (trackDisplayTime - trackFadeInDuration - trackHoldDuration) / trackFadeOutDuration;
+          trackSlot.opacity = 1.0 - fadeProgress;
+        } else {
+          // Done - hide
+          trackSlot.opacity = 0;
+          trackActive = false;
+        }
+      }
     }
   }
   
@@ -371,6 +414,41 @@ class TextlerTile extends Tile {
   @Override
   boolean handleOSC(OscMessage msg) {
     String addr = msg.addrPattern();
+    
+    // /textler/track [active, source, artist, title, album, duration, has_lyrics]
+    if (addr.equals("/textler/track") && msg.typetag().length() >= 4) {
+      int active = msg.get(0).intValue();
+      String source = msg.get(1).stringValue();
+      String artist = msg.get(2).stringValue();
+      String title = msg.get(3).stringValue();
+      String album = (msg.typetag().length() >= 5) ? msg.get(4).stringValue() : "";
+      float duration = (msg.typetag().length() >= 6) ? msg.get(5).floatValue() : 0;
+      int hasLyricsInt = (msg.typetag().length() >= 7) ? msg.get(6).intValue() : 0;
+      
+      // Store track info
+      currentArtist = artist;
+      currentTitle = title;
+      currentAlbum = album;
+      currentDuration = duration;
+      hasLyrics = (hasLyricsInt == 1);
+      
+      // Update track slot with artist - title
+      TextSlot trackSlot = slots.get("track");
+      if (trackSlot != null) {
+        if (active == 1 && !artist.isEmpty() && !title.isEmpty()) {
+          trackSlot.text = artist + " - " + title;
+          trackActive = true;
+          trackDisplayTime = 0;  // Reset fade timer
+          trackSlot.opacity = 0; // Start from 0, will fade in
+        } else {
+          trackSlot.text = "";
+          trackActive = false;
+          trackSlot.opacity = 0;
+        }
+      }
+      markOSCReceived(addr);
+      return true;
+    }
     
     // /textler/slot <name> <text>
     if (addr.equals("/textler/slot") && msg.typetag().length() >= 2) {
@@ -428,18 +506,8 @@ class TextlerTile extends Tile {
       }
     }
     
-    // /textler/slot/<name>/color <r> <g> <b>
-    if (addr.startsWith("/textler/slot/") && addr.endsWith("/color")) {
-      String slotName = extractSlotName(addr);
-      if (slotName != null && msg.typetag().length() >= 3) {
-        int r = msg.get(0).intValue();
-        int g = msg.get(1).intValue();
-        int b = msg.get(2).intValue();
-        getOrCreateSlot(slotName).textColor = color(r, g, b);
-        markOSCReceived("/textler/slot");
-        return true;
-      }
-    }
+    // NOTE: Color OSC handler removed - text is always rendered WHITE for VJ readability
+    // All slots use textColor = color(255) by default
     
     // /textler/fade <name> <target> <duration>
     if (addr.equals("/textler/fade") && msg.typetag().length() >= 3) {

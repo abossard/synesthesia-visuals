@@ -23,6 +23,66 @@ logger = logging.getLogger(__name__)
 
 Handler = Callable[[str, List[Any]], None]
 
+_MATCH_ANY = "any"
+_MATCH_EXACT = "exact"
+_MATCH_PREFIX = "prefix"
+
+
+@dataclass(frozen=True)
+class _PatternEntry:
+    order: int
+    pattern: Optional[str]
+    handlers: Tuple[Handler, ...]
+
+
+class _PrefixTrieNode:
+    __slots__ = ("children", "entries")
+
+    def __init__(self) -> None:
+        self.children: Dict[str, "_PrefixTrieNode"] = {}
+        self.entries: List[_PatternEntry] = []
+
+
+class _PrefixTrie:
+    __slots__ = ("_root",)
+
+    def __init__(self) -> None:
+        self._root = _PrefixTrieNode()
+
+    def add(self, prefix: str, entry: _PatternEntry) -> None:
+        node = self._root
+        for char in prefix:
+            node = node.children.setdefault(char, _PrefixTrieNode())
+        node.entries.append(entry)
+
+    def match(self, path: str) -> List[_PatternEntry]:
+        node = self._root
+        matches: List[_PatternEntry] = []
+        if node.entries:
+            matches.extend(node.entries)
+        for char in path:
+            node = node.children.get(char)
+            if node is None:
+                break
+            if node.entries:
+                matches.extend(node.entries)
+        return matches
+
+
+@dataclass(frozen=True)
+class _ListenerSnapshot:
+    any_entries: Tuple[_PatternEntry, ...]
+    exact_entries: Dict[str, _PatternEntry]
+    prefix_trie: _PrefixTrie
+
+
+def _classify_pattern(pattern: Optional[str]) -> Tuple[str, Optional[str]]:
+    if pattern in (None, "", "/", "*"):
+        return _MATCH_ANY, None
+    if pattern.endswith("*"):
+        return _MATCH_PREFIX, pattern[:-1]
+    return _MATCH_EXACT, pattern
+
 # Central receive port for all incoming OSC
 RECEIVE_PORT = 9999
 
@@ -122,7 +182,7 @@ class OSCHub:
 
         self._listeners: Dict[str, List[Handler]] = {}
         self._listeners_lock = threading.Lock()
-        self._listeners_snapshot: List[Tuple[str, Tuple[Handler, ...]]] = []
+        self._listeners_snapshot = _ListenerSnapshot((), {}, _PrefixTrie())
         self._listener_count = 0
 
     @property
@@ -277,42 +337,63 @@ class OSCHub:
 
     def _forward(self, path: str, args: List[Any]) -> None:
         """Forward a message to all configured targets."""
+        message = liblo.Message(path, *args)
+        bundle = liblo.Bundle()
+        bundle.add(message)
         for target in self._forward_targets:
             try:
-                liblo.send(target, path, *args)
+                liblo.send(target, bundle)
             except Exception as exc:
                 logger.error(f"Forward error to {target}: {exc}")
 
     def _dispatch(self, path: str, args: List[Any]) -> None:
         """Dispatch message to subscribed handlers."""
-        listeners = self._listeners_snapshot
-        args_list: Optional[List[Any]] = None
-        for pattern, handlers in listeners:
-            if self._matches(pattern, path):
-                if args_list is None:
-                    args_list = list(args)
-                for handler in handlers:
-                    try:
-                        handler(path, args_list)
-                    except Exception as exc:
-                        logger.error(f"OSC handler error for {pattern}: {exc}")
-
-    @staticmethod
-    def _matches(pattern: str, path: str) -> bool:
-        if pattern in (None, "", "/", "*"):
-            return True
-        if pattern.endswith("*"):
-            return path.startswith(pattern[:-1])
-        return path == pattern
+        snapshot = self._listeners_snapshot
+        matches: List[_PatternEntry] = []
+        if snapshot.any_entries:
+            matches.extend(snapshot.any_entries)
+        exact_entry = snapshot.exact_entries.get(path)
+        if exact_entry:
+            matches.append(exact_entry)
+        matches.extend(snapshot.prefix_trie.match(path))
+        if not matches:
+            return
+        if len(matches) > 1:
+            matches.sort(key=lambda entry: entry.order)
+        # Reuse list args across handlers; treat as read-only.
+        args_list = args if isinstance(args, list) else list(args)
+        for entry in matches:
+            for handler in entry.handlers:
+                try:
+                    handler(path, args_list)
+                except Exception as exc:
+                    logger.error(f"OSC handler error for {entry.pattern}: {exc}")
 
     def _refresh_listeners_snapshot(self) -> None:
-        snapshot: List[Tuple[str, Tuple[Handler, ...]]] = []
+        any_entries: List[_PatternEntry] = []
+        exact_entries: Dict[str, _PatternEntry] = {}
+        prefix_trie = _PrefixTrie()
         total = 0
+        order = 0
         for pattern, handlers in self._listeners.items():
-            if handlers:
-                snapshot.append((pattern, tuple(handlers)))
-                total += len(handlers)
-        self._listeners_snapshot = snapshot
+            if not handlers:
+                continue
+            entry = _PatternEntry(order=order, pattern=pattern, handlers=tuple(handlers))
+            match_type, match_value = _classify_pattern(pattern)
+            if match_type == _MATCH_ANY:
+                any_entries.append(entry)
+            elif match_type == _MATCH_EXACT:
+                exact_entries[match_value] = entry
+            else:
+                if match_value is not None:
+                    prefix_trie.add(match_value, entry)
+            total += len(handlers)
+            order += 1
+        self._listeners_snapshot = _ListenerSnapshot(
+            tuple(any_entries),
+            exact_entries,
+            prefix_trie,
+        )
         self._listener_count = total
 
     @staticmethod

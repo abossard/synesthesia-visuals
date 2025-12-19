@@ -503,12 +503,14 @@ class VJConsoleApp(App):
         - Track info display
         - Lyrics lines and active line
         - Refrain display
-        - Text slots (title, subtitle, footer)
+        - Text slots (title, subtitle, footer) with intent defaults
+        - DJ font presets and cycling
         - Broadcast message
         - Shader loading
         - Timed messages with fade
         """
         from osc import osc
+        from textler_engine import get_slot_defaults_osc, TEXT_INTENT_DEFAULTS
         
         if not osc.is_started:
             self.notify("OSC Hub not running!", severity="error")
@@ -525,65 +527,71 @@ class VJConsoleApp(App):
         # 1. Set track info: [active, source, artist, title, album, duration, has_lyrics]
         send("/textler/track", 1, "test", "Test Artist", "Test Song Title", "Test Album 2024", 180.0, 1)
         
-        # 2. Reset and populate lyrics
+        # 2. Send slot defaults for all intents (pure function test)
+        for intent in TEXT_INTENT_DEFAULTS.keys():
+            for addr, value in get_slot_defaults_osc(intent):
+                send(addr, value)
+        
+        # 3. Reset and populate lyrics
         send("/textler/lyrics/reset")
         test_lyrics = [
-            (0.0, "♪ Welcome to VJUniverse ♪"),
+            (0.0, "* Welcome to VJUniverse *"),
             (2.0, "Testing the lyrics display"),
             (4.0, "Each line syncs to the beat"),
             (6.0, "This is line number four"),
             (8.0, "Watch the text animate smoothly"),
-            (10.0, "♪ Music makes us come alive ♪"),
+            (10.0, "* Music makes us come alive *"),
         ]
         for idx, (time_sec, text) in enumerate(test_lyrics):
             send("/textler/lyrics/line", idx, float(time_sec), text)
         
-        # 3. Set active line (index 2)
+        # 4. Set active line (index 2)
         send("/textler/line/active", 2)
         
-        # 4. Reset and populate refrain
+        # 5. Reset and populate refrain
         send("/textler/refrain/reset")
         refrain_lines = [
-            (0.0, "♪ CHORUS: This is the refrain! ♪"),
-            (2.0, "♪ Sing along with me! ♪"),
-            (4.0, "♪ Feel the rhythm flow! ♪"),
+            (0.0, ">> CHORUS: This is the refrain! <<"),
+            (2.0, ">> Sing along with me! <<"),
+            (4.0, ">> Feel the rhythm flow! <<"),
         ]
         for idx, (time_sec, text) in enumerate(refrain_lines):
             send("/textler/refrain/line", idx, float(time_sec), text)
         
-        # 5. Set active refrain
-        send("/textler/refrain/active", 1, "♪ Sing along with me! ♪")
+        # 6. Set active refrain
+        send("/textler/refrain/active", 1, ">> Sing along with me! <<")
         
-        # 6. Set text slots (Textler tile)
-        send("/textler/slot", "title", "🎵 VJ UNIVERSE TEST 🎵")
+        # 7. Set text slots (white-only text - no color messages)
+        send("/textler/slot", "title", "** VJ UNIVERSE TEST **")
         send("/textler/slot", "subtitle", "Testing all OSC features")
-        send("/textler/slot", "footer", "Python → Processing via OSC port 10000")
+        send("/textler/slot", "footer", "Python -> Processing via OSC port 10000")
         
-        # 7. Configure slot appearance
+        # 8. Configure slot appearance (position/size only - no colors)
         send("/textler/slot/title/size", 2.0)
         send("/textler/slot/title/y", 0.15)
-        send("/textler/slot/title/color", 255, 200, 50)  # Gold
         
         send("/textler/slot/subtitle/size", 1.2)
         send("/textler/slot/subtitle/y", 0.5)
-        send("/textler/slot/subtitle/color", 100, 255, 200)  # Cyan-ish
         
         send("/textler/slot/footer/size", 0.8)
         send("/textler/slot/footer/y", 0.85)
-        send("/textler/slot/footer/color", 150, 150, 150)  # Gray
         
-        # 8. Send broadcast message (overlay at bottom)
-        send("/textler/broadcast", "🔊 BROADCAST: Test message from VJ Console!")
+        # 9. Test DJ font presets
+        send("/textler/font", "Avenir Next Heavy")  # Set by name
+        send("/textler/fontsize", 3)  # Size index 3 = 60px
         
-        # 9. Send timed message with fade envelope
+        # 10. Send broadcast message (overlay at bottom)
+        send("/textler/broadcast", "[BROADCAST] Test message from VJ Console!")
+        
+        # 11. Send timed message with fade envelope
         # /textler/message [text, x, y, size, align, opacity, fadeIn, hold, fadeOut, layer, priority]
         # CENTER = 3 in Processing
-        send("/textler/message", "⚡ FLASH MESSAGE ⚡", 0.5, 0.3, 1.5, 3, 255.0, 0.3, 2.0, 0.5, "test", 10)
+        send("/textler/message", "*** FLASH MESSAGE ***", 0.5, 0.3, 1.5, 3, 255.0, 0.3, 2.0, 0.5, "test", 10)
         
-        # 10. Load a shader (if available)
+        # 12. Load a shader (if available)
         send("/shader/load", "alien_cavern_dup", 0.7, 0.3)
         
-        logger.info("VJUniverse test sequence complete - 10 message types sent")
+        logger.info("VJUniverse test sequence complete - 12 message types sent")
         self.notify("✓ Test complete! Check VJUniverse window", severity="information")
 
     def _update_osc_control_panel(self) -> None:

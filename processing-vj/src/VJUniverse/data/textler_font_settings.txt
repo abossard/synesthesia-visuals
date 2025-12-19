@@ -1,2 +1,2 @@
 fontName=Serif
-fontSizeIndex=1
+fontSizeIndex=3
