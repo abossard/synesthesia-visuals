@@ -79,7 +79,7 @@ logger = logging.getLogger('vj_console')
 
 # Import UI components and utilities from refactored modules
 from ui import (
-    OSCClearRequested, PlaybackSourceChanged,
+    OSCClearRequested, PlaybackSourceChanged, VJUniverseTestRequested,
     ShaderSearchModal,
     StartupControlPanel, OSCControlPanel, OSCPanel,
     NowPlayingPanel, PlaybackSourcePanel,
@@ -490,6 +490,101 @@ class VJConsoleApp(App):
         """Handle OSC clear request from OSCControlPanel."""
         osc_monitor.clear()
         logger.info("OSC message log cleared")
+
+    def on_vjuniverse_test_requested(self, message: VJUniverseTestRequested) -> None:
+        """Handle VJUniverse test request - send multiple OSC messages to test all features."""
+        self._run_vjuniverse_test()
+
+    def _run_vjuniverse_test(self) -> None:
+        """
+        Send multiple OSC messages to VJUniverse to test all features.
+        
+        Tests:
+        - Track info display
+        - Lyrics lines and active line
+        - Refrain display
+        - Text slots (title, subtitle, footer)
+        - Broadcast message
+        - Shader loading
+        - Timed messages with fade
+        """
+        from osc import osc
+        
+        if not osc.is_started:
+            self.notify("OSC Hub not running!", severity="error")
+            return
+        
+        logger.info("Starting VJUniverse test sequence...")
+        self.notify("Sending test messages to VJUniverse...", severity="information")
+        
+        # Helper to send via textler channel
+        def send(addr: str, *args):
+            osc.textler.send(addr, *args)
+            logger.debug(f"Test OSC: {addr} {args}")
+        
+        # 1. Set track info: [active, source, artist, title, album, duration, has_lyrics]
+        send("/textler/track", 1, "test", "Test Artist", "Test Song Title", "Test Album 2024", 180.0, 1)
+        
+        # 2. Reset and populate lyrics
+        send("/textler/lyrics/reset")
+        test_lyrics = [
+            (0.0, "♪ Welcome to VJUniverse ♪"),
+            (2.0, "Testing the lyrics display"),
+            (4.0, "Each line syncs to the beat"),
+            (6.0, "This is line number four"),
+            (8.0, "Watch the text animate smoothly"),
+            (10.0, "♪ Music makes us come alive ♪"),
+        ]
+        for idx, (time_sec, text) in enumerate(test_lyrics):
+            send("/textler/lyrics/line", idx, float(time_sec), text)
+        
+        # 3. Set active line (index 2)
+        send("/textler/line/active", 2)
+        
+        # 4. Reset and populate refrain
+        send("/textler/refrain/reset")
+        refrain_lines = [
+            (0.0, "♪ CHORUS: This is the refrain! ♪"),
+            (2.0, "♪ Sing along with me! ♪"),
+            (4.0, "♪ Feel the rhythm flow! ♪"),
+        ]
+        for idx, (time_sec, text) in enumerate(refrain_lines):
+            send("/textler/refrain/line", idx, float(time_sec), text)
+        
+        # 5. Set active refrain
+        send("/textler/refrain/active", 1, "♪ Sing along with me! ♪")
+        
+        # 6. Set text slots (Textler tile)
+        send("/textler/slot", "title", "🎵 VJ UNIVERSE TEST 🎵")
+        send("/textler/slot", "subtitle", "Testing all OSC features")
+        send("/textler/slot", "footer", "Python → Processing via OSC port 10000")
+        
+        # 7. Configure slot appearance
+        send("/textler/slot/title/size", 2.0)
+        send("/textler/slot/title/y", 0.15)
+        send("/textler/slot/title/color", 255, 200, 50)  # Gold
+        
+        send("/textler/slot/subtitle/size", 1.2)
+        send("/textler/slot/subtitle/y", 0.5)
+        send("/textler/slot/subtitle/color", 100, 255, 200)  # Cyan-ish
+        
+        send("/textler/slot/footer/size", 0.8)
+        send("/textler/slot/footer/y", 0.85)
+        send("/textler/slot/footer/color", 150, 150, 150)  # Gray
+        
+        # 8. Send broadcast message (overlay at bottom)
+        send("/textler/broadcast", "🔊 BROADCAST: Test message from VJ Console!")
+        
+        # 9. Send timed message with fade envelope
+        # /textler/message [text, x, y, size, align, opacity, fadeIn, hold, fadeOut, layer, priority]
+        # CENTER = 3 in Processing
+        send("/textler/message", "⚡ FLASH MESSAGE ⚡", 0.5, 0.3, 1.5, 3, 255.0, 0.3, 2.0, 0.5, "test", 10)
+        
+        # 10. Load a shader (if available)
+        send("/shader/load", "alien_cavern_dup", 0.7, 0.3)
+        
+        logger.info("VJUniverse test sequence complete - 10 message types sent")
+        self.notify("✓ Test complete! Check VJUniverse window", severity="information")
 
     def _update_osc_control_panel(self) -> None:
         """Update the OSC control panel with current status."""

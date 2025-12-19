@@ -9,6 +9,11 @@ class OSCClearRequested(Message):
     pass
 
 
+class VJUniverseTestRequested(Message):
+    """Message posted when user requests VJUniverse OSC test."""
+    pass
+
+
 # Playback Messages
 class PlaybackSourceChanged(Message):
     """Message posted when playback source is changed."""

@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual.widgets import Button, Input, Static
 
-from ui.messages import OSCClearRequested
+from ui.messages import OSCClearRequested, VJUniverseTestRequested
 from .base import ReactivePanel
 
 
@@ -166,6 +166,7 @@ class OSCControlPanel(Static):
         yield Static("[bold green]Textler/Processing[/] (send :10000)", id="osc-kar-label")
 
         yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
+        yield Button("🧪 Test VJUniverse", id="btn-vjuniverse-test", variant="primary")
         yield Static("", id="osc-status-label")
 
     def on_mount(self) -> None:
@@ -227,3 +228,5 @@ class OSCControlPanel(Static):
 
         if btn_id == "btn-osc-clear":
             self.post_message(OSCClearRequested())
+        elif btn_id == "btn-vjuniverse-test":
+            self.post_message(VJUniverseTestRequested())
