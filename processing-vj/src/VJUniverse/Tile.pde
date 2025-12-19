@@ -169,7 +169,7 @@ abstract class Tile {
   void beginDraw() {
     if (buffer != null) {
       buffer.beginDraw();
-      buffer.background(0);  // Default black background
+      buffer.background(0, 0);  // Transparent background for Syphon compositing
       buffer.camera();       // Reset camera to default (prevents off-center after level switches)
     }
   }
@@ -730,7 +730,7 @@ class TextlerMultiTile extends Tile {
   
   void renderLyrics() {
     buffer.beginDraw();
-    buffer.background(0);
+    buffer.background(0, 0);  // Transparent
     
     if (textRenderer != null && lyricsState.activeIndex >= 0) {
       PFont font = textRenderer.getFont();
@@ -779,7 +779,7 @@ class TextlerMultiTile extends Tile {
   
   void renderRefrain() {
     refrainBuffer.beginDraw();
-    refrainBuffer.background(0);
+    refrainBuffer.background(0, 0);  // Transparent
     
     if (textRenderer != null && !refrainState.currentText.isEmpty()) {
       PFont font = textRenderer.getFont();
@@ -808,7 +808,7 @@ class TextlerMultiTile extends Tile {
   
   void renderSongInfo() {
     songInfoBuffer.beginDraw();
-    songInfoBuffer.background(0);
+    songInfoBuffer.background(0, 0);  // Transparent
     
     if (textRenderer != null && songInfoState.active && 
         (!songInfoState.artist.isEmpty() || !songInfoState.title.isEmpty())) {

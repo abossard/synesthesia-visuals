@@ -265,7 +265,7 @@ void draw() {
     
     // Stage 1: Render shader to buffer
     shaderBuffer.beginDraw();
-    shaderBuffer.background(0);
+    shaderBuffer.background(0, 0);  // Transparent for Syphon compositing
     
     if (useMultiPass && activeShaderPipeline.size() > 1) {
       drawMultiPassPipeline();

@@ -83,7 +83,7 @@ class ImageTile extends Tile {
     }
     
     buffer.beginDraw();
-    buffer.background(0);
+    buffer.background(0, 0);  // Transparent for Syphon compositing
     
     // Crossfade logic:
     // - fading=true: draw currentImage fading out, nextImage fading in
