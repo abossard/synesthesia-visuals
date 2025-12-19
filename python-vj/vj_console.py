@@ -559,7 +559,7 @@ class VJConsoleApp(App):
     # === Actions (impure, side effects) ===
     
     def _start_textler(self) -> None:
-        """Start the karaoke engine."""
+        """Start the textler engine."""
         if self.textler_engine is not None:
             return  # Already running
         try:
@@ -569,9 +569,9 @@ class VJConsoleApp(App):
             if source:
                 self.textler_engine.set_playback_source(source)
             self.textler_engine.start()
-            logger.info("Karaoke engine started")
+            logger.info("Textler engine started")
         except Exception as e:
-            logger.exception(f"Karaoke start error: {e}")
+            logger.exception(f"Textler start error: {e}")
     
     def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
         """Run a subprocess, return True if successful."""
@@ -616,7 +616,7 @@ class VJConsoleApp(App):
         return {'available': False, 'model': '', 'warning': ''}
     
     def _is_music_monitor_running(self) -> bool:
-        """Check if Music Monitor (Karaoke Engine) is running."""
+        """Check if Music Monitor (Textler Engine) is running."""
         return self.textler_engine is not None
     
     def _is_magic_running(self) -> bool:
@@ -878,7 +878,7 @@ class VJConsoleApp(App):
                 ),
             )
 
-        # If no karaoke engine, clear panels and return
+        # If no textler engine, clear panels and return
         if not self.textler_engine:
             self._safe_update_panel("#now-playing", "track_data", {})
             self._safe_update_panel("#playback-source", "monitor_running", False)

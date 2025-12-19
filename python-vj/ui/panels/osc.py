@@ -158,12 +158,12 @@ class OSCControlPanel(Static):
         yield Static("[dim]Always-on hub recv :9999 → fwd :10000, :11111[/dim]")
         yield Static("[dim]Monitor runs only while OSC View tab is open[/dim]")
         yield Static("[dim]Filter OSC addresses (substring):[/dim]")
-        yield Input(placeholder="e.g. /audio or /karaoke", id="osc-filter-input")
+        yield Input(placeholder="e.g. /audio or /textler", id="osc-filter-input")
 
         yield Static("[bold]Outgoing Channels[/bold]")
         yield Static("[bold cyan]VirtualDJ[/] (send :9009)", id="osc-vdj-label")
         yield Static("[bold magenta]Synesthesia[/] (send :7777)", id="osc-syn-label")
-        yield Static("[bold green]Karaoke/Processing[/] (send :10000)", id="osc-kar-label")
+        yield Static("[bold green]Textler/Processing[/] (send :10000)", id="osc-kar-label")
 
         yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
         yield Static("", id="osc-status-label")
@@ -183,7 +183,7 @@ class OSCControlPanel(Static):
             return
 
         # Update channel status labels
-        for key in ["vdj", "synesthesia", "karaoke"]:
+        for key in ["vdj", "synesthesia", "textler"]:
             try:
                 ch = self.channel_status.get(key, {})
                 active = ch.get("active", False)
@@ -200,11 +200,11 @@ class OSCControlPanel(Static):
                     self.query_one(label_id, Static).update(
                         f"[bold magenta]Synesthesia[/] (send :7777) {status_icon}"
                     )
-                elif key == "karaoke":
+                elif key == "textler":
                     label_id = "#osc-kar-label"
                     status_icon = "[green]● READY[/]" if active else "[dim]○ offline[/]"
                     self.query_one(label_id, Static).update(
-                        f"[bold green]Karaoke/Processing[/] (send :10000) {status_icon}"
+                        f"[bold green]Textler/Processing[/] (send :10000) {status_icon}"
                     )
             except Exception:
                 pass

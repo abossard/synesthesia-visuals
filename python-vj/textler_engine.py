@@ -8,7 +8,7 @@ ARCHITECTURE:
 - adapters.py: External service interfaces (Spotify, VirtualDJ, LRCLIB, OSC)
 - ai_services.py: AI integrations (LLM, categorization, image generation)
 - orchestrators.py: Focused coordinators with dependency injection
-- karaoke_engine.py: Main engine composition (this file)
+- textler_engine.py: Main engine composition (this file)
 
 LIVE EVENT SOFTWARE - Designed for resilience and graceful degradation.
 All services are optional and will auto-reconnect if they become available.
@@ -74,7 +74,7 @@ logger = logging.getLogger('textler')
 
 
 # =============================================================================
-# KARAOKE ENGINE - Main composition with dependency injection
+# TEXTLER ENGINE - Main composition with dependency injection
 # =============================================================================
 
 class TextlerEngine:
@@ -234,7 +234,7 @@ class TextlerEngine:
         self._running = True
         thread = Thread(target=self._run_loop, args=(poll_interval,), daemon=True, name="Textler-Main")
         thread.start()
-        logger.info(f"Karaoke engine started (poll interval: {poll_interval:.1f}s)")
+        logger.info(f"Textler engine started (poll interval: {poll_interval:.1f}s)")
     
     def set_playback_source(self, source_key: str):
         """Switch playback source live. Persists to settings."""
@@ -263,7 +263,7 @@ class TextlerEngine:
     def stop(self):
         """Stop engine and workers."""
         self._running = False
-        logger.info("Karaoke engine stopped")
+        logger.info("Textler engine stopped")
     
     def run(self, poll_interval: float = 2.0):
         """Run in foreground (blocking). Polls every 2 seconds."""

@@ -23,7 +23,7 @@ class MasterControlPanel(ReactivePanel):
             return
         syn = format_status_icon(bool(self.status.get('synesthesia')), "● RUNNING", "○ stopped")
         pms = format_status_icon(bool(self.status.get('milksyphon')), "● RUNNING", "○ stopped")
-        kar = format_status_icon(bool(self.status.get('karaoke')), "● ACTIVE", "○ inactive")
+        kar = format_status_icon(bool(self.status.get('textler')), "● ACTIVE", "○ inactive")
         proc = self.status.get('processing_apps', 0)
 
         self.update(
@@ -31,6 +31,6 @@ class MasterControlPanel(ReactivePanel):
             f"  [S] Synesthesia     {syn}\n"
             f"  [M] ProjMilkSyphon  {pms}\n"
             f"  [P] Processing Apps {proc} running\n"
-            f"  [K] Karaoke Engine  {kar}\n\n"
+            f"  [K] Textler Engine  {kar}\n\n"
             "[dim]Press letter key to toggle app[/dim]"
         )

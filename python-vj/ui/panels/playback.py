@@ -5,7 +5,7 @@ from textual.reactive import reactive
 from textual.widgets import Static, RadioSet, RadioButton
 
 from infrastructure import Settings
-from karaoke_engine import PLAYBACK_SOURCES
+from textler_engine import PLAYBACK_SOURCES
 from ui.messages import PlaybackSourceChanged
 from utils import format_status_icon, format_duration
 from .base import ReactivePanel
