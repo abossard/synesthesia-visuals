@@ -62,6 +62,7 @@ class OSCMonitor:
             return True
         if not osc.is_started:
             osc.start()
+        osc.set_stats_enabled(True)
         osc.subscribe("/", self._on_incoming)
         self._started = True
         logger.info(f"OSCMonitor started")
@@ -72,6 +73,7 @@ class OSCMonitor:
         if not self._started:
             return
         osc.unsubscribe("/", self._on_incoming)
+        osc.set_stats_enabled(False)
         self._started = False
 
     def _on_incoming(self, path: str, args: list):
@@ -146,12 +148,16 @@ class OSCMonitor:
             channels = dict(self._channel_counts)
             rate = len(self._recent_timestamps) / self._rate_window_sec
 
-        return {
+        stats = {
             "total": total,
             "unique_addresses": unique_addresses,
             "rate": rate,
             "channels": channels,
         }
+        hub_stats = osc.get_hub_stats()
+        if hub_stats:
+            stats["hub"] = hub_stats
+        return stats
 
     def get_grouped_prefixes(
         self,

@@ -173,6 +173,7 @@ void setup() {
  * - VJUniverse/Refrain  - Chorus/refrain text (larger)
  * - VJUniverse/SongInfo - Artist/title display
  * - VJUniverse/VJSims   - Procedural levels
+ * - VJUniverse/Image    - Image display with crossfade & beat cycling
  * 
  * TextlerMultiTile manages 3 Syphon outputs in a single tile for compact preview.
  */
@@ -191,9 +192,12 @@ void initTextlerSystem() {
 
   // 3. VJSims tile (42 procedural levels)
   tileManager.addTile(new VJSimsTile());
+  
+  // 4. Image tile (crossfade, folder beat-cycling)
+  tileManager.addTile(new ImageTile());
 
   println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
-  println("  Syphon outputs: Shader, Lyrics, Refrain, SongInfo, VJSims");
+  println("  Syphon outputs: Shader, Lyrics, Refrain, SongInfo, VJSims, Image");
 }
 
 // ============================================
@@ -801,6 +805,11 @@ void keyPressed() {
       synthMouseEnabled = !synthMouseEnabled;
       println("Synthetic mouse: " + (synthMouseEnabled ? "ON" : "OFF"));
       break;
+    case 'i':
+    case 'I':
+      // Load example images folder into ImageTile
+      loadExampleImages();
+      break;
   }
   
   // Arrow keys for shader panning (only when not in modal dialogs)
@@ -1034,3 +1043,25 @@ void updateShaderCycling() {
   }
 }
 
+
+// ============================================
+// IMAGE TILE HELPERS
+// ============================================
+
+/**
+ * Load example images folder into the ImageTile.
+ * Called when user presses 'i'.
+ */
+void loadExampleImages() {
+  if (tileManager == null) return;
+  
+  // Find ImageTile by name
+  Tile tile = tileManager.getTile("Image");
+  if (tile instanceof ImageTile) {
+    ImageTile imageTile = (ImageTile) tile;
+    imageTile.loadFolder(dataPath("images"));
+    consoleLog("🖼 Loaded images folder");
+  } else {
+    println("[ImageTile] No ImageTile found");
+  }
+}

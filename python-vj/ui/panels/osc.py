@@ -73,6 +73,7 @@ class OSCPanel(ReactivePanel):
         unique = stats.get("unique_addresses", 0)
         rate = stats.get("rate", 0.0)
         channels = stats.get("channels", {})
+        hub = stats.get("hub", {})
 
         lines = [
             self.render_section("OSC Stats", "─"),
@@ -85,6 +86,22 @@ class OSCPanel(ReactivePanel):
             lines.append(f"By channel: {counts}")
         else:
             lines.append("[dim]By channel: (none)[/dim]")
+
+        if hub:
+            queue_depth = hub.get("queue_depth", 0)
+            queue_capacity = hub.get("queue_capacity", 0)
+            queue_peak = hub.get("queue_peak", 0)
+            dropped = hub.get("dropped", 0)
+            processed = hub.get("processed", 0)
+            avg_ms = hub.get("queue_latency_avg_ms", 0.0)
+            max_ms = hub.get("queue_latency_max_ms", 0.0)
+            samples = hub.get("queue_latency_samples", 0)
+            lines.append(
+                f"Hub queue: {queue_depth}/{queue_capacity} (peak {queue_peak})  Dropped: {dropped}"
+            )
+            lines.append(
+                f"Hub delay: avg {avg_ms:.2f} ms  max {max_ms:.2f} ms  samples {samples}"
+            )
 
         return lines
 
