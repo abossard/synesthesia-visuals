@@ -105,7 +105,7 @@ class KaraokeEngine:
         self._pipeline.set_observer(self._handle_pipeline_update)
         
         # External adapters
-        self._osc = OSCSender(osc_host or Config.DEFAULT_OSC_HOST, osc_port or Config.DEFAULT_OSC_PORT)
+        self._osc = OSCSender()  # Uses centralized osc hub
         self._lyrics_fetcher = LyricsFetcher()
         
         # Playback coordinator (no monitor active by default - user must start explicitly)
@@ -275,21 +275,50 @@ class KaraokeEngine:
     
     # Private implementation
     
+    # Adaptive polling intervals
+    POLL_INTERVAL_FAST = 1.0   # When playback detected (1s)
+    POLL_INTERVAL_SLOW = 10.0  # When no playback (10s)
+    
     def _run_loop(self, poll_interval: float):
-        """Main loop with fast lyrics checking, slow position updates."""
+        """Main loop with adaptive polling: fast when playing, slow when idle."""
         last_position_update = 0
-        last_lyrics_hash = None  # Track changes to avoid redundant sends
+        last_poll = 0
         lyrics_check_interval = 0.1  # Check lyrics every 100ms for precision
+        current_poll_interval = self.POLL_INTERVAL_SLOW  # Start slow until source connected
         
         while self._running:
             try:
                 current_time = time.time()
-                snapshot = self._refresh_snapshot()
                 
-                # Fast: Check lyrics every 100ms
-                self._check_lyrics(snapshot)
+                # Adaptive polling: only poll source at current interval
+                if current_time - last_poll >= current_poll_interval:
+                    snapshot = self._refresh_snapshot()
+                    last_poll = current_time
+                    
+                    # Adjust polling speed based on playback state
+                    has_playback = snapshot.state.has_track and snapshot.state.is_playing
+                    source_connected = not snapshot.error
+                    
+                    if has_playback:
+                        if current_poll_interval != self.POLL_INTERVAL_FAST:
+                            current_poll_interval = self.POLL_INTERVAL_FAST
+                            logger.info(f"Playback detected - polling every {self.POLL_INTERVAL_FAST}s")
+                    elif source_connected:
+                        # Source connected but not playing - use fast poll
+                        current_poll_interval = self.POLL_INTERVAL_FAST
+                    else:
+                        # No source or error - slow poll
+                        if current_poll_interval != self.POLL_INTERVAL_SLOW:
+                            current_poll_interval = self.POLL_INTERVAL_SLOW
+                            logger.info(f"No playback - polling every {self.POLL_INTERVAL_SLOW}s")
+                else:
+                    snapshot = self.get_snapshot()
                 
-                # Slow: Update position every poll_interval (2s)
+                # Fast: Check lyrics every 100ms (only if playing)
+                if snapshot.state.is_playing:
+                    self._check_lyrics(snapshot)
+                
+                # Slow: Update position every poll_interval
                 if current_time - last_position_update >= poll_interval:
                     self._send_position_update(snapshot)
                     last_position_update = current_time

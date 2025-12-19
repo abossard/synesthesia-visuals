@@ -33,13 +33,6 @@ class PipelinePanel(ReactivePanel):
             lines.append(f"  {status_text}")
             has_content = True
 
-        if self.pipeline_data.get('image_prompt'):
-            prompt = self.pipeline_data['image_prompt']
-            if isinstance(prompt, dict):
-                prompt = prompt.get('description', str(prompt))
-            lines.append(f"\n[bold cyan]Image Prompt:[/]\n[cyan]{truncate(str(prompt), 200)}[/]")
-            has_content = True
-
         if self.pipeline_data.get('current_lyric'):
             lyric = self.pipeline_data['current_lyric']
             refrain_tag = " [magenta][REFRAIN][/]" if lyric.get('is_refrain') else ""

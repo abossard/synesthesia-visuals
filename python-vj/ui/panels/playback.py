@@ -76,12 +76,14 @@ class NowPlayingPanel(ReactivePanel):
 class PlaybackSourcePanel(Static):
     """
     Panel for selecting playback source with radio buttons.
-    Shows: source selection, running status with latency.
+    Shows: source selection, connection status, latency.
     """
 
     # Reactive data
     lookup_ms = reactive(0.0)
     monitor_running = reactive(False)
+    connection_state = reactive("idle")  # "idle", "connecting", "connected", "no_playback"
+    current_track = reactive("")  # "Artist - Title" when playing
 
     def __init__(self, settings: Settings, **kwargs):
         super().__init__(**kwargs)
@@ -114,28 +116,40 @@ class PlaybackSourcePanel(Static):
     def watch_lookup_ms(self, ms: float) -> None:
         """Update status when lookup time changes."""
         self._update_status_label()
+    
+    def watch_connection_state(self, state: str) -> None:
+        """Update status when connection state changes."""
+        self._update_status_label()
+    
+    def watch_current_track(self, track: str) -> None:
+        """Update status when track changes."""
+        self._update_status_label()
 
     def _update_status_label(self) -> None:
-        """Update the status label with running state and latency."""
+        """Update the status label with connection state and latency."""
         if not self.is_mounted:
             return
         try:
             label = self.query_one("#monitor-status-label", Static)
             source = self.settings.playback_source
+            source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source) if source else "No source"
+            
             if not self.monitor_running:
-                if source:
-                    source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
-                    label.update(f"[dim]○ {source_label} (not running)[/]")
-                else:
-                    label.update("[dim]○ No source selected[/]")
-            else:
-                source_label = PLAYBACK_SOURCES.get(source, {}).get('label', source)
-                ms = self.lookup_ms
-                if ms > 0:
-                    color = "green" if ms < 100 else ("yellow" if ms < 500 else "red")
-                    label.update(f"[{color}]● {source_label} ({ms:.0f}ms)[/]")
-                else:
-                    label.update(f"[green]● {source_label}[/]")
+                label.update(f"[dim]○ {source_label} (not started)[/]")
+                return
+            
+            ms = self.lookup_ms
+            latency = f" ({ms:.0f}ms)" if ms > 0 else ""
+            
+            if self.connection_state == "connected":
+                track_info = f" - {self.current_track}" if self.current_track else ""
+                label.update(f"[green]● {source_label}{latency}[/]{track_info}")
+            elif self.connection_state == "connecting":
+                label.update(f"[yellow]◐ {source_label} - Connecting...{latency}[/]")
+            elif self.connection_state == "no_playback":
+                label.update(f"[cyan]○ {source_label} - No playback{latency}[/]")
+            else:  # idle or unknown
+                label.update(f"[dim]○ {source_label}{latency}[/]")
         except Exception:
             pass
 

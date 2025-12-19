@@ -39,7 +39,6 @@ def build_pipeline_data(engine: KaraokeEngine, snapshot: PlaybackSnapshot) -> Di
     """Assemble pipeline panel payload."""
     pipeline_data = {
         'display_lines': engine.pipeline.get_display_lines(),
-        'image_prompt': engine.pipeline.image_prompt,
         'error': snapshot.error,
         'backoff': snapshot.backoff_seconds,
     }

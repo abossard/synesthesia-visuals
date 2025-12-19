@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
 from dataclasses import dataclass
 import logging
+import os
 import subprocess
+import threading
 import time
 import asyncio
 
@@ -82,8 +84,7 @@ from ui import (
     StartupControlPanel, OSCControlPanel, OSCPanel,
     NowPlayingPanel, PlaybackSourcePanel,
     CategoriesPanel, PipelinePanel,
-    ServicesPanel, AppsListPanel, LogsPanel,
-    MasterControlPanel,
+    AppsListPanel, LogsPanel,
     ShaderIndexPanel, ShaderMatchPanel,
     ShaderAnalysisPanel, ShaderSearchPanel,
     ShaderActionsPanel,
@@ -221,12 +222,11 @@ class VJConsoleApp(App):
         Binding("q", "quit", "Quit"),
         Binding("1", "screen_master", "Master"),
         Binding("2", "screen_osc", "OSC"),
-        Binding("3", "screen_ai", "AI Debug"),
-        Binding("4", "screen_logs", "Logs"),
-        Binding("6", "screen_midi", "MIDI"),
-        Binding("7", "screen_shaders", "Shaders"),
+        Binding("3", "screen_logs", "Logs"),
+        Binding("4", "screen_midi", "MIDI"),
+        Binding("5", "screen_shaders", "Shaders"),
         Binding("s", "toggle_synesthesia", "Synesthesia"),
-        Binding("m", "toggle_milksyphon", "MilkSyphon"),        Binding("k,up", "nav_up", "Up"),
+        Binding("k,up", "nav_up", "Up"),
         Binding("j,down", "nav_down", "Down"),
         Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
@@ -240,7 +240,6 @@ class VJConsoleApp(App):
 
     current_tab = reactive("master")
     synesthesia_running = reactive(False)
-    milksyphon_running = reactive(False)
     lmstudio_running = reactive(False)
     karaoke_overlay_running = reactive(False)
 
@@ -264,7 +263,6 @@ class VJConsoleApp(App):
         
         self.karaoke_engine: Optional[KaraokeEngine] = None
         self._logs: List[str] = []
-        self._last_master_status: Optional[Dict[str, Any]] = None
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
         
@@ -392,9 +390,7 @@ class VJConsoleApp(App):
                     with VerticalScroll(id="left-col"):
                         yield StartupControlPanel(self.settings, id="startup-control")
                         yield PlaybackSourcePanel(self.settings, id="playback-source", classes="panel")
-                        yield MasterControlPanel(id="master-ctrl", classes="panel")
                         yield AppsListPanel(id="apps", classes="panel")
-                        yield ServicesPanel(id="services", classes="panel")
                     with VerticalScroll(id="right-col"):
                         yield NowPlayingPanel(id="now-playing", classes="panel")
                         yield CategoriesPanel(id="categories", classes="panel")
@@ -406,20 +402,12 @@ class VJConsoleApp(App):
                 with VerticalScroll(id="osc-scroll", classes="panel full-height"):
                     yield OSCPanel(id="osc-full")
 
-            # Tab 3: Song AI Debug  
-            with TabPane("3️⃣ Song AI Debug", id="ai"):
-                with Horizontal():
-                    with VerticalScroll(id="left-col"):
-                        yield CategoriesPanel(id="categories-full", classes="panel full-height")
-                    with VerticalScroll(id="right-col"):
-                        yield PipelinePanel(id="pipeline-full", classes="panel full-height")
-
-            # Tab 4: All Logs
-            with TabPane("4️⃣ All Logs", id="logs"):
+            # Tab 3: All Logs
+            with TabPane("3️⃣ All Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
             
-            # Tab 5: Launchpad Controller
-            with TabPane("5️⃣ Launchpad", id="launchpad"):
+            # Tab 4: Launchpad Controller
+            with TabPane("4️⃣ Launchpad", id="launchpad"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         if LAUNCHPAD_LIB_AVAILABLE and LaunchpadStatusPanel:
@@ -435,8 +423,8 @@ class VJConsoleApp(App):
                         else:
                             yield Static("[dim]Connect Launchpad and restart[/]", classes="panel")
             
-            # Tab 6: Shader Indexer
-            with TabPane("7️⃣ Shaders", id="shaders"):
+            # Tab 5: Shader Indexer
+            with TabPane("5️⃣ Shaders", id="shaders"):
                 yield ShaderActionsPanel(id="shader-actions")
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
@@ -450,7 +438,7 @@ class VJConsoleApp(App):
 
     def on_mount(self) -> None:
         self.title = "🎛 VJ Console"
-        self.sub_title = "Press 1-7 to switch screens"
+        self.sub_title = "Press 1-5 to switch screens"
 
         # OSC hub runs continuously for the lifetime of the console
         if osc.start():
@@ -462,7 +450,10 @@ class VJConsoleApp(App):
         self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
         self.process_manager.start_monitoring(daemon_mode=True)
 
-        # NOTE: No auto-start by default - user controls via StartupControlPanel
+        # Always start KaraokeEngine - it polls slowly (10s) when no source connected
+        self._start_karaoke()
+
+        # NOTE: Other services controlled via StartupControlPanel
         # Services are started only when "Start All" button is pressed
         # or when auto-restart is enabled and service is not running
 
@@ -727,11 +718,6 @@ class VJConsoleApp(App):
             if self._start_lmstudio():
                 started.append("LM Studio")
         
-        if self.settings.start_music_monitor:
-            self._start_karaoke()
-            if self.karaoke_engine:
-                started.append("Music Monitor")
-        
         if self.settings.start_magic:
             if self._start_magic():
                 started.append("Magic")
@@ -776,15 +762,6 @@ class VJConsoleApp(App):
             except Exception as e:
                 logger.error(f"Failed to stop LM Studio: {e}")
         
-        # Stop Music Monitor (Karaoke Engine)
-        if self.karaoke_engine:
-            try:
-                self.karaoke_engine.stop()
-                self.karaoke_engine = None
-                stopped.append("Music Monitor")
-            except Exception as e:
-                logger.error(f"Failed to stop Music Monitor: {e}")
-        
         # Stop Magic Music Visuals
         if self._is_magic_running():
             try:
@@ -817,7 +794,6 @@ class VJConsoleApp(App):
         """Check running status of external apps and auto-restart if enabled."""
         # Update running status
         self.synesthesia_running = self._is_synesthesia_running()
-        self.milksyphon_running = self._run_process(['pgrep', '-f', 'projectMilkSyphon'], 1)
         self.lmstudio_running = self._is_lmstudio_running()
         self.karaoke_overlay_running = self._is_karaoke_overlay_running()
         self.magic_running = self._is_magic_running()
@@ -862,54 +838,9 @@ class VJConsoleApp(App):
             logger.info("Auto-restarting LM Studio")
             self._start_lmstudio()
         
-        if self.settings.autorestart_music_monitor and not self._is_music_monitor_running():
-            logger.info("Auto-restarting Music Monitor")
-            self._start_karaoke()
-        
         if self.settings.autorestart_magic and not self.magic_running:
             logger.info("Auto-restarting Magic")
             self._start_magic()
-        
-        # Update services panel
-        self._update_services()
-
-    def _update_services(self) -> None:
-        """Update services panel with current status."""
-        import os
-        lmstudio_ok, lmstudio_model, comfyui_ok = False, '', False
-        
-        try:
-            import requests
-            # Single request to LM Studio - reuse response
-            lmstudio_resp = requests.get("http://localhost:1234/v1/models", timeout=1)
-            if lmstudio_resp.status_code == 200:
-                lmstudio_ok = True
-                models = lmstudio_resp.json().get('data', [])
-                lmstudio_model = models[0].get('id', 'loaded') if models else 'no model'
-            
-            comfyui_ok = requests.get("http://127.0.0.1:8188/system_stats", timeout=1).status_code == 200
-        except Exception:
-            pass
-
-        vdj_path = KaraokeConfig.find_vdj_path()
-        
-        try:
-            self.query_one("#services", ServicesPanel).services = {
-                'spotify': KaraokeConfig.has_spotify_credentials(),
-                'virtualdj': bool(vdj_path),
-                'vdj_file': vdj_path.name if vdj_path else '',
-                'lmstudio': lmstudio_ok,
-                'lmstudio_model': lmstudio_model,
-                'comfyui': comfyui_ok,
-                'openai': bool(os.environ.get('OPENAI_API_KEY')),
-                'synesthesia': self.synesthesia_running,
-                'synesthesia_installed': Path('/Applications/Synesthesia.app').exists(),
-                'playback_monitors': (self._latest_snapshot.monitor_status if self._latest_snapshot else {}),
-                'playback_error': (self._latest_snapshot.error if self._latest_snapshot else ""),
-                'playback_backoff': (self._latest_snapshot.backoff_seconds if self._latest_snapshot else 0.0),
-            }
-        except Exception:
-            pass
 
     def _update_data(self) -> None:
         """Update all panels with current data."""
@@ -947,21 +878,12 @@ class VJConsoleApp(App):
                 ),
             )
 
-        # Update master control panel
-        running_apps = sum(1 for app in self.process_manager.apps if self.process_manager.is_running(app))
-        master_status = {
-            'synesthesia': self.synesthesia_running,
-            'milksyphon': self.milksyphon_running,
-            'processing_apps': running_apps,
-            'karaoke': self.karaoke_engine is not None,
-        }
-        self._safe_update_panel("#master-ctrl", "status", master_status)
-
         # If no karaoke engine, clear panels and return
         if not self.karaoke_engine:
             self._safe_update_panel("#now-playing", "track_data", {})
             self._safe_update_panel("#playback-source", "monitor_running", False)
             self._safe_update_panel("#playback-source", "lookup_ms", 0.0)
+            self._safe_update_panel("#playback-source", "connection_state", "idle")
             return
 
         # Get snapshot and build data
@@ -979,40 +901,41 @@ class VJConsoleApp(App):
         self._safe_update_panel("#now-playing", "track_data", track_data)
         self._safe_update_panel("#now-playing", "shader_name", self.karaoke_engine.current_shader)
 
-        # Update playback source panel
+        # Update playback source panel with connection state
         self._safe_update_panel("#playback-source", "lookup_ms", self.karaoke_engine.last_lookup_ms)
         self._safe_update_panel("#playback-source", "monitor_running", bool(self.karaoke_engine.playback_source))
+        
+        # Determine connection state for visual feedback
+        state = snapshot.state
+        if not self.karaoke_engine.playback_source:
+            connection_state = "idle"
+            current_track = ""
+        elif snapshot.error:
+            connection_state = "connecting"
+            current_track = ""
+        elif state.has_track and state.is_playing:
+            connection_state = "connected"
+            current_track = f"{state.track.artist} - {state.track.title}" if state.track else ""
+        elif state.has_track:
+            connection_state = "connected"  # Has track but paused
+            current_track = f"{state.track.artist} - {state.track.title} (paused)" if state.track else ""
+        else:
+            connection_state = "no_playback"
+            current_track = ""
+        
+        self._safe_update_panel("#playback-source", "connection_state", connection_state)
+        self._safe_update_panel("#playback-source", "current_track", current_track)
 
-        # Update categories (both panels)
+        # Update categories panel
         cat_data = build_categories_payload(self.karaoke_engine.current_categories)
         self._safe_update_panel("#categories", "categories_data", cat_data)
-        self._safe_update_panel("#categories-full", "categories_data", cat_data)
 
-        # Update pipeline (both panels)
+        # Update pipeline panel
         pipeline_data = build_pipeline_data(self.karaoke_engine, snapshot)
         self._safe_update_panel("#pipeline", "pipeline_data", pipeline_data)
-        self._safe_update_panel("#pipeline-full", "pipeline_data", pipeline_data)
-
-        # Send OSC status only when it changes
-        current_status = {
-            'karaoke_active': True,
-            'synesthesia_running': self.synesthesia_running,
-            'milksyphon_running': self.milksyphon_running,
-            'processing_apps': running_apps
-        }
-        if current_status != self._last_master_status:
-            self.karaoke_engine.osc_sender.send_master_status(
-                karaoke_active=True,
-                synesthesia_running=self.synesthesia_running,
-                milksyphon_running=self.milksyphon_running,
-                processing_apps=running_apps
-            )
-            self._last_master_status = current_status
 
         # Update Launchpad panels
         self._update_launchpad_panels()
-        
-        # Update audio analyzer panels
         
         # Update shader panels
         self._update_shader_panels()
@@ -1109,39 +1032,28 @@ class VJConsoleApp(App):
     def action_screen_osc(self) -> None:
         self.query_one("#screens", TabbedContent).active = "osc"
     
-    def action_screen_ai(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "ai"
-    
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
     
-    def action_screen_audio(self) -> None:
-        self.query_one("#screens", TabbedContent).active = "audio"
-    
     def action_screen_midi(self) -> None:
-        """Switch to Launchpad screen (kept as 'midi' for key binding compat)."""
+        """Switch to Launchpad screen."""
         self.query_one("#screens", TabbedContent).active = "launchpad"
     
     def action_screen_shaders(self) -> None:
         self.query_one("#screens", TabbedContent).active = "shaders"
 
     # === App control ===
+
+    def action_quit(self) -> None:
+        logger.info("Quit requested")
+        self._start_force_exit_watchdog()
+        self.exit()
     
     def action_toggle_synesthesia(self) -> None:
         if self.synesthesia_running:
             self._run_process(['pkill', '-x', 'Synesthesia'])
         else:
             subprocess.Popen(['open', '-a', 'Synesthesia'])
-        self._check_apps()
-
-    def action_toggle_milksyphon(self) -> None:
-        if self.milksyphon_running:
-            self._run_process(['pkill', '-f', 'projectMilkSyphon'])
-        else:
-            for p in [Path("/Applications/projectMilkSyphon.app"), Path.home() / "Applications/projectMilkSyphon.app"]:
-                if p.exists():
-                    subprocess.Popen(['open', '-a', str(p)])
-                    break
         self._check_apps()
     
     def action_shader_toggle_analysis(self) -> None:
@@ -1352,16 +1264,43 @@ class VJConsoleApp(App):
         if len(self._logs) > 500:
             self._logs.pop(0)
 
+    def _start_force_exit_watchdog(self, timeout: float = 3.0) -> None:
+        if getattr(self, "_force_exit_thread", None):
+            return
+
+        def _force_exit() -> None:
+            time.sleep(timeout)
+            logger.warning("Force exit after shutdown timeout")
+            os._exit(0)
+
+        self._force_exit_thread = threading.Thread(
+            target=_force_exit,
+            name="ForceExitWatchdog",
+            daemon=True,
+        )
+        self._force_exit_thread.start()
+
     def on_unmount(self) -> None:
+        logger.info("Shutdown: begin")
         if osc_monitor.is_started:
+            logger.info("Shutdown: stopping osc_monitor")
             osc_monitor.stop()
+            logger.info("Shutdown: osc_monitor stopped")
         if self.shader_analysis_worker:
+            logger.info("Shutdown: stopping shader_analysis_worker")
             self.shader_analysis_worker.stop()
+            logger.info("Shutdown: shader_analysis_worker stopped")
         if self.karaoke_engine:
+            logger.info("Shutdown: stopping karaoke_engine")
             self.karaoke_engine.stop()
+            logger.info("Shutdown: karaoke_engine stopped")
         if self.launchpad_manager:
+            logger.info("Shutdown: stopping launchpad_manager")
             self.launchpad_manager.stop()
+            logger.info("Shutdown: launchpad_manager stopped")
+        logger.info("Shutdown: process_manager.cleanup")
         self.process_manager.cleanup()
+        logger.info("Shutdown: complete")
 
 
 def main():

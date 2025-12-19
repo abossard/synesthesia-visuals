@@ -50,10 +50,6 @@ class Config:
 
     # Timing adjustment step (200ms per key press)
     TIMING_STEP_MS = 200
-    
-    
-    # Image prompt generation - disabled by default (set IMAGE_PROMPT_ENABLED=1 to enable)
-    IMAGE_PROMPT_ENABLED = os.environ.get('IMAGE_PROMPT_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
 
     # Spotify monitor feature flags (AppleScript enabled by default)
     SPOTIFY_WEBAPI_ENABLED = os.environ.get('SPOTIFY_WEBAPI_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
@@ -196,15 +192,6 @@ class Settings:
         self._set_bool('start_lmstudio', value)
     
     @property
-    def start_music_monitor(self) -> bool:
-        """Whether to start Music Monitor (lyrics sync) on launch."""
-        return self._get_bool('start_music_monitor', False)
-    
-    @start_music_monitor.setter
-    def start_music_monitor(self, value: bool) -> None:
-        self._set_bool('start_music_monitor', value)
-    
-    @property
     def start_magic(self) -> bool:
         """Whether to start Magic Music Visuals on launch."""
         return self._get_bool('start_magic', False)
@@ -241,15 +228,6 @@ class Settings:
     @autorestart_lmstudio.setter
     def autorestart_lmstudio(self, value: bool) -> None:
         self._set_bool('autorestart_lmstudio', value)
-    
-    @property
-    def autorestart_music_monitor(self) -> bool:
-        """Whether to auto-restart Music Monitor if it crashes."""
-        return self._get_bool('autorestart_music_monitor', False)
-    
-    @autorestart_music_monitor.setter
-    def autorestart_music_monitor(self, value: bool) -> None:
-        self._set_bool('autorestart_music_monitor', value)
     
     @property
     def autorestart_magic(self) -> bool:
@@ -426,8 +404,6 @@ class PipelineTracker:
         self._track_key = ""
         self._steps: Dict[str, PipelineStep] = {}
         self._logs: List[str] = []
-        self._image_prompt = ""
-        self._generated_image_path = ""
         self._observer = None
         self.reset()
     
@@ -440,8 +416,6 @@ class PipelineTracker:
                 for step in self.STEPS
             }
             self._logs = []
-            self._image_prompt = ""
-            self._generated_image_path = ""
             if track_key:
                 self._logs.append(f"Pipeline reset for: {track_key}")
     
@@ -526,11 +500,6 @@ class PipelineTracker:
         with self._lock:
             self._logs.append(message)
     
-    def set_image_prompt(self, prompt):
-        """Set image prompt for display."""
-        with self._lock:
-            self._image_prompt = prompt
-    
     def get_display_lines(self) -> List[tuple]:
         """Get formatted display lines for UI. Returns list of (label, status, message)."""
         with self._lock:
@@ -581,23 +550,6 @@ class PipelineTracker:
         """Get log entries."""
         with self._lock:
             return list(self._logs)
-    
-    @property
-    def image_prompt(self):
-        """Get image prompt."""
-        with self._lock:
-            return self._image_prompt
-    
-    @property
-    def generated_image_path(self) -> str:
-        """Get generated image path."""
-        with self._lock:
-            return self._generated_image_path
-    
-    def set_generated_image_path(self, path: str):
-        """Set generated image path."""
-        with self._lock:
-            self._generated_image_path = path
 
 
 # =============================================================================

@@ -42,14 +42,17 @@ int lastFrameTime;
 float time = 0;
 long levelChangeTimeMs;
 long nextLevelAtMs;
-int levelDurationMs = 30000; // 30s per level
+int levelDurationMs = 10000; // 10s per level
 
 // Screenshots
 String screenshotDir;
-int screenshotDelayMs = 10000; // 10s after level load
+int screenshotDelayMs = 3000; // 3s after level load
 int screenshotCounter = 0;
 boolean levelScreenshotTaken = false;
 String screenshotSessionId;
+
+// Recording mode (auto-rotate + screenshots)
+boolean recordingMode = false;
 
 // ============================================
 // SETTINGS
@@ -87,12 +90,13 @@ void setup() {
   ensureScreenshotDir();
   screenshotSessionId = nf(year(), 4) + nf(month(), 2) + nf(day(), 2) + "-" + nf(hour(), 2) + nf(minute(), 2) + nf(second(), 2);
   
-  println("VJSims initialized (non-interactive mode)");
+  println("VJSims initialized");
   println("  Syphon server: VJSims");
   println("  Resolution: " + width + "x" + height);
-  println("  Audio: Synesthesia OSC (TODO: implement OSC listener)");
-  println("  Mode: Auto-running visual simulations (" + levels.size() + " level(s))");
-  println("  Level duration: " + levelDurationMs + "ms");
+  println("  Scenes: " + levels.size());
+  println("  Controls:");
+  println("    LEFT/RIGHT or [/] - Change scene");
+  println("    R - Toggle recording mode (auto-rotate + screenshots)");
   
   lastFrameTime = millis();
   levelChangeTimeMs = millis();
@@ -123,27 +127,29 @@ void draw() {
     canvas.endDraw();
   }
   
-  // Display on screen
-  image(canvas, 0, 0);
-  
-  // Send to Syphon
+  // Send clean canvas to Syphon (no text overlay)
   syphon.sendImage(canvas);
 
-  // Periodic screenshots
-  captureScreenshotIfNeeded();
+  // Display on screen
+  image(canvas, 0, 0);
 
-  // Auto-rotate levels
-  long now = millis();
-  if (now < levelChangeTimeMs) { // handle millis wrap
-    levelChangeTimeMs = now;
-    nextLevelAtMs = now + levelDurationMs;
-  }
-  if (frameCount % 300 == 0) {
-    println("Timer debug now=" + now + " target=" + nextLevelAtMs);
-  }
-  if (now >= nextLevelAtMs) {
-    println("Auto-rotate trigger now=" + now + " target=" + nextLevelAtMs);
-    nextLevel();
+  // Draw text overlay on screen (not in Syphon output)
+  drawSceneNameOverlay();
+
+  // Recording mode: auto-rotate and screenshots
+  if (recordingMode) {
+    captureScreenshotIfNeeded();
+
+    // Auto-rotate levels
+    long now = millis();
+    if (now < levelChangeTimeMs) { // handle millis wrap
+      levelChangeTimeMs = now;
+      nextLevelAtMs = now + levelDurationMs;
+    }
+    if (now >= nextLevelAtMs) {
+      println("Auto-rotate trigger now=" + now + " target=" + nextLevelAtMs);
+      nextLevel();
+    }
   }
 }
 
@@ -243,12 +249,38 @@ void keyPressed() {
     nextLevel();
   } else if (key == '[' || keyCode == LEFT) {
     previousLevel();
+  } else if (key == 'r' || key == 'R') {
+    recordingMode = !recordingMode;
+    if (recordingMode) {
+      println("Recording mode ON - auto-rotating scenes with screenshots");
+      levelChangeTimeMs = millis();
+      nextLevelAtMs = levelChangeTimeMs + levelDurationMs;
+      levelScreenshotTaken = false;
+    } else {
+      println("Recording mode OFF");
+    }
   }
 }
 
 // ============================================
 // HELPERS
 // ============================================
+
+void drawSceneNameOverlay() {
+  if (activeLevel == null) return;
+
+  String sceneName = activeLevel.getName();
+  String modeText = recordingMode ? " [REC]" : "";
+  String displayText = sceneName + modeText;
+
+  // Draw text with shadow for readability
+  textSize(16);
+  textAlign(LEFT, TOP);
+  fill(0, 150);
+  text(displayText, 12, 12);
+  fill(255);
+  text(displayText, 10, 10);
+}
 
 void simulateAudio(float dt) {
   // Auto-trigger audio simulation (simulates beats at ~120 BPM)
@@ -280,9 +312,27 @@ void captureScreenshotIfNeeded() {
   }
   String levelName = activeLevel != null ? activeLevel.getName() : "vjsims";
   String safeName = levelName.toLowerCase().replaceAll("[^a-z0-9]+", "-");
-  String filename = screenshotDir + "/" + screenshotSessionId + "-" + safeName + "-" + nf(screenshotCounter, 4) + ".png";
+
+  // Check if a screenshot already exists for this level
+  if (screenshotExistsForLevel(safeName)) {
+    println("Screenshot already exists for level: " + levelName);
+    levelScreenshotTaken = true;
+    return;
+  }
+
+  String filename = screenshotDir + "/" + safeName + ".png";
   canvas.save(filename);
   println("Saved screenshot: " + filename);
   screenshotCounter++;
   levelScreenshotTaken = true;
+}
+
+boolean screenshotExistsForLevel(String safeName) {
+  File dir = new File(screenshotDir);
+  if (!dir.exists()) {
+    return false;
+  }
+  String targetFilename = safeName + ".png";
+  File targetFile = new File(screenshotDir + "/" + targetFilename);
+  return targetFile.exists();
 }

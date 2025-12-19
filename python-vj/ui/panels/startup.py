@@ -43,11 +43,6 @@ class StartupControlPanel(Static):
             yield Static("", id="stat-lmstudio", classes="stat-label")
 
         with Horizontal(classes="startup-row"):
-            yield Checkbox("Music Monitor", self.settings.start_music_monitor, id="chk-music-monitor")
-            yield Checkbox("Auto-restart", self.settings.autorestart_music_monitor, id="chk-ar-music-monitor")
-            yield Static("", id="stat-music-monitor", classes="stat-label")
-
-        with Horizontal(classes="startup-row"):
             yield Checkbox("Magic Music Visuals", self.settings.start_magic, id="chk-magic")
             yield Checkbox("Auto-restart", self.settings.autorestart_magic, id="chk-ar-magic")
             yield Static("", id="stat-magic", classes="stat-label")
@@ -67,12 +62,10 @@ class StartupControlPanel(Static):
             "chk-synesthesia": "start_synesthesia",
             "chk-karaoke-overlay": "start_karaoke_overlay",
             "chk-lmstudio": "start_lmstudio",
-            "chk-music-monitor": "start_music_monitor",
             "chk-magic": "start_magic",
             "chk-ar-synesthesia": "autorestart_synesthesia",
             "chk-ar-karaoke-overlay": "autorestart_karaoke_overlay",
             "chk-ar-lmstudio": "autorestart_lmstudio",
-            "chk-ar-music-monitor": "autorestart_music_monitor",
             "chk-ar-magic": "autorestart_magic",
         }
 
@@ -130,18 +123,6 @@ class StartupControlPanel(Static):
                         label.update(f"[green]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - {model[:20]}[/]")
                 else:
                     label.update(f"[yellow]● {lm_stats.cpu_percent:.0f}% / {lm_stats.memory_mb:.0f}MB - No model loaded[/]")
-            else:
-                label.update("[dim]○ Not running[/]")
-        except Exception:
-            pass
-
-        # Music Monitor stats
-        try:
-            label = self.query_one("#stat-music-monitor", Static)
-            # Music Monitor runs in the same process, check if karaoke_engine exists
-            app = self.app if hasattr(self, 'app') else None
-            if app and hasattr(app, 'karaoke_engine') and app.karaoke_engine is not None:
-                label.update("[green]● Running[/]")
             else:
                 label.update("[dim]○ Not running[/]")
         except Exception:

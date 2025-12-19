@@ -60,12 +60,15 @@ class PlaybackCoordinator:
         self._state = PlaybackState()
         self._current_source = "none"
         self._last_lookup_ms = 0.0
+        self._was_connected = False  # Track connection state for logging
+        self._last_track_key = ""    # Track for change detection
     
     def set_monitor(self, monitor):
         """Hot-swap the active monitor for live source switching."""
         self._monitor = monitor
         self._current_source = self._monitor_key(monitor) if monitor else "none"
-        logger.info(f"PlaybackCoordinator: switched to {self._current_source}")
+        self._was_connected = False  # Reset connection state for new monitor
+        logger.info(f"Playback source: switching to {self._current_source}")
     
     @property
     def last_lookup_ms(self) -> float:
@@ -106,6 +109,18 @@ class PlaybackCoordinator:
             )
             position = playback.get('progress_ms', 0) / 1000.0
             
+            # Log connection success on first successful poll
+            if not self._was_connected:
+                self._was_connected = True
+                logger.info(f"✓ {self._current_source}: connected - {track.artist} - {track.title}")
+            
+            # Log track changes
+            track_key = track.key
+            if track_key != self._last_track_key:
+                self._last_track_key = track_key
+                if self._was_connected:  # Don't double-log initial connection
+                    logger.info(f"♪ Now playing: {track.artist} - {track.title}")
+            
             # Update state immutably
             self._state = self._state.update(
                 track=track,
@@ -114,7 +129,11 @@ class PlaybackCoordinator:
                 last_update=time.time()
             )
         else:
-            # No playback detected
+            # No playback detected - log disconnection
+            if self._was_connected:
+                self._was_connected = False
+                logger.info(f"○ {self._current_source}: no playback detected")
+            
             if self._state.has_track:
                 self._state = self._state.update(is_playing=False)
         
@@ -379,21 +398,6 @@ class AIOrchestrator:
                         
                         # Store LLM results for shader matching
                         self._last_llm_result = result
-                        
-                        # Image prompt generation (disabled by default)
-                        if Config.IMAGE_PROMPT_ENABLED:
-                            self._pipeline.start("generate_image_prompt")
-                            prompt = result.get('image_prompt') or self._llm.generate_image_prompt(
-                                track.artist, track.title,
-                                result.get('keywords', []),
-                                result.get('themes', [])
-                            )
-                            self._pipeline.set_image_prompt(prompt)
-                            self._pipeline.complete("generate_image_prompt")
-                            
-                            # Queue image generation
-                        else:
-                            self._pipeline.skip("generate_image_prompt", "Disabled by config")
                     else:
                         self._pipeline.skip("llm_analysis", "LLM unavailable")
                 else:

@@ -32,7 +32,6 @@ class LLMAnalyzer:
     Deep module interface:
         analyze_lyrics(lyrics, artist, title) -> Dict
         analyze_shader(shader_name, shader_source) -> Dict
-        generate_image_prompt(artist, title, keywords, themes) -> str
     
     Hides: Multi-backend LLM (OpenAI/LM Studio), caching, fallback logic
     """
@@ -72,38 +71,6 @@ class LLMAnalyzer:
         
         # Fallback
         return self._basic_analysis(lyrics)
-    
-    def generate_image_prompt(self, artist: str, title: str, keywords: List[str], themes: List[str]) -> str:
-        """Generate image prompt for AI image generation."""
-        self._try_reconnect()
-        
-        if not self._health.available:
-            return self._basic_image_prompt(artist, title, keywords, themes)
-        
-        prompt = f"""Create a visual prompt for '{title}' by {artist}. Keywords: {', '.join(keywords[:5])}. Themes: {', '.join(themes[:3])}. Style: cinematic, abstract, high-contrast VJ visuals."""
-        
-        try:
-            if self._backend == "openai":
-                response = self._openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=150
-                )
-                return response.choices[0].message.content.strip()
-            elif self._backend == "lmstudio":
-                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
-                    json={
-                        "model": self._lmstudio_model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 150
-                    },
-                    timeout=30)
-                if resp.status_code == 200:
-                    return resp.json().get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-        except Exception as e:
-            logger.debug(f"Image prompt generation error: {e}")
-        
-        return self._basic_image_prompt(artist, title, keywords, themes)
     
     def analyze_shader(
         self, 
@@ -791,10 +758,6 @@ Lyrics: {lyrics[:2000]}"""
         keywords = sorted(word_counts, key=lambda x: word_counts[x], reverse=True)[:10]
         
         return {'refrain_lines': list(set(refrain))[:5], 'keywords': keywords, 'themes': [], 'cached': False}
-    
-    def _basic_image_prompt(self, artist: str, title: str, keywords: List[str], themes: List[str]) -> str:
-        kw = ', '.join(keywords[:5]) if keywords else 'music, rhythm'
-        return f"Abstract visualization for '{title}' by {artist}. Elements: {kw}. Cinematic, high-contrast VJ visuals, dark background."
 
 
 # =============================================================================
