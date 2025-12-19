@@ -104,6 +104,8 @@ This project uses:
 - [MMV Master Pipeline](docs/operation/mmv-master-pipeline-guide.md) - Production setup
 
 **📚 Technical Reference**
+- [OSC Architecture](OSC.md) - Current OSC communication system
+- **[OSC Future Plan](OSC_FUTURE_PLAN.md)** - 🚀 Planned OSC evolution (VDJ queries, forwarding, Launchpad)
 - [Processing VJ Guides](docs/reference/processing-guides/README.md) - Comprehensive development series
 - [Processing Levels](docs/reference/processing-levels/README.md) - 14 visual concept implementations
 - [ISF to Synesthesia Migration](docs/reference/isf-to-synesthesia-migration.md) - Manual shader conversion
@@ -126,10 +128,10 @@ Full series: [docs/reference/processing-guides/](docs/reference/processing-guide
 
 ## Controller Roles
 
-| Controller | Primary Use | Mode |
-|------------|-------------|------|
-| Akai MIDImix | VJ / lighting control | Standard MIDI |
-| Launchpad Mini Mk3 | Processing games | Programmer mode |
+| Controller | Primary Use | Mode | Future Plan |
+|------------|-------------|------|-------------|
+| Akai MIDImix | VJ / lighting control | Standard MIDI | Unchanged |
+| Launchpad Mini Mk3 | Synesthesia + VJUniverse control | Programmer mode | Banks 0-3: Synesthesia, 4-7: VJUniverse (see [OSC_FUTURE_PLAN.md](OSC_FUTURE_PLAN.md#step-04-launchpad-controller-architecture)) |
 
 ## License
 

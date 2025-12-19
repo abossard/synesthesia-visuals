@@ -4,7 +4,7 @@
 
 This VJ system uses OSC (Open Sound Control) over UDP for real-time communication between audio sources, playback monitors, a central Python hub, and visual applications.
 
-**Design Principle:** Central hub pattern — one process binds to each port, then fans out to multiple consumers.
+**Design Principle:** Central hub pattern — the python-vj `osc_hub.py` binds to receive ports (9008, 9999) to listen for incoming OSC from VDJ and Synesthesia, then routes and forwards messages. The hub also sends control messages to external applications on their respective ports (9009 for VDJ, 7777 for Synesthesia, 9000 for Processing/MMV).
 
 ---
 
@@ -16,9 +16,9 @@ flowchart TB
         SPOT[Spotify<br/>AppleScript]
     end
     
-    subgraph PyHub["🐍 Python OSC Hub (osc_hub.py)"]
+    subgraph PyHub["🐍 Python OSC Hub (osc_hub.py)<br/>Central Listener & Router"]
         direction TB
-        HUB_CORE[OSCHub<br/>Central Router]
+        HUB_CORE[OSCHub<br/>Receives & Routes All OSC]
         CH_VDJ[Channel: vdj<br/>send 9009 / recv 9008]
         CH_SYN[Channel: synesthesia<br/>send 7777 / recv 9999]
         CH_KAR[Channel: karaoke<br/>send 9000 / recv —]
@@ -27,23 +27,25 @@ flowchart TB
         HUB_CORE --> CH_KAR
     end
     
-    subgraph Consumers["🎨 Visual Consumers"]
-        VDJ_APP[VirtualDJ<br/>OSC PRO port 9009]
-        PROC[Processing Sketches<br/>OscAudioVisualizer<br/>KaraokeOverlay<br/>port 9000]
-        SYN[Synesthesia<br/>port 7777 in / 9999 out]
-        MMV[Magic Music Visuals<br/>port 9000+]
+    subgraph External["🎨 External Applications"]
+        VDJ_APP[VirtualDJ<br/>Sends OSC to 9008<br/>Receives on 9009]
+        PROC[Processing/VJUniverse<br/>Receives on 9000]
+        SYN[Synesthesia<br/>Sends OSC to 9999<br/>Receives on 7777]
+        MMV[Magic Music Visuals<br/>Receives on 9000+]
     end
     
     %% Source connections
     SPOT -->|track info| HUB_CORE
     
-    %% Hub to consumers
-    CH_VDJ -->|/deck/*<br/>/browser/*| VDJ_APP
-    VDJ_APP -->|responses| CH_VDJ
-    CH_KAR -->|/karaoke/*<br/>/shader/*<br/>/audio/*| PROC
-    CH_KAR -->|forward| MMV
-    CH_SYN -->|/scene/*<br/>/param/*| SYN
-    SYN -->|audio uniforms| CH_SYN
+    %% External apps SEND to Hub (Hub listens)
+    VDJ_APP -->|OSC responses<br/>port 9008| CH_VDJ
+    SYN -->|audio uniforms<br/>callbacks<br/>port 9999| CH_SYN
+    
+    %% Hub SENDS to External apps
+    CH_VDJ -->|/deck/*<br/>/browser/*<br/>port 9009| VDJ_APP
+    CH_SYN -->|/scene/*<br/>/param/*<br/>port 7777| SYN
+    CH_KAR -->|/karaoke/*<br/>/shader/*<br/>/audio/*<br/>port 9000| PROC
+    CH_KAR -->|forward<br/>port 9000+| MMV
     
     %% Syphon video (not OSC but completes picture)
     PROC -.->|Syphon| MMV
@@ -54,15 +56,15 @@ flowchart TB
 
 ## Port Allocation
 
-| Port | Direction | Application | Purpose |
+| Port | Direction | Who Listens | Purpose |
 |------|-----------|-------------|---------|
-| **7777** | → Synesthesia | Python Hub | Scene/param control |
-| **9999** | ← Synesthesia | Python Hub | Audio uniforms, callbacks |
-| **9008** | ← VirtualDJ | Python Hub | VDJ OSC responses |
-| **9009** | → VirtualDJ | Python Hub | VDJ OSC commands (PRO license) |
-| **9000** | → Processing/MMV | Python Hub | Karaoke, audio, shaders |
+| **7777** | Python Hub → Synesthesia | Synesthesia | Scene/param control commands |
+| **9999** | Synesthesia → Python Hub | **Python Hub** | Audio uniforms, callbacks, events |
+| **9008** | VirtualDJ → Python Hub | **Python Hub** | VDJ OSC responses, status |
+| **9009** | Python Hub → VirtualDJ | VirtualDJ | VDJ OSC commands (PRO license) |
+| **9000** | Python Hub → Processing/MMV | Processing/MMV | Karaoke, audio, shaders |
 
-> **Why a central hub?** Only one process can bind to a UDP port. The hub listens once and forwards to multiple destinations, avoiding port conflicts.
+> **Why a central hub?** The Python Hub is the **single listener** on ports 9999 and 9008, receiving OSC from Synesthesia and VirtualDJ. This centralizes all incoming data, allows processing/routing/forwarding, and avoids port conflicts. The hub then sends control messages and forwards data to other applications.
 
 ---
 
@@ -185,33 +187,40 @@ sequenceDiagram
 │                         macOS Machine                               │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│   ┌──────────────┐     ┌──────────────────────────────────┐        │
-│   │ Spotify      │────▶│ Python VJ Console (osc_hub.py)   │        │
-│   │ (AppleScript)│     │                                  │        │
-│   └──────────────┘     │  Channels:                       │        │
-│                        │  • vdj:        9009 → / ← 9008   │        │
-│                        │  • synesthesia: 7777 → / ← 9999  │        │
-│                        │  • karaoke:    9000 →            │        │
-│                        └────────────┬───────────────┬─────┘        │
-│                                     │               │              │
-│                                     ▼               ▼              │
-│   ┌──────────────┐     ┌────────────────┐   ┌──────────────┐       │
-│   │ VirtualDJ    │◀───▶│ Synesthesia    │   │ Processing   │       │
-│   │ port 9009    │     │ port 7777/9999 │   │ port 9000    │       │
-│   └──────────────┘     └───────┬────────┘   └──────┬───────┘       │
-│                                │                    │              │
-│                        ┌───────┴────────────────────┴───────┐      │
-│                        │              Syphon                │      │
-│                        │         (frame sharing)            │      │
-│                        └───────────────┬────────────────────┘      │
-│                                        ▼                           │
-│                               ┌──────────────────┐                 │
-│                               │ Magic Music      │                 │
-│                               │ Visuals          │                 │
-│                               │ (Syphon mixer)   │                 │
-│                               └────────┬─────────┘                 │
-│                                        ▼                           │
-│                                   Projector                        │
+│   ┌──────────────┐     ┌──────────────────────────────────────┐    │
+│   │ Spotify      │────▶│ Python VJ Console (osc_hub.py)       │    │
+│   │ (AppleScript)│     │ CENTRAL OSC HUB & ROUTER             │    │
+│   └──────────────┘     │                                      │    │
+│                        │  Listening on (receives):            │    │
+│   ┌──────────────┐     │  • port 9999 ← Synesthesia          │    │
+│   │ VirtualDJ    │────▶│  • port 9008 ← VirtualDJ            │    │
+│   │ Sends to 9008│     │                                      │    │
+│   │ Listens 9009 │◀────│  Sending to (transmits):            │    │
+│   └──────────────┘     │  • port 9009 → VirtualDJ            │    │
+│                        │  • port 7777 → Synesthesia          │    │
+│   ┌──────────────┐     │  • port 9000 → Processing/MMV       │    │
+│   │ Synesthesia  │────▶│                                      │    │
+│   │ Sends to 9999│     └──────────────┬───────────────────────┘    │
+│   │ Listens 7777 │◀───────────────────┘                           │
+│   └──────┬───────┘                                                 │
+│          │                    ┌──────────────┐                     │
+│          │                    │ Processing   │                     │
+│          │                    │ Listens 9000 │◀────────────────────┤
+│          │                    └──────┬───────┘                     │
+│          │                           │                             │
+│          │           ┌───────────────┴──────────────┐              │
+│          │           │         Syphon                │              │
+│          │           │    (frame sharing)            │              │
+│          └───────────┴────────────┬──────────────────┘              │
+│                                   ▼                                 │
+│                          ┌──────────────────┐                       │
+│                          │ Magic Music      │                       │
+│                          │ Visuals          │                       │
+│                          │ Listens 9000+    │                       │
+│                          │ (Syphon mixer)   │                       │
+│                          └────────┬─────────┘                       │
+│                                   ▼                                 │
+│                              Projector                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -281,6 +290,8 @@ liblo.send(liblo.Address('127.0.0.1', 9000), '/test', 1, 2, 3)
 
 ## Related Documentation
 
+- **[OSC_FUTURE_PLAN.md](OSC_FUTURE_PLAN.md)** — 🚀 **Future Architecture Plan** (VDJ queries, message forwarding, Launchpad banks)
 - [vj-console-spec/03-osc-protocol.md](vj-console-spec/03-osc-protocol.md) — Full message specification
+- [vj-console-spec/07-launchpad-osc-lib.md](vj-console-spec/07-launchpad-osc-lib.md) — Launchpad controller integration
 - [python-vj/docs/guides/osc-visual-mapping.md](python-vj/docs/guides/osc-visual-mapping.md) — VJ software mapping guide
 - [docs/setup/live-vj-setup-guide.md](docs/setup/live-vj-setup-guide.md) — Full Syphon/Magic pipeline setup
