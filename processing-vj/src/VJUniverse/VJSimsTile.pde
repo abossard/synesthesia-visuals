@@ -187,28 +187,10 @@ class VJSimsTile extends Tile {
       activeLevel.render(buffer);
     }
 
-    // Draw level name overlay (on buffer, will appear in Syphon too)
-    drawLevelOverlay();
-
     endDraw();
   }
 
-  void drawLevelOverlay() {
-    if (activeLevel == null) return;
 
-    String levelName = activeLevel.getName();
-    String modeText = recordingMode ? " [REC]" : "";
-    String indexText = " [" + (currentLevelIndex + 1) + "/" + levels.size() + "]";
-    String displayText = levelName + indexText + modeText;
-
-    // Draw text with shadow for readability
-    buffer.textSize(14);
-    buffer.textAlign(LEFT, TOP);
-    buffer.fill(0, 150);
-    buffer.text(displayText, 12, 12);
-    buffer.fill(255);
-    buffer.text(displayText, 10, 10);
-  }
 
   // === OSC HANDLING ===
 
