@@ -1,2 +1,2 @@
-fontName=Serif
-fontSizeIndex=3
+fontName=Monospaced
+fontSizeIndex=5

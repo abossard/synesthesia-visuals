@@ -5,6 +5,7 @@ class ClassicPulseLevel extends Level {
   
   public void render(PGraphics pg) {
     pg.pushStyle();
+    pg.camera();  // Reset camera to default
     pg.colorMode(RGB, 255);
     float t = millis() / 1000.0f;
     

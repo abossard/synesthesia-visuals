@@ -15,6 +15,7 @@ class BreathingPlanetLevel extends Level {
   public void render(PGraphics pg) {
     pg.pushStyle();
     pg.background(8, 10, 18);
+    pg.camera();  // Reset camera to default
     pg.lights();
     pg.ambientLight(40, 40, 60);
     pg.directionalLight(180, 160, 255, -0.4f, -0.6f, -1);

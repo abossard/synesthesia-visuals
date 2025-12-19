@@ -166,6 +166,15 @@ void setup() {
 
 /**
  * Initialize Textler system - tiles, text renderer, and state
+ * 
+ * Syphon outputs:
+ * - VJUniverse/Shader   - Shader visuals
+ * - VJUniverse/Lyrics   - Main lyrics (prev/current/next)
+ * - VJUniverse/Refrain  - Chorus/refrain text (larger)
+ * - VJUniverse/SongInfo - Artist/title display
+ * - VJUniverse/VJSims   - Procedural levels
+ * 
+ * TextlerMultiTile manages 3 Syphon outputs in a single tile for compact preview.
  */
 void initTextlerSystem() {
   // Create text renderer
@@ -174,17 +183,17 @@ void initTextlerSystem() {
   // Create tile manager
   tileManager = new TileManager(this);
   
-  // Add tiles (2 tiles: Shader + Textler)
   // 1. Shader tile (full resolution shader rendering)
   tileManager.addTile(new ShaderTile());
   
-  // 2. Textler tile (generic text rendering via OSC)
-  tileManager.addTile(new TextlerTile("Textler", "VJUniverse/Textler", textRenderer));
+  // 2. Textler multi-output tile (Lyrics + Refrain + SongInfo = 3 Syphons in 1 tile)
+  tileManager.addTile(new TextlerMultiTile(textRenderer));
 
   // 3. VJSims tile (42 procedural levels)
   tileManager.addTile(new VJSimsTile());
 
   println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
+  println("  Syphon outputs: Shader, Lyrics, Refrain, SongInfo, VJSims");
 }
 
 // ============================================

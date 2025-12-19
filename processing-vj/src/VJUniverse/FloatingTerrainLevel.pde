@@ -19,6 +19,7 @@ class FloatingTerrainLevel extends Level {
   public void render(PGraphics pg) {
     pg.pushStyle();
     pg.background(8, 10, 18);
+    pg.camera();  // Reset camera to default
     pg.lights();
     pg.ambientLight(50, 50, 60);
     pg.directionalLight(180, 200, 255, -0.4f, -0.5f, -1);

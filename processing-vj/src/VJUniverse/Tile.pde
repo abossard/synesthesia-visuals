@@ -661,119 +661,233 @@ class TextlerTile extends Tile {
 
 
 // =============================================================================
-// REFRAIN TILE - (DEPRECATED - use TextlerTile with preset)
+// TEXTLER MULTI-OUTPUT TILE - Single tile with 3 Syphon outputs
 // =============================================================================
+//
+// One tile that manages 3 separate Syphon outputs:
+//   - VJUniverse/Lyrics   : prev/current/next lyrics lines
+//   - VJUniverse/Refrain  : chorus/refrain (larger)
+//   - VJUniverse/SongInfo : artist/title (fades after delay)
+//
+// This keeps preview grid compact while providing separate mixable layers.
+//
 
-class RefrainTile extends Tile {
+class TextlerMultiTile extends Tile {
   
-  RefrainState state;
+  // === STATE ===
+  TextlerState lyricsState;
+  RefrainState refrainState;
+  SongInfoState songInfoState;
   TextRenderer textRenderer;
   
-  RefrainTile(RefrainState state, TextRenderer textRenderer) {
-    super("Refrain", "VJUniverse/Refrain");
-    this.state = state;
+  // === ADDITIONAL BUFFERS & SYPHONS ===
+  PGraphics refrainBuffer;
+  PGraphics songInfoBuffer;
+  SyphonServer refrainSyphon;
+  SyphonServer songInfoSyphon;
+  
+  TextlerMultiTile(TextRenderer textRenderer) {
+    super("Textler", "VJUniverse/Lyrics");  // Main buffer = Lyrics
     this.textRenderer = textRenderer;
+    this.lyricsState = new TextlerState();
+    this.refrainState = new RefrainState();
+    this.songInfoState = new SongInfoState();
+    
     setOSCAddresses(
-      new String[] {"/textler/refrain/line", "/textler/refrain/active", "/textler/refrain/reset", "/karaoke/refrain/*"},
-      new String[] {"Refrain line", "Active refrain", "Reset refrain", "Refrain (legacy)"}
+      new String[] {"/textler/track", "/textler/lyrics/*", "/textler/refrain/*", "/textler/line/active"},
+      new String[] {"Track info", "Lyrics lines", "Refrain lines", "Active line"}
     );
   }
   
   @Override
+  void init(PApplet parent) {
+    super.init(parent);  // Creates main buffer + syphonServer (Lyrics)
+    
+    // Create additional buffers and Syphons
+    refrainBuffer = parent.createGraphics(bufferWidth, bufferHeight, P3D);
+    songInfoBuffer = parent.createGraphics(bufferWidth, bufferHeight, P3D);
+    refrainSyphon = new SyphonServer(parent, "VJUniverse/Refrain");
+    songInfoSyphon = new SyphonServer(parent, "VJUniverse/SongInfo");
+    
+    println("[TextlerMulti] 3 Syphon outputs: Lyrics, Refrain, SongInfo");
+  }
+  
+  @Override
   void update() {
-    state.updateFades();
+    lyricsState.updateFades();
+    refrainState.updateFades();
+    songInfoState.updateFades();
   }
   
   @Override
   void render() {
-    beginDraw();
-    buffer.textAlign(CENTER, TOP);
+    renderLyrics();
+    renderRefrain();
+    renderSongInfo();
+  }
+  
+  void renderLyrics() {
+    buffer.beginDraw();
+    buffer.background(0);
     
-    if (state.active && !state.currentText.isEmpty() && textRenderer != null) {
+    if (textRenderer != null && lyricsState.activeIndex >= 0) {
       PFont font = textRenderer.getFont();
-      int fontSize = textRenderer.getFontSize() + 12;  // Larger for refrain
-      float lineHeight = fontSize * 1.25;
-      float maxWidth = buffer.width * 0.86;
+      int fontSize = textRenderer.getFontSize();
+      float lineHeight = fontSize * 1.4;
+      float maxWidth = buffer.width * 0.88;
       
       buffer.textFont(font);
-      buffer.fill(255, state.textOpacity);
-      buffer.textSize(fontSize);
-      ArrayList<String> lines = textRenderer.wrapText(state.currentText, buffer, maxWidth);
+      buffer.textAlign(CENTER, CENTER);
+      
+      int activeIdx = lyricsState.activeIndex;
+      
+      // Previous line (dim)
+      if (activeIdx > 0 && activeIdx - 1 < lyricsState.lines.size()) {
+        String prevText = lyricsState.lines.get(activeIdx - 1).text;
+        buffer.fill(255, lyricsState.textOpacity * 0.4);
+        buffer.textSize(fontSize * 0.8);
+        buffer.text(prevText, buffer.width / 2, buffer.height * 0.3);
+      }
+      
+      // Current line (bright)
+      if (activeIdx >= 0 && activeIdx < lyricsState.lines.size()) {
+        String currText = lyricsState.lines.get(activeIdx).text;
+        buffer.fill(255, lyricsState.textOpacity);
+        buffer.textSize(fontSize * 1.1);
+        ArrayList<String> wrapped = textRenderer.wrapText(currText, buffer, maxWidth);
+        float startY = buffer.height * 0.5 - (wrapped.size() - 1) * lineHeight * 0.5;
+        for (int i = 0; i < wrapped.size(); i++) {
+          buffer.text(wrapped.get(i), buffer.width / 2, startY + i * lineHeight);
+        }
+      }
+      
+      // Next line (dim)
+      if (activeIdx + 1 < lyricsState.lines.size()) {
+        String nextText = lyricsState.lines.get(activeIdx + 1).text;
+        buffer.fill(255, lyricsState.textOpacity * 0.4);
+        buffer.textSize(fontSize * 0.8);
+        buffer.text(nextText, buffer.width / 2, buffer.height * 0.7);
+      }
+      
+      textRenderer.drawBroadcast(buffer);
+    }
+    
+    buffer.endDraw();
+  }
+  
+  void renderRefrain() {
+    refrainBuffer.beginDraw();
+    refrainBuffer.background(0);
+    
+    if (textRenderer != null && !refrainState.currentText.isEmpty()) {
+      PFont font = textRenderer.getFont();
+      int fontSize = textRenderer.getFontSize() + 16;
+      float lineHeight = fontSize * 1.3;
+      float maxWidth = refrainBuffer.width * 0.85;
+      
+      refrainBuffer.textFont(font);
+      refrainBuffer.textAlign(CENTER, CENTER);
+      refrainBuffer.fill(255, refrainState.textOpacity);
+      refrainBuffer.textSize(fontSize);
+      
+      ArrayList<String> lines = textRenderer.wrapText(refrainState.currentText, refrainBuffer, maxWidth);
       float totalHeight = lines.size() * lineHeight;
-      float startY = buffer.height / 2 - totalHeight / 2;
-      textRenderer.drawWrappedLines(buffer, lines, buffer.width / 2, startY, lineHeight);
+      float startY = refrainBuffer.height / 2 - totalHeight / 2 + lineHeight / 2;
+      
+      for (int i = 0; i < lines.size(); i++) {
+        refrainBuffer.text(lines.get(i), refrainBuffer.width / 2, startY + i * lineHeight);
+      }
+      
+      textRenderer.drawBroadcast(refrainBuffer);
     }
     
-    textRenderer.drawBroadcast(buffer);
-    endDraw();
+    refrainBuffer.endDraw();
   }
   
-  @Override
-  boolean handleOSC(OscMessage msg) {
-    boolean handled = state.handleOSC(msg);
-    if (handled) {
-      markOSCReceived(msg.addrPattern());
-    }
-    return handled;
-  }
-}
-
-
-// =============================================================================
-// SONG INFO TILE - Artist/title display (fades after 5s)
-// =============================================================================
-
-class SongInfoTile extends Tile {
-  
-  SongInfoState state;
-  TextRenderer textRenderer;
-  
-  SongInfoTile(SongInfoState state, TextRenderer textRenderer) {
-    super("SongInfo", "VJUniverse/SongInfo");
-    this.state = state;
-    this.textRenderer = textRenderer;
-    setOSCAddresses(
-      new String[] {"/textler/track", "/textler/song/*", "/karaoke/track"},
-      new String[] {"Track info", "Song metadata", "Track (legacy)"}
-    );
-  }
-  
-  @Override
-  void update() {
-    state.updateFades();
-  }
-  
-  @Override
-  void render() {
-    beginDraw();
-    buffer.textAlign(CENTER, CENTER);
+  void renderSongInfo() {
+    songInfoBuffer.beginDraw();
+    songInfoBuffer.background(0);
     
-    if (state.active && textRenderer != null) {
+    if (textRenderer != null && songInfoState.active && 
+        (!songInfoState.artist.isEmpty() || !songInfoState.title.isEmpty())) {
       PFont font = textRenderer.getFont();
-      int fontSize = textRenderer.getFontSize() + 24;  // Large for song info
+      int fontSize = textRenderer.getFontSize() + 24;
       
-      buffer.textFont(font);
+      songInfoBuffer.textFont(font);
+      songInfoBuffer.textAlign(CENTER, CENTER);
       
-      // Artist
-      buffer.fill(255, state.textOpacity);
-      buffer.textSize(fontSize * 0.7);
-      buffer.text(state.artist, buffer.width / 2, buffer.height / 2 - fontSize * 0.6);
+      // Artist (smaller, above center)
+      songInfoBuffer.fill(255, songInfoState.textOpacity);
+      songInfoBuffer.textSize(fontSize * 0.65);
+      songInfoBuffer.text(songInfoState.artist, songInfoBuffer.width / 2, songInfoBuffer.height * 0.42);
       
-      // Title (larger)
-      buffer.textSize(fontSize);
-      buffer.text(state.title, buffer.width / 2, buffer.height / 2 + fontSize * 0.3);
+      // Title (larger, below center)
+      songInfoBuffer.textSize(fontSize);
+      songInfoBuffer.text(songInfoState.title, songInfoBuffer.width / 2, songInfoBuffer.height * 0.55);
+      
+      textRenderer.drawBroadcast(songInfoBuffer);
     }
     
-    textRenderer.drawBroadcast(buffer);
-    endDraw();
+    songInfoBuffer.endDraw();
+  }
+  
+  @Override
+  void sendToSyphon() {
+    if (syphonServer != null && buffer != null) {
+      syphonServer.sendImage(buffer);  // Lyrics
+    }
+    if (refrainSyphon != null && refrainBuffer != null) {
+      refrainSyphon.sendImage(refrainBuffer);
+    }
+    if (songInfoSyphon != null && songInfoBuffer != null) {
+      songInfoSyphon.sendImage(songInfoBuffer);
+    }
+  }
+  
+  @Override
+  PGraphics getBuffer() {
+    // For preview, composite all 3 layers
+    // Return main buffer (lyrics) - preview shows lyrics layer
+    return buffer;
   }
   
   @Override
   boolean handleOSC(OscMessage msg) {
-    boolean handled = state.handleOSC(msg);
+    String addr = msg.addrPattern();
+    boolean handled = false;
+    
+    // Route to appropriate state
+    if (addr.startsWith("/textler/lyrics") || addr.equals("/textler/line/active")) {
+      handled = lyricsState.handleOSC(msg);
+    }
+    else if (addr.startsWith("/textler/refrain")) {
+      handled = refrainState.handleOSC(msg);
+      if (handled && addr.equals("/textler/refrain/active")) {
+        refrainState.active = true;
+      }
+    }
+    else if (addr.equals("/textler/track")) {
+      handled = songInfoState.handleOSC(msg);
+    }
+    
     if (handled) {
-      markOSCReceived(msg.addrPattern());
+      markOSCReceived(addr);
     }
     return handled;
+  }
+  
+  @Override
+  void dispose() {
+    super.dispose();
+    if (refrainSyphon != null) {
+      refrainSyphon.stop();
+      refrainSyphon = null;
+    }
+    if (songInfoSyphon != null) {
+      songInfoSyphon.stop();
+      songInfoSyphon = null;
+    }
+    refrainBuffer = null;
+    songInfoBuffer = null;
   }
 }

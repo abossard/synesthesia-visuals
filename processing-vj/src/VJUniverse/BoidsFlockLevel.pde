@@ -9,7 +9,7 @@ class BoidsFlockLevel extends Level {
     boids.clear();
     for (int i = 0; i < 180; i++) {
       Boid b = new Boid();
-      b.p.set(random(-400, 400), random(-260, 260), random(-400, 200));
+      b.p.set(random(-200, 200), random(-150, 150), random(-150, 150));
       PVector dir = PVector.random3D();
       dir.mult(random(60, 120));
       b.v.set(dir);
@@ -61,20 +61,22 @@ class BoidsFlockLevel extends Level {
       b.v.limit(maxSpeed);
       b.p.add(PVector.mult(b.v, dt));
       
-      // wrap
-      float bounds = 500;
-      if (b.p.x > bounds) b.p.x = -bounds;
-      if (b.p.x < -bounds) b.p.x = bounds;
-      if (b.p.y > bounds) b.p.y = -bounds;
-      if (b.p.y < -bounds) b.p.y = bounds;
-      if (b.p.z > bounds) b.p.z = -bounds;
-      if (b.p.z < -bounds) b.p.z = bounds;
+      // wrap - tighter bounds to keep boids on screen
+      float boundsXY = 280;
+      float boundsZ = 200;
+      if (b.p.x > boundsXY) b.p.x = -boundsXY;
+      if (b.p.x < -boundsXY) b.p.x = boundsXY;
+      if (b.p.y > boundsXY) b.p.y = -boundsXY;
+      if (b.p.y < -boundsXY) b.p.y = boundsXY;
+      if (b.p.z > boundsZ) b.p.z = -boundsZ;
+      if (b.p.z < -boundsZ) b.p.z = boundsZ;
     }
   }
   
   public void render(PGraphics pg) {
     pg.pushStyle();
     pg.background(6, 8, 14);
+    pg.camera();  // Reset camera to default
     pg.lights();
     pg.translate(pg.width/2, pg.height/2, 0);
     pg.rotateY(time * 0.2f);

@@ -14,6 +14,7 @@ class RibbonHelixLevel extends Level {
   public void render(PGraphics pg) {
     pg.pushStyle();
     pg.background(8, 10, 18);
+    pg.camera();  // Reset camera to default
     pg.lights();
     pg.ambientLight(30, 30, 40);
     pg.directionalLight(200, 180, 255, -0.4f, -0.6f, -1);

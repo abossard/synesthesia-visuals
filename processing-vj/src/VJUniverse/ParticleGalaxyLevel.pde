@@ -29,6 +29,7 @@ class ParticleGalaxyLevel extends Level {
   public void render(PGraphics pg) {
     pg.pushStyle();
     pg.background(5, 6, 14);
+    pg.camera();  // Reset camera to default
     pg.noLights();
     pg.hint(DISABLE_DEPTH_TEST);
     pg.blendMode(ADD);
