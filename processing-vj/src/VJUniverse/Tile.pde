@@ -304,6 +304,10 @@ class TextlerTile extends Tile {
   float trackHoldDuration = 5.0;    // Hold at full opacity
   float trackFadeOutDuration = 1.0; // Fade out duration
   
+  // Lyrics and refrain state (from TextlerState.pde)
+  TextlerState lyricsState = new TextlerState();
+  RefrainState refrainState = new RefrainState();
+  
   TextlerTile(String name, String syphonName, TextRenderer textRenderer) {
     super(name, syphonName);
     this.textRenderer = textRenderer;
@@ -321,14 +325,26 @@ class TextlerTile extends Tile {
     trackSlot.opacity = 0;
     slots.put("track", trackSlot);
     
+    // Create lyrics slot (center area)
+    TextSlot lyricsSlot = new TextSlot("lyrics", 0.5);
+    lyricsSlot.sizeMultiplier = 1.0;
+    lyricsSlot.opacity = 1.0;
+    slots.put("lyrics", lyricsSlot);
+    
+    // Create refrain slot (slightly below center, larger)
+    TextSlot refrainSlot = new TextSlot("refrain", 0.6);
+    refrainSlot.sizeMultiplier = 1.3;
+    refrainSlot.opacity = 0;
+    slots.put("refrain", refrainSlot);
+    
     // Configure default sizes
     slots.get("title").sizeMultiplier = 0.7;
     slots.get("sub").sizeMultiplier = 0.6;
     slots.get("center").sizeMultiplier = 1.2;
     
     setOSCAddresses(
-      new String[] {"/textler/track", "/textler/slot", "/textler/fade", "/textler/flash", "/textler/clear", "/textler/preset"},
-      new String[] {"Song info (fade)", "Set slot text/props", "Fade opacity", "Flash effect", "Clear slots", "Load preset"}
+      new String[] {"/textler/track", "/textler/slot", "/textler/lyrics/*", "/textler/refrain/*", "/textler/fade", "/textler/flash", "/textler/clear", "/textler/preset"},
+      new String[] {"Song info (fade)", "Set slot text/props", "Lyrics lines/active", "Refrain lines/active", "Fade opacity", "Flash effect", "Clear slots", "Load preset"}
     );
   }
   
@@ -340,6 +356,27 @@ class TextlerTile extends Tile {
     
     for (TextSlot slot : slots.values()) {
       slot.update(dt);
+    }
+    
+    // Update lyrics and refrain fades
+    lyricsState.updateFades();
+    refrainState.updateFades();
+    
+    // Update lyrics slot text from active line
+    TextSlot lyricsSlot = slots.get("lyrics");
+    if (lyricsSlot != null && lyricsState.activeIndex >= 0 && lyricsState.activeIndex < lyricsState.lines.size()) {
+      TextLine activeLine = lyricsState.lines.get(lyricsState.activeIndex);
+      lyricsSlot.text = activeLine.text;
+      lyricsSlot.opacity = lyricsState.textOpacity / 255.0;
+    }
+    
+    // Update refrain slot text
+    TextSlot refrainSlot = slots.get("refrain");
+    if (refrainSlot != null && refrainState.active && !refrainState.currentText.isEmpty()) {
+      refrainSlot.text = refrainState.currentText;
+      refrainSlot.opacity = refrainState.textOpacity / 255.0;
+    } else if (refrainSlot != null) {
+      refrainSlot.opacity = 0;
     }
     
     // Update track info fade envelope
@@ -552,6 +589,22 @@ class TextlerTile extends Tile {
     if (addr.equals("/textler/preset") && msg.typetag().length() >= 1) {
       String preset = msg.get(0).stringValue().toLowerCase();
       applyPreset(preset);
+      markOSCReceived(addr);
+      return true;
+    }
+    
+    // Delegate lyrics messages to lyricsState
+    if (lyricsState.handleOSC(msg)) {
+      markOSCReceived(addr);
+      return true;
+    }
+    
+    // Delegate refrain messages to refrainState
+    if (refrainState.handleOSC(msg)) {
+      // When refrain becomes active, show it
+      if (addr.equals("/textler/refrain/active")) {
+        refrainState.active = true;
+      }
       markOSCReceived(addr);
       return true;
     }
