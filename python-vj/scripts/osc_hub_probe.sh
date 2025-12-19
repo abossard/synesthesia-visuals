@@ -5,19 +5,27 @@ IN_PORT=9999
 OUT_PORTS=(10000 11111)
 DURATION=10
 IFACE=""
-MODE="both"
 PID=""
+TMP_CAPTURE=""
+TMP_DELTAS=""
+TMP_STATS=""
+TMP_SORTED=""
+
+cleanup() {
+  rm -f "${TMP_CAPTURE:-}" "${TMP_DELTAS:-}" "${TMP_STATS:-}" "${TMP_SORTED:-}"
+}
+trap cleanup EXIT
 
 usage() {
   cat <<'EOF'
-Usage: osc_hub_probe.sh [--pid PID] [--duration SECONDS] [--iface IFACE] [--mode latency|load|both]
+Usage: osc_hub_probe.sh [--pid PID] [--duration SECONDS] [--iface IFACE]
 
 Measures OSC hub latency (udp 9999 -> 10000/11111) and process load without Python.
 
 Examples:
   ./osc_hub_probe.sh --duration 15
-  ./osc_hub_probe.sh --pid 12345 --mode latency
-  ./osc_hub_probe.sh --iface lo0 --mode load
+  ./osc_hub_probe.sh --pid 12345
+  ./osc_hub_probe.sh --iface lo0
 EOF
 }
 
@@ -43,9 +51,9 @@ find_pid() {
     return
   fi
   require_cmd lsof
-  PID=$(lsof -nP -iUDP:${IN_PORT} -sUDP:LISTEN 2>/dev/null | awk 'NR==2{print $2}')
+  PID=$(lsof -nP -iUDP:${IN_PORT} -sUDP:LISTEN 2>/dev/null | awk 'NR==2{print $2}' || true)
   if [[ -z "$PID" ]]; then
-    PID=$(lsof -nP -iUDP:${IN_PORT} 2>/dev/null | awk 'NR==2{print $2}')
+    PID=$(lsof -nP -iUDP:${IN_PORT} 2>/dev/null | awk 'NR==2{print $2}' || true)
   fi
   if [[ -z "$PID" ]]; then
     echo "Could not find a process bound to UDP ${IN_PORT}. Use --pid." >&2
@@ -65,34 +73,29 @@ measure_latency() {
   require_cmd awk
   require_cmd sort
 
-  local tmp_capture
-  local tmp_deltas
-  local tmp_stats
-  local tmp_sorted
-  tmp_capture=$(mktemp)
-  tmp_deltas=$(mktemp)
-  tmp_stats=$(mktemp)
-  tmp_sorted=$(mktemp)
-
-  cleanup() {
-    rm -f "$tmp_capture" "$tmp_deltas" "$tmp_stats" "$tmp_sorted"
-  }
-  trap cleanup EXIT
+  TMP_CAPTURE=$(mktemp)
+  TMP_DELTAS=$(mktemp)
+  TMP_STATS=$(mktemp)
+  TMP_SORTED=$(mktemp)
 
   local filter="udp and (port ${IN_PORT} or port ${OUT_PORTS[0]} or port ${OUT_PORTS[1]})"
-  local tcpdump_cmd=(tcpdump -i "$IFACE" -tt -n -l -s 0 "$filter")
+  echo "Capturing ${DURATION}s on ${IFACE}..."
   if [[ $EUID -ne 0 ]]; then
-    tcpdump_cmd=(sudo "${tcpdump_cmd[@]}")
+    if ! sudo -v; then
+      echo "sudo authentication failed; cannot run tcpdump." >&2
+      return 1
+    fi
+    sudo -n CAPTURE_IFACE="$IFACE" CAPTURE_FILTER="$filter" CAPTURE_OUT="$TMP_CAPTURE" CAPTURE_DURATION="$DURATION" \
+      bash -c 'tcpdump -i "$CAPTURE_IFACE" -tt -n -l -s 0 "$CAPTURE_FILTER" > "$CAPTURE_OUT" & pid=$!; sleep "$CAPTURE_DURATION"; kill -INT "$pid" 2>/dev/null; wait "$pid" 2>/dev/null'
+  else
+    tcpdump -i "$IFACE" -tt -n -l -s 0 "$filter" > "$TMP_CAPTURE" &
+    local tcpdump_pid=$!
+    sleep "$DURATION"
+    kill -INT "$tcpdump_pid" 2>/dev/null || true
+    wait "$tcpdump_pid" 2>/dev/null || true
   fi
 
-  echo "Capturing ${DURATION}s on ${IFACE}..."
-  "${tcpdump_cmd[@]}" > "$tmp_capture" 2>/dev/null &
-  local tcpdump_pid=$!
-  sleep "$DURATION"
-  kill -INT "$tcpdump_pid" 2>/dev/null || true
-  wait "$tcpdump_pid" 2>/dev/null || true
-
-  awk -v in_port="$IN_PORT" -v out_ports="${OUT_PORTS[*]}" -v stats="$tmp_stats" '
+  awk -v in_port="$IN_PORT" -v out_ports="${OUT_PORTS[*]}" -v stats="$TMP_STATS" '
     function port_of(addr,    n, parts) {
       gsub(":", "", addr)
       n = split(addr, parts, ".")
@@ -138,9 +141,9 @@ measure_latency() {
     END {
       printf "%d %d %d %.9f %.9f %.9f\n", in_count, out_count, delta_count, sum, min, max > stats
     }
-  ' "$tmp_capture" > "$tmp_deltas"
+  ' "$TMP_CAPTURE" > "$TMP_DELTAS"
 
-  read -r in_count out_count delta_count sum min max < "$tmp_stats"
+  read -r in_count out_count delta_count sum min max < "$TMP_STATS"
   local in_rate out_rate
   in_rate=$(awk -v n="$in_count" -v d="$DURATION" 'BEGIN { if (d>0) printf "%.2f", n/d; else print "0.00"; }')
   out_rate=$(awk -v n="$out_count" -v d="$DURATION" 'BEGIN { if (d>0) printf "%.2f", n/d; else print "0.00"; }')
@@ -152,12 +155,12 @@ measure_latency() {
     return
   fi
 
-  sort -n "$tmp_deltas" > "$tmp_sorted"
+  sort -n "$TMP_DELTAS" > "$TMP_SORTED"
   local p50_idx p95_idx p50 p95 avg
   p50_idx=$(( (delta_count * 50 + 99) / 100 ))
   p95_idx=$(( (delta_count * 95 + 99) / 100 ))
-  p50=$(sed -n "${p50_idx}p" "$tmp_sorted")
-  p95=$(sed -n "${p95_idx}p" "$tmp_sorted")
+  p50=$(sed -n "${p50_idx}p" "$TMP_SORTED")
+  p95=$(sed -n "${p95_idx}p" "$TMP_SORTED")
   avg=$(awk -v s="$sum" -v c="$delta_count" 'BEGIN { printf "%.9f", s / c }')
 
   local min_ms max_ms avg_ms p50_ms p95_ms
@@ -188,7 +191,6 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mode)
-      MODE="$2"
       shift 2
       ;;
     --help|-h)
@@ -203,19 +205,5 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-case "$MODE" in
-  latency)
-    measure_latency
-    ;;
-  load)
-    show_load
-    ;;
-  both)
-    show_load
-    measure_latency
-    ;;
-  *)
-    echo "Invalid --mode: $MODE (use latency|load|both)" >&2
-    exit 1
-    ;;
-esac
+show_load
+measure_latency

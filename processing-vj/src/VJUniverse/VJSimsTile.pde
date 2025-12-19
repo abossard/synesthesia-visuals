@@ -111,6 +111,11 @@ class VJSimsTile extends Tile {
     levels.add(new RetroShipLevel());
     levels.add(new RetroFreighterLevel());
     levels.add(new ClassicPulseLevel());
+
+    // Cinematic wireframe space levels
+    levels.add(new CapitalShipFlybyLevel());
+    levels.add(new RingedPlanetLevel());
+    levels.add(new SpaceFleetLevel());
   }
 
   // === LEVEL MANAGEMENT ===
