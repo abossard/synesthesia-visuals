@@ -9,7 +9,7 @@ const float size = 32.0;
 const float noiseSize = 8.0;
 const float noiseStrength = 0.25;
 const int noiseDepth = 3;
-const float speed = 4.0;
+const float burnSpeed = 4.0;  // Renamed from 'speed' to avoid conflict with audio uniform
 
 const vec3 color = vec3(2.5, 2.0, 1.5);
 
@@ -99,7 +99,7 @@ void main( void ) {
 	float dist = distance(position, coord) / resolution.y;
 	
 	// Compute flame noise
-	vec2 noisePosition = noiseSize * (gl_FragCoord.xy - position) / resolution.y - vec2(0.0, speed * time);
+	vec2 noisePosition = noiseSize * (gl_FragCoord.xy - position) / resolution.y - vec2(0.0, burnSpeed * time);
 	float noise = 0.0;
 	for (int i = 0; i < noiseDepth; i++) {
 		noise += cnoise(noisePosition * pow(2.0, float(i)));
