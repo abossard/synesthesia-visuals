@@ -1,0 +1,139 @@
+#define PROCESSING_COLOR_SHADER
+// RingLattice_Chaos - Violent, glitchy, aggressive animation
+// Based on RGBringlattice3D
+
+#ifdef GL_ES
+precision highp float;
+#endif
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+uniform float bass;
+uniform float mid;
+uniform float highs;
+uniform float level;
+uniform float kickEnv;
+uniform float speed;
+uniform float energyFast;
+
+// Hash for noise
+float hash(float n) { return fract(sin(n) * 43758.5453); }
+float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+// Shake function
+vec3 shake(float intensity) {
+    float t = time * 30.0;
+    return vec3(
+        sin(t * 7.3) * cos(t * 5.1),
+        sin(t * 8.7) * cos(t * 6.3),
+        sin(t * 9.1) * cos(t * 4.7)
+    ) * intensity;
+}
+
+float pointToGrille(vec3 pp, float b, float r) {
+    vec3 p = abs(pp);
+    vec3 pa = mod(p, 2.0 * b) - b;
+    
+    float dy = length(vec2(b - length(pa.xz), pa.y));
+    float dz = length(vec2(b - length(pa.xy), pa.z));
+    float ddy = length(vec3(pa.x, pa.z, pa.y * step(0.0, pa.y)));
+    float ddz = length(vec3(pa.x, pa.y, pa.z * step(0.0, pa.z)));
+    
+    return min(min(dy, ddy), min(dz, ddz)) - r;
+}
+
+// Glitchy rotation
+vec3 glitchRotor(vec3 p, float glitchAmount) {
+    float t = time * 2.0;
+    float glitch = step(0.95, hash(floor(time * 8.0))) * glitchAmount;
+    
+    float co = t + glitch * 3.14159;
+    float c = cos(co);
+    float s = sin(co);
+    mat3 mz = mat3(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
+    
+    co = t * 1.3 + glitch * 1.5;
+    c = cos(co);
+    s = sin(co);
+    mat3 mx = mat3(1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c);
+    
+    return p * mz * mx;
+}
+
+float render(vec3 org, vec3 dir) {
+    float lambda = 0.0;
+    float lamb = 100.0;
+    float couleur = 0.0;
+    float glow = 0.0;
+    
+    // Jittery cell size based on kick
+    float cellSize = 10.0 + kickEnv * 5.0;
+    float ringRadius = 0.6 + bass * 0.8;
+    
+    for(int i = 0; i < 60; i++) {
+        vec3 pos = org + lambda * dir;
+        pos = glitchRotor(pos, kickEnv);
+        lamb = pointToGrille(pos, cellSize, ringRadius);
+        lambda += lamb * 0.7;
+        couleur += 0.016;
+        glow += 0.05 / (1.0 + lamb * lamb * 5.0);
+        if(abs(lamb) < 1.0e-4) break;
+    }
+    return clamp(couleur * 1.5 + glow, 0.0, 1.0);
+}
+
+void main(void) {
+    vec2 uv = gl_FragCoord.xy / resolution.xy - 0.5;
+    uv.x *= resolution.x / resolution.y;
+    
+    // Glitch UV distortion
+    float glitchLine = step(0.98, hash(floor(uv.y * 20.0 + time * 5.0)));
+    uv.x += glitchLine * (hash(floor(time * 10.0)) - 0.5) * 0.1 * kickEnv;
+    
+    float t = time * (1.5 + speed);
+    
+    // Aggressive camera with shake
+    vec3 shakeOffset = shake(2.0 + kickEnv * 8.0);
+    vec3 eye = vec3(0.0, 0.0, -1.62);
+    eye = glitchRotor(eye, 0.0);
+    eye += vec3(
+        sin(t * 0.5) * 200.0,
+        cos(t * 0.4) * 200.0,
+        sin(t * 0.3) * 200.0
+    );
+    eye += shakeOffset;
+    
+    vec3 dir = normalize(glitchRotor(vec3(uv.x, uv.y, 1.6), 0.0));
+    
+    float coul = render(eye, dir);
+    
+    // Aggressive color palette - reds, oranges, whites
+    vec3 color;
+    if(coul < 0.3) {
+        color = mix(vec3(0.0), vec3(0.8, 0.1, 0.0), coul / 0.3);
+    } else if(coul < 0.6) {
+        color = mix(vec3(0.8, 0.1, 0.0), vec3(1.0, 0.6, 0.0), (coul - 0.3) / 0.3);
+    } else {
+        color = mix(vec3(1.0, 0.6, 0.0), vec3(1.0, 1.0, 0.9), (coul - 0.6) / 0.4);
+    }
+    
+    // RGB split on kick
+    float rgbSplit = kickEnv * 0.02;
+    vec2 uvR = uv + vec2(rgbSplit, 0.0);
+    vec2 uvB = uv - vec2(rgbSplit, 0.0);
+    
+    // Flash on kick
+    color += vec3(1.0) * kickEnv * 0.5;
+    
+    // Scanlines
+    float scanline = sin(gl_FragCoord.y * 2.0) * 0.1;
+    color -= scanline * (1.0 - coul);
+    
+    // Vignette burn
+    float vignette = 1.0 - pow(length(uv) * 1.2, 2.0);
+    color *= max(vignette, 0.0);
+    
+    gl_FragColor = vec4(color, 1.0);
+}

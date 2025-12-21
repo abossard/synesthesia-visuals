@@ -62,6 +62,10 @@ float bpmTwitcher = 0;
 float bpmSin4 = 0;
 float bpmConfidence = 0;
 
+// Ramp state for Magic-style speed buildup
+float rampedSpeed = 0.02f;       // Current ramped speed (starts at floor)
+float beatBoostAccum = 0.0f;     // Beat boost accumulator (decays)
+
 boolean showAudioBars = false;
 boolean audioControlsDirty = true;
 float lastSpeedMixDisplayed = -1;
@@ -90,13 +94,23 @@ final float BPM_LFO_SMOOTHING = 0.85;
 final float BEAT_RANDOM_SMOOTHING = 0.70;
 final float BEAT_ON_SMOOTHING = 0.60;
 final float BEAT_HOLD_DECAY = 0.88f;
-final float BASE_SPEED_FLOOR_MIN = 0.30f;
-final float BASE_SPEED_FLOOR_MAX = 0.45f;
+
+// Speed ramp constants (Magic-style smooth → scale → ramp)
+final float BASE_SPEED_FLOOR = 0.02f;       // Near-standstill in silence
+final float AUDIO_SPEED_MAX = 1.20f;        // 120% of real-time at sustained loud
+final float SPEED_RAMP_UP = 0.008f;         // Slow ramp-up rate per frame
+final float SPEED_RAMP_DOWN = 0.025f;       // Faster decay when quiet
+final float BASS_BOOST_WEIGHT = 0.35f;      // Bass contribution to speed
+final float BEAT_BOOST_AMOUNT = 0.15f;      // Additive boost on beat hits
+final float BEAT_BOOST_DECAY = 0.92f;       // Beat boost decay per frame
+
+// Legacy constants (kept for compatibility)
+final float BASE_SPEED_FLOOR_MIN = 0.02f;   // Alias
+final float BASE_SPEED_FLOOR_MAX = 0.10f;   // Unused
 final float AUDIO_SPEED_GAIN = 0.75f;
 final float AUDIO_SPEED_CURVE = 1.0f;
-final float AUDIO_SPEED_MAX = 1.90f;
 final float AUDIO_KICK_BOOST = 1.00f;
-final float AUDIO_SPEED_IDLE = 1.0f;
+final float AUDIO_SPEED_IDLE = 0.02f;       // Match floor for consistency
 final float AUDIO_DYNAMIC_MIX = 0.70f;
 
 // Live tweak controls
@@ -428,32 +442,65 @@ float getBoundUniformValue(String uniformName, float defaultValue) {
   return val != null ? val : defaultValue;
 }
 
+/**
+ * Compute audio-reactive speed using Magic-style pipeline:
+ *   1. SMOOTH: Use already-smoothed audio levels (smoothAudioLevel, smoothAudioBass)
+ *   2. SCALE:  Map volume (0-1) to target speed (FLOOR - MAX)
+ *   3. RAMP:   Gradually climb toward target; decay faster when quiet
+ *   4. BOOST:  Add beat/kick transients on top
+ *
+ * Result: silence → near-standstill; sustained loud → gradual climb to 1.2×
+ */
 float computeAudioReactiveSpeed() {
+  // No audio → decay to floor
   if (!isSynAudioActive()) {
-    return AUDIO_SPEED_IDLE;
+    rampedSpeed = lerp(rampedSpeed, BASE_SPEED_FLOOR, SPEED_RAMP_DOWN);
+    beatBoostAccum *= BEAT_BOOST_DECAY;
+    return constrain(rampedSpeed + beatBoostAccum, BASE_SPEED_FLOOR, AUDIO_SPEED_MAX);
   }
 
-  float energyDriver = constrain(max(max(energyFast, energySlow), presenceAll), 0, 1);
-  float beatPulse = max(max((float)kickPulse, beatOnSmooth), beatPhaseAudio);
-  beatHold = max(beatHold * BEAT_HOLD_DECAY, beatPulse);
+  // ========================================
+  // 1. SMOOTH (already done in updateSynesthesiaAudio)
+  // ========================================
+  // smoothAudioLevel, smoothAudioBass, etc. are EMA-smoothed
 
-  float baseFloor = BASE_SPEED_FLOOR_MIN + presenceAll * 0.05f;
-  baseFloor = constrain(baseFloor, BASE_SPEED_FLOOR_MIN, BASE_SPEED_FLOOR_MAX);
+  // ========================================
+  // 2. SCALE: Map volume → target speed
+  // ========================================
+  // Blend overall level with bass emphasis for "thump" response
+  float volumeDriver = smoothAudioLevel * (1.0f - BASS_BOOST_WEIGHT)
+                     + smoothAudioBass * BASS_BOOST_WEIGHT;
+  volumeDriver = constrain(volumeDriver, 0, 1);
 
-  float offbeatLift = energyDriver * 0.16f;
+  // Scale to speed range: floor at silence, max at loud
+  float targetSpeed = BASE_SPEED_FLOOR + volumeDriver * (AUDIO_SPEED_MAX - BASE_SPEED_FLOOR);
 
-  float beatBaseBoost = 0.85f;
-  float beatEnergyBonus = energyDriver * 0.55f;
-  float beatScale = 1.00f + 0.30f * (uiKickBoost / AUDIO_KICK_BOOST);
-  float beatContribution = beatHold * (beatBaseBoost + beatEnergyBonus) * beatScale;
+  // ========================================
+  // 3. RAMP: Gradual buildup / faster decay
+  // ========================================
+  if (targetSpeed > rampedSpeed) {
+    // Ramp UP slowly (sustained loud builds momentum)
+    rampedSpeed = lerp(rampedSpeed, targetSpeed, SPEED_RAMP_UP);
+  } else {
+    // Ramp DOWN faster (quiet sections decay quicker)
+    rampedSpeed = lerp(rampedSpeed, targetSpeed, SPEED_RAMP_DOWN);
+  }
 
-  float tempoBreathe = (0.5f + 0.5f * sin(TWO_PI * beatBarPhase)) * 0.04f * (1.0f - uiSpeedMix);
+  // ========================================
+  // 4. BEAT BOOST: Transient punch on kicks/beats
+  // ========================================
+  // Accumulate beat energy (kick hits add boost, decays over time)
+  float beatTrigger = max(kickEnv, beatPhaseAudio) * BEAT_BOOST_AMOUNT;
+  beatBoostAccum = max(beatBoostAccum * BEAT_BOOST_DECAY, beatTrigger);
 
-  float dynamic = offbeatLift + beatContribution;
-  float audioSpeed = baseFloor + uiSpeedGain * dynamic + tempoBreathe;
+  // Scale beat boost by user control
+  float scaledBeatBoost = beatBoostAccum * uiKickBoost;
 
-  audioSpeed = constrain(audioSpeed, baseFloor, AUDIO_SPEED_MAX);
-  return audioSpeed;
+  // ========================================
+  // Final speed = ramped base + beat transient
+  // ========================================
+  float finalSpeed = rampedSpeed + scaledBeatBoost;
+  return constrain(finalSpeed, BASE_SPEED_FLOOR, AUDIO_SPEED_MAX);
 }
 
 void setupDefaultAudioBindings() {

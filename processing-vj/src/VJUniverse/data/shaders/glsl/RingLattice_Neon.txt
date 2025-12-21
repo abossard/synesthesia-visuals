@@ -1,0 +1,148 @@
+#define PROCESSING_COLOR_SHADER
+// RingLattice_Neon - Glowing wireframe, cyberpunk aesthetic
+// Based on RGBringlattice3D
+
+#ifdef GL_ES
+precision highp float;
+#endif
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+uniform float bass;
+uniform float mid;
+uniform float highs;
+uniform float level;
+uniform float kickEnv;
+uniform float speed;
+
+float pointToGrille(vec3 pp, float b, float r) {
+    vec3 p = abs(pp);
+    vec3 pa = mod(p, 2.0 * b) - b;
+    
+    float dy = length(vec2(b - length(pa.xz), pa.y));
+    float dz = length(vec2(b - length(pa.xy), pa.z));
+    float ddy = length(vec3(pa.x, pa.z, pa.y * step(0.0, pa.y)));
+    float ddz = length(vec3(pa.x, pa.y, pa.z * step(0.0, pa.z)));
+    
+    return min(min(dy, ddy), min(dz, ddz)) - r;
+}
+
+vec3 rotor(vec3 p) {
+    float co = time * 0.12;
+    float c = cos(co);
+    float s = sin(co);
+    mat3 mz = mat3(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
+    mat3 mx = mat3(1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c);
+    return p * mz * mx;
+}
+
+// Get edge glow based on distance to surface
+float edgeGlow(float d, float thickness) {
+    return exp(-abs(d) / thickness);
+}
+
+float render(vec3 org, vec3 dir, out float minDist, out float glowAccum) {
+    float lambda = 0.0;
+    float lamb = 100.0;
+    float couleur = 0.0;
+    minDist = 1000.0;
+    glowAccum = 0.0;
+    
+    float ringSize = 0.3 + bass * 0.2;  // Thinner rings
+    
+    for(int i = 0; i < 100; i++) {
+        vec3 pos = org + lambda * dir;
+        lamb = pointToGrille(rotor(pos), 10.0, ringSize);
+        
+        // Track minimum distance for edge detection
+        minDist = min(minDist, abs(lamb));
+        
+        // Accumulate glow near surfaces
+        float glow = edgeGlow(lamb, 0.5 + highs * 0.5);
+        glowAccum += glow * 0.02;
+        
+        lambda += max(abs(lamb), 0.1) * 0.8;
+        couleur += 0.01;
+        
+        if(abs(lamb) < 0.001 || lambda > 300.0) break;
+    }
+    return clamp(couleur * 1.3, 0.0, 1.0);
+}
+
+// Neon color cycling
+vec3 neonColor(float t, float offset) {
+    vec3 c1 = vec3(1.0, 0.0, 0.5);   // Magenta
+    vec3 c2 = vec3(0.0, 1.0, 1.0);   // Cyan
+    vec3 c3 = vec3(0.5, 0.0, 1.0);   // Purple
+    vec3 c4 = vec3(0.0, 1.0, 0.3);   // Green
+    
+    float phase = fract(t * 0.1 + offset);
+    if(phase < 0.25) return mix(c1, c2, phase * 4.0);
+    if(phase < 0.5) return mix(c2, c3, (phase - 0.25) * 4.0);
+    if(phase < 0.75) return mix(c3, c4, (phase - 0.5) * 4.0);
+    return mix(c4, c1, (phase - 0.75) * 4.0);
+}
+
+void main(void) {
+    vec2 uv = gl_FragCoord.xy / resolution.xy - 0.5;
+    uv.x *= resolution.x / resolution.y;
+    
+    float t = time * (0.6 + speed * 0.4);
+    
+    // Smooth camera motion
+    vec3 eye = vec3(
+        sin(t * 0.2) * 200.0,
+        cos(t * 0.15) * 150.0,
+        t * 60.0
+    );
+    
+    vec3 dir = normalize(rotor(vec3(uv.x, uv.y, 1.4)));
+    
+    float minDist, glowAccum;
+    float coul = render(eye, dir, minDist, glowAccum);
+    
+    // Pure black background
+    vec3 color = vec3(0.0);
+    
+    // Edge glow with cycling neon colors
+    float edgeIntensity = edgeGlow(minDist, 0.15);
+    vec3 neon1 = neonColor(time, 0.0);
+    vec3 neon2 = neonColor(time, 0.33);
+    vec3 neon3 = neonColor(time, 0.66);
+    
+    // Layer multiple neon colors based on depth
+    vec3 neonMix = mix(neon1, neon2, coul);
+    neonMix = mix(neonMix, neon3, glowAccum);
+    
+    // Main edge glow
+    color += neonMix * edgeIntensity * 3.0;
+    
+    // Volumetric glow accumulation
+    color += neonMix * glowAccum * 0.8;
+    
+    // Pulse on kick
+    color *= 1.0 + kickEnv * 0.8;
+    
+    // Hot white core on very close edges
+    float coreGlow = edgeGlow(minDist, 0.02);
+    color += vec3(1.0) * coreGlow * 2.0;
+    
+    // Bloom effect (fake)
+    float bloom = pow(glowAccum, 2.0) * 0.5;
+    color += neonMix * bloom;
+    
+    // Scanlines for cyber feel
+    float scanline = sin(gl_FragCoord.y * 1.5) * 0.5 + 0.5;
+    color *= 0.9 + scanline * 0.1;
+    
+    // CRT-style vignette
+    float vignette = 1.0 - pow(length(uv * 1.3), 2.5);
+    color *= max(vignette, 0.0);
+    
+    // Slight chromatic aberration
+    vec2 caOffset = uv * 0.01 * (1.0 + kickEnv);
+    
+    gl_FragColor = vec4(color, 1.0);
+}
