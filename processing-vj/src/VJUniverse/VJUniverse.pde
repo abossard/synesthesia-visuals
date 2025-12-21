@@ -810,6 +810,16 @@ void keyPressed() {
       // Load example images folder into ImageTile
       loadExampleImages();
       break;
+    case '+':
+    case '=':
+      // Increase rating (better = lower number)
+      changeCurrentShaderRating(-1);
+      break;
+    case '-':
+    case '_':
+      // Decrease rating (worse = higher number)
+      changeCurrentShaderRating(1);
+      break;
   }
   
   // Arrow keys for shader panning (only when not in modal dialogs)
@@ -869,7 +879,7 @@ void drawDebugOverlay() {
   // Semi-transparent background
   fill(0, 180);
   noStroke();
-  rect(10, 10, 380, 220);
+  rect(10, 10, 380, 240);
   
   // Text
   fill(255);
@@ -905,8 +915,20 @@ void drawDebugOverlay() {
   String shaderType = current != null ? current.type.toString() : "";
   String filterStr = currentTypeFilter == null ? "ALL" : currentTypeFilter.toString();
   
+  // Get rating for current shader
+  String ratingStr = "?";
+  if (current != null) {
+    ShaderAnalysis analysis = shaderAnalyses.get(current.name);
+    if (analysis != null) {
+      ratingStr = analysis.getRatingLabel();
+    } else {
+      ratingStr = "unanalyzed";
+    }
+  }
+  
   text("Filter: " + filterStr + " | Shader [" + (currentShaderIndex + 1) + "/" + list.size() + "]", 20, y); y += lineHeight;
   text("  " + shaderType + ": " + shaderName, 20, y); y += lineHeight;
+  text("  Rating: " + ratingStr + " (+/- to change)", 20, y); y += lineHeight;
   text("  Zoom: " + nf(shaderZoom, 1, 2) + " | Offset: " + nf(shaderOffsetX, 1, 2) + ", " + nf(shaderOffsetY, 1, 2), 20, y); y += lineHeight;
   y += 5;
   
@@ -1064,4 +1086,60 @@ void loadExampleImages() {
   } else {
     println("[ImageTile] No ImageTile found");
   }
+}
+
+
+// ============================================
+// SHADER RATING
+// ============================================
+
+/**
+ * Change rating of current shader by delta.
+ * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
+ * Delta: -1 = improve rating (lower number), +1 = worsen rating (higher number)
+ */
+void changeCurrentShaderRating(int delta) {
+  ShaderInfo current = getCurrentShaderInfo();
+  if (current == null) {
+    println("[Rating] No current shader");
+    return;
+  }
+  
+  ShaderAnalysis analysis = shaderAnalyses.get(current.name);
+  if (analysis == null) {
+    // Create minimal analysis for rating-only
+    analysis = createMinimalAnalysis(current);
+    shaderAnalyses.put(current.name, analysis);
+    println("[Rating] Created minimal analysis for: " + current.name);
+  }
+  
+  int oldRating = analysis.getEffectiveRating();
+  int newRating = constrain(oldRating + delta, 1, 5);
+  
+  if (newRating != oldRating) {
+    saveShaderRating(current.name, newRating);
+    consoleLog("★ " + current.name + ": " + analysis.getRatingLabel());
+  }
+}
+
+/**
+ * Create a minimal ShaderAnalysis for rating purposes.
+ * Full LLM analysis can be done later by Python.
+ */
+ShaderAnalysis createMinimalAnalysis(ShaderInfo shader) {
+  return new ShaderAnalysis(
+    shader.name,
+    "unanalyzed",           // mood
+    new String[0],          // colors
+    new String[0],          // geometry
+    new String[0],          // objects
+    new String[0],          // effects
+    "medium",               // energy
+    "medium",               // complexity
+    "Rating-only placeholder, awaiting full analysis",
+    System.currentTimeMillis(),
+    new HashMap<String, Float>(),
+    new ShaderInputs(),
+    3                       // default rating
+  );
 }

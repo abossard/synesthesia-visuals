@@ -237,6 +237,39 @@ void saveShaderAnalysis(String shaderPath, ShaderAnalysis analysis) {
   println("Saved shader analysis: " + analysisPath);
 }
 
+/**
+ * Save just the rating for a shader to its .analysis.json file.
+ * Re-serializes the entire analysis with updated rating.
+ */
+void saveShaderRating(String shaderName, int newRating) {
+  ShaderAnalysis analysis = shaderAnalyses.get(shaderName);
+  if (analysis == null) {
+    println("[Rating] No analysis found for: " + shaderName);
+    return;
+  }
+  
+  // Update rating in memory
+  analysis.rating = constrain(newRating, 1, 5);
+  
+  // Find shader path to derive analysis file path
+  String shaderPath = null;
+  for (ShaderInfo info : availableShaders) {
+    if (info.name.equals(shaderName)) {
+      shaderPath = info.path;
+      break;
+    }
+  }
+  
+  if (shaderPath == null) {
+    println("[Rating] Could not find shader path for: " + shaderName);
+    return;
+  }
+  
+  // Save updated analysis
+  saveShaderAnalysis(shaderPath, analysis);
+  println("[Rating] " + shaderName + " -> " + analysis.getRatingLabel());
+}
+
 boolean shaderAnalysisExists(String shaderPath) {
   String analysisPath = shaderPath.replaceAll("\\.(fs|frag|isf|glsl)$", ".analysis.json");
   String filepath = dataPath(analysisPath);
@@ -281,6 +314,7 @@ String analysisToJson(ShaderAnalysis a) {
   sb.append("    \"inputNames\": ").append(arrayToJson(a.inputs.inputNames)).append("\n");
   sb.append("  },\n");
   
+  sb.append("  \"rating\": ").append(a.rating).append(",\n");
   sb.append("  \"analyzedAt\": ").append(a.analyzedAt).append("\n");
   sb.append("}");
   
@@ -345,6 +379,9 @@ ShaderAnalysis parseAnalysisJson(String json) {
   if (objects == null) objects = new String[0];
   if (effects == null) effects = new String[0];
   
+  // Extract rating (0 = unrated, treated as 3)
+  int rating = extractIntField(json, "rating", 0);
+  
   return new ShaderAnalysis(
     shaderName,
     mood != null ? mood : "unknown",
@@ -354,7 +391,8 @@ ShaderAnalysis parseAnalysisJson(String json) {
     description != null ? description : "",
     analyzedAt,
     features,
-    inputs
+    inputs,
+    rating
   );
 }
 

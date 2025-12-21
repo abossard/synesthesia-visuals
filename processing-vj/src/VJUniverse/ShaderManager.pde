@@ -44,6 +44,9 @@ void loadAllShaders() {
   
   // Load existing analysis files (from Python-side analysis)
   loadShaderAnalyses();
+  
+  // Filter out rating=5 shaders and warn about rating=4 (masks)
+  filterShadersByRating();
 }
 
 void reloadShadersIfChanged() {
@@ -375,6 +378,65 @@ void loadShaderAnalyses() {
     }
   }
   println("Loaded " + shaderAnalyses.size() + "/" + availableShaders.size() + " shader analyses");
+}
+
+/**
+ * Filter out rating=5 shaders and warn about rating=4 (mask candidates).
+ * Rating meanings:
+ *   1 = BEST (use often)
+ *   2 = GOOD (special occasions)
+ *   3 = NORMAL (working shader)
+ *   4 = MASK (usable as black/white mask)
+ *   5 = SKIP (don't use)
+ */
+void filterShadersByRating() {
+  ArrayList<ShaderInfo> filtered = new ArrayList<ShaderInfo>();
+  ArrayList<String> skipped = new ArrayList<String>();
+  ArrayList<String> masks = new ArrayList<String>();
+  
+  for (ShaderInfo shader : availableShaders) {
+    ShaderAnalysis analysis = shaderAnalyses.get(shader.name);
+    int rating = (analysis != null) ? analysis.getEffectiveRating() : 3;
+    
+    if (rating == 5) {
+      skipped.add(shader.name);
+    } else {
+      filtered.add(shader);
+      if (rating == 4) {
+        masks.add(shader.name);
+      }
+    }
+  }
+  
+  // Update available shaders
+  availableShaders = filtered;
+  
+  // Log skipped shaders
+  if (skipped.size() > 0) {
+    println("[Rating] Skipped " + skipped.size() + " shaders with rating=5 (SKIP):");
+    for (String name : skipped) {
+      println("  - " + name);
+    }
+  }
+  
+  // Warn about mask shaders
+  if (masks.size() > 0) {
+    println("[Rating] " + masks.size() + " shaders with rating=4 (MASK-only):");
+    for (String name : masks) {
+      println("  ◐ " + name);
+    }
+  }
+  
+  // Stats summary
+  int best = 0, good = 0, normal = 0;
+  for (ShaderInfo shader : availableShaders) {
+    ShaderAnalysis analysis = shaderAnalyses.get(shader.name);
+    int rating = (analysis != null) ? analysis.getEffectiveRating() : 3;
+    if (rating == 1) best++;
+    else if (rating == 2) good++;
+    else if (rating == 3) normal++;
+  }
+  println("[Rating] Available: " + best + " BEST, " + good + " GOOD, " + normal + " NORMAL, " + masks.size() + " MASK");
 }
 
 // ============================================
