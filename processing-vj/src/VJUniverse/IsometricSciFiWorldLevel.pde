@@ -278,7 +278,7 @@ class IsometricSciFiWorldLevel extends Level {
     // Orthographic projection for true isometric
     float aspect = (float)pg.width / pg.height;
     float viewSize = 160;  // Smaller = more zoomed in, shows height better
-    pg.ortho(-viewSize * aspect, viewSize * aspect, -viewSize, viewSize, -3000, 3000);
+    pg.ortho(-viewSize * aspect, viewSize * aspect, -viewSize, viewSize, -5000, 5000);
 
     // Center screen
     pg.translate(pg.width * 0.5, pg.height * 0.5, 0);
@@ -295,17 +295,20 @@ class IsometricSciFiWorldLevel extends Level {
   void setupLighting(PGraphics pg) {
     pg.lights();
 
-    // Cool ambient - dark sci-fi feel
-    pg.ambientLight(35, 40, 50);
+    // Cool ambient - dark sci-fi feel (slightly brighter for better visibility)
+    pg.ambientLight(45, 50, 60);
 
-    // Main directional light - slightly warm
-    pg.directionalLight(140, 135, 130, -0.5, -0.8, -0.3);
+    // Main directional light - stronger, more dramatic angle for shadow definition
+    pg.directionalLight(180, 170, 160, -0.4, -0.7, -0.5);
 
-    // Fill light - cool blue
-    pg.directionalLight(40, 50, 70, 0.3, -0.2, 0.5);
+    // Fill light - cool blue from the side
+    pg.directionalLight(50, 65, 90, 0.5, -0.3, 0.4);
 
-    // Rim light from behind - adds depth
-    pg.directionalLight(30, 35, 45, 0.2, 0.3, -0.8);
+    // Rim light from behind - adds depth and edge definition
+    pg.directionalLight(40, 50, 65, 0.3, 0.4, -0.7);
+
+    // Top-down subtle light to highlight horizontal surfaces
+    pg.directionalLight(30, 35, 40, 0, -1, 0);
   }
 
   void drawAtmosphere(PGraphics pg) {
@@ -390,10 +393,23 @@ class IsometricSciFiWorldLevel extends Level {
         color tileColor = getTerrainColor(t00.zone, t00.height, x, z);
         pg.fill(tileColor);
 
+        // Calculate normals for proper lighting on terrain faces
+        // Triangle 1: (x0,y00,z0), (x1,y10,z0), (x0,y01,z1)
+        PVector v1 = new PVector(x1 - x0, y10 - y00, 0);
+        PVector v2 = new PVector(0, y01 - y00, z1 - z0);
+        PVector n1 = v2.cross(v1).normalize();
+        pg.normal(n1.x, n1.y, n1.z);
+
         // Triangle 1
         pg.vertex(x0, y00, z0);
         pg.vertex(x1, y10, z0);
         pg.vertex(x0, y01, z1);
+
+        // Triangle 2: (x1,y10,z0), (x1,y11,z1), (x0,y01,z1)
+        PVector v3 = new PVector(0, y11 - y10, z1 - z0);
+        PVector v4 = new PVector(x0 - x1, y01 - y11, 0);
+        PVector n2 = v4.cross(v3).normalize();
+        pg.normal(n2.x, n2.y, n2.z);
 
         // Triangle 2
         pg.vertex(x1, y10, z0);
@@ -436,34 +452,48 @@ class IsometricSciFiWorldLevel extends Level {
   }
 
   color getTerrainColor(int zone, float height, int x, int z) {
-    float variation = noise(x * 0.3, z * 0.3) * 15 - 7;
+    float variation = noise(x * 0.3, z * 0.3) * 20 - 10;
+
+    // Height-based brightness variation to emphasize topography
+    float heightBrightness = map(height, 0, 100, -15, 15);
 
     color baseColor;
     switch (zone) {
       case ZONE_MILITARY:
-        baseColor = lerpColor(groundDark, groundMid, 0.3);
+        // Darker valleys, lighter ridges
+        float milT = constrain(map(height, 20, 80, 0, 1), 0, 1);
+        baseColor = lerpColor(groundDark, groundMid, milT);
         break;
       case ZONE_SPACEPORT:
         baseColor = concrete;
         break;
       case ZONE_INDUSTRIAL:
-        baseColor = lerpColor(groundMid, concrete, 0.4);
+        float indT = constrain(map(height, 20, 80, 0.2, 0.7), 0, 1);
+        baseColor = lerpColor(groundDark, concrete, indT);
         break;
       case ZONE_OUTPOST:
-        baseColor = lerpColor(groundLight, color(120, 110, 95), 0.5);
+        // Desert gradient from dark valleys to sandy peaks
+        float outT = constrain(map(height, 10, 90, 0, 1), 0, 1);
+        baseColor = lerpColor(color(80, 70, 60), color(140, 125, 100), outT);
         break;
       case ZONE_MOUNTAIN:
-        float t = map(height, 50, 150, 0, 1);
-        baseColor = lerpColor(groundMid, metalLight, constrain(t, 0, 1));
+        // More dramatic mountain coloring
+        float t = constrain(map(height, 40, 200, 0, 1), 0, 1);
+        if (t > 0.7) {
+          // Snow caps
+          baseColor = lerpColor(metalLight, color(180, 185, 190), (t - 0.7) / 0.3);
+        } else {
+          baseColor = lerpColor(groundMid, metalLight, t / 0.7);
+        }
         break;
       default:
         baseColor = groundMid;
     }
 
     return color(
-      red(baseColor) + variation,
-      green(baseColor) + variation,
-      blue(baseColor) + variation
+      constrain(red(baseColor) + variation + heightBrightness, 0, 255),
+      constrain(green(baseColor) + variation + heightBrightness, 0, 255),
+      constrain(blue(baseColor) + variation + heightBrightness, 0, 255)
     );
   }
 

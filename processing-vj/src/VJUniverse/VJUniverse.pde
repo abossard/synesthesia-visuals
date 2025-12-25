@@ -85,6 +85,12 @@ int shaderCycleIndex = 0;
 float lastShaderCycleTime = 0;
 final float SHADER_CYCLE_DELAY = 2.0;  // Seconds between shader changes
 
+// Rating feedback overlay
+String lastRatingLabel = "";       // e.g. "★★★★★ BEST"
+color lastRatingColor = 0;         // Color for rating display
+float lastRatingTime = -999;       // Time when rating was last changed
+final float RATING_DISPLAY_DURATION = 2.0;  // Seconds to show rating feedback
+
 // Shader rendering parameters
 float shaderZoom = 1.0;  // 1.0 = normal, >1 = zoom in, <1 = zoom out
 float shaderOffsetX = 0.0;  // Pan offset X (-1 to 1)
@@ -304,6 +310,9 @@ void draw() {
   
   // Draw audio bars (OSC listener HUD)
   drawAudioBars();
+  
+  // Draw rating feedback overlay (always visible when active)
+  drawRatingFeedback();
   
   // Draw debug overlay
   if (debugMode) {
@@ -820,6 +829,31 @@ void keyPressed() {
       // Decrease rating (worse = higher number)
       changeCurrentShaderRating(1);
       break;
+    case 's':
+      // Skip = rate 5 + next shader (quick reject)
+      setCurrentShaderRating(5);
+      nextShader();
+      break;
+    case 'k':
+      // Keep/favorite = rate 1 + next shader (quick approve)
+      setCurrentShaderRating(1);
+      nextShader();
+      break;
+    case '!':  // Shift+1
+      setCurrentShaderRating(1);
+      break;
+    case '@':  // Shift+2
+      setCurrentShaderRating(2);
+      break;
+    case '#':  // Shift+3
+      setCurrentShaderRating(3);
+      break;
+    case '$':  // Shift+4
+      setCurrentShaderRating(4);
+      break;
+    case '%':  // Shift+5
+      setCurrentShaderRating(5);
+      break;
   }
   
   // Arrow keys for shader panning (only when not in modal dialogs)
@@ -869,6 +903,48 @@ void prevShader() {
   if (list.size() == 0) return;
   currentShaderIndex = (currentShaderIndex - 1 + list.size()) % list.size();
   loadShaderByIndex(currentShaderIndex);
+}
+
+// ============================================
+// RATING FEEDBACK OVERLAY
+// ============================================
+
+void drawRatingFeedback() {
+  // Calculate fade based on time since rating changed
+  float age = globalTime - lastRatingTime;
+  if (age > RATING_DISPLAY_DURATION || lastRatingLabel.isEmpty()) {
+    return;  // Nothing to show
+  }
+  
+  // Fade out over time
+  float alpha = 255 * (1.0 - (age / RATING_DISPLAY_DURATION));
+  
+  // Draw large centered label
+  pushStyle();
+  textAlign(CENTER, CENTER);
+  textSize(72);
+  
+  // Black outline for readability
+  fill(0, alpha);
+  for (int dx = -3; dx <= 3; dx++) {
+    for (int dy = -3; dy <= 3; dy++) {
+      if (dx != 0 || dy != 0) {
+        text(lastRatingLabel, width/2 + dx, height/2 + dy);
+      }
+    }
+  }
+  
+  // Colored text
+  fill(red(lastRatingColor), green(lastRatingColor), blue(lastRatingColor), alpha);
+  text(lastRatingLabel, width/2, height/2);
+  
+  // Show keyboard hints below
+  textSize(24);
+  fill(200, alpha * 0.8);
+  String hints = "K=KEEP  S=SKIP  Shift+1-5=RATE  N/P=NAV";
+  text(hints, width/2, height/2 + 60);
+  
+  popStyle();
 }
 
 // ============================================
@@ -942,7 +1018,7 @@ void drawDebugOverlay() {
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader Y=type V=tiles F/G=font T=broadcast 0-9=focus z/Z=zoom", 20, height - 25);
+  text("D=debug N/P=shader K=keep S=skip !@#$%=rate Y=type V=tiles 0-9=focus", 20, height - 25);
 }
 
 // ============================================
@@ -1093,6 +1169,51 @@ void loadExampleImages() {
 // SHADER RATING
 // ============================================
 
+// Rating labels for visual feedback
+final String[] RATING_LABELS = {"", "★★★★★ BEST", "★★★★ GOOD", "★★★ NORMAL", "★★ MASK ONLY", "★ SKIP"};
+
+// Get color for rating (can't use color() at declaration time)
+int getRatingColor(int rating) {
+  switch(rating) {
+    case 1: return color(0, 255, 100);     // Bright green - BEST
+    case 2: return color(100, 255, 100);   // Light green - GOOD
+    case 3: return color(255, 255, 100);   // Yellow - NORMAL
+    case 4: return color(255, 150, 50);    // Orange - MASK ONLY
+    case 5: return color(255, 50, 50);     // Red - SKIP
+    default: return color(128);            // Gray - unknown
+  }
+}
+
+/**
+ * Set rating of current shader to exact value.
+ * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
+ */
+void setCurrentShaderRating(int rating) {
+  ShaderInfo current = getCurrentShaderInfo();
+  if (current == null) {
+    println("[Rating] No current shader");
+    return;
+  }
+  
+  ShaderAnalysis analysis = shaderAnalyses.get(current.name);
+  if (analysis == null) {
+    // Create minimal analysis for rating-only
+    analysis = createMinimalAnalysis(current);
+    shaderAnalyses.put(current.name, analysis);
+    println("[Rating] Created minimal analysis for: " + current.name);
+  }
+  
+  int newRating = constrain(rating, 1, 5);
+  saveShaderRating(current.name, newRating);
+  
+  // Trigger visual feedback
+  lastRatingLabel = RATING_LABELS[newRating];
+  lastRatingColor = getRatingColor(newRating);
+  lastRatingTime = globalTime;
+  
+  consoleLog("★ " + current.name + ": " + RATING_LABELS[newRating]);
+}
+
 /**
  * Change rating of current shader by delta.
  * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
@@ -1118,7 +1239,13 @@ void changeCurrentShaderRating(int delta) {
   
   if (newRating != oldRating) {
     saveShaderRating(current.name, newRating);
-    consoleLog("★ " + current.name + ": " + analysis.getRatingLabel());
+    
+    // Trigger visual feedback
+    lastRatingLabel = RATING_LABELS[newRating];
+    lastRatingColor = getRatingColor(newRating);
+    lastRatingTime = globalTime;
+    
+    consoleLog("★ " + current.name + ": " + RATING_LABELS[newRating]);
   }
 }
 

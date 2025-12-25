@@ -168,7 +168,7 @@ class LowPolyLandscapeLevel extends Level {
     // Orthographic projection for isometric look - zoomed in close
     float aspect = (float)pg.width / pg.height;
     float viewSize = 180;  // Zoomed in
-    pg.ortho(-viewSize * aspect, viewSize * aspect, -viewSize, viewSize, -2000, 2000);
+    pg.ortho(-viewSize * aspect, viewSize * aspect, -viewSize, viewSize, -5000, 5000);
 
     // Move to center of screen
     pg.translate(pg.width * 0.5, pg.height * 0.5, 0);
