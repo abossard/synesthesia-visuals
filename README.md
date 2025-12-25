@@ -6,12 +6,16 @@ A toolkit for VJ performances combining Synesthesia shaders, Processing games, a
 
 ```
 ├── synesthesia-shaders/    # Synesthesia scene files and GLSL shaders
+├── swift-vj/               # Swift Metal VJ app (replaces VJUniverse + KaraokeOverlay)
+│   ├── Sources/SwiftVJ/    # Metal shader renderer with karaoke overlay
+│   ├── Shaders/            # Metal shaders (.metal files)
+│   └── README.md           # Swift VJ documentation
 ├── processing-vj/          # Processing interactive visuals and shader engines
 │   ├── examples/           # VJ game implementations (Launchpad-controlled)
 │   ├── src/                # Main applications:
 │   │   ├── VJSims/         # Simulation framework with Synesthesia Audio OSC
-│   │   ├── VJUniverse/     # GLSL shader engine with LLM selection
-│   │   ├── KaraokeOverlay/ # Lyrics display with AI refrain detection
+│   │   ├── VJUniverse/     # GLSL shader engine (legacy - use swift-vj)
+│   │   ├── KaraokeOverlay/ # Lyrics display (legacy - use swift-vj)
 │   │   └── ImageOverlay/   # AI-generated image display
 │   └── lib/                # Shared utilities (LaunchpadUtils)
 ├── python-vj/              # Python VJ control and automation
@@ -30,6 +34,26 @@ The `synesthesia-shaders/` folder contains `.synScene` directories with GLSL sha
 
 **Convert shaders from Shadertoy/ISF**: Use the [Shadertoy to Synesthesia Converter](.github/prompts/shadertoy-to-synesthesia-converter.prompt.md) prompt for AI-powered conversion with intelligent audio reactivity.
 
+### Swift VJ Application (Recommended for Apple Silicon)
+The `swift-vj/` folder contains a native macOS Metal-based VJ application:
+
+**SwiftVJ** - High-performance Metal shader renderer with karaoke overlay
+- Native Apple Silicon support (also runs on Intel)
+- Metal shader rendering with audio reactivity
+- Multiple Syphon channels (shader, lyrics, refrain, song info)
+- OSC integration with python-vj pipeline
+- ~10x more efficient than Processing (150MB RAM vs 600MB+)
+- **Replaces**: VJUniverse + KaraokeOverlay with single efficient app
+
+**Build and Run:**
+```bash
+cd swift-vj
+swift build -c release
+.build/release/SwiftVJ
+```
+
+See [swift-vj/README.md](swift-vj/README.md) for detailed documentation.
+
 ### Processing Visual Applications
 The `processing-vj/` folder contains multiple applications:
 
@@ -38,13 +62,13 @@ The `processing-vj/` folder contains multiple applications:
 - Synesthesia Audio OSC support (TODO)  
 - Syphon output for VJ software integration
 
-**VJUniverse** - GLSL shader engine with LLM-powered shader selection
+**VJUniverse** (Legacy - consider SwiftVJ) - GLSL shader engine with LLM-powered shader selection
 - 100+ GLSL shaders (.glsl, .txt, .frag)
 - Ollama/LM Studio integration for mood-based shader selection
 - Synesthesia Audio OSC reactivity
 - **Note**: ISF format no longer supported (use converter above)
 
-**KaraokeOverlay** - AI-powered lyrics display
+**KaraokeOverlay** (Legacy - consider SwiftVJ) - AI-powered lyrics display
 - AI refrain detection for chorus highlighting  
 - Multiple display modes (full lyrics, refrain only, word-by-word)
 

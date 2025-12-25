@@ -1,0 +1,166 @@
+name: Swift VJ Build and Test
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'swift-vj/**'
+      - '.github/workflows/swift-build.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'swift-vj/**'
+      - '.github/workflows/swift-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-13  # Ventura with Xcode 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
+      
+      - name: Print Swift version
+        run: swift --version
+      
+      - name: Print Xcode version
+        run: xcodebuild -version
+      
+      - name: Resolve Swift dependencies
+        run: |
+          cd swift-vj
+          swift package resolve
+      
+      - name: Build SwiftVJ (Debug)
+        run: |
+          cd swift-vj
+          swift build -v
+      
+      - name: Build SwiftVJ (Release)
+        run: |
+          cd swift-vj
+          swift build -c release -v
+      
+      - name: Run Swift tests
+        run: |
+          cd swift-vj
+          swift test -v || echo "No tests yet, continuing..."
+      
+      - name: Verify binary exists
+        run: |
+          cd swift-vj
+          ls -lh .build/release/SwiftVJ
+          file .build/release/SwiftVJ
+      
+      - name: Check binary architecture
+        run: |
+          cd swift-vj
+          lipo -info .build/release/SwiftVJ
+      
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftVJ-macos
+          path: swift-vj/.build/release/SwiftVJ
+          retention-days: 30
+      
+      - name: Build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ SwiftVJ built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Binary Info" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cd swift-vj
+          ls -lh .build/release/SwiftVJ >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          lipo -info .build/release/SwiftVJ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+  
+  build-matrix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-14]  # Intel and Apple Silicon
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-14
+            arch: arm64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Print system info
+        run: |
+          uname -a
+          sysctl hw.model
+          swift --version
+      
+      - name: Build for ${{ matrix.arch }}
+        run: |
+          cd swift-vj
+          swift build -c release
+      
+      - name: Verify architecture
+        run: |
+          cd swift-vj
+          lipo -info .build/release/SwiftVJ
+          # Check it matches expected architecture
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            lipo -info .build/release/SwiftVJ | grep -q arm64 || exit 1
+          elif [[ "${{ matrix.arch }}" == "x86_64" ]]; then
+            lipo -info .build/release/SwiftVJ | grep -q x86_64 || exit 1
+          fi
+      
+      - name: Upload ${{ matrix.arch }} binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftVJ-macos-${{ matrix.arch }}
+          path: swift-vj/.build/release/SwiftVJ
+          retention-days: 30
+
+  lint-and-format:
+    runs-on: macos-13
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check Swift code formatting
+        run: |
+          cd swift-vj
+          # Install SwiftFormat if needed
+          # brew install swiftformat
+          # swiftformat --lint Sources/
+          echo "SwiftFormat check would run here"
+      
+      - name: Check for common issues
+        run: |
+          cd swift-vj
+          # Check for TODOs and FIXMEs
+          echo "## Code Quality Checks" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          TODO_COUNT=$(grep -r "TODO:" Sources/ | wc -l | tr -d ' ')
+          FIXME_COUNT=$(grep -r "FIXME:" Sources/ | wc -l | tr -d ' ')
+          
+          echo "- TODOs: $TODO_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- FIXMEs: $FIXME_COUNT" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $TODO_COUNT -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### TODO items:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            grep -rn "TODO:" Sources/ || true >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,28 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+xcuserdata/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# Build artifacts
+*.dSYM
+*.o
+*.a
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Syphon framework (if added as binary)
+Frameworks/Syphon.framework
+
+# IDE
+.vscode/
+.idea/
