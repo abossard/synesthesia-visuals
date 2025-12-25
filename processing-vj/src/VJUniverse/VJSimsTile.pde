@@ -286,8 +286,8 @@ class VJSimsTile extends Tile {
       return true;
     }
 
-    // R = toggle recording mode
-    if (key == 'r' || key == 'R') {
+    // ! (Shift+1) = toggle recording mode (R is for shader cycling)
+    if (key == '!') {
       recordingMode = !recordingMode;
       if (recordingMode) {
         levelChangeTimeMs = millis();

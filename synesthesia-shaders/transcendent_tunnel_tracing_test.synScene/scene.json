@@ -1,0 +1,88 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Adds lighting glow. Turn below 0.05 to turn off entirely.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glow_amt",
+			"PARAMS" : 0.25,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "default"
+		},
+		{
+			"DEFAULT" : 0.8,
+			"DESCRIPTION" : "Limit glow amt to the bass frequency levels. Combine with glow_amt to set level",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glow_bass",
+			"PARAMS" : 0.25,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "default"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Scale the scene / zoom in or out",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "zoom_amt",
+			"PARAMS" : 0.01,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "default"
+		}
+	],
+	"CREDIT" : "mrange",
+	"DESCRIPTION" : "Ported from https://www.shadertoy.com/view/wc3BD8 by UFFFD",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "new_scene_2.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"DOUBLE_BUFFER" : false,
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 540,
+			"TARGET" : "BufferA",
+			"WIDTH" : 960,
+			"WRAP" : "clamp"
+		},
+		{
+			"DOUBLE_BUFFER" : false,
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 540,
+			"TARGET" : "BufferB",
+			"WIDTH" : 960,
+			"WRAP" : "clamp"
+		},
+		{
+			"DOUBLE_BUFFER" : false,
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 540,
+			"TARGET" : "BufferC",
+			"WIDTH" : 960,
+			"WRAP" : "clamp"
+		},
+		{
+			"DOUBLE_BUFFER" : false,
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 540,
+			"TARGET" : "BufferD",
+			"WIDTH" : 960,
+			"WRAP" : "clamp"
+		}
+	],
+	"TITLE" : "Transcendent Tunnel Tracing Test",
+	"WIDTH" : 1920
+}
