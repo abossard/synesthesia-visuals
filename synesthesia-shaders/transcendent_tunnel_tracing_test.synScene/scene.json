@@ -22,6 +22,26 @@
 			"UI_GROUP" : "default"
 		},
 		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Base blur amount for glow effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "blur_amt",
+			"PARAMS" : 0.1,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "default"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "How much bass boosts the blur (0=none, 1=full)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "blur_audio",
+			"PARAMS" : 0.1,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "default"
+		},
+		{
 			"DEFAULT" : 1,
 			"DESCRIPTION" : "Scale the scene / zoom in or out",
 			"MAX" : 3,

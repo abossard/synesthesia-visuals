@@ -14,17 +14,21 @@ float hash(float co) {
   return fract(sin(co*12.9898) * 13758.5453);
 }
 
-// Gaussian blur - using normalized texture() for resolution independence
-vec3 gb(sampler2D pp, vec2 dir, vec2 uv) {
-  const float blurriness = 100.;
+// Gaussian blur - audio-reactive blur radius
+vec3 gb(sampler2D pp, vec2 dir, vec2 uv, float blurScale) {
+  const float baseBlurriness = 50.;  // Reduced base blur
+  float blurriness = baseBlurriness * (1.0 + blurScale * 2.0);  // Scale up with audio
   vec2 texelSize = 1.0 / RENDERSIZE;
   vec3 col = texture(pp, uv).xyz;
   float w, ws = 1., I;
-
-  for(int i = 1; i < 9; ++i) {
+  
+  // Reduced samples (5 instead of 9) and scaled by blurScale
+  int samples = int(mix(3.0, 7.0, blurScale));
+  for(int i = 1; i < 7; ++i) {
+    if (i > samples) break;
     I = float(i);
     w = exp(-(I*I)/blurriness);
-    vec2 off = float(i) * dir * texelSize;
+    vec2 off = float(i) * dir * texelSize * (0.5 + blurScale);
     col += w * (texture(pp, uv - off).xyz + texture(pp, uv + off).xyz);
     ws += 2. * w;
   }
@@ -110,22 +114,22 @@ vec4 fpass0(vec2 p, ivec2 xy) {
   ;
   float
     an                   // Angular coordinate
-  , at                   // Accumulated attenuation
+  , at = 1.              // Accumulated attenuation - INIT to 1
   , bi                   // Loop counter for bounces
-  , cf                   // Cylinder index with fractional time
+  , cf = 0.              // Cylinder index with fractional time - INIT
   , ci                   // Loop counter for cylinders
   , ch                   // Cylinder height
   , fi                   // Fade-in factor for first cylinder
-  , fo                   // Fade-out factor
+  , fo = 1.              // Fade-out factor - INIT
   , fr                   // Fresnel/scale factor
   , id                   // Cylinder ID
-  , ns =0.               // Sample count
+  , ns = 0.              // Sample count
   , sd                   // RNG seed
   , si                   // Discriminant/sqrt term for cylinder intersection
   , tn                   // Nearest intersection distance
   , ts                   // Sphere intersection distance
-  , h0                   // Hash for cylinder
-  , h1
+  , h0 = 0.5             // Hash for cylinder - INIT
+  , h1 = 0.5             // INIT
   , T=TT+123.4         // Current time
   , NT=floor(T)          // Integer time
   , FT=fract(T)          // Fractional time
@@ -154,13 +158,13 @@ vec4 fpass0(vec2 p, ivec2 xy) {
   , X =normalize(cross(Z,UP)) // Camera right vector
   , Y =cross(X,Z)             // Camera up vector
   , co=vec3(0)                // Accumulated color
-  , ip                        // Current intersection point
+  , ip = vec3(0)              // Current intersection point - INIT
   , po                        // Path vertex position
   , rd                        // Path ray direction
-  , no                        // Surface normal
-  , rf                        // Reflected direction
+  , no = vec3(0,1,0)          // Surface normal - INIT
+  , rf = vec3(0)              // Reflected direction - INIT
   , ld                        // Lambert sampled direction
-  , nc
+  , nc = vec3(0,1,0)          // INIT
   ;
   
   sd=fract(hash(p)+TT);
@@ -311,7 +315,8 @@ vec4 fpass1(vec2 uv) {
 
 // Buffer C:
 vec4 fpass2(vec2 uv) {
-  return vec4(gb(BufferB, vec2(2.0, 0.0), uv), 1.);
+  float blurScale = blur_amt + blur_audio * syn_BassLevel;
+  return vec4(gb(BufferB, vec2(2.0, 0.0), uv, blurScale), 1.);
 }
 
 // void mainImage(out vec4 O, vec2 C) {
@@ -322,8 +327,9 @@ vec4 fpass2(vec2 uv) {
 
 // Buffer D:
 vec4 fpass3(vec2 uv) {
+  float blurScale = blur_amt + blur_audio * syn_BassLevel;
   vec3 pcol = texture(BufferD, uv).xyz;
-  return vec4(mix(gb(BufferC, vec2(0.0, 2.0), uv), pcol, 0.8), 1.);
+  return vec4(mix(gb(BufferC, vec2(0.0, 2.0), uv, blurScale), pcol, 0.8), 1.);
 }
 
 // void mainImage(out vec4 O, vec2 C) {
