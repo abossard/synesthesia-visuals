@@ -119,6 +119,9 @@ class VJSimsTile extends Tile {
 
     // Low-poly landscape with infinite scrolling biomes
     levels.add(new LowPolyLandscapeLevel());
+
+    // Isometric dark sci-fi world with procedural bases, spacecraft, and infrastructure
+    levels.add(new IsometricSciFiWorldLevel());
   }
 
   // === LEVEL MANAGEMENT ===
