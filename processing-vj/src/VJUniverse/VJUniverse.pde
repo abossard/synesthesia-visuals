@@ -236,8 +236,8 @@ void draw() {
   // Check for shader file changes (auto-reload)
   reloadShadersIfChanged();
   
-  // Clear background
-  background(0);
+  // Clear background (transparent for Syphon compositing)
+  background(0, 0);
   
   // ============================================
   // TILED MODE: Render all tiles, show preview grid
@@ -322,7 +322,7 @@ void drawMultiPassPipeline() {
   
   // First pass: render to buffer1
   source.beginDraw();
-  source.background(0);
+  source.background(0, 0);  // Transparent for Syphon compositing
   if (activeShaderPipeline.size() > 0) {
     PShader firstShader = activeShaderPipeline.get(0);
     applyShaderUniformsTo(firstShader, source);
@@ -340,7 +340,7 @@ void drawMultiPassPipeline() {
     target = temp;
     
     target.beginDraw();
-    target.background(0);
+    target.background(0, 0);  // Transparent for Syphon compositing
     PShader passShader = activeShaderPipeline.get(i);
     applyShaderUniformsTo(passShader, target);
     passShader.set("prevPass", source);  // Previous pass as texture

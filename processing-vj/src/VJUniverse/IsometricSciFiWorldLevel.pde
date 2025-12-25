@@ -277,15 +277,16 @@ class IsometricSciFiWorldLevel extends Level {
   void setupIsometricCamera(PGraphics pg) {
     // Orthographic projection for true isometric
     float aspect = (float)pg.width / pg.height;
-    float viewSize = 220;
+    float viewSize = 160;  // Smaller = more zoomed in, shows height better
     pg.ortho(-viewSize * aspect, viewSize * aspect, -viewSize, viewSize, -3000, 3000);
 
     // Center screen
     pg.translate(pg.width * 0.5, pg.height * 0.5, 0);
 
-    // Isometric angles - classic 2:1 ratio look
-    pg.rotateX(radians(60));
-    pg.rotateZ(radians(135) + sin(cameraAngle) * 0.03); // Subtle sway
+    // True isometric angle: arctan(1/sqrt(2)) ≈ 35.264 degrees
+    // Using ~40 degrees for slightly more dramatic view of heights
+    pg.rotateX(radians(40));  // Shallower tilt shows vertical heights better
+    pg.rotateY(radians(-45) + sin(cameraAngle) * 0.03);  // Diamond orientation with subtle sway
 
     // Scroll offset
     pg.translate(-scrollX, 0, -scrollZ);
@@ -372,8 +373,8 @@ class IsometricSciFiWorldLevel extends Level {
         SciFiTile t01 = chunk.tiles[x][z + 1];
         SciFiTile t11 = chunk.tiles[x + 1][z + 1];
 
-        // Audio modulation
-        float audioMod = audioPulse * 3 * noise(x * 0.2, z * 0.2);
+        // Audio modulation - more dramatic terrain breathing
+        float audioMod = audioPulse * 12 * noise(x * 0.15, z * 0.15);
 
         float x0 = x * TILE_SIZE;
         float x1 = (x + 1) * TILE_SIZE;
@@ -543,24 +544,24 @@ class IsometricSciFiWorldLevel extends Level {
 
     h = h / 1.55;
 
-    // Zone-specific terrain modifications
+    // Zone-specific terrain modifications - increased for more dramatic height variation
     switch (zone) {
       case ZONE_MOUNTAIN:
-        baseHeight = pow(h, 1.5) * 180 + 20;
+        baseHeight = pow(h, 1.3) * 250 + 40;  // More dramatic mountains
         break;
       case ZONE_SPACEPORT:
-        // Flat landing areas
-        baseHeight = 5 + h * 8;
+        // Flatter landing areas but still some variation
+        baseHeight = 15 + h * 25;
         break;
       case ZONE_MILITARY:
       case ZONE_INDUSTRIAL:
-        baseHeight = 10 + h * 25;
+        baseHeight = 20 + h * 60;  // More rolling terrain
         break;
       case ZONE_OUTPOST:
-        baseHeight = h * 40;
+        baseHeight = 10 + h * 80;  // Desert dunes/hills
         break;
       default:
-        baseHeight = h * 30;
+        baseHeight = h * 50;
     }
 
     return baseHeight;
@@ -867,7 +868,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Roof lights
     float glow = audioGlow * 0.5;
-    pg.emissive(glowOrange, glow * 80);
+    setEmissive(pg, glowOrange, glow * 80);
     pg.fill(glowOrange);
     for (int i = 0; i < 4; i++) {
       float zOff = -d/2 + 10 + i * d/3;
@@ -913,7 +914,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Blinking light
     float blink = (sin(worldTime * 4) + 1) * 0.5;
-    pg.emissive(glowRed, (blink + audioGlow) * 100);
+    setEmissive(pg, glowRed, (blink + audioGlow) * 100);
     pg.fill(glowRed);
     drawBox(pg, 0, -height - 6 - deckHeight - 32, 0, 4, 4, 4);
     pg.emissive(0);
@@ -956,7 +957,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Glow ring
     float glow = audioGlow * 0.6;
-    pg.emissive(glowTeal, glow * 100);
+    setEmissive(pg, glowTeal, glow * 100);
     pg.fill(glowTeal);
     drawCylinder(pg, 0, -6, 0, radius + 3, 1, 16);
     pg.emissive(0);
@@ -987,7 +988,7 @@ class IsometricSciFiWorldLevel extends Level {
     // Windows
     pg.fill(40, 50, 65);
     float winGlow = audioGlow * 0.3;
-    pg.emissive(glowBlue, winGlow * 60);
+    setEmissive(pg, glowBlue, winGlow * 60);
     drawBox(pg, w/4, -h * 0.6, d/2 + 0.5, 5, 4, 0.5);
     drawBox(pg, -w/4, -h * 0.6, d/2 + 0.5, 5, 4, 0.5);
     pg.emissive(0);
@@ -1078,7 +1079,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Status light
     float blink = (sin(worldTime * 3) + 1) * 0.5;
-    pg.emissive(glowRed, blink * 150);
+    setEmissive(pg, glowRed, blink * 150);
     pg.fill(glowRed);
     drawBox(pg, 0, -towerHeight - 12, 0, 3, 3, 3);
     pg.emissive(0);
@@ -1147,7 +1148,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Corner lights
     float glow = (sin(worldTime * 2) + 1) * 0.3 + audioGlow * 0.4;
-    pg.emissive(glowTeal, glow * 100);
+    setEmissive(pg, glowTeal, glow * 100);
     pg.fill(glowTeal);
     float offset = size/2 - 3;
     drawBox(pg, -offset, -5, -offset, 3, 6, 3);
@@ -1195,7 +1196,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Control panel (glowing)
     float panelGlow = audioGlow * 0.5 + 0.3;
-    pg.emissive(glowBlue, panelGlow * 80);
+    setEmissive(pg, glowBlue, panelGlow * 80);
     pg.fill(glowBlue);
     drawBox(pg, 0, -h * 0.6, d/2 + 0.5, 10, 6, 1);
     pg.emissive(0);
@@ -1249,7 +1250,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Top beacon
     float blink = (sin(worldTime * 5) + 1) * 0.5;
-    pg.emissive(glowRed, blink * 200);
+    setEmissive(pg, glowRed, blink * 200);
     pg.fill(glowRed);
     drawBox(pg, 0, -height - 12, 0, 3, 3, 3);
     pg.emissive(0);
@@ -1327,7 +1328,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Engine glow
     float glow = 0.5 + audioBass * 0.5;
-    pg.emissive(glowOrange, glow * 150);
+    setEmissive(pg, glowOrange, glow * 150);
     pg.fill(glowOrange);
     drawCylinder(pg, -5, -5, -20, 2, 3, 6);
     drawCylinder(pg, 5, -5, -20, 2, 3, 6);
@@ -1376,7 +1377,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Engine glow
     float glow = 0.4 + audioBass * 0.4;
-    pg.emissive(glowTeal, glow * 120);
+    setEmissive(pg, glowTeal, glow * 120);
     pg.fill(glowTeal);
     drawCylinder(pg, -25, -8, -20, 3, 3, 6);
     drawCylinder(pg, 25, -8, -20, 3, 3, 6);
@@ -1428,7 +1429,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Engine glow
     float glow = 0.5 + audioBass * 0.5;
-    pg.emissive(glowOrange, glow * 180);
+    setEmissive(pg, glowOrange, glow * 180);
     pg.fill(glowOrange);
     drawCylinder(pg, -10, -18, -60, 5, 5, 8);
     drawCylinder(pg, 10, -18, -60, 5, 5, 8);
@@ -1448,12 +1449,12 @@ class IsometricSciFiWorldLevel extends Level {
     drawBox(pg, 15, 0, -25, 6, 12, 6);
 
     // Navigation lights
-    pg.emissive(glowRed, 100);
+    setEmissive(pg, glowRed, 100);
     pg.fill(glowRed);
     drawBox(pg, -18, -35, 25, 2, 2, 2);
     pg.emissive(0);
 
-    pg.emissive(accentTeal, 100);
+    setEmissive(pg, accentTeal, 100);
     pg.fill(accentTeal);
     drawBox(pg, 18, -35, 25, 2, 2, 2);
     pg.emissive(0);
@@ -1499,7 +1500,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Headlights
     float glow = 0.3 + audioGlow * 0.3;
-    pg.emissive(glowOrange, glow * 80);
+    setEmissive(pg, glowOrange, glow * 80);
     pg.fill(accentYellow);
     drawBox(pg, -5, -8, 12.5, 2, 2, 1);
     drawBox(pg, 5, -8, 12.5, 2, 2, 1);
@@ -1551,7 +1552,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Status light
     float blink = (sin(worldTime * 4) + 1) * 0.5;
-    pg.emissive(glowTeal, blink * 150);
+    setEmissive(pg, glowTeal, blink * 150);
     pg.fill(glowTeal);
     drawBox(pg, 0, -3, 0, 2, 2, 2);
     pg.emissive(0);
@@ -1619,7 +1620,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Light (glowing)
     float glow = 0.4 + audioGlow * 0.4;
-    pg.emissive(glowOrange, glow * 150);
+    setEmissive(pg, glowOrange, glow * 150);
     pg.fill(glowOrange);
     drawBox(pg, 0, -22, 0, 5, 1, 5);
     pg.emissive(0);
@@ -1657,7 +1658,7 @@ class IsometricSciFiWorldLevel extends Level {
 
     // Tip light
     float blink = (sin(worldTime * 6) + 1) * 0.5;
-    pg.emissive(glowRed, blink * 100);
+    setEmissive(pg, glowRed, blink * 100);
     pg.fill(glowRed);
     drawBox(pg, 0, -23, 0, 1.5, 1.5, 1.5);
     pg.emissive(0);
@@ -1720,6 +1721,12 @@ class IsometricSciFiWorldLevel extends Level {
   // ═══════════════════════════════════════════════════════════════════════════
   // PRIMITIVE SHAPE HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
+
+  // Helper: emissive with intensity scaling (Processing doesn't support emissive(color, float))
+  void setEmissive(PGraphics pg, color c, float intensity) {
+    float scale = constrain(intensity / 255.0, 0, 1);
+    pg.emissive(red(c) * scale, green(c) * scale, blue(c) * scale);
+  }
 
   void drawBox(PGraphics pg, float x, float y, float z, float w, float h, float d) {
     pg.pushMatrix();

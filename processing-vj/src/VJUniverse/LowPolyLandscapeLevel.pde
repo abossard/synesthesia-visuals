@@ -173,9 +173,10 @@ class LowPolyLandscapeLevel extends Level {
     // Move to center of screen
     pg.translate(pg.width * 0.5, pg.height * 0.5, 0);
 
-    // Isometric rotation - scroll moves "up" the screen
-    pg.rotateX(radians(60));   // Tilt down more for better view
-    pg.rotateZ(radians(135));  // Rotated so movement goes up-screen
+    // True isometric: tilt down, then rotate around Y for diamond view
+    // This makes +Z scroll direction appear as left-to-right on screen
+    pg.rotateX(radians(55));  // Tilt down to see ground
+    pg.rotateY(radians(-45)); // Diamond orientation
 
     // Offset by scroll position to create movement
     pg.translate(-scrollX, 0, -scrollZ);
