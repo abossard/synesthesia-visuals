@@ -1071,6 +1071,9 @@ class VJConsoleApp(App):
             self._safe_update_panel("#playback-source", "connection_state", "idle")
             return
 
+        # Poll the controller for new data
+        self.textler_engine.tick()
+
         # Get snapshot and build data
         snapshot = self.textler_engine.get_snapshot()
         self._latest_snapshot = snapshot
