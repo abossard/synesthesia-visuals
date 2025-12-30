@@ -19,6 +19,9 @@ HashMap<String, ShaderAnalysis> shaderAnalyses = new HashMap<String, ShaderAnaly
 // Shader list (only GLSL shaders)
 ArrayList<ShaderInfo> glslShaders = new ArrayList<ShaderInfo>();
 
+// Mask shaders list (rating 4 only) - for dedicated MaskShaderTile
+ArrayList<ShaderInfo> maskShaders = new ArrayList<ShaderInfo>();
+
 // Error logging - accumulated errors written to errors.json
 ArrayList<String> shaderErrors = new ArrayList<String>();
 final String ERRORS_FILE = "errors.json";
@@ -30,6 +33,7 @@ final String ERRORS_FILE = "errors.json";
 void loadAllShaders() {
   availableShaders.clear();
   glslShaders.clear();
+  maskShaders.clear();
   shaderAnalyses.clear();
   shaderErrors.clear();
   
@@ -381,62 +385,82 @@ void loadShaderAnalyses() {
 }
 
 /**
- * Filter out rating=5 shaders and warn about rating=4 (mask candidates).
+ * Filter shaders by rating into separate lists:
+ *   - availableShaders: Only rating 1-2 (BEST/GOOD) for main ShaderTile
+ *   - maskShaders: Only rating 4 (MASK) for MaskShaderTile
+ *   - Rating 3 (NORMAL): Excluded until upgraded to 1-2
+ *   - Rating 5 (SKIP): Excluded completely
+ *
  * Rating meanings:
  *   1 = BEST (use often)
  *   2 = GOOD (special occasions)
- *   3 = NORMAL (working shader)
+ *   3 = NORMAL (working shader, needs rating)
  *   4 = MASK (usable as black/white mask)
  *   5 = SKIP (don't use)
  */
 void filterShadersByRating() {
-  ArrayList<ShaderInfo> filtered = new ArrayList<ShaderInfo>();
+  ArrayList<ShaderInfo> mainShaders = new ArrayList<ShaderInfo>();
+  ArrayList<ShaderInfo> masks = new ArrayList<ShaderInfo>();
+  ArrayList<String> normalShaders = new ArrayList<String>();
   ArrayList<String> skipped = new ArrayList<String>();
-  ArrayList<String> masks = new ArrayList<String>();
-  
+
   for (ShaderInfo shader : availableShaders) {
     ShaderAnalysis analysis = shaderAnalyses.get(shader.name);
     int rating = (analysis != null) ? analysis.getEffectiveRating() : 3;
-    
-    if (rating == 5) {
+
+    if (rating == 1 || rating == 2) {
+      // BEST/GOOD -> main shader tile
+      mainShaders.add(shader);
+    } else if (rating == 4) {
+      // MASK -> dedicated mask tile
+      masks.add(shader);
+    } else if (rating == 5) {
+      // SKIP -> exclude completely
       skipped.add(shader.name);
     } else {
-      filtered.add(shader);
-      if (rating == 4) {
-        masks.add(shader.name);
-      }
+      // NORMAL (3) -> excluded from display, needs rating
+      normalShaders.add(shader.name);
     }
   }
-  
-  // Update available shaders
-  availableShaders = filtered;
-  
+
+  // Update shader lists
+  availableShaders = mainShaders;
+  maskShaders = masks;
+
   // Log skipped shaders
   if (skipped.size() > 0) {
     println("[Rating] Skipped " + skipped.size() + " shaders with rating=5 (SKIP):");
     for (String name : skipped) {
-      println("  - " + name);
+      println("  ✗ " + name);
     }
   }
-  
-  // Warn about mask shaders
-  if (masks.size() > 0) {
-    println("[Rating] " + masks.size() + " shaders with rating=4 (MASK-only):");
-    for (String name : masks) {
-      println("  ◐ " + name);
+
+  // Log normal shaders (awaiting rating)
+  if (normalShaders.size() > 0) {
+    println("[Rating] " + normalShaders.size() + " shaders with rating=3 (NORMAL, awaiting upgrade):");
+    if (normalShaders.size() <= 10) {
+      for (String name : normalShaders) {
+        println("  ○ " + name);
+      }
+    } else {
+      println("  (first 10 shown)");
+      for (int i = 0; i < 10; i++) {
+        println("  ○ " + normalShaders.get(i));
+      }
     }
   }
-  
+
   // Stats summary
-  int best = 0, good = 0, normal = 0;
+  int best = 0, good = 0;
   for (ShaderInfo shader : availableShaders) {
     ShaderAnalysis analysis = shaderAnalyses.get(shader.name);
     int rating = (analysis != null) ? analysis.getEffectiveRating() : 3;
     if (rating == 1) best++;
     else if (rating == 2) good++;
-    else if (rating == 3) normal++;
   }
-  println("[Rating] Available: " + best + " BEST, " + good + " GOOD, " + normal + " NORMAL, " + masks.size() + " MASK");
+  println("[Rating] Main tile: " + best + " BEST + " + good + " GOOD = " + availableShaders.size() + " shaders");
+  println("[Rating] Mask tile: " + masks.size() + " MASK shaders");
+  println("[Rating] Excluded: " + normalShaders.size() + " NORMAL (need upgrade), " + skipped.size() + " SKIP");
 }
 
 // ============================================

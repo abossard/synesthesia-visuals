@@ -29,16 +29,6 @@ class Config:
     DEFAULT_OSC_HOST = "127.0.0.1"
     DEFAULT_OSC_PORT = 10000  # VJUniverse OSC port
     
-    # VirtualDJ paths to search (in order of priority)
-    VDJ_SEARCH_PATHS = [
-        Path.home() / "Library" / "Application Support" / "VirtualDJ" / "History" / "tracklist.txt",  # macOS standard
-        Path.home() / "Documents" / "VirtualDJ" / "History" / "tracklist.txt",
-        Path.home() / "Documents" / "VirtualDJ" / "History" / "now_playing.txt",
-        Path.home() / "Documents" / "VirtualDJ" / "now_playing.txt", 
-        Path.home() / "Music" / "VirtualDJ" / "now_playing.txt",
-        Path("/tmp") / "virtualdj_now_playing.txt",
-    ]
-    
     # Cache/state locations - stored in application folder
     APP_DATA_DIR = Path(__file__).parent / ".cache"
     DEFAULT_STATE_FILE = APP_DATA_DIR / "state.json"
@@ -54,14 +44,6 @@ class Config:
     # Spotify monitor feature flags (AppleScript enabled by default)
     SPOTIFY_WEBAPI_ENABLED = os.environ.get('SPOTIFY_WEBAPI_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
     SPOTIFY_APPLESCRIPT_ENABLED = os.environ.get('SPOTIFY_APPLESCRIPT_ENABLED', '1').lower() in ('1', 'true', 'yes', 'on')
-    
-    @classmethod
-    def find_vdj_path(cls) -> Optional[Path]:
-        """Auto-detect VirtualDJ now_playing.txt path."""
-        for path in cls.VDJ_SEARCH_PATHS:
-            if path.exists():
-                return path
-        return None
     
     @classmethod
     def get_spotify_credentials(cls) -> Dict[str, str]:
@@ -255,6 +237,7 @@ class Settings:
     # Valid playback source keys (must match PLAYBACK_SOURCES in adapters.py)
     VALID_PLAYBACK_SOURCES = [
         'spotify_applescript',
+        'vdj_osc',
     ]
     
     @property

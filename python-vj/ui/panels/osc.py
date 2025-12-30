@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual.widgets import Button, Input, Static
 
-from ui.messages import OSCClearRequested, VJUniverseTestRequested
+from ui.messages import OSCClearRequested, VJUniverseTestRequested, VDJTestRequested
 from .base import ReactivePanel
 
 
@@ -184,6 +184,7 @@ class OSCControlPanel(Static):
 
         yield Button("⟳ Clear Log", id="btn-osc-clear", variant="default")
         yield Button("🧪 Test VJUniverse", id="btn-vjuniverse-test", variant="primary")
+        yield Button("🎧 Test VDJ", id="btn-vdj-test", variant="warning")
         yield Static("", id="osc-status-label")
 
     def on_mount(self) -> None:
@@ -247,3 +248,5 @@ class OSCControlPanel(Static):
             self.post_message(OSCClearRequested())
         elif btn_id == "btn-vjuniverse-test":
             self.post_message(VJUniverseTestRequested())
+        elif btn_id == "btn-vdj-test":
+            self.post_message(VDJTestRequested())

@@ -59,11 +59,13 @@ class VDJMonitor:
     ]
     
     TIMEOUT_SEC = 5.0
+    STARTUP_GRACE_SEC = 3.0  # Grace period after start before reporting unavailable
     
     def __init__(self):
         self._state = VDJState()
         self._lock = threading.RLock()
         self._running = False
+        self._start_time: float = 0.0
     
     def start(self) -> bool:
         """Start monitor, subscribe to VDJ OSC."""
@@ -75,6 +77,7 @@ class VDJMonitor:
             osc.subscribe("/vdj/*", self._on_message)
             self._subscribe()
             self._running = True
+            self._start_time = time.time()
             logger.info(f"[VDJMonitor] Started on port {osc.receive_port}")
             return True
         except Exception as e:
@@ -94,11 +97,16 @@ class VDJMonitor:
     
     def get_playback(self) -> Optional[Dict[str, Any]]:
         """Get playback info for audible deck (TextlerEngine interface)."""
+        # Auto-start on first call (lazy initialization)
+        if not self._running:
+            self.start()
         with self._lock:
             if not self._is_connected():
                 return None
             deck = self._get_audible_deck()
-            if not deck or not deck.loaded or (not deck.artist and not deck.title):
+            # Don't require 'loaded' flag - VDJ sends empty string for False
+            # Instead, check if we have actual track info
+            if not deck or (not deck.artist and not deck.title):
                 return None
             return {
                 'artist': deck.artist,
@@ -116,6 +124,9 @@ class VDJMonitor:
     @property
     def status(self) -> Dict[str, Any]:
         """Monitor status for UI."""
+        # Auto-start on first access
+        if not self._running:
+            self.start()
         with self._lock:
             connected = self._is_connected()
             deck = self._get_audible_deck()
@@ -191,16 +202,29 @@ class VDJMonitor:
     def _get_audible_deck(self) -> Optional[VDJDeckState]:
         """Return audible deck (VDJ is_audible = playing + volume up)."""
         d1, d2 = self._state.deck1, self._state.deck2
+        # Check is_audible first (VDJ: playing AND volume up)
         if d1.is_audible and not d2.is_audible:
             return d1
         if d2.is_audible and not d1.is_audible:
             return d2
         if d1.is_audible and d2.is_audible:
             return d1  # Both audible, pick deck 1
-        # Fallback: any loaded
-        return d1 if d1.loaded else (d2 if d2.loaded else None)
+        # Fallback: any deck with track info (artist or title present)
+        d1_has_track = bool(d1.artist or d1.title)
+        d2_has_track = bool(d2.artist or d2.title)
+        if d1_has_track and not d2_has_track:
+            return d1
+        if d2_has_track and not d1_has_track:
+            return d2
+        # Both have tracks or neither - prefer deck 1
+        return d1 if d1_has_track else None
     
     def _is_connected(self) -> bool:
-        """Check if VDJ responded recently."""
+        """Check if VDJ responded recently, with startup grace period."""
+        # During startup grace period, assume connected (waiting for first message)
+        if self._start_time > 0:
+            elapsed = time.time() - self._start_time
+            if elapsed < self.STARTUP_GRACE_SEC:
+                return True  # Still in grace period
         t = self._state.last_message_time
         return t > 0 and (time.time() - t) < self.TIMEOUT_SEC

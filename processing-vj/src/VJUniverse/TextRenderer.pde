@@ -101,16 +101,18 @@ class TextRenderer {
   PFont currentFont;
   PFont hudFont;
   
-  // === DJ FONT PRESETS ===
+  // === DJ FONT PRESETS (Modern Readable) ===
   String[] djFonts = {
-    "Avenir Next Heavy",
-    "Futura Bold",
-    "DIN Condensed Bold",
-    "Impact",
-    "Phosphate"
+    "Avenir Next Medium",
+    "SF Pro Display Medium",
+    "Helvetica Neue Medium",
+    "Futura Medium",
+    "DIN Condensed",
+    "Open Sans SemiBold",
+    "Source Sans Pro SemiBold"
   };
   int djFontIndex = 0;
-  boolean useDJFonts = false;
+  boolean useDJFonts = true;  // Default to DJ fonts for better readability
   
   // === SETTINGS PERSISTENCE ===
   final String SETTINGS_FILE = "textler_font_settings.txt";
@@ -349,7 +351,63 @@ class TextRenderer {
     if (lines.size() == 0) lines.add("");
     return lines;
   }
-  
+
+  // === AUTO-SIZING (Pure Functions) ===
+
+  /**
+   * Calculate optimal font size to fit text within target width.
+   * Pure function: no side effects, returns optimal size.
+   *
+   * @param text     Text to measure
+   * @param pg       Graphics context for measurement
+   * @param maxWidth Target width to fit
+   * @param minSize  Minimum acceptable size
+   * @param maxSize  Maximum acceptable size
+   * @return Optimal font size that fits within maxWidth
+   */
+  int calcAutoFitFontSize(String text, PGraphics pg, float maxWidth, int minSize, int maxSize) {
+    if (text == null || text.isEmpty()) return maxSize;
+
+    for (int size = maxSize; size >= minSize; size--) {
+      pg.textSize(size);
+      if (pg.textWidth(text) <= maxWidth) {
+        return size;
+      }
+    }
+    return minSize;
+  }
+
+  /**
+   * Calculate optimal font size for a multi-line text block.
+   * Returns the smallest size that fits all lines within maxWidth.
+   *
+   * @param lines    Array of text lines
+   * @param pg       Graphics context for measurement
+   * @param maxWidth Target width to fit
+   * @param minSize  Minimum acceptable size
+   * @param maxSize  Maximum acceptable size
+   * @return Optimal font size that fits all lines
+   */
+  int calcAutoFitBlockSize(String[] lines, PGraphics pg, float maxWidth, int minSize, int maxSize) {
+    if (lines == null || lines.length == 0) return maxSize;
+
+    int optimalSize = maxSize;
+    for (String line : lines) {
+      if (line == null || line.isEmpty()) continue;
+      int lineSize = calcAutoFitFontSize(line, pg, maxWidth, minSize, maxSize);
+      optimalSize = min(optimalSize, lineSize);
+    }
+    return optimalSize;
+  }
+
+  /**
+   * Calculate line height based on font size.
+   * Uses 1.4 multiplier for good readability.
+   */
+  float calcLineHeight(int fontSize) {
+    return fontSize * 1.4;
+  }
+
   // === DRAWING HELPERS ===
   
   void drawWrappedLines(PGraphics pg, ArrayList<String> lines, float centerX, float startY, float lineHeight) {

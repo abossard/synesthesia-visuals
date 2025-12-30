@@ -39,10 +39,19 @@ from textual.screen import ModalScreen
 from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
-from textler_engine import TextlerEngine, Config as TextlerConfig, SongCategories, get_active_line_index, PLAYBACK_SOURCES
-from domain import PlaybackSnapshot, PlaybackState
+from services import VJController
+from domain_types import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
 from osc import osc, osc_monitor
+
+# For compatibility - import PLAYBACK_SOURCES and SongCategories from textler_engine
+# TODO: move these to proper locations
+try:
+    from textler_engine import PLAYBACK_SOURCES, SongCategories, get_active_line_index
+except ImportError:
+    PLAYBACK_SOURCES = {"spotify_applescript": {"label": "Spotify"}, "vdj_osc": {"label": "VirtualDJ"}}
+    SongCategories = None
+    get_active_line_index = lambda lines, pos: -1
 
 # Launchpad control (replaces MIDI Router)
 try:
@@ -79,7 +88,7 @@ logger = logging.getLogger('vj_console')
 
 # Import UI components and utilities from refactored modules
 from ui import (
-    OSCClearRequested, PlaybackSourceChanged, VJUniverseTestRequested,
+    OSCClearRequested, PlaybackSourceChanged, VJUniverseTestRequested, VDJTestRequested,
     ShaderSearchModal,
     StartupControlPanel, OSCControlPanel, OSCPanel,
     NowPlayingPanel, PlaybackSourcePanel,
@@ -90,7 +99,7 @@ from ui import (
     ShaderActionsPanel,
 )
 from data.builders import build_track_data, build_pipeline_data, build_categories_payload
-from services import ProcessMonitor, ShaderAnalysisWorker
+from services import ProcessMonitor, ProcessStats, ShaderAnalysisWorker
 
 # ============================================================================
 # MAIN APPLICATION
@@ -261,7 +270,7 @@ class VJConsoleApp(App):
             "java",  # Processing apps run as Java
         ])
         
-        self.textler_engine: Optional[TextlerEngine] = None
+        self.textler_engine: Optional[VJController] = None
         self._logs: List[str] = []
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
@@ -495,34 +504,101 @@ class VJConsoleApp(App):
         """Handle VJUniverse test request - send multiple OSC messages to test all features."""
         self._run_vjuniverse_test()
 
-    def _run_vjuniverse_test(self) -> None:
+    def on_vdj_test_requested(self, message: VDJTestRequested) -> None:
+        """Handle VDJ OSC connection test request."""
+        self._run_vdj_test()
+
+    def _run_vdj_test(self) -> None:
         """
-        Send multiple OSC messages to VJUniverse to test all features.
+        Test VirtualDJ OSC connection by sending queries and checking responses.
+        
+        VDJ OSC Requirements:
+        - VirtualDJ PRO license with OSC enabled
+        - Settings: oscPort=9009, oscPortBack=9999
         
         Tests:
-        - Track info display
-        - Lyrics lines and active line
-        - Refrain display
-        - Text slots (title, subtitle, footer) with intent defaults
-        - DJ font presets and cycling
-        - Broadcast message
-        - Shader loading
-        - Timed messages with fade
+        1. Check if VDJ process is running
+        2. Send OSC query to VDJ and wait for response
+        3. Report connection status and deck info
         """
+        import time
+        import subprocess
         from osc import osc
-        from textler_engine import get_slot_defaults_osc, TEXT_INTENT_DEFAULTS
+        from vdj_monitor import VDJMonitor
         
         if not osc.is_started:
             self.notify("OSC Hub not running!", severity="error")
             return
         
-        logger.info("Starting VJUniverse test sequence...")
-        self.notify("Sending test messages to VJUniverse...", severity="information")
+        logger.info("=== VDJ Connection Test ===")
+        self.notify("Testing VDJ connection...", severity="information")
         
-        # Helper to send via textler channel
-        def send(addr: str, *args):
-            osc.textler.send(addr, *args)
-            logger.debug(f"Test OSC: {addr} {args}")
+        # 1. Check if VDJ process is running
+        try:
+            result = subprocess.run(['pgrep', '-f', 'VirtualDJ'], capture_output=True, timeout=2)
+            vdj_running = result.returncode == 0
+        except Exception:
+            vdj_running = False
+        
+        if not vdj_running:
+            msg = "❌ VirtualDJ is NOT running"
+            logger.warning(msg)
+            self.notify(msg, severity="error")
+            return
+        
+        logger.info("✓ VirtualDJ process is running")
+        
+        # 2. Check OSC channel status
+        channel_status = osc.get_channel_status()
+        vdj_channel = channel_status.get("vdj", {})
+        logger.info(f"VDJ OSC channel: send_port={vdj_channel.get('send_port')}, recv_port={vdj_channel.get('recv_port')}, active={vdj_channel.get('active')}")
+        
+        # 3. Send test query to VDJ
+        logger.info("Sending OSC queries to VDJ on port 9009...")
+        
+        # Subscribe to deck 1 info and query it
+        for verb in ["get_title", "get_artist", "is_audible", "play", "loaded"]:
+            osc.vdj.send(f"/vdj/subscribe/deck/1/{verb}")
+            osc.vdj.send(f"/vdj/query/deck/1/{verb}")
+        
+        # 4. Check TextlerEngine's VDJ monitor status
+        if self.textler_engine:
+            # Access the internal VDJ monitor if available
+            playback_coord = getattr(self.textler_engine, '_playback_coord', None)
+            if playback_coord:
+                monitor = getattr(playback_coord, '_monitor', None)
+                if monitor and hasattr(monitor, 'status'):
+                    status = monitor.status
+                    logger.info(f"VDJ Monitor status: {status}")
+                    
+                    if status.get('available'):
+                        audible_deck = status.get('audible_deck')
+                        bpm = status.get('bpm', 0)
+                        msg = f"✓ VDJ Connected! Deck {audible_deck} at {bpm:.1f} BPM"
+                        logger.info(msg)
+                        self.notify(msg, severity="information")
+                        return
+        
+        # 5. Wait briefly and check for response
+        time.sleep(0.5)
+        
+        # Check if we received any VDJ messages
+        from osc import osc_monitor
+        recent_vdj = [m for m in osc_monitor.get_aggregated() if 'vdj' in m.channel.lower()]
+        
+        if recent_vdj:
+            msg = f"✓ VDJ responding! Got {len(recent_vdj)} message types"
+            logger.info(msg)
+            for m in recent_vdj[:5]:
+                logger.info(f"  {m.address}: {m.last_args}")
+            self.notify(msg, severity="information")
+        else:
+            msg = "⚠️ VDJ running but NO OSC response. Check VDJ Settings: oscPort=9009, oscPortBack=9999"
+            logger.warning(msg)
+            logger.warning("In VirtualDJ: Settings → Options → internet")
+            logger.warning("  - Set: oscPort=9009 (VDJ listens)")
+            logger.warning("  - Set: oscPortBack=9999 (VDJ sends replies)")
+            self.notify(msg, severity="warning")
         
         # 1. Set track info: [active, source, artist, title, album, duration, has_lyrics]
         send("/textler/track", 1, "test", "Test Artist", "Test Song Title", "Test Album 2024", 180.0, 1)
@@ -656,25 +732,31 @@ class VJConsoleApp(App):
     def on_playback_source_changed(self, event: PlaybackSourceChanged) -> None:
         """Handle playback source change from radio buttons."""
         if self.textler_engine:
-            self.textler_engine.set_playback_source(event.source_key)
-            self._logs.append(f"Switched playback source to: {event.source_key}")
+            # Map old source keys to new display names
+            source_map = {"spotify_applescript": "Spotify", "vdj_osc": "VirtualDJ"}
+            display_name = source_map.get(event.source_key, event.source_key)
+            self.textler_engine.set_source(display_name)
+            self._logs.append(f"Switched playback source to: {display_name}")
 
     # === Actions (impure, side effects) ===
     
     def _start_textler(self) -> None:
-        """Start the textler engine."""
+        """Start the VJ controller (replaces textler engine)."""
         if self.textler_engine is not None:
             return  # Already running
         try:
-            self.textler_engine = TextlerEngine()
+            self.textler_engine = VJController()
             # Activate the selected playback source if one is configured
             source = self.settings.playback_source
             if source:
-                self.textler_engine.set_playback_source(source)
+                # Map old source keys to new display names
+                source_map = {"spotify_applescript": "Spotify", "vdj_osc": "VirtualDJ"}
+                display_name = source_map.get(source, source)
+                self.textler_engine.set_source(display_name)
             self.textler_engine.start()
-            logger.info("Textler engine started")
+            logger.info("VJ Controller started")
         except Exception as e:
-            logger.exception(f"Textler start error: {e}")
+            logger.exception(f"VJ Controller start error: {e}")
     
     def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
         """Run a subprocess, return True if successful."""
@@ -1157,7 +1239,7 @@ class VJConsoleApp(App):
             self._run_process(['pkill', '-x', 'Synesthesia'])
         else:
             subprocess.Popen(['open', '-a', 'Synesthesia'])
-        self._check_apps()
+        self._check_apps_and_autorestart()
     
     def action_shader_toggle_analysis(self) -> None:
         """Toggle shader analysis pause/resume (p key)."""

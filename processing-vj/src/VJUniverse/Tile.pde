@@ -731,49 +731,67 @@ class TextlerMultiTile extends Tile {
   void renderLyrics() {
     buffer.beginDraw();
     buffer.background(0, 0);  // Transparent
-    
+
     if (textRenderer != null && lyricsState.activeIndex >= 0) {
       PFont font = textRenderer.getFont();
-      int fontSize = textRenderer.getFontSize();
-      float lineHeight = fontSize * 1.4;
-      float maxWidth = buffer.width * 0.88;
-      
+      int baseFontSize = textRenderer.getFontSize();
+      float maxWidth = buffer.width * 0.92;  // More margin for clean look
+      float margin = buffer.width * 0.04;
+
       buffer.textFont(font);
       buffer.textAlign(CENTER, CENTER);
-      
+
       int activeIdx = lyricsState.activeIndex;
-      
-      // Previous line (dim)
-      if (activeIdx > 0 && activeIdx - 1 < lyricsState.lines.size()) {
-        String prevText = lyricsState.lines.get(activeIdx - 1).text;
-        buffer.fill(255, lyricsState.textOpacity * 0.4);
-        buffer.textSize(fontSize * 0.8);
-        buffer.text(prevText, buffer.width / 2, buffer.height * 0.3);
+
+      // Gather all lines for auto-sizing calculation
+      String prevText = (activeIdx > 0 && activeIdx - 1 < lyricsState.lines.size())
+                        ? lyricsState.lines.get(activeIdx - 1).text : "";
+      String currText = (activeIdx >= 0 && activeIdx < lyricsState.lines.size())
+                        ? lyricsState.lines.get(activeIdx).text : "";
+      String nextText = (activeIdx + 1 < lyricsState.lines.size())
+                        ? lyricsState.lines.get(activeIdx + 1).text : "";
+
+      // Auto-size based on longest line (modern readable approach)
+      int autoSize = textRenderer.calcAutoFitBlockSize(
+        new String[]{prevText, currText, nextText},
+        buffer, maxWidth, 28, baseFontSize * 2
+      );
+      autoSize = min(autoSize, 96);  // Cap at 96px for readability
+
+      float lineHeight = autoSize * 1.5;  // Generous line spacing
+
+      // === VISUAL HIERARCHY ===
+
+      // Previous line: 70% size, 35% opacity, positioned higher
+      if (!prevText.isEmpty()) {
+        buffer.fill(255, lyricsState.textOpacity * 0.35);
+        buffer.textSize(autoSize * 0.7);
+        buffer.text(prevText, buffer.width / 2, buffer.height * 0.28);
       }
-      
-      // Current line (bright)
-      if (activeIdx >= 0 && activeIdx < lyricsState.lines.size()) {
-        String currText = lyricsState.lines.get(activeIdx).text;
+
+      // Current line: FULL size, FULL opacity, centered with text wrapping
+      if (!currText.isEmpty()) {
         buffer.fill(255, lyricsState.textOpacity);
-        buffer.textSize(fontSize * 1.1);
+        buffer.textSize(autoSize);
+
+        // Wrap if needed for long lines
         ArrayList<String> wrapped = textRenderer.wrapText(currText, buffer, maxWidth);
         float startY = buffer.height * 0.5 - (wrapped.size() - 1) * lineHeight * 0.5;
         for (int i = 0; i < wrapped.size(); i++) {
           buffer.text(wrapped.get(i), buffer.width / 2, startY + i * lineHeight);
         }
       }
-      
-      // Next line (dim)
-      if (activeIdx + 1 < lyricsState.lines.size()) {
-        String nextText = lyricsState.lines.get(activeIdx + 1).text;
-        buffer.fill(255, lyricsState.textOpacity * 0.4);
-        buffer.textSize(fontSize * 0.8);
-        buffer.text(nextText, buffer.width / 2, buffer.height * 0.7);
+
+      // Next line: 70% size, 25% opacity, positioned lower
+      if (!nextText.isEmpty()) {
+        buffer.fill(255, lyricsState.textOpacity * 0.25);
+        buffer.textSize(autoSize * 0.7);
+        buffer.text(nextText, buffer.width / 2, buffer.height * 0.72);
       }
-      
+
       textRenderer.drawBroadcast(buffer);
     }
-    
+
     buffer.endDraw();
   }
   

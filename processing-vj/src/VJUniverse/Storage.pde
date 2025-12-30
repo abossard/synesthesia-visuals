@@ -532,3 +532,100 @@ HashMap<String, Float> extractFeaturesObject(String json) {
   
   return features;
 }
+
+// ============================================
+// SHADER FILE MOVEMENT (Rate Mode)
+// ============================================
+
+/**
+ * Move shader file based on rating (when rate mode is active).
+ * Creates target folders if they don't exist.
+ *
+ * Rating destinations:
+ *   1-2: Keep in glsl/ (no move)
+ *   3:   Move to neutral/
+ *   4:   Move to masks/
+ *   5:   Move to trash/
+ *
+ * @param shaderName Name of the shader to move
+ * @param rating     New rating (1-5)
+ * @return true if file was moved, false if kept in place or error
+ */
+boolean moveShaderByRating(String shaderName, int rating) {
+  // Rating 1-2: Keep in place (BEST/GOOD shaders stay)
+  if (rating <= 2) {
+    println("[RateMode] Keeping " + shaderName + " in glsl/ (rating " + rating + ")");
+    return false;
+  }
+
+  // Find shader info to get file path
+  ShaderInfo shaderInfo = null;
+  for (ShaderInfo info : glslShaders) {
+    if (info.name.equals(shaderName)) {
+      shaderInfo = info;
+      break;
+    }
+  }
+
+  if (shaderInfo == null) {
+    println("[RateMode] Shader not found: " + shaderName);
+    return false;
+  }
+
+  // Get source file path
+  String sourcePath = dataPath(shaderInfo.path);
+  File sourceFile = new File(sourcePath);
+
+  if (!sourceFile.exists()) {
+    println("[RateMode] Source file not found: " + sourcePath);
+    return false;
+  }
+
+  // Determine destination folder based on rating
+  String destFolderName;
+  switch (rating) {
+    case 3:
+      destFolderName = "neutral";
+      break;
+    case 4:
+      destFolderName = "masks";
+      break;
+    case 5:
+      destFolderName = "trash";
+      break;
+    default:
+      return false;
+  }
+
+  // Create destination directory if needed
+  File destDir = new File(dataPath(SHADERS_PATH + "/" + destFolderName));
+  if (!destDir.exists()) {
+    if (destDir.mkdirs()) {
+      println("[RateMode] Created folder: " + destFolderName + "/");
+    } else {
+      println("[RateMode] Failed to create folder: " + destFolderName + "/");
+      return false;
+    }
+  }
+
+  // Move shader file
+  File destFile = new File(destDir, sourceFile.getName());
+  try {
+    Files.move(sourceFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    println("[RateMode] Moved " + shaderName + " -> " + destFolderName + "/");
+
+    // Also move .analysis.json if it exists
+    String analysisName = sourceFile.getName().replaceAll("\\.(frag|txt|glsl)$", ".analysis.json");
+    File analysisSource = new File(sourceFile.getParent(), analysisName);
+    if (analysisSource.exists()) {
+      File analysisDest = new File(destDir, analysisName);
+      Files.move(analysisSource.toPath(), analysisDest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+      println("[RateMode] Moved analysis file -> " + destFolderName + "/");
+    }
+
+    return true;
+  } catch (Exception e) {
+    println("[RateMode] Error moving file: " + e.getMessage());
+    return false;
+  }
+}

@@ -104,6 +104,10 @@ boolean synthMouseEnabled = true;  // Default ON
 float synthMouseBlend = 0.85;      // Blend: 0 = real mouse, 1 = full synthetic
 float synthMouseSpeed = 0.3;       // Base figure-8 rotation speed
 
+// Shader rate mode (Q key toggle)
+// When enabled, rating actions move files instead of just updating metadata
+boolean shaderRateModeActive = false;
+
 // ============================================
 // TEXTLER SYSTEM (Multiplexed Tiles)
 // ============================================
@@ -159,51 +163,113 @@ void setup() {
 
   // Initialize Textler system
   initTextlerSystem();
-  
+
   // Schedule auto-screenshot for testing
   autoScreenshotTime = AUTO_SCREENSHOT_DELAY;
   println("[AUTO] Screenshot scheduled in " + AUTO_SCREENSHOT_DELAY + " seconds");
-  
+
+  // Print keyboard shortcuts cheatsheet
+  printKeyboardShortcuts();
+
+  println("");
   println("VJUniverse initialized");
-  println("Shaders found: " + availableShaders.size());
+  println("Shaders: " + availableShaders.size() + " (main) + " + maskShaders.size() + " (masks)");
   println("OSC listening on port: " + OSC_PORT);
   println("Tiles: " + tileManager.getTileCount());
+  println("");
+}
+
+// ============================================
+// KEYBOARD SHORTCUTS CHEATSHEET
+// ============================================
+
+void printKeyboardShortcuts() {
+  println("");
+  println("========================================");
+  println("   VJUniverse Keyboard Shortcuts");
+  println("========================================");
+  println("");
+  println("=== SHADER NAVIGATION ===");
+  println("  N / P       Next / Previous shader");
+  println("  Space       Reload current shader");
+  println("  r           Reload all shaders");
+  println("  R           Start shader cycling (auto-rotate)");
+  println("");
+  println("=== SHADER RATING ===");
+  println("  K           Rate BEST (1) + next shader");
+  println("  S           Rate SKIP (5) + next shader");
+  println("  + / -       Increase / decrease rating");
+  println("  Shift+1-5   Set exact rating (!@#$%)");
+  println("              1=BEST 2=GOOD 3=NORMAL 4=MASK 5=SKIP");
+  println("  Q           Toggle RATE MODE (moves files!)");
+  println("");
+  println("=== TILE NAVIGATION ===");
+  println("  0           Show all tiles (grid view)");
+  println("  1-9         Focus single tile (fullscreen)");
+  println("  V           Toggle tiled/legacy mode");
+  println("");
+  println("=== VISUALS ===");
+  println("  D           Toggle debug overlay");
+  println("  B           Toggle audio bars display");
+  println("  C           Toggle audio controls");
+  println("  M           Toggle synthetic mouse");
+  println("  Z / Shift+Z Zoom out / in shader");
+  println("  X           Reset zoom and pan");
+  println("  Arrows      Pan shader view");
+  println("");
+  println("=== TEXT / FONTS ===");
+  println("  F           Cycle font");
+  println("  G           Cycle font size");
+  println("  T           Start typing broadcast message");
+  println("");
+  println("=== IMAGES ===");
+  println("  I           Load example images folder");
+  println("");
+  println("=== SYSTEM ===");
+  println("  Enter       Open console");
+  println("  ESC         Close console / cancel typing");
+  println("");
+  println("========================================");
 }
 
 /**
  * Initialize Textler system - tiles, text renderer, and state
- * 
+ *
  * Syphon outputs:
- * - VJUniverse/Shader   - Shader visuals
+ * - VJUniverse/Shader   - Shader visuals (rating 1-2 only)
+ * - VJUniverse/Mask     - Mask shaders (rating 4)
  * - VJUniverse/Lyrics   - Main lyrics (prev/current/next)
  * - VJUniverse/Refrain  - Chorus/refrain text (larger)
  * - VJUniverse/SongInfo - Artist/title display
  * - VJUniverse/VJSims   - Procedural levels
  * - VJUniverse/Image    - Image display with crossfade & beat cycling
- * 
+ *
  * TextlerMultiTile manages 3 Syphon outputs in a single tile for compact preview.
  */
 void initTextlerSystem() {
   // Create text renderer
   textRenderer = new TextRenderer(this);
-  
+
   // Create tile manager
   tileManager = new TileManager(this);
-  
-  // 1. Shader tile (full resolution shader rendering)
+
+  // 1. Shader tile (full resolution shader rendering - rating 1-2 only)
   tileManager.addTile(new ShaderTile());
-  
-  // 2. Textler multi-output tile (Lyrics + Refrain + SongInfo = 3 Syphons in 1 tile)
+
+  // 2. Mask shader tile (rating 4 shaders - dedicated Syphon output)
+  tileManager.addTile(new MaskShaderTile());
+
+  // 3. Textler multi-output tile (Lyrics + Refrain + SongInfo = 3 Syphons in 1 tile)
   tileManager.addTile(new TextlerMultiTile(textRenderer));
 
-  // 3. VJSims tile (42 procedural levels)
+  // 4. VJSims tile (42 procedural levels)
   tileManager.addTile(new VJSimsTile());
-  
-  // 4. Image tile (crossfade, folder beat-cycling)
+
+  // 5. Image tile (crossfade, folder beat-cycling)
   tileManager.addTile(new ImageTile());
 
   println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
-  println("  Syphon outputs: Shader, Lyrics, Refrain, SongInfo, VJSims, Image");
+  println("  Syphon outputs: Shader, Mask, Lyrics, Refrain, SongInfo, VJSims, Image");
 }
 
 // ============================================
@@ -814,6 +880,22 @@ void keyPressed() {
       synthMouseEnabled = !synthMouseEnabled;
       println("Synthetic mouse: " + (synthMouseEnabled ? "ON" : "OFF"));
       break;
+    case 'q':
+    case 'Q':
+      // Toggle shader rate mode (moves files when rating)
+      shaderRateModeActive = !shaderRateModeActive;
+      if (shaderRateModeActive) {
+        println("[RATE MODE] ACTIVE - Ratings will MOVE shader files!");
+        println("  Rating 1-2: Keep in glsl/");
+        println("  Rating 3: Move to neutral/");
+        println("  Rating 4: Move to masks/");
+        println("  Rating 5: Move to trash/");
+        consoleLog("RATE MODE ON - Files will move!");
+      } else {
+        println("[RATE MODE] OFF - Ratings only update metadata");
+        consoleLog("Rate mode OFF");
+      }
+      break;
     case 'i':
     case 'I':
       // Load example images folder into ImageTile
@@ -1018,7 +1100,23 @@ void drawDebugOverlay() {
   // Controls hint at bottom
   fill(150);
   textSize(12);
-  text("D=debug N/P=shader K=keep S=skip !@#$%=rate Y=type V=tiles 0-9=focus", 20, height - 25);
+  text("D=debug N/P=shader K=keep S=skip !@#$%=rate Q=ratemode V=tiles 0-9=focus", 20, height - 25);
+
+  // Rate mode indicator (prominent warning at top-right when active)
+  if (shaderRateModeActive) {
+    pushStyle();
+    textAlign(RIGHT, TOP);
+    textSize(18);
+    // Pulsing red background
+    float pulse = (sin(globalTime * 4) + 1) * 0.5;
+    fill(180, 0, 0, 200 + pulse * 55);
+    noStroke();
+    rect(width - 260, 10, 250, 30, 5);
+    // White text
+    fill(255);
+    text("RATE MODE: FILES WILL MOVE", width - 20, 16);
+    popStyle();
+  }
 }
 
 // ============================================
@@ -1187,6 +1285,11 @@ int getRatingColor(int rating) {
 /**
  * Set rating of current shader to exact value.
  * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
+ *
+ * When shaderRateModeActive is true, ratings 3-5 will MOVE the shader file:
+ *   3 -> neutral/
+ *   4 -> masks/
+ *   5 -> trash/
  */
 void setCurrentShaderRating(int rating) {
   ShaderInfo current = getCurrentShaderInfo();
@@ -1194,7 +1297,7 @@ void setCurrentShaderRating(int rating) {
     println("[Rating] No current shader");
     return;
   }
-  
+
   ShaderAnalysis analysis = shaderAnalyses.get(current.name);
   if (analysis == null) {
     // Create minimal analysis for rating-only
@@ -1202,22 +1305,42 @@ void setCurrentShaderRating(int rating) {
     shaderAnalyses.put(current.name, analysis);
     println("[Rating] Created minimal analysis for: " + current.name);
   }
-  
+
   int newRating = constrain(rating, 1, 5);
-  saveShaderRating(current.name, newRating);
-  
+  String shaderName = current.name;
+
+  // Save rating to analysis file first
+  saveShaderRating(shaderName, newRating);
+
   // Trigger visual feedback
   lastRatingLabel = RATING_LABELS[newRating];
   lastRatingColor = getRatingColor(newRating);
   lastRatingTime = globalTime;
-  
-  consoleLog("★ " + current.name + ": " + RATING_LABELS[newRating]);
+
+  consoleLog("★ " + shaderName + ": " + RATING_LABELS[newRating]);
+
+  // If rate mode is active and rating is 3-5, move the file
+  if (shaderRateModeActive && newRating >= 3) {
+    boolean moved = moveShaderByRating(shaderName, newRating);
+    if (moved) {
+      consoleLog("Moved to " + (newRating == 3 ? "neutral" : newRating == 4 ? "masks" : "trash") + "/");
+      // Reload shaders to reflect the change
+      loadAllShaders();
+      // Advance to next shader (current one is gone)
+      if (availableShaders.size() > 0) {
+        currentShaderIndex = min(currentShaderIndex, availableShaders.size() - 1);
+        loadShaderByIndex(currentShaderIndex);
+      }
+    }
+  }
 }
 
 /**
  * Change rating of current shader by delta.
  * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
  * Delta: -1 = improve rating (lower number), +1 = worsen rating (higher number)
+ *
+ * When shaderRateModeActive is true, ratings 3-5 will MOVE the shader file.
  */
 void changeCurrentShaderRating(int delta) {
   ShaderInfo current = getCurrentShaderInfo();
@@ -1225,7 +1348,7 @@ void changeCurrentShaderRating(int delta) {
     println("[Rating] No current shader");
     return;
   }
-  
+
   ShaderAnalysis analysis = shaderAnalyses.get(current.name);
   if (analysis == null) {
     // Create minimal analysis for rating-only
@@ -1233,19 +1356,13 @@ void changeCurrentShaderRating(int delta) {
     shaderAnalyses.put(current.name, analysis);
     println("[Rating] Created minimal analysis for: " + current.name);
   }
-  
+
   int oldRating = analysis.getEffectiveRating();
   int newRating = constrain(oldRating + delta, 1, 5);
-  
+
   if (newRating != oldRating) {
-    saveShaderRating(current.name, newRating);
-    
-    // Trigger visual feedback
-    lastRatingLabel = RATING_LABELS[newRating];
-    lastRatingColor = getRatingColor(newRating);
-    lastRatingTime = globalTime;
-    
-    consoleLog("★ " + current.name + ": " + RATING_LABELS[newRating]);
+    // Use setCurrentShaderRating to handle rate mode file movement
+    setCurrentShaderRating(newRating);
   }
 }
 

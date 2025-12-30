@@ -162,13 +162,7 @@ class TextlerEngine:
     Simple interface: start(), stop(), adjust_timing()
     """
     
-    def __init__(
-        self,
-        osc_host: Optional[str] = None,
-        osc_port: Optional[int] = None,
-        vdj_path: Optional[str] = None,
-        state_file: Optional[str] = None
-    ):
+    def __init__(self):
         # Settings
         self._settings = Settings()
         
@@ -280,14 +274,6 @@ class TextlerEngine:
     def _state(self):
         """Alias for current_state (backwards compatibility)."""
         return self.current_state
-    
-    @property
-    def _spotify(self):
-        """Access to Spotify monitor (for vj_console.py connection check)."""
-        for monitor in self._playback._monitors:
-            if isinstance(monitor, SpotifyMonitor):
-                return monitor
-        return None
     
     @property
     def current_lines(self):
@@ -984,10 +970,6 @@ OSC Channels:
   /textler/keywords/*   Key words only
 """
     )
-    parser.add_argument('--osc-host', default=Config.DEFAULT_OSC_HOST)
-    parser.add_argument('--osc-port', type=int, default=Config.DEFAULT_OSC_PORT)
-    parser.add_argument('--vdj-path', help='VirtualDJ now_playing.txt path (auto-detected)')
-    parser.add_argument('--state-file', help='State file path')
     parser.add_argument('--poll-interval', type=float, default=0.1)
     parser.add_argument('-v', '--verbose', action='store_true')
     
@@ -996,12 +978,7 @@ OSC Channels:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    engine = TextlerEngine(
-        osc_host=args.osc_host,
-        osc_port=args.osc_port,
-        vdj_path=args.vdj_path,
-        state_file=args.state_file,
-    )
+    engine = TextlerEngine()
     
     try:
         engine.run(args.poll_interval)

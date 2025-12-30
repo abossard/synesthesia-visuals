@@ -14,6 +14,11 @@ class VJUniverseTestRequested(Message):
     pass
 
 
+class VDJTestRequested(Message):
+    """Message posted when user requests VDJ OSC connection test."""
+    pass
+
+
 # Playback Messages
 class PlaybackSourceChanged(Message):
     """Message posted when playback source is changed."""

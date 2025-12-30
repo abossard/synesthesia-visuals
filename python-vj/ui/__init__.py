@@ -4,6 +4,7 @@ from .messages import (
     OSCClearRequested,
     PlaybackSourceChanged,
     VJUniverseTestRequested,
+    VDJTestRequested,
 )
 
 from .modals import ShaderSearchModal
@@ -33,6 +34,7 @@ __all__ = [
     "OSCClearRequested",
     "PlaybackSourceChanged",
     "VJUniverseTestRequested",
+    "VDJTestRequested",
     # Modals
     "ShaderSearchModal",
     # Panels
