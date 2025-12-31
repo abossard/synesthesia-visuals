@@ -48,25 +48,30 @@ class VDJState:
 
 
 class VDJMonitor:
-    """Minimal VirtualDJ OSC Monitor."""
+    """Minimal VirtualDJ OSC Monitor.
+    
+    Uses hybrid approach based on VDJ OSC behavior:
+    - SUBSCRIBE: Discrete events (track change, BPM change) - VDJ pushes these
+    - POLL: Continuous data (position, level) - VDJ doesn't push these
+    """
     
     monitor_key = "vdj_osc"
     monitor_label = "VirtualDJ (OSC)"
     
-    # Subscribe to frequently-updating values to keep connection alive
+    # Subscribe to discrete events (VDJ pushes "everytime it changes")
     DECK_SUBS = [
-        # Track info (changes on load)
         "get_title", "get_artist", "get_album", "get_key",
-        "get_songlength", "get_bpm",
-        # Playback state (changes frequently)
-        "play", "is_audible", "song_pos", "volume", "loaded",
-        "get_beat", "level",  # level changes constantly during playback
+        "get_songlength", "get_bpm", "loaded",
     ]
     
-    # Global subscriptions (not per-deck)
+    # Poll these on each get_playback() - VDJ doesn't push continuous data
+    DECK_POLLS = [
+        "song_pos", "volume", "is_audible", "play",
+    ]
+    
+    # Global subscriptions
     GLOBAL_SUBS = [
-        "crossfader",  # Changes when mixing
-        "masterlevel",  # Master output level
+        "crossfader",
     ]
     
     TIMEOUT_SEC = 30.0  # VDJ only sends on change, so use longer timeout
@@ -210,26 +215,23 @@ class VDJMonitor:
                 d.loaded = value not in (None, "", 0, "0", False)
     
     def _query_state(self):
-        """Query VDJ for current state (VDJ only responds to queries, not push)."""
-        # Query essential values for both decks
+        """Poll VDJ for continuous data (position, volume, audibility)."""
         for deck in (1, 2):
-            osc.vdj.send(f"/vdj/query/deck/{deck}/song_pos")
-            osc.vdj.send(f"/vdj/query/deck/{deck}/get_title")
-            osc.vdj.send(f"/vdj/query/deck/{deck}/get_artist")
-            osc.vdj.send(f"/vdj/query/deck/{deck}/volume")
+            for verb in self.DECK_POLLS:
+                osc.vdj.send(f"/vdj/query/deck/{deck}/{verb}")
     
     def _subscribe(self):
-        """Subscribe to VDJ OSC updates (for change notifications)."""
-        # Per-deck subscriptions
+        """Subscribe to discrete events (track info, BPM) - VDJ pushes these."""
+        # Per-deck subscriptions for track metadata
         for deck in (1, 2):
             for verb in self.DECK_SUBS:
                 osc.vdj.send(f"/vdj/subscribe/deck/{deck}/{verb}")
-        # Global subscriptions (update frequently = keep-alive)
+        # Global subscriptions
         for verb in self.GLOBAL_SUBS:
             osc.vdj.send(f"/vdj/subscribe/{verb}")
-        # Query initial state
+        # Initial query for all values
         for deck in (1, 2):
-            for verb in self.DECK_SUBS:
+            for verb in self.DECK_SUBS + self.DECK_POLLS:
                 osc.vdj.send(f"/vdj/query/deck/{deck}/{verb}")
     
     def _unsubscribe(self):

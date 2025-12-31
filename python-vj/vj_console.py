@@ -39,7 +39,7 @@ from textual.screen import ModalScreen
 from rich.text import Text
 
 from process_manager import ProcessManager, ProcessingApp
-from services import VJController
+from textler_engine import TextlerEngine
 from domain_types import PlaybackSnapshot, PlaybackState
 from infrastructure import Settings
 from osc import osc, osc_monitor
@@ -270,7 +270,7 @@ class VJConsoleApp(App):
             "java",  # Processing apps run as Java
         ])
         
-        self.textler_engine: Optional[VJController] = None
+        self.textler_engine: Optional[TextlerEngine] = None
         self._logs: List[str] = []
         self._latest_snapshot: Optional[PlaybackSnapshot] = None
         self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
@@ -741,20 +741,17 @@ class VJConsoleApp(App):
     # === Actions (impure, side effects) ===
     
     def _start_textler(self) -> None:
-        """Start the VJ controller (replaces textler engine)."""
+        """Start the TextlerEngine."""
         if self.textler_engine is not None:
             return  # Already running
         try:
-            self.textler_engine = VJController()
+            self.textler_engine = TextlerEngine()
             # Activate the selected playback source if one is configured
             source = self.settings.playback_source
             if source:
-                # Map old source keys to new display names
-                source_map = {"spotify_applescript": "Spotify", "vdj_osc": "VirtualDJ"}
-                display_name = source_map.get(source, source)
-                self.textler_engine.set_source(display_name)
+                self.textler_engine.set_playback_source(source)
             self.textler_engine.start()
-            logger.info("VJ Controller started")
+            logger.info("TextlerEngine started")
         except Exception as e:
             logger.exception(f"VJ Controller start error: {e}")
     
@@ -1071,8 +1068,7 @@ class VJConsoleApp(App):
             self._safe_update_panel("#playback-source", "connection_state", "idle")
             return
 
-        # Poll the controller for new data
-        self.textler_engine.tick()
+        # TextlerEngine runs its own loop - just get the latest snapshot
 
         # Get snapshot and build data
         snapshot = self.textler_engine.get_snapshot()
