@@ -23,6 +23,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from infra import PipelineTracker
 from services.playback import PlaybackService, Playback
 from services.lyrics import LyricsService
 from services.output import OutputService
@@ -50,6 +51,7 @@ class VJController:
         self._playback = PlaybackService()
         self._lyrics = LyricsService()
         self._output = OutputService()
+        self._pipeline = PipelineTracker()
         
         # State
         self._running = False
@@ -58,6 +60,11 @@ class VJController:
         
         # Register for track changes
         self._playback.on_track_change(self._handle_track_change)
+    
+    @property
+    def pipeline(self) -> PipelineTracker:
+        """Pipeline tracker for UI display."""
+        return self._pipeline
     
     # =========================================================================
     # LIFECYCLE
@@ -113,6 +120,7 @@ class VJController:
             self._output.send_no_lyrics()
             self._last_track_key = ""
             self._last_active_index = -1
+            self._pipeline.reset()
             return
         
         track_key = f"{track.artist}|{track.title}".lower()
@@ -122,10 +130,41 @@ class VJController:
         self._last_track_key = track_key
         self._last_active_index = -1
         
+        # Reset pipeline for new track
+        self._pipeline.reset(f"{track.artist} - {track.title}")
+        
         logger.info(f"♪ {track.artist} - {track.title}")
         
-        # Load lyrics
+        # Mark detect_playback complete
+        self._pipeline.start("detect_playback")
+        self._pipeline.complete("detect_playback", f"{track.artist} - {track.title}")
+        
+        # Load lyrics (LyricsService will update pipeline)
+        self._pipeline.start("fetch_lyrics")
         has_lyrics = self._lyrics.load(track)
+        
+        if has_lyrics:
+            self._pipeline.complete("fetch_lyrics", f"{len(self._lyrics.lines)} lines")
+            
+            # Mark refrain detection
+            self._pipeline.start("detect_refrain")
+            refrain_count = len(self._lyrics.refrain_lines)
+            if refrain_count > 0:
+                self._pipeline.complete("detect_refrain", f"{refrain_count} refrain lines")
+            else:
+                self._pipeline.skip("detect_refrain", "No refrain detected")
+            
+            # Mark keyword extraction
+            self._pipeline.start("extract_keywords")
+            keywords = self._lyrics.keywords
+            if keywords:
+                self._pipeline.complete("extract_keywords", f"{len(keywords)} keywords")
+            else:
+                self._pipeline.skip("extract_keywords", "No keywords")
+        else:
+            self._pipeline.skip("fetch_lyrics", "No lyrics found")
+            self._pipeline.skip("detect_refrain", "No lyrics")
+            self._pipeline.skip("extract_keywords", "No lyrics")
         
         # Send to output
         self._output.send_track(track, has_lyrics=has_lyrics)

@@ -19,7 +19,8 @@
       "Bash(wc:*)",
       "Bash(grep:*)",
       "Bash(done)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(python vdj_subscription_test.py:*)"
     ],
     "deny": [],
     "ask": []

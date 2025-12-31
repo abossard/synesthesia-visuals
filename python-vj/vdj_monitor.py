@@ -35,6 +35,8 @@ class VDJDeckState:
     beat_intensity: float = 0.0
     volume: float = 1.0
     loaded: bool = False
+    _last_pos: float = 0.0  # For detecting position changes
+    _last_pos_time: float = 0.0  # When position last changed
 
 
 @dataclass
@@ -51,21 +53,32 @@ class VDJMonitor:
     monitor_key = "vdj_osc"
     monitor_label = "VirtualDJ (OSC)"
     
-    # Only subscribe to what we actually use
+    # Subscribe to frequently-updating values to keep connection alive
     DECK_SUBS = [
+        # Track info (changes on load)
         "get_title", "get_artist", "get_album", "get_key",
-        "get_songlength", "get_bpm", "get_beat",
+        "get_songlength", "get_bpm",
+        # Playback state (changes frequently)
         "play", "is_audible", "song_pos", "volume", "loaded",
+        "get_beat", "level",  # level changes constantly during playback
     ]
     
-    TIMEOUT_SEC = 5.0
+    # Global subscriptions (not per-deck)
+    GLOBAL_SUBS = [
+        "crossfader",  # Changes when mixing
+        "masterlevel",  # Master output level
+    ]
+    
+    TIMEOUT_SEC = 30.0  # VDJ only sends on change, so use longer timeout
     STARTUP_GRACE_SEC = 3.0  # Grace period after start before reporting unavailable
+    QUERY_INTERVAL_SEC = 4.0  # Re-query VDJ to keep connection alive
     
     def __init__(self):
         self._state = VDJState()
         self._lock = threading.RLock()
         self._running = False
         self._start_time: float = 0.0
+        self._last_query_time: float = 0.0
     
     def start(self) -> bool:
         """Start monitor, subscribe to VDJ OSC."""
@@ -100,6 +113,10 @@ class VDJMonitor:
         # Auto-start on first call (lazy initialization)
         if not self._running:
             self.start()
+        
+        # Query VDJ for fresh data on each poll (VDJ doesn't push continuously)
+        self._query_state()
+        
         with self._lock:
             if not self._is_connected():
                 return None
@@ -173,21 +190,43 @@ class VDJMonitor:
             elif verb == "get_beat":
                 d.beat_intensity = float(value) if value else 0.0
             elif verb == "play":
-                d.is_playing = bool(value)
+                # VDJ sends "1" for playing, "" for stopped
+                d.is_playing = value not in (None, "", 0, "0", False)
             elif verb == "is_audible":
-                d.is_audible = bool(value)
+                d.is_audible = value not in (None, "", 0, "0", False)
             elif verb == "song_pos":
-                d.position = float(value) if value else 0.0
+                new_pos = float(value) if value else 0.0
+                now = time.time()
+                # Infer playing from position changing (VDJ doesn't always send play state)
+                if abs(new_pos - d._last_pos) > 0.001:
+                    d._last_pos = new_pos
+                    d._last_pos_time = now
+                    d.is_playing = True  # Position changed = playing
+                    d.is_audible = d.volume > 0.1  # Infer audible from volume
+                d.position = new_pos
             elif verb == "volume":
                 d.volume = float(value) if value else 1.0
             elif verb == "loaded":
-                d.loaded = bool(value)
+                d.loaded = value not in (None, "", 0, "0", False)
+    
+    def _query_state(self):
+        """Query VDJ for current state (VDJ only responds to queries, not push)."""
+        # Query essential values for both decks
+        for deck in (1, 2):
+            osc.vdj.send(f"/vdj/query/deck/{deck}/song_pos")
+            osc.vdj.send(f"/vdj/query/deck/{deck}/get_title")
+            osc.vdj.send(f"/vdj/query/deck/{deck}/get_artist")
+            osc.vdj.send(f"/vdj/query/deck/{deck}/volume")
     
     def _subscribe(self):
-        """Subscribe to VDJ OSC updates."""
+        """Subscribe to VDJ OSC updates (for change notifications)."""
+        # Per-deck subscriptions
         for deck in (1, 2):
             for verb in self.DECK_SUBS:
                 osc.vdj.send(f"/vdj/subscribe/deck/{deck}/{verb}")
+        # Global subscriptions (update frequently = keep-alive)
+        for verb in self.GLOBAL_SUBS:
+            osc.vdj.send(f"/vdj/subscribe/{verb}")
         # Query initial state
         for deck in (1, 2):
             for verb in self.DECK_SUBS:
@@ -198,6 +237,8 @@ class VDJMonitor:
         for deck in (1, 2):
             for verb in self.DECK_SUBS:
                 osc.vdj.send(f"/vdj/unsubscribe/deck/{deck}/{verb}")
+        for verb in self.GLOBAL_SUBS:
+            osc.vdj.send(f"/vdj/unsubscribe/{verb}")
     
     def _get_audible_deck(self) -> Optional[VDJDeckState]:
         """Return audible deck (VDJ is_audible = playing + volume up)."""
