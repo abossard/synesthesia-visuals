@@ -57,17 +57,17 @@ This ensures:
 
 ## Phases
 
-| Phase | Focus | Outcome |
-|-------|-------|---------|
-| 0 | Foundation | Test infrastructure with prerequisite checking |
-| 1 | OSC Runtime Module | Standalone OSC, no global singleton |
-| 2 | Playback Module | Standalone playback with callbacks |
-| 3 | Lyrics Module | Standalone fetch + sync |
-| 4 | AI Analysis Module | Standalone categorization with graceful degradation |
-| 5 | Shaders Module | Standalone shader matching |
-| 6 | Pipeline Module | Orchestrates modules 3-5 |
-| 7 | Console Refactor | Thin shell that composes modules |
-| 8 | Cleanup | Remove deprecated code |
+| Phase | Focus | Outcome | Status |
+|-------|-------|---------|--------|
+| 0 | Foundation | Test infrastructure with prerequisite checking | ✅ |
+| 1 | OSC Runtime Module | Standalone OSC, no global singleton | ✅ |
+| 2 | Playback Module | Standalone playback with callbacks | ✅ |
+| 3 | Lyrics Module | Standalone fetch + sync | ✅ |
+| 4 | AI Analysis Module | Standalone categorization with graceful degradation | ✅ |
+| 5 | Shaders Module | Standalone shader matching | ✅ |
+| 6 | Pipeline Module | Orchestrates modules 3-5 + images | ✅ |
+| 7 | Console Refactor | Thin shell that composes modules | ⏳ |
+| 8 | Cleanup | Remove deprecated code | ⏳ |
 
 ---
 
@@ -218,14 +218,15 @@ Module indexes shaders and finds matches based on energy/valence.
 
 ---
 
-## Phase 6: Pipeline Module
+## Phase 6: Pipeline Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/pipeline.py` orchestrating lyrics → ai → shaders
-- [ ] Accept module dependencies via injection
-- [ ] Expose step callbacks: `on_step_start`, `on_step_complete`
-- [ ] Add standalone CLI: `python -m modules.pipeline --artist "..." --title "..."`
+- [x] Create `modules/pipeline.py` orchestrating lyrics → ai → shaders → images
+- [x] Accept module dependencies via injection
+- [x] Expose step callbacks: `on_step_start`, `on_step_complete`
+- [x] Add standalone CLI: `python -m modules.pipeline --artist "..." --title "..."`
+- [x] Integrate `ImageScraper` for album art and thematic images
 
 ### E2E Tests
 
