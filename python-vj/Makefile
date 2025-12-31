@@ -1,6 +1,9 @@
-.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime test-playback test-lyrics-module help
+.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime test-playback test-lyrics-module kill-osc help
 
 help:
+	@echo "Utilities:"
+	@echo "  make kill-osc      - Kill any process listening on port 9999"
+	@echo ""
 	@echo "Test targets:"
 	@echo "  make test          - Run baseline behavior tests (interactive)"
 	@echo "  make test-osc      - Run OSC tests only"
@@ -41,3 +44,7 @@ test-lyrics-module:
 
 test-all:
 	pytest tests/ -v -s
+
+kill-osc:
+	@echo "Killing processes on port 9999..."
+	@lsof -ti :9999 | xargs kill -9 2>/dev/null || echo "No process found on port 9999"

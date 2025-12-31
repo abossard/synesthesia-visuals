@@ -20,7 +20,11 @@
       "Bash(grep:*)",
       "Bash(done)",
       "Bash(head:*)",
-      "Bash(python vdj_subscription_test.py:*)"
+      "Bash(python vdj_subscription_test.py:*)",
+      "Bash(make test-osc-runtime:*)",
+      "Bash(cd /Users/abossard/Desktop/projects/synesthesia-visuals/python-vj && pytest:*)",
+      "Bash(source ../.venv/bin/activate)",
+      "Bash(pytest:*)"
     ],
     "deny": [],
     "ask": []

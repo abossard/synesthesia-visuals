@@ -57,7 +57,7 @@ class OSCRuntime(Module):
         super().__init__()
         self._config = config or OSCConfig()
         self._hub = None
-        self._callbacks: List[Handler] = []
+        self._pending_subscriptions: List[Tuple[str, Handler]] = []  # (pattern, handler)
 
     @property
     def config(self) -> OSCConfig:
@@ -73,16 +73,19 @@ class OSCRuntime(Module):
         if self._started:
             return True
 
-        from osc.hub import OSCHub
-        self._hub = OSCHub()
+        # Reuse global singleton instead of creating new hub
+        from osc.hub import osc
+        self._hub = osc
 
-        if not self._hub.start():
-            self._hub = None
-            return False
+        # Start hub if not already running
+        if not self._hub.is_started:
+            if not self._hub.start():
+                self._hub = None
+                return False
 
-        if self._callbacks:
-            for cb in self._callbacks:
-                self._hub.subscribe("*", cb)
+        # Apply any pending subscriptions
+        for pattern, handler in self._pending_subscriptions:
+            self._hub.subscribe(pattern, handler)
 
         self._started = True
         return True
@@ -92,26 +95,27 @@ class OSCRuntime(Module):
         if not self._started:
             return
 
+        # Unsubscribe all our subscriptions from the shared hub
         if self._hub:
-            self._hub.stop()
-            self._hub = None
+            for pattern, handler in self._pending_subscriptions:
+                self._hub.unsubscribe(pattern, handler)
 
+        self._hub = None
         self._started = False
 
     def subscribe(self, pattern: str, handler: Handler) -> None:
         """Subscribe to incoming OSC messages matching pattern."""
+        self._pending_subscriptions.append((pattern, handler))
         if self._hub:
             self._hub.subscribe(pattern, handler)
-        else:
-            if pattern == "*":
-                self._callbacks.append(handler)
 
     def unsubscribe(self, pattern: str, handler: Handler) -> None:
         """Unsubscribe from OSC messages."""
+        entry = (pattern, handler)
+        if entry in self._pending_subscriptions:
+            self._pending_subscriptions.remove(entry)
         if self._hub:
             self._hub.unsubscribe(pattern, handler)
-        if handler in self._callbacks:
-            self._callbacks.remove(handler)
 
     def send_to_vdj(self, address: str, *args) -> bool:
         """Send OSC message to VirtualDJ."""

@@ -22,12 +22,23 @@ def is_interactive() -> bool:
 
 
 def is_port_open(port: int) -> bool:
-    """Check if a port is accepting connections."""
+    """Check if a TCP port is accepting connections."""
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
             return True
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
+
+
+def is_udp_port_in_use(port: int) -> bool:
+    """Check if a UDP port is in use (e.g., by OSC listener)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(("127.0.0.1", port))
+        s.close()
+        return False  # We could bind, so nothing is using it
+    except OSError:
+        return True  # Port is in use
 
 
 def is_process_running(name: str) -> bool:
@@ -162,28 +173,17 @@ def requires_lm_studio(request):
 @pytest.fixture
 def requires_vjuniverse(request):
     """Prompt user to start VJUniverse (Processing)."""
-    if not is_port_open(10000):
+    # VJUniverse uses UDP for OSC on port 10000
+    if not is_udp_port_in_use(10000):
         ready = prompt_user(
             "vjuniverse",
-            ["VJUniverse (Processing) running", "Listening on port 10000"]
+            ["VJUniverse (Processing) running", "Listening on UDP port 10000"]
         )
         if not ready:
             pytest.skip("User skipped - VJUniverse not running")
 
-        if not is_port_open(10000):
-            pytest.skip("VJUniverse still not listening on port 10000")
-
-
-@pytest.fixture
-def requires_osc_ports_free():
-    """Check OSC ports are available. Run 'make kill-osc' first if port is busy."""
-    for port in [9999]:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.bind(("127.0.0.1", port))
-            s.close()
-        except OSError:
-            pytest.skip(f"Port {port} in use. Run 'make kill-osc' first.")
+        if not is_udp_port_in_use(10000):
+            pytest.skip("VJUniverse still not listening on UDP port 10000")
 
 
 @pytest.fixture

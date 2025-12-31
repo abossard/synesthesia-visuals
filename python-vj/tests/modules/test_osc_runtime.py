@@ -9,7 +9,7 @@ import time
 class TestOSCRuntimeLifecycle:
     """Test OSC Runtime module lifecycle."""
 
-    def test_module_starts_and_stops_cleanly(self, requires_osc_ports_free):
+    def test_module_starts_and_stops_cleanly(self):
         """OSC Runtime module starts and stops without errors."""
         from modules.osc_runtime import OSCRuntime, OSCConfig
 
@@ -31,7 +31,7 @@ class TestOSCRuntimeLifecycle:
 
         print("\nModule started and stopped cleanly")
 
-    def test_module_can_restart(self, requires_osc_ports_free):
+    def test_module_can_restart(self):
         """OSC Runtime can be stopped and restarted."""
         from modules.osc_runtime import OSCRuntime
 
@@ -59,11 +59,17 @@ class TestOSCRuntimeCommunication:
 
         received = []
         runtime = OSCRuntime()
-        runtime.subscribe("/deck*", lambda addr, args: received.append((addr, args)))
+        # VDJ responds with /vdj/deck/... addresses
+        runtime.subscribe("/vdj/deck*", lambda addr, args: received.append((addr, args)))
         runtime.start()
 
-        # Wait for VDJ messages (it sends continuous updates when playing)
-        time.sleep(2)
+        # Query VDJ using proper format: /vdj/query/deck/N/verb
+        for _ in range(5):
+            runtime.send_to_vdj("/vdj/query/deck/1/get_title")
+            runtime.send_to_vdj("/vdj/query/deck/1/get_artist")
+            time.sleep(0.3)
+            if received:
+                break
 
         runtime.stop()
 
@@ -86,7 +92,7 @@ class TestOSCRuntimeCommunication:
         runtime.stop()
         print("\nSent message to VJUniverse successfully")
 
-    def test_subscription_filtering(self, requires_osc_ports_free):
+    def test_subscription_filtering(self):
         """OSC Runtime filters messages by subscription pattern."""
         from modules.osc_runtime import OSCRuntime
 
