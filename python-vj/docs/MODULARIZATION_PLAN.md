@@ -120,14 +120,14 @@ Module runs standalone and communicates with VDJ.
 
 ---
 
-## Phase 2: Playback Module
+## Phase 2: Playback Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/playback.py` wrapping `PlaybackCoordinator` + monitors
-- [ ] Expose callbacks: `on_track_change`, `on_position_update`
-- [ ] Support hot-swap of playback source
-- [ ] Add standalone CLI: `python -m modules.playback --source vdj_osc`
+- [x] Create `modules/playback.py` wrapping `PlaybackCoordinator` + monitors
+- [x] Expose callbacks: `on_track_change`, `on_position_update`
+- [x] Support hot-swap of playback source
+- [x] Add standalone CLI: `python -m modules.playback --source vdj_osc`
 
 ### E2E Tests
 
@@ -145,14 +145,14 @@ Module detects track and position from VDJ in real-time.
 
 ---
 
-## Phase 3: Lyrics Module
+## Phase 3: Lyrics Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/lyrics.py` wrapping `LyricsFetcher` + sync logic
-- [ ] Expose `fetch(artist, title)` and `update_position(sec)`
-- [ ] Expose callback: `on_active_line`
-- [ ] Add standalone CLI: `python -m modules.lyrics --artist "..." --title "..."`
+- [x] Create `modules/lyrics.py` wrapping `LyricsFetcher` + sync logic
+- [x] Expose `fetch(artist, title)` and `update_position(sec)`
+- [x] Expose callback: `on_active_line`
+- [x] Add standalone CLI: `python -m modules.lyrics --artist "..." --title "..."`
 
 ### E2E Tests
 

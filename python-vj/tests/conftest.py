@@ -176,14 +176,14 @@ def requires_vjuniverse(request):
 
 @pytest.fixture
 def requires_osc_ports_free():
-    """Check OSC ports are available (no prompt needed)."""
+    """Check OSC ports are available. Run 'make kill-osc' first if port is busy."""
     for port in [9999]:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.bind(("127.0.0.1", port))
             s.close()
         except OSError:
-            pytest.skip(f"Port {port} is already in use")
+            pytest.skip(f"Port {port} in use. Run 'make kill-osc' first.")
 
 
 @pytest.fixture

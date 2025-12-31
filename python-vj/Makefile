@@ -1,4 +1,4 @@
-.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime help
+.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime test-playback test-lyrics-module help
 
 help:
 	@echo "Test targets:"
@@ -32,6 +32,12 @@ test-ai:
 
 test-osc-runtime:
 	pytest tests/modules/test_osc_runtime.py -v -s
+
+test-playback:
+	pytest tests/modules/test_playback.py -v -s
+
+test-lyrics-module:
+	pytest tests/modules/test_lyrics.py -v -s
 
 test-all:
 	pytest tests/ -v -s
