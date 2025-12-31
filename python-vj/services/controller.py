@@ -1,232 +1,485 @@
 """
-VJController - Thin coordinator for VJ system
+VJController - Single deep module for VJ system
 
-This is the ONLY coordinator. It's tiny (~100 lines of actual logic).
-Uses the three deep modules:
-- PlaybackService: track detection
-- LyricsService: lyrics + metadata  
-- OutputService: OSC output
+One class that hides everything:
+- Track detection (Spotify/VDJ)
+- Lyrics fetching (LRCLIB)
+- Refrain detection
+- OSC output
+- Pipeline tracking
 
-The controller just runs a tick() loop that:
-1. Polls playback
-2. On track change: load lyrics, send to output
-3. On position change: update active line
-
-Provides compatibility API for vj_console.py:
-- get_snapshot() → PlaybackSnapshot
-- set_playback_source(key)
-- playback_source, current_shader, current_categories, last_lookup_ms
+Simple interface:
+    controller.start() / stop()
+    controller.tick()
+    controller.playback → Playback
+    controller.lines → List[LyricLine]
 """
 
 import logging
+import re
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
-
-from infra import PipelineTracker
-from services.playback import PlaybackService, Playback
-from services.lyrics import LyricsService
-from services.output import OutputService
+from dataclasses import dataclass, field, replace
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# IMMUTABLE DATA (calculations operate on these)
+# =============================================================================
+
+@dataclass(frozen=True)
+class Track:
+    artist: str = ""
+    title: str = ""
+    album: str = ""
+    duration_sec: float = 0.0
+    bpm: float = 0.0
+    
+    @property
+    def key(self) -> str:
+        return f"{self.artist}|{self.title}".lower()
+    
+    def __bool__(self) -> bool:
+        return bool(self.artist or self.title)
+
+
+@dataclass(frozen=True)
+class Playback:
+    track: Optional[Track] = None
+    position_sec: float = 0.0
+    is_playing: bool = False
+    updated_at: float = field(default_factory=time.time)
+    
+    @property
+    def has_track(self) -> bool:
+        return self.track is not None and bool(self.track)
+
+
+@dataclass(frozen=True)
+class LyricLine:
+    time_sec: float
+    text: str
+    is_refrain: bool = False
+    keywords: str = ""
+
+
+# =============================================================================
+# PURE FUNCTIONS (no side effects)
+# =============================================================================
+
+def parse_lrc(lrc_text: str) -> List[LyricLine]:
+    """Parse LRC format into list of LyricLine."""
+    if not lrc_text:
+        return []
+    
+    lines = []
+    pattern = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)')
+    
+    for raw in lrc_text.splitlines():
+        m = pattern.match(raw.strip())
+        if m:
+            mins, secs, frac_str, text = m.groups()
+            frac = int(frac_str) / (100.0 if len(frac_str) == 2 else 1000.0)
+            time_sec = int(mins) * 60 + int(secs) + frac
+            if text.strip():
+                lines.append(LyricLine(time_sec=time_sec, text=text.strip()))
+    
+    return sorted(lines, key=lambda x: x.time_sec)
+
+
+def detect_refrains(lines: List[LyricLine], min_repeats: int = 2) -> List[LyricLine]:
+    """Mark lines that repeat as refrains."""
+    counts: Dict[str, int] = {}
+    for line in lines:
+        key = line.text.lower().strip()
+        counts[key] = counts.get(key, 0) + 1
+    
+    refrain_texts = {k for k, v in counts.items() if v >= min_repeats}
+    
+    return [
+        LyricLine(line.time_sec, line.text, line.text.lower().strip() in refrain_texts, line.keywords)
+        for line in lines
+    ]
+
+
+STOPWORDS = {
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
+    'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been', 'i', 'you',
+    'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'my', 'your',
+    'do', 'does', 'did', 'have', 'has', 'had', 'will', 'would', 'could', 'can',
+    'just', 'like', 'get', 'got', 'go', 'yeah', 'oh', 'ah', 'uh', 'ooh', 'na',
+}
+
+
+def extract_keywords(lines: List[LyricLine]) -> List[LyricLine]:
+    """Extract keywords from each line."""
+    result = []
+    for line in lines:
+        words = re.findall(r"[a-zA-Z']+", line.text.lower())
+        kw = [w for w in words if len(w) > 2 and w not in STOPWORDS][:5]
+        result.append(LyricLine(line.time_sec, line.text, line.is_refrain, ' '.join(kw)))
+    return result
+
+
+def get_active_index(lines: List[LyricLine], position: float) -> int:
+    """Find active line index for position."""
+    active = -1
+    for i, line in enumerate(lines):
+        if line.time_sec <= position:
+            active = i
+        else:
+            break
+    return active
+
+
+# =============================================================================
+# SOURCES (internal config)
+# =============================================================================
+
+def _create_spotify():
+    from adapters import AppleScriptSpotifyMonitor
+    return AppleScriptSpotifyMonitor()
+
+def _create_vdj():
+    from vdj_monitor import VDJMonitor
+    return VDJMonitor()
+
+_SOURCES = {
+    "Spotify": ("spotify_applescript", _create_spotify),
+    "VirtualDJ": ("vdj_osc", _create_vdj),
+}
+
+
+# =============================================================================
+# VJ CONTROLLER (single deep module)
+# =============================================================================
+
 class VJController:
     """
-    Thin coordinator for VJ system.
+    Deep module for VJ system.
     
-    Simple interface:
-        controller.start()
-        controller.tick()  # call every 100-200ms
-        controller.stop()
-    
-    Properties for UI:
-        controller.playback → current playback state
-        controller.lyrics → LyricsService (for lines, metadata)
-        controller.sources → available playback sources
+    Hides: sources, monitors, OSC, LRCLIB, parsing, analysis.
+    Exposes: playback, lines, tick().
     """
     
     def __init__(self):
-        # Deep modules do the work
-        self._playback = PlaybackService()
-        self._lyrics = LyricsService()
-        self._output = OutputService()
-        self._pipeline = PipelineTracker()
+        self._lock = threading.RLock()
         
-        # State
-        self._running = False
+        # Playback
+        self._monitor = None
+        self._source_key = ""
+        self._source_name = ""
+        self._playback = Playback()
+        self._last_lookup_ms = 0.0
+        
+        # Lyrics
+        self._fetcher = None
+        self._lines: List[LyricLine] = []
         self._last_track_key = ""
         self._last_active_index = -1
         
-        # Register for track changes
-        self._playback.on_track_change(self._handle_track_change)
-    
-    @property
-    def pipeline(self) -> PipelineTracker:
-        """Pipeline tracker for UI display."""
-        return self._pipeline
+        # OSC
+        self._osc = None
+        
+        # Pipeline (simple list of tuples)
+        self._pipeline_steps: List[tuple] = []  # (name, status, message)
+        
+        # Running state
+        self._running = False
+        
+        # Restore saved source
+        self._restore_source()
     
     # =========================================================================
     # LIFECYCLE
     # =========================================================================
     
     def start(self) -> None:
-        """Start the controller."""
         self._running = True
+        self._ensure_osc()
         logger.info("VJController started")
     
     def stop(self) -> None:
-        """Stop the controller."""
         self._running = False
+        if self._monitor and hasattr(self._monitor, 'stop'):
+            self._monitor.stop()
         logger.info("VJController stopped")
     
     def tick(self) -> None:
-        """
-        Main tick - call every 100-200ms.
-        
-        Polls playback, updates active line.
-        Track changes handled via callback.
-        """
+        """Main tick - poll playback, update active line."""
         if not self._running:
             return
         
-        # Poll playback (track changes trigger callback)
-        playback = self._playback.poll()
-        
-        if not playback.has_track:
+        with self._lock:
+            self._poll_playback()
+            self._update_active_line()
+    
+    # =========================================================================
+    # PLAYBACK (internal)
+    # =========================================================================
+    
+    def _poll_playback(self) -> None:
+        if not self._monitor:
             return
         
-        # Update active line based on position
-        if self._lyrics.has_lyrics:
-            index = self._lyrics.get_active_index(playback.position_sec)
-            if index != self._last_active_index:
-                self._last_active_index = index
-                self._output.send_active_line(index)
+        start = time.time()
+        try:
+            raw = self._monitor.get_playback()
+            self._last_lookup_ms = (time.time() - start) * 1000.0
+            
+            if raw:
+                track = Track(
+                    artist=raw.get('artist', ''),
+                    title=raw.get('title', ''),
+                    album=raw.get('album', ''),
+                    duration_sec=raw.get('duration_ms', 0) / 1000.0,
+                    bpm=raw.get('bpm', 0.0),
+                )
+                position = raw.get('progress_ms', 0) / 1000.0
+                is_playing = raw.get('is_playing', False)
                 
-                # Check if active line is a refrain
-                line = self._lyrics.get_line(index)
-                if line and line.is_refrain:
-                    self._output.send_refrain_active(index, line.text)
+                # Track change?
+                if track.key != self._last_track_key:
+                    self._handle_track_change(track)
+                
+                self._playback = Playback(track, position, is_playing, time.time())
+            else:
+                if self._playback.has_track:
+                    self._playback = replace(self._playback, is_playing=False)
+        except Exception as e:
+            logger.debug(f"Playback poll error: {e}")
     
-    # =========================================================================
-    # TRACK CHANGE HANDLER
-    # =========================================================================
-    
-    def _handle_track_change(self, track) -> None:
-        """Handle track change from PlaybackService."""
-        if not track:
-            self._lyrics.clear()
-            self._output.send_no_track()
-            self._output.send_no_lyrics()
-            self._last_track_key = ""
-            self._last_active_index = -1
-            self._pipeline.reset()
-            return
-        
-        track_key = f"{track.artist}|{track.title}".lower()
-        if track_key == self._last_track_key:
-            return  # Same track
-        
-        self._last_track_key = track_key
+    def _handle_track_change(self, track: Track) -> None:
+        """Process new track: fetch lyrics, send OSC."""
+        self._last_track_key = track.key
         self._last_active_index = -1
-        
-        # Reset pipeline for new track
-        self._pipeline.reset(f"{track.artist} - {track.title}")
+        self._lines = []
+        self._pipeline_steps = []
         
         logger.info(f"♪ {track.artist} - {track.title}")
         
-        # Mark detect_playback complete
-        self._pipeline.start("detect_playback")
-        self._pipeline.complete("detect_playback", f"{track.artist} - {track.title}")
+        # Pipeline: detect_playback
+        self._pipeline_steps.append(("detect_playback", "complete", f"{track.artist} - {track.title}"))
         
-        # Load lyrics (LyricsService will update pipeline)
-        self._pipeline.start("fetch_lyrics")
-        has_lyrics = self._lyrics.load(track)
+        # Fetch lyrics
+        self._pipeline_steps.append(("fetch_lyrics", "running", ""))
+        self._ensure_fetcher()
         
-        if has_lyrics:
-            self._pipeline.complete("fetch_lyrics", f"{len(self._lyrics.lines)} lines")
+        try:
+            lrc_text = self._fetcher.fetch(track.artist, track.title, track.album, track.duration_sec)
             
-            # Mark refrain detection
-            self._pipeline.start("detect_refrain")
-            refrain_count = len(self._lyrics.refrain_lines)
-            if refrain_count > 0:
-                self._pipeline.complete("detect_refrain", f"{refrain_count} refrain lines")
+            if lrc_text:
+                lines = parse_lrc(lrc_text)
+                lines = detect_refrains(lines)
+                lines = extract_keywords(lines)
+                self._lines = lines
+                
+                # Update pipeline
+                self._pipeline_steps[-1] = ("fetch_lyrics", "complete", f"{len(lines)} lines")
+                
+                refrain_count = sum(1 for ln in lines if ln.is_refrain)
+                if refrain_count:
+                    self._pipeline_steps.append(("detect_refrain", "complete", f"{refrain_count} refrains"))
+                else:
+                    self._pipeline_steps.append(("detect_refrain", "skip", "none found"))
+                
+                kw_count = len({w for ln in lines for w in ln.keywords.split() if w})
+                if kw_count:
+                    self._pipeline_steps.append(("extract_keywords", "complete", f"{kw_count} keywords"))
+                else:
+                    self._pipeline_steps.append(("extract_keywords", "skip", "none"))
             else:
-                self._pipeline.skip("detect_refrain", "No refrain detected")
+                self._pipeline_steps[-1] = ("fetch_lyrics", "skip", "no lyrics found")
+                self._pipeline_steps.append(("detect_refrain", "skip", "no lyrics"))
+                self._pipeline_steps.append(("extract_keywords", "skip", "no lyrics"))
+        except Exception as e:
+            self._pipeline_steps[-1] = ("fetch_lyrics", "error", str(e)[:30])
+            logger.error(f"Lyrics fetch error: {e}")
+        
+        # Send to OSC
+        self._send_track(track, has_lyrics=bool(self._lines))
+        if self._lines:
+            self._send_lyrics()
+    
+    def _update_active_line(self) -> None:
+        if not self._lines or not self._playback.has_track:
+            return
+        
+        idx = get_active_index(self._lines, self._playback.position_sec)
+        if idx != self._last_active_index:
+            self._last_active_index = idx
+            self._ensure_osc()
+            self._osc.textler.send("/textler/line/active", idx)
             
-            # Mark keyword extraction
-            self._pipeline.start("extract_keywords")
-            keywords = self._lyrics.keywords
-            if keywords:
-                self._pipeline.complete("extract_keywords", f"{len(keywords)} keywords")
-            else:
-                self._pipeline.skip("extract_keywords", "No keywords")
-        else:
-            self._pipeline.skip("fetch_lyrics", "No lyrics found")
-            self._pipeline.skip("detect_refrain", "No lyrics")
-            self._pipeline.skip("extract_keywords", "No lyrics")
-        
-        # Send to output
-        self._output.send_track(track, has_lyrics=has_lyrics)
-        
-        if has_lyrics:
-            self._output.send_lyrics(self._lyrics.lines)
-            self._output.send_refrains(self._lyrics.refrain_lines)
-        else:
-            self._output.send_no_lyrics()
+            # Check refrain
+            if 0 <= idx < len(self._lines) and self._lines[idx].is_refrain:
+                self._osc.textler.send("/textler/refrain/active", idx, self._lines[idx].text)
     
     # =========================================================================
-    # UI ACCESSORS
+    # OSC OUTPUT (internal)
     # =========================================================================
     
-    @property
-    def playback(self):
-        """Current playback state."""
-        return self._playback.playback
+    def _ensure_osc(self):
+        if self._osc is None:
+            from osc import osc
+            self._osc = osc
+            self._osc.start()
+    
+    def _send_track(self, track: Track, has_lyrics: bool) -> None:
+        self._ensure_osc()
+        self._osc.textler.send(
+            "/textler/track", 1, self._source_name or "unknown",
+            track.artist, track.title, track.album,
+            float(track.duration_sec), 1 if has_lyrics else 0
+        )
+    
+    def _send_lyrics(self) -> None:
+        self._ensure_osc()
+        self._osc.textler.send("/textler/lyrics/reset")
+        for i, line in enumerate(self._lines):
+            self._osc.textler.send("/textler/lyrics/line", i, float(line.time_sec), line.text)
+        
+        # Refrains
+        self._osc.textler.send("/textler/refrain/reset")
+        for i, line in enumerate(self._lines):
+            if line.is_refrain:
+                self._osc.textler.send("/textler/refrain/line", i, float(line.time_sec), line.text)
+    
+    # =========================================================================
+    # FETCHER (internal)
+    # =========================================================================
+    
+    def _ensure_fetcher(self):
+        if self._fetcher is None:
+            from adapters import LyricsFetcher
+            self._fetcher = LyricsFetcher()
+    
+    # =========================================================================
+    # SOURCE MANAGEMENT
+    # =========================================================================
+    
+    def _restore_source(self) -> None:
+        try:
+            from infra import Settings
+            saved = Settings().playback_source or ""
+            for name, (key, factory) in _SOURCES.items():
+                if key == saved:
+                    self._activate_source(name, persist=False)
+                    return
+        except Exception:
+            pass
+    
+    def _activate_source(self, name: str, persist: bool = True) -> bool:
+        if name not in _SOURCES:
+            return False
+        
+        key, factory = _SOURCES[name]
+        
+        with self._lock:
+            if self._monitor and hasattr(self._monitor, 'stop'):
+                try:
+                    self._monitor.stop()
+                except Exception:
+                    pass
+            
+            try:
+                self._monitor = factory()
+                if hasattr(self._monitor, 'start'):
+                    self._monitor.start()
+                self._source_key = key
+                self._source_name = name
+                self._playback = Playback()
+                self._last_track_key = ""
+                
+                if persist:
+                    from infra import Settings
+                    Settings().playback_source = key
+                
+                logger.info(f"Source: {name}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to activate {name}: {e}")
+                return False
     
     @property
-    def lyrics(self) -> LyricsService:
-        """Lyrics service for accessing lines, metadata."""
-        return self._lyrics
+    def sources(self) -> List[str]:
+        return list(_SOURCES.keys())
     
-    @property
-    def sources(self):
-        """Available playback sources."""
-        return self._playback.sources
+    def set_source(self, name: str) -> bool:
+        return self._activate_source(name)
     
     @property
     def current_source(self) -> str:
-        """Current playback source name."""
-        return self._playback.current_source
+        return self._source_name
     
-    def set_source(self, name: str) -> bool:
-        """Set playback source."""
-        return self._playback.set_source(name)
+    # =========================================================================
+    # PUBLIC ACCESSORS
+    # =========================================================================
+    
+    @property
+    def playback(self) -> Playback:
+        with self._lock:
+            return self._playback
+    
+    @property
+    def lines(self) -> List[LyricLine]:
+        return self._lines
+    
+    @property
+    def refrain_lines(self) -> List[LyricLine]:
+        return [ln for ln in self._lines if ln.is_refrain]
+    
+    @property
+    def keywords(self) -> List[str]:
+        return sorted({w for ln in self._lines for w in ln.keywords.split() if w})
+    
+    @property
+    def has_lyrics(self) -> bool:
+        return bool(self._lines)
+    
+    @property
+    def last_lookup_ms(self) -> float:
+        return self._last_lookup_ms
     
     @property
     def is_running(self) -> bool:
-        """Check if controller is running."""
         return self._running
     
     # =========================================================================
-    # COMPATIBILITY API (for vj_console.py drop-in replacement)
+    # PIPELINE (for UI)
+    # =========================================================================
+    
+    @property
+    def pipeline(self):
+        """Return pipeline-like object for UI compatibility."""
+        return self._PipelineView(self._pipeline_steps)
+    
+    class _PipelineView:
+        """Minimal view for pipeline panel."""
+        def __init__(self, steps: List[tuple]):
+            self._steps = steps
+        
+        def get_display_lines(self) -> List[tuple]:
+            """Return (label, status, color, message) for each step."""
+            result = []
+            colors = {"complete": "green", "skip": "dim", "running": "yellow", "error": "red"}
+            for name, status, msg in self._steps:
+                label = name.replace("_", " ").title()
+                color = colors.get(status, "white")
+                result.append((label, status.upper(), color, msg))
+            return result
+    
+    # =========================================================================
+    # COMPATIBILITY API (for vj_console.py)
     # =========================================================================
     
     def get_snapshot(self):
-        """
-        Get current playback snapshot for UI.
-        
-        Returns PlaybackSnapshot-like object with:
-        - state: PlaybackState with track, position, is_playing
-        - source: current source name
-        - monitor_status: dict of monitor statuses
-        - error: error message if any
-        """
+        """Get PlaybackSnapshot for UI."""
         from domain_types import PlaybackSnapshot, PlaybackState, Track as DomainTrack
         
-        pb = self._playback.playback
-        
-        # Build Track if we have one
+        pb = self._playback
         track = None
         if pb.has_track and pb.track:
             track = DomainTrack(
@@ -236,7 +489,6 @@ class VJController:
                 duration=pb.track.duration_sec,
             )
         
-        # Build PlaybackState
         state = PlaybackState(
             track=track,
             position=pb.position_sec,
@@ -244,39 +496,39 @@ class VJController:
             last_update=pb.updated_at,
         )
         
-        # Build snapshot
+        # Monitor status
+        monitor_status = {}
+        if self._source_name:
+            if self._monitor and hasattr(self._monitor, 'status'):
+                raw = self._monitor.status
+                if isinstance(raw, dict):
+                    monitor_status[self._source_name] = raw
+        
         return PlaybackSnapshot(
             state=state,
-            source=self._playback.current_source,
-            monitor_status=self._playback.monitor_status,
+            source=self._source_name,
+            monitor_status=monitor_status,
             error="",
         )
     
     def set_playback_source(self, key: str) -> bool:
-        """Set playback source by key (alias for set_source)."""
+        """Set source by internal key."""
+        for name, (k, _) in _SOURCES.items():
+            if k == key:
+                return self.set_source(name)
         return self.set_source(key)
     
     @property
     def playback_source(self) -> str:
-        """Current playback source key."""
-        return self._playback.current_source
+        return self._source_key
     
     @property
     def current_shader(self) -> str:
-        """Current shader name (placeholder - shader matching not yet integrated)."""
         return ""
     
     @property
     def current_categories(self):
-        """Current song categories (placeholder - AI not yet integrated)."""
         return None
     
-    @property
-    def last_lookup_ms(self) -> float:
-        """Last playback lookup duration in ms."""
-        return self._playback.last_lookup_ms
-    
     def adjust_timing(self, ms: int) -> None:
-        """Adjust lyrics timing offset (placeholder)."""
-        # TODO: implement timing offset in LyricsService
-        logger.debug(f"Timing adjustment requested: {ms}ms (not yet implemented)")
+        logger.debug(f"Timing adjustment: {ms}ms (not yet implemented)")
