@@ -27,7 +27,8 @@
       "Bash(pytest:*)",
       "Bash(python -m modules.ai_analysis:*)",
       "Bash(python -m modules.shaders:*)",
-      "Bash(python -m modules.pipeline:*)"
+      "Bash(python -m modules.pipeline:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
