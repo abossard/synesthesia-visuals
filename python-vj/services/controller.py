@@ -530,5 +530,23 @@ class VJController:
     def current_categories(self):
         return None
     
+    @property
+    def current_lines(self) -> List[LyricLine]:
+        """Alias for lines (vj_console compatibility)."""
+        return self._lines
+    
+    @property
+    def timing_offset_ms(self) -> int:
+        """Lyrics timing offset in ms."""
+        return self._timing_offset_ms if hasattr(self, '_timing_offset_ms') else 0
+    
+    @property
+    def last_llm_result(self) -> Optional[Dict]:
+        """LLM analysis result (not yet implemented)."""
+        return None
+    
     def adjust_timing(self, ms: int) -> None:
-        logger.debug(f"Timing adjustment: {ms}ms (not yet implemented)")
+        if not hasattr(self, '_timing_offset_ms'):
+            self._timing_offset_ms = 0
+        self._timing_offset_ms += ms
+        logger.debug(f"Timing offset: {self._timing_offset_ms}ms")
