@@ -1,4 +1,4 @@
-.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all help
+.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime help
 
 help:
 	@echo "Test targets:"
@@ -7,6 +7,7 @@ help:
 	@echo "  make test-vdj      - Run VDJ integration tests"
 	@echo "  make test-lyrics   - Run lyrics fetching tests"
 	@echo "  make test-ai       - Run AI categorization tests"
+	@echo "  make test-osc-runtime - Run OSC Runtime module tests"
 	@echo "  make test-all      - Run all tests"
 
 test: test-baseline
@@ -28,6 +29,9 @@ test-lyrics:
 
 test-ai:
 	pytest tests/test_baseline_behavior.py::TestAICategorization -v -s
+
+test-osc-runtime:
+	pytest tests/modules/test_osc_runtime.py -v -s
 
 test-all:
 	pytest tests/ -v -s

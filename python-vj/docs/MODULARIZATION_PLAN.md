@@ -71,13 +71,13 @@ This ensures:
 
 ---
 
-## Phase 0: Foundation
+## Phase 0: Foundation ✅
 
 ### Tasks
 
-- [ ] Create `tests/conftest.py` with prerequisite fixtures (`requires_vdj_running`, `requires_lm_studio`, etc.)
-- [ ] Create `tests/test_baseline_behavior.py` with E2E tests for current system
-- [ ] Create `Makefile` with test targets
+- [x] Create `tests/conftest.py` with prerequisite fixtures (`requires_vdj_running`, `requires_lm_studio`, etc.)
+- [x] Create `tests/test_baseline_behavior.py` with E2E tests for current system
+- [x] Create `Makefile` with test targets
 
 ### E2E Tests
 
@@ -96,15 +96,15 @@ All baseline tests pass (or skip gracefully when services unavailable).
 
 ---
 
-## Phase 1: OSC Runtime Module
+## Phase 1: OSC Runtime Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/base.py` with `Module` base class
-- [ ] Create `modules/osc_runtime.py` wrapping existing `osc/hub.py`
-- [ ] Add configuration dataclass for ports
-- [ ] Add standalone CLI: `python -m modules.osc_runtime`
-- [ ] Update console to use module (backward compatible)
+- [x] Create `modules/base.py` with `Module` base class
+- [x] Create `modules/osc_runtime.py` wrapping existing `osc/hub.py`
+- [x] Add configuration dataclass for ports
+- [x] Add standalone CLI: `python -m modules.osc_runtime`
+- [x] Console can use module (backward compatible - module available, global singleton still works)
 
 ### E2E Tests
 
