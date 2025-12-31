@@ -171,14 +171,14 @@ Module fetches lyrics and syncs to playback position.
 
 ---
 
-## Phase 4: AI Analysis Module
+## Phase 4: AI Analysis Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/ai_analysis.py` wrapping `LLMAnalyzer` + `SongCategorizer`
-- [ ] Expose `is_available` property for graceful degradation
-- [ ] Expose `categorize(lyrics, artist, title)` returning mood/energy/valence
-- [ ] Add standalone CLI: `python -m modules.ai_analysis --artist "..." --title "..."`
+- [x] Create `modules/ai_analysis.py` wrapping `LLMAnalyzer` + `SongCategorizer`
+- [x] Expose `is_available` property for graceful degradation
+- [x] Expose `categorize(lyrics, artist, title)` returning mood/energy/valence
+- [x] Add standalone CLI: `python -m modules.ai_analysis --artist "..." --title "..."`
 
 ### E2E Tests
 
@@ -195,14 +195,14 @@ Module categorizes songs when LM Studio available, degrades gracefully otherwise
 
 ---
 
-## Phase 5: Shaders Module
+## Phase 5: Shaders Module ✅
 
 ### Tasks
 
-- [ ] Create `modules/shaders.py` wrapping `ShaderIndexer` + `ShaderSelector`
-- [ ] Expose `find_best_match(energy, valence)`
-- [ ] Expose `list_shaders()` and `get_shader(name)`
-- [ ] Add standalone CLI: `python -m modules.shaders --energy 0.8 --valence 0.6`
+- [x] Create `modules/shaders.py` wrapping `ShaderIndexer` + `ShaderSelector`
+- [x] Expose `find_best_match(energy, valence)`
+- [x] Expose `list_shaders()` and `get_shader(name)`
+- [x] Add standalone CLI: `python -m modules.shaders --energy 0.8 --valence 0.6`
 
 ### E2E Tests
 

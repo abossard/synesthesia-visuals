@@ -24,7 +24,10 @@
       "Bash(make test-osc-runtime:*)",
       "Bash(cd /Users/abossard/Desktop/projects/synesthesia-visuals/python-vj && pytest:*)",
       "Bash(source ../.venv/bin/activate)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(python -m modules.ai_analysis:*)",
+      "Bash(python -m modules.shaders:*)",
+      "Bash(python -m modules.pipeline:*)"
     ],
     "deny": [],
     "ask": []

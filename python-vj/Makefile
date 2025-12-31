@@ -1,4 +1,4 @@
-.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime test-playback test-lyrics-module kill-osc help
+.PHONY: test test-baseline test-osc test-vdj test-lyrics test-ai test-all test-osc-runtime test-playback test-lyrics-module test-ai-module test-shaders-module test-pipeline-module kill-osc help
 
 help:
 	@echo "Utilities:"
@@ -11,6 +11,9 @@ help:
 	@echo "  make test-lyrics   - Run lyrics fetching tests"
 	@echo "  make test-ai       - Run AI categorization tests"
 	@echo "  make test-osc-runtime - Run OSC Runtime module tests"
+	@echo "  make test-ai-module   - Run AI Analysis module tests"
+	@echo "  make test-shaders-module - Run Shaders module tests"
+	@echo "  make test-pipeline-module - Run Pipeline module tests"
 	@echo "  make test-all      - Run all tests"
 
 test: test-baseline
@@ -41,6 +44,15 @@ test-playback:
 
 test-lyrics-module:
 	pytest tests/modules/test_lyrics.py -v -s
+
+test-ai-module:
+	pytest tests/modules/test_ai_analysis.py -v -s
+
+test-shaders-module:
+	pytest tests/modules/test_shaders.py -v -s
+
+test-pipeline-module:
+	pytest tests/modules/test_pipeline.py -v -s
 
 test-all:
 	pytest tests/ -v -s
