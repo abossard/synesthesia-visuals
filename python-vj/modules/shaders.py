@@ -103,6 +103,9 @@ class ShadersModule(Module):
         if self._started:
             return True
 
+        import logging
+        logger = logging.getLogger(__name__)
+
         from shader_matcher import ShaderIndexer, ShaderMatcher
 
         # Initialize indexer
@@ -112,7 +115,16 @@ class ShadersModule(Module):
         )
 
         # Sync from JSON files
-        self._indexer.sync()
+        stats = self._indexer.sync()
+        loaded = stats.get('loaded', 0)
+
+        if loaded == 0:
+            logger.warning(
+                f"No analyzed shaders found at {self._indexer.shaders_base}. "
+                f"Run shader analysis first: python -m shader_matcher --analyze"
+            )
+        else:
+            logger.info(f"Loaded {loaded} analyzed shaders")
 
         # Initialize matcher with same directory
         self._matcher = ShaderMatcher(str(self._indexer.shaders_base))

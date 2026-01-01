@@ -1,92 +1,41 @@
 #!/usr/bin/env python3
 """
-VJ Console - Textual Edition with Multi-Screen Support
+VJ Console - Modular Edition
 
-Screens (press 1-6 to switch):
-1. Master Control - Main dashboard with all controls
-2. OSC View - Full OSC message debug view  
-3. Song AI Debug - Song categorization and pipeline details
-4. All Logs - Complete application logs
-5. MIDI Router - Toggle management and MIDI traffic debug
-6. Shader Index - Shader analysis status and matching
+A thin shell that composes modules for VJ control.
 
-(Audio Analysis removed - use Synesthesia instead)
+Screens (press 1-5 to switch):
+1. Master Control - Track, pipeline status, categories
+2. OSC View - Full OSC message debug view
+3. All Logs - Complete application logs
+4. Launchpad - Controller management
+5. Shaders - Shader analysis and matching
 """
 
 from dotenv import load_dotenv
 load_dotenv(override=True, verbose=True)
 
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
-from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
 import logging
 import os
 import subprocess
 import threading
 import time
-import asyncio
-
-import psutil
-import requests
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, VerticalScroll, Vertical
-from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Input, Button, Label, Checkbox, RadioButton, RadioSet
-from textual.message import Message
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.widgets import Header, Footer, Static, TabbedContent, TabPane, Button
 from textual.reactive import reactive
 from textual.binding import Binding
-from textual.screen import ModalScreen
-from rich.text import Text
 
-from process_manager import ProcessManager, ProcessingApp
-from textler_engine import TextlerEngine
-from domain_types import PlaybackSnapshot, PlaybackState
+from modules import ModuleRegistry, ModuleRegistryConfig
+from modules.pipeline import PipelineStep, PipelineResult
 from infrastructure import Settings
 from osc import osc, osc_monitor
+from process_manager import ProcessManager
 
-# For compatibility - import PLAYBACK_SOURCES and SongCategories from textler_engine
-# TODO: move these to proper locations
-try:
-    from textler_engine import PLAYBACK_SOURCES, SongCategories, get_active_line_index
-except ImportError:
-    PLAYBACK_SOURCES = {"spotify_applescript": {"label": "Spotify"}, "vdj_osc": {"label": "VirtualDJ"}}
-    SongCategories = None
-    get_active_line_index = lambda lines, pos: -1
-
-# Launchpad control (replaces MIDI Router)
-try:
-    from launchpad_console import (
-        LaunchpadStatusPanel, LaunchpadPadsPanel, 
-        LaunchpadInstructionsPanel, LaunchpadOscDebugPanel,
-        LaunchpadTestsPanel, LaunchpadManager,
-        LAUNCHPAD_LIB_AVAILABLE,
-    )
-except ImportError:
-    LAUNCHPAD_LIB_AVAILABLE = False
-    LaunchpadStatusPanel = None
-    LaunchpadPadsPanel = None
-    LaunchpadInstructionsPanel = None
-    LaunchpadOscDebugPanel = None
-    LaunchpadTestsPanel = None
-    LaunchpadManager = None
-
-# Shader matching
-try:
-    from shader_matcher import ShaderIndexer, ShaderSelector
-    SHADER_MATCHER_AVAILABLE = True
-except ImportError as e:
-    SHADER_MATCHER_AVAILABLE = False
-    import sys
-    print(f"Warning: Shader matcher not available - {e}", file=sys.stderr)
-
-# Audio analyzer removed - Synesthesia is the primary audio engine
-AUDIO_ANALYZER_AVAILABLE = False
-
-# Configure logging to capture INFO level messages for the log panel
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('vj_console')
-
-# Import UI components and utilities from refactored modules
+# UI components
 from ui import (
     OSCClearRequested, PlaybackSourceChanged, VJUniverseTestRequested, VDJTestRequested,
     ShaderSearchModal,
@@ -98,16 +47,28 @@ from ui import (
     ShaderAnalysisPanel, ShaderSearchPanel,
     ShaderActionsPanel,
 )
-from data.builders import build_track_data, build_pipeline_data, build_categories_payload
-from services import ProcessMonitor, ProcessStats, ShaderAnalysisWorker
+from services import ProcessMonitor, ProcessStats
 
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
+# Launchpad (optional)
+try:
+    from launchpad_console import (
+        LaunchpadStatusPanel, LaunchpadPadsPanel,
+        LaunchpadInstructionsPanel, LaunchpadOscDebugPanel,
+        LaunchpadTestsPanel, LaunchpadManager,
+        LAUNCHPAD_LIB_AVAILABLE,
+    )
+except ImportError:
+    LAUNCHPAD_LIB_AVAILABLE = False
+    LaunchpadStatusPanel = LaunchpadPadsPanel = None
+    LaunchpadInstructionsPanel = LaunchpadOscDebugPanel = None
+    LaunchpadTestsPanel = LaunchpadManager = None
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('vj_console')
 
 
 class VJConsoleApp(App):
-    """Multi-screen VJ Console application."""
+    """VJ Console using modular architecture."""
 
     CSS = """
     Screen { background: $surface; }
@@ -117,114 +78,13 @@ class VJConsoleApp(App):
     .full-height { height: 1fr; overflow-y: auto; }
     #left-col { width: 40%; }
     #right-col { width: 60%; }
-    
-    /* Startup control panel */
-    #startup-control {
-        padding: 1;
-        border: solid $success;
-        margin-bottom: 1;
-    }
-    
-    /* OSC control panel */
-    #osc-control {
-        padding: 1;
-        border: solid $warning;
-        margin-bottom: 1;
-        height: auto;
-    }
-    
-    #osc-control .startup-buttons {
-        height: auto;
-        padding: 0;
-        margin-bottom: 1;
-    }
-    
-    #osc-control Button {
-        margin-right: 1;
-    }
-    
-    .startup-row {
-        height: auto;
-        padding: 0;
-        margin: 0 0 1 0;
-    }
-    
-    .startup-row Checkbox {
-        width: auto;
-        margin-right: 2;
-    }
-    
-    .stat-label {
-        width: 1fr;
-        text-align: right;
-    }
-    
-    .startup-buttons {
-        height: auto;
-        padding-top: 1;
-    }
-    
-    .startup-buttons Button {
-        margin-right: 1;
-    }
-    
-    .section-title {
-        margin-bottom: 1;
-    }
-    
-    /* Action button panels */
-    .action-buttons {
-        height: auto;
-        padding: 1;
-    }
-    
-    .action-buttons Button {
-        margin: 0 1 1 0;
-        min-width: 16;
-    }
-    
-    /* Controller selection modal */
-    #controller-modal {
-        width: 80;
-        height: auto;
-        background: $surface;
-        border: thick $primary;
-        padding: 2;
-    }
-    
-    /* Shader search modal */
-    #shader-search-modal {
-        width: 70;
-        height: auto;
-        background: $surface;
-        border: thick $success;
-        padding: 2;
-    }
-    
-    #shader-search-modal Input {
-        margin: 1 0;
-    }
-    
-    #modal-buttons {
-        align: center middle;
-        height: auto;
-        padding-top: 1;
-    }
-    
-    #modal-buttons Button {
-        margin: 0 1;
-    }
-    
-    ListView {
-        height: auto;
-        max-height: 15;
-        border: solid $accent;
-        padding: 1;
-    }
-    
-    ListItem {
-        height: 1;
-    }
+    #startup-control { padding: 1; border: solid $success; margin-bottom: 1; }
+    #osc-control { padding: 1; border: solid $warning; margin-bottom: 1; height: auto; }
+    .startup-row { height: auto; margin: 0; padding: 0; }
+    .startup-row Checkbox { margin-right: 1; }
+    .startup-row Static { margin-left: 1; }
+    .startup-buttons { height: auto; padding-top: 1; }
+    .startup-buttons Button { margin-right: 1; }
     """
 
     BINDINGS = [
@@ -232,61 +92,45 @@ class VJConsoleApp(App):
         Binding("1", "screen_master", "Master"),
         Binding("2", "screen_osc", "OSC"),
         Binding("3", "screen_logs", "Logs"),
-        Binding("4", "screen_midi", "MIDI"),
+        Binding("4", "screen_midi", "Launchpad"),
         Binding("5", "screen_shaders", "Shaders"),
-        Binding("s", "toggle_synesthesia", "Synesthesia"),
-        Binding("k,up", "nav_up", "Up"),
-        Binding("j,down", "nav_down", "Down"),
-        Binding("enter", "select_app", "Select"),
         Binding("plus,equals", "timing_up", "+Timing"),
         Binding("minus", "timing_down", "-Timing"),
-        # Shader analysis bindings (active on shaders tab)
-        Binding("p", "shader_toggle_analysis", "Pause/Resume Analysis", show=False),
-        Binding("slash", "shader_search_mood", "Search by Mood", show=False),
-        Binding("e", "shader_search_energy", "Search by Energy", show=False),
-        Binding("R", "shader_rescan", "Rescan Shaders", show=False),
     ]
 
-    current_tab = reactive("master")
     synesthesia_running = reactive(False)
     lmstudio_running = reactive(False)
     vjuniverse_running = reactive(False)
 
     def __init__(self):
         super().__init__()
-        
-        # Persistent settings (includes startup preferences)
+
         self.settings = Settings()
-        
+        self._logs: List[str] = []
+
+        # Module Registry - the heart of the new architecture
+        config = ModuleRegistryConfig(
+            playback_source=self.settings.playback_source or "vdj_osc",
+        )
+        self.registry = ModuleRegistry(config)
+
         # Process manager for Processing apps
         self.process_manager = ProcessManager()
         self.process_manager.discover_apps(self._find_project_root())
-        
-        # Process monitor for CPU/memory tracking
+
+        # Process monitor for resource tracking
         self.process_monitor = ProcessMonitor([
-            "Synesthesia",
-            "LM Studio",
-            "Magic",
-            "java",  # Processing apps run as Java
+            "Synesthesia", "LM Studio", "Magic", "java",
         ])
-        
-        self.textler_engine: Optional[TextlerEngine] = None
-        self._logs: List[str] = []
-        self._latest_snapshot: Optional[PlaybackSnapshot] = None
-        self._lmstudio_status: Dict[str, Any] = {}  # Tracks model availability
-        
-        # Launchpad controller (replaces MIDI Router)
-        self.launchpad_manager: Optional['LaunchpadManager'] = None
+
+        # Pipeline state for UI
+        self._pipeline_result: Optional[PipelineResult] = None
+        self._pipeline_steps: List[Dict[str, Any]] = []
+
+        # Launchpad (optional)
+        self.launchpad_manager: Optional[Any] = None
         self._setup_launchpad()
-        
-        # Shader Indexer
-        self.shader_indexer: Optional[Any] = None  # ShaderIndexer when available
-        self.shader_selector: Optional[Any] = None  # ShaderSelector when available  
-        self.shader_analysis_worker: Optional[ShaderAnalysisWorker] = None
-        self._current_shader_match: Dict[str, Any] = {}
-        self._shader_search_results: Dict[str, Any] = {}
-        self._setup_shader_indexer()
-        
+
         self._setup_log_capture()
 
     def _find_project_root(self) -> Path:
@@ -294,107 +138,46 @@ class VJConsoleApp(App):
             if (p / "processing-vj").exists():
                 return p
         return Path.cwd()
-    
+
     def _setup_launchpad(self) -> None:
-        """Initialize Launchpad controller."""
         if not LAUNCHPAD_LIB_AVAILABLE or LaunchpadManager is None:
-            logger.info("Launchpad library not available - skipping")
             return
-        
         try:
-            self.launchpad_manager = LaunchpadManager(
-                osc_send_port=7777,
-                osc_receive_port=9999,
-            )
-            # Set callback for state changes (will be called from background thread)
+            self.launchpad_manager = LaunchpadManager(osc_send_port=7777, osc_receive_port=9999)
             self.launchpad_manager.set_state_callback(self._on_launchpad_state_change)
-            
-            # Start the manager (non-blocking - runs in background thread)
-            if self.launchpad_manager.start():
-                logger.info("Launchpad manager started")
-            else:
-                logger.warning("Launchpad manager start failed")
-                
+            self.launchpad_manager.start()
         except Exception as e:
-            logger.warning(f"Launchpad initialization failed: {e}")
+            logger.warning(f"Launchpad init failed: {e}")
             self.launchpad_manager = None
-    
+
     def _on_launchpad_state_change(self, state) -> None:
-        """Handle Launchpad state change (called from background thread)."""
-        # Use call_from_thread to safely update UI from background thread
         self.call_from_thread(self._update_launchpad_panels)
-    
-    def _setup_shader_indexer(self) -> None:
-        """Initialize shader indexer and analysis worker."""
-        if not SHADER_MATCHER_AVAILABLE:
-            logger.warning("Shader matcher not available - skipping initialization")
-            return
-        
-        try:
-            self.shader_indexer = ShaderIndexer()
-            
-            # Sync from JSON files on startup
-            stats = self.shader_indexer.sync()
-            logger.info(f"Shader indexer synced: {stats}")
-            
-            # Create selector with loaded shaders (tracks usage)
-            self.shader_selector = ShaderSelector(self.shader_indexer)
-            
-            # Create LLM analyzer for shader analysis
-            from ai_services import LLMAnalyzer
-            llm = LLMAnalyzer()
-            
-            # Create and start the analysis worker (starts paused)
-            self.shader_analysis_worker = ShaderAnalysisWorker(self.shader_indexer, llm)
-            self.shader_analysis_worker.start()
-            
-            logger.info("Shader indexer and analysis worker initialized")
-            
-        except Exception as e:
-            logger.exception(f"Shader indexer initialization failed: {e}")
-            self.shader_indexer = None
-            self.shader_selector = None
-            self.shader_analysis_worker = None
-    
+
     def _setup_log_capture(self) -> None:
-        """Setup logging handler to capture logs to _logs list."""
         class ListHandler(logging.Handler):
             def __init__(self, log_list: List[str]):
                 super().__init__()
                 self.log_list = log_list
                 self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-                self.setLevel(logging.DEBUG)  # Capture all levels
-            
+
             def emit(self, record):
                 try:
-                    msg = self.format(record)
-                    self.log_list.append(msg)
-                    # Keep only last 500 lines
+                    self.log_list.append(self.format(record))
                     if len(self.log_list) > 500:
                         self.log_list.pop(0)
                 except Exception:
                     pass
-        
-        # Add handler to root logger to capture all logs
-        handler = ListHandler(self._logs)
+
         root_logger = logging.getLogger()
-        root_logger.setLevel(logging.DEBUG)  # Ensure root accepts all levels
-        root_logger.addHandler(handler)
-        
-        # Suppress noisy HTTP library logs
+        root_logger.addHandler(ListHandler(self._logs))
         logging.getLogger('urllib3').setLevel(logging.WARNING)
-        logging.getLogger('requests').setLevel(logging.WARNING)
-        logging.getLogger('urllib3.connectionpool').setLevel(logging.WARNING)
-        
-        # Log startup message to verify capture works
-        logger.info("VJ Console started - logging active")
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        
+
         with TabbedContent(id="screens"):
             # Tab 1: Master Control
-            with TabPane("1️⃣ Master Control", id="master"):
+            with TabPane("1 Master", id="master"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         yield StartupControlPanel(self.settings, id="startup-control")
@@ -406,34 +189,32 @@ class VJConsoleApp(App):
                         yield PipelinePanel(id="pipeline", classes="panel")
 
             # Tab 2: OSC View
-            with TabPane("2️⃣ OSC View", id="osc"):
+            with TabPane("2 OSC", id="osc"):
                 yield OSCControlPanel(id="osc-control")
-                with VerticalScroll(id="osc-scroll", classes="panel full-height"):
+                with VerticalScroll(classes="panel full-height"):
                     yield OSCPanel(id="osc-full")
 
-            # Tab 3: All Logs
-            with TabPane("3️⃣ All Logs", id="logs"):
+            # Tab 3: Logs
+            with TabPane("3 Logs", id="logs"):
                 yield LogsPanel(id="logs-panel", classes="panel full-height")
-            
-            # Tab 4: Launchpad Controller
-            with TabPane("4️⃣ Launchpad", id="launchpad"):
+
+            # Tab 4: Launchpad
+            with TabPane("4 Launchpad", id="launchpad"):
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
                         if LAUNCHPAD_LIB_AVAILABLE and LaunchpadStatusPanel:
                             yield LaunchpadStatusPanel(id="lp-status", classes="panel")
                             yield LaunchpadPadsPanel(id="lp-pads", classes="panel")
                         else:
-                            yield Static("[dim]launchpad_osc_lib not available[/]", classes="panel")
+                            yield Static("[dim]Launchpad not available[/]", classes="panel")
                     with VerticalScroll(id="right-col"):
                         if LAUNCHPAD_LIB_AVAILABLE and LaunchpadInstructionsPanel:
                             yield LaunchpadInstructionsPanel(id="lp-instructions", classes="panel")
                             yield LaunchpadTestsPanel(id="lp-tests", classes="panel")
                             yield LaunchpadOscDebugPanel(id="lp-osc", classes="panel full-height")
-                        else:
-                            yield Static("[dim]Connect Launchpad and restart[/]", classes="panel")
-            
-            # Tab 5: Shader Indexer
-            with TabPane("5️⃣ Shaders", id="shaders"):
+
+            # Tab 5: Shaders
+            with TabPane("5 Shaders", id="shaders"):
                 yield ShaderActionsPanel(id="shader-actions")
                 with Horizontal():
                     with VerticalScroll(id="left-col"):
@@ -446,1043 +227,357 @@ class VJConsoleApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = "🎛 VJ Console"
+        self.title = "VJ Console (Modular)"
         self.sub_title = "Press 1-5 to switch screens"
 
-        # OSC hub runs continuously for the lifetime of the console
-        if osc.start():
-            logger.info("OSC Hub started (always-on)")
-        else:
-            logger.error("OSC Hub failed to start")
+        # Wire callbacks BEFORE starting (so first track is caught)
+        self._wire_callbacks()
 
-        # Initialize apps list
-        self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
+        # Start module registry
+        logger.info("Starting module registry...")
+        self.registry.start_all()
+
+        # Init apps list
+        try:
+            self.query_one("#apps", AppsListPanel).apps = self.process_manager.apps
+        except Exception:
+            pass
         self.process_manager.start_monitoring(daemon_mode=True)
 
-        # Always start TextlerEngine - it polls slowly (10s) when no source connected
-        self._start_textler()
+        # Background updates
+        self.set_interval(0.5, self._update_ui)
+        self.set_interval(30.0, self._check_services)
 
-        # NOTE: Other services controlled via StartupControlPanel
-        # Services are started only when "Start All" button is pressed
-        # or when auto-restart is enabled and service is not running
+        logger.info("VJ Console mounted - modular architecture active")
 
-        # Background updates - stagger intervals to reduce CPU spikes
-        self.set_interval(0.5, self._update_data)
-        self.set_interval(30.0, self._check_apps_and_autorestart)  # Check every 30s
+    def _wire_callbacks(self) -> None:
+        """Wire module callbacks to UI updates."""
 
-        # Fix keyboard focus: ensure TabbedContent has focus for key bindings to work
-        # Use call_after_refresh to ensure UI is fully rendered before setting focus
-        self.call_after_refresh(self._set_initial_focus)
+        # Track change -> run pipeline
+        def on_track_change(track):
+            if track:
+                logger.info(f"Track: {track.artist} - {track.title}")
+                self._run_pipeline_async(track.artist, track.title, track.album)
 
-        # Log startup to verify logging is working
-        logger.info("VJ Console mounted and ready")
-        logger.info(f"Logs are being captured to panel (current count: {len(self._logs)})")
+        self.registry.playback.on_track_change = on_track_change
 
-    def _set_initial_focus(self) -> None:
-        """Set initial focus after UI is rendered."""
-        try:
-            tabs = self.query_one("#screens", TabbedContent)
-            tabs.focus()
-        except Exception as e:
-            logger.warning(f"Could not set initial focus: {e}")
+        # Pipeline step callbacks
+        def on_step_start(step: PipelineStep):
+            self._pipeline_steps.append({"step": step.value, "status": "running"})
 
-    def _safe_update_panel(self, panel_id: str, attribute: str, value: Any) -> None:
-        """Safely update a panel attribute without crashing on errors."""
-        try:
-            panel = self.query_one(panel_id)
-            setattr(panel, attribute, value)
-        except Exception:
-            # Silently ignore - panel might not be mounted yet
-            pass
+        def on_step_complete(step: PipelineStep, data: Any):
+            for s in self._pipeline_steps:
+                if s["step"] == step.value:
+                    s["status"] = "done" if "error" not in data else "error"
+                    s["data"] = data
+                    break
 
-    def on_osc_clear_requested(self, message: OSCClearRequested) -> None:
-        """Handle OSC clear request from OSCControlPanel."""
-        osc_monitor.clear()
-        logger.info("OSC message log cleared")
+        self.registry.pipeline.on_step_start = on_step_start
+        self.registry.pipeline.on_step_complete = on_step_complete
 
-    def on_vjuniverse_test_requested(self, message: VJUniverseTestRequested) -> None:
-        """Handle VJUniverse test request - send multiple OSC messages to test all features."""
-        self._run_vjuniverse_test()
+    def _run_pipeline_async(self, artist: str, title: str, album: str = "") -> None:
+        """Run pipeline in background thread."""
+        logger.info(f"Starting pipeline for: {artist} - {title}")
+        self._pipeline_steps = []
 
-    def on_vdj_test_requested(self, message: VDJTestRequested) -> None:
-        """Handle VDJ OSC connection test request."""
-        self._run_vdj_test()
-
-    def _run_vdj_test(self) -> None:
-        """
-        Test VirtualDJ OSC connection by sending queries and checking responses.
-        
-        VDJ OSC Requirements:
-        - VirtualDJ PRO license with OSC enabled
-        - Settings: oscPort=9009, oscPortBack=9999
-        
-        Tests:
-        1. Check if VDJ process is running
-        2. Send OSC query to VDJ and wait for response
-        3. Report connection status and deck info
-        """
-        import time
-        import subprocess
-        from osc import osc
-        from vdj_monitor import VDJMonitor
-        
-        if not osc.is_started:
-            self.notify("OSC Hub not running!", severity="error")
-            return
-        
-        logger.info("=== VDJ Connection Test ===")
-        self.notify("Testing VDJ connection...", severity="information")
-        
-        # 1. Check if VDJ process is running
-        try:
-            result = subprocess.run(['pgrep', '-f', 'VirtualDJ'], capture_output=True, timeout=2)
-            vdj_running = result.returncode == 0
-        except Exception:
-            vdj_running = False
-        
-        if not vdj_running:
-            msg = "❌ VirtualDJ is NOT running"
-            logger.warning(msg)
-            self.notify(msg, severity="error")
-            return
-        
-        logger.info("✓ VirtualDJ process is running")
-        
-        # 2. Check OSC channel status
-        channel_status = osc.get_channel_status()
-        vdj_channel = channel_status.get("vdj", {})
-        logger.info(f"VDJ OSC channel: send_port={vdj_channel.get('send_port')}, recv_port={vdj_channel.get('recv_port')}, active={vdj_channel.get('active')}")
-        
-        # 3. Send test query to VDJ
-        logger.info("Sending OSC queries to VDJ on port 9009...")
-        
-        # Subscribe to deck 1 info and query it
-        for verb in ["get_title", "get_artist", "is_audible", "play", "loaded"]:
-            osc.vdj.send(f"/vdj/subscribe/deck/1/{verb}")
-            osc.vdj.send(f"/vdj/query/deck/1/{verb}")
-        
-        # 4. Check TextlerEngine's VDJ monitor status
-        if self.textler_engine:
-            # Access the internal VDJ monitor if available
-            playback_coord = getattr(self.textler_engine, '_playback_coord', None)
-            if playback_coord:
-                monitor = getattr(playback_coord, '_monitor', None)
-                if monitor and hasattr(monitor, 'status'):
-                    status = monitor.status
-                    logger.info(f"VDJ Monitor status: {status}")
-                    
-                    if status.get('available'):
-                        audible_deck = status.get('audible_deck')
-                        bpm = status.get('bpm', 0)
-                        msg = f"✓ VDJ Connected! Deck {audible_deck} at {bpm:.1f} BPM"
-                        logger.info(msg)
-                        self.notify(msg, severity="information")
-                        return
-        
-        # 5. Wait briefly and check for response
-        time.sleep(0.5)
-        
-        # Check if we received any VDJ messages
-        from osc import osc_monitor
-        recent_vdj = [m for m in osc_monitor.get_aggregated() if 'vdj' in m.channel.lower()]
-        
-        if recent_vdj:
-            msg = f"✓ VDJ responding! Got {len(recent_vdj)} message types"
-            logger.info(msg)
-            for m in recent_vdj[:5]:
-                logger.info(f"  {m.address}: {m.last_args}")
-            self.notify(msg, severity="information")
-        else:
-            msg = "⚠️ VDJ running but NO OSC response. Check VDJ Settings: oscPort=9009, oscPortBack=9999"
-            logger.warning(msg)
-            logger.warning("In VirtualDJ: Settings → Options → internet")
-            logger.warning("  - Set: oscPort=9009 (VDJ listens)")
-            logger.warning("  - Set: oscPortBack=9999 (VDJ sends replies)")
-            self.notify(msg, severity="warning")
-        
-        # 1. Set track info: [active, source, artist, title, album, duration, has_lyrics]
-        send("/textler/track", 1, "test", "Test Artist", "Test Song Title", "Test Album 2024", 180.0, 1)
-        
-        # 2. Send slot defaults for all intents (pure function test)
-        for intent in TEXT_INTENT_DEFAULTS.keys():
-            for addr, value in get_slot_defaults_osc(intent):
-                send(addr, value)
-        
-        # 3. Reset and populate lyrics
-        send("/textler/lyrics/reset")
-        test_lyrics = [
-            (0.0, "* Welcome to VJUniverse *"),
-            (2.0, "Testing the lyrics display"),
-            (4.0, "Each line syncs to the beat"),
-            (6.0, "This is line number four"),
-            (8.0, "Watch the text animate smoothly"),
-            (10.0, "* Music makes us come alive *"),
-        ]
-        for idx, (time_sec, text) in enumerate(test_lyrics):
-            send("/textler/lyrics/line", idx, float(time_sec), text)
-        
-        # 4. Set active line (index 2)
-        send("/textler/line/active", 2)
-        
-        # 5. Reset and populate refrain
-        send("/textler/refrain/reset")
-        refrain_lines = [
-            (0.0, ">> CHORUS: This is the refrain! <<"),
-            (2.0, ">> Sing along with me! <<"),
-            (4.0, ">> Feel the rhythm flow! <<"),
-        ]
-        for idx, (time_sec, text) in enumerate(refrain_lines):
-            send("/textler/refrain/line", idx, float(time_sec), text)
-        
-        # 6. Set active refrain
-        send("/textler/refrain/active", 1, ">> Sing along with me! <<")
-        
-        # 7. Set text slots (white-only text - no color messages)
-        send("/textler/slot", "title", "** VJ UNIVERSE TEST **")
-        send("/textler/slot", "subtitle", "Testing all OSC features")
-        send("/textler/slot", "footer", "Python -> Processing via OSC port 10000")
-        
-        # 8. Configure slot appearance (position/size only - no colors)
-        send("/textler/slot/title/size", 2.0)
-        send("/textler/slot/title/y", 0.15)
-        
-        send("/textler/slot/subtitle/size", 1.2)
-        send("/textler/slot/subtitle/y", 0.5)
-        
-        send("/textler/slot/footer/size", 0.8)
-        send("/textler/slot/footer/y", 0.85)
-        
-        # 9. Test DJ font presets
-        send("/textler/font", "Avenir Next Heavy")  # Set by name
-        send("/textler/fontsize", 3)  # Size index 3 = 60px
-        
-        # 10. Send broadcast message (overlay at bottom)
-        send("/textler/broadcast", "[BROADCAST] Test message from VJ Console!")
-        
-        # 11. Send timed message with fade envelope
-        # /textler/message [text, x, y, size, align, opacity, fadeIn, hold, fadeOut, layer, priority]
-        # CENTER = 3 in Processing
-        send("/textler/message", "*** FLASH MESSAGE ***", 0.5, 0.3, 1.5, 3, 255.0, 0.3, 2.0, 0.5, "test", 10)
-        
-        # 12. Load a shader (if available)
-        send("/shader/load", "alien_cavern_dup", 0.7, 0.3)
-        
-        logger.info("VJUniverse test sequence complete - 12 message types sent")
-        self.notify("✓ Test complete! Check VJUniverse window", severity="information")
-
-    def _update_osc_control_panel(self) -> None:
-        """Update the OSC control panel with current status."""
-        try:
-            panel = self.query_one("#osc-control", OSCControlPanel)
-            panel.channel_status = osc.get_channel_status()
-        except Exception:
-            pass
-
-    def _is_osc_view_active(self) -> bool:
-        try:
-            return self.query_one("#screens", TabbedContent).active == "osc"
-        except Exception:
-            return False
-
-    def _sync_osc_monitor_visibility(self) -> None:
-        osc_view_active = self._is_osc_view_active()
-        if osc_view_active and osc.is_started and not osc_monitor.is_started:
-            osc_monitor.start()
-            return
-        if osc_monitor.is_started and (not osc_view_active or not osc.is_started):
-            osc_monitor.stop()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Route button clicks to actions."""
-        button_id = event.button.id
-        
-        # Startup control buttons
-        if button_id == "btn-start-all":
-            self._start_selected_services()
-            return
-        
-        if button_id == "btn-stop-all":
-            self._stop_all_services()
-            return
-        
-        # Launchpad test buttons
-        if button_id and button_id.startswith("test-"):
-            test_name = button_id.replace("test-", "")
-            if self.launchpad_manager:
-                result = self.launchpad_manager.run_test(test_name)
-                try:
-                    tests_panel = self.query_one("#lp-tests", LaunchpadTestsPanel)
-                    tests_panel.test_status = {'result': result}
-                except Exception:
-                    pass
-            return
-        
-        # Shader buttons
-        if button_id == "shader-pause-resume":
-            self.action_shader_toggle_analysis()
-        elif button_id == "shader-search-mood":
-            self.action_shader_search_mood()
-        elif button_id == "shader-search-energy":
-            self.action_shader_search_energy()
-        elif button_id == "shader-search-text":
-            self.action_shader_search_text()
-        elif button_id == "shader-rescan":
-            self.action_shader_rescan()
-
-    def on_playback_source_changed(self, event: PlaybackSourceChanged) -> None:
-        """Handle playback source change from radio buttons."""
-        if self.textler_engine:
-            # Map old source keys to new display names
-            source_map = {"spotify_applescript": "Spotify", "vdj_osc": "VirtualDJ"}
-            display_name = source_map.get(event.source_key, event.source_key)
-            self.textler_engine.set_source(display_name)
-            self._logs.append(f"Switched playback source to: {display_name}")
-
-    # === Actions (impure, side effects) ===
-    
-    def _start_textler(self) -> None:
-        """Start the TextlerEngine."""
-        if self.textler_engine is not None:
-            return  # Already running
-        try:
-            self.textler_engine = TextlerEngine()
-            # Activate the selected playback source if one is configured
-            source = self.settings.playback_source
-            if source:
-                self.textler_engine.set_playback_source(source)
-            self.textler_engine.start()
-            logger.info("TextlerEngine started")
-        except Exception as e:
-            logger.exception(f"VJ Controller start error: {e}")
-    
-    def _run_process(self, cmd: List[str], timeout: int = 2) -> bool:
-        """Run a subprocess, return True if successful."""
-        try:
-            result = subprocess.run(cmd, capture_output=True, timeout=timeout)
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    # =========================================================================
-    # SERVICE DETECTION METHODS
-    # =========================================================================
-    
-    def _is_synesthesia_running(self) -> bool:
-        """Check if Synesthesia is running."""
-        return self._run_process(['pgrep', '-x', 'Synesthesia'], 1)
-    
-    def _is_vjuniverse_running(self) -> bool:
-        """Check if VJUniverse Processing app is running."""
-        for app in self.process_manager.apps:
-            if 'vjuniverse' in app.name.lower() or 'universe' in app.name.lower():
-                if self.process_manager.is_running(app):
-                    return True
-        return False
-    
-    def _is_lmstudio_running(self) -> bool:
-        """Check if LM Studio process is running."""
-        return self._run_process(['pgrep', '-f', 'LM Studio'], 1)
-    
-    def _check_lmstudio_model(self) -> Dict[str, Any]:
-        """Check LM Studio API and model status."""
-        try:
-            resp = requests.get("http://localhost:1234/v1/models", timeout=1)
-            if resp.status_code == 200:
-                models = resp.json().get('data', [])
-                if models:
-                    model_id = models[0].get('id', 'unknown')
-                    return {'available': True, 'model': model_id, 'warning': ''}
-                return {'available': False, 'model': '', 'warning': 'No model loaded'}
-        except Exception:
-            pass
-        return {'available': False, 'model': '', 'warning': ''}
-    
-    def _is_music_monitor_running(self) -> bool:
-        """Check if Music Monitor (Textler Engine) is running."""
-        return self.textler_engine is not None
-    
-    def _is_magic_running(self) -> bool:
-        """Check if Magic Music Visuals is running."""
-        return self._run_process(['pgrep', '-x', 'Magic'], 1)
-    
-    # =========================================================================
-    # SERVICE LAUNCHER METHODS
-    # =========================================================================
-    
-    def _start_synesthesia(self) -> bool:
-        """Start Synesthesia app. Returns True if launched."""
-        if self._is_synesthesia_running():
-            logger.debug("Synesthesia already running")
-            return True
-        try:
-            subprocess.Popen(['open', '-a', 'Synesthesia'])
-            logger.info("Started Synesthesia")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start Synesthesia: {e}")
-            return False
-    
-    def _start_vjuniverse(self) -> bool:
-        """Start VJUniverse Processing app. Returns True if launched."""
-        if self._is_vjuniverse_running():
-            logger.debug("VJUniverse already running")
-            return True
-        
-        # Validate processing-java is available
-        if not self._run_process(['which', 'processing-java'], 2):
-            logger.error("processing-java not found in PATH. Install Processing and add to PATH.")
-            self.notify("processing-java not found! Install Processing and add to PATH.", severity="error")
-            return False
-        
-        # Find and launch VJUniverse
-        for app in self.process_manager.apps:
-            if 'vjuniverse' in app.name.lower() or 'universe' in app.name.lower():
-                if self.process_manager.launch_app(app):
-                    logger.info(f"Started {app.name}")
-                    return True
-                else:
-                    logger.error(f"Failed to launch {app.name}")
-                    return False
-        
-        logger.error("VJUniverse app not found in processing-vj/src/")
-        return False
-    
-    def _start_lmstudio(self) -> bool:
-        """Start LM Studio app. Returns True if launched."""
-        if self._is_lmstudio_running():
-            logger.debug("LM Studio already running")
-            return True
-        try:
-            subprocess.Popen(['open', '-a', 'LM Studio'])
-            logger.info("Started LM Studio (user must load a model)")
-            self.notify("LM Studio started - please load a model manually", severity="information")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start LM Studio: {e}")
-            return False
-    
-    def _start_magic(self) -> bool:
-        """Start Magic Music Visuals app. Returns True if launched."""
-        if self._is_magic_running():
-            logger.debug("Magic already running")
-            return True
-        
-        try:
-            # Check if a specific .magic file should be loaded
-            magic_file = self.settings.magic_file_path
-            if magic_file and Path(magic_file).exists():
-                # Open Magic with specific file
-                subprocess.Popen(['open', '-a', 'Magic', magic_file])
-                logger.info(f"Started Magic with file: {magic_file}")
-                self.notify(f"Magic started with {Path(magic_file).name}", severity="information")
-            else:
-                # Open Magic without file
-                subprocess.Popen(['open', '-a', 'Magic'])
-                logger.info("Started Magic Music Visuals")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to start Magic: {e}")
-            return False
-    
-    def _start_selected_services(self) -> None:
-        """Start all services that have checkboxes enabled."""
-        started = []
-        
-        if self.settings.start_synesthesia:
-            if self._start_synesthesia():
-                started.append("Synesthesia")
-        
-        if self.settings.start_vjuniverse:
-            if self._start_vjuniverse():
-                started.append("VJUniverse")
-        
-        if self.settings.start_lmstudio:
-            if self._start_lmstudio():
-                started.append("LM Studio")
-        
-        if self.settings.start_magic:
-            if self._start_magic():
-                started.append("Magic")
-        
-        if started:
-            self.notify(f"Started: {', '.join(started)}", severity="information")
-        else:
-            self.notify("No services selected to start", severity="warning")
-        
-        # Refresh status immediately
-        self._check_apps_and_autorestart()
-    
-    def _stop_all_services(self) -> None:
-        """Stop all running services."""
-        stopped = []
-        
-        # Stop Synesthesia
-        if self._is_synesthesia_running():
+        def run():
             try:
-                subprocess.run(['pkill', '-x', 'Synesthesia'], check=False)
-                stopped.append("Synesthesia")
+                result = self.registry.pipeline.process(artist, title, album)
+                self._pipeline_result = result
+                logger.info(f"Pipeline complete: {result.steps_completed}")
             except Exception as e:
-                logger.error(f"Failed to stop Synesthesia: {e}")
-        
-        # Stop VJUniverse (Processing java apps)
-        if self._is_vjuniverse_running():
-            try:
-                # Stop via ProcessManager
-                for app in self.process_manager.apps:
-                    if ('vjuniverse' in app.name.lower() or 'universe' in app.name.lower()) and self.process_manager.is_running(app):
-                        self.process_manager.stop_app(app)
-                        stopped.append("VJUniverse")
-                        break
-            except Exception as e:
-                logger.error(f"Failed to stop VJUniverse: {e}")
-        
-        # Stop LM Studio
-        if self._is_lmstudio_running():
-            try:
-                subprocess.run(['pkill', '-f', 'LM Studio'], check=False)
-                stopped.append("LM Studio")
-            except Exception as e:
-                logger.error(f"Failed to stop LM Studio: {e}")
-        
-        # Stop Magic Music Visuals
-        if self._is_magic_running():
-            try:
-                subprocess.run(['pkill', '-x', 'Magic'], check=False)
-                stopped.append("Magic")
-            except Exception as e:
-                logger.error(f"Failed to stop Magic: {e}")
-        
-        if stopped:
-            self.notify(f"Stopped: {', '.join(stopped)}", severity="information")
-        else:
-            self.notify("No services were running", severity="warning")
-        
-        # Clear process monitor cache
-        self.process_monitor = ProcessMonitor([
-            "Synesthesia",
-            "LM Studio",
-            "Magic",
-            "java",  # Processing apps run as Java
-        ])
-        
-        # Refresh status immediately
-        self._check_apps_and_autorestart()
+                logger.error(f"Pipeline error: {e}")
 
-    # =========================================================================
-    # COMBINED CHECK AND AUTO-RESTART
-    # =========================================================================
-    
-    def _check_apps_and_autorestart(self) -> None:
-        """Check running status of external apps and auto-restart if enabled."""
-        # Update running status
-        self.synesthesia_running = self._is_synesthesia_running()
-        self.lmstudio_running = self._is_lmstudio_running()
-        self.vjuniverse_running = self._is_vjuniverse_running()
-        self.magic_running = self._is_magic_running()
-        
-        # Check LM Studio model status
-        self._lmstudio_status = self._check_lmstudio_model()
-        
-        # Get process stats for resource monitoring
-        process_stats = self.process_monitor.get_stats()
-        
-        # Add TextlerEngine stats (self process)
-        try:
-            self_proc = psutil.Process()
-            process_stats["TextlerEngine"] = ProcessStats(
-                pid=self_proc.pid,
-                name="TextlerEngine",
-                cpu_percent=self_proc.cpu_percent(interval=None),
-                memory_mb=self_proc.memory_info().rss / (1024 * 1024),
-                running=self.textler_engine is not None
-            )
-        except Exception:
-            pass
-        
-        # Update startup panel with stats
-        try:
-            startup_panel = self.query_one("#startup-control", StartupControlPanel)
-            startup_panel.stats_data = process_stats
-            startup_panel.lmstudio_status = self._lmstudio_status
-        except Exception:
-            pass
-        
-        # Auto-restart logic
-        if self.settings.autorestart_synesthesia and not self.synesthesia_running:
-            logger.info("Auto-restarting Synesthesia")
-            self._start_synesthesia()
-        
-        if self.settings.autorestart_vjuniverse and not self.vjuniverse_running:
-            logger.info("Auto-restarting VJUniverse")
-            self._start_vjuniverse()
-        
-        if self.settings.autorestart_lmstudio and not self.lmstudio_running:
-            logger.info("Auto-restarting LM Studio")
-            self._start_lmstudio()
-        
-        if self.settings.autorestart_magic and not self.magic_running:
-            logger.info("Auto-restarting Magic")
-            self._start_magic()
+        threading.Thread(target=run, daemon=True).start()
 
-    def _update_data(self) -> None:
-        """Update all panels with current data."""
-        # Always update logs panel
-        self._safe_update_panel("#logs-panel", "logs", list(self._logs))
+    def _update_ui(self) -> None:
+        """Update all UI panels."""
+        # Logs
+        self._safe_update("#logs-panel", "logs", list(self._logs))
 
-        # Always update OSC panels
-        self._update_osc_control_panel()
-        self._sync_osc_monitor_visibility()
-        self._safe_update_panel("#osc-full", "osc_running", osc.is_started)
-        if self._is_osc_view_active() and osc.is_started and osc_monitor.is_started:
-            try:
-                control_panel = self.query_one("#osc-control", OSCControlPanel)
-                filter_text = control_panel.filter_text
-            except Exception:
-                filter_text = ""
-            self._safe_update_panel("#osc-full", "full_view", True)
-            self._safe_update_panel("#osc-full", "filter_text", filter_text)
-            self._safe_update_panel("#osc-full", "stats", osc_monitor.get_stats())
-            self._safe_update_panel(
-                "#osc-full",
-                "grouped_prefixes",
-                osc_monitor.get_grouped_prefixes(
-                    filter_text=filter_text,
-                    limit=20,
-                    child_limit=20,
-                ),
-            )
-            self._safe_update_panel(
-                "#osc-full",
-                "grouped_messages",
-                osc_monitor.get_grouped_messages(
-                    filter_text=filter_text,
-                    limit_per_channel=20,
-                ),
-            )
+        # OSC
+        self._update_osc_panels()
 
-        # If no textler engine, clear panels and return
-        if not self.textler_engine:
-            self._safe_update_panel("#now-playing", "track_data", {})
-            self._safe_update_panel("#playback-source", "monitor_running", False)
-            self._safe_update_panel("#playback-source", "lookup_ms", 0.0)
-            self._safe_update_panel("#playback-source", "connection_state", "idle")
-            return
+        # Playback/Track
+        self._update_playback_panels()
 
-        # TextlerEngine runs its own loop - just get the latest snapshot
+        # Pipeline/Categories
+        self._update_pipeline_panels()
 
-        # Get snapshot and build data
-        snapshot = self.textler_engine.get_snapshot()
-        self._latest_snapshot = snapshot
-        monitor_status = snapshot.monitor_status or {}
-        source_connected = (
-            monitor_status.get(snapshot.source, {}).get('available', False)
-            if snapshot.source in monitor_status
-            else any(s.get('available', False) for s in monitor_status.values())
-        )
-
-        # Update now playing
-        track_data = build_track_data(snapshot, source_connected)
-        self._safe_update_panel("#now-playing", "track_data", track_data)
-        self._safe_update_panel("#now-playing", "shader_name", self.textler_engine.current_shader)
-
-        # Update playback source panel with connection state
-        self._safe_update_panel("#playback-source", "lookup_ms", self.textler_engine.last_lookup_ms)
-        self._safe_update_panel("#playback-source", "monitor_running", bool(self.textler_engine.playback_source))
-        
-        # Determine connection state for visual feedback
-        state = snapshot.state
-        if not self.textler_engine.playback_source:
-            connection_state = "idle"
-            current_track = ""
-        elif snapshot.error:
-            connection_state = "connecting"
-            current_track = ""
-        elif state.has_track and state.is_playing:
-            connection_state = "connected"
-            current_track = f"{state.track.artist} - {state.track.title}" if state.track else ""
-        elif state.has_track:
-            connection_state = "connected"  # Has track but paused
-            current_track = f"{state.track.artist} - {state.track.title} (paused)" if state.track else ""
-        else:
-            connection_state = "no_playback"
-            current_track = ""
-        
-        self._safe_update_panel("#playback-source", "connection_state", connection_state)
-        self._safe_update_panel("#playback-source", "current_track", current_track)
-
-        # Update categories panel
-        cat_data = build_categories_payload(self.textler_engine.current_categories)
-        self._safe_update_panel("#categories", "categories_data", cat_data)
-
-        # Update pipeline panel
-        pipeline_data = build_pipeline_data(self.textler_engine, snapshot)
-        self._safe_update_panel("#pipeline", "pipeline_data", pipeline_data)
-
-        # Update Launchpad panels
+        # Launchpad
         self._update_launchpad_panels()
-        
-        # Update shader panels
-        self._update_shader_panels()
 
-    def _update_shader_panels(self) -> None:
-        """Update shader indexer/matcher panels."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
-            return
-        
+    def _safe_update(self, panel_id: str, attr: str, value: Any) -> None:
         try:
-            # Use cached stats (fast) - only rescan when explicitly requested
-            stats = self.shader_indexer.get_stats(use_cache=True)
-            try:
-                index_panel = self.query_one("#shader-index", ShaderIndexPanel)
-                index_panel.status = stats
-            except Exception:
-                pass
-            
-            # Update analysis progress panel
-            if self.shader_analysis_worker:
-                try:
-                    analysis_panel = self.query_one("#shader-analysis", ShaderAnalysisPanel)
-                    analysis_panel.analysis_status = self.shader_analysis_worker.get_status()
-                except Exception:
-                    pass
-                
-                # Update action panel button labels
-                try:
-                    actions_panel = self.query_one("#shader-actions", ShaderActionsPanel)
-                    actions_panel.analysis_running = not self.shader_analysis_worker.is_paused()
-                except Exception:
-                    pass
-            
-            # Update search results panel
-            try:
-                search_panel = self.query_one("#shader-search", ShaderSearchPanel)
-                search_panel.search_results = self._shader_search_results
-            except Exception:
-                pass
-            
-            # Update match panel
-            try:
-                match_panel = self.query_one("#shader-match", ShaderMatchPanel)
-                match_panel.match_result = self._current_shader_match
-            except Exception:
-                pass
-            
+            setattr(self.query_one(panel_id), attr, value)
+        except Exception:
+            pass
+
+    def _update_osc_panels(self) -> None:
+        try:
+            self._safe_update("#osc-control", "channel_status", osc.get_channel_status())
+            self._safe_update("#osc-full", "osc_running", osc.is_started)
+
+            # Only update OSC view when visible
+            if self.query_one("#screens", TabbedContent).active == "osc":
+                if not osc_monitor.is_started:
+                    osc_monitor.start()
+                self._safe_update("#osc-full", "full_view", True)
+                self._safe_update("#osc-full", "stats", osc_monitor.get_stats())
+                self._safe_update("#osc-full", "grouped_prefixes", osc_monitor.get_grouped_prefixes(limit=20, child_limit=20))
+                self._safe_update("#osc-full", "grouped_messages", osc_monitor.get_grouped_messages(limit_per_channel=20))
+            elif osc_monitor.is_started:
+                osc_monitor.stop()
+        except Exception:
+            pass
+
+    def _update_playback_panels(self) -> None:
+        try:
+            playback = self.registry.playback
+            track = playback.current_track
+            position = playback.current_position
+
+            # Build track data
+            if track:
+                track_data = {
+                    "active": True,
+                    "connected": True,
+                    "source": playback.current_source or "unknown",
+                    "artist": track.artist,
+                    "title": track.title,
+                    "album": track.album,
+                    "position": position,
+                    "duration": track.duration_sec,
+                    "has_lyrics": self._pipeline_result.lyrics_found if self._pipeline_result else False,
+                }
+                connection_state = "connected"
+            else:
+                track_data = {"active": False, "connected": False}
+                connection_state = "no_playback" if playback.is_started else "idle"
+
+            self._safe_update("#now-playing", "track_data", track_data)
+            self._safe_update("#playback-source", "connection_state", connection_state)
+            self._safe_update("#playback-source", "monitor_running", playback.is_started)
+            self._safe_update("#playback-source", "lookup_ms", getattr(playback, '_last_lookup_ms', 0))
         except Exception as e:
-            logger.debug(f"Failed to update shader panels: {e}")
-    
+            logger.debug(f"Playback update error: {e}")
+
+    def _update_pipeline_panels(self) -> None:
+        try:
+            result = self._pipeline_result
+
+            # Categories panel
+            if result and result.mood:
+                categories_data = {
+                    "primary_mood": result.mood,
+                    "energy": result.energy,
+                    "valence": result.valence,
+                    "scores": result.categories,
+                    "ai_available": result.ai_available,
+                }
+            else:
+                categories_data = {}
+            self._safe_update("#categories", "categories_data", categories_data)
+
+            # Pipeline panel - convert steps to display_lines format
+            display_lines = []
+            for step in self._pipeline_steps:
+                step_name = step.get("step", "unknown")
+                status = step.get("status", "pending")
+                data = step.get("data", {})
+
+                # Map step to display label
+                labels = {
+                    "lyrics": "Lyrics",
+                    "metadata": "Metadata",
+                    "ai_analysis": "AI Analysis",
+                    "shader_match": "Shader Match",
+                    "images": "Images",
+                }
+                label = labels.get(step_name, step_name.replace("_", " ").title())
+
+                # Map status to display format
+                if status == "running":
+                    status_icon, color = "◐", "yellow"
+                    message = "Processing..."
+                elif status == "done":
+                    status_icon, color = "✓", "green"
+                    # Build detailed message based on step type
+                    if step_name == "lyrics":
+                        lines = data.get("lines", 0)
+                        refrains = data.get("refrains", 0)
+                        keywords = data.get("keywords", 0)
+                        if data.get("found"):
+                            message = f"{lines} lines, {refrains} refrains, {keywords} kw"
+                        else:
+                            message = "Not found"
+                    elif step_name == "metadata":
+                        kw = data.get("keywords", 0)
+                        themes = data.get("themes", 0)
+                        visuals = data.get("visuals", 0)
+                        if data.get("found"):
+                            message = f"{kw} kw, {themes} themes, {visuals} visuals"
+                        else:
+                            message = "LLM unavailable"
+                    elif step_name == "ai_analysis":
+                        mood = data.get("mood", "")
+                        energy = data.get("energy", 0)
+                        valence = data.get("valence", 0)
+                        message = f"{mood} (E:{energy:.1f} V:{valence:+.1f})" if mood else "No result"
+                    elif step_name == "shader_match":
+                        name = data.get("name", "")
+                        score = data.get("score", 0)
+                        message = f"{name} ({score:.2f})" if name else "No match"
+                    elif step_name == "images":
+                        count = data.get("count", 0)
+                        cached = " (cached)" if data.get("cached") else ""
+                        message = f"{count} images{cached}" if count else "None found"
+                    else:
+                        message = data.get("summary", "Complete")
+                elif status == "error":
+                    status_icon, color = "✗", "red"
+                    message = data.get("error", "Failed")
+                else:
+                    status_icon, color = "○", "dim"
+                    message = ""
+
+                display_lines.append((label, status_icon, color, message))
+
+            pipeline_data = {
+                "display_lines": display_lines,
+                "result": {
+                    "lyrics_found": result.lyrics_found if result else False,
+                    "lyrics_lines": result.lyrics_line_count if result else 0,
+                    "mood": result.mood if result else "",
+                    "shader": result.shader_name if result else "",
+                    "images": result.images_count if result else 0,
+                    "time_ms": result.total_time_ms if result else 0,
+                } if result else {},
+            }
+            self._safe_update("#pipeline", "pipeline_data", pipeline_data)
+        except Exception as e:
+            logger.debug(f"Pipeline update error: {e}")
+
     def _update_launchpad_panels(self) -> None:
-        """Update Launchpad controller panels."""
         if not LAUNCHPAD_LIB_AVAILABLE or not self.launchpad_manager:
             return
-        
         try:
-            # Update status panel
-            try:
-                status_panel = self.query_one("#lp-status", LaunchpadStatusPanel)
-                status_panel.status = self.launchpad_manager.get_status()
-            except Exception:
-                pass
-            
-            # Update pads panel
-            try:
-                pads_panel = self.query_one("#lp-pads", LaunchpadPadsPanel)
-                pads_panel.pads_data = self.launchpad_manager.get_pads_data()
-            except Exception:
-                pass
-            
-            # Update instructions panel (based on current phase)
-            try:
-                status = self.launchpad_manager.get_status()
-                instructions_panel = self.query_one("#lp-instructions", LaunchpadInstructionsPanel)
-                instructions_panel.phase = status.get('phase', 'IDLE')
-            except Exception:
-                pass
-            
-            # Update OSC debug panel
-            try:
-                osc_panel = self.query_one("#lp-osc", LaunchpadOscDebugPanel)
-                osc_panel.messages = self.launchpad_manager.get_osc_messages()
-            except Exception:
-                pass
-            
-        except Exception as e:
-            logger.debug(f"Failed to update Launchpad panels: {e}")
+            self._safe_update("#lp-status", "status", self.launchpad_manager.get_status())
+            self._safe_update("#lp-pads", "pads_data", self.launchpad_manager.get_pads_data())
+            self._safe_update("#lp-osc", "messages", self.launchpad_manager.get_osc_messages())
+        except Exception:
+            pass
 
-    # === Screen switching ===
-    
+    def _check_services(self) -> None:
+        """Check external services status."""
+        self.synesthesia_running = self._run_cmd(['pgrep', '-x', 'Synesthesia'])
+        self.lmstudio_running = self._run_cmd(['pgrep', '-f', 'LM Studio'])
+        self.vjuniverse_running = any(
+            self.process_manager.is_running(app)
+            for app in self.process_manager.apps
+            if 'universe' in app.name.lower()
+        )
+
+        # Update startup panel with stats
+        try:
+            stats = self.process_monitor.get_stats()
+            self._safe_update("#startup-control", "stats_data", stats)
+        except Exception:
+            pass
+
+    def _run_cmd(self, cmd: List[str]) -> bool:
+        try:
+            return subprocess.run(cmd, capture_output=True, timeout=2).returncode == 0
+        except Exception:
+            return False
+
+    # === Event Handlers ===
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn = event.button.id
+        if btn == "btn-start-all":
+            self._start_services()
+        elif btn == "btn-stop-all":
+            self._stop_services()
+
+    def on_playback_source_changed(self, event: PlaybackSourceChanged) -> None:
+        source_map = {"spotify_applescript": "Spotify", "vdj_osc": "VirtualDJ"}
+        source = source_map.get(event.source_key, event.source_key)
+        self.registry.set_playback_source(source)
+        logger.info(f"Playback source changed to: {source}")
+
+    def on_osc_clear_requested(self, event: OSCClearRequested) -> None:
+        osc_monitor.clear()
+
+    # === Service Control ===
+
+    def _start_services(self) -> None:
+        started = []
+        if self.settings.start_synesthesia:
+            subprocess.Popen(['open', '-a', 'Synesthesia'])
+            started.append("Synesthesia")
+        if self.settings.start_vjuniverse:
+            for app in self.process_manager.apps:
+                if 'universe' in app.name.lower():
+                    self.process_manager.launch_app(app)
+                    started.append("VJUniverse")
+                    break
+        if self.settings.start_lmstudio:
+            subprocess.Popen(['open', '-a', 'LM Studio'])
+            started.append("LM Studio")
+        if started:
+            self.notify(f"Started: {', '.join(started)}")
+
+    def _stop_services(self) -> None:
+        subprocess.run(['pkill', '-x', 'Synesthesia'], check=False)
+        subprocess.run(['pkill', '-f', 'LM Studio'], check=False)
+        for app in self.process_manager.apps:
+            if 'universe' in app.name.lower() and self.process_manager.is_running(app):
+                self.process_manager.stop_app(app)
+        self.notify("Stopped all services")
+
+    # === Actions ===
+
     def action_screen_master(self) -> None:
         self.query_one("#screens", TabbedContent).active = "master"
-    
+
     def action_screen_osc(self) -> None:
         self.query_one("#screens", TabbedContent).active = "osc"
-    
+
     def action_screen_logs(self) -> None:
         self.query_one("#screens", TabbedContent).active = "logs"
-    
+
     def action_screen_midi(self) -> None:
-        """Switch to Launchpad screen."""
         self.query_one("#screens", TabbedContent).active = "launchpad"
-    
+
     def action_screen_shaders(self) -> None:
         self.query_one("#screens", TabbedContent).active = "shaders"
 
-    # === App control ===
-
     def action_quit(self) -> None:
         logger.info("Quit requested")
-        self._start_force_exit_watchdog()
+        self._start_exit_watchdog()
         self.exit()
-    
-    def action_toggle_synesthesia(self) -> None:
-        if self.synesthesia_running:
-            self._run_process(['pkill', '-x', 'Synesthesia'])
-        else:
-            subprocess.Popen(['open', '-a', 'Synesthesia'])
-        self._check_apps_and_autorestart()
-    
-    def action_shader_toggle_analysis(self) -> None:
-        """Toggle shader analysis pause/resume (p key)."""
-        if not self.shader_analysis_worker:
-            self.notify("Shader analysis worker not available", severity="warning")
-            return
-        
-        self.shader_analysis_worker.toggle_pause()
-        if self.shader_analysis_worker.is_paused():
-            self.notify("Shader analysis paused", severity="information")
-        else:
-            self.notify("Shader analysis resumed", severity="information")
-    
-    def action_shader_search_mood(self) -> None:
-        """Search shaders by mood (/ key)."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_selector:
-            self.notify("Shader selector not available", severity="warning")
-            return
-        
-        # Cycle through common moods
-        moods = ['energetic', 'calm', 'dark', 'bright', 'psychedelic', 'mysterious', 'chaotic', 'peaceful']
-        current = self._shader_search_results.get('query', '')
-        
-        try:
-            idx = moods.index(current)
-            next_mood = moods[(idx + 1) % len(moods)]
-        except ValueError:
-            next_mood = moods[0]
-        
-        # Perform search using selector (tracks usage for variety)
-        results = []
-        for _ in range(8):
-            match = self.shader_selector.select_by_mood(next_mood, energy=0.5, top_k=10)
-            if match and match.name not in [r['name'] for r in results]:
-                results.append({
-                    'name': match.name,
-                    'score': match.score,
-                    'features': {
-                        'energy_score': match.features.energy_score,
-                        'mood_valence': match.features.mood_valence,
-                        'motion_speed': match.features.motion_speed,
-                    }
-                })
-        
-        # Reset usage to not pollute actual session tracking
-        self.shader_selector.reset_usage()
-        
-        self._shader_search_results = {
-            'type': 'mood',
-            'query': next_mood,
-            'results': results
-        }
-    
-    def action_shader_search_energy(self) -> None:
-        """Search shaders by energy level (e key)."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_selector:
-            self.notify("Shader selector not available", severity="warning")
-            return
-        
-        # Cycle through energy levels
-        levels = [0.2, 0.4, 0.6, 0.8, 1.0]
-        current_query = self._shader_search_results.get('query', '')
-        
-        try:
-            current_energy = float(current_query)
-            idx = min(range(len(levels)), key=lambda i: abs(levels[i] - current_energy))
-            next_energy = levels[(idx + 1) % len(levels)]
-        except (ValueError, TypeError):
-            next_energy = levels[0]
-        
-        # Perform search using feature vector via indexer
-        target_vector = [next_energy, 0.0, 0.5, next_energy, 0.5, 0.5]  # energy-focused search
-        
-        if self.shader_indexer and self.shader_indexer._use_chromadb:
-            # Use ChromaDB
-            similar = self.shader_indexer.query_similar(target_vector, top_k=8)
-            results = []
-            for name, dist in similar:
-                # Find shader features in indexer
-                shader = self.shader_indexer.shaders.get(name)
-                if shader:
-                    results.append({
-                        'name': name,
-                        'score': dist,
-                        'features': {
-                            'energy_score': shader.energy_score,
-                            'mood_valence': shader.mood_valence,
-                            'motion_speed': shader.motion_speed,
-                        }
-                    })
-                else:
-                    # Shader found in ChromaDB but not in memory - still show it
-                    results.append({
-                        'name': name,
-                        'score': dist,
-                        'features': {}
-                    })
-        else:
-            # Fallback to mood search with energy via selector
-            results = []
-            for _ in range(8):
-                match = self.shader_selector.select_by_mood(
-                    'energetic' if next_energy > 0.5 else 'calm',
-                    energy=next_energy,
-                    top_k=10
-                )
-                if match and match.name not in [r['name'] for r in results]:
-                    results.append({
-                        'name': match.name,
-                        'score': match.score,
-                        'features': {
-                            'energy_score': match.features.energy_score,
-                            'mood_valence': match.features.mood_valence,
-                            'motion_speed': match.features.motion_speed,
-                        }
-                    })
-            # Reset usage to not pollute actual session tracking
-            self.shader_selector.reset_usage()
-        
-        self._shader_search_results = {
-            'type': 'energy',
-            'query': f'{next_energy:.1f}',
-            'results': results
-        }
-    
-    def action_shader_search_text(self) -> None:
-        """Open text search modal for shaders."""
-        if not SHADER_MATCHER_AVAILABLE or not self.shader_indexer:
-            self.notify("Shader indexer not available", severity="warning")
-            return
-        
-        def handle_search_result(query: str | None) -> None:
-            if not query:
-                return
-            
-            # Perform text search
-            results = self.shader_indexer.text_search(query, top_k=10)
-            
-            formatted_results = []
-            for name, score, features in results:
-                formatted_results.append({
-                    'name': name,
-                    'score': score,
-                    'features': features
-                })
-            
-            self._shader_search_results = {
-                'type': 'text',
-                'query': query,
-                'results': formatted_results
-            }
-            
-            self.notify(f"Found {len(results)} shaders matching '{query}'", severity="information")
-        
-        self.push_screen(ShaderSearchModal(), handle_search_result)
-    
-    def action_shader_rescan(self) -> None:
-        """Rescan for unanalyzed shaders (R key)."""
-        if self.shader_analysis_worker:
-            self.shader_analysis_worker.rescan()
-            # Invalidate stats cache to force fresh directory scan
-            if self.shader_indexer:
-                self.shader_indexer.invalidate_stats_cache()
-            self.notify("Rescanning for unanalyzed shaders...", severity="information")
-        else:
-            self.notify("Shader analysis worker not available", severity="warning")
-    
-    def action_nav_up(self) -> None:
-        current_screen = self.query_one("#screens", TabbedContent).active
-        
-        if current_screen == "master":
-            panel = self.query_one("#apps", AppsListPanel)
-            if panel.selected > 0:
-                panel.selected -= 1
-
-    def action_nav_down(self) -> None:
-        current_screen = self.query_one("#screens", TabbedContent).active
-        
-        if current_screen == "master":
-            panel = self.query_one("#apps", AppsListPanel)
-            if panel.selected < len(self.process_manager.apps) - 1:
-                panel.selected += 1
-
-    def action_select_app(self) -> None:
-        current_screen = self.query_one("#screens", TabbedContent).active
-        
-        if current_screen == "master":
-            panel = self.query_one("#apps", AppsListPanel)
-            if 0 <= panel.selected < len(self.process_manager.apps):
-                app = self.process_manager.apps[panel.selected]
-                if self.process_manager.is_running(app):
-                    self.process_manager.stop_app(app)
-                else:
-                    self.process_manager.launch_app(app)
 
     def action_timing_up(self) -> None:
-        if self.textler_engine:
-            self.textler_engine.adjust_timing(+200)
+        # Timing adjustment (future: lyrics offset)
+        pass
 
     def action_timing_down(self) -> None:
-        if self.textler_engine:
-            self.textler_engine.adjust_timing(-200)
-    
-    def _log(self, message: str):
-        """Add a message to logs."""
-        self._logs.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - vj_console - INFO - {message}")
-        if len(self._logs) > 500:
-            self._logs.pop(0)
+        pass
 
-    def _start_force_exit_watchdog(self, timeout: float = 3.0) -> None:
-        if getattr(self, "_force_exit_thread", None):
-            return
-
-        def _force_exit() -> None:
+    def _start_exit_watchdog(self, timeout: float = 3.0) -> None:
+        def force_exit():
             time.sleep(timeout)
-            logger.warning("Force exit after shutdown timeout")
             os._exit(0)
-
-        self._force_exit_thread = threading.Thread(
-            target=_force_exit,
-            name="ForceExitWatchdog",
-            daemon=True,
-        )
-        self._force_exit_thread.start()
+        threading.Thread(target=force_exit, daemon=True).start()
 
     def on_unmount(self) -> None:
         logger.info("Shutdown: begin")
         if osc_monitor.is_started:
-            logger.info("Shutdown: stopping osc_monitor")
             osc_monitor.stop()
-            logger.info("Shutdown: osc_monitor stopped")
-        if self.shader_analysis_worker:
-            logger.info("Shutdown: stopping shader_analysis_worker")
-            self.shader_analysis_worker.stop()
-            logger.info("Shutdown: shader_analysis_worker stopped")
-        if self.textler_engine:
-            logger.info("Shutdown: stopping textler_engine")
-            self.textler_engine.stop()
-            logger.info("Shutdown: textler_engine stopped")
         if self.launchpad_manager:
-            logger.info("Shutdown: stopping launchpad_manager")
             self.launchpad_manager.stop()
-            logger.info("Shutdown: launchpad_manager stopped")
-        logger.info("Shutdown: process_manager.cleanup")
+        self.registry.stop_all()
         self.process_manager.cleanup()
         logger.info("Shutdown: complete")
 

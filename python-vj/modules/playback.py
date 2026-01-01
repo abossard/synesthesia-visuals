@@ -75,6 +75,8 @@ class PlaybackModule(Module):
         self._coordinator = None
         self._current_source: Optional[str] = None
         self._current_track: Optional[TrackInfo] = None
+        self._current_position: float = 0.0
+        self._last_lookup_ms: float = 0.0
 
         # Callbacks
         self._on_track_change: Optional[OnTrackChange] = None
@@ -95,6 +97,10 @@ class PlaybackModule(Module):
     @property
     def current_track(self) -> Optional[TrackInfo]:
         return self._current_track
+
+    @property
+    def current_position(self) -> float:
+        return self._current_position
 
     @property
     def on_track_change(self) -> Optional[OnTrackChange]:
@@ -248,6 +254,10 @@ class PlaybackModule(Module):
                     self._on_track_change(new_track)
                 except Exception:
                     pass
+
+        # Update current position
+        self._current_position = state.position
+        self._last_lookup_ms = sample.last_lookup_ms
 
         # Position callback (only when playing)
         if state.is_playing and self._on_position_update:

@@ -66,7 +66,7 @@ This ensures:
 | 4 | AI Analysis Module | Standalone categorization with graceful degradation | ✅ |
 | 5 | Shaders Module | Standalone shader matching | ✅ |
 | 6 | Pipeline Module | Orchestrates modules 3-5 + images | ✅ |
-| 7 | Console Refactor | Thin shell that composes modules | ⏳ |
+| 7 | Console Refactor | Thin shell that composes modules | ✅ |
 | 8 | Cleanup | Remove deprecated code | ⏳ |
 
 ---
@@ -248,11 +248,11 @@ Pipeline orchestrates full song processing with real services.
 
 ### Tasks
 
-- [ ] Create `ModuleRegistry` for module lifecycle management
-- [ ] Refactor `on_mount()` to compose modules
-- [ ] Wire module callbacks to UI updates
-- [ ] Route playback → pipeline → OSC flow through modules
-- [ ] Remove direct service instantiation from console
+- [x] Create `ModuleRegistry` for module lifecycle management
+- [x] Refactor `on_mount()` to compose modules
+- [x] Wire module callbacks to UI updates
+- [x] Route playback → pipeline → OSC flow through modules
+- [x] Remove direct service instantiation from console
 
 ### E2E Tests
 

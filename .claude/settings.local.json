@@ -28,7 +28,9 @@
       "Bash(python -m modules.ai_analysis:*)",
       "Bash(python -m modules.shaders:*)",
       "Bash(python -m modules.pipeline:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(../.venv/bin/pytest:*)",
+      "Bash(timeout 30 ../.venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []
