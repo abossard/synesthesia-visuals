@@ -597,23 +597,38 @@ class PipelineModule(Module):
         try:
             # Reset and send all lyrics lines
             osc.send_textler("lyrics", "reset")
-            for line in result.lyrics_lines:
+            for i, line in enumerate(result.lyrics_lines):
+                # Ensure text is ASCII-safe for OSC (replace non-ASCII with ?)
+                text = line.text.encode('ascii', 'replace').decode('ascii') if line.text else ""
+                keywords = getattr(line, 'keywords', '') or ""
+                keywords = keywords.encode('ascii', 'replace').decode('ascii')
                 osc.send_textler("lyrics", "line", {
+                    "index": i,
                     "time": line.time_sec,
-                    "text": line.text,
-                    "is_refrain": getattr(line, 'is_refrain', False),
-                    "keywords": getattr(line, 'keywords', ''),
+                    "text": text,
                 })
 
-            # Reset and send refrain lines
+            # Reset and send refrain lines (as summary, not individual)
             osc.send_textler("refrain", "reset")
-            for text in result.refrain_lines:
-                osc.send_textler("refrain", "line", {"text": text})
+            if result.refrain_lines:
+                # Send count and first few lines as joined text
+                refrain_text = " | ".join(
+                    t.encode('ascii', 'replace').decode('ascii')
+                    for t in result.refrain_lines[:5]
+                )
+                osc.send_textler("refrain", "summary", {
+                    "count": len(result.refrain_lines),
+                    "text": refrain_text[:200],  # Limit length
+                })
 
-            # Reset and send keywords
+            # Reset and send keywords as single message
             osc.send_textler("keywords", "reset")
-            for kw in result.lyrics_keywords:
-                osc.send_textler("keywords", "keyword", {"text": kw})
+            if result.lyrics_keywords:
+                keywords_text = ",".join(result.lyrics_keywords[:30])
+                osc.send_textler("keywords", "summary", {
+                    "count": len(result.lyrics_keywords),
+                    "text": keywords_text,
+                })
 
             logger.debug(f"OSC: sent {len(result.lyrics_lines)} lyrics, {len(result.refrain_lines)} refrains, {len(result.lyrics_keywords)} keywords")
         except Exception as e:
