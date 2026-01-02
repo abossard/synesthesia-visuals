@@ -324,7 +324,7 @@ public actor PipelineModule: Module {
     // MARK: - Private
     
     private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis?, shader: ShaderMatchResult?, images: ImageResult?) async {
-        // Send track info
+        // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
         try? hub.sendToProcessing(
             "/textler/track",
             values: [
@@ -338,13 +338,25 @@ public actor PipelineModule: Module {
             ]
         )
         
-        // Send lyrics reset
+        // Send lyrics reset: /textler/lyrics/reset
         try? hub.sendToProcessing("/textler/lyrics/reset")
         
-        // Send each line
+        // Send each line: /textler/lyrics/line [index, time, text]
         for (index, line) in lines.enumerated() {
             try? hub.sendToProcessing(
                 "/textler/lyrics/line",
+                values: [Int32(index), Float32(line.timeSec), line.text]
+            )
+        }
+        
+        // Send refrain reset: /textler/refrain/reset
+        try? hub.sendToProcessing("/textler/refrain/reset")
+        
+        // Send refrain lines: /textler/refrain/line [index, time, text]
+        let refrainLines = lines.filter { $0.isRefrain }
+        for (index, line) in refrainLines.enumerated() {
+            try? hub.sendToProcessing(
+                "/textler/refrain/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
             )
         }
@@ -361,7 +373,7 @@ public actor PipelineModule: Module {
             )
         }
         
-        // Send shader if matched
+        // Send shader if matched: /shader/load [name, energy, valence]
         if let shader = shader {
             try? hub.sendToProcessing(
                 "/shader/load",
@@ -375,6 +387,12 @@ public actor PipelineModule: Module {
         
         // Send image folder if available
         if let images = images {
+            // Send fit mode first: /image/fit [mode]
+            try? hub.sendToProcessing(
+                "/image/fit",
+                values: ["cover"]
+            )
+            // Send folder path: /image/folder [path]
             try? hub.sendToProcessing(
                 "/image/folder",
                 values: [images.folder.path]

@@ -93,14 +93,14 @@
 
 | Feature | Status | Source |
 |---------|--------|--------|
-| Shader Indexing | ❌ | `shader_matcher.py` |
+| Shader Indexing | ✅ | `shader_matcher.py` |
 | LLM Shader Analysis | ❌ | `shader_matcher.py` |
-| Feature Extraction | ❌ | `shader_matcher.py` |
-| Quality Ratings (BEST→SKIP) | ❌ | `shader_matcher.py` |
-| Feature-based Matching | ❌ | `modules/shaders.py` |
-| Mood-based Matching | ❌ | `modules/shaders.py` |
+| Feature Extraction | ✅ | `shader_matcher.py` |
+| Quality Ratings (BEST→SKIP) | ✅ | `shader_matcher.py` |
+| Feature-based Matching | ✅ | `modules/shaders.py` |
+| Mood-based Matching | ✅ | `modules/shaders.py` |
 | ChromaDB/Vector Search | ❌ | `shader_matcher.py` |
-| Text Search | ❌ | `modules/shaders.py` |
+| Text Search | ✅ | `modules/shaders.py` |
 
 ### 2.5 OSC Communication
 
@@ -123,7 +123,7 @@
 | OSC Broadcast | ✅ | `modules/pipeline.py` |
 | Timing Metrics | ✅ | `modules/pipeline.py` |
 | Result Caching | ✅ | `modules/pipeline.py` |
-| Parallel Shader+Images | ❌ | `modules/pipeline.py` |
+| Parallel Shader+Images | ✅ | `modules/pipeline.py` |
 | Cache Serialization | ❌ | `modules/pipeline.py` |
 
 ### 2.7 MIDI Controller (Launchpad)
@@ -155,9 +155,9 @@
 
 | Feature | Status | Source |
 |---------|--------|--------|
-| Image Scraping (web search) | ❌ | `image_scraper.py` |
-| Folder Output (by song) | ❌ | `image_scraper.py` |
-| OSC Broadcast (folder path) | ❌ | `modules/pipeline.py` |
+| Image Scraping (web search) | ✅ | `image_scraper.py` |
+| Folder Output (by song) | ✅ | `image_scraper.py` |
+| OSC Broadcast (folder path) | ✅ | `modules/pipeline.py` |
 
 ### 2.10 UI Features
 
@@ -208,7 +208,7 @@
 
 ---
 
-### Phase 3: Modules Layer 🔄 PARTIAL
+### Phase 3: Modules Layer ✅ COMPLETE
 
 **Goal**: Business logic modules with lifecycle
 
@@ -218,45 +218,14 @@
 | PlaybackModule | ✅ | Track detection + callbacks |
 | LyricsModule | ✅ | Fetch + parse + timing |
 | AIModule | ✅ | Categorization + energy/valence |
-| PipelineModule | ✅ | Orchestration (basic) |
+| PipelineModule | ✅ | Full orchestration with shader+images |
 | ModuleRegistry | ✅ | Lifecycle management |
-| **ShaderMatcher adapter** | ❌ | Load/index shaders from disk |
-| **ShadersModule** | ❌ | match(energy:valence:), searchByMood() |
-| **ImageScraper adapter** | ❌ | Fetch images from web |
-| **ImagesModule** | ❌ | fetchImages(for:visualAdjectives:) |
+| ShaderMatcher adapter | ✅ | Load .analysis.json, feature matching |
+| ShadersModule | ✅ | match/matchByMood/search with usage tracking |
+| ImageScraper adapter | ✅ | Fetch from 4 sources with rate limiting |
+| ImagesModule | ✅ | fetchImages with metadata support |
 
-**Tests**: PlaybackModuleTests (3), LyricsModuleTests (2), AIModuleTests (3), PipelineModuleTests (4), ModuleRegistryTests (5)
-
----
-
-### Phase 3B: Shader & Image System ❌ NOT STARTED
-
-**Goal**: Complete shader matching and image scraping
-
-| Task | Description |
-|------|-------------|
-| ShaderMatcher adapter | Load .synScene directories, parse scene.json metadata |
-| Shader feature extraction | Extract energy, mood, colors, motion, effects from GLSL |
-| LLM shader analysis | Use LLM to analyze shader visual characteristics |
-| Quality rating system | BEST(1), GOOD(2), NORMAL(3), MASK(4), SKIP(5) |
-| Vector similarity matching | Feature-based matching with euclidean distance |
-| Mood keyword matching | Match shader mood to song mood |
-| Text search | Keyword-based shader search |
-| ShadersModule | Module wrapper with match/search interface |
-| ImageScraper adapter | Web image search (DuckDuckGo/Bing) |
-| Image folder management | Store images by artist-title |
-| ImagesModule | Module wrapper with fetch interface |
-| Pipeline integration | Add shader+image steps to pipeline |
-| Parallel execution | Run shader+image steps concurrently |
-
-**TDD Checkpoints**:
-- [ ] Shader indexing loads all .synScene directories
-- [ ] Feature extraction returns valid scores
-- [ ] match(energy:valence:) returns best shader
-- [ ] searchByMood("dark") returns appropriate shaders
-- [ ] ImageScraper returns image URLs
-- [ ] Images saved to correct folder structure
-- [ ] Pipeline runs shader+image steps in parallel
+**Tests**: PlaybackModuleTests (3), LyricsModuleTests (2), AIModuleTests (3), PipelineModuleTests (4), ModuleRegistryTests (5), ShaderMatcherTests (12), ShadersModuleTests (8), ImageScraperTests (5), ImagesModuleTests (8)
 
 ---
 
@@ -458,4 +427,4 @@ swift-vj/
 ---
 
 *Last Updated: 2026-01-02*  
-*Test Count: 164 tests passing (8 skipped)*
+*Test Count: 197 tests passing (8 skipped)*

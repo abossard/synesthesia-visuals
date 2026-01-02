@@ -49,7 +49,6 @@ public actor ShadersModule: Module {
     public func getStatus() -> [String: Any] {
         [
             "started": isStarted,
-            "shader_count": shaderCount,
             "usage_count": usageCounts.values.reduce(0, +),
             "unique_used": usageCounts.count,
             "last_selected": lastSelected ?? "none"

@@ -43,8 +43,7 @@ public actor ImagesModule: Module {
     
     public func getStatus() -> [String: Any] {
         var status: [String: Any] = [
-            "started": isStarted,
-            "cached_count": cachedCount
+            "started": isStarted
         ]
         
         if let last = lastFetchedTrack {
