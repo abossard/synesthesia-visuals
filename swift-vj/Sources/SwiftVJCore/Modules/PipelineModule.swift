@@ -7,6 +7,8 @@ import Foundation
 public enum PipelineStep: String, CaseIterable, Sendable {
     case lyrics = "lyrics"
     case ai = "ai"
+    case shaders = "shaders"
+    case images = "images"
     case osc = "osc"
 }
 
@@ -31,6 +33,8 @@ public actor PipelineModule: Module {
     // Dependencies
     private let lyricsModule: LyricsModule
     private let aiModule: AIModule
+    private let shadersModule: ShadersModule?
+    private let imagesModule: ImagesModule?
     private let oscHub: OSCHub?
     
     // Cache
@@ -47,10 +51,14 @@ public actor PipelineModule: Module {
     public init(
         lyricsModule: LyricsModule,
         aiModule: AIModule,
+        shadersModule: ShadersModule? = nil,
+        imagesModule: ImagesModule? = nil,
         oscHub: OSCHub? = nil
     ) {
         self.lyricsModule = lyricsModule
         self.aiModule = aiModule
+        self.shadersModule = shadersModule
+        self.imagesModule = imagesModule
         self.oscHub = oscHub
     }
     
@@ -63,6 +71,14 @@ public actor PipelineModule: Module {
         try await lyricsModule.start()
         try await aiModule.start()
         
+        if let shadersModule = shadersModule {
+            try await shadersModule.start()
+        }
+        
+        if let imagesModule = imagesModule {
+            try await imagesModule.start()
+        }
+        
         isStarted = true
         print("[Pipeline] Started")
     }
@@ -70,6 +86,14 @@ public actor PipelineModule: Module {
     public func stop() async {
         await lyricsModule.stop()
         await aiModule.stop()
+        
+        if let shadersModule = shadersModule {
+            await shadersModule.stop()
+        }
+        
+        if let imagesModule = imagesModule {
+            await imagesModule.stop()
+        }
         
         isStarted = false
         isProcessing = false
@@ -155,12 +179,67 @@ public actor PipelineModule: Module {
         stepTimings["ai"] = Int(Date().timeIntervalSince(aiStart) * 1000)
         await fireStepComplete(.ai, ["mood": analysis?.mood ?? "unknown"])
         
-        // === STEP 3: OSC Broadcast ===
+        // === STEP 3: Shaders (parallel with images) ===
+        var shaderMatch: ShaderMatchResult?
+        var imageResult: ImageResult?
+        
+        await withTaskGroup(of: Void.self) { group in
+            // Shader matching
+            if let shadersModule = shadersModule, analysis != nil {
+                group.addTask {
+                    await self.fireStepStart(.shaders)
+                    let shaderStart = Date()
+                    
+                    shaderMatch = await shadersModule.selectForSong(
+                        categories: nil,
+                        energy: analysis?.energy ?? 0.5,
+                        valence: analysis?.valence ?? 0.0
+                    )
+                    
+                    stepTimings["shaders"] = Int(Date().timeIntervalSince(shaderStart) * 1000)
+                    
+                    if shaderMatch != nil {
+                        stepsCompleted.append("shaders")
+                        await self.fireStepComplete(.shaders, ["shader": shaderMatch?.name ?? ""])
+                    } else {
+                        stepsSkipped.append("shaders")
+                        await self.fireStepComplete(.shaders, ["skipped": true])
+                    }
+                }
+            }
+            
+            // Image fetching
+            if let imagesModule = imagesModule, analysis != nil {
+                group.addTask {
+                    await self.fireStepStart(.images)
+                    let imagesStart = Date()
+                    
+                    imageResult = await imagesModule.fetchImages(
+                        for: track,
+                        visualAdjectives: analysis?.visualAdjectives ?? [],
+                        themes: analysis?.themes ?? [],
+                        mood: analysis?.mood ?? "unknown"
+                    )
+                    
+                    stepTimings["images"] = Int(Date().timeIntervalSince(imagesStart) * 1000)
+                    
+                    if imageResult != nil {
+                        stepsCompleted.append("images")
+                        await self.fireStepComplete(.images, ["count": imageResult?.totalImages ?? 0])
+                    } else {
+                        stepsSkipped.append("images")
+                        await self.fireStepComplete(.images, ["skipped": true])
+                    }
+                }
+            }
+        }
+        
+        // === STEP 4: OSC Broadcast ===
         await fireStepStart(.osc)
         let oscStart = Date()
         
         if let hub = oscHub {
-            await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis)
+            await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis, shader: shaderMatch, images: imageResult)
             stepsCompleted.append("osc")
         } else {
             stepsSkipped.append("osc")
@@ -192,6 +271,12 @@ public actor PipelineModule: Module {
             energy: analysis?.energy ?? 0.5,
             valence: analysis?.valence ?? 0.0,
             categories: analysis?.categories ?? [:],
+            shaderMatched: shaderMatch != nil,
+            shaderName: shaderMatch?.name ?? "",
+            shaderScore: shaderMatch?.score ?? 0.0,
+            imagesFound: imageResult != nil,
+            imagesFolder: imageResult?.folder.path ?? "",
+            imagesCount: imageResult?.totalImages ?? 0,
             stepsCompleted: stepsCompleted,
             totalTimeMs: totalTimeMs
         )
@@ -238,7 +323,7 @@ public actor PipelineModule: Module {
     
     // MARK: - Private
     
-    private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis?) async {
+    private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis?, shader: ShaderMatchResult?, images: ImageResult?) async {
         // Send track info
         try? hub.sendToProcessing(
             "/textler/track",
@@ -273,6 +358,26 @@ public actor PipelineModule: Module {
                     Float32(analysis.energy),
                     Float32(analysis.valence)
                 ]
+            )
+        }
+        
+        // Send shader if matched
+        if let shader = shader {
+            try? hub.sendToProcessing(
+                "/shader/load",
+                values: [
+                    shader.name,
+                    Float32(shader.energyScore),
+                    Float32(shader.moodValence)
+                ]
+            )
+        }
+        
+        // Send image folder if available
+        if let images = images {
+            try? hub.sendToProcessing(
+                "/image/folder",
+                values: [images.folder.path]
             )
         }
     }
