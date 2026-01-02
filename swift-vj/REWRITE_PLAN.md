@@ -118,6 +118,8 @@
 | Graceful Degradation | Works offline with basic analysis | `ai_services.py` |
 | LLM Metadata Fetch | Keywords, themes, visual adjectives | `adapters.py` |
 | Automatic Caching | Cache analysis results | `ai_services.py` |
+| **Visual Adjectives** | LLM extracts aesthetic words (neon, cosmic, ethereal) for image search | `ai_services.py` |
+| Combined Single-Call | `analyze_song_complete()` merges metadata + categorization in one LLM call | `ai_services.py` |
 
 ### 2.4 Shader System
 
@@ -154,29 +156,233 @@
 | OSC Broadcast | Send results to Processing | `modules/pipeline.py` |
 | Timing Metrics | Track processing time | `modules/pipeline.py` |
 | Concurrent Execution | Background thread processing | `modules/pipeline.py` |
+| **Result Caching** | Full pipeline results cached per track with TTL (instant replay) | `modules/pipeline.py` |
+| **Parallel Phase 3** | Shader + Images run in parallel (ThreadPoolExecutor) | `modules/pipeline.py` |
+| **Cache Serialization** | `PipelineResult.to_cache_dict()` / `from_cache_dict()` for JSON storage | `modules/pipeline.py` |
 
-### 2.7 MIDI Controller (Launchpad)
+### 2.7 MIDI Controller (Launchpad) - CRITICAL FEATURE
+
+**This is a core feature for live VJ performance control.**
 
 | Feature | Description | Source |
 |---------|-------------|--------|
 | Launchpad Mini MK3 | Hardware controller support | `launchpad_osc_lib/` |
 | Pad Modes | SELECTOR, TOGGLE, ONE_SHOT, PUSH | `launchpad_osc_lib/model.py` |
-| Button Groups | Radio-button behavior | `launchpad_osc_lib/model.py` |
-| LED Control | Static, Pulse, Flash modes | `launchpad_osc_lib/model.py` |
-| Learn Mode FSM | Configure pads by recording OSC | `launchpad_osc_lib/fsm.py` |
-| Bank System | 8 button banks | `launchpad_osc_lib/banks.py` |
-| Config Persistence | Save/load pad mappings | `launchpad_osc_lib/config.py` |
-| Beat Sync | Blink LEDs with beat | `launchpad_osc_lib/blink.py` |
+| Button Groups | Radio-button behavior (SCENES, PRESETS, COLORS, CUSTOM) | `launchpad_osc_lib/model.py` |
+| LED Control | Static, Pulse, Flash modes with 10 base colors × 3 brightness levels | `launchpad_osc_lib/model.py` |
+| Learn Mode FSM | Configure pads by recording OSC with multi-phase workflow | `launchpad_osc_lib/fsm.py` |
+| Bank System | 8 button banks for expanded control | `launchpad_osc_lib/banks.py` |
+| Config Persistence | Save/load pad mappings to YAML | `launchpad_osc_lib/config.py` |
+| Beat Sync | Blink LEDs with beat from OSC | `launchpad_osc_lib/blink.py` |
+| Group Hierarchy | PRESETS resets when parent SCENES changes | `launchpad_osc_lib/model.py` |
+
+#### 2.7.1 Pad Modes (Interaction Patterns)
+
+```
+PadMode.SELECTOR
+├── Radio-button within a group (only one active at a time)
+├── Deactivates previous pad in same group
+├── Requires: group, osc_action
+├── Example: Scene selection - pressing "AlienCavern" deselects "Nebula"
+
+PadMode.TOGGLE
+├── On/Off toggle with two OSC commands
+├── Alternates between osc_on and osc_off
+├── Requires: osc_on (osc_off optional)
+├── Example: Effect enable/disable
+
+PadMode.ONE_SHOT
+├── Single action on press only
+├── No persistent state - sends once and done
+├── Requires: osc_action
+├── Example: Trigger a one-time effect
+
+PadMode.PUSH
+├── Momentary - sends 1.0 on press, 0.0 on release
+├── Like a sustain pedal
+├── Requires: osc_action
+├── Example: Hold-to-activate effect
+```
+
+#### 2.7.2 Button Groups (Radio Behavior)
+
+```
+ButtonGroupType.SCENES
+├── Primary group for Synesthesia scene selection
+├── When changed, resets child groups (PRESETS)
+
+ButtonGroupType.PRESETS
+├── Subgroup of SCENES
+├── Automatically resets when parent SCENES changes
+├── parent_group = SCENES
+
+ButtonGroupType.COLORS
+├── Meta color/hue control
+
+ButtonGroupType.CUSTOM
+├── User-defined groups
+```
+
+#### 2.7.3 LED Color System
+
+```
+Base Colors (10): red, orange, yellow, lime, green, cyan, blue, purple, pink, white
+Brightness Levels (3): DIM(0), NORMAL(1), BRIGHT(2)
+
+get_color_at_brightness("green", BrightnessLevel.DIM) -> 19
+get_color_at_brightness("green", BrightnessLevel.BRIGHT) -> 22
+
+LED Modes:
+├── STATIC: Constant on
+├── PULSE: Hardware pulsing (uses Launchpad native)
+├── FLASH: Blinking effect
+```
+
+#### 2.7.4 Learn Mode FSM (Finite State Machine)
+
+```
+LearnPhase.IDLE
+├── Normal operation - pads execute their configured behaviors
+└── Press LEARN_BUTTON → WAIT_PAD
+
+LearnPhase.WAIT_PAD
+├── Blinking all pads, waiting for user to press a pad to configure
+└── Press any grid pad → RECORD_OSC
+
+LearnPhase.RECORD_OSC
+├── Recording incoming OSC messages
+├── Filters to only "controllable" addresses (scenes, presets, controls)
+├── Press SAVE_PAD → save_from_recording() → IDLE
+├── Press CANCEL_PAD → IDLE
+└── Wait for timeout or manual finish → CONFIG
+
+LearnPhase.CONFIG
+├── Multi-register configuration phase
+├── Three registers: OSC_SELECT, MODE_SELECT, COLOR_SELECT
+├── Yellow pads at top select active register
+├── OSC pagination (8 per page)
+├── Bottom row: SAVE (green), TEST (blue), CANCEL (red)
+└── Save → create PadBehavior → IDLE
+```
+
+#### 2.7.5 Domain Types
+
+```swift
+struct ButtonId: Hashable {
+    let x: Int  // 0-8 (8 = right scene column)
+    let y: Int  // 0-7 (0 = bottom, 7 = top row)
+    func isGrid() -> Bool  // True if x < 8
+}
+
+struct OscCommand {
+    let address: String
+    let args: [Any]
+}
+
+struct PadBehavior {
+    let padId: ButtonId
+    let mode: PadMode
+    let group: ButtonGroupType?
+    let idleColor: Int
+    let activeColor: Int
+    let label: String
+    let oscOn: OscCommand?   // TOGGLE mode
+    let oscOff: OscCommand?  // TOGGLE mode
+    let oscAction: OscCommand?  // SELECTOR/ONE_SHOT/PUSH
+}
+
+struct PadRuntimeState {
+    let isActive: Bool
+    let isOn: Bool
+    let currentColor: Int
+    let blinkEnabled: Bool
+    let ledMode: LedMode
+}
+
+struct ControllerState {  // Immutable, all transitions return new instance
+    let pads: [ButtonId: PadBehavior]
+    let padRuntime: [ButtonId: PadRuntimeState]
+    let activeSelectorByGroup: [ButtonGroupType: ButtonId?]
+    let activeScene: String?
+    let activePreset: String?
+    let activeColorHue: Double?
+    let beatPhase: Double
+    let beatPulse: Bool
+    let learnState: LearnState
+    let blinkOn: Bool
+}
+```
+
+#### 2.7.6 Effect System (Side Effects)
+
+Pure FSM functions return `(newState, [Effect])`. Effects are executed by imperative shell:
+
+```swift
+enum Effect {
+    case sendOsc(OscCommand)
+    case setLed(padId: ButtonId, color: Int, blink: Bool)
+    case saveConfig
+    case log(message: String, level: LogLevel)
+}
+```
+
+#### 2.7.7 Config Persistence
+
+Pad configurations saved to YAML:
+```yaml
+pads:
+  "0,0":
+    x: 0
+    y: 0
+    mode: SELECTOR
+    group: scenes
+    idle_color: 19
+    active_color: 22
+    label: AlienCavern
+    osc_action:
+      address: /scenes/AlienCavern
+      args: []
+```
+
+Default path: `~/.config/launchpad_osc_lib/config.yaml`
 
 ### 2.8 Process Management
 
 | Feature | Description | Source |
 |---------|-------------|--------|
-| App Discovery | Find Processing sketches | `process_manager.py` |
-| Auto-restart | Restart crashed apps | `process_manager.py` |
-| CPU/Memory Monitor | Track resource usage | `services/process_monitor.py` |
+| App Discovery | Scan `processing-vj/src/` for `.pde` files | `process_manager.py` |
+| Processing Path Detection | Find `processing-java` in PATH or common locations | `process_manager.py` |
+| Sketch Launch | `processing-java --sketch=<path> --run` | `process_manager.py` |
+| Process Lifecycle | Track `subprocess.Popen` with proper cleanup | `process_manager.py` |
+| Auto-restart Daemon | Monitor thread restarts crashed apps with cooldown | `process_manager.py` |
+| Restart Cooldown | Exponential: `min(30, 5 * (restart_count + 1))` seconds | `process_manager.py` |
+| Graceful Stop | `terminate()` → wait 3s → `kill()` | `process_manager.py` |
+| Description Extraction | Parse first comment line from `.pde` file | `process_manager.py` |
 | Health Tracking | Service availability state | `infra.py` |
 | Exponential Backoff | Retry with increasing delay | `infra.py` |
+
+**Key Classes:**
+```
+ProcessingApp
+├── name: str
+├── path: Path
+├── description: str
+├── process: Optional[Popen]
+├── restart_count: int
+├── last_restart: float
+├── enabled: bool
+
+ProcessManager
+├── apps: List[ProcessingApp]
+├── processing_cmd: Optional[str]
+├── discover_apps(project_root) -> List[ProcessingApp]
+├── launch_app(app) -> bool
+├── stop_app(app)
+├── is_running(app) -> bool
+├── start_monitoring(daemon_mode)
+├── stop_monitoring()
+├── cleanup()
+```
 
 ### 2.9 UI Features (Textual -> SwiftUI)
 
@@ -235,11 +441,28 @@ SongCategories
 
 PipelineResult
 ├── artist, title, album
+├── success: Bool
+├── cached: Bool  // True if loaded from cache
 ├── lyricsFound, lyricsLineCount
+├── lyricsLines: [LyricLine]
+├── refrainLines, lyricsKeywords: [String]
+├── plainLyrics: String
+├── aiAnalyzed: Bool
+├── keywords, themes: [String]
+├── visualAdjectives: [String]  // LLM-generated: neon, cosmic, ethereal
+├── llmRefrainLines: [String]
+├── tempo: String
 ├── mood, energy, valence
+├── categories: [String: Double]
+├── shaderMatched: Bool
 ├── shaderName, shaderScore
-├── stepsCompleted: [String]
+├── imagesFound: Bool
+├── imagesFolder, imagesCount
+├── stepsCompleted, stepsSkipped: [String]
+├── stepTimings: [String: Int]  // step_name -> ms
 ├── totalTimeMs: Int
+├── func toCacheDict() -> [String: Any]
+├── static func fromCacheDict(_:) -> PipelineResult
 ```
 
 ### 3.2 Pure Functions
@@ -296,6 +519,8 @@ protocol Module {
 | `AIModule` | Song categorization | None (uses LLMClient) |
 | `ShadersModule` | Shader indexing and matching | None |
 | `PipelineModule` | Orchestrate all analysis | All above |
+| `LaunchpadModule` | MIDI controller with pure FSM | OSCModule |
+| `ProcessModule` | Processing app lifecycle | None |
 
 ### 4.3 Registry Pattern
 
@@ -522,19 +747,36 @@ Tasks:
 - [ ] Settings changes persist
 - [ ] Log buffer limits to 500 lines
 
-### Phase 5: MIDI Controller (Optional)
+### Phase 5: MIDI Controller (Launchpad) - REQUIRED
 
-**Goal**: Launchpad support
+**Goal**: Full Launchpad Mini MK3 support for live VJ control
 
 ```
 Tasks:
-1. MIDI device discovery
-2. Pad state management (FSM)
-3. LED control
-4. Learn mode
-5. Bank system
-6. Config persistence
+1. MIDI device discovery (CoreMIDI)
+2. ButtonId coordinate system (0-8, 0-7)
+3. Pad modes (SELECTOR, TOGGLE, ONE_SHOT, PUSH)
+4. Button groups with parent/child hierarchy
+5. LED color system (10 colors × 3 brightness)
+6. Immutable ControllerState with all runtime data
+7. Pure FSM functions returning (State, [Effect])
+8. Effect execution shell (OSC, LED, Config, Log)
+9. Learn mode with 4-phase workflow (IDLE → WAIT_PAD → RECORD_OSC → CONFIG)
+10. CONFIG phase with 3 registers (OSC/Mode/Color selection)
+11. OSC event recording and filtering (is_controllable)
+12. Bank system for 8× pad capacity
+13. YAML config persistence (~/.config/launchpad_osc_lib/)
+14. Beat sync LED blinking from OSC /audio/beat/onbeat
 ```
+
+**TDD Checkpoints:**
+- [ ] Pad press generates correct OSC effect
+- [ ] SELECTOR mode deactivates previous in group
+- [ ] TOGGLE alternates between osc_on/osc_off
+- [ ] PUSH sends 1.0 on press, 0.0 on release
+- [ ] Learn mode FSM transitions correctly
+- [ ] Config saves and loads pad mappings
+- [ ] Group hierarchy resets child groups on parent change
 
 ---
 
@@ -803,7 +1045,8 @@ swift-vj/
 │   │   │   ├── Config.swift
 │   │   │   ├── Settings.swift
 │   │   │   ├── ServiceHealth.swift
-│   │   │   └── Cache.swift
+│   │   │   ├── Cache.swift
+│   │   │   └── ProcessManager.swift   # Processing app lifecycle
 │   │   │
 │   │   ├── Adapters/
 │   │   │   ├── LyricsFetcher.swift
@@ -820,11 +1063,18 @@ swift-vj/
 │   │   │   ├── AIModule.swift
 │   │   │   ├── ShadersModule.swift
 │   │   │   ├── PipelineModule.swift
+│   │   │   ├── ProcessModule.swift    # Processing app management
 │   │   │   └── ModuleRegistry.swift
 │   │   │
-│   │   └── MIDI/                      # Optional
-│   │       ├── LaunchpadController.swift
-│   │       └── PadState.swift
+│   │   └── Launchpad/                 # MIDI Controller (REQUIRED)
+│   │       ├── ButtonId.swift         # Grid coordinate system
+│   │       ├── Model.swift            # PadMode, PadBehavior, ControllerState
+│   │       ├── FSM.swift              # Pure state machine functions
+│   │       ├── Effects.swift          # Effect types (SendOsc, SetLed, etc.)
+│   │       ├── LearnMode.swift        # Learn mode phases and handlers
+│   │       ├── ColorSystem.swift      # 10 colors × 3 brightness
+│   │       ├── Config.swift           # YAML persistence
+│   │       └── Controller.swift       # Imperative shell executing effects
 │   │
 │   └── SwiftVJUI/                     # SwiftUI App
 │       ├── App.swift
