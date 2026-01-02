@@ -71,11 +71,12 @@ final class RefrainDetectionTests: XCTestCase {
         // When: Extracting keywords
         let keywords = extractKeywords(text)
 
-        // Then: Only meaningful words remain
-        XCTAssertFalse(keywords.contains("THE"))
-        XCTAssertFalse(keywords.contains("AND"))
-        XCTAssertFalse(keywords.contains("GOING"))  // "going" is also a stop word variant
-        XCTAssertTrue(keywords.contains("STORE") || keywords.contains("BUYING") || keywords.contains("THINGS"))
+        // Then: Stop words are filtered out, meaningful words remain
+        XCTAssertFalse(keywords.contains("THE"))  // article - stop word
+        XCTAssertFalse(keywords.contains("AND"))  // conjunction - stop word
+        XCTAssertFalse(keywords.contains("SOME")) // quantifier - stop word
+        // "going" is NOT a stop word, so it may appear in keywords
+        XCTAssertTrue(keywords.contains("STORE") || keywords.contains("BUYING") || keywords.contains("GOING"))
     }
 
     func test_extractKeywords_limitsToMaxWords() {

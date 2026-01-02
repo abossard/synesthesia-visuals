@@ -35,7 +35,7 @@ public struct LyricsDisplayState: Sendable, Equatable {
 
     /// Next lyric line (if any)
     public var nextLine: String? {
-        guard activeIndex + 1 < lines.count else { return nil }
+        guard activeIndex >= 0, activeIndex + 1 < lines.count else { return nil }
         return lines[activeIndex + 1].text
     }
 

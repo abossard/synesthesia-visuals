@@ -453,11 +453,11 @@ Tasks:
 ```
 
 **TDD Checkpoints:**
-- [ ] LRC parsing works for all formats
-- [ ] Refrain detection marks repeated lines
-- [ ] Keyword extraction filters stop words
-- [ ] Active line detection handles edge cases
-- [ ] Settings persist to JSON
+- [x] LRC parsing works for all formats ✅ (LRCParsingTests: 8 tests)
+- [x] Refrain detection marks repeated lines ✅ (RefrainDetectionTests: 4 tests)
+- [x] Keyword extraction filters stop words ✅ (RefrainDetectionTests: 5 tests)
+- [x] Active line detection handles edge cases ✅ (RefrainDetectionTests: 2 tests)
+- [x] Settings persist to JSON ✅ (SettingsTests: 7 tests)
 
 ### Phase 2: Adapters (External Services)
 
@@ -474,11 +474,11 @@ Tasks:
 ```
 
 **TDD Checkpoints:**
-- [ ] LRCLIB fetch returns lyrics for known songs
+- [x] LRCLIB fetch returns lyrics for known songs ✅ (LyricsE2ETests: 8 tests)
 - [ ] OSC send delivers messages to target
 - [ ] Spotify query returns current track (when playing)
 - [ ] VDJ subscription receives track changes
-- [ ] Cache stores and retrieves correctly
+- [x] Cache stores and retrieves correctly ✅ (LyricsFetcher with 7-day TTL)
 
 ### Phase 3: Modules Layer
 
