@@ -1,26 +1,29 @@
-// OSCClient - Central OSC communication adapter
+// OSCHub - Central OSC communication adapter
 // Following Grokking Simplicity: this is an action (side effects)
+// Renamed to OSCHub to avoid conflict with OSCKit's OSCClient
 
 import Foundation
 import OSCKit
 
 /// OSC message handler type
-public typealias OSCHandler = @Sendable (String, [any OSCValue]) -> Void
+public typealias OSCMessageHandler = @Sendable (String, [any OSCValue]) -> Void
 
 /// Error types for OSC operations
-public enum OSCClientError: Error, Equatable {
+public enum OSCHubError: Error, Equatable {
     case notStarted
     case sendFailed(String)
     case serverFailed(String)
 }
 
-/// Central OSC client managing send and receive
+/// Central OSC hub managing send and receive
 ///
 /// Architecture:
 /// - Single receive port: 9999 (all incoming OSC)
 /// - Forwards received messages to: 10000 (Processing), 11111 (Magic)
 /// - Send channels: VDJ (9009), Synesthesia (7777), Processing (10000)
-public actor OSCClient {
+///
+/// Note: Named "OSCHub" to avoid conflict with OSCKit's OSCClient class
+public final class OSCHub: @unchecked Sendable {
 
     // MARK: - Configuration
 
@@ -39,14 +42,17 @@ public actor OSCClient {
 
     // MARK: - State
 
-    private let client = OSCUDPClient()
-    private var server: OSCUDPServer?
+    // Client bound to port 9999 so VDJ responses come back to us
+    // (VDJ responds to the source port of subscribe requests)
+    private var client: OSCClient?
+    private var server: OSCServer?
     private var isStarted = false
 
-    // Subscriptions: pattern -> handlers
-    private var subscriptions: [String: [OSCHandler]] = [:]
+    // Subscriptions: pattern -> handlers (protected by lock)
+    private let lock = NSLock()
+    private var subscriptions: [String: [OSCMessageHandler]] = [:]
 
-    // Stats
+    // Stats (atomic via lock)
     private var messagesSent: Int = 0
     private var messagesReceived: Int = 0
     private var messagesForwarded: Int = 0
@@ -59,27 +65,30 @@ public actor OSCClient {
     public func start() throws {
         guard !isStarted else { return }
 
-        // Start client
-        do {
-            try client.start()
-        } catch {
-            throw OSCClientError.sendFailed("Client start failed: \(error.localizedDescription)")
+        // Start server FIRST on receive port with port reuse enabled
+        // OSCKit 0.6.x API: OSCServer with setHandler (no host/port in callback)
+        let oscServer = OSCServer(port: Self.receivePort) { [weak self] message, timeTag in
+            await self?.handleMessage(message, timeTag: timeTag)
         }
-
-        // Start server on receive port
-        let oscServer = OSCUDPServer(port: Self.receivePort)
-        oscServer.setReceiveHandler { [weak self] message, timeTag, host, port in
-            Task { [weak self] in
-                await self?.handleMessage(message, timeTag: timeTag, host: host, port: port)
-            }
-        }
+        oscServer.isPortReuseEnabled = true
 
         do {
             try oscServer.start()
             self.server = oscServer
         } catch {
-            client.stop()
-            throw OSCClientError.serverFailed("Server start failed on port \(Self.receivePort): \(error.localizedDescription)")
+            throw OSCHubError.serverFailed("Server start failed on port \(Self.receivePort): \(error.localizedDescription)")
+        }
+
+        // Start client bound to SAME port 9999 with port reuse
+        // This ensures VDJ responds to port 9999 (not ephemeral port)
+        let oscClient = OSCClient(localPort: Self.receivePort)
+        oscClient.isPortReuseEnabled = true
+        do {
+            try oscClient.start()
+            self.client = oscClient
+        } catch {
+            oscServer.stop()
+            throw OSCHubError.sendFailed("Client start failed: \(error.localizedDescription)")
         }
 
         isStarted = true
@@ -89,13 +98,14 @@ public actor OSCClient {
     public func stop() {
         guard isStarted else { return }
 
-        client.stop()
+        client?.stop()
+        client = nil
         server?.stop()
         server = nil
         isStarted = false
     }
 
-    /// Whether the client is running
+    /// Whether the hub is running
     public var running: Bool {
         isStarted
     }
@@ -120,15 +130,18 @@ public actor OSCClient {
     /// Send OSC message to specific host and port
     public func send(_ address: String, values: [any OSCValue] = [], host: String, port: UInt16) throws {
         guard isStarted else {
-            throw OSCClientError.notStarted
+            throw OSCHubError.notStarted
         }
 
         let message = OSCMessage(address, values: values)
+        guard let oscClient = client else {
+            throw OSCHubError.notStarted
+        }
         do {
-            try client.send(.message(message), to: host, port: port)
-            messagesSent += 1
+            try oscClient.send(message, to: host, port: port)
+            lock.withLock { messagesSent += 1 }
         } catch {
-            throw OSCClientError.sendFailed(error.localizedDescription)
+            throw OSCHubError.sendFailed(error.localizedDescription)
         }
     }
 
@@ -136,26 +149,28 @@ public actor OSCClient {
 
     /// Subscribe to incoming OSC messages matching a pattern
     /// - Pattern: "*" matches all, "/prefix*" matches prefix, exact path for exact match
-    public func subscribe(pattern: String, handler: @escaping OSCHandler) {
-        var handlers = subscriptions[pattern] ?? []
-        handlers.append(handler)
-        subscriptions[pattern] = handlers
+    public func subscribe(pattern: String, handler: @escaping OSCMessageHandler) {
+        lock.withLock {
+            var handlers = subscriptions[pattern] ?? []
+            handlers.append(handler)
+            subscriptions[pattern] = handlers
+        }
     }
 
     /// Unsubscribe all handlers for a pattern
     public func unsubscribe(pattern: String) {
-        subscriptions.removeValue(forKey: pattern)
+        lock.withLock { _ = subscriptions.removeValue(forKey: pattern) }
     }
 
     /// Clear all subscriptions
     public func clearSubscriptions() {
-        subscriptions.removeAll()
+        lock.withLock { subscriptions.removeAll() }
     }
 
     // MARK: - Message Handling
 
-    private func handleMessage(_ message: OSCMessage, timeTag: OSCTimeTag, host: String, port: UInt16) {
-        messagesReceived += 1
+    private func handleMessage(_ message: OSCMessage, timeTag: OSCTimeTag) async {
+        lock.withLock { messagesReceived += 1 }
 
         // Forward to all targets
         forwardMessage(message)
@@ -165,10 +180,11 @@ public actor OSCClient {
     }
 
     private func forwardMessage(_ message: OSCMessage) {
+        guard let oscClient = client else { return }
         for target in Self.forwardTargets {
             do {
-                try client.send(.message(message), to: target.host, port: target.port)
-                messagesForwarded += 1
+                try oscClient.send(message, to: target.host, port: target.port)
+                lock.withLock { messagesForwarded += 1 }
             } catch {
                 // Log error but don't stop processing
             }
@@ -179,7 +195,9 @@ public actor OSCClient {
         let address = message.addressPattern.stringValue
         let values = message.values
 
-        for (pattern, handlers) in subscriptions {
+        let currentSubscriptions = lock.withLock { subscriptions }
+
+        for (pattern, handlers) in currentSubscriptions {
             if matches(address: address, pattern: pattern) {
                 for handler in handlers {
                     handler(address, values)
@@ -209,38 +227,42 @@ public actor OSCClient {
 
     /// Get current statistics
     public func stats() -> [String: Any] {
-        [
-            "running": isStarted,
-            "receivePort": Self.receivePort,
-            "messagesSent": messagesSent,
-            "messagesReceived": messagesReceived,
-            "messagesForwarded": messagesForwarded,
-            "subscriptionCount": subscriptions.count
-        ]
+        lock.withLock {
+            [
+                "running": isStarted,
+                "receivePort": Self.receivePort,
+                "messagesSent": messagesSent,
+                "messagesReceived": messagesReceived,
+                "messagesForwarded": messagesForwarded,
+                "subscriptionCount": subscriptions.count
+            ]
+        }
     }
 
     /// Reset statistics
     public func resetStats() {
-        messagesSent = 0
-        messagesReceived = 0
-        messagesForwarded = 0
+        lock.withLock {
+            messagesSent = 0
+            messagesReceived = 0
+            messagesForwarded = 0
+        }
     }
 }
 
 // MARK: - Convenience Extensions
 
-public extension OSCClient {
-    /// Send a simple string message
+public extension OSCHub {
+    /// Send a simple string message to VDJ
     func sendToVDJ(_ address: String, _ stringValue: String) throws {
         try sendToVDJ(address, values: [stringValue])
     }
 
-    /// Send a simple int message
+    /// Send a simple int message to VDJ
     func sendToVDJ(_ address: String, _ intValue: Int32) throws {
         try sendToVDJ(address, values: [intValue])
     }
 
-    /// Send a simple float message
+    /// Send a simple float message to VDJ
     func sendToVDJ(_ address: String, _ floatValue: Float32) throws {
         try sendToVDJ(address, values: [floatValue])
     }
