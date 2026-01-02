@@ -700,10 +700,11 @@ Tasks:
 
 **TDD Checkpoints:**
 - [x] LRCLIB fetch returns lyrics for known songs ✅ (LyricsE2ETests: 8 tests)
-- [ ] OSC send delivers messages to target
-- [ ] Spotify query returns current track (when playing)
-- [ ] VDJ subscription receives track changes
+- [x] OSC send delivers messages to target ✅ (OSCE2ETests: 15 tests)
+- [x] Spotify query returns current track (when playing) ✅ (PlaybackE2ETests)
+- [x] VDJ subscription receives track changes ✅ (PlaybackE2ETests: VDJ live tests)
 - [x] Cache stores and retrieves correctly ✅ (LyricsFetcher with 7-day TTL)
+- [x] LLM analysis with LM Studio/OpenAI/basic fallback ✅ (LLMClientTests: 15 tests)
 
 ### Phase 3: Modules Layer
 
