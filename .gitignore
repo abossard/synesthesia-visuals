@@ -56,3 +56,4 @@ temp_*.frag
 *error.json
 *.analysis.json
 screenshots/
+.temp/

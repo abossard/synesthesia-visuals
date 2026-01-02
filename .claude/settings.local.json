@@ -32,7 +32,8 @@
       "Bash(../.venv/bin/pytest:*)",
       "Bash(timeout 30 ../.venv/bin/python:*)",
       "Bash(timeout 60 ../.venv/bin/python:*)",
-      "Bash(swift test:*)"
+      "Bash(swift test:*)",
+      "Bash(swift build)"
     ],
     "deny": [],
     "ask": []
