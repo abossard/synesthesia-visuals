@@ -6,8 +6,8 @@ Analysis of remaining broken/black GLSL shaders after mouse fix.
 
 **Status:** RESOLVED via synthetic mouse implementation in VJUniverse.pde
 
-- Mouse now defaults to center (0.5, 0.5) when real mouse hasn't moved
-- Audio-reactive figure-8 motion provides continuous mouse movement
+- Mouse input is fully synthetic (audio-reactive figure-8 motion)
+- Continuous motion keeps mouse-dependent shaders alive
 - ~25 previously broken shaders now work
 
 ## Remaining Issues Summary

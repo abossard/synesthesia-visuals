@@ -98,6 +98,10 @@ abstract class Tile {
   PGraphics getBuffer() {
     return buffer;
   }
+
+  String getStatusString() {
+    return "";
+  }
   
   /**
    * Handle OSC message (return true if handled)
@@ -220,6 +224,27 @@ class ShaderTile extends Tile {
     }
     
     endDraw();
+  }
+
+  @Override
+  boolean handleKey(char key, int keyCode) {
+    if (keyCode == RIGHT) {
+      nextShader();
+      return true;
+    }
+    if (keyCode == LEFT) {
+      prevShader();
+      return true;
+    }
+    return false;
+  }
+
+  @Override
+  String getStatusString() {
+    ShaderInfo current = getCurrentShaderInfo();
+    if (current == null) return "No shader";
+    ArrayList<ShaderInfo> list = getFilteredShaderList();
+    return current.name + " [" + (currentShaderIndex + 1) + "/" + list.size() + "]";
   }
 }
 
@@ -681,6 +706,7 @@ class TextlerMultiTile extends Tile {
   RefrainState refrainState;
   SongInfoState songInfoState;
   TextRenderer textRenderer;
+  int previewLayer = 0;  // 0=Lyrics, 1=Refrain, 2=SongInfo
   
   // === ADDITIONAL BUFFERS & SYPHONS ===
   PGraphics refrainBuffer;
@@ -866,9 +892,49 @@ class TextlerMultiTile extends Tile {
   
   @Override
   PGraphics getBuffer() {
-    // For preview, composite all 3 layers
-    // Return main buffer (lyrics) - preview shows lyrics layer
+    if (previewLayer == 1 && refrainBuffer != null) return refrainBuffer;
+    if (previewLayer == 2 && songInfoBuffer != null) return songInfoBuffer;
     return buffer;
+  }
+
+  @Override
+  boolean handleKey(char key, int keyCode) {
+    if (keyCode == RIGHT) {
+      previewLayer = (previewLayer + 1) % 3;
+      return true;
+    }
+    if (keyCode == LEFT) {
+      previewLayer = (previewLayer + 2) % 3;
+      return true;
+    }
+    return false;
+  }
+
+  @Override
+  String getStatusString() {
+    String label = getPreviewLabel();
+    String track = buildTrackLabel();
+    if (track.isEmpty()) return label;
+    return label + ": " + track;
+  }
+
+  String getPreviewLabel() {
+    switch (previewLayer) {
+      case 1:
+        return "Refrain";
+      case 2:
+        return "SongInfo";
+      default:
+        return "Lyrics";
+    }
+  }
+
+  String buildTrackLabel() {
+    String artist = songInfoState != null ? songInfoState.artist : "";
+    String title = songInfoState != null ? songInfoState.title : "";
+    if (artist.isEmpty() && title.isEmpty()) return "";
+    if (!artist.isEmpty() && !title.isEmpty()) return artist + " - " + title;
+    return !artist.isEmpty() ? artist : title;
   }
   
   @Override

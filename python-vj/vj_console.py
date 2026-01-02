@@ -123,9 +123,10 @@ class VJConsoleApp(App):
             "Synesthesia", "LM Studio", "Magic", "java",
         ])
 
-        # Pipeline state for UI
+        # Pipeline state for UI - track all steps with status
         self._pipeline_result: Optional[PipelineResult] = None
-        self._pipeline_steps: List[Dict[str, Any]] = []
+        self._pipeline_steps: Dict[str, Dict[str, Any]] = {}  # step_name -> {status, data, time_ms}
+        self._pipeline_running: bool = False
 
         # Launchpad (optional)
         self.launchpad_manager: Optional[Any] = None
@@ -143,7 +144,7 @@ class VJConsoleApp(App):
         if not LAUNCHPAD_LIB_AVAILABLE or LaunchpadManager is None:
             return
         try:
-            self.launchpad_manager = LaunchpadManager(osc_send_port=7777, osc_receive_port=9999)
+            self.launchpad_manager = LaunchpadManager()
             self.launchpad_manager.set_state_callback(self._on_launchpad_state_change)
             self.launchpad_manager.start()
         except Exception as e:
@@ -263,14 +264,18 @@ class VJConsoleApp(App):
 
         # Pipeline step callbacks
         def on_step_start(step: PipelineStep):
-            self._pipeline_steps.append({"step": step.value, "status": "running"})
+            self._pipeline_steps[step.value] = {
+                "status": "running",
+                "start_time": time.time(),
+                "data": {},
+            }
 
         def on_step_complete(step: PipelineStep, data: Any):
-            for s in self._pipeline_steps:
-                if s["step"] == step.value:
-                    s["status"] = "done" if "error" not in data else "error"
-                    s["data"] = data
-                    break
+            if step.value in self._pipeline_steps:
+                step_info = self._pipeline_steps[step.value]
+                step_info["status"] = "done" if "error" not in data else "error"
+                step_info["data"] = data
+                step_info["time_ms"] = int((time.time() - step_info.get("start_time", time.time())) * 1000)
 
         self.registry.pipeline.on_step_start = on_step_start
         self.registry.pipeline.on_step_complete = on_step_complete
@@ -278,14 +283,27 @@ class VJConsoleApp(App):
     def _run_pipeline_async(self, artist: str, title: str, album: str = "") -> None:
         """Run pipeline in background thread."""
         logger.info(f"Starting pipeline for: {artist} - {title}")
-        self._pipeline_steps = []
+
+        # Initialize all steps as pending
+        self._pipeline_steps = {
+            step.value: {"status": "pending", "data": {}, "time_ms": 0}
+            for step in PipelineStep
+        }
+        self._pipeline_running = True
+        self._pipeline_result = None
 
         def run():
             try:
                 result = self.registry.pipeline.process(artist, title, album)
                 self._pipeline_result = result
+                self._pipeline_running = False
+                # Mark skipped steps
+                for step_name in result.steps_skipped:
+                    if step_name in self._pipeline_steps:
+                        self._pipeline_steps[step_name]["status"] = "skipped"
                 logger.info(f"Pipeline complete: {result.steps_completed}")
             except Exception as e:
+                self._pipeline_running = False
                 logger.error(f"Pipeline error: {e}")
 
         threading.Thread(target=run, daemon=True).start()
@@ -373,78 +391,83 @@ class VJConsoleApp(App):
                     "energy": result.energy,
                     "valence": result.valence,
                     "scores": result.categories,
-                    "ai_available": result.ai_available,
+                    "ai_analyzed": result.ai_analyzed,
                 }
             else:
                 categories_data = {}
             self._safe_update("#categories", "categories_data", categories_data)
 
-            # Pipeline panel - convert steps to display_lines format
+            # Pipeline panel - show ALL steps in order with status
             display_lines = []
-            for step in self._pipeline_steps:
-                step_name = step.get("step", "unknown")
-                status = step.get("status", "pending")
-                data = step.get("data", {})
+            labels = {
+                "lyrics": "Lyrics",
+                "ai_analysis": "AI Analysis",
+                "shader_match": "Shader",
+                "images": "Images",
+            }
 
-                # Map step to display label
-                labels = {
-                    "lyrics": "Lyrics",
-                    "metadata": "Metadata",
-                    "ai_analysis": "AI Analysis",
-                    "shader_match": "Shader Match",
-                    "images": "Images",
-                }
+            # Process all steps in order
+            for step in PipelineStep:
+                step_name = step.value
+                step_info = self._pipeline_steps.get(step_name, {"status": "pending", "data": {}, "time_ms": 0})
+                status = step_info.get("status", "pending")
+                data = step_info.get("data", {})
+                time_ms = step_info.get("time_ms", 0)
+
                 label = labels.get(step_name, step_name.replace("_", " ").title())
 
                 # Map status to display format
                 if status == "running":
                     status_icon, color = "◐", "yellow"
-                    message = "Processing..."
+                    message = "..."
                 elif status == "done":
                     status_icon, color = "✓", "green"
                     # Build detailed message based on step type
                     if step_name == "lyrics":
                         lines = data.get("lines", 0)
                         refrains = data.get("refrains", 0)
-                        keywords = data.get("keywords", 0)
                         if data.get("found"):
-                            message = f"{lines} lines, {refrains} refrains, {keywords} kw"
+                            message = f"{lines}L {refrains}R"
                         else:
-                            message = "Not found"
-                    elif step_name == "metadata":
-                        kw = data.get("keywords", 0)
-                        themes = data.get("themes", 0)
-                        visuals = data.get("visuals", 0)
-                        if data.get("found"):
-                            message = f"{kw} kw, {themes} themes, {visuals} visuals"
-                        else:
-                            message = "LLM unavailable"
+                            message = "not found"
                     elif step_name == "ai_analysis":
                         mood = data.get("mood", "")
                         energy = data.get("energy", 0)
                         valence = data.get("valence", 0)
-                        message = f"{mood} (E:{energy:.1f} V:{valence:+.1f})" if mood else "No result"
+                        kw = data.get("keywords", 0)
+                        vis = data.get("visuals", 0)
+                        if mood:
+                            message = f"{mood} E{energy:.1f} V{valence:+.1f} {kw}kw {vis}vis"
+                        else:
+                            message = "no result"
                     elif step_name == "shader_match":
                         name = data.get("name", "")
                         score = data.get("score", 0)
-                        message = f"{name} ({score:.2f})" if name else "No match"
+                        message = f"{name} ({score:.2f})" if name else "no match"
                     elif step_name == "images":
                         count = data.get("count", 0)
-                        cached = " (cached)" if data.get("cached") else ""
-                        message = f"{count} images{cached}" if count else "None found"
+                        cached = " cached" if data.get("cached") else ""
+                        message = f"{count} imgs{cached}" if count else "none"
                     else:
-                        message = data.get("summary", "Complete")
+                        message = "done"
+                elif status == "skipped":
+                    status_icon, color = "○", "dim"
+                    message = "skipped"
                 elif status == "error":
                     status_icon, color = "✗", "red"
-                    message = data.get("error", "Failed")
-                else:
-                    status_icon, color = "○", "dim"
+                    message = data.get("error", "failed")[:30]
+                else:  # pending
+                    status_icon, color = "·", "dim"
                     message = ""
 
-                display_lines.append((label, status_icon, color, message))
+                # Add timing if available
+                timing_str = f" [{time_ms}ms]" if time_ms > 0 else ""
+
+                display_lines.append((label, status_icon, color, message, timing_str))
 
             pipeline_data = {
                 "display_lines": display_lines,
+                "running": self._pipeline_running,
                 "result": {
                     "lyrics_found": result.lyrics_found if result else False,
                     "lyrics_lines": result.lyrics_line_count if result else 0,
@@ -452,6 +475,7 @@ class VJConsoleApp(App):
                     "shader": result.shader_name if result else "",
                     "images": result.images_count if result else 0,
                     "time_ms": result.total_time_ms if result else 0,
+                    "step_timings": result.step_timings if result else {},
                 } if result else {},
             }
             self._safe_update("#pipeline", "pipeline_data", pipeline_data)

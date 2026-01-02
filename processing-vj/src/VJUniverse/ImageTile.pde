@@ -482,7 +482,14 @@ class ImageTile extends Tile {
   
   @Override
   boolean handleKey(char key, int keyCode) {
-    // Only handle if this tile is focused (handled by TileManager)
+    if (keyCode == RIGHT) {
+      nextFolderImage();
+      return true;
+    }
+    if (keyCode == LEFT) {
+      prevFolderImage();
+      return true;
+    }
     return false;
   }
   
@@ -490,13 +497,28 @@ class ImageTile extends Tile {
   // STATUS
   // ==========================================================================
   
+  @Override
   String getStatusString() {
+    if (isLoading) return "Loading...";
+    
+    String name = getCurrentImageName();
     if (folderMode) {
-      return "Folder [" + (folderIndex + 1) + "/" + folderImages.size() + "] beat:" + beatsPerChange;
-    } else if (currentImage != null || nextImage != null) {
-      return "Image loaded";
-    } else {
-      return "Empty";
+      String indexInfo = folderImages.size() > 0
+        ? (folderIndex + 1) + "/" + folderImages.size()
+        : "0/0";
+      String beatInfo = beatsPerChange == 0 ? "manual" : ("beat:" + beatsPerChange);
+      if (!name.isEmpty()) {
+        return "Folder " + indexInfo + " - " + name + " (" + beatInfo + ")";
+      }
+      return "Folder " + indexInfo + " (" + beatInfo + ")";
     }
+    if (!name.isEmpty()) return name;
+    if (currentImage != null || nextImage != null) return "Image loaded";
+    return "Empty";
+  }
+
+  String getCurrentImageName() {
+    if (currentPath == null || currentPath.isEmpty()) return "";
+    return new java.io.File(currentPath).getName();
   }
 }

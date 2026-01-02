@@ -280,36 +280,22 @@ class VJSimsTile extends Tile {
   @Override
   boolean handleKey(char key, int keyCode) {
     // Arrow keys for level navigation
-    if (keyCode == RIGHT || key == ']') {
+    if (keyCode == RIGHT) {
       nextLevel();
       return true;
     }
-    if (keyCode == LEFT || key == '[') {
+    if (keyCode == LEFT) {
       prevLevel();
       return true;
     }
 
-    // ! (Shift+1) = toggle recording mode (R is for shader cycling)
-    if (key == '!') {
-      recordingMode = !recordingMode;
-      if (recordingMode) {
-        levelChangeTimeMs = millis();
-        nextLevelAtMs = levelChangeTimeMs + levelDurationMs;
-        levelScreenshotTaken = false;
-        println("[VJSimsTile] Recording mode ON - auto-rotating scenes with screenshots");
-      } else {
-        println("[VJSimsTile] Recording mode OFF");
-      }
-      return true;
-    }
-
-    // Space = reset current level
-    if (key == ' ') {
-      resetLevel();
-      return true;
-    }
-
     return false;
+  }
+
+  @Override
+  String getStatusString() {
+    if (activeLevel == null) return "No level";
+    return activeLevel.getName() + " [" + (currentLevelIndex + 1) + "/" + levels.size() + "]";
   }
 
   // === SCREENSHOT FUNCTIONALITY ===

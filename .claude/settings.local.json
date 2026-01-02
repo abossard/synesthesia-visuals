@@ -30,7 +30,8 @@
       "Bash(python -m modules.pipeline:*)",
       "Bash(python:*)",
       "Bash(../.venv/bin/pytest:*)",
-      "Bash(timeout 30 ../.venv/bin/python:*)"
+      "Bash(timeout 30 ../.venv/bin/python:*)",
+      "Bash(timeout 60 ../.venv/bin/python:*)"
     ],
     "deny": [],
     "ask": []

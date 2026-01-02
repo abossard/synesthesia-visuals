@@ -22,7 +22,7 @@ class TileManager {
   
   // === PREVIEW SETTINGS ===
   int previewPadding = 4;
-  boolean showLabels = true;
+  boolean showLabels = false;
   
   // === REFERENCE ===
   PApplet parent;
@@ -89,8 +89,8 @@ class TileManager {
       gridCols = 2;
       gridRows = 2;
     } else if (count <= 6) {
-      gridCols = 3;
-      gridRows = 2;
+      gridCols = 2;
+      gridRows = 3;
     } else {
       gridCols = 3;
       gridRows = 3;
@@ -139,12 +139,35 @@ class TileManager {
     // Fullscreen single tile mode
     if (focusedTileIndex >= 0 && focusedTileIndex < tiles.size()) {
       Tile focused = tiles.get(focusedTileIndex);
-      if (focused.buffer != null) {
-        parent.image(focused.buffer, 0, 0, displayWidth, displayHeight);
+      float tileAspect = getTileAspect(focused);
+      float drawW = displayWidth;
+      float drawH = drawW / tileAspect;
+      if (drawH > displayHeight) {
+        drawH = displayHeight;
+        drawW = drawH * tileAspect;
+      }
+      float drawX = (displayWidth - drawW) * 0.5;
+      float drawY = (displayHeight - drawH) * 0.5;
+      
+      PGraphics focusedBuffer = focused.getBuffer();
+      if (focusedBuffer != null) {
+        parent.image(focusedBuffer, drawX, drawY, drawW, drawH);
+      } else {
+        parent.fill(30);
+        parent.noStroke();
+        parent.rect(drawX, drawY, drawW, drawH);
       }
       
+      // Border
+      parent.noFill();
+      parent.stroke(80);
+      parent.strokeWeight(1);
+      parent.rect(drawX, drawY, drawW, drawH);
+      
       // Draw overlay info (not in Syphon)
-      drawTileOverlay(focused, 0, 0, displayWidth, displayHeight, true);
+      if (showLabels) {
+        drawTileOverlay(focused, drawX, drawY, drawW, drawH, true);
+      }
       return;
     }
     
@@ -160,28 +183,53 @@ class TileManager {
         float x = previewPadding + col * (cellWidth + previewPadding);
         float y = previewPadding + row * (cellHeight + previewPadding);
         
+        // Fit tile buffer inside the cell while preserving aspect ratio.
+        float tileAspect = getTileAspect(t);
+        float drawW = cellWidth;
+        float drawH = drawW / tileAspect;
+        if (drawH > cellHeight) {
+          drawH = cellHeight;
+          drawW = drawH * tileAspect;
+        }
+        float drawX = x + (cellWidth - drawW) * 0.5;
+        float drawY = y + (cellHeight - drawH) * 0.5;
+        
         // Draw tile buffer
-        if (t.buffer != null) {
-          parent.image(t.buffer, x, y, cellWidth, cellHeight);
+        PGraphics previewBuffer = t.getBuffer();
+        if (previewBuffer != null) {
+          parent.image(previewBuffer, drawX, drawY, drawW, drawH);
         } else {
           // Placeholder for uninitialized tile
           parent.fill(30);
           parent.noStroke();
-          parent.rect(x, y, cellWidth, cellHeight);
+          parent.rect(drawX, drawY, drawW, drawH);
         }
         
         // Border
         parent.noFill();
         parent.stroke(80);
         parent.strokeWeight(1);
-        parent.rect(x, y, cellWidth, cellHeight);
+        parent.rect(drawX, drawY, drawW, drawH);
         
         // Draw overlay info (not in Syphon)
-        drawTileOverlay(t, x, y, cellWidth, cellHeight, false);
+        if (showLabels) {
+          drawTileOverlay(t, drawX, drawY, drawW, drawH, false);
+        }
         
         idx++;
       }
     }
+  }
+  
+  float getTileAspect(Tile t) {
+    if (t == null) return 16.0f / 9.0f;
+    if (t.buffer != null && t.buffer.height > 0) {
+      return (float) t.buffer.width / (float) t.buffer.height;
+    }
+    if (t.bufferHeight > 0) {
+      return (float) t.bufferWidth / (float) t.bufferHeight;
+    }
+    return 16.0f / 9.0f;
   }
   
   /**
@@ -301,8 +349,8 @@ class TileManager {
    * Returns true if any tile consumed it
    */
   boolean handleKey(char key, int keyCode) {
-    // Number keys 1-9 for tile focus
-    if (key >= '1' && key <= '9') {
+    // Number keys 1-5 for tile focus (toggle back to grid)
+    if (key >= '1' && key <= '5') {
       int idx = key - '1';
       if (idx < tiles.size()) {
         focusedTileIndex = (focusedTileIndex == idx) ? -1 : idx;
@@ -311,16 +359,9 @@ class TileManager {
       }
     }
     
-    // 0 key to show all
-    if (key == '0') {
-      focusedTileIndex = -1;
-      println("[TileManager] Focus: all");
-      return true;
-    }
-    
-    // Route to tiles
-    for (Tile t : tiles) {
-      if (t.handleKey(key, keyCode)) return true;
+    // Route to focused tile only (if any)
+    if (focusedTileIndex >= 0 && focusedTileIndex < tiles.size()) {
+      return tiles.get(focusedTileIndex).handleKey(key, keyCode);
     }
     
     return false;
@@ -335,6 +376,39 @@ class TileManager {
       t.visible = !t.visible;
       println("[TileManager] " + name + " visibility: " + t.visible);
     }
+  }
+
+  Tile getFocusedTile() {
+    if (focusedTileIndex >= 0 && focusedTileIndex < tiles.size()) {
+      return tiles.get(focusedTileIndex);
+    }
+    return null;
+  }
+
+  int getFocusedTileIndex() {
+    return focusedTileIndex;
+  }
+
+  String getTileShortcutLabels() {
+    if (tiles.size() == 0) return "No tiles";
+    StringBuilder sb = new StringBuilder();
+    int count = min(tiles.size(), 5);
+    for (int i = 0; i < count; i++) {
+      if (i > 0) sb.append(" | ");
+      sb.append((i + 1) + " " + tiles.get(i).name);
+    }
+    return sb.toString();
+  }
+  
+  String getTileOrderString() {
+    if (tiles.size() == 0) return "Tiles: none";
+    StringBuilder sb = new StringBuilder();
+    sb.append("Tiles: ");
+    for (int i = 0; i < tiles.size(); i++) {
+      if (i > 0) sb.append(", ");
+      sb.append((i + 1) + " " + tiles.get(i).name);
+    }
+    return sb.toString();
   }
   
   /**

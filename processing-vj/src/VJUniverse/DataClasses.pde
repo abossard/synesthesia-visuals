@@ -137,9 +137,6 @@ class ShaderAnalysis {
   final String description;    // brief description
   final long analyzedAt;
   
-  // User rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=don't use (0=unrated, treated as 3)
-  int rating;
-  
   // Normalized feature scores for semantic matching (0.0 to 1.0, mood_valence: -1.0 to 1.0)
   final HashMap<String, Float> features;
   
@@ -180,14 +177,6 @@ class ShaderAnalysis {
                  String[] objects, String[] effects, String energy, 
                  String complexity, String description, long analyzedAt,
                  HashMap<String, Float> features, ShaderInputs inputs) {
-    this(shaderName, mood, colors, geometry, objects, effects, energy, 
-         complexity, description, analyzedAt, features, inputs, 0);
-  }
-  
-  ShaderAnalysis(String shaderName, String mood, String[] colors, String[] geometry,
-                 String[] objects, String[] effects, String energy, 
-                 String complexity, String description, long analyzedAt,
-                 HashMap<String, Float> features, ShaderInputs inputs, int rating) {
     this.shaderName = shaderName;
     this.mood = mood;
     this.colors = colors;
@@ -200,7 +189,6 @@ class ShaderAnalysis {
     this.analyzedAt = analyzedAt;
     this.features = features != null ? features : new HashMap<String, Float>();
     this.inputs = inputs != null ? inputs : new ShaderInputs();
-    this.rating = rating;  // 0 = unrated, treated as 3
   }
   
   // Get feature value with default
@@ -219,23 +207,6 @@ class ShaderAnalysis {
   // Check if features are populated
   boolean hasFeatures() {
     return features != null && features.size() > 0;
-  }
-  
-  // Get effective rating (0=unrated treated as 3)
-  int getEffectiveRating() {
-    return rating == 0 ? 3 : rating;
-  }
-  
-  // Rating labels for display
-  String getRatingLabel() {
-    switch (getEffectiveRating()) {
-      case 1: return "★★★ BEST";
-      case 2: return "★★ GOOD";
-      case 3: return "★ NORMAL";
-      case 4: return "◐ MASK";
-      case 5: return "✗ SKIP";
-      default: return "?";
-    }
   }
   
   // Get all tags as a combined array for matching

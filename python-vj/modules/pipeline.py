@@ -21,14 +21,18 @@ Standalone CLI:
     python -m modules.pipeline --artist "Queen" --title "Bohemian Rhapsody" --skip-images
 """
 import argparse
+import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from domain import sanitize_cache_filename
+from infrastructure import Config
 from modules.base import Module
 
 logger = logging.getLogger(__name__)
@@ -37,8 +41,7 @@ logger = logging.getLogger(__name__)
 class PipelineStep(Enum):
     """Pipeline processing steps."""
     LYRICS = "lyrics"
-    METADATA = "metadata"
-    AI_ANALYSIS = "ai_analysis"
+    AI_ANALYSIS = "ai_analysis"  # Combined metadata + categorization (single LLM call)
     SHADER_MATCH = "shader_match"
     IMAGES = "images"
 
@@ -47,12 +50,14 @@ class PipelineStep(Enum):
 class PipelineConfig:
     """Configuration for Pipeline module."""
     skip_lyrics: bool = False
-    skip_metadata: bool = False
-    skip_ai: bool = False
+    skip_ai: bool = False  # Controls combined AI analysis (metadata + categorization)
     skip_shaders: bool = False
     skip_images: bool = False
     skip_osc: bool = False
+    skip_cache: bool = False  # Disable result caching
     shaders_dir: Optional[str] = None
+    parallel: bool = True  # Enable parallel execution of independent steps
+    cache_dir: Optional[Path] = None  # Pipeline result cache directory
 
 
 @dataclass
@@ -62,27 +67,23 @@ class PipelineResult:
     title: str
     album: str = ""
     success: bool = False
+    cached: bool = False  # True if result was loaded from cache
 
-    # Lyrics
+    # Lyrics (from LRC file)
     lyrics_found: bool = False
     lyrics_line_count: int = 0
     lyrics_lines: List[Any] = field(default_factory=list)  # LyricLine objects
     refrain_lines: List[str] = field(default_factory=list)
     lyrics_keywords: List[str] = field(default_factory=list)
-
-    # Metadata (from LLM)
-    metadata_found: bool = False
     plain_lyrics: str = ""
+
+    # AI Analysis (combined metadata + categorization from single LLM call)
+    ai_analyzed: bool = False
     keywords: List[str] = field(default_factory=list)
     themes: List[str] = field(default_factory=list)
-    release_date: str = ""
-    genre: str = ""
     visual_adjectives: List[str] = field(default_factory=list)
+    llm_refrain_lines: List[str] = field(default_factory=list)
     tempo: str = ""
-    llm_refrain_lines: List[str] = field(default_factory=list)  # From LLM analysis
-
-    # AI Analysis
-    ai_available: bool = False
     mood: str = ""
     energy: float = 0.5
     valence: float = 0.0
@@ -100,7 +101,68 @@ class PipelineResult:
 
     # Timing
     steps_completed: List[str] = field(default_factory=list)
+    steps_skipped: List[str] = field(default_factory=list)
+    step_timings: Dict[str, int] = field(default_factory=dict)  # step_name -> ms
     total_time_ms: int = 0
+
+    def to_cache_dict(self) -> Dict[str, Any]:
+        """Convert to dict for caching (excludes non-serializable fields)."""
+        d = asdict(self)
+        # Convert LyricLine objects to dicts
+        d['lyrics_lines'] = [
+            {'time_sec': l.time_sec, 'text': l.text, 'keywords': getattr(l, 'keywords', '')}
+            for l in self.lyrics_lines
+        ] if self.lyrics_lines else []
+        return d
+
+    @classmethod
+    def from_cache_dict(cls, data: Dict[str, Any]) -> 'PipelineResult':
+        """Restore from cached dict."""
+        # lyrics_lines need special handling - keep as dicts for now
+        result = cls(
+            artist=data.get('artist', ''),
+            title=data.get('title', ''),
+            album=data.get('album', ''),
+            success=data.get('success', False),
+            cached=True,
+            lyrics_found=data.get('lyrics_found', False),
+            lyrics_line_count=data.get('lyrics_line_count', 0),
+            lyrics_lines=[],  # Will be empty for cached results
+            refrain_lines=data.get('refrain_lines', []),
+            lyrics_keywords=data.get('lyrics_keywords', []),
+            plain_lyrics=data.get('plain_lyrics', ''),
+            ai_analyzed=data.get('ai_analyzed', False),
+            keywords=data.get('keywords', []),
+            themes=data.get('themes', []),
+            visual_adjectives=data.get('visual_adjectives', []),
+            llm_refrain_lines=data.get('llm_refrain_lines', []),
+            tempo=data.get('tempo', ''),
+            mood=data.get('mood', ''),
+            energy=data.get('energy', 0.5),
+            valence=data.get('valence', 0.0),
+            categories=data.get('categories', {}),
+            shader_matched=data.get('shader_matched', False),
+            shader_name=data.get('shader_name', ''),
+            shader_score=data.get('shader_score', 0.0),
+            images_found=data.get('images_found', False),
+            images_folder=data.get('images_folder', ''),
+            images_count=data.get('images_count', 0),
+            steps_completed=data.get('steps_completed', []),
+            steps_skipped=data.get('steps_skipped', []),
+            step_timings=data.get('step_timings', {}),
+            total_time_ms=data.get('total_time_ms', 0),
+        )
+        return result
+
+
+@dataclass
+class StepInfo:
+    """Information about a pipeline step for UI display."""
+    name: str
+    status: str  # "pending", "running", "completed", "skipped", "error"
+    time_ms: int = 0
+    message: str = ""
+    data: Dict[str, Any] = field(default_factory=dict)
 
 
 # Callback types
@@ -115,24 +177,28 @@ class PipelineModule(Module):
 
     Steps:
     1. Fetch lyrics (LyricsModule)
-    2. AI analysis (AIAnalysisModule)
+    2. AI analysis - combined metadata + categorization (single LLM call)
     3. Match shader (ShadersModule)
     4. Fetch images (ImageScraper)
 
     Each step is optional and degrades gracefully if unavailable.
+    Results are cached per track for instant replay.
     """
 
     def __init__(self, config: Optional[PipelineConfig] = None):
         super().__init__()
         self._config = config or PipelineConfig()
 
+        # Cache directory
+        self._cache_dir = self._config.cache_dir or (Config.APP_DATA_DIR / "pipeline_cache")
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+
         # Sub-modules (lazy loaded)
         self._lyrics = None
-        self._ai = None
+        self._llm = None  # LLMAnalyzer for combined analysis
         self._shaders = None
         self._images = None
         self._osc = None
-        self._lyrics_fetcher = None
 
         # Callbacks
         self._on_step_start: Optional[OnStepStart] = None
@@ -185,17 +251,13 @@ class PipelineModule(Module):
             self._lyrics.stop()
             self._lyrics = None
 
-        if self._ai:
-            self._ai.stop()
-            self._ai = None
-
         if self._shaders:
             self._shaders.stop()
             self._shaders = None
 
+        self._llm = None
         self._images = None
         self._osc = None
-        self._lyrics_fetcher = None
         self._started = False
 
     def _get_osc(self):
@@ -205,12 +267,55 @@ class PipelineModule(Module):
             self._osc = OSCSender()
         return self._osc
 
-    def _get_lyrics_fetcher(self):
-        """Get lyrics fetcher for metadata (lazy loaded)."""
-        if self._lyrics_fetcher is None:
-            from adapters import LyricsFetcher
-            self._lyrics_fetcher = LyricsFetcher()
-        return self._lyrics_fetcher
+    def _get_llm(self):
+        """Get LLM analyzer (lazy loaded)."""
+        if self._llm is None:
+            from ai_services import LLMAnalyzer
+            self._llm = LLMAnalyzer()
+        return self._llm
+
+    def _get_cache_path(self, artist: str, title: str, album: str = "") -> Path:
+        """Get cache file path for a track."""
+        cache_key = sanitize_cache_filename(artist, title)
+        if album:
+            cache_key = f"{cache_key}_{sanitize_cache_filename('', album)}"
+        return self._cache_dir / f"{cache_key}.json"
+
+    def _load_cached_result(self, artist: str, title: str, album: str = "") -> Optional[PipelineResult]:
+        """Load cached result if available."""
+        if self._config.skip_cache:
+            return None
+
+        cache_path = self._get_cache_path(artist, title, album)
+        if cache_path.exists():
+            try:
+                data = json.loads(cache_path.read_text())
+                result = PipelineResult.from_cache_dict(data)
+                logger.info(f"Pipeline cache hit: {artist} - {title}")
+                return result
+            except Exception as e:
+                logger.debug(f"Failed to load cache: {e}")
+        return None
+
+    def _save_cached_result(self, result: PipelineResult) -> None:
+        """Save result to cache."""
+        if self._config.skip_cache:
+            return
+
+        try:
+            cache_path = self._get_cache_path(result.artist, result.title, result.album)
+            data = result.to_cache_dict()
+            cache_path.write_text(json.dumps(data, indent=2))
+            logger.debug(f"Saved pipeline cache: {cache_path}")
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
+
+    def get_all_steps(self) -> List[StepInfo]:
+        """Get info about all pipeline steps for UI display."""
+        return [
+            StepInfo(name=step.value, status="pending")
+            for step in PipelineStep
+        ]
 
     def process(
         self,
@@ -220,6 +325,11 @@ class PipelineModule(Module):
     ) -> PipelineResult:
         """
         Process a song through the full pipeline.
+
+        Pipeline flow:
+        ```
+        [cache check] → lyrics → ai_analysis → shader + images (parallel)
+        ```
 
         Args:
             artist: Artist name
@@ -232,92 +342,203 @@ class PipelineModule(Module):
         if not self._started:
             self.start()
 
+        # Check cache first
+        cached_result = self._load_cached_result(artist, title, album)
+        if cached_result:
+            self._send_all_osc(cached_result)
+            self._fire_pipeline_complete(cached_result)
+            return cached_result
+
         start_time = time.time()
         result = PipelineResult(artist=artist, title=title, album=album)
-        logger.info(f"Pipeline processing: {artist} - {title}")
+        mode = "parallel" if self._config.parallel else "sequential"
+        logger.info(f"Pipeline processing ({mode}): {artist} - {title}")
+
+        # Send track info IMMEDIATELY
+        self._send_track_osc(result)
 
         lyrics_text = None
 
-        # Send track info via OSC
-        self._send_track_osc(result)
-
-        # Step 1: Fetch lyrics (includes refrain + keyword detection)
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 1: Lyrics (required for AI analysis)
+        # ═══════════════════════════════════════════════════════════
         if not self._config.skip_lyrics:
+            step_start = time.time()
             lyrics_text = self._step_lyrics(result, artist, title, album)
+            result.step_timings["lyrics"] = int((time.time() - step_start) * 1000)
             if lyrics_text:
-                logger.info(f"  ✓ Lyrics: {result.lyrics_line_count} lines, {len(result.refrain_lines)} refrains, {len(result.lyrics_keywords)} keywords")
-                # Send lyrics via OSC
-                self._send_lyrics_osc(result)
+                logger.info(f"  ✓ Lyrics: {result.lyrics_line_count} lines, {len(result.refrain_lines)} refrains [{result.step_timings['lyrics']}ms]")
+                self._send_lyrics_osc(result)  # Send immediately when ready
             else:
-                logger.info(f"  ✗ Lyrics: not found")
+                logger.info(f"  ✗ Lyrics: not found [{result.step_timings['lyrics']}ms]")
         else:
+            result.steps_skipped.append("lyrics")
             logger.info(f"  ○ Lyrics: skipped")
 
-        # Step 2: Fetch metadata via LLM (keywords, themes, visual adjectives)
-        if not self._config.skip_metadata:
-            self._step_metadata(result, artist, title)
-            if result.metadata_found:
-                logger.info(f"  ✓ Metadata: {len(result.keywords)} keywords, {len(result.themes)} themes, {len(result.visual_adjectives)} visuals")
-                # Send metadata via OSC
-                self._send_metadata_osc(result)
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 2: AI Analysis (combined metadata + categorization)
+        # ═══════════════════════════════════════════════════════════
+        if not self._config.skip_ai and lyrics_text:
+            step_start = time.time()
+            self._step_ai_combined(result, lyrics_text, artist, title, album)
+            result.step_timings["ai_analysis"] = int((time.time() - step_start) * 1000)
+            if result.ai_analyzed:
+                logger.info(f"  ✓ AI Analysis: {result.mood} (E={result.energy:.2f}, V={result.valence:+.2f}), "
+                           f"{len(result.keywords)} kw, {len(result.visual_adjectives)} visuals [{result.step_timings['ai_analysis']}ms]")
+                self._send_ai_osc(result)  # Send immediately when ready
             else:
-                logger.info(f"  ✗ Metadata: LLM unavailable")
+                logger.info(f"  ✗ AI Analysis: failed [{result.step_timings['ai_analysis']}ms]")
         else:
-            logger.info(f"  ○ Metadata: skipped")
-
-        # Step 3: AI Analysis (categorization)
-        if not self._config.skip_ai:
-            text_for_analysis = lyrics_text or result.plain_lyrics
-            if text_for_analysis:
-                self._step_ai_analysis(result, text_for_analysis, artist, title, album)
-                if result.mood:
-                    logger.info(f"  ✓ AI Analysis: {result.mood} (energy={result.energy:.2f}, valence={result.valence:+.2f})")
-                    # Send categories via OSC
-                    self._send_categories_osc(result)
-                else:
-                    logger.info(f"  ✗ AI Analysis: no result")
-            else:
-                logger.info(f"  ○ AI Analysis: skipped (no lyrics)")
-        else:
+            result.steps_skipped.append("ai_analysis")
             logger.info(f"  ○ AI Analysis: skipped")
 
-        # Step 4: Shader matching
-        if not self._config.skip_shaders:
-            self._step_shader_match(result)
-            if result.shader_matched:
-                logger.info(f"  ✓ Shader: {result.shader_name} (score={result.shader_score:.3f})")
-                # Send shader via OSC
-                self._send_shader_osc(result)
-            else:
-                logger.info(f"  ✗ Shader: no match found")
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 3: Shader + Images (parallel, each sends OSC when done)
+        # ═══════════════════════════════════════════════════════════
+        if self._config.parallel:
+            self._run_phase3_parallel(result, artist, title, album)
         else:
-            logger.info(f"  ○ Shader: skipped")
-
-        # Step 5: Fetch images
-        if not self._config.skip_images:
-            self._step_images(result, artist, title, album)
-            if result.images_found:
-                logger.info(f"  ✓ Images: {result.images_count} images in {result.images_folder}")
-                # Send image folder via OSC
-                self._send_images_osc(result)
-            else:
-                logger.info(f"  ✗ Images: not found")
-        else:
-            logger.info(f"  ○ Images: skipped")
+            self._run_phase3_sequential(result, artist, title, album)
 
         # Finalize
         result.total_time_ms = int((time.time() - start_time) * 1000)
         result.success = len(result.steps_completed) > 0
-        logger.info(f"Pipeline complete in {result.total_time_ms}ms: {result.steps_completed}")
+
+        # Save to cache
+        self._save_cached_result(result)
+
+        # Log summary
+        timing_str = " + ".join(f"{k}:{v}ms" for k, v in result.step_timings.items())
+        logger.info(f"Pipeline complete: {result.steps_completed} in {result.total_time_ms}ms ({timing_str})")
 
         # Fire completion callback
-        if self._on_pipeline_complete:
-            try:
-                self._on_pipeline_complete(result)
-            except Exception:
-                pass
+        self._fire_pipeline_complete(result)
 
         return result
+
+    def _step_ai_combined(
+        self,
+        result: PipelineResult,
+        lyrics_text: str,
+        artist: str,
+        title: str,
+        album: str
+    ) -> None:
+        """
+        Combined AI analysis: metadata + categorization in single LLM call.
+
+        Extracts: keywords, themes, visual_adjectives, mood, energy, valence, categories.
+        """
+        self._fire_step_start(PipelineStep.AI_ANALYSIS)
+
+        try:
+            llm = self._get_llm()
+            analysis = llm.analyze_song_complete(lyrics_text, artist, title, album)
+
+            if analysis:
+                result.ai_analyzed = True
+
+                # Metadata fields
+                result.keywords = analysis.get('keywords', [])
+                result.themes = analysis.get('themes', [])
+                result.visual_adjectives = analysis.get('visual_adjectives', [])
+                result.llm_refrain_lines = analysis.get('refrain_lines', [])
+                result.tempo = analysis.get('tempo', '')
+
+                # Categorization fields
+                result.mood = analysis.get('mood', '')
+                result.energy = analysis.get('energy', 0.5)
+                result.valence = analysis.get('valence', 0.0)
+                result.categories = analysis.get('categories', {})
+
+                result.steps_completed.append("ai_analysis")
+                self._fire_step_complete(PipelineStep.AI_ANALYSIS, {
+                    "mood": result.mood,
+                    "energy": result.energy,
+                    "valence": result.valence,
+                    "keywords": len(result.keywords),
+                    "visuals": len(result.visual_adjectives),
+                    "cached": analysis.get('cached', False)
+                })
+            else:
+                self._fire_step_complete(PipelineStep.AI_ANALYSIS, {"error": "No result"})
+
+        except Exception as e:
+            logger.warning(f"AI combined analysis error: {e}")
+            self._fire_step_complete(PipelineStep.AI_ANALYSIS, {"error": str(e)})
+
+    def _run_phase3_parallel(self, result: PipelineResult, artist: str, title: str, album: str) -> None:
+        """Run shader matching and image fetching in parallel."""
+        futures = {}
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit shader task
+            if not self._config.skip_shaders:
+                futures["shader_match"] = executor.submit(
+                    self._run_step_timed, "shader_match",
+                    lambda: self._step_shader_match(result)
+                )
+            else:
+                result.steps_skipped.append("shader_match")
+                logger.info(f"  ○ Shader: skipped")
+
+            # Submit images task
+            if not self._config.skip_images:
+                futures["images"] = executor.submit(
+                    self._run_step_timed, "images",
+                    lambda: self._step_images(result, artist, title, album)
+                )
+            else:
+                result.steps_skipped.append("images")
+                logger.info(f"  ○ Images: skipped")
+
+            # Wait for completion and log results
+            for future in as_completed(futures.values()):
+                step_name, time_ms = future.result()
+                result.step_timings[step_name] = time_ms
+                self._log_step_result(step_name, result, time_ms)
+
+    def _run_phase3_sequential(self, result: PipelineResult, artist: str, title: str, album: str) -> None:
+        """Run shader matching and image fetching sequentially."""
+        # Shader
+        if not self._config.skip_shaders:
+            step_start = time.time()
+            self._step_shader_match(result)
+            result.step_timings["shader_match"] = int((time.time() - step_start) * 1000)
+            self._log_step_result("shader_match", result, result.step_timings["shader_match"])
+        else:
+            result.steps_skipped.append("shader_match")
+            logger.info(f"  ○ Shader: skipped")
+
+        # Images
+        if not self._config.skip_images:
+            step_start = time.time()
+            self._step_images(result, artist, title, album)
+            result.step_timings["images"] = int((time.time() - step_start) * 1000)
+            self._log_step_result("images", result, result.step_timings["images"])
+        else:
+            result.steps_skipped.append("images")
+            logger.info(f"  ○ Images: skipped")
+
+    def _run_step_timed(self, step_name: str, step_func: Callable) -> tuple:
+        """Run a step function and return (step_name, time_ms)."""
+        step_start = time.time()
+        step_func()
+        time_ms = int((time.time() - step_start) * 1000)
+        return (step_name, time_ms)
+
+    def _log_step_result(self, step_name: str, result: PipelineResult, time_ms: int) -> None:
+        """Log the result of a pipeline step."""
+        if step_name == "shader_match":
+            if result.shader_matched:
+                logger.info(f"  ✓ Shader: {result.shader_name} (score={result.shader_score:.2f}) [{time_ms}ms]")
+            else:
+                logger.info(f"  ✗ Shader: no match [{time_ms}ms]")
+        elif step_name == "images":
+            if result.images_found:
+                logger.info(f"  ✓ Images: {result.images_count} images [{time_ms}ms]")
+            else:
+                logger.info(f"  ✗ Images: none found [{time_ms}ms]")
 
     def _step_lyrics(
         self,
@@ -378,91 +599,6 @@ class PipelineModule(Module):
             self._fire_step_complete(PipelineStep.LYRICS, {"error": str(e)})
             return None
 
-    def _step_metadata(
-        self,
-        result: PipelineResult,
-        artist: str,
-        title: str
-    ) -> None:
-        """Fetch metadata via LLM (keywords, themes, visual adjectives, etc.)."""
-        self._fire_step_start(PipelineStep.METADATA)
-
-        try:
-            fetcher = self._get_lyrics_fetcher()
-            metadata = fetcher.fetch_metadata(artist, title)
-
-            if metadata:
-                result.metadata_found = True
-
-                # Basic info
-                result.plain_lyrics = metadata.get('plain_lyrics', '')
-                result.release_date = str(metadata.get('release_date', ''))
-                genre = metadata.get('genre', '')
-                result.genre = genre if isinstance(genre, str) else (genre[0] if genre else '')
-
-                # Keywords/themes from LLM
-                kw = metadata.get('keywords', [])
-                result.keywords = kw if isinstance(kw, list) else []
-                themes = metadata.get('themes', [])
-                result.themes = themes if isinstance(themes, list) else []
-
-                # Analysis from LLM (refrain_lines, visual_adjectives, tempo)
-                analysis = metadata.get('analysis', {})
-                if analysis:
-                    result.llm_refrain_lines = analysis.get('refrain_lines', [])
-                    result.visual_adjectives = analysis.get('visual_adjectives', [])
-                    result.tempo = analysis.get('tempo', '')
-
-                result.steps_completed.append("metadata")
-                self._fire_step_complete(PipelineStep.METADATA, {
-                    "found": True,
-                    "keywords": len(result.keywords),
-                    "themes": len(result.themes),
-                    "visuals": len(result.visual_adjectives)
-                })
-            else:
-                self._fire_step_complete(PipelineStep.METADATA, {"found": False})
-
-        except Exception as e:
-            self._fire_step_complete(PipelineStep.METADATA, {"error": str(e)})
-
-    def _step_ai_analysis(
-        self,
-        result: PipelineResult,
-        lyrics_text: str,
-        artist: str,
-        title: str,
-        album: str
-    ) -> None:
-        """Run AI analysis on lyrics."""
-        self._fire_step_start(PipelineStep.AI_ANALYSIS)
-
-        try:
-            if self._ai is None:
-                from modules.ai_analysis import AIAnalysisModule
-                self._ai = AIAnalysisModule()
-                self._ai.start()
-
-            result.ai_available = self._ai.is_available
-
-            analysis = self._ai.categorize(lyrics_text, artist, title, album)
-
-            result.mood = analysis.primary_mood
-            result.energy = analysis.energy
-            result.valence = analysis.valence
-            result.categories = analysis.scores
-
-            result.steps_completed.append("ai_analysis")
-            self._fire_step_complete(PipelineStep.AI_ANALYSIS, {
-                "mood": result.mood,
-                "energy": result.energy,
-                "valence": result.valence,
-                "backend": analysis.backend
-            })
-
-        except Exception as e:
-            self._fire_step_complete(PipelineStep.AI_ANALYSIS, {"error": str(e)})
-
     def _step_shader_match(self, result: PipelineResult) -> None:
         """Match shader based on energy/valence."""
         self._fire_step_start(PipelineStep.SHADER_MATCH)
@@ -480,8 +616,7 @@ class PipelineModule(Module):
 
             match = self._shaders.find_best_match(
                 energy=energy,
-                valence=valence,
-                require_quality=True
+                valence=valence
             )
 
             if match:
@@ -516,18 +651,35 @@ class PipelineModule(Module):
                 from image_scraper import ImageScraper
                 self._images = ImageScraper()
 
-            # Build metadata for thematic search
-            metadata = {}
-            if result.mood:
-                metadata['mood'] = result.mood
-            if result.categories:
-                # Get top themes from categories
+            # Build rich metadata for thematic search
+            metadata = {'album': album}
+
+            # Best source: visual_adjectives from LLM (e.g., "neon", "cosmic", "ethereal")
+            if result.visual_adjectives:
+                metadata['themes'] = result.visual_adjectives[:5]
+            # Fallback: themes from LLM metadata
+            elif result.themes:
+                metadata['themes'] = result.themes[:5]
+            # Last resort: category names from AI analysis
+            elif result.categories:
                 top_cats = sorted(
                     result.categories.items(),
                     key=lambda x: x[1],
                     reverse=True
                 )[:3]
                 metadata['themes'] = [cat for cat, _ in top_cats]
+
+            # Add mood for search
+            if result.mood:
+                metadata['mood'] = result.mood
+
+            # Add keywords from LLM metadata
+            if result.keywords:
+                metadata['keywords'] = result.keywords[:10]
+
+            # Log what we're passing to image scraper
+            logger.debug(f"Image search metadata: themes={metadata.get('themes', [])}, "
+                        f"mood={metadata.get('mood', '')}, keywords={len(metadata.get('keywords', []))} kw")
 
             # Create track object
             from domain import Track
@@ -569,13 +721,34 @@ class PipelineModule(Module):
                 pass
 
     # ─────────────────────────────────────────────────────────────
-    # OSC Sending Methods
+    # Unified OSC & Callbacks
+    # ─────────────────────────────────────────────────────────────
+
+    def _send_all_osc(self, result: PipelineResult) -> None:
+        """Send all OSC messages for a result. Each method handles empty data gracefully."""
+        self._send_track_osc(result)
+        self._send_lyrics_osc(result)
+        self._send_ai_osc(result)
+        self._send_shader_osc(result)
+        self._send_images_osc(result)
+
+    def _fire_pipeline_complete(self, result: PipelineResult) -> None:
+        """Fire pipeline completion callback safely."""
+        if self._on_pipeline_complete:
+            try:
+                self._on_pipeline_complete(result)
+            except Exception:
+                pass
+
+    # ─────────────────────────────────────────────────────────────
+    # Individual OSC Methods (each handles empty data gracefully)
     # ─────────────────────────────────────────────────────────────
 
     def _send_track_osc(self, result: PipelineResult) -> None:
         """Send track info via OSC."""
         osc = self._get_osc()
         if not osc:
+            logger.debug("OSC: skipped (disabled)")
             return
 
         try:
@@ -584,9 +757,9 @@ class PipelineModule(Module):
                 "title": result.title,
                 "album": result.album,
             })
-            logger.debug(f"OSC: sent track info for {result.artist} - {result.title}")
+            logger.info(f"OSC → /textler/track/info: {result.artist} - {result.title}")
         except Exception as e:
-            logger.debug(f"OSC track send failed: {e}")
+            logger.warning(f"OSC track send failed: {e}")
 
     def _send_lyrics_osc(self, result: PipelineResult) -> None:
         """Send lyrics, refrains, and keywords via OSC."""
@@ -630,80 +803,63 @@ class PipelineModule(Module):
                     "text": keywords_text,
                 })
 
-            logger.debug(f"OSC: sent {len(result.lyrics_lines)} lyrics, {len(result.refrain_lines)} refrains, {len(result.lyrics_keywords)} keywords")
+            logger.info(f"OSC → /textler/lyrics: {len(result.lyrics_lines)} lines, {len(result.refrain_lines)} refrains, {len(result.lyrics_keywords)} keywords")
         except Exception as e:
-            logger.debug(f"OSC lyrics send failed: {e}")
+            logger.warning(f"OSC lyrics send failed: {e}")
 
-    def _send_metadata_osc(self, result: PipelineResult) -> None:
-        """Send metadata via OSC (keywords, themes, visual adjectives)."""
+    def _send_ai_osc(self, result: PipelineResult) -> None:
+        """Send combined AI analysis via OSC (metadata + categories)."""
         osc = self._get_osc()
         if not osc:
             return
 
         try:
-            # Send keywords as comma-separated string (OSC can't handle lists)
-            keywords_str = ",".join(result.keywords[:20])
-            osc.send_textler("metadata", "keywords", {
-                "text": keywords_str,
-                "count": len(result.keywords),
-            })
+            # Send keywords as comma-separated string
+            if result.keywords:
+                keywords_str = ",".join(result.keywords[:20])
+                osc.send_textler("metadata", "keywords", {
+                    "text": keywords_str,
+                    "count": len(result.keywords),
+                })
 
-            # Send themes as comma-separated string
-            themes_str = ",".join(result.themes[:10])
-            osc.send_textler("metadata", "themes", {
-                "text": themes_str,
-                "count": len(result.themes),
-            })
+            # Send themes
+            if result.themes:
+                themes_str = ",".join(result.themes[:10])
+                osc.send_textler("metadata", "themes", {
+                    "text": themes_str,
+                    "count": len(result.themes),
+                })
 
-            # Send visual adjectives as comma-separated string
-            visuals_str = ",".join(result.visual_adjectives[:15])
-            osc.send_textler("metadata", "visuals", {
-                "text": visuals_str,
-                "count": len(result.visual_adjectives),
-            })
-
-            # Send refrain lines from LLM as newline-separated string
-            if result.llm_refrain_lines:
-                refrains_str = " | ".join(result.llm_refrain_lines[:5])
-                osc.send_textler("metadata", "refrains", {
-                    "text": refrains_str,
-                    "count": len(result.llm_refrain_lines),
+            # Send visual adjectives
+            if result.visual_adjectives:
+                visuals_str = ",".join(result.visual_adjectives[:15])
+                osc.send_textler("metadata", "visuals", {
+                    "text": visuals_str,
+                    "count": len(result.visual_adjectives),
                 })
 
             # Send tempo
             if result.tempo:
-                osc.send_textler("metadata", "tempo", {
-                    "text": result.tempo,
-                })
+                osc.send_textler("metadata", "tempo", {"text": result.tempo})
 
-            logger.debug(f"OSC: sent metadata - {len(result.keywords)} kw, {len(result.themes)} themes, {len(result.visual_adjectives)} visuals")
-        except Exception as e:
-            logger.debug(f"OSC metadata send failed: {e}")
-
-    def _send_categories_osc(self, result: PipelineResult) -> None:
-        """Send AI categories via OSC."""
-        osc = self._get_osc()
-        if not osc:
-            return
-
-        try:
-            # Send primary mood
+            # Send primary mood and scores
             osc.send_textler("categories", "mood", {
                 "mood": result.mood,
                 "energy": result.energy,
                 "valence": result.valence,
             })
 
-            # Send all category scores
+            # Send category scores
             for category, score in result.categories.items():
                 osc.send_textler("categories", "score", {
                     "category": category,
                     "score": score,
                 })
 
-            logger.debug(f"OSC: sent categories - mood={result.mood}, {len(result.categories)} categories")
+            logger.info(f"OSC → /textler/ai: {result.mood} (E={result.energy:.2f}, V={result.valence:+.2f}), "
+                       f"{len(result.keywords)} kw, {len(result.visual_adjectives)} visuals")
         except Exception as e:
-            logger.debug(f"OSC categories send failed: {e}")
+            logger.warning(f"OSC AI send failed: {e}")
 
     def _send_shader_osc(self, result: PipelineResult) -> None:
         """Send shader load command via OSC."""
@@ -717,9 +873,9 @@ class PipelineModule(Module):
                 energy=result.energy,
                 valence=result.valence
             )
-            logger.debug(f"OSC: sent shader load - {result.shader_name}")
+            logger.info(f"OSC → /shader/load: {result.shader_name}")
         except Exception as e:
-            logger.debug(f"OSC shader send failed: {e}")
+            logger.warning(f"OSC shader send failed: {e}")
 
     def _send_images_osc(self, result: PipelineResult) -> None:
         """Send image folder path via OSC."""
@@ -729,21 +885,21 @@ class PipelineModule(Module):
 
         try:
             osc.send_image_folder(result.images_folder)
-            logger.debug(f"OSC: sent image folder - {result.images_folder}")
+            logger.info(f"OSC → /image/folder: {result.images_folder}")
         except Exception as e:
-            logger.debug(f"OSC images send failed: {e}")
+            logger.warning(f"OSC images send failed: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """Get module status."""
         status = super().get_status()
 
         status["lyrics_ready"] = self._lyrics is not None
-        status["ai_ready"] = self._ai is not None
+        status["llm_ready"] = self._llm is not None
         status["shaders_ready"] = self._shaders is not None
         status["images_ready"] = self._images is not None
 
-        if self._ai:
-            status["ai_available"] = self._ai.is_available
+        if self._llm:
+            status["llm_available"] = self._llm.is_available
 
         if self._shaders:
             status["shader_count"] = self._shaders.shader_count
@@ -777,14 +933,9 @@ def main():
         help="Skip lyrics fetching"
     )
     parser.add_argument(
-        "--skip-metadata",
-        action="store_true",
-        help="Skip LLM metadata fetching"
-    )
-    parser.add_argument(
         "--skip-ai",
         action="store_true",
-        help="Skip AI analysis"
+        help="Skip AI analysis (combined metadata + categorization)"
     )
     parser.add_argument(
         "--skip-shaders",
@@ -810,7 +961,6 @@ def main():
 
     config = PipelineConfig(
         skip_lyrics=args.skip_lyrics,
-        skip_metadata=args.skip_metadata,
         skip_ai=args.skip_ai,
         skip_shaders=args.skip_shaders,
         skip_images=args.skip_images,
@@ -834,17 +984,14 @@ def main():
                         print(f"  [{step.value}] Found {data['lines']} lines{extra}")
                     else:
                         print(f"  [{step.value}] No lyrics found")
-                elif step == PipelineStep.METADATA:
-                    if data.get("found"):
-                        print(f"  [{step.value}] {data.get('keywords', 0)} keywords, "
-                              f"{data.get('themes', 0)} themes, "
-                              f"{data.get('visuals', 0)} visuals")
-                    else:
-                        print(f"  [{step.value}] LLM unavailable")
                 elif step == PipelineStep.AI_ANALYSIS:
-                    print(f"  [{step.value}] Mood: {data.get('mood')}, "
-                          f"Energy: {data.get('energy', 0):.2f}, "
-                          f"Valence: {data.get('valence', 0):+.2f}")
+                    mood = data.get('mood', '')
+                    if mood:
+                        print(f"  [{step.value}] {mood}, "
+                              f"E={data.get('energy', 0):.2f}, V={data.get('valence', 0):+.2f}, "
+                              f"{data.get('keywords', 0)} kw, {data.get('visuals', 0)} visuals")
+                    else:
+                        print(f"  [{step.value}] Failed")
                 elif step == PipelineStep.SHADER_MATCH:
                     if data.get("name"):
                         print(f"  [{step.value}] Matched: {data['name']} "

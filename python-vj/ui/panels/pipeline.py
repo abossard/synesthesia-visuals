@@ -7,7 +7,7 @@ from .base import ReactivePanel
 
 
 class PipelinePanel(ReactivePanel):
-    """Processing pipeline status."""
+    """Processing pipeline status with timing."""
     pipeline_data = reactive({})
 
     def on_mount(self) -> None:
@@ -21,18 +21,50 @@ class PipelinePanel(ReactivePanel):
         """Render only if mounted."""
         if not self.is_mounted:
             return
-        lines = [self.render_section("Processing Pipeline", "═")]
+
+        running = self.pipeline_data.get('running', False)
+        result = self.pipeline_data.get('result', {})
+
+        # Header with total time if complete
+        if result.get('time_ms'):
+            header = f"Pipeline [{result['time_ms']}ms]"
+        elif running:
+            header = "Pipeline [running...]"
+        else:
+            header = "Pipeline"
+        lines = [self.render_section(header, "═")]
 
         has_content = False
 
-        # Display pipeline steps with status
-        for label, status, color, message in self.pipeline_data.get('display_lines', []):
-            status_text = f"[{color}]{status}[/] {label}"
-            if message:
-                status_text += f": [dim]{message}[/]"
-            lines.append(f"  {status_text}")
-            has_content = True
+        # Display pipeline steps as a visual graph
+        display_lines = self.pipeline_data.get('display_lines', [])
+        if display_lines:
+            # Draw pipeline graph
+            for i, step_data in enumerate(display_lines):
+                # Handle both old format (4 elements) and new format (5 elements)
+                if len(step_data) == 5:
+                    label, status_icon, color, message, timing = step_data
+                else:
+                    label, status_icon, color, message = step_data
+                    timing = ""
 
+                # Draw connector
+                is_last = i == len(display_lines) - 1
+                connector = "└" if is_last else "├"
+
+                # Build line with status, label, message and timing
+                status_text = f"[{color}]{status_icon}[/]"
+                timing_text = f"[dim]{timing}[/]" if timing else ""
+
+                if message:
+                    line = f"  {connector}─ {status_text} [bold]{label}[/]: {message}{timing_text}"
+                else:
+                    line = f"  {connector}─ {status_text} [dim]{label}[/]{timing_text}"
+
+                lines.append(line)
+                has_content = True
+
+        # Show current lyric if available
         if self.pipeline_data.get('current_lyric'):
             lyric = self.pipeline_data['current_lyric']
             refrain_tag = " [magenta][REFRAIN][/]" if lyric.get('is_refrain') else ""
@@ -41,11 +73,10 @@ class PipelinePanel(ReactivePanel):
                 lines.append(f"[yellow]   🔑 {lyric['keywords']}[/]")
             has_content = True
 
+        # Show analysis summary if available
         summary = self.pipeline_data.get('analysis_summary')
         if summary:
-            lines.append("\n[bold cyan]═══ AI Analysis ═══[/]")
-            if summary.get('summary'):
-                lines.append(f"[cyan]💭 {truncate(str(summary['summary']), 180)}[/]")
+            lines.append("\n[bold cyan]═══ Analysis ═══[/]")
             if summary.get('keywords'):
                 kw = ', '.join(summary['keywords'][:8])
                 lines.append(f"[yellow]🔑 {kw}[/]")
@@ -55,18 +86,12 @@ class PipelinePanel(ReactivePanel):
             if summary.get('visuals'):
                 vis = ' · '.join(summary['visuals'][:5])
                 lines.append(f"[magenta]🎨 {vis}[/]")
-            if summary.get('refrain_lines'):
-                hooks = summary['refrain_lines'][:3]
-                for hook in hooks:
-                    lines.append(f"[dim]♫ \"{truncate(str(hook), 60)}\"[/]")
-            if summary.get('tempo'):
-                lines.append(f"[dim]⏱️  {summary['tempo']}[/]")
             has_content = True
 
         if self.pipeline_data.get('error'):
             retry = self.pipeline_data.get('backoff', 0.0)
             extra = f" (retry in {retry:.1f}s)" if retry else ""
-            lines.append(f"[yellow]Playback warning: {self.pipeline_data['error']}{extra}[/]")
+            lines.append(f"[yellow]Warning: {self.pipeline_data['error']}{extra}[/]")
             has_content = True
 
         if not has_content:

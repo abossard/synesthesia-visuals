@@ -49,7 +49,6 @@ class ShaderInfo:
     mood: str
     colors: List[str]
     effects: List[str]
-    rating: int  # 1=BEST, 2=GOOD, 3=NORMAL, 4=MASK, 5=SKIP
 
 
 @dataclass
@@ -71,7 +70,6 @@ class ShadersModule(Module):
     - Shader indexing from ISF and GLSL files
     - Feature-based matching (energy, valence)
     - Text/semantic search
-    - Rating-aware selection (prefers quality shaders)
     """
 
     def __init__(self, config: Optional[ShadersConfig] = None):
@@ -162,8 +160,7 @@ class ShadersModule(Module):
                 motion_speed=shader.motion_speed,
                 mood=shader.mood,
                 colors=shader.colors,
-                effects=shader.effects,
-                rating=shader.get_effective_rating()
+                effects=shader.effects
             ))
         return result
 
@@ -192,8 +189,7 @@ class ShadersModule(Module):
                     motion_speed=shader.motion_speed,
                     mood=shader.mood,
                     colors=shader.colors,
-                    effects=shader.effects,
-                    rating=shader.get_effective_rating()
+                    effects=shader.effects
                 )
 
         # Try partial match (without prefix)
@@ -208,8 +204,7 @@ class ShadersModule(Module):
                     motion_speed=shader.motion_speed,
                     mood=shader.mood,
                     colors=shader.colors,
-                    effects=shader.effects,
-                    rating=shader.get_effective_rating()
+                    effects=shader.effects
                 )
 
         return None
@@ -218,8 +213,7 @@ class ShadersModule(Module):
         self,
         energy: float,
         valence: float,
-        top_k: int = 5,
-        require_quality: bool = True
+        top_k: int = 5
     ) -> Optional[ShaderMatchResult]:
         """
         Find best matching shader for energy/valence.
@@ -228,7 +222,6 @@ class ShadersModule(Module):
             energy: Energy level 0.0-1.0 (calm to intense)
             valence: Mood valence -1.0 to 1.0 (dark to bright)
             top_k: Number of candidates to consider
-            require_quality: Only consider rating 1-2 shaders
 
         Returns:
             ShaderMatchResult or None if no shaders available.
@@ -249,8 +242,7 @@ class ShadersModule(Module):
 
         matches = self._matcher.match_to_features(
             target,
-            top_k=top_k,
-            require_quality=require_quality
+            top_k=top_k
         )
 
         if not matches:
@@ -270,8 +262,7 @@ class ShadersModule(Module):
         self,
         energy: float,
         valence: float,
-        top_k: int = 5,
-        require_quality: bool = True
+        top_k: int = 5
     ) -> List[ShaderMatchResult]:
         """
         Find multiple matching shaders for energy/valence.
@@ -280,7 +271,6 @@ class ShadersModule(Module):
             energy: Energy level 0.0-1.0
             valence: Mood valence -1.0 to 1.0
             top_k: Number of results
-            require_quality: Only consider rating 1-2 shaders
 
         Returns:
             List of ShaderMatchResult sorted by score (best first).
@@ -299,8 +289,7 @@ class ShadersModule(Module):
 
         matches = self._matcher.match_to_features(
             target,
-            top_k=top_k,
-            require_quality=require_quality
+            top_k=top_k
         )
 
         return [
@@ -319,8 +308,7 @@ class ShadersModule(Module):
         self,
         mood: str,
         energy: float = 0.5,
-        top_k: int = 5,
-        require_quality: bool = True
+        top_k: int = 5
     ) -> List[ShaderMatchResult]:
         """
         Find shaders matching a mood keyword.
@@ -329,7 +317,6 @@ class ShadersModule(Module):
             mood: Mood keyword (energetic, calm, dark, bright, psychedelic, etc.)
             energy: Energy level 0.0-1.0
             top_k: Number of results
-            require_quality: Only consider rating 1-2 shaders
 
         Returns:
             List of ShaderMatchResult.
@@ -340,8 +327,7 @@ class ShadersModule(Module):
         matches = self._matcher.match_by_mood(
             mood,
             energy=energy,
-            top_k=top_k,
-            require_quality=require_quality
+            top_k=top_k
         )
 
         return [
@@ -381,9 +367,6 @@ class ShadersModule(Module):
             matcher_stats = self._matcher.get_stats()
             status["shader_count"] = matcher_stats.get("count", 0)
             status["with_features"] = matcher_stats.get("with_features", 0)
-            status["rating_best"] = matcher_stats.get("rating_best", 0)
-            status["rating_good"] = matcher_stats.get("rating_good", 0)
-            status["quality_count"] = matcher_stats.get("quality_count", 0)
 
         if self._indexer:
             indexer_stats = self._indexer.get_stats()
@@ -432,11 +415,6 @@ def main():
         help="Number of results (default: 5)"
     )
     parser.add_argument(
-        "--all-ratings",
-        action="store_true",
-        help="Include all ratings (not just quality 1-2)"
-    )
-    parser.add_argument(
         "--stats",
         action="store_true",
         help="Show statistics"
@@ -445,8 +423,6 @@ def main():
 
     shaders = ShadersModule()
     shaders.start()
-
-    require_quality = not args.all_ratings
 
     if args.stats:
         stats = shaders.get_stats()
@@ -465,7 +441,6 @@ def main():
             print(f"{'='*60}\n")
             print(f"  Path: {info.path}")
             print(f"  Mood: {info.mood}")
-            print(f"  Rating: {info.rating}")
             print(f"  Energy: {info.energy_score:.2f}")
             print(f"  Valence: {info.mood_valence:+.2f}")
             print(f"  Warmth: {info.color_warmth:.2f}")
@@ -485,20 +460,10 @@ def main():
         print(f"Available Shaders ({len(all_shaders)})")
         print(f"{'='*60}\n")
 
-        # Group by rating
-        by_rating = {1: [], 2: [], 3: [], 4: [], 5: []}
-        for s in all_shaders:
-            by_rating[s.rating].append(s)
-
-        rating_names = {1: "BEST", 2: "GOOD", 3: "NORMAL", 4: "MASK", 5: "SKIP"}
-        for rating in [1, 2, 3, 4, 5]:
-            group = by_rating[rating]
-            if group:
-                print(f"\n[{rating_names[rating]}] ({len(group)} shaders)")
-                for s in sorted(group, key=lambda x: x.name)[:10]:
-                    print(f"  {s.name} ({s.mood}, e={s.energy_score:.1f})")
-                if len(group) > 10:
-                    print(f"  ... and {len(group) - 10} more")
+        for s in sorted(all_shaders, key=lambda x: x.name)[:50]:
+            print(f"  {s.name} ({s.mood}, e={s.energy_score:.1f})")
+        if len(all_shaders) > 50:
+            print(f"  ... and {len(all_shaders) - 50} more")
         return
 
     if args.search:
@@ -525,8 +490,7 @@ def main():
         matches = shaders.match_by_mood(
             args.mood,
             energy=energy,
-            top_k=args.top,
-            require_quality=require_quality
+            top_k=args.top
         )
         if matches:
             for m in matches:
@@ -548,8 +512,7 @@ def main():
         matches = shaders.find_matches(
             energy=energy,
             valence=valence,
-            top_k=args.top,
-            require_quality=require_quality
+            top_k=args.top
         )
         if matches:
             for m in matches:
@@ -564,7 +527,6 @@ def main():
     stats = shaders.get_stats()
     print(f"\nShaders Module")
     print(f"  Loaded: {stats.get('shader_count', 0)} shaders")
-    print(f"  Quality (1-2): {stats.get('quality_count', 0)}")
     print(f"\nUsage:")
     print(f"  python -m modules.shaders --list")
     print(f"  python -m modules.shaders --energy 0.8 --valence 0.5")

@@ -244,9 +244,6 @@ class ShaderFeatures:
     geometric_score: float = 0.5   # 0=organic, 1=geometric
     visual_density: float = 0.5    # 0=minimal, 1=dense
     
-    # User rating: 1=BEST, 2=GOOD, 3=NORMAL, 4=MASK, 5=SKIP (0=unrated, treated as 3)
-    rating: int = 0
-    
     # Input capabilities
     inputs: ShaderInputs = field(default_factory=ShaderInputs)
     
@@ -280,24 +277,11 @@ class ShaderFeatures:
             motion_speed=features.get('motion_speed', 0.5),
             geometric_score=features.get('geometric_score', 0.5),
             visual_density=features.get('visual_density', 0.5),
-            rating=data.get('rating', 0),  # 0=unrated, treated as 3
             inputs=ShaderInputs.from_dict(inputs_data),
             mood=data.get('mood', 'unknown'),
             colors=data.get('colors', []),
             effects=data.get('effects', [])
         )
-    
-    def get_effective_rating(self) -> int:
-        """Get effective rating (0=unrated treated as 3)"""
-        return self.rating if self.rating > 0 else 3
-    
-    def is_quality_shader(self) -> bool:
-        """Return True if shader is rated 1 (BEST) or 2 (GOOD)"""
-        return self.get_effective_rating() in (1, 2)
-    
-    def is_usable(self) -> bool:
-        """Return True if shader is not rated 5 (SKIP)"""
-        return self.get_effective_rating() != 5
 
 
 @dataclass
@@ -538,24 +522,13 @@ class ShaderMatcher:
         require_compositable: bool = False,
         require_midi: bool = False,
         require_audio: bool = False,
-        require_autonomous: bool = False,
-        require_quality: bool = False,
-        exclude_skip: bool = True
+        require_autonomous: bool = False
     ) -> List[ShaderFeatures]:
         """
-        Filter shaders by input capabilities and rating.
-        
-        Args:
-            require_quality: Only include rating 1 (BEST) or 2 (GOOD) shaders
-            exclude_skip: Exclude rating 5 (SKIP) shaders (default True)
+        Filter shaders by input capabilities.
         """
         result = []
         for shader in self.shaders:
-            # Rating filters
-            if exclude_skip and not shader.is_usable():
-                continue
-            if require_quality and not shader.is_quality_shader():
-                continue
             # Capability filters
             if require_interactive and not shader.inputs.is_interactive:
                 continue
@@ -592,8 +565,7 @@ class ShaderMatcher:
         self, 
         target: List[float], 
         top_k: int = 4,
-        diversity_penalty: float = 0.3,
-        require_quality: bool = True
+        diversity_penalty: float = 0.3
     ) -> List[Tuple[ShaderFeatures, float]]:
         """
         Find best matching shaders for target feature vector.
@@ -602,24 +574,11 @@ class ShaderMatcher:
             target: Target feature vector [energy, mood, warmth, motion, geometric, density]
             top_k: Number of shaders to return
             diversity_penalty: Penalty for similar shaders (0=no penalty, 1=max penalty)
-            require_quality: Only match rating 1-2 shaders (default True)
         
         Returns:
             List of (shader, score) tuples, sorted by score (lower is better)
         """
-        # Filter to usable shaders (exclude rating=5, optionally require quality)
-        candidates = self.filter_by_capability(
-            require_quality=require_quality,
-            exclude_skip=True
-        )
-        
-        if not candidates:
-            # Fallback: if no quality shaders, try all usable shaders
-            if require_quality:
-                candidates = self.filter_by_capability(
-                    require_quality=False,
-                    exclude_skip=True
-                )
+        candidates = self.filter_by_capability()
         
         if not candidates:
             return []
@@ -628,9 +587,6 @@ class ShaderMatcher:
         scored = []
         for shader in candidates:
             dist = self.weighted_distance(shader.to_vector(), target)
-            # Boost quality shaders slightly (lower distance = better match)
-            if shader.is_quality_shader():
-                dist *= 0.9  # 10% bonus for quality shaders
             scored.append((shader, dist))
         
         # Sort by distance
@@ -662,23 +618,20 @@ class ShaderMatcher:
     def match_to_song(
         self, 
         song: SongFeatures, 
-        top_k: int = 4,
-        require_quality: bool = True
+        top_k: int = 4
     ) -> List[Tuple[ShaderFeatures, float]]:
-        """Match shaders to song features (prefers quality shaders by default)"""
+        """Match shaders to song features."""
         target = song.to_shader_target()
-        return self.match_to_features(target, top_k, require_quality=require_quality)
+        return self.match_to_features(target, top_k)
     
     def match_by_mood(
         self, 
         mood: str, 
         energy: float = 0.5,
-        top_k: int = 4,
-        require_quality: bool = True
+        top_k: int = 4
     ) -> List[Tuple[ShaderFeatures, float]]:
         """
         Match shaders by mood keyword and energy level.
-        Prefers quality (rating 1-2) shaders by default.
         
         Common moods: energetic, calm, dark, bright, psychedelic, 
                       melancholic, aggressive, dreamy, mysterious
@@ -704,33 +657,22 @@ class ShaderMatcher:
         target[0] = energy
         target[3] = target[3] * 0.5 + energy * 0.5  # Motion follows energy
         
-        return self.match_to_features(target, top_k, require_quality=require_quality)
+        return self.match_to_features(target, top_k)
     
     def get_stats(self) -> Dict:
-        """Get statistics about loaded shaders including rating breakdown"""
+        """Get statistics about loaded shaders."""
         if not self.shaders:
             return {'count': 0}
         
         has_features = sum(1 for s in self.shaders 
                           if s.energy_score != 0.5 or s.mood_valence != 0.0)
         
-        # Rating breakdown
-        rating_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-        for s in self.shaders:
-            rating_counts[s.get_effective_rating()] += 1
-        
         return {
             'count': len(self.shaders),
             'with_features': has_features,
             'without_features': len(self.shaders) - has_features,
             'avg_energy': sum(s.energy_score for s in self.shaders) / len(self.shaders),
-            'avg_motion': sum(s.motion_speed for s in self.shaders) / len(self.shaders),
-            'rating_best': rating_counts[1],
-            'rating_good': rating_counts[2],
-            'rating_normal': rating_counts[3],
-            'rating_mask': rating_counts[4],
-            'rating_skip': rating_counts[5],
-            'quality_count': rating_counts[1] + rating_counts[2],
+            'avg_motion': sum(s.motion_speed for s in self.shaders) / len(self.shaders)
         }
 
 
@@ -1678,8 +1620,7 @@ class ShaderSelector:
         self,
         song_features: SongFeatures,
         top_k: int = 5,
-        exclude_last: bool = True,
-        require_quality: bool = True
+        exclude_last: bool = True
     ) -> Optional[ShaderMatch]:
         """
         Select best shader for a song with variety preference.
@@ -1688,7 +1629,6 @@ class ShaderSelector:
             song_features: Song feature vector
             top_k: Number of candidates to consider
             exclude_last: Skip the last selected shader
-            require_quality: Only consider rating 1-2 shaders (default True)
         
         Returns:
             ShaderMatch or None if no shaders available
@@ -1702,32 +1642,22 @@ class ShaderSelector:
             logger.warning("No shader candidates found")
             return None
         
-        # Score with usage penalty, filter by quality
+        # Score with usage penalty
         scored = []
         for name, distance in candidates:
             # Skip last selected if requested
             if exclude_last and name == self._last_selected:
                 continue
             
-            # Get features to check rating
+            # Get features for selection
             features = self.indexer.shaders.get(name)
             if not features:
                 continue
-            
-            # Filter by rating
-            if not features.is_usable():
-                continue  # Skip rating=5 (SKIP)
-            if require_quality and not features.is_quality_shader():
-                continue  # Skip non-quality (rating 3-4)
             
             # Apply usage penalty
             usage = self.get_usage(name)
             penalty = usage * self.USAGE_PENALTY
             adjusted_score = distance + penalty
-            
-            # Boost quality shaders
-            if features.is_quality_shader():
-                adjusted_score *= 0.9
             
             scored.append((name, adjusted_score, distance, usage))
         
@@ -1769,19 +1699,16 @@ class ShaderSelector:
         mood: str,
         energy: float = 0.5,
         valence: float = 0.0,
-        top_k: int = 5,
-        require_quality: bool = True
+        top_k: int = 5
     ) -> Optional[ShaderMatch]:
         """
         Select shader by mood keyword with variety preference.
-        Prefers quality shaders (rating 1-2) by default.
         
         Args:
             mood: Mood keyword (energetic, calm, dark, bright, etc.)
             energy: Energy level 0-1
             valence: Mood valence -1 to 1
             top_k: Number of candidates
-            require_quality: Only consider rating 1-2 shaders
         
         Returns:
             ShaderMatch or None
@@ -1796,36 +1723,15 @@ class ShaderSelector:
             acousticness=0.3 if mood in ('calm', 'dreamy', 'melancholic') else 0.7,
             loudness_normalized=energy
         )
-        return self.select_for_song(song, top_k=top_k, require_quality=require_quality)
+        return self.select_for_song(song, top_k=top_k)
     
-    def get_random_shader(self, require_quality: bool = True) -> Optional[ShaderMatch]:
+    def get_random_shader(self) -> Optional[ShaderMatch]:
         """
-        Get a random shader, preferring quality shaders.
-        
-        Args:
-            require_quality: Only consider rating 1-2 shaders
-        
-        Returns:
-            ShaderMatch or None
+        Get a random shader.
         """
         import random
         
-        # Filter candidates by rating
-        candidates = []
-        for name, features in self.indexer.shaders.items():
-            if not features.is_usable():
-                continue
-            if require_quality and not features.is_quality_shader():
-                continue
-            candidates.append((name, features))
-        
-        if not candidates:
-            # Fallback to all usable shaders
-            candidates = [
-                (name, features) 
-                for name, features in self.indexer.shaders.items()
-                if features.is_usable()
-            ]
+        candidates = list(self.indexer.shaders.items())
         
         if not candidates:
             return None

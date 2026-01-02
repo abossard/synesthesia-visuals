@@ -58,7 +58,7 @@ class TestPipelineProcessing:
         """Pipeline runs all steps for a popular song."""
         from modules.pipeline import PipelineModule, PipelineConfig
 
-        config = PipelineConfig(skip_shaders=True)  # Skip shaders (no data)
+        config = PipelineConfig(skip_shaders=True, skip_cache=True)  # Skip shaders (no data)
         pipeline = PipelineModule(config)
         pipeline.start()
 
@@ -77,7 +77,7 @@ class TestPipelineProcessing:
         """Step callbacks fire in expected order."""
         from modules.pipeline import PipelineModule, PipelineConfig, PipelineStep
 
-        config = PipelineConfig(skip_ai=True, skip_shaders=True, skip_images=True)
+        config = PipelineConfig(skip_ai=True, skip_shaders=True, skip_images=True, skip_cache=True)
         pipeline = PipelineModule(config)
 
         started_steps = []
@@ -149,7 +149,7 @@ class TestPipelineImages:
         """Pipeline fetches images when enabled."""
         from modules.pipeline import PipelineModule, PipelineConfig
 
-        config = PipelineConfig(skip_ai=True, skip_shaders=True)
+        config = PipelineConfig(skip_ai=True, skip_shaders=True, skip_cache=True)
         pipeline = PipelineModule(config)
         pipeline.start()
 
@@ -167,66 +167,67 @@ class TestPipelineImages:
             print("\nNo images found (may need API keys)")
 
 
-class TestPipelineMetadata:
-    """Test pipeline metadata step (LLM-based)."""
+class TestPipelineAIAnalysis:
+    """Test combined AI analysis step (metadata + categorization in single LLM call)."""
 
-    def test_metadata_step_included(self):
-        """Metadata step is part of the pipeline enum."""
+    def test_ai_analysis_step_included(self):
+        """AI analysis step is part of the pipeline enum."""
         from modules.pipeline import PipelineStep
 
         step_values = [s.value for s in PipelineStep]
-        assert "metadata" in step_values, "Should have metadata step"
+        assert "ai_analysis" in step_values, "Should have ai_analysis step"
 
-        # Check order: lyrics -> metadata -> ai_analysis
-        assert step_values.index("lyrics") < step_values.index("metadata")
-        assert step_values.index("metadata") < step_values.index("ai_analysis")
+        # Check order: lyrics -> ai_analysis -> shader_match
+        assert step_values.index("lyrics") < step_values.index("ai_analysis")
+        assert step_values.index("ai_analysis") < step_values.index("shader_match")
 
         print(f"\nPipeline steps: {step_values}")
 
-    def test_pipeline_result_has_metadata_fields(self):
-        """PipelineResult has all metadata-related fields."""
+    def test_pipeline_result_has_ai_fields(self):
+        """PipelineResult has all AI analysis fields."""
         from modules.pipeline import PipelineResult
 
         result = PipelineResult(artist="Test", title="Song")
 
-        # Check metadata fields exist
-        assert hasattr(result, "metadata_found")
+        # Check AI analysis fields exist (combined metadata + categorization)
+        assert hasattr(result, "ai_analyzed")
         assert hasattr(result, "keywords")
         assert hasattr(result, "themes")
         assert hasattr(result, "visual_adjectives")
         assert hasattr(result, "tempo")
         assert hasattr(result, "llm_refrain_lines")
-        assert hasattr(result, "plain_lyrics")
-        assert hasattr(result, "release_date")
-        assert hasattr(result, "genre")
+        assert hasattr(result, "mood")
+        assert hasattr(result, "energy")
+        assert hasattr(result, "valence")
+        assert hasattr(result, "categories")
 
-        print("\nPipelineResult has all metadata fields")
+        print("\nPipelineResult has all AI analysis fields")
 
-    def test_fetches_metadata_when_lm_studio_available(self, requires_internet, requires_lm_studio):
-        """Pipeline fetches metadata via LLM when available."""
+    def test_fetches_ai_analysis_when_lm_studio_available(self, requires_internet, requires_lm_studio):
+        """Pipeline fetches combined AI analysis via LLM when available."""
         from modules.pipeline import PipelineModule, PipelineConfig
 
-        config = PipelineConfig(skip_ai=True, skip_shaders=True, skip_images=True, skip_osc=True)
+        config = PipelineConfig(skip_shaders=True, skip_images=True, skip_osc=True, skip_cache=True)
         pipeline = PipelineModule(config)
         pipeline.start()
 
         result = pipeline.process("Queen", "Bohemian Rhapsody")
 
-        assert "metadata" in result.steps_completed, "Should complete metadata step"
-        assert result.metadata_found, "Should find metadata"
+        assert "ai_analysis" in result.steps_completed, "Should complete ai_analysis step"
+        assert result.ai_analyzed, "Should have AI analysis"
+        assert result.mood, "Should have mood"
         assert len(result.keywords) > 0 or len(result.themes) > 0, "Should have keywords or themes"
 
         pipeline.stop()
 
-        print(f"\nMetadata: {len(result.keywords)} keywords, {len(result.themes)} themes")
+        print(f"\nAI Analysis: {result.mood}, {len(result.keywords)} keywords, {len(result.themes)} themes")
 
-    def test_metadata_step_skippable(self):
-        """Metadata step can be skipped."""
+    def test_ai_step_skippable(self):
+        """AI analysis step can be skipped."""
         from modules.pipeline import PipelineModule, PipelineConfig, PipelineStep
 
         config = PipelineConfig(
             skip_lyrics=True,
-            skip_metadata=True,
             skip_ai=True,
             skip_shaders=True,
             skip_images=True,
@@ -241,9 +242,9 @@ class TestPipelineMetadata:
         result = pipeline.process("Test", "Song")
         pipeline.stop()
 
-        assert "metadata" not in started_steps, "Metadata step should be skipped"
+        assert "ai_analysis" not in started_steps, "AI analysis step should be skipped"
 
-        print("\nMetadata step skipped successfully")
+        print("\nAI analysis step skipped successfully")
 
 
 class TestPipelineLyricsEnhancements:
@@ -266,7 +267,6 @@ class TestPipelineLyricsEnhancements:
         from modules.pipeline import PipelineModule, PipelineConfig
 
         config = PipelineConfig(
-            skip_metadata=True,
             skip_ai=True,
             skip_shaders=True,
             skip_images=True,
@@ -290,11 +290,11 @@ class TestPipelineLyricsEnhancements:
         from modules.pipeline import PipelineModule, PipelineConfig, PipelineStep
 
         config = PipelineConfig(
-            skip_metadata=True,
             skip_ai=True,
             skip_shaders=True,
             skip_images=True,
-            skip_osc=True
+            skip_osc=True,
+            skip_cache=True
         )
         pipeline = PipelineModule(config)
 
@@ -339,8 +339,7 @@ class TestPipelineOSC:
 
         assert hasattr(pipeline, "_send_track_osc")
         assert hasattr(pipeline, "_send_lyrics_osc")
-        assert hasattr(pipeline, "_send_metadata_osc")
-        assert hasattr(pipeline, "_send_categories_osc")
+        assert hasattr(pipeline, "_send_ai_osc")
         assert hasattr(pipeline, "_send_shader_osc")
         assert hasattr(pipeline, "_send_images_osc")
 
@@ -370,7 +369,6 @@ class TestPipelineOSC:
         mock_sender = MagicMock()
 
         config = PipelineConfig(
-            skip_metadata=True,
             skip_ai=True,
             skip_shaders=True,
             skip_images=True
@@ -397,10 +395,10 @@ class TestPipelineFullFlow:
     """Test full pipeline end-to-end with all steps."""
 
     def test_full_pipeline_with_all_steps(self, requires_internet, requires_lm_studio):
-        """Full pipeline runs all 5 steps successfully."""
+        """Full pipeline runs all 4 steps successfully."""
         from modules.pipeline import PipelineModule, PipelineConfig, PipelineStep
 
-        config = PipelineConfig(skip_shaders=True, skip_osc=True)  # Skip shaders (no data)
+        config = PipelineConfig(skip_shaders=True, skip_osc=True, skip_cache=True)
         pipeline = PipelineModule(config)
 
         started_steps = []
@@ -414,7 +412,7 @@ class TestPipelineFullFlow:
         pipeline.stop()
 
         # Should have all non-skipped steps
-        expected = ["lyrics", "metadata", "ai_analysis", "images"]
+        expected = ["lyrics", "ai_analysis", "images"]
         for step in expected:
             assert step in completed_steps, f"Should complete {step} step"
 
@@ -455,7 +453,6 @@ class TestPipelineStandalone:
         help_text = result.stdout
 
         assert "--skip-lyrics" in help_text
-        assert "--skip-metadata" in help_text
         assert "--skip-ai" in help_text
         assert "--skip-shaders" in help_text
         assert "--skip-images" in help_text

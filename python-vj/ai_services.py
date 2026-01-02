@@ -50,7 +50,7 @@ class LLMAnalyzer:
     def analyze_lyrics(self, lyrics: str, artist: str, title: str) -> Dict[str, Any]:
         """Analyze lyrics, extract refrain/keywords/themes. Returns dict with 'refrain_lines', 'keywords', 'themes'."""
         cache_file = self._cache_dir / f"{sanitize_cache_filename(artist, title)}.json"
-        
+
         # Check cache
         if cache_file.exists():
             try:
@@ -59,7 +59,7 @@ class LLMAnalyzer:
                 return data
             except Exception:
                 pass
-        
+
         # Try LLM
         self._try_reconnect()
         if self._health.available:
@@ -68,9 +68,210 @@ class LLMAnalyzer:
                 cache_file.write_text(json.dumps(result, indent=2))
                 result['cached'] = False
                 return result
-        
+
         # Fallback
         return self._basic_analysis(lyrics)
+
+    def analyze_song_complete(
+        self,
+        lyrics: str,
+        artist: str,
+        title: str,
+        album: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Complete song analysis in a single LLM call.
+
+        Combines metadata extraction (keywords, themes, visual adjectives) with
+        mood categorization (energy, valence, category scores) for efficiency.
+
+        Returns dict with:
+            - keywords: List[str] - key words from lyrics
+            - themes: List[str] - detected themes
+            - visual_adjectives: List[str] - words for image search
+            - refrain_lines: List[str] - repeated chorus lines
+            - tempo: str - perceived tempo
+            - mood: str - primary mood
+            - energy: float - 0.0 to 1.0
+            - valence: float - -1.0 (dark) to 1.0 (bright)
+            - categories: Dict[str, float] - all category scores
+            - cached: bool
+        """
+        cache_key = f"{sanitize_cache_filename(artist, title)}_complete"
+        cache_file = self._cache_dir / f"{cache_key}.json"
+
+        # Check cache
+        if cache_file.exists():
+            try:
+                data = json.loads(cache_file.read_text())
+                data['cached'] = True
+                logger.debug(f"Using cached complete analysis: {artist} - {title}")
+                return data
+            except Exception:
+                pass
+
+        # Try LLM
+        self._try_reconnect()
+        if self._health.available:
+            result = self._analyze_complete_with_llm(lyrics, artist, title, album)
+            if result:
+                cache_file.write_text(json.dumps(result, indent=2))
+                result['cached'] = False
+                return result
+
+        # Fallback to basic analysis
+        return self._basic_complete_analysis(lyrics, artist, title)
+
+    def _analyze_complete_with_llm(
+        self,
+        lyrics: str,
+        artist: str,
+        title: str,
+        album: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Single LLM call for complete song analysis."""
+        categories = ['dark', 'happy', 'sad', 'energetic', 'calm', 'love',
+                      'romantic', 'aggressive', 'peaceful', 'nostalgic', 'uplifting']
+
+        album_context = f' from album "{album}"' if album else ''
+        prompt = f"""Analyze the song "{title}" by {artist}{album_context}.
+
+Lyrics:
+{lyrics[:2500]}
+
+Provide a complete analysis as JSON with:
+1. keywords: 5-10 important words from the lyrics
+2. themes: 2-4 main themes (love, loss, rebellion, etc.)
+3. visual_adjectives: 5-8 visual/aesthetic words for image search (neon, cosmic, ethereal, gritty, etc.)
+4. refrain_lines: repeated chorus/hook lines (max 3)
+5. tempo: slow/medium/fast
+6. mood: primary mood (dark/happy/sad/energetic/calm/romantic/aggressive/peaceful/dreamy/nostalgic)
+7. energy: 0.0-1.0 (calm=0, intense=1)
+8. valence: -1.0 to 1.0 (dark/negative=-1, bright/positive=+1)
+9. categories: scores 0.0-1.0 for each: {', '.join(categories)}
+
+Return ONLY valid JSON:
+{{
+  "keywords": ["word1", "word2"],
+  "themes": ["theme1", "theme2"],
+  "visual_adjectives": ["adj1", "adj2"],
+  "refrain_lines": ["line1"],
+  "tempo": "medium",
+  "mood": "energetic",
+  "energy": 0.7,
+  "valence": 0.3,
+  "categories": {{"dark": 0.2, "happy": 0.6, ...}}
+}}"""
+
+        try:
+            if self._backend == "openai":
+                response = self._openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=800,
+                    timeout=60
+                )
+                content = response.choices[0].message.content
+            elif self._backend == "lmstudio":
+                resp = requests.post(f"{self.LM_STUDIO_URL}/v1/chat/completions",
+                    json={
+                        "model": self._lmstudio_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 800
+                    },
+                    timeout=60)
+                if resp.status_code == 200:
+                    content = resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                else:
+                    return None
+            else:
+                return None
+
+            if content:
+                # Parse JSON from response
+                start = content.find('{')
+                end = content.rfind('}')
+                if start >= 0 and end > start:
+                    result = json.loads(content[start:end+1])
+                    # Validate and normalize
+                    return self._normalize_complete_result(result)
+
+        except Exception as e:
+            logger.warning(f"Complete analysis LLM error: {e}")
+            self._health.mark_unavailable(str(e))
+
+        return None
+
+    def _normalize_complete_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure all expected fields exist with proper types."""
+        return {
+            'keywords': result.get('keywords', [])[:10],
+            'themes': result.get('themes', [])[:5],
+            'visual_adjectives': result.get('visual_adjectives', [])[:8],
+            'refrain_lines': result.get('refrain_lines', [])[:5],
+            'tempo': result.get('tempo', 'medium'),
+            'mood': result.get('mood', 'neutral'),
+            'energy': float(result.get('energy', 0.5)),
+            'valence': float(result.get('valence', 0.0)),
+            'categories': {k: float(v) for k, v in result.get('categories', {}).items()},
+            'cached': False
+        }
+
+    def _basic_complete_analysis(self, lyrics: str, artist: str, title: str) -> Dict[str, Any]:
+        """Fallback analysis without LLM."""
+        # Extract basic info using existing methods
+        basic = self._basic_analysis(lyrics)
+
+        # Simple keyword-based mood detection
+        text = (title + ' ' + lyrics).lower()
+
+        categories = {cat: 0.1 for cat in
+                      ['dark', 'happy', 'sad', 'energetic', 'calm', 'love',
+                       'romantic', 'aggressive', 'peaceful', 'nostalgic', 'uplifting']}
+
+        # Keyword matching for categories
+        if any(w in text for w in ['dark', 'death', 'shadow', 'night', 'black']):
+            categories['dark'] = 0.7
+        if any(w in text for w in ['happy', 'joy', 'smile', 'laugh', 'fun']):
+            categories['happy'] = 0.7
+        if any(w in text for w in ['sad', 'cry', 'tear', 'pain', 'hurt']):
+            categories['sad'] = 0.7
+        if any(w in text for w in ['love', 'heart', 'kiss', 'baby']):
+            categories['love'] = 0.7
+        if any(w in text for w in ['fight', 'rage', 'anger', 'hate']):
+            categories['aggressive'] = 0.7
+        if any(w in text for w in ['dance', 'party', 'move', 'groove']):
+            categories['energetic'] = 0.7
+
+        # Find primary mood
+        mood = max(categories.items(), key=lambda x: x[1])[0]
+
+        # Calculate energy/valence from categories
+        high_energy = ['energetic', 'aggressive', 'uplifting']
+        low_energy = ['calm', 'peaceful', 'sad']
+        positive = ['happy', 'uplifting', 'love', 'romantic', 'peaceful']
+        negative = ['dark', 'sad', 'aggressive']
+
+        high_sum = sum(categories.get(c, 0) for c in high_energy)
+        low_sum = sum(categories.get(c, 0) for c in low_energy)
+        energy = high_sum / (high_sum + low_sum + 0.001) if (high_sum + low_sum) > 0 else 0.5
+
+        pos_sum = sum(categories.get(c, 0) for c in positive)
+        neg_sum = sum(categories.get(c, 0) for c in negative)
+        valence = (pos_sum - neg_sum) / (pos_sum + neg_sum + 0.001) if (pos_sum + neg_sum) > 0 else 0.0
+
+        return {
+            'keywords': basic.get('keywords', []),
+            'themes': basic.get('themes', []),
+            'visual_adjectives': [],  # Can't generate without LLM
+            'refrain_lines': basic.get('refrain_lines', []),
+            'tempo': 'medium',
+            'mood': mood,
+            'energy': energy,
+            'valence': valence,
+            'categories': categories,
+            'cached': False
+        }
     
     def analyze_shader(
         self, 

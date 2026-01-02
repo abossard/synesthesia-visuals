@@ -17,11 +17,13 @@ import codeanticode.syphon.*;
 // ============================================
 // CONFIGURATION
 // ============================================
-final int WINDOW_WIDTH = 1280;
-final int WINDOW_HEIGHT = 720;  // HD Ready resolution
+final int WINDOW_WIDTH = 960;
+final int WINDOW_HEIGHT = 810;  // 32:27 preview for a 2x3 grid of 16:9 tiles
 final int OSC_PORT = 10000;  // Single OSC port for all messages
 final String SHADERS_PATH = "shaders";
 final String SCENES_PATH = "scenes";
+final int CONSOLE_HEIGHT = 200;
+final int INFO_BAR_HEIGHT = 32;
 
 // ============================================
 // GLOBAL STATE
@@ -39,6 +41,13 @@ int currentShaderIndex = 0;
 float shaderEnergyHint = 0.5;
 float shaderValenceHint = 0.5;
 
+// Shader load requests (queued from OSC thread, applied on draw thread)
+final Object shaderLoadLock = new Object();
+String pendingShaderName = null;
+float pendingShaderEnergy = 0.5f;
+float pendingShaderValence = 0.0f;
+boolean pendingShaderHasHints = false;
+
 // Multi-pass rendering
 PGraphics passBuffer1;
 PGraphics passBuffer2;
@@ -46,7 +55,7 @@ boolean useMultiPass = false;  // Disabled by default - single shader mode
 ArrayList<PShader> activeShaderPipeline = new ArrayList<PShader>();
 
 // State
-boolean debugMode = true;
+boolean debugMode = false;
 float globalTime = 0;
 // Audio-reactive time accumulator keeps shaders synced to beat without new uniforms
 float audioTime = 0;
@@ -85,12 +94,6 @@ int shaderCycleIndex = 0;
 float lastShaderCycleTime = 0;
 final float SHADER_CYCLE_DELAY = 2.0;  // Seconds between shader changes
 
-// Rating feedback overlay
-String lastRatingLabel = "";       // e.g. "★★★★★ BEST"
-color lastRatingColor = 0;         // Color for rating display
-float lastRatingTime = -999;       // Time when rating was last changed
-final float RATING_DISPLAY_DURATION = 2.0;  // Seconds to show rating feedback
-
 // Shader rendering parameters
 float shaderZoom = 1.0;  // 1.0 = normal, >1 = zoom in, <1 = zoom out
 float shaderOffsetX = 0.0;  // Pan offset X (-1 to 1)
@@ -100,13 +103,8 @@ float shaderOffsetY = 0.0;  // Pan offset Y (-1 to 1)
 PGraphics shaderBuffer;
 
 // Synthetic mouse (audio-reactive figure-8 motion)
-boolean synthMouseEnabled = true;  // Default ON
-float synthMouseBlend = 0.85;      // Blend: 0 = real mouse, 1 = full synthetic
 float synthMouseSpeed = 0.3;       // Base figure-8 rotation speed
 
-// Shader rate mode (Q key toggle)
-// When enabled, rating actions move files instead of just updating metadata
-boolean shaderRateModeActive = false;
 
 // ============================================
 // TEXTLER SYSTEM (Multiplexed Tiles)
@@ -189,45 +187,8 @@ void printKeyboardShortcuts() {
   println("   VJUniverse Keyboard Shortcuts");
   println("========================================");
   println("");
-  println("=== SHADER NAVIGATION ===");
-  println("  N / P       Next / Previous shader");
-  println("  Space       Reload current shader");
-  println("  r           Reload all shaders");
-  println("  R           Start shader cycling (auto-rotate)");
-  println("");
-  println("=== SHADER RATING ===");
-  println("  K           Rate BEST (1) + next shader");
-  println("  S           Rate SKIP (5) + next shader");
-  println("  + / -       Increase / decrease rating");
-  println("  Shift+1-5   Set exact rating (!@#$%)");
-  println("              1=BEST 2=GOOD 3=NORMAL 4=MASK 5=SKIP");
-  println("  Q           Toggle RATE MODE (moves files!)");
-  println("");
-  println("=== TILE NAVIGATION ===");
-  println("  0           Show all tiles (grid view)");
-  println("  1-9         Focus single tile (fullscreen)");
-  println("  V           Toggle tiled/legacy mode");
-  println("");
-  println("=== VISUALS ===");
-  println("  D           Toggle debug overlay");
-  println("  B           Toggle audio bars display");
-  println("  C           Toggle audio controls");
-  println("  M           Toggle synthetic mouse");
-  println("  Z / Shift+Z Zoom out / in shader");
-  println("  X           Reset zoom and pan");
-  println("  Arrows      Pan shader view");
-  println("");
-  println("=== TEXT / FONTS ===");
-  println("  F           Cycle font");
-  println("  G           Cycle font size");
-  println("  T           Start typing broadcast message");
-  println("");
-  println("=== IMAGES ===");
-  println("  I           Load example images folder");
-  println("");
-  println("=== SYSTEM ===");
-  println("  Enter       Open console");
-  println("  ESC         Close console / cancel typing");
+  println("=== GLOBAL ===");
+  println("  1-5         Focus tile (toggle back to grid)");
   println("");
   println("========================================");
 }
@@ -236,13 +197,14 @@ void printKeyboardShortcuts() {
  * Initialize Textler system - tiles, text renderer, and state
  *
  * Syphon outputs:
- * - VJUniverse/Shader   - Shader visuals (rating 1-2 only)
- * - VJUniverse/Mask     - Mask shaders (rating 4)
+ * - VJUniverse/Shader   - Shader visuals
+ * - VJUniverse/Mask     - Mask shaders
  * - VJUniverse/Lyrics   - Main lyrics (prev/current/next)
  * - VJUniverse/Refrain  - Chorus/refrain text (larger)
  * - VJUniverse/SongInfo - Artist/title display
  * - VJUniverse/VJSims   - Procedural levels
  * - VJUniverse/Image    - Image display with crossfade & beat cycling
+ * - VJUniverse/Audio    - Audio analysis panel
  *
  * TextlerMultiTile manages 3 Syphon outputs in a single tile for compact preview.
  */
@@ -253,10 +215,10 @@ void initTextlerSystem() {
   // Create tile manager
   tileManager = new TileManager(this);
 
-  // 1. Shader tile (full resolution shader rendering - rating 1-2 only)
+  // 1. Shader tile (full resolution shader rendering)
   tileManager.addTile(new ShaderTile());
 
-  // 2. Mask shader tile (rating 4 shaders - dedicated Syphon output)
+  // 2. Mask shader tile (dedicated Syphon output)
   tileManager.addTile(new MaskShaderTile());
 
   // 3. Textler multi-output tile (Lyrics + Refrain + SongInfo = 3 Syphons in 1 tile)
@@ -269,7 +231,11 @@ void initTextlerSystem() {
   tileManager.addTile(new ImageTile());
 
   println("[Textler] System initialized with " + tileManager.getTileCount() + " tiles");
-  println("  Syphon outputs: Shader, Mask, Lyrics, Refrain, SongInfo, VJSims, Image");
+  // 6. Audio panel tile
+  tileManager.addTile(new AudioPanelTile());
+
+  println("  Syphon outputs: Shader, Mask, Lyrics, Refrain, SongInfo, VJSims, Image, Audio");
+  println("[Tiles] " + tileManager.getTileOrderString());
 }
 
 // ============================================
@@ -282,6 +248,9 @@ void draw() {
 
   // Update audio parameters from OSC feed
   updateSynesthesiaAudio();
+  
+  // Apply any queued shader load from OSC (safe on draw thread)
+  processQueuedShaderLoad();
 
   // Update VJSims audio envelope with enhanced values
   // Bass: mix in kick for punch on beats
@@ -374,16 +343,8 @@ void draw() {
   // Update shader cycling if active
   updateShaderCycling();
   
-  // Draw audio bars (OSC listener HUD)
-  drawAudioBars();
-  
-  // Draw rating feedback overlay (always visible when active)
-  drawRatingFeedback();
-  
-  // Draw debug overlay
-  if (debugMode) {
-    drawDebugOverlay();
-  }
+  // Draw info bar
+  drawInfoBar();
   
   // Draw console (always on top)
   if (consoleActive) {
@@ -504,24 +465,9 @@ void applyShaderUniformsTo(PShader s, PGraphics pg) {
     
     // Mouse uniform (for Shadertoy-style GLSL shaders)
     // Y is flipped to match OpenGL conventions
-    // Synthetic mouse: audio-reactive figure-8 Lissajous curve
+    // Synthetic mouse only (stable across fullscreen/tiles)
     float[] synthPos = calcSynthMousePosition(audioTime, energySlow, smoothAudioBass, presenceMid, beatPhaseAudio);
-    
-    // Real mouse position (normalized 0-1)
-    float realMouseX = mouseX / w;
-    float realMouseY = mouseY / h;
-    if (mouseX == 0 && mouseY == 0) {
-      // Mouse hasn't moved - default to center
-      realMouseX = 0.5f;
-      realMouseY = 0.5f;
-    }
-    
-    // Blend real and synthetic mouse based on settings
-    float blendAmt = synthMouseEnabled ? synthMouseBlend : 0.0f;
-    float mx = lerp(realMouseX, synthPos[0], blendAmt);
-    float my = lerp(realMouseY, synthPos[1], blendAmt);
-    
-    s.set("mouse", mx, 1.0f - my);  // Normalized 0-1, Y-flipped
+    s.set("mouse", synthPos[0], 1.0f - synthPos[1]);  // Normalized 0-1, Y-flipped
     
     // Speed uniform: audio-reactive time scaling (0-1)
     // Key hook for GLSL shader audio reactivity
@@ -640,18 +586,21 @@ void oscEvent(OscMessage msg) {
   if (addr.equals("/shader/load")) {
     try {
       String shaderName = msg.get(0).stringValue();
-      float energy = msg.get(1).floatValue();
-      float valence = msg.get(2).floatValue();
+      float energy = 0.5f;
+      float valence = 0.0f;
+      boolean hasHints = false;
       
-      consoleLog("Shader: " + shaderName + " (e=" + nf(energy,1,2) + " v=" + nf(valence,1,2) + ")");
-      loadShaderByName(shaderName);
+      if (msg.typetag() != null && msg.typetag().length() >= 3) {
+        energy = msg.get(1).floatValue();
+        valence = msg.get(2).floatValue();
+        hasHints = true;
+      }
       
-      // Store hints for future uniform modulation
-      shaderEnergyHint = energy;
-      shaderValenceHint = valence;
+      queueShaderLoad(shaderName, energy, valence, hasHints);
     } catch (Exception e) {
       println("OSC /shader/load error: " + e.getMessage());
     }
+    return;
   }
   
   // Log non-spammy OSC messages
@@ -660,19 +609,54 @@ void oscEvent(OscMessage msg) {
   }
 }
 
+void queueShaderLoad(String shaderName, float energy, float valence, boolean hasHints) {
+  if (shaderName == null || shaderName.trim().isEmpty()) return;
+  synchronized (shaderLoadLock) {
+    pendingShaderName = shaderName;
+    pendingShaderEnergy = energy;
+    pendingShaderValence = valence;
+    pendingShaderHasHints = hasHints;
+  }
+}
+
+void processQueuedShaderLoad() {
+  String shaderName = null;
+  float energy = 0.5f;
+  float valence = 0.0f;
+  boolean hasHints = false;
+  
+  synchronized (shaderLoadLock) {
+    if (pendingShaderName == null) return;
+    shaderName = pendingShaderName;
+    energy = pendingShaderEnergy;
+    valence = pendingShaderValence;
+    hasHints = pendingShaderHasHints;
+    pendingShaderName = null;
+    pendingShaderHasHints = false;
+  }
+  
+  if (hasHints) {
+    consoleLog("Shader: " + shaderName + " (e=" + nf(energy,1,2) + " v=" + nf(valence,1,2) + ")");
+    shaderEnergyHint = energy;
+    shaderValenceHint = valence;
+  } else {
+    consoleLog("Shader: " + shaderName);
+  }
+  loadShaderByName(shaderName);
+}
+
 // ============================================
 // DEBUG CONSOLE
 // ============================================
 
 void drawConsole() {
   // Full-width console at bottom
-  int consoleHeight = 200;
-  int y = height - consoleHeight;
+  int y = height - CONSOLE_HEIGHT;
   
   // Background
   fill(0, 220);
   noStroke();
-  rect(0, y, width, consoleHeight);
+  rect(0, y, width, CONSOLE_HEIGHT);
   
   // Border
   stroke(100);
@@ -741,7 +725,7 @@ void consoleSubmit() {
   }
   else if (input.equalsIgnoreCase("help")) {
     consoleLog("Commands: status, clear, shaders, help");
-    consoleLog("Keys: D=debug N/P=shader R=reload");
+    consoleLog("Keys: 1-5 focus tile (toggle)");
   }
   else {
     // Try to load shader by name
@@ -791,186 +775,14 @@ void keyPressed() {
     return;
   }
   
-  // TileManager tile focus (number keys 0-9)
+  // TileManager tile focus (number keys 1-5)
   if (tileManager != null && tileManager.handleKey(key, keyCode)) {
     return;
-  }
-  
-  // Normal key handling
-  if (key == ENTER || key == RETURN) {
-    consoleActive = true;
-    return;
-  }
-  
-  switch (key) {
-    case 'd':
-    case 'D':
-      debugMode = !debugMode;
-      break;
-    case 'n':
-    case 'N':
-      nextShader();
-      break;
-    case 'p':
-    case 'P':
-      prevShader();
-      break;
-    case 'r':
-      loadAllShaders();
-      println("Shaders reloaded: " + availableShaders.size());
-      break;
-    case 'R':
-      startShaderCycling();
-      break;
-    case 'v':
-    case 'V':
-      // Toggle tiled mode vs legacy shader-only mode
-      tiledMode = !tiledMode;
-      println("Tiled mode: " + (tiledMode ? "ON" : "OFF"));
-      break;
-    case 'f':
-    case 'F':
-      // Cycle text font
-      if (textRenderer != null) {
-        textRenderer.cycleFont();
-      }
-      break;
-    case 'g':
-    case 'G':
-      // Cycle text font size
-      if (textRenderer != null) {
-        textRenderer.cycleFontSize();
-      }
-      break;
-    case 'y':
-    case 'Y':
-      toggleShaderTypeFilter();  // Toggle GLSL/ISF/All
-      break;
-    case ' ':
-      if (currentShaderIndex < getFilteredShaderList().size()) {
-        loadShaderByIndex(currentShaderIndex);
-      }
-      break;
-    case 'b':
-    case 'B':
-      showAudioBars = !showAudioBars;  // Toggle audio bars visibility
-      break;
-    case 'c':
-    case 'C':
-      showAudioControls = !showAudioControls;
-      println("Audio controls: " + (showAudioControls ? "ON" : "OFF"));
-      break;
-    case 'z':
-      shaderZoom = max(0.1, shaderZoom - 0.1);  // Zoom out
-      println("Shader zoom: " + nf(shaderZoom, 1, 2));
-      break;
-    case 'Z':
-      shaderZoom = min(5.0, shaderZoom + 0.1);  // Zoom in
-      println("Shader zoom: " + nf(shaderZoom, 1, 2));
-      break;
-    case 'x':
-    case 'X':
-      shaderZoom = 1.0;  // Reset zoom and offset
-      shaderOffsetX = 0.0;
-      shaderOffsetY = 0.0;
-      println("Shader zoom/offset reset");
-      break;
-    case 'm':
-    case 'M':
-      synthMouseEnabled = !synthMouseEnabled;
-      println("Synthetic mouse: " + (synthMouseEnabled ? "ON" : "OFF"));
-      break;
-    case 'q':
-    case 'Q':
-      // Toggle shader rate mode (moves files when rating)
-      shaderRateModeActive = !shaderRateModeActive;
-      if (shaderRateModeActive) {
-        println("[RATE MODE] ACTIVE - Ratings will MOVE shader files!");
-        println("  Rating 1-2: Keep in glsl/");
-        println("  Rating 3: Move to neutral/");
-        println("  Rating 4: Move to masks/");
-        println("  Rating 5: Move to trash/");
-        consoleLog("RATE MODE ON - Files will move!");
-      } else {
-        println("[RATE MODE] OFF - Ratings only update metadata");
-        consoleLog("Rate mode OFF");
-      }
-      break;
-    case 'i':
-    case 'I':
-      // Load example images folder into ImageTile
-      loadExampleImages();
-      break;
-    case '+':
-    case '=':
-      // Increase rating (better = lower number)
-      changeCurrentShaderRating(-1);
-      break;
-    case '-':
-    case '_':
-      // Decrease rating (worse = higher number)
-      changeCurrentShaderRating(1);
-      break;
-    case 's':
-      // Skip = rate 5 + next shader (quick reject)
-      setCurrentShaderRating(5);
-      nextShader();
-      break;
-    case 'k':
-      // Keep/favorite = rate 1 + next shader (quick approve)
-      setCurrentShaderRating(1);
-      nextShader();
-      break;
-    case '!':  // Shift+1
-      setCurrentShaderRating(1);
-      break;
-    case '@':  // Shift+2
-      setCurrentShaderRating(2);
-      break;
-    case '#':  // Shift+3
-      setCurrentShaderRating(3);
-      break;
-    case '$':  // Shift+4
-      setCurrentShaderRating(4);
-      break;
-    case '%':  // Shift+5
-      setCurrentShaderRating(5);
-      break;
-  }
-  
-  // Arrow keys for shader panning (only when not in modal dialogs)
-  if (key == CODED) {
-    float offsetStep = 0.05 / shaderZoom;  // Scale step by zoom for consistent feel
-    switch (keyCode) {
-      case LEFT:
-        // LEFT arrow = pan view left = move shader content right = increase offset
-        shaderOffsetX = constrain(shaderOffsetX + offsetStep, -1.0, 1.0);
-        println("Pan LEFT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
-        break;
-      case RIGHT:
-        // RIGHT arrow = pan view right = move shader content left = decrease offset
-        shaderOffsetX = constrain(shaderOffsetX - offsetStep, -1.0, 1.0);
-        println("Pan RIGHT: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
-        break;
-      case UP:
-        // UP arrow = pan view up = move shader content down = increase Y offset
-        shaderOffsetY = constrain(shaderOffsetY + offsetStep, -1.0, 1.0);
-        println("Pan UP: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
-        break;
-      case DOWN:
-        // DOWN arrow = pan view down = move shader content up = decrease Y offset
-        shaderOffsetY = constrain(shaderOffsetY - offsetStep, -1.0, 1.0);
-        println("Pan DOWN: offset = " + nf(shaderOffsetX, 1, 3) + ", " + nf(shaderOffsetY, 1, 3));
-        break;
-    }
   }
 }
 
 void mousePressed() {
   if (consoleActive) return;
-  if (handleAudioControlMouse(mouseX, mouseY)) {
-    println("Speed mix=" + nf(uiSpeedMix,0,2) + " gain=" + nf(uiSpeedGain,0,2) + " kick=" + nf(uiKickBoost,0,2));
-  }
 }
 
 void nextShader() {
@@ -985,48 +797,6 @@ void prevShader() {
   if (list.size() == 0) return;
   currentShaderIndex = (currentShaderIndex - 1 + list.size()) % list.size();
   loadShaderByIndex(currentShaderIndex);
-}
-
-// ============================================
-// RATING FEEDBACK OVERLAY
-// ============================================
-
-void drawRatingFeedback() {
-  // Calculate fade based on time since rating changed
-  float age = globalTime - lastRatingTime;
-  if (age > RATING_DISPLAY_DURATION || lastRatingLabel.isEmpty()) {
-    return;  // Nothing to show
-  }
-  
-  // Fade out over time
-  float alpha = 255 * (1.0 - (age / RATING_DISPLAY_DURATION));
-  
-  // Draw large centered label
-  pushStyle();
-  textAlign(CENTER, CENTER);
-  textSize(72);
-  
-  // Black outline for readability
-  fill(0, alpha);
-  for (int dx = -3; dx <= 3; dx++) {
-    for (int dy = -3; dy <= 3; dy++) {
-      if (dx != 0 || dy != 0) {
-        text(lastRatingLabel, width/2 + dx, height/2 + dy);
-      }
-    }
-  }
-  
-  // Colored text
-  fill(red(lastRatingColor), green(lastRatingColor), blue(lastRatingColor), alpha);
-  text(lastRatingLabel, width/2, height/2);
-  
-  // Show keyboard hints below
-  textSize(24);
-  fill(200, alpha * 0.8);
-  String hints = "K=KEEP  S=SKIP  Shift+1-5=RATE  N/P=NAV";
-  text(hints, width/2, height/2 + 60);
-  
-  popStyle();
 }
 
 // ============================================
@@ -1063,7 +833,6 @@ void drawDebugOverlay() {
   text("  Tempo: sin=" + nf(tempoSinDbg, 0, 2) + " saw=" + nf(tempoSawDbg, 0, 2) + " rand=" + nf(beatRandom, 0, 2), 20, y); y += lineHeight;
   text("  Presence: low=" + nf(presenceBass, 0, 2) + " mid=" + nf(presenceMid, 0, 2) + " high=" + nf(presenceHigh, 0, 2), 20, y); y += lineHeight;
   text("  Time: t=" + nf(audioTime, 0, 2) + " speed=" + nf(smoothedAudioSpeed, 0, 2) + " tgt=" + nf(lastAudioSpeedTarget, 0, 2), 20, y); y += lineHeight;
-  text("  Controls: mix=" + nf(uiSpeedMix, 0, 2) + " gain=" + nf(uiSpeedGain, 0, 2) + " kick=" + nf(uiKickBoost, 0, 2), 20, y); y += lineHeight;
   y += 5;
   
   // Shader info with type filter
@@ -1073,20 +842,8 @@ void drawDebugOverlay() {
   String shaderType = current != null ? current.type.toString() : "";
   String filterStr = currentTypeFilter == null ? "ALL" : currentTypeFilter.toString();
   
-  // Get rating for current shader
-  String ratingStr = "?";
-  if (current != null) {
-    ShaderAnalysis analysis = shaderAnalyses.get(current.name);
-    if (analysis != null) {
-      ratingStr = analysis.getRatingLabel();
-    } else {
-      ratingStr = "unanalyzed";
-    }
-  }
-  
   text("Filter: " + filterStr + " | Shader [" + (currentShaderIndex + 1) + "/" + list.size() + "]", 20, y); y += lineHeight;
   text("  " + shaderType + ": " + shaderName, 20, y); y += lineHeight;
-  text("  Rating: " + ratingStr + " (+/- to change)", 20, y); y += lineHeight;
   text("  Zoom: " + nf(shaderZoom, 1, 2) + " | Offset: " + nf(shaderOffsetX, 1, 2) + ", " + nf(shaderOffsetY, 1, 2), 20, y); y += lineHeight;
   y += 5;
   
@@ -1097,26 +854,79 @@ void drawDebugOverlay() {
     text("  Font: " + fontInfo + (textRenderer.isTypingBroadcast() ? " [TYPING...]" : ""), 20, y); y += lineHeight;
   }
   
-  // Controls hint at bottom
-  fill(150);
-  textSize(12);
-  text("D=debug N/P=shader K=keep S=skip !@#$%=rate Q=ratemode V=tiles 0-9=focus", 20, height - 25);
+}
 
-  // Rate mode indicator (prominent warning at top-right when active)
-  if (shaderRateModeActive) {
-    pushStyle();
-    textAlign(RIGHT, TOP);
-    textSize(18);
-    // Pulsing red background
-    float pulse = (sin(globalTime * 4) + 1) * 0.5;
-    fill(180, 0, 0, 200 + pulse * 55);
-    noStroke();
-    rect(width - 260, 10, 250, 30, 5);
-    // White text
-    fill(255);
-    text("RATE MODE: FILES WILL MOVE", width - 20, 16);
-    popStyle();
+// ============================================
+// INFO BAR
+// ============================================
+
+void drawInfoBar() {
+  if (tileManager == null) return;
+  
+  Tile focused = tileManager.getFocusedTile();
+  String leftText;
+  String centerText;
+  String rightText;
+  
+  if (focused != null) {
+    int focusedIndex = tileManager.getFocusedTileIndex();
+    String indexLabel = focusedIndex >= 0 ? String.valueOf(focusedIndex + 1) : "";
+    leftText = indexLabel.isEmpty() ? focused.name : (indexLabel + " " + focused.name);
+    centerText = focused.getStatusString();
+    rightText = "Left/Right: Prev/Next";
+  } else {
+    leftText = "Grid";
+    centerText = tileManager.getTileShortcutLabels();
+    rightText = "1-5: Focus";
   }
+  
+  if (centerText == null) centerText = "";
+  
+  int barH = INFO_BAR_HEIGHT;
+  int y = height - barH;
+  if (consoleActive) {
+    y = height - CONSOLE_HEIGHT - barH;
+  }
+  if (y < 0) y = 0;
+  
+  pushStyle();
+  noStroke();
+  fill(0, 190);
+  rect(0, y, width, barH);
+  stroke(255, 40);
+  line(0, y, width, y);
+  noStroke();
+  
+  textSize(12);
+  fill(230);
+  textAlign(LEFT, CENTER);
+  text(leftText, 12, y + barH / 2);
+  
+  float leftW = textWidth(leftText) + 24;
+  float rightW = textWidth(rightText) + 24;
+  float maxCenterW = max(0, width - leftW - rightW);
+  String centerLabel = ellipsize(centerText, maxCenterW);
+  
+  textAlign(CENTER, CENTER);
+  text(centerLabel, width / 2, y + barH / 2);
+  
+  textAlign(RIGHT, CENTER);
+  text(rightText, width - 12, y + barH / 2);
+  popStyle();
+}
+
+String ellipsize(String text, float maxWidth) {
+  if (text == null) return "";
+  if (maxWidth <= 0) return "";
+  if (textWidth(text) <= maxWidth) return text;
+  String ellipsis = "...";
+  float ellipsisWidth = textWidth(ellipsis);
+  int len = text.length();
+  while (len > 0 && textWidth(text.substring(0, len)) + ellipsisWidth > maxWidth) {
+    len--;
+  }
+  if (len <= 0) return ellipsis;
+  return text.substring(0, len) + ellipsis;
 }
 
 // ============================================
@@ -1246,7 +1056,6 @@ void updateShaderCycling() {
 
 /**
  * Load example images folder into the ImageTile.
- * Called when user presses 'i'.
  */
 void loadExampleImages() {
   if (tileManager == null) return;
@@ -1260,130 +1069,4 @@ void loadExampleImages() {
   } else {
     println("[ImageTile] No ImageTile found");
   }
-}
-
-
-// ============================================
-// SHADER RATING
-// ============================================
-
-// Rating labels for visual feedback
-final String[] RATING_LABELS = {"", "★★★★★ BEST", "★★★★ GOOD", "★★★ NORMAL", "★★ MASK ONLY", "★ SKIP"};
-
-// Get color for rating (can't use color() at declaration time)
-int getRatingColor(int rating) {
-  switch(rating) {
-    case 1: return color(0, 255, 100);     // Bright green - BEST
-    case 2: return color(100, 255, 100);   // Light green - GOOD
-    case 3: return color(255, 255, 100);   // Yellow - NORMAL
-    case 4: return color(255, 150, 50);    // Orange - MASK ONLY
-    case 5: return color(255, 50, 50);     // Red - SKIP
-    default: return color(128);            // Gray - unknown
-  }
-}
-
-/**
- * Set rating of current shader to exact value.
- * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
- *
- * When shaderRateModeActive is true, ratings 3-5 will MOVE the shader file:
- *   3 -> neutral/
- *   4 -> masks/
- *   5 -> trash/
- */
-void setCurrentShaderRating(int rating) {
-  ShaderInfo current = getCurrentShaderInfo();
-  if (current == null) {
-    println("[Rating] No current shader");
-    return;
-  }
-
-  ShaderAnalysis analysis = shaderAnalyses.get(current.name);
-  if (analysis == null) {
-    // Create minimal analysis for rating-only
-    analysis = createMinimalAnalysis(current);
-    shaderAnalyses.put(current.name, analysis);
-    println("[Rating] Created minimal analysis for: " + current.name);
-  }
-
-  int newRating = constrain(rating, 1, 5);
-  String shaderName = current.name;
-
-  // Save rating to analysis file first
-  saveShaderRating(shaderName, newRating);
-
-  // Trigger visual feedback
-  lastRatingLabel = RATING_LABELS[newRating];
-  lastRatingColor = getRatingColor(newRating);
-  lastRatingTime = globalTime;
-
-  consoleLog("★ " + shaderName + ": " + RATING_LABELS[newRating]);
-
-  // If rate mode is active and rating is 3-5, move the file
-  if (shaderRateModeActive && newRating >= 3) {
-    boolean moved = moveShaderByRating(shaderName, newRating);
-    if (moved) {
-      consoleLog("Moved to " + (newRating == 3 ? "neutral" : newRating == 4 ? "masks" : "trash") + "/");
-      // Reload shaders to reflect the change
-      loadAllShaders();
-      // Advance to next shader (current one is gone)
-      if (availableShaders.size() > 0) {
-        currentShaderIndex = min(currentShaderIndex, availableShaders.size() - 1);
-        loadShaderByIndex(currentShaderIndex);
-      }
-    }
-  }
-}
-
-/**
- * Change rating of current shader by delta.
- * Rating: 1=best, 2=good, 3=normal, 4=mask-only, 5=skip
- * Delta: -1 = improve rating (lower number), +1 = worsen rating (higher number)
- *
- * When shaderRateModeActive is true, ratings 3-5 will MOVE the shader file.
- */
-void changeCurrentShaderRating(int delta) {
-  ShaderInfo current = getCurrentShaderInfo();
-  if (current == null) {
-    println("[Rating] No current shader");
-    return;
-  }
-
-  ShaderAnalysis analysis = shaderAnalyses.get(current.name);
-  if (analysis == null) {
-    // Create minimal analysis for rating-only
-    analysis = createMinimalAnalysis(current);
-    shaderAnalyses.put(current.name, analysis);
-    println("[Rating] Created minimal analysis for: " + current.name);
-  }
-
-  int oldRating = analysis.getEffectiveRating();
-  int newRating = constrain(oldRating + delta, 1, 5);
-
-  if (newRating != oldRating) {
-    // Use setCurrentShaderRating to handle rate mode file movement
-    setCurrentShaderRating(newRating);
-  }
-}
-
-/**
- * Create a minimal ShaderAnalysis for rating purposes.
- * Full LLM analysis can be done later by Python.
- */
-ShaderAnalysis createMinimalAnalysis(ShaderInfo shader) {
-  return new ShaderAnalysis(
-    shader.name,
-    "unanalyzed",           // mood
-    new String[0],          // colors
-    new String[0],          // geometry
-    new String[0],          // objects
-    new String[0],          // effects
-    "medium",               // energy
-    "medium",               // complexity
-    "Rating-only placeholder, awaiting full analysis",
-    System.currentTimeMillis(),
-    new HashMap<String, Float>(),
-    new ShaderInputs(),
-    3                       // default rating
-  );
 }

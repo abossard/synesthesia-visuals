@@ -1,5 +1,5 @@
 /**
- * MaskShaderTile.pde - Dedicated tile for mask shaders (rating 4)
+ * MaskShaderTile.pde - Dedicated tile for mask shaders
  *
  * Provides a separate Syphon output for black/white mask shaders.
  * Independent shader cycling from the main ShaderTile.
@@ -153,13 +153,20 @@ class MaskShaderTile extends Tile {
 
   @Override
   boolean handleKey(char key, int keyCode) {
-    // When tile is focused (via number keys), use standard N/P for navigation
-    // This method is called by TileManager when this tile is focused
-    return false;  // Let main keyboard handler deal with it
+    if (keyCode == RIGHT) {
+      nextMaskShader();
+      return true;
+    }
+    if (keyCode == LEFT) {
+      prevMaskShader();
+      return true;
+    }
+    return false;
   }
 
   // === STATUS ===
 
+  @Override
   String getStatusString() {
     if (maskShaders.size() == 0) {
       return "No masks";

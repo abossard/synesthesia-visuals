@@ -792,8 +792,7 @@ POST http://localhost:1234/v1/chat/completions
 1. Add reference image support (VLM integration)
 2. Implement shader refinement (iterate on existing shader)
 3. Add shader caching (avoid regenerating)
-4. Create shader rating system (track which shaders perform well)
-5. Add batch generation mode
+4. Add batch generation mode
 
 **Deliverable**: Advanced generation features
 
@@ -977,7 +976,6 @@ Avoid:
 
 3. **Shader Evolution**
    - Genetic algorithm: mutate and crossbreed shaders
-   - Human-in-the-loop rating system
    - Automatic parameter tuning based on audience feedback
 
 4. **Real-Time Refinement**

@@ -531,12 +531,6 @@ class TextRenderer {
    */
   boolean handleKey(char key, int keyCode) {
     if (!typingBroadcast) {
-      if (key == 't' || key == 'T') {
-        typingBroadcast = true;
-        broadcastInput = broadcastMessage;
-        println("[TextRenderer] Typing broadcast...");
-        return true;
-      }
       return false;
     }
     

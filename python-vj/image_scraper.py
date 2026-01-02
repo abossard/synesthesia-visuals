@@ -28,6 +28,13 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from threading import Lock
 
+# Load .env for API keys if not already loaded
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from domain import Track, sanitize_cache_filename
 from infrastructure import Config
 

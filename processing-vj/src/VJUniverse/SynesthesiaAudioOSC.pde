@@ -636,9 +636,106 @@ void drawAudioBars() {
   text("BEAT:" + beat4, beatX + 35, beatY + 10);
   text("AGE:" + nf(synAudioAgeSeconds(), 0, 1) + "s", beatX + 120, beatY + 10);
 
-  if (showAudioControls || debugMode) {
-    drawAudioControlPanel(startX - 150, startY + barHeight + 60);
+}
+
+void drawAudioPanelTo(PGraphics pg) {
+  if (pg == null) return;
+  
+  pg.pushStyle();
+  pg.background(10);
+  
+  float padding = max(12, pg.width * 0.03);
+  float headerH = max(26, pg.height * 0.08);
+  float footerH = max(34, pg.height * 0.14);
+  
+  float barAreaY = padding + headerH;
+  float barAreaH = pg.height - barAreaY - footerH - padding;
+  if (barAreaH < 40) {
+    barAreaH = max(40, pg.height * 0.45);
   }
+  
+  // Header
+  pg.fill(255);
+  pg.textAlign(LEFT, CENTER);
+  pg.textSize(14);
+  pg.text("AUDIO", padding, padding + headerH * 0.5);
+  
+  String status = isSynAudioActive() ? "stream" : "wait";
+  String ageLabel = isSynAudioActive() ? ("age " + nf(synAudioAgeSeconds(), 0, 1) + "s") : "age --";
+  pg.textAlign(RIGHT, CENTER);
+  pg.text(status, pg.width - padding, padding + headerH * 0.5);
+  pg.textSize(10);
+  pg.fill(180);
+  pg.text(ageLabel, pg.width - padding, padding + headerH * 0.5 + 14);
+  
+  // Bars
+  String[] labels = {"BASS", "LOW", "MID", "HIGH", "LVL", "BEAT", "E-F", "E-S", "PR", "TMP"};
+  float tempoValue = constrain((bpmSin4 * 0.5f) + 0.5f, 0, 1);
+  float[] values = {
+    smoothAudioBass,
+    smoothAudioLowMid,
+    smoothAudioMid,
+    smoothAudioHighs,
+    smoothAudioLevel,
+    kickEnv,
+    energyFast,
+    energySlow,
+    presenceAll,
+    tempoValue
+  };
+  int[] colors = {
+    color(255, 70, 50),
+    color(255, 150, 60),
+    color(255, 230, 70),
+    color(70, 255, 110),
+    color(70, 180, 255),
+    color(255, 60, 220),
+    color(255, 200, 90),
+    color(90, 200, 255),
+    color(120, 255, 190),
+    color(160, 160, 255)
+  };
+  
+  float gap = max(6, pg.width * 0.01);
+  float totalGap = gap * (labels.length - 1);
+  float barW = (pg.width - padding * 2 - totalGap) / labels.length;
+  float barX = padding;
+  float barY = barAreaY;
+  
+  for (int i = 0; i < labels.length; i++) {
+    drawAudioBarSegment(pg, barX, barY, barW, barAreaH, labels[i], values[i], colors[i]);
+    barX += barW + gap;
+  }
+  
+  // Footer
+  float footerY = pg.height - footerH;
+  float beatX = padding;
+  float beatY = footerY + footerH * 0.5;
+  pg.noStroke();
+  pg.fill(kickPulse == 1 ? color(255, 80, 80) : color(60));
+  pg.ellipse(beatX + 10, beatY, 16, 16);
+  pg.fill(200);
+  pg.textAlign(LEFT, CENTER);
+  pg.textSize(11);
+  pg.text("Beat " + beat4, beatX + 26, beatY);
+  
+  pg.textAlign(RIGHT, CENTER);
+  pg.text("Energy " + nf(energyFast, 0, 2), pg.width - padding, beatY);
+  
+  pg.popStyle();
+}
+
+void drawAudioBarSegment(PGraphics pg, float x, float y, float w, float h, String label, float value, int c) {
+  pg.noStroke();
+  pg.fill(30);
+  pg.rect(x, y, w, h, 3);
+  float barH = constrain(value, 0, 1) * h;
+  pg.fill(c);
+  pg.rect(x, y + h - barH, w, barH, 3);
+  pg.fill(180);
+  pg.textAlign(CENTER, TOP);
+  pg.textSize(9);
+  pg.text(label, x + w / 2, y + h + 6);
 }
 
 void drawBarSegment(int x, int y, int w, int h, String label, float value, int c) {
