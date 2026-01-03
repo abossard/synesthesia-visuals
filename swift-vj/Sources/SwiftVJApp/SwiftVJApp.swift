@@ -120,18 +120,16 @@ final class AppState: ObservableObject {
                 }
             }
             
-            // Wire VDJ OSC messages to VDJMonitor
+            // Wire VDJ OSC messages to VDJMonitor (no logging - use OSC view instead)
             oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
                 guard let self = self else { return }
                 Task {
-                    await MainActor.run { self.log("VDJ OSC: \(address)", level: .debug) }
                     await self.playbackModule?.handleVDJOSC(address: address, values: values)
                 }
             }
             oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
                 guard let self = self else { return }
                 Task {
-                    await MainActor.run { self.log("VDJ OSC: \(address)", level: .debug) }
                     await self.playbackModule?.handleVDJOSC(address: address, values: values)
                 }
             }
@@ -232,8 +230,36 @@ final class AppState: ObservableObject {
         if let count = await shadersModule?.shaderCount {
             shaderCount = count
         }
+        
+        // Process current track immediately if one is already playing
+        // (Don't wait for track *change* - process what's playing NOW)
+        log("Waiting for VDJ data...", level: .debug)
+        try? await Task.sleep(for: .milliseconds(1000))  // Give VDJ time to respond to queries
+        await playbackModule?.poll()  // Force a poll
+        
+        let track = await playbackModule?.currentTrack
+        log("After poll: track = \(track?.title ?? "nil")", level: .debug)
+        
+        if let track = track {
+            log("Initial track detected: \(track.artist) - \(track.title)", level: .info)
+            currentTrack = track
+            if let pipeline = pipelineModule {
+                log("Starting pipeline processing...", level: .debug)
+                let result = await pipeline.process(track: track)
+                log("Pipeline completed: \(result.stepsCompleted.joined(separator: ", "))", level: .info)
+                await MainActor.run {
+                    self.updatePipelineSteps(from: result)
+                    self.pipelineResult = result
+                }
+            } else {
+                log("ERROR: pipelineModule is nil!", level: .error)
+            }
+        } else {
+            log("No track detected after poll", level: .warning)
+        }
     }
     
+    @MainActor
     private func updatePipelineSteps(from result: PipelineResult) {
         // Update pipeline steps from result
         pipelineSteps = [

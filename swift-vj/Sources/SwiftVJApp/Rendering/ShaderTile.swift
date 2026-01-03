@@ -374,6 +374,7 @@ final class ShaderTile: BaseTile {
 // MARK: - Shader State Manager
 
 /// Manages ShaderTile state and shader library
+/// Port of ShaderManager.pde - loads GLSL shaders and supports iteration
 @MainActor
 final class ShaderStateManager: ObservableObject {
     @Published private(set) var state: ShaderDisplayState = .empty
@@ -381,11 +382,51 @@ final class ShaderStateManager: ObservableObject {
     @Published private(set) var currentIndex: Int = 0
 
     private var shadersDirectory: URL?
+    
+    // UserDefaults key for persisting last used directory
+    private static let lastDirectoryKey = "ShaderStateManager.lastDirectory"
 
-    init() {}
+    init() {
+        loadInitialDirectory()
+    }
+    
+    /// Load shaders from last used directory or default
+    private func loadInitialDirectory() {
+        // Try last used directory first
+        if let savedPath = UserDefaults.standard.string(forKey: Self.lastDirectoryKey) {
+            let savedURL = URL(fileURLWithPath: savedPath)
+            if FileManager.default.fileExists(atPath: savedPath) {
+                loadShaderDirectory(savedURL)
+                return
+            }
+        }
+        
+        // Find default directory relative to swift-vj project
+        // Look for Shaders/glsl relative to known locations
+        let possibleRoots = [
+            // Relative to executable (for built app)
+            Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent(),
+            // Common development locations
+            URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj"),
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/projects/synesthesia-visuals/swift-vj"),
+            // Current working directory might be swift-vj
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        ]
+        
+        for root in possibleRoots {
+            let shadersURL = root.appendingPathComponent("Shaders/glsl")
+            if FileManager.default.fileExists(atPath: shadersURL.path) {
+                loadShaderDirectory(shadersURL)
+                return
+            }
+        }
+    }
 
     func loadShaderDirectory(_ url: URL) {
         shadersDirectory = url
+        
+        // Persist the directory for next launch
+        UserDefaults.standard.set(url.path, forKey: Self.lastDirectoryKey)
 
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: url,
@@ -396,6 +437,8 @@ final class ShaderStateManager: ObservableObject {
             .filter { isShaderFile($0.lastPathComponent) }
             .map { ShaderInfo(name: stripExtension($0.lastPathComponent), path: $0) }
             .sorted { $0.name < $1.name }
+        
+        print("[ShaderStateManager] Loaded \(availableShaders.count) shaders from \(url.path)")
     }
 
     func selectShader(at index: Int) {

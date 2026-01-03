@@ -1,0 +1,167 @@
+#define PROCESSING_COLOR_SHADER
+// RingLattice_Godrays - Volumetric light beams through lattice structure
+// Based on RGBringlattice3D
+
+#ifdef GL_ES
+precision highp float;
+#endif
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+uniform float bass;
+uniform float mid;
+uniform float highs;
+uniform float level;
+uniform float kickEnv;
+uniform float speed;
+
+float pointToGrille(vec3 pp, float b, float r) {
+    vec3 p = abs(pp);
+    vec3 pa = mod(p, 2.0 * b) - b;
+    
+    float dy = length(vec2(b - length(pa.xz), pa.y));
+    float dz = length(vec2(b - length(pa.xy), pa.z));
+    float ddy = length(vec3(pa.x, pa.z, pa.y * step(0.0, pa.y)));
+    float ddz = length(vec3(pa.x, pa.y, pa.z * step(0.0, pa.z)));
+    
+    return min(min(dy, ddy), min(dz, ddz)) - r;
+}
+
+vec3 rotor(vec3 p) {
+    float co = time * 0.08;
+    float c = cos(co);
+    float s = sin(co);
+    mat3 mz = mat3(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
+    mat3 mx = mat3(1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c);
+    return p * mz * mx;
+}
+
+// Light source position
+vec3 lightPos(float t) {
+    return vec3(
+        sin(t * 0.2) * 100.0,
+        cos(t * 0.15) * 80.0 + 50.0,
+        t * 40.0 + 200.0
+    );
+}
+
+// Check if point is in shadow (simplified)
+float shadowRay(vec3 pos, vec3 lightDir, float maxDist) {
+    float shadow = 1.0;
+    float t = 1.0;
+    for(int i = 0; i < 30; i++) {
+        vec3 p = pos + lightDir * t;
+        float d = pointToGrille(rotor(p), 12.0, 0.7);
+        if(d < 0.01) {
+            shadow = 0.0;
+            break;
+        }
+        t += max(d, 0.5);
+        if(t > maxDist) break;
+    }
+    return shadow;
+}
+
+// Volumetric light accumulation
+float volumetricLight(vec3 org, vec3 dir, vec3 lightP, float maxDist) {
+    float volumetric = 0.0;
+    int steps = 40;
+    float stepSize = maxDist / float(steps);
+    
+    for(int i = 0; i < 40; i++) {
+        float t = float(i) * stepSize;
+        vec3 pos = org + dir * t;
+        
+        vec3 toLight = lightP - pos;
+        float lightDist = length(toLight);
+        vec3 lightDir = toLight / lightDist;
+        
+        // Check if this point can "see" the light
+        float shadow = shadowRay(pos, lightDir, min(lightDist, 80.0));
+        
+        // Distance attenuation
+        float atten = 1.0 / (1.0 + lightDist * 0.01);
+        
+        // Accumulate light
+        volumetric += shadow * atten * stepSize * 0.02;
+    }
+    
+    return volumetric;
+}
+
+float render(vec3 org, vec3 dir, out float dist) {
+    float lambda = 0.0;
+    float lamb = 100.0;
+    float couleur = 0.0;
+    
+    for(int i = 0; i < 80; i++) {
+        vec3 pos = org + lambda * dir;
+        lamb = pointToGrille(rotor(pos), 12.0, 0.7 + bass * 0.2);
+        lambda += lamb * 0.85;
+        couleur += 0.012;
+        if(abs(lamb) < 0.001 || lambda > 400.0) break;
+    }
+    
+    dist = lambda;
+    return clamp(couleur * 1.2, 0.0, 1.0);
+}
+
+void main(void) {
+    vec2 uv = gl_FragCoord.xy / resolution.xy - 0.5;
+    uv.x *= resolution.x / resolution.y;
+    
+    float t = time * (0.4 + speed * 0.3);
+    
+    // Camera
+    vec3 eye = vec3(
+        sin(t * 0.25) * 150.0,
+        cos(t * 0.2) * 100.0,
+        t * 50.0
+    );
+    
+    vec3 dir = normalize(rotor(vec3(uv.x, uv.y, 1.5)));
+    
+    // Light position (moves ahead of camera)
+    vec3 lightP = lightPos(t);
+    lightP.z = eye.z + 150.0 + sin(t * 0.5) * 50.0;
+    
+    float hitDist;
+    float coul = render(eye, dir, hitDist);
+    
+    // Volumetric light
+    float volLight = volumetricLight(eye, dir, lightP, min(hitDist, 200.0));
+    volLight *= 1.0 + kickEnv * 2.0;  // Pulse on beat
+    
+    // Base color - dark with structure
+    vec3 structureColor = vec3(0.15, 0.1, 0.2) * (1.0 - coul);
+    structureColor += vec3(0.3, 0.2, 0.4) * coul;
+    
+    // Light color - warm golden rays
+    vec3 lightColor = vec3(1.0, 0.85, 0.5);
+    lightColor = mix(lightColor, vec3(1.0, 0.5, 0.2), bass);  // Warmer on bass
+    
+    // Combine
+    vec3 color = structureColor + lightColor * volLight * 2.0;
+    
+    // Light source glow
+    vec3 toLight = normalize(lightP - eye);
+    float sunDot = max(dot(dir, toLight), 0.0);
+    float sunGlow = pow(sunDot, 64.0) + pow(sunDot, 8.0) * 0.2;
+    color += lightColor * sunGlow * 0.5;
+    
+    // Atmospheric haze
+    float haze = 1.0 - exp(-hitDist * 0.004);
+    vec3 hazeColor = mix(vec3(0.1, 0.08, 0.15), lightColor * 0.3, volLight);
+    color = mix(color, hazeColor, haze * 0.7);
+    
+    // Tone mapping
+    color = color / (1.0 + color);
+    
+    // Subtle vignette
+    float vignette = 1.0 - pow(length(uv) * 0.9, 2.5);
+    color *= vignette;
+    
+    gl_FragColor = vec4(color, 1.0);
+}

@@ -146,7 +146,6 @@ public actor PlaybackModule: Module {
     
     /// Handle VDJ OSC message (forwarded from OSCHub)
     public func handleVDJOSC(address: String, values: [any OSCValue]) async {
-        print("[PlaybackModule] handleVDJOSC: \(address) = \(values)")
         await vdjMonitor?.handleOSC(address: address, values: values)
     }
     
@@ -219,18 +218,11 @@ public actor PlaybackModule: Module {
         guard let monitor = vdjMonitor, let hub = oscHub else { return }
         
         // Query VDJ for fresh data (VDJ doesn't push is_audible/position changes)
-        // This is critical - without this, we won't detect deck changes when crossfading!
         try? await monitor.query(using: hub)
         
         let playback = await monitor.getPlayback()
         
-        // Debug: show both decks' audible state
-        print("[PlaybackModule] pollVDJ: deck1=\(playback.deck1.artist)/\(playback.deck1.title) isAudible=\(playback.deck1.isAudible) | deck2=\(playback.deck2.artist)/\(playback.deck2.title) isAudible=\(playback.deck2.isAudible)")
-        
-        if let deck = playback.audibleDeck {
-            print("[PlaybackModule] → Selected deck \(deck.deckNumber): \(deck.artist) - \(deck.title)")
-        }
-        
+        // Only log when deck selection changes or on track detection
         if let deck = playback.audibleDeck, deck.hasTrack {
             let track = Track(
                 artist: deck.artist,
@@ -261,10 +253,11 @@ public actor PlaybackModule: Module {
     }
     
     private func fireTrackChange(_ track: Track) async {
-        print("[Playback] Track changed: \(track.artist) - \(track.title)")
+        print("[Playback] 🎵 Track changed: \(track.artist) - \(track.title) (\(trackChangeCallbacks.count) callbacks)")
         for callback in trackChangeCallbacks {
             await callback(track)
         }
+        print("[Playback] ✅ All callbacks executed")
     }
     
     private func firePositionUpdate(_ position: Double, _ isPlaying: Bool) async {

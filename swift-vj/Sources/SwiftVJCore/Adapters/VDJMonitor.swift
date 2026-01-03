@@ -196,14 +196,11 @@ public actor VDJMonitor {
     
     /// Query VDJ for current state (poll)
     public func query(using hub: OSCHub) throws {
-        var queryCount = 0
         for deck in [1, 2] {
             for verb in Self.deckQueries {
                 try hub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
-                queryCount += 1
             }
         }
-        print("📤 VDJMonitor: sent \(queryCount) query commands to VDJ")
     }
     
     // MARK: - Public API
@@ -235,8 +232,6 @@ public actor VDJMonitor {
     
     /// Process incoming OSC message from VDJ
     public func handleOSC(address: String, values: [any OSCValue]) {
-        print("[VDJMonitor] handleOSC: \(address) values=\(values)")
-        
         // Parse deck number from address
         guard let deckNum = parseDeckNumber(from: address) else {
             handleGlobalOSC(address: address, values: values)
@@ -376,7 +371,6 @@ public actor VDJMonitor {
                 duration: deck.duration, isPlaying: boolValue,
                 isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
-            print("[VDJMonitor] ▶️ Deck \(deckNum) isPlaying = \(boolValue)")
         case "is_audible":
             // VDJ "is_audible" = playing AND volume up - use boolValue (Python-style parsing)
             deck = VDJDeck(
@@ -385,7 +379,6 @@ public actor VDJMonitor {
                 duration: deck.duration, isPlaying: deck.isPlaying,
                 isAudible: boolValue, isMaster: deck.isMaster, volume: deck.volume
             )
-            print("[VDJMonitor] 🔊 Deck \(deckNum) isAudible = \(boolValue)")
         case "masterdeck":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
@@ -402,7 +395,6 @@ public actor VDJMonitor {
             )
         case "loaded":
             // Track loaded state using boolValue (Python-style parsing)
-            print("[VDJMonitor] 📀 Deck \(deckNum) loaded = \(boolValue)")
             return  // loaded doesn't update deck state directly
         default:
             return
