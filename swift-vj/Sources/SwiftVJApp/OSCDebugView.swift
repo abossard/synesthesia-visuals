@@ -7,34 +7,35 @@ import OSCKit
 
 struct OSCDebugView: View {
     @EnvironmentObject var appState: AppState
-    @State private var filterText = ""
     @State private var testAddress = "/test/message"
     @State private var testArg1 = "hello"
     @State private var testArg2 = "1.0"
     @State private var showSentOnly = false
     @State private var showReceivedOnly = false
     
-    var filteredMessages: [OSCLogEntry] {
-        appState.oscMessages.filter { msg in
-            if filterText.isEmpty { return true }
-            return msg.address.localizedCaseInsensitiveContains(filterText)
-        }
+    /// Sorted OSC messages by address for consistent display
+    private var sortedOSCMessages: [OSCLogEntry] {
+        appState.oscMessages.values.sorted { $0.address < $1.address }
     }
     
     var body: some View {
         HSplitView {
             // Message log (left)
             VStack(spacing: 0) {
-                // Filter bar
+                // Filter bar (filters at CAPTURE time, not display)
                 HStack {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundColor(.secondary)
-                    TextField("Filter by address...", text: $filterText)
+                    TextField("Capture filter...", text: $appState.oscFilter)
                         .textFieldStyle(.plain)
+                        .onChange(of: appState.oscFilter) { _, _ in
+                            // Clear buffer when filter changes to start fresh
+                            appState.oscMessages.removeAll()
+                        }
                     
-                    if !filterText.isEmpty {
+                    if !appState.oscFilter.isEmpty {
                         Button {
-                            filterText = ""
+                            appState.oscFilter = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
@@ -49,10 +50,10 @@ struct OSCDebugView: View {
                 
                 Divider()
                 
-                // Message list
+                // Message list (all messages are already filtered at capture, grouped by address)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(filteredMessages.reversed()) { msg in
+                        ForEach(sortedOSCMessages) { msg in
                             OSCMessageRow(message: msg)
                         }
                     }
@@ -63,7 +64,7 @@ struct OSCDebugView: View {
                 
                 // Stats bar
                 HStack {
-                    Text("\(appState.oscMessages.count) messages")
+                    Text("\(appState.oscMessages.count) addresses (\(appState.oscMessageCount) total)")
                         .foregroundColor(.secondary)
                     Spacer()
                     Button {
@@ -138,6 +139,12 @@ struct OSCDebugView: View {
             }
             .padding()
             .frame(minWidth: 280, maxWidth: 320)
+        }
+        .onAppear {
+            appState.oscDebugEnabled = true
+        }
+        .onDisappear {
+            appState.oscDebugEnabled = false
         }
     }
     

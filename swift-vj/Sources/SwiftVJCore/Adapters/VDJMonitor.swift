@@ -13,7 +13,8 @@ public struct VDJDeck: Sendable, Equatable {
     public let bpm: Double
     public let position: Double      // seconds
     public let duration: Double      // seconds
-    public let isPlaying: Bool
+    public let isPlaying: Bool       // VDJ "play" state
+    public let isAudible: Bool       // VDJ "is_audible" = playing AND volume up (KEY for deck selection!)
     public let isMaster: Bool
     public let volume: Double        // 0.0-1.0
     
@@ -26,6 +27,7 @@ public struct VDJDeck: Sendable, Equatable {
         position: Double = 0,
         duration: Double = 0,
         isPlaying: Bool = false,
+        isAudible: Bool = false,
         isMaster: Bool = false,
         volume: Double = 1.0
     ) {
@@ -37,6 +39,7 @@ public struct VDJDeck: Sendable, Equatable {
         self.position = position
         self.duration = duration
         self.isPlaying = isPlaying
+        self.isAudible = isAudible
         self.isMaster = isMaster
         self.volume = volume
     }
@@ -46,9 +49,9 @@ public struct VDJDeck: Sendable, Equatable {
         "\(artist.lowercased())|\(title.lowercased())"
     }
     
-    /// Check if deck has a track loaded
+    /// Check if deck has a track loaded (artist OR title - matching Python)
     public var hasTrack: Bool {
-        !artist.isEmpty && !title.isEmpty
+        !artist.isEmpty || !title.isEmpty
     }
 }
 
@@ -71,25 +74,29 @@ public struct VDJPlayback: Sendable, Equatable {
         self.crossfader = crossfader
     }
     
-    /// Get the currently audible deck (master or crossfader-based)
+    /// Get the currently audible deck - the LOUDER deck with a track
+    /// Priority: isAudible flag → volume comparison → hasTrack fallback
     public var audibleDeck: VDJDeck? {
-        // First check for master flag
-        if deck1.isMaster && deck1.isPlaying { return deck1 }
-        if deck2.isMaster && deck2.isPlaying { return deck2 }
+        // 1. Check is_audible first (VDJ: playing AND volume up) - if VDJ sends it
+        if deck1.isAudible && !deck2.isAudible { return deck1 }
+        if deck2.isAudible && !deck1.isAudible { return deck2 }
         
-        // Fall back to crossfader position
-        if crossfader < -0.5 && deck1.isPlaying { return deck1 }
-        if crossfader > 0.5 && deck2.isPlaying { return deck2 }
+        // 2. Both have tracks? Pick the LOUDER one by volume
+        //    This handles crossfade: louder deck = the one coming in
+        if deck1.hasTrack && deck2.hasTrack {
+            // Significant volume difference (>10%) → pick louder
+            if deck2.volume > deck1.volume + 0.1 { return deck2 }
+            if deck1.volume > deck2.volume + 0.1 { return deck1 }
+            // Similar volume → prefer deck 1 (like Python)
+            return deck1
+        }
         
-        // If crossfader is centered, pick any playing deck
-        if deck1.isPlaying { return deck1 }
-        if deck2.isPlaying { return deck2 }
+        // 3. Only one has a track
+        if deck1.hasTrack && !deck2.hasTrack { return deck1 }
+        if deck2.hasTrack && !deck1.hasTrack { return deck2 }
         
-        // Last resort: any deck with a track (for testing when VDJ doesn't send play state)
-        if deck1.hasTrack { return deck1 }
-        if deck2.hasTrack { return deck2 }
-        
-        return nil
+        // 3. Both have tracks or neither - prefer deck 1 (like Python)
+        return deck1.hasTrack ? deck1 : nil
     }
 }
 
@@ -125,6 +132,10 @@ public actor VDJMonitor {
     private var deck2: VDJDeck = VDJDeck(deckNumber: 2)
     private var masterBPM: Double = 0
     private var crossfader: Double = 0
+    
+    // Position tracking for inferring audibility (Python: _last_pos, _last_pos_time)
+    private var deck1LastPos: Double = 0
+    private var deck2LastPos: Double = 0
     
     private let health: ServiceHealth
     private var lastUpdate: Date = .distantPast
@@ -224,19 +235,23 @@ public actor VDJMonitor {
     
     /// Process incoming OSC message from VDJ
     public func handleOSC(address: String, values: [any OSCValue]) {
+        print("[VDJMonitor] handleOSC: \(address) values=\(values)")
+        
         // Parse deck number from address
         guard let deckNum = parseDeckNumber(from: address) else {
             handleGlobalOSC(address: address, values: values)
             return
         }
         
-        // Get first value as string or float
-        let stringValue = values.first.flatMap { $0 as? String } ?? ""
-        let floatValue = values.first.flatMap { extractFloat(from: $0) } ?? 0
+        // Get first value - pass raw for proper boolean parsing
+        let firstValue = values.first
+        let stringValue = (firstValue as? String) ?? ""
+        let floatValue = firstValue.flatMap { extractFloat(from: $0) } ?? 0
+        let boolValue = extractBool(from: firstValue)
         
         // Update deck state based on address suffix
         let suffix = address.components(separatedBy: "/").last ?? ""
-        updateDeckValue(deckNum: deckNum, suffix: suffix, stringValue: stringValue, floatValue: floatValue)
+        updateDeckValue(deckNum: deckNum, suffix: suffix, stringValue: stringValue, floatValue: floatValue, boolValue: boolValue)
         
         lastUpdate = Date()
         Task { await health.markAvailable(message: "VDJ connected") }
@@ -255,9 +270,19 @@ public actor VDJMonitor {
     // MARK: - Private
     
     private func parseDeckNumber(from address: String) -> Int? {
-        // Match /vdj/deck/1/... or /deck/1/...
-        if address.hasPrefix("/vdj/deck/1/") || address.hasPrefix("/deck/1/") { return 1 }
-        if address.hasPrefix("/vdj/deck/2/") || address.hasPrefix("/deck/2/") { return 2 }
+        // Python: parts = address.split("/"), if parts[2] == "deck": deck_num = int(parts[3])
+        // For /vdj/deck/2/is_audible: parts = ["", "vdj", "deck", "2", "is_audible"]
+        // For /deck/2/is_audible: parts = ["", "deck", "2", "is_audible"]
+        let parts = address.split(separator: "/").map { String($0) }
+        
+        // Find "deck" in parts and get the next element as deck number
+        for (index, part) in parts.enumerated() {
+            if part == "deck", index + 1 < parts.count {
+                if let deckNum = Int(parts[index + 1]) {
+                    return deckNum
+                }
+            }
+        }
         return nil
     }
     
@@ -274,9 +299,10 @@ public actor VDJMonitor {
         }
     }
     
-    private func updateDeckValue(deckNum: Int, suffix: String, stringValue: String, floatValue: Double) {
+    private func updateDeckValue(deckNum: Int, suffix: String, stringValue: String, floatValue: Double, boolValue: Bool) {
         let oldDeck = deckNum == 1 ? deck1 : deck2
         let oldTrackKey = oldDeck.trackKey
+        let lastPos = deckNum == 1 ? deck1LastPos : deck2LastPos
         
         var deck = oldDeck
         
@@ -286,68 +312,98 @@ public actor VDJMonitor {
                 deckNumber: deckNum, artist: stringValue, title: deck.title,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
         case "title", "get_title":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: stringValue,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
         case "album", "get_album":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: stringValue, bpm: deck.bpm, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
         case "get_bpm", "bpm":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: deck.album, bpm: floatValue, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
         case "get_position", "position", "song_pos":
+            // song_pos comes as 0.0-1.0 ratio, convert to seconds using duration
+            let positionInSeconds = floatValue <= 1.0 ? floatValue * deck.duration : floatValue
+            
+            // Python: Infer playing from position changing (VDJ doesn't always send play state)
+            let positionChanged = abs(floatValue - lastPos) > 0.001
+            var inferredPlaying = deck.isPlaying
+            var inferredAudible = deck.isAudible
+            
+            if positionChanged {
+                inferredPlaying = true  // Position changed = playing
+                inferredAudible = deck.volume > 0.1  // Infer audible from volume
+                // Update last pos
+                if deckNum == 1 { deck1LastPos = floatValue } else { deck2LastPos = floatValue }
+            }
+            
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
-                album: deck.album, bpm: deck.bpm, position: floatValue,
-                duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                album: deck.album, bpm: deck.bpm, position: positionInSeconds,
+                duration: deck.duration, isPlaying: inferredPlaying,
+                isAudible: inferredAudible, isMaster: deck.isMaster, volume: deck.volume
             )
             // Notify position handlers
             for handler in positionHandlers {
-                handler(deckNum, floatValue)
+                handler(deckNum, positionInSeconds)
             }
         case "get_duration", "duration", "get_songlength", "songlength":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
                 duration: floatValue, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
-        case "play", "is_audible":
+        case "play":
+            // VDJ sends "1" for playing, "" for stopped - use boolValue (Python-style parsing)
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
-                duration: deck.duration, isPlaying: floatValue > 0.5,
-                isMaster: deck.isMaster, volume: deck.volume
+                duration: deck.duration, isPlaying: boolValue,
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: deck.volume
             )
+            print("[VDJMonitor] ▶️ Deck \(deckNum) isPlaying = \(boolValue)")
+        case "is_audible":
+            // VDJ "is_audible" = playing AND volume up - use boolValue (Python-style parsing)
+            deck = VDJDeck(
+                deckNumber: deckNum, artist: deck.artist, title: deck.title,
+                album: deck.album, bpm: deck.bpm, position: deck.position,
+                duration: deck.duration, isPlaying: deck.isPlaying,
+                isAudible: boolValue, isMaster: deck.isMaster, volume: deck.volume
+            )
+            print("[VDJMonitor] 🔊 Deck \(deckNum) isAudible = \(boolValue)")
         case "masterdeck":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: floatValue > 0.5, volume: deck.volume
+                isAudible: deck.isAudible, isMaster: boolValue, volume: deck.volume
             )
         case "volume":
             deck = VDJDeck(
                 deckNumber: deckNum, artist: deck.artist, title: deck.title,
                 album: deck.album, bpm: deck.bpm, position: deck.position,
                 duration: deck.duration, isPlaying: deck.isPlaying,
-                isMaster: deck.isMaster, volume: floatValue
+                isAudible: deck.isAudible, isMaster: deck.isMaster, volume: floatValue
             )
+        case "loaded":
+            // Track loaded state using boolValue (Python-style parsing)
+            print("[VDJMonitor] 📀 Deck \(deckNum) loaded = \(boolValue)")
+            return  // loaded doesn't update deck state directly
         default:
             return
         }
@@ -373,5 +429,23 @@ public actor VDJMonitor {
         if let i = value as? Int32 { return Double(i) }
         if let s = value as? String { return Double(s) }
         return nil
+    }
+    
+    /// Parse boolean the way Python does: value not in (None, "", 0, "0", False)
+    /// VDJ sends "1" for true, "" for false - this handles all cases
+    private func extractBool(from value: (any OSCValue)?) -> Bool {
+        guard let value = value else { return false }
+        
+        // Check string values first (VDJ often sends "1" or "")
+        if let s = value as? String {
+            return !s.isEmpty && s != "0" && s.lowercased() != "false"
+        }
+        // Check numeric values
+        if let f = value as? Float32 { return f != 0 }
+        if let f = value as? Float64 { return f != 0 }
+        if let i = value as? Int32 { return i != 0 }
+        if let b = value as? Bool { return b }
+        
+        return false
     }
 }

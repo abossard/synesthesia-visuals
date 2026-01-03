@@ -20,7 +20,7 @@ struct MasterControlView: View {
                                     .fill(.quaternary)
                                     .frame(width: 80, height: 80)
                                     .overlay {
-                                        Image(systemName: "music.note")
+                                        Image(systemName: appState.isPlaying ? "music.note" : "pause.fill")
                                             .font(.largeTitle)
                                             .foregroundColor(.secondary)
                                     }
@@ -37,12 +37,47 @@ struct MasterControlView: View {
                                             .font(.subheadline)
                                             .foregroundStyle(.tertiary)
                                     }
-                                    Text(formatDuration(track.duration))
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
+                                    
+                                    // Playback position
+                                    HStack(spacing: 8) {
+                                        Text(formatDuration(appState.playbackPosition))
+                                            .font(.caption)
+                                            .monospacedDigit()
+                                            .foregroundStyle(.secondary)
+                                        
+                                        // Progress bar
+                                        GeometryReader { geometry in
+                                            ZStack(alignment: .leading) {
+                                                RoundedRectangle(cornerRadius: 2)
+                                                    .fill(.quaternary)
+                                                    .frame(height: 4)
+                                                
+                                                RoundedRectangle(cornerRadius: 2)
+                                                    .fill(appState.isPlaying ? .blue : .gray)
+                                                    .frame(width: max(0, geometry.size.width * progressRatio(track: track)), height: 4)
+                                            }
+                                        }
+                                        .frame(height: 4)
+                                        
+                                        Text(formatDuration(track.duration))
+                                            .font(.caption)
+                                            .monospacedDigit()
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .padding(.top, 4)
                                 }
                                 
                                 Spacer()
+                                
+                                // Play state indicator
+                                VStack {
+                                    Image(systemName: appState.isPlaying ? "play.fill" : "pause.fill")
+                                        .font(.title2)
+                                        .foregroundColor(appState.isPlaying ? .green : .orange)
+                                    Text(appState.isPlaying ? "Playing" : "Paused")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         } else {
                             HStack {
@@ -152,6 +187,11 @@ struct MasterControlView: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+    
+    private func progressRatio(track: Track) -> Double {
+        guard track.duration > 0 else { return 0 }
+        return min(1.0, max(0.0, appState.playbackPosition / track.duration))
     }
 }
 

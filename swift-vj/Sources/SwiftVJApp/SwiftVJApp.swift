@@ -76,6 +76,8 @@ final class AppState: ObservableObject {
     // UI State
     @Published var isRunning = false
     @Published var currentTrack: Track?
+    @Published var playbackPosition: Double = 0
+    @Published var isPlaying: Bool = false
     @Published var playbackSource: String = "vdj"
     @Published var timingOffsetMs: Int = 0
 
@@ -84,8 +86,10 @@ final class AppState: ObservableObject {
     @Published var pipelineResult: PipelineResult?
 
     // OSC State
-    @Published var oscMessages: [OSCLogEntry] = []
+    @Published var oscMessages: [String: OSCLogEntry] = [:]  // Grouped by address
     @Published var oscMessageCount: Int = 0
+    @Published var oscFilter: String = ""  // Filter at capture time
+    @Published var oscDebugEnabled: Bool = false  // Only capture when OSC view is active
 
     // Shader State
     @Published var shaderCount: Int = 0
@@ -107,14 +111,29 @@ final class AppState: ObservableObject {
             try oscHub.start()
             log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
             
+            // Debug: Log ALL incoming OSC messages
+            oscHub.subscribe(pattern: "*") { [weak self] address, values in
+                guard let self = self else { return }
+                let argsStr = values.map { "\($0)" }.joined(separator: ", ")
+                Task { @MainActor in
+                    self.recordOSCMessage(address, args: [argsStr])
+                }
+            }
+            
             // Wire VDJ OSC messages to VDJMonitor
             oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
                 guard let self = self else { return }
-                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+                Task {
+                    await MainActor.run { self.log("VDJ OSC: \(address)", level: .debug) }
+                    await self.playbackModule?.handleVDJOSC(address: address, values: values)
+                }
             }
             oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
                 guard let self = self else { return }
-                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+                Task {
+                    await MainActor.run { self.log("VDJ OSC: \(address)", level: .debug) }
+                    await self.playbackModule?.handleVDJOSC(address: address, values: values)
+                }
             }
             oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
                 guard let self = self else { return }
@@ -160,23 +179,11 @@ final class AppState: ObservableObject {
     private var vdjQueryTask: Task<Void, Never>?
     
     func start() async throws {
-        // Start playback module
-        try await playbackModule?.start()
-        
-        // Set initial source (this also triggers VDJ subscription)
-        let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
-        await playbackModule?.setSource(source)
-        
-        // If VDJ, send subscriptions and start periodic queries
-        if source == .vdj {
-            await setupVDJSubscriptionsAndQueries()
-        }
-        
         // Capture references for Sendable closure (avoid capturing self)
         let pipeline = pipelineModule
         
-        // Register track change callback - triggers pipeline processing
-        // Use explicit Sendable closure to satisfy Swift 6 concurrency
+        // Register track change callback BEFORE starting playback module
+        // This ensures we don't miss the first track detection
         await playbackModule?.onTrackChange { @Sendable [weak self] track in
             guard let self = self else { return }
             
@@ -194,6 +201,27 @@ final class AppState: ObservableObject {
                     self?.updatePipelineSteps(from: result)
                 }
             }
+        }
+        
+        // Register position update callback
+        await playbackModule?.onPositionUpdate { @Sendable [weak self] position, isPlaying in
+            guard let self = self else { return }
+            await MainActor.run { [weak self] in
+                self?.playbackPosition = position
+                self?.isPlaying = isPlaying
+            }
+        }
+        
+        // NOW start playback module (after callbacks registered)
+        try await playbackModule?.start()
+        
+        // Set initial source (this also triggers VDJ subscription)
+        let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
+        await playbackModule?.setSource(source)
+        
+        // If VDJ, send subscriptions and start periodic queries
+        if source == .vdj {
+            await setupVDJSubscriptionsAndQueries()
         }
         
         try await pipelineModule?.start()
@@ -218,9 +246,10 @@ final class AppState: ObservableObject {
     }
     
     func stop() async {
+        vdjQueryTask?.cancel()
+        vdjQueryTask = nil
         await playbackModule?.stop()
         await pipelineModule?.stop()
-        oscHub.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)
     }
@@ -229,7 +258,64 @@ final class AppState: ObservableObject {
         playbackSource = source
         let sourceType: PlaybackSourceType = source == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(sourceType)
+        
+        // Stop existing VDJ query task
+        vdjQueryTask?.cancel()
+        vdjQueryTask = nil
+        
+        // If VDJ, setup subscriptions and queries
+        if sourceType == .vdj {
+            await setupVDJSubscriptionsAndQueries()
+        }
+        
         log("Playback source: \(source)", level: .info)
+    }
+    
+    /// Setup VDJ subscriptions (track changes) and periodic queries (position updates)
+    private func setupVDJSubscriptionsAndQueries() async {
+        // Send subscription commands to VDJ for track change notifications
+        do {
+            // Subscriptions: VDJ pushes these on change
+            for deck in [1, 2] {
+                for verb in ["get_title", "get_artist", "get_album", "get_bpm", "get_songlength", "loaded"] {
+                    try oscHub.sendToVDJ("/vdj/subscribe/deck/\(deck)/\(verb)")
+                }
+            }
+            try oscHub.sendToVDJ("/vdj/subscribe/crossfader")
+            log("VDJ subscriptions sent", level: .info)
+        } catch {
+            log("Failed to send VDJ subscriptions: \(error)", level: .error)
+        }
+        
+        // Initial query for current state
+        await queryVDJState()
+        
+        // Start periodic query task for position updates
+        vdjQueryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self = self else { break }
+                await self.queryVDJState()
+            }
+        }
+    }
+    
+    /// Query VDJ for current deck state (metadata + position)
+    private func queryVDJState() async {
+        do {
+            for deck in [1, 2] {
+                // Query metadata (title, artist, etc.) - subscriptions only push on change
+                for verb in ["get_title", "get_artist", "get_album", "get_bpm", "get_songlength"] {
+                    try oscHub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
+                }
+                // Query playback state
+                for verb in ["song_pos", "play", "volume", "is_audible"] {
+                    try oscHub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
+                }
+            }
+        } catch {
+            // Silently ignore query errors (VDJ may not be running)
+        }
     }
     
     func adjustTiming(_ deltaMs: Int) {
@@ -271,12 +357,16 @@ final class AppState: ObservableObject {
     }
     
     func recordOSCMessage(_ address: String, args: [String]) {
-        let entry = OSCLogEntry(address: address, args: args, timestamp: Date())
-        oscMessages.append(entry)
-        oscMessageCount += 1
-        if oscMessages.count > 200 {
-            oscMessages.removeFirst(oscMessages.count - 200)
+        // Only record when OSC debug view is active
+        guard oscDebugEnabled else { return }
+        
+        // Filter at capture time - only record if filter is empty or address matches
+        if !oscFilter.isEmpty && !address.localizedCaseInsensitiveContains(oscFilter) {
+            return
         }
+        let entry = OSCLogEntry(address: address, args: args, timestamp: Date())
+        oscMessages[address] = entry  // Replace existing entry for this address
+        oscMessageCount += 1
     }
 }
 

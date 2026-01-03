@@ -13,6 +13,7 @@ struct SwiftVJCLI: AsyncParsableCommand {
         version: swiftVJVersion,
         subcommands: [
             LyricsCommand.self,
+            LaunchpadTestCommand.self,
             // PipelineCommand.self,  // TODO: Implement
             // PlaybackCommand.self,  // TODO: Implement
             // ShadersCommand.self,   // TODO: Implement
@@ -88,5 +89,44 @@ struct LyricsCommand: AsyncParsableCommand {
             print("TODO: Implement LRCLIB fetch")
             print("Use --local to demo LRC parsing with sample data")
         }
+    }
+}
+
+// MARK: - Launchpad Test Command
+
+struct LaunchpadTestCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "launchpad-test",
+        abstract: "Interactive hardware tests for Launchpad Mini MK3"
+    )
+    
+    @Argument(help: "Test number (1-8) or 'all'")
+    var test: String?
+    
+    func run() throws {
+        print()
+        print("🎹 LAUNCHPAD MINI MK3 - INTERACTIVE TESTS")
+        print(String(repeating: "=", count: 50))
+        print()
+        print("Make sure Launchpad is connected and in PROGRAMMER mode:")
+        print("  → Hold Session → Press orange button → Release")
+        print()
+        
+        let testNumber: Int?
+        if let t = test {
+            if t.lowercased() == "all" {
+                testNumber = nil  // Will run menu which has 'all' option
+            } else if let num = Int(t), num >= 1, num <= 8 {
+                testNumber = num
+            } else {
+                print("Invalid test: \(t)")
+                print("Use 1-8 or 'all'")
+                return
+            }
+        } else {
+            testNumber = nil
+        }
+        
+        runLaunchpadInteractiveTests(testNumber: testNumber)
     }
 }
