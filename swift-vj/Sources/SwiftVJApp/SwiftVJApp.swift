@@ -33,14 +33,21 @@ struct SwiftVJApp: App {
 // MARK: - App Delegate for Window Management
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // CRITICAL: Set activation policy to regular (foreground GUI app)
+        // Without this, SPM-built SwiftUI apps won't show windows
+        NSApplication.shared.setActivationPolicy(.regular)
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Ensure window is visible and app is active
+        // Ensure app is active and frontmost
         NSApplication.shared.activate(ignoringOtherApps: true)
         
-        // Make the first window key and front
+        // Force window creation and display
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if let window = NSApplication.shared.windows.first {
+            for window in NSApplication.shared.windows {
                 window.makeKeyAndOrderFront(nil)
+                window.center()
             }
         }
     }
@@ -91,6 +98,31 @@ final class AppState: ObservableObject {
     init() {
         setupModules()
         setupRenderEngine()
+        startOSCHub()
+    }
+    
+    /// Start OSC hub immediately on app launch
+    private func startOSCHub() {
+        do {
+            try oscHub.start()
+            log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
+            
+            // Wire VDJ OSC messages to VDJMonitor
+            oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
+                guard let self = self else { return }
+                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+            }
+            oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
+                guard let self = self else { return }
+                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+            }
+            oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
+                guard let self = self else { return }
+                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+            }
+        } catch {
+            log("Failed to start OSC hub: \(error)", level: .error)
+        }
     }
 
     private func setupRenderEngine() {
@@ -125,10 +157,35 @@ final class AppState: ObservableObject {
     }
     
     func start() async throws {
-        // Start playback module first
+        // Start OSC hub first (must be started before VDJ subscription)
+        try oscHub.start()
+        log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
+        
+        // Wire VDJ OSC messages to VDJMonitor
+        // VDJ sends on /deck/N/... and /vdj/deck/N/... addresses
+        oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
+            guard let self = self else { return }
+            Task {
+                await self.playbackModule?.handleVDJOSC(address: address, values: values)
+            }
+        }
+        oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
+            guard let self = self else { return }
+            Task {
+                await self.playbackModule?.handleVDJOSC(address: address, values: values)
+            }
+        }
+        oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
+            guard let self = self else { return }
+            Task {
+                await self.playbackModule?.handleVDJOSC(address: address, values: values)
+            }
+        }
+        
+        // Start playback module
         try await playbackModule?.start()
         
-        // Set initial source
+        // Set initial source (this also triggers VDJ subscription)
         await playbackModule?.setSource(playbackSource == "vdj" ? .vdj : .spotify)
         
         // Capture references for Sendable closure (avoid capturing self)
@@ -179,6 +236,7 @@ final class AppState: ObservableObject {
     func stop() async {
         await playbackModule?.stop()
         await pipelineModule?.stop()
+        oscHub.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)
     }

@@ -2,6 +2,7 @@
 // Following A Philosophy of Software Design: deep module hiding complexity
 
 import Foundation
+import OSCKit
 
 /// Playback source types
 public enum PlaybackSourceType: String, Sendable, CaseIterable {
@@ -141,6 +142,11 @@ public actor PlaybackModule: Module {
     /// Force poll (for testing)
     public func poll() async {
         await pollOnce()
+    }
+    
+    /// Handle VDJ OSC message (forwarded from OSCHub)
+    public func handleVDJOSC(address: String, values: [any OSCValue]) async {
+        await vdjMonitor?.handleOSC(address: address, values: values)
     }
     
     // MARK: - Private
