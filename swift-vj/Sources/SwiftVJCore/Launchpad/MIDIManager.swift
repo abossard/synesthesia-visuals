@@ -2,12 +2,13 @@
 // Phase 5: MIDI Controller
 //
 // Deep module hiding CoreMIDI complexity behind simple interface
+// Auto-detects Launchpad connect/disconnect - no mocks, real hardware only
 
 import Foundation
 import CoreMIDI
 
 /// MIDI device info
-public struct MIDIDeviceInfo: Identifiable, Sendable {
+public struct MIDIDeviceInfo: Identifiable, Sendable, Equatable {
     public let id: MIDIEndpointRef
     public let name: String
     public let manufacturer: String
@@ -18,6 +19,10 @@ public struct MIDIDeviceInfo: Identifiable, Sendable {
         self.name = MIDIManager.getStringProperty(endpoint, kMIDIPropertyDisplayName) ?? "Unknown"
         self.manufacturer = MIDIManager.getStringProperty(endpoint, kMIDIPropertyManufacturer) ?? ""
         self.isLaunchpad = name.lowercased().contains("launchpad")
+    }
+    
+    public static func == (lhs: MIDIDeviceInfo, rhs: MIDIDeviceInfo) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
@@ -61,7 +66,11 @@ public enum MIDIMessage: Sendable {
 /// Callback for MIDI messages
 public typealias MIDIMessageCallback = @Sendable (MIDIMessage) -> Void
 
+/// Callback for connection state changes
+public typealias ConnectionStateCallback = @Sendable (Bool, String?) -> Void
+
 /// CoreMIDI wrapper for device discovery and communication
+/// Auto-monitors for Launchpad connect/disconnect events
 public final class MIDIManager: @unchecked Sendable {
     
     // MARK: - Properties
@@ -73,13 +82,20 @@ public final class MIDIManager: @unchecked Sendable {
     private var connectedOutput: MIDIEndpointRef = 0
     
     private var messageCallback: MIDIMessageCallback?
+    private var connectionCallback: ConnectionStateCallback?
     private let callbackQueue = DispatchQueue(label: "midi.callback", qos: .userInteractive)
+    
+    /// Whether auto-reconnect is enabled
+    private var autoReconnectEnabled = false
     
     /// Current connection status
     public private(set) var isConnected = false
     
     /// Name of connected device
     public private(set) var connectedDeviceName: String?
+    
+    /// Whether MIDI system is available
+    public var isAvailable: Bool { client != 0 }
     
     // MARK: - Init
     
@@ -118,29 +134,90 @@ public final class MIDIManager: @unchecked Sendable {
         
         // Create output port
         MIDIOutputPortCreate(client, "Output" as CFString, &outputPort)
+        
+        print("[MIDI] CoreMIDI initialized - \(MIDIGetNumberOfSources()) sources, \(MIDIGetNumberOfDestinations()) destinations")
     }
     
     private func handleMIDINotification(_ notification: UnsafePointer<MIDINotification>) {
         switch notification.pointee.messageID {
         case .msgSetupChanged:
-            print("[MIDI] Setup changed")
+            print("[MIDI] Setup changed - checking devices")
+            handleDeviceChange()
+            
         case .msgObjectAdded:
             print("[MIDI] Device added")
+            // Delay slightly to let CoreMIDI finish setup
+            callbackQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.handleDeviceChange()
+            }
+            
         case .msgObjectRemoved:
             print("[MIDI] Device removed")
             // Check if our device was removed
             if isConnected && !isEndpointValid(connectedInput) {
-                disconnect()
+                print("[MIDI] Connected device was removed")
+                handleDisconnection()
             }
+            
         default:
             break
         }
     }
     
+    private func handleDeviceChange() {
+        // If not connected but auto-reconnect is enabled, try to connect
+        if !isConnected && autoReconnectEnabled {
+            if let _ = findLaunchpad() {
+                print("[MIDI] Launchpad detected - auto-connecting")
+                tryAutoConnect()
+            }
+        }
+    }
+    
+    private func handleDisconnection() {
+        let wasConnected = isConnected
+        let deviceName = connectedDeviceName
+        
+        // Clean up connection state
+        connectedInput = 0
+        connectedOutput = 0
+        connectedDeviceName = nil
+        isConnected = false
+        
+        if wasConnected {
+            print("[MIDI] Disconnected from \(deviceName ?? "device")")
+            
+            // Notify via callback
+            if let callback = connectionCallback {
+                callbackQueue.async {
+                    callback(false, nil)
+                }
+            }
+        }
+    }
+    
+    private func tryAutoConnect() {
+        guard autoReconnectEnabled, let callback = messageCallback else { return }
+        
+        if connectToLaunchpad(callback: callback) {
+            // Notify connection
+            if let connCallback = connectionCallback {
+                callbackQueue.async { [weak self] in
+                    connCallback(true, self?.connectedDeviceName)
+                }
+            }
+        }
+    }
+    
     private func isEndpointValid(_ endpoint: MIDIEndpointRef) -> Bool {
+        guard endpoint != 0 else { return false }
         var name: Unmanaged<CFString>?
         let status = MIDIObjectGetStringProperty(endpoint, kMIDIPropertyDisplayName, &name)
-        return status == noErr
+        if status == noErr, let cfName = name {
+            cfName.release()
+            return true
+        }
+        return false
     }
     
     // MARK: - Device Discovery
@@ -152,7 +229,9 @@ public final class MIDIManager: @unchecked Sendable {
         
         for i in 0..<sourceCount {
             let endpoint = MIDIGetSource(i)
-            devices.append(MIDIDeviceInfo(endpoint: endpoint))
+            if endpoint != 0 {
+                devices.append(MIDIDeviceInfo(endpoint: endpoint))
+            }
         }
         
         return devices
@@ -165,7 +244,9 @@ public final class MIDIManager: @unchecked Sendable {
         
         for i in 0..<destCount {
             let endpoint = MIDIGetDestination(i)
-            devices.append(MIDIDeviceInfo(endpoint: endpoint))
+            if endpoint != 0 {
+                devices.append(MIDIDeviceInfo(endpoint: endpoint))
+            }
         }
         
         return devices
@@ -183,11 +264,22 @@ public final class MIDIManager: @unchecked Sendable {
         return (input, output)
     }
     
+    /// Check if any Launchpad is currently available
+    public var isLaunchpadAvailable: Bool {
+        findLaunchpad() != nil
+    }
+    
     // MARK: - Connection
     
     /// Connect to a MIDI device pair
     public func connect(input: MIDIDeviceInfo, output: MIDIDeviceInfo, callback: @escaping MIDIMessageCallback) -> Bool {
         disconnect()
+        
+        // Verify endpoints are still valid
+        guard isEndpointValid(input.id), isEndpointValid(output.id) else {
+            print("[MIDI] Device endpoints no longer valid")
+            return false
+        }
         
         // Connect input
         let inputStatus = MIDIPortConnectSource(inputPort, input.id, nil)
@@ -202,18 +294,47 @@ public final class MIDIManager: @unchecked Sendable {
         messageCallback = callback
         isConnected = true
         
-        print("[MIDI] Connected to \(input.name)")
+        print("[MIDI] ✓ Connected to \(input.name)")
         return true
     }
     
     /// Connect to first available Launchpad
+    @discardableResult
     public func connectToLaunchpad(callback: @escaping MIDIMessageCallback) -> Bool {
         guard let (input, output) = findLaunchpad() else {
-            print("[MIDI] No Launchpad found")
+            print("[MIDI] No Launchpad found in available devices")
             return false
         }
         
         return connect(input: input, output: output, callback: callback)
+    }
+    
+    /// Enable auto-reconnect with connection state callback
+    /// When enabled, will automatically connect when Launchpad appears and notify on disconnect
+    public func enableAutoReconnect(
+        messageCallback: @escaping MIDIMessageCallback,
+        connectionCallback: @escaping ConnectionStateCallback
+    ) {
+        self.messageCallback = messageCallback
+        self.connectionCallback = connectionCallback
+        self.autoReconnectEnabled = true
+        
+        // Try immediate connection if device already present
+        if let _ = findLaunchpad() {
+            if connectToLaunchpad(callback: messageCallback) {
+                callbackQueue.async { [weak self] in
+                    connectionCallback(true, self?.connectedDeviceName)
+                }
+            }
+        } else {
+            print("[MIDI] Auto-reconnect enabled - waiting for Launchpad")
+        }
+    }
+    
+    /// Disable auto-reconnect
+    public func disableAutoReconnect() {
+        autoReconnectEnabled = false
+        connectionCallback = nil
     }
     
     /// Disconnect from current device
@@ -222,11 +343,15 @@ public final class MIDIManager: @unchecked Sendable {
             MIDIPortDisconnectSource(inputPort, connectedInput)
         }
         
+        let wasConnected = isConnected
         connectedInput = 0
         connectedOutput = 0
         connectedDeviceName = nil
-        messageCallback = nil
         isConnected = false
+        
+        if wasConnected {
+            print("[MIDI] Disconnected")
+        }
     }
     
     // MARK: - Send
@@ -282,6 +407,7 @@ public final class MIDIManager: @unchecked Sendable {
     
     /// Clear all LEDs
     public func clearAllLeds() {
+        guard isConnected else { return }
         for y in 0..<8 {
             for x in 0..<9 {  // Include scene buttons
                 let padId = ButtonId(x: x, y: y)

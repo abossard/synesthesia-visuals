@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "SwiftVJ",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        .iOS(.v17)  // Required by OSCKit dependency, though we only target macOS
     ],
     products: [
         // CLI executable

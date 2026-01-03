@@ -5,10 +5,12 @@
 import SwiftUI
 import SwiftVJCore
 import Metal
+import AppKit
 
 @main
 struct SwiftVJApp: App {
     @StateObject private var appState = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
         WindowGroup {
@@ -25,6 +27,26 @@ struct SwiftVJApp: App {
             SettingsView()
                 .environmentObject(appState)
         }
+    }
+}
+
+// MARK: - App Delegate for Window Management
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure window is visible and app is active
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        
+        // Make the first window key and front
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let window = NSApplication.shared.windows.first {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
     }
 }
 
@@ -83,8 +105,8 @@ final class AppState: ObservableObject {
         let imageScraper = ImageScraper()
         let llmClient = LLMClient()
         
-        // Create modules
-        playbackModule = PlaybackModule()
+        // Create modules - pass OSCHub to PlaybackModule for VDJ subscription
+        playbackModule = PlaybackModule(oscHub: oscHub)
         lyricsModule = LyricsModule(fetcher: lyricsFetcher)
         aiModule = AIModule(llmClient: llmClient)
         shadersModule = ShadersModule(matcher: shaderMatcher)
@@ -103,10 +125,33 @@ final class AppState: ObservableObject {
     }
     
     func start() async throws {
-        // Register track change callback
-        await playbackModule?.onTrackChange { [weak self] track in
-            Task { @MainActor in
+        // Start playback module first
+        try await playbackModule?.start()
+        
+        // Set initial source
+        await playbackModule?.setSource(playbackSource == "vdj" ? .vdj : .spotify)
+        
+        // Capture references for Sendable closure (avoid capturing self)
+        let pipeline = pipelineModule
+        
+        // Register track change callback - triggers pipeline processing
+        // Use explicit Sendable closure to satisfy Swift 6 concurrency
+        await playbackModule?.onTrackChange { @Sendable [weak self] track in
+            guard let self = self else { return }
+            
+            // Update UI state on main thread
+            await MainActor.run { [weak self] in
                 self?.currentTrack = track
+                self?.log("Track: \(track.artist) - \(track.title)", level: .info)
+            }
+            
+            // Process through pipeline
+            if let pipeline = pipeline {
+                let result = await pipeline.process(track: track)
+                await MainActor.run { [weak self] in
+                    self?.pipelineResult = result
+                    self?.updatePipelineSteps(from: result)
+                }
             }
         }
         
@@ -120,7 +165,19 @@ final class AppState: ObservableObject {
         }
     }
     
+    private func updatePipelineSteps(from result: PipelineResult) {
+        // Update pipeline steps from result
+        pipelineSteps = [
+            PipelineStep(name: "lyrics", status: result.lyricsFound ? "✓ \(result.lyricsLineCount) lines" : "skipped", timestamp: Date()),
+            PipelineStep(name: "ai", status: result.aiAvailable ? "✓ \(result.mood)" : "skipped", timestamp: Date()),
+            PipelineStep(name: "shaders", status: result.shaderMatched ? "✓ \(result.shaderName)" : "skipped", timestamp: Date()),
+            PipelineStep(name: "images", status: result.imagesFound ? "✓ \(result.imagesCount) images" : "skipped", timestamp: Date()),
+            PipelineStep(name: "osc", status: result.stepsCompleted.contains("osc") ? "✓" : "skipped", timestamp: Date())
+        ]
+    }
+    
     func stop() async {
+        await playbackModule?.stop()
         await pipelineModule?.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)

@@ -156,7 +156,7 @@
 | Learn Mode FSM | ✅ | `Launchpad/LaunchpadFSM.swift` |
 | Bank System (8×) | ➖ | future enhancement |
 | JSON Config Persistence | ✅ | `Launchpad/EffectExecutor.swift` |
-| Beat Sync LED Blinking | ➖ | timer needed |
+| Beat Sync LED Blinking | ✅ | `Launchpad/LaunchpadModule.swift` |
 | Group Hierarchy | ✅ | `Launchpad/LaunchpadFSM.swift` |
 
 ### 2.8 Process Management
@@ -310,7 +310,7 @@
 | CONFIG phase | ✅ |
 | OSC event filtering | ✅ |
 | JSON config persistence | ✅ |
-| Beat sync LED blinking | ➖ (prepared, needs blink timer) |
+| Beat sync LED blinking | ✅ |
 | Bank system | ➖ (future enhancement) |
 | LaunchpadModule | ✅ |
 
@@ -329,7 +329,7 @@
 - [x] Learn mode FSM transitions correctly
 - [x] Config saves and loads pad mappings
 - [x] Group hierarchy resets child groups on parent change
-- [ ] Beat sync blinks LEDs correctly (timer needed)
+- [x] Beat sync blinks LEDs correctly (BPM-based timer + beat pulse)
 
 ---
 
