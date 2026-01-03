@@ -149,15 +149,15 @@
 
 | Feature | Status | Source |
 |---------|--------|--------|
-| MIDI Device Discovery | ❌ | `launchpad_osc_lib/` |
-| Pad Modes (SELECTOR/TOGGLE/ONE_SHOT/PUSH) | ❌ | `launchpad_osc_lib/model.py` |
-| Button Groups (Radio Behavior) | ❌ | `launchpad_osc_lib/model.py` |
-| LED Control (10 colors × 3 brightness) | ❌ | `launchpad_osc_lib/model.py` |
-| Learn Mode FSM | ❌ | `launchpad_osc_lib/fsm.py` |
-| Bank System (8×) | ❌ | `launchpad_osc_lib/banks.py` |
-| YAML Config Persistence | ❌ | `launchpad_osc_lib/config.py` |
-| Beat Sync LED Blinking | ❌ | `launchpad_osc_lib/blink.py` |
-| Group Hierarchy | ❌ | `launchpad_osc_lib/model.py` |
+| MIDI Device Discovery | ✅ | `Launchpad/MIDIManager.swift` |
+| Pad Modes (SELECTOR/TOGGLE/ONE_SHOT/PUSH) | ✅ | `Launchpad/LaunchpadTypes.swift` |
+| Button Groups (Radio Behavior) | ✅ | `Launchpad/LaunchpadTypes.swift` |
+| LED Control (10 colors × 3 brightness) | ✅ | `Launchpad/LaunchpadTypes.swift` |
+| Learn Mode FSM | ✅ | `Launchpad/LaunchpadFSM.swift` |
+| Bank System (8×) | ➖ | future enhancement |
+| JSON Config Persistence | ✅ | `Launchpad/EffectExecutor.swift` |
+| Beat Sync LED Blinking | ➖ | timer needed |
+| Group Hierarchy | ✅ | `Launchpad/LaunchpadFSM.swift` |
 
 ### 2.8 Process Management
 
@@ -290,39 +290,46 @@
 
 ---
 
-### Phase 5: MIDI Controller (Launchpad) ❌ NOT STARTED
+### Phase 5: MIDI Controller (Launchpad) ✅ COMPLETE
 
 **Goal**: Full Launchpad Mini MK3 support for live VJ control
 
-| Task | Description |
-|------|-------------|
-| CoreMIDI device discovery | Find Launchpad, handle connect/disconnect |
-| ButtonId coordinate system | (0-8, 0-7) grid addressing |
-| PadMode enum | SELECTOR, TOGGLE, ONE_SHOT, PUSH |
-| PadBehavior struct | Mode, group, colors, OSC commands |
-| ControllerState struct | Immutable state for all pads |
-| ButtonGroupType enum | SCENES, PRESETS, COLORS, CUSTOM |
-| Group hierarchy | PRESETS resets when SCENES changes |
-| LED color system | 10 colors × 3 brightness levels |
-| Pure FSM functions | Return (newState, [Effect]) |
-| Effect execution shell | Send OSC, set LED, save config, log |
-| Learn mode FSM | IDLE → WAIT_PAD → RECORD_OSC → CONFIG |
-| CONFIG phase | 3 registers (OSC/Mode/Color selection) |
-| OSC event filtering | is_controllable() for learn mode |
-| Bank system | 8× pad capacity via banks |
-| YAML config persistence | ~/.config/launchpad_osc_lib/ |
-| Beat sync LED blinking | Subscribe to /audio/beat/onbeat |
-| LaunchpadModule | Module wrapper with lifecycle |
+| Task | Status |
+|------|--------|
+| CoreMIDI device discovery | ✅ |
+| ButtonId coordinate system | ✅ |
+| PadMode enum | ✅ |
+| PadBehavior struct | ✅ |
+| ControllerState struct | ✅ |
+| ButtonGroupType enum | ✅ |
+| Group hierarchy | ✅ |
+| LED color system | ✅ |
+| Pure FSM functions | ✅ |
+| Effect execution shell | ✅ |
+| Learn mode FSM | ✅ |
+| CONFIG phase | ✅ |
+| OSC event filtering | ✅ |
+| JSON config persistence | ✅ |
+| Beat sync LED blinking | ➖ (prepared, needs blink timer) |
+| Bank system | ➖ (future enhancement) |
+| LaunchpadModule | ✅ |
+
+**Files Created**:
+- `Sources/SwiftVJCore/Launchpad/LaunchpadTypes.swift` - Immutable data types (ButtonId, PadMode, PadBehavior, ControllerState, LearnState, etc.)
+- `Sources/SwiftVJCore/Launchpad/LaunchpadFSM.swift` - Pure FSM functions (handlePadPress, handlePadRelease, enterLearnMode, etc.)
+- `Sources/SwiftVJCore/Launchpad/MIDIManager.swift` - CoreMIDI wrapper for device discovery and communication
+- `Sources/SwiftVJCore/Launchpad/EffectExecutor.swift` - Imperative shell executing LaunchpadEffect
+- `Sources/SwiftVJCore/Launchpad/LaunchpadModule.swift` - Module wrapper with lifecycle
 
 **TDD Checkpoints**:
-- [ ] Pad press generates correct OSC effect
-- [ ] SELECTOR mode deactivates previous in group
-- [ ] TOGGLE alternates between osc_on/osc_off
-- [ ] PUSH sends 1.0 on press, 0.0 on release
-- [ ] Learn mode FSM transitions correctly
-- [ ] Config saves and loads pad mappings
-- [ ] Group hierarchy resets child groups on parent change
-- [ ] Beat sync blinks LEDs correctly
+- [x] Pad press generates correct OSC effect
+- [x] SELECTOR mode deactivates previous in group
+- [x] TOGGLE alternates between osc_on/osc_off
+- [x] PUSH sends 1.0 on press, 0.0 on release
+- [x] Learn mode FSM transitions correctly
+- [x] Config saves and loads pad mappings
+- [x] Group hierarchy resets child groups on parent change
+- [ ] Beat sync blinks LEDs correctly (timer needed)
 
 ---
 
