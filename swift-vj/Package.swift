@@ -13,6 +13,10 @@ let package = Package(
         .executable(
             name: "swift-vj",
             targets: ["SwiftVJ"]),
+        // SwiftUI macOS app
+        .executable(
+            name: "SwiftVJApp",
+            targets: ["SwiftVJApp"]),
         // Core library (for embedding)
         .library(
             name: "SwiftVJCore",
@@ -23,6 +27,8 @@ let package = Package(
         .package(url: "https://github.com/orchetect/OSCKit", from: "0.6.0"),
         // Command-line argument parsing
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+        // Note: Syphon requires manual framework integration
+        // Download from: https://github.com/Syphon/Syphon-Framework
     ],
     targets: [
         // CLI executable
@@ -31,6 +37,13 @@ let package = Package(
             dependencies: [
                 "SwiftVJCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]),
+
+        // SwiftUI macOS app
+        .executableTarget(
+            name: "SwiftVJApp",
+            dependencies: [
+                "SwiftVJCore",
             ]),
 
         // Core library containing all business logic
