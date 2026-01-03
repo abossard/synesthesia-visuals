@@ -193,6 +193,258 @@ public actor LLMClient {
         return basicCategorization(artist: artist, title: title, lyrics: lyrics)
     }
     
+    // MARK: - Shader Analysis
+    
+    /// Result of shader analysis
+    public struct ShaderAnalysisResult: Sendable, Equatable {
+        public let shaderName: String
+        public let mood: String
+        public let colors: [String]
+        public let effects: [String]
+        public let description: String
+        public let features: ShaderFeatureScores
+        public let hasScreenshot: Bool
+        public let error: String?
+        
+        public init(
+            shaderName: String,
+            mood: String = "unknown",
+            colors: [String] = [],
+            effects: [String] = [],
+            description: String = "",
+            features: ShaderFeatureScores = ShaderFeatureScores(),
+            hasScreenshot: Bool = false,
+            error: String? = nil
+        ) {
+            self.shaderName = shaderName
+            self.mood = mood
+            self.colors = colors
+            self.effects = effects
+            self.description = description
+            self.features = features
+            self.hasScreenshot = hasScreenshot
+            self.error = error
+        }
+    }
+    
+    /// Feature scores for shader matching
+    public struct ShaderFeatureScores: Sendable, Equatable {
+        public let energyScore: Double
+        public let moodValence: Double
+        public let colorWarmth: Double
+        public let motionSpeed: Double
+        public let geometricScore: Double
+        public let visualDensity: Double
+        
+        public init(
+            energyScore: Double = 0.5,
+            moodValence: Double = 0.0,
+            colorWarmth: Double = 0.5,
+            motionSpeed: Double = 0.5,
+            geometricScore: Double = 0.5,
+            visualDensity: Double = 0.5
+        ) {
+            self.energyScore = energyScore
+            self.moodValence = moodValence
+            self.colorWarmth = colorWarmth
+            self.motionSpeed = motionSpeed
+            self.geometricScore = geometricScore
+            self.visualDensity = visualDensity
+        }
+        
+        public func toVector() -> [Double] {
+            [energyScore, moodValence, colorWarmth, motionSpeed, geometricScore, visualDensity]
+        }
+    }
+    
+    /// Analyze GLSL shader source for VJ music visualization matching
+    ///
+    /// Uses LLM to extract:
+    /// - mood, colors, effects, description
+    /// - feature scores (energy, valence, warmth, motion, geometry, density)
+    ///
+    /// - Parameters:
+    ///   - shaderName: Name of the shader
+    ///   - shaderSource: GLSL source code
+    ///   - timeout: Request timeout in seconds
+    /// - Returns: ShaderAnalysisResult with extracted features or error
+    public func analyzeShader(
+        shaderName: String,
+        shaderSource: String,
+        timeout: TimeInterval = 120
+    ) async -> ShaderAnalysisResult {
+        await ensureBackend()
+        
+        guard backend != .none else {
+            return ShaderAnalysisResult(shaderName: shaderName, error: "LLM not available")
+        }
+        
+        // Check cache
+        let cacheKey = "shader_\(shaderName.replacingOccurrences(of: "/", with: "_"))"
+        let cacheFile = cacheDir.appendingPathComponent("\(cacheKey).json")
+        
+        if let cached = loadShaderCache(from: cacheFile) {
+            return cached
+        }
+        
+        // Build prompt
+        let prompt = buildShaderAnalysisPrompt(shaderName: shaderName, source: shaderSource)
+        
+        do {
+            let content = try await sendChatRequest(prompt: prompt, maxTokens: 1200)
+            let result = parseShaderAnalysisResponse(content, shaderName: shaderName)
+            
+            if result.error == nil {
+                saveShaderCache(result, to: cacheFile)
+            }
+            
+            return result
+        } catch {
+            return ShaderAnalysisResult(shaderName: shaderName, error: error.localizedDescription)
+        }
+    }
+    
+    private func buildShaderAnalysisPrompt(shaderName: String, source: String) -> String {
+        // Truncate source for API limits
+        let maxLen = 6000
+        let truncatedSource = source.count > maxLen
+            ? String(source.prefix(maxLen)) + "\n// ... (truncated)"
+            : source
+        
+        return """
+        Analyze this GLSL shader for VJ/music visualization matching.
+        
+        Shader: \(shaderName)
+        
+        Code:
+        ```glsl
+        \(truncatedSource)
+        ```
+        
+        Provide analysis as JSON with:
+        1. mood: primary mood (energetic|calm|dark|bright|psychedelic|melancholic|aggressive|dreamy|mysterious|happy|sad)
+        2. colors: dominant colors (list of 2-4 color names)
+        3. effects: visual effects used (blur, glow, tunnel, fractal, particles, warp, etc.)
+        4. description: one-sentence description of the visual
+        5. features: numeric scores 0.0-1.0 for:
+           - energy_score: visual energy/intensity
+           - mood_valence: positive (+1) to negative (-1) normalized to 0-1
+           - color_warmth: warm colors (1) vs cool (0)
+           - motion_speed: fast motion (1) vs slow/static (0)
+           - geometric_score: geometric/structured (1) vs organic (0)
+           - visual_density: complex/busy (1) vs minimal (0)
+        
+        Return ONLY valid JSON:
+        {
+          "mood": "energetic",
+          "colors": ["blue", "purple", "cyan"],
+          "effects": ["glow", "tunnel", "particles"],
+          "description": "A pulsing neon tunnel with floating particles",
+          "features": {
+            "energy_score": 0.8,
+            "mood_valence": 0.6,
+            "color_warmth": 0.3,
+            "motion_speed": 0.7,
+            "geometric_score": 0.5,
+            "visual_density": 0.6
+          }
+        }
+        """
+    }
+    
+    private func parseShaderAnalysisResponse(_ content: String, shaderName: String) -> ShaderAnalysisResult {
+        guard let start = content.firstIndex(of: "{"),
+              let end = content.lastIndex(of: "}") else {
+            return ShaderAnalysisResult(shaderName: shaderName, error: "No JSON found in response")
+        }
+        
+        let jsonStr = String(content[start...end])
+        guard let data = jsonStr.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ShaderAnalysisResult(shaderName: shaderName, error: "Invalid JSON")
+        }
+        
+        // Parse features
+        var features = ShaderFeatureScores()
+        if let featuresDict = json["features"] as? [String: Double] {
+            features = ShaderFeatureScores(
+                energyScore: featuresDict["energy_score"] ?? 0.5,
+                moodValence: featuresDict["mood_valence"] ?? 0.5,
+                colorWarmth: featuresDict["color_warmth"] ?? 0.5,
+                motionSpeed: featuresDict["motion_speed"] ?? 0.5,
+                geometricScore: featuresDict["geometric_score"] ?? 0.5,
+                visualDensity: featuresDict["visual_density"] ?? 0.5
+            )
+        }
+        
+        return ShaderAnalysisResult(
+            shaderName: shaderName,
+            mood: json["mood"] as? String ?? "unknown",
+            colors: json["colors"] as? [String] ?? [],
+            effects: json["effects"] as? [String] ?? [],
+            description: json["description"] as? String ?? "",
+            features: features,
+            hasScreenshot: false,
+            error: nil
+        )
+    }
+    
+    private func loadShaderCache(from file: URL) -> ShaderAnalysisResult? {
+        guard let data = try? Data(contentsOf: file),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let shaderName = json["shader_name"] as? String else {
+            return nil
+        }
+        
+        var features = ShaderFeatureScores()
+        if let featuresDict = json["features"] as? [String: Double] {
+            features = ShaderFeatureScores(
+                energyScore: featuresDict["energy_score"] ?? 0.5,
+                moodValence: featuresDict["mood_valence"] ?? 0.5,
+                colorWarmth: featuresDict["color_warmth"] ?? 0.5,
+                motionSpeed: featuresDict["motion_speed"] ?? 0.5,
+                geometricScore: featuresDict["geometric_score"] ?? 0.5,
+                visualDensity: featuresDict["visual_density"] ?? 0.5
+            )
+        }
+        
+        return ShaderAnalysisResult(
+            shaderName: shaderName,
+            mood: json["mood"] as? String ?? "unknown",
+            colors: json["colors"] as? [String] ?? [],
+            effects: json["effects"] as? [String] ?? [],
+            description: json["description"] as? String ?? "",
+            features: features,
+            hasScreenshot: json["has_screenshot"] as? Bool ?? false,
+            error: nil
+        )
+    }
+    
+    private func saveShaderCache(_ result: ShaderAnalysisResult, to file: URL) {
+        let featuresDict: [String: Double] = [
+            "energy_score": result.features.energyScore,
+            "mood_valence": result.features.moodValence,
+            "color_warmth": result.features.colorWarmth,
+            "motion_speed": result.features.motionSpeed,
+            "geometric_score": result.features.geometricScore,
+            "visual_density": result.features.visualDensity
+        ]
+        
+        let json: [String: Any] = [
+            "shader_name": result.shaderName,
+            "mood": result.mood,
+            "colors": result.colors,
+            "effects": result.effects,
+            "description": result.description,
+            "features": featuresDict,
+            "has_screenshot": result.hasScreenshot
+        ]
+        
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) {
+            try? data.write(to: file)
+        }
+    }
+    
     /// Get service status
     public func status() async -> [String: Any] {
         await health.status()

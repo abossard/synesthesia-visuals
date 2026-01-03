@@ -363,4 +363,119 @@ public actor ShaderMatcher {
         }
         return sqrt(total)
     }
+    
+    // MARK: - Vector Similarity Search
+    
+    /// Match shaders using cosine similarity (vector search)
+    ///
+    /// Unlike weighted Euclidean distance, cosine similarity measures
+    /// angle between vectors, making it robust to magnitude differences.
+    /// Returns results with similarity score 0.0-1.0 (higher is better match).
+    ///
+    /// - Parameters:
+    ///   - query: Query feature vector [energy, valence, warmth, motion, geometric, density]
+    ///   - topK: Number of results to return
+    /// - Returns: Array of ShaderMatchResult sorted by similarity (descending)
+    public func matchBySimilarity(query: [Double], topK: Int = 5) -> [ShaderMatchResult] {
+        guard !shaders.isEmpty, query.count >= 4 else { return [] }
+        
+        // Normalize query vector
+        let queryNorm = normalize(query)
+        
+        var scored: [(ShaderInfo, Double)] = []
+        
+        for info in shaders.values {
+            let vector = [
+                info.energyScore,
+                info.moodValence,
+                info.colorWarmth,
+                info.motionSpeed,
+                0.5,  // geometric
+                0.5   // density
+            ]
+            
+            let vectorNorm = normalize(vector)
+            let similarity = cosineSimilarity(queryNorm, vectorNorm)
+            scored.append((info, similarity))
+        }
+        
+        // Sort by similarity descending (higher is better)
+        scored.sort { $0.1 > $1.1 }
+        
+        return scored.prefix(topK).map { info, similarity in
+            ShaderMatchResult(
+                name: info.name,
+                path: info.path,
+                score: 1.0 - similarity,  // Convert to distance for consistency
+                energyScore: info.energyScore,
+                moodValence: info.moodValence,
+                mood: info.mood
+            )
+        }
+    }
+    
+    /// Find similar shaders to a given shader by name
+    ///
+    /// Uses the shader's feature vector to find other shaders with similar characteristics.
+    ///
+    /// - Parameters:
+    ///   - shaderName: Name of the reference shader
+    ///   - topK: Number of similar shaders to return
+    /// - Returns: Array of similar shaders (excluding the reference)
+    public func findSimilar(to shaderName: String, topK: Int = 5) -> [ShaderMatchResult] {
+        guard let reference = shaders[shaderName] else { return [] }
+        
+        let query = [
+            reference.energyScore,
+            reference.moodValence,
+            reference.colorWarmth,
+            reference.motionSpeed,
+            0.5,
+            0.5
+        ]
+        
+        // Get topK+1 to exclude self
+        var results = matchBySimilarity(query: query, topK: topK + 1)
+        results.removeAll { $0.name == shaderName }
+        return Array(results.prefix(topK))
+    }
+    
+    /// Build embedding text for a shader (for future semantic search)
+    ///
+    /// Creates a text representation suitable for embedding models.
+    public func buildEmbeddingText(for shaderName: String) -> String? {
+        guard let info = shaders[shaderName],
+              let analysis = analyses[shaderName] else { return nil }
+        
+        var parts: [String] = []
+        parts.append("shader: \(info.name)")
+        parts.append("mood: \(info.mood)")
+        parts.append("colors: \(info.colors.joined(separator: ", "))")
+        parts.append("effects: \(info.effects.joined(separator: ", "))")
+        if !analysis.description.isEmpty {
+            parts.append("description: \(analysis.description)")
+        }
+        
+        return parts.joined(separator: " | ")
+    }
+    
+    // MARK: - Vector Math Helpers
+    
+    /// Normalize a vector to unit length
+    private func normalize(_ v: [Double]) -> [Double] {
+        let magnitude = sqrt(v.reduce(0) { $0 + $1 * $1 })
+        guard magnitude > 0 else { return v }
+        return v.map { $0 / magnitude }
+    }
+    
+    /// Compute cosine similarity between two normalized vectors
+    private func cosineSimilarity(_ v1: [Double], _ v2: [Double]) -> Double {
+        guard v1.count == v2.count else { return 0 }
+        var dotProduct = 0.0
+        for i in 0..<v1.count {
+            dotProduct += v1[i] * v2[i]
+        }
+        // Clamp to [-1, 1] to handle floating point errors
+        return max(-1.0, min(1.0, dotProduct))
+    }
 }

@@ -40,6 +40,8 @@ public actor PipelineModule: Module {
     // Cache
     private var resultCache: [String: PipelineResult] = [:]
     private let cacheTTL: TimeInterval = 3600 * 24 * 7  // 7 days
+    private let cacheDir: URL
+    private let cacheFile: URL
     
     // Callbacks
     private var stepStartCallbacks: [PipelineStepStartCallback] = []
@@ -53,19 +55,31 @@ public actor PipelineModule: Module {
         aiModule: AIModule,
         shadersModule: ShadersModule? = nil,
         imagesModule: ImagesModule? = nil,
-        oscHub: OSCHub? = nil
+        oscHub: OSCHub? = nil,
+        cacheDir: URL? = nil
     ) {
         self.lyricsModule = lyricsModule
         self.aiModule = aiModule
         self.shadersModule = shadersModule
         self.imagesModule = imagesModule
         self.oscHub = oscHub
+        
+        // Cache directory setup
+        let dir = cacheDir ?? Config.cacheDirectory.appendingPathComponent("pipeline")
+        self.cacheDir = dir
+        self.cacheFile = dir.appendingPathComponent("pipeline_cache.json")
+        
+        // Create cache directory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
     
     // MARK: - Module Protocol
     
     public func start() async throws {
         guard !isStarted else { throw ModuleError.alreadyStarted }
+        
+        // Load cached results from disk
+        loadCacheFromDisk()
         
         // Start dependencies
         try await lyricsModule.start()
@@ -80,10 +94,13 @@ public actor PipelineModule: Module {
         }
         
         isStarted = true
-        print("[Pipeline] Started")
+        print("[Pipeline] Started (cache: \(resultCache.count) entries)")
     }
     
     public func stop() async {
+        // Save cache to disk before stopping
+        saveCacheToDisk()
+        
         await lyricsModule.stop()
         await aiModule.stop()
         
@@ -319,6 +336,59 @@ public actor PipelineModule: Module {
     /// Clear cache
     public func clearCache() {
         resultCache.removeAll()
+        try? FileManager.default.removeItem(at: cacheFile)
+    }
+    
+    /// Save cache to disk
+    public func saveCache() {
+        saveCacheToDisk()
+    }
+    
+    // MARK: - Cache Serialization
+    
+    private func loadCacheFromDisk() {
+        guard FileManager.default.fileExists(atPath: cacheFile.path) else {
+            print("[Pipeline] No cache file found")
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: cacheFile)
+            let decoder = JSONDecoder()
+            let cacheData = try decoder.decode(PipelineCacheData.self, from: data)
+            
+            // Filter out expired entries
+            let now = Date()
+            var validCount = 0
+            for entry in cacheData.entries {
+                if now.timeIntervalSince(entry.cachedAt) < cacheTTL {
+                    resultCache[entry.key] = entry.result
+                    validCount += 1
+                }
+            }
+            
+            print("[Pipeline] Loaded \(validCount) cached results (filtered \(cacheData.entries.count - validCount) expired)")
+        } catch {
+            print("[Pipeline] Cache load error: \(error.localizedDescription)")
+        }
+    }
+    
+    private func saveCacheToDisk() {
+        let entries = resultCache.map { key, result in
+            CacheEntry(key: key, result: result, cachedAt: Date())
+        }
+        
+        let cacheData = PipelineCacheData(entries: entries, savedAt: Date())
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(cacheData)
+            try data.write(to: cacheFile)
+            print("[Pipeline] Saved \(entries.count) cache entries to disk")
+        } catch {
+            print("[Pipeline] Cache save error: \(error.localizedDescription)")
+        }
     }
     
     // MARK: - Private

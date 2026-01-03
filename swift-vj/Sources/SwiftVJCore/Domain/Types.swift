@@ -174,7 +174,7 @@ public struct SongCategories: Sendable, Equatable, Codable {
 // MARK: - Pipeline Result
 
 /// Result from full pipeline processing.
-public struct PipelineResult: Sendable, Equatable {
+public struct PipelineResult: Sendable, Equatable, Codable {
     public let artist: String
     public let title: String
     public let album: String
@@ -350,5 +350,31 @@ public struct ShaderMatchResult: Sendable, Equatable {
         self.energyScore = energyScore
         self.moodValence = moodValence
         self.mood = mood
+    }
+}
+
+// MARK: - Pipeline Cache Serialization
+
+/// Entry in the pipeline cache
+public struct CacheEntry: Codable {
+    public let key: String
+    public let result: PipelineResult
+    public let cachedAt: Date
+    
+    public init(key: String, result: PipelineResult, cachedAt: Date) {
+        self.key = key
+        self.result = result
+        self.cachedAt = cachedAt
+    }
+}
+
+/// Serializable pipeline cache data
+public struct PipelineCacheData: Codable {
+    public let entries: [CacheEntry]
+    public let savedAt: Date
+    
+    public init(entries: [CacheEntry], savedAt: Date) {
+        self.entries = entries
+        self.savedAt = savedAt
     }
 }
