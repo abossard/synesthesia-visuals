@@ -37,6 +37,11 @@
 			<key>primary</key>
 			<true/>
 		</dict>
+		<key>SwiftVJApp</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>SwiftVJCore</key>
 		<dict>
 			<key>primary</key>

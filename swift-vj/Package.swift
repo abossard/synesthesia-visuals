@@ -27,10 +27,25 @@ let package = Package(
         .package(url: "https://github.com/orchetect/OSCKit", from: "0.6.0"),
         // Command-line argument parsing
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
-        // Note: Syphon requires manual framework integration
-        // Download from: https://github.com/Syphon/Syphon-Framework
     ],
     targets: [
+        // Syphon binary framework (built from Syphon-Framework)
+        .binaryTarget(
+            name: "Syphon",
+            path: "Frameworks/Syphon.xcframework"
+        ),
+        
+        // SyphonKit - Swift wrapper for Syphon
+        .target(
+            name: "SyphonKit",
+            dependencies: ["Syphon"],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("OpenGL"),
+            ]
+        ),
+        
         // CLI executable
         .executableTarget(
             name: "SwiftVJ",
@@ -44,6 +59,7 @@ let package = Package(
             name: "SwiftVJApp",
             dependencies: [
                 "SwiftVJCore",
+                "SyphonKit",
             ]),
 
         // Core library containing all business logic

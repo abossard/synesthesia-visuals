@@ -1,56 +1,11 @@
 // SyphonOutput.swift - Syphon server management for VJ tile outputs
 // Port of Syphon output from VJUniverse
 //
-// Note: This uses a stub implementation. For real Syphon output:
-// 1. Download Syphon.framework from https://github.com/Syphon/Syphon-Framework
-// 2. Add it to the project
-// 3. Replace SyphonMetalServerStub with actual SyphonMetalServer
+// Now using real Syphon.xcframework via SyphonKit wrapper
 
 import Foundation
 import Metal
-
-// MARK: - Syphon Server Protocol
-
-/// Protocol for Syphon server (allows stub/real implementation swap)
-protocol SyphonServerProtocol {
-    var name: String { get }
-    func publishTexture(
-        _ texture: MTLTexture,
-        onCommandBuffer commandBuffer: MTLCommandBuffer,
-        imageRegion: MTLRegion,
-        flipped: Bool
-    )
-    func stop()
-}
-
-// MARK: - Syphon Metal Server Stub
-
-/// Stub implementation for when Syphon.framework is not available
-/// Replace with real SyphonMetalServer when framework is integrated
-final class SyphonMetalServerStub: SyphonServerProtocol {
-    let name: String
-    private let device: MTLDevice
-
-    init(name: String, device: MTLDevice, options: [String: Any]?) {
-        self.name = name
-        self.device = device
-        // In real implementation, this creates the Syphon server
-    }
-
-    func publishTexture(
-        _ texture: MTLTexture,
-        onCommandBuffer commandBuffer: MTLCommandBuffer,
-        imageRegion: MTLRegion,
-        flipped: Bool
-    ) {
-        // Stub: In real implementation, this publishes to Syphon
-        // The texture is ready for sharing with other applications
-    }
-
-    func stop() {
-        // Stub: In real implementation, this stops the server
-    }
-}
+import SyphonKit
 
 // MARK: - Syphon Output Manager
 
@@ -59,7 +14,7 @@ final class SyphonMetalServerStub: SyphonServerProtocol {
 final class SyphonOutputManager {
     // MARK: - Properties
 
-    private var servers: [String: SyphonServerProtocol] = [:]
+    private var senders: [String: SyphonSender] = [:]
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
 
@@ -67,13 +22,13 @@ final class SyphonOutputManager {
     var isEnabled: Bool = true
 
     /// Number of active servers
-    var serverCount: Int { servers.count }
+    var serverCount: Int { senders.count }
 
     /// Active server names
-    var serverNames: [String] { Array(servers.keys).sorted() }
+    var serverNames: [String] { Array(senders.keys).sorted() }
 
-    /// Whether using stub (vs real Syphon)
-    var isUsingStub: Bool { true }  // Set to false when real Syphon is integrated
+    /// Whether using stub (vs real Syphon) - now always false with real framework
+    var isUsingStub: Bool { false }
 
     // MARK: - Init
 
@@ -90,16 +45,15 @@ final class SyphonOutputManager {
 
     /// Create a Syphon server for a tile
     func createServer(name: String) {
-        guard servers[name] == nil else { return }
+        guard senders[name] == nil else { return }
 
-        // Use stub implementation - replace with real SyphonMetalServer when available
-        let server = SyphonMetalServerStub(
-            name: name,
-            device: device,
-            options: nil
-        )
-        servers[name] = server
-        print("[Syphon] Created server: \(name)\(isUsingStub ? " (stub)" : "")")
+        let sender = SyphonSender(name: name, device: device)
+        if sender.start() {
+            senders[name] = sender
+            print("[Syphon] Created server: \(name)")
+        } else {
+            print("[Syphon] Failed to create server: \(name)")
+        }
     }
 
     /// Create all standard tile servers
@@ -125,14 +79,11 @@ final class SyphonOutputManager {
         commandBuffer: MTLCommandBuffer
     ) {
         guard isEnabled,
-              let server = servers[name] else { return }
+              let sender = senders[name] else { return }
 
-        let region = MTLRegionMake2D(0, 0, texture.width, texture.height)
-
-        server.publishTexture(
-            texture,
-            onCommandBuffer: commandBuffer,
-            imageRegion: region,
+        sender.publish(
+            texture: texture,
+            commandBuffer: commandBuffer,
             flipped: false
         )
     }
@@ -140,15 +91,12 @@ final class SyphonOutputManager {
     /// Publish texture with automatic command buffer
     func publish(name: String, texture: MTLTexture) {
         guard isEnabled,
-              let server = servers[name],
+              let sender = senders[name],
               let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
-        let region = MTLRegionMake2D(0, 0, texture.width, texture.height)
-
-        server.publishTexture(
-            texture,
-            onCommandBuffer: commandBuffer,
-            imageRegion: region,
+        sender.publish(
+            texture: texture,
+            commandBuffer: commandBuffer,
             flipped: false
         )
 
@@ -157,64 +105,33 @@ final class SyphonOutputManager {
 
     /// Stop a specific server
     func stopServer(name: String) {
-        if let server = servers[name] {
-            server.stop()
-            servers.removeValue(forKey: name)
+        if let sender = senders[name] {
+            sender.stop()
+            senders.removeValue(forKey: name)
             print("[Syphon] Stopped server: \(name)")
         }
     }
 
     /// Stop all servers
     func stopAll() {
-        for (name, server) in servers {
-            server.stop()
+        for (name, sender) in senders {
+            sender.stop()
             print("[Syphon] Stopped server: \(name)")
         }
-        servers.removeAll()
+        senders.removeAll()
     }
 
     /// Check if a server exists
     func hasServer(name: String) -> Bool {
-        servers[name] != nil
+        senders[name] != nil
     }
 }
 
-// MARK: - Real Syphon Integration Guide
-/*
- To integrate real Syphon.framework:
+// MARK: - Server Discovery Extension
 
- 1. Download from https://github.com/Syphon/Syphon-Framework/releases
-
- 2. Add to Xcode project:
-    - Drag Syphon.framework to project
-    - Add to "Frameworks, Libraries, and Embedded Content"
-    - Set to "Embed & Sign"
-
- 3. Create bridging header if needed:
-    #import <Syphon/Syphon.h>
-
- 4. Replace SyphonMetalServerStub with:
-
-    import Syphon
-
-    extension SyphonMetalServer: SyphonServerProtocol {
-        func publishTexture(
-            _ texture: MTLTexture,
-            onCommandBuffer commandBuffer: MTLCommandBuffer,
-            imageRegion: MTLRegion,
-            flipped: Bool
-        ) {
-            self.publishFrameTexture(
-                texture,
-                onCommandBuffer: commandBuffer,
-                imageRegion: imageRegion,
-                flipped: flipped
-            )
-        }
+extension SyphonOutputManager {
+    /// Get list of all available Syphon servers (from other apps)
+    static func availableServers() -> [SyphonReceiver.ServerInfo] {
+        SyphonReceiver.availableServers()
     }
-
- 5. Update createServer() to use SyphonMetalServer:
-    let server = SyphonMetalServer(name: name, device: device, options: nil)
-
- 6. Set isUsingStub = false
-*/
+}

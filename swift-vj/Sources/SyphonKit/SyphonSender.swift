@@ -6,6 +6,7 @@
 import Foundation
 import Metal
 import Syphon
+import CoreGraphics
 
 /// Swift wrapper around SyphonMetalServer for sending textures
 public final class SyphonSender {
@@ -62,27 +63,19 @@ public final class SyphonSender {
     ) {
         guard let server = server else { return }
         
-        if flipped {
-            let region = MTLRegion(
-                origin: MTLOrigin(x: 0, y: 0, z: 0),
-                size: MTLSize(
-                    width: texture.width,
-                    height: texture.height,
-                    depth: 1
-                )
-            )
-            server.publishFrameTexture(
-                texture,
-                onCommandBuffer: commandBuffer,
-                imageRegion: region,
-                flipped: true
-            )
-        } else {
-            server.publishFrameTexture(
-                texture,
-                onCommandBuffer: commandBuffer
-            )
-        }
+        let region = CGRect(
+            x: 0,
+            y: 0,
+            width: texture.width,
+            height: texture.height
+        )
+        
+        server.publishFrameTexture(
+            texture,
+            on: commandBuffer,
+            imageRegion: region,
+            flipped: flipped
+        )
     }
     
     /// Publishes a texture from an IOSurface
@@ -91,15 +84,6 @@ public final class SyphonSender {
     ///   - flipped: Whether to flip vertically
     public func publish(surface: IOSurfaceRef, flipped: Bool = false) {
         guard let server = server else { return }
-        
-        let region = MTLRegion(
-            origin: MTLOrigin(x: 0, y: 0, z: 0),
-            size: MTLSize(
-                width: IOSurfaceGetWidth(surface),
-                height: IOSurfaceGetHeight(surface),
-                depth: 1
-            )
-        )
         
         // Create texture from IOSurface for publishing
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -118,9 +102,15 @@ public final class SyphonSender {
             // Need a command buffer for the publish
             if let queue = device.makeCommandQueue(),
                let commandBuffer = queue.makeCommandBuffer() {
+                let region = CGRect(
+                    x: 0,
+                    y: 0,
+                    width: texture.width,
+                    height: texture.height
+                )
                 server.publishFrameTexture(
                     texture,
-                    onCommandBuffer: commandBuffer,
+                    on: commandBuffer,
                     imageRegion: region,
                     flipped: flipped
                 )
