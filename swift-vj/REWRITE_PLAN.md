@@ -112,6 +112,25 @@
 | Prefix Trie Matching | ❌ | `osc/hub.py` |
 | Drop Detection | ❌ | `osc/hub.py` |
 | Latency Monitoring | ❌ | `osc/hub.py` |
+| Active Line OSC (position-driven) | ✅ | `ActiveLineTracker.swift` |
+| Keywords/Metadata OSC | ✅ | `PipelineModule.swift` |
+
+#### OSC Messages (Swift ↔ Python Parity)
+
+**Pipeline Messages (on track load):**
+- `/textler/track [active, source, artist, title, album, duration, has_lyrics]`
+- `/textler/lyrics/reset []` + `/textler/lyrics/line [index, time, text]`
+- `/textler/refrain/reset []` + `/textler/refrain/line [index, time, text]`
+- `/textler/keywords/reset []` + `/textler/keywords/line [index, time, keywords]`
+- `/textler/metadata/keywords`, `/textler/metadata/themes`, `/textler/metadata/visuals`, `/textler/metadata/mood`
+- `/ai/analysis [mood, energy, valence]`
+- `/shader/load [name, energy, valence]`
+- `/image/fit [mode]` + `/image/folder [path]`
+
+**Position Update Messages (during playback):**
+- `/textler/line/active [index]`
+- `/textler/refrain/active [index, text]` (when line is refrain)
+- `/textler/keywords/active [index, keywords]` (when line has keywords)
 
 ### 2.6 Pipeline Orchestration
 

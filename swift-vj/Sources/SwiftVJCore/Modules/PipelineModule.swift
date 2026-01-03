@@ -361,8 +361,45 @@ public actor PipelineModule: Module {
             )
         }
         
-        // Send analysis if available
+        // Send keywords reset: /textler/keywords/reset
+        try? hub.sendToProcessing("/textler/keywords/reset")
+        
+        // Send keywords per line: /textler/keywords/line [index, time, keywords]
+        for (index, line) in lines.enumerated() {
+            if !line.keywords.isEmpty {
+                try? hub.sendToProcessing(
+                    "/textler/keywords/line",
+                    values: [Int32(index), Float32(line.timeSec), line.keywords]
+                )
+            }
+        }
+        
+        // Send metadata if available (from LLM analysis)
         if let analysis = analysis {
+            // Keywords: /textler/metadata/keywords [comma-separated]
+            let keywordsJoined = analysis.keywords.joined(separator: ",")
+            if !keywordsJoined.isEmpty {
+                try? hub.sendToProcessing("/textler/metadata/keywords", values: [keywordsJoined])
+            }
+            
+            // Themes: /textler/metadata/themes [comma-separated]
+            let themesJoined = analysis.themes.joined(separator: ",")
+            if !themesJoined.isEmpty {
+                try? hub.sendToProcessing("/textler/metadata/themes", values: [themesJoined])
+            }
+            
+            // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
+            let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
+            if !visualsJoined.isEmpty {
+                try? hub.sendToProcessing("/textler/metadata/visuals", values: [visualsJoined])
+            }
+            
+            // Mood: /textler/metadata/mood [string]
+            if !analysis.mood.isEmpty {
+                try? hub.sendToProcessing("/textler/metadata/mood", values: [analysis.mood])
+            }
+            
+            // AI analysis summary: /ai/analysis [mood, energy, valence]
             try? hub.sendToProcessing(
                 "/ai/analysis",
                 values: [
