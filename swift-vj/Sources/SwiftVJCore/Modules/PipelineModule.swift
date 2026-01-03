@@ -155,6 +155,7 @@ public actor PipelineModule: Module {
         var stepTimings: [String: Int] = [:]
         
         // === STEP 1: Lyrics ===
+        print("[Pipeline] ▶ Step 1/5: LYRICS - Fetching lyrics for \(track.artist) - \(track.title)")
         await fireStepStart(.lyrics)
         let lyricsStart = Date()
         
@@ -168,13 +169,16 @@ public actor PipelineModule: Module {
         
         if lyricsFound {
             stepsCompleted.append("lyrics")
-            await fireStepComplete(.lyrics, ["line_count": lines.count])
+            print("[Pipeline] ✓ Step 1/5: LYRICS - Found \(lines.count) lines, \(refrainLines.count) refrain (\(stepTimings["lyrics"] ?? 0)ms)")
+            await fireStepComplete(.lyrics, ["line_count": lines.count, "status": "complete"])
         } else {
             stepsSkipped.append("lyrics")
-            await fireStepComplete(.lyrics, ["skipped": true])
+            print("[Pipeline] ○ Step 1/5: LYRICS - No lyrics found (\(stepTimings["lyrics"] ?? 0)ms)")
+            await fireStepComplete(.lyrics, ["skipped": true, "status": "skipped"])
         }
         
         // === STEP 2: AI Analysis ===
+        print("[Pipeline] ▶ Step 2/5: AI - Analyzing song...")
         await fireStepStart(.ai)
         let aiStart = Date()
         
@@ -194,76 +198,108 @@ public actor PipelineModule: Module {
         }
         
         stepTimings["ai"] = Int(Date().timeIntervalSince(aiStart) * 1000)
-        await fireStepComplete(.ai, ["mood": analysis?.mood ?? "unknown"])
         
-        // === STEP 3: Shaders (parallel with images) ===
+        if let a = analysis {
+            print("[Pipeline] ✓ Step 2/5: AI - mood=\(a.mood), energy=\(String(format: "%.2f", a.energy)), valence=\(String(format: "%.2f", a.valence)) (\(stepTimings["ai"] ?? 0)ms)")
+            await fireStepComplete(.ai, ["mood": a.mood, "status": "complete"])
+        } else {
+            print("[Pipeline] ○ Step 2/5: AI - No analysis available (\(stepTimings["ai"] ?? 0)ms)")
+            await fireStepComplete(.ai, ["skipped": true, "status": "skipped"])
+        }
+        
+        // === STEP 3 & 4: Shaders + Images (parallel) ===
         var shaderMatch: ShaderMatchResult?
         var imageResult: ImageResult?
         
+        print("[Pipeline] ▶ Steps 3-4: SHADERS+IMAGES (parallel)...")
+        
         await withTaskGroup(of: Void.self) { group in
             // Shader matching
-            if let shadersModule = shadersModule, analysis != nil {
+            if let shadersModule = shadersModule {
                 group.addTask {
                     await self.fireStepStart(.shaders)
                     let shaderStart = Date()
                     
+                    let energy = analysis?.energy ?? 0.5
+                    let valence = analysis?.valence ?? 0.0
+                    print("[Pipeline] ▶ Step 3/5: SHADERS - Matching (energy=\(String(format: "%.2f", energy)), valence=\(String(format: "%.2f", valence)))")
+                    
                     shaderMatch = await shadersModule.selectForSong(
                         categories: nil,
-                        energy: analysis?.energy ?? 0.5,
-                        valence: analysis?.valence ?? 0.0
+                        energy: energy,
+                        valence: valence
                     )
                     
                     stepTimings["shaders"] = Int(Date().timeIntervalSince(shaderStart) * 1000)
                     
-                    if shaderMatch != nil {
+                    if let match = shaderMatch {
                         stepsCompleted.append("shaders")
-                        await self.fireStepComplete(.shaders, ["shader": shaderMatch?.name ?? ""])
+                        print("[Pipeline] ✓ Step 3/5: SHADERS - Matched '\(match.name)' (score=\(String(format: "%.2f", match.score))) (\(stepTimings["shaders"] ?? 0)ms)")
+                        await self.fireStepComplete(.shaders, ["shader": match.name, "status": "complete"])
                     } else {
                         stepsSkipped.append("shaders")
-                        await self.fireStepComplete(.shaders, ["skipped": true])
+                        print("[Pipeline] ○ Step 3/5: SHADERS - No match found (\(stepTimings["shaders"] ?? 0)ms)")
+                        await self.fireStepComplete(.shaders, ["skipped": true, "status": "skipped"])
                     }
                 }
+            } else {
+                print("[Pipeline] ○ Step 3/5: SHADERS - Module not configured")
+                stepsSkipped.append("shaders")
             }
             
             // Image fetching
-            if let imagesModule = imagesModule, analysis != nil {
+            if let imagesModule = imagesModule {
                 group.addTask {
                     await self.fireStepStart(.images)
                     let imagesStart = Date()
                     
+                    let visuals = analysis?.visualAdjectives ?? []
+                    let themes = analysis?.themes ?? []
+                    let mood = analysis?.mood ?? "unknown"
+                    print("[Pipeline] ▶ Step 4/5: IMAGES - Fetching (visuals=\(visuals.prefix(3)), themes=\(themes.prefix(3)))")
+                    
                     imageResult = await imagesModule.fetchImages(
                         for: track,
-                        visualAdjectives: analysis?.visualAdjectives ?? [],
-                        themes: analysis?.themes ?? [],
-                        mood: analysis?.mood ?? "unknown"
+                        visualAdjectives: visuals,
+                        themes: themes,
+                        mood: mood
                     )
                     
                     stepTimings["images"] = Int(Date().timeIntervalSince(imagesStart) * 1000)
                     
-                    if imageResult != nil {
+                    if let result = imageResult {
                         stepsCompleted.append("images")
-                        await self.fireStepComplete(.images, ["count": imageResult?.totalImages ?? 0])
+                        print("[Pipeline] ✓ Step 4/5: IMAGES - Fetched \(result.totalImages) images to \(result.folder.lastPathComponent) (\(stepTimings["images"] ?? 0)ms)")
+                        await self.fireStepComplete(.images, ["count": result.totalImages, "status": "complete"])
                     } else {
                         stepsSkipped.append("images")
-                        await self.fireStepComplete(.images, ["skipped": true])
+                        print("[Pipeline] ○ Step 4/5: IMAGES - No images fetched (\(stepTimings["images"] ?? 0)ms)")
+                        await self.fireStepComplete(.images, ["skipped": true, "status": "skipped"])
                     }
                 }
+            } else {
+                print("[Pipeline] ○ Step 4/5: IMAGES - Module not configured")
+                stepsSkipped.append("images")
             }
         }
         
-        // === STEP 4: OSC Broadcast ===
+        // === STEP 5: OSC Broadcast ===
+        print("[Pipeline] ▶ Step 5/5: OSC - Broadcasting results...")
         await fireStepStart(.osc)
         let oscStart = Date()
         
         if let hub = oscHub {
             await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis, shader: shaderMatch, images: imageResult)
             stepsCompleted.append("osc")
+            stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
+            print("[Pipeline] ✓ Step 5/5: OSC - Sent track, \(lines.count) lines, shader=\(shaderMatch?.name ?? "none") (\(stepTimings["osc"] ?? 0)ms)")
+            await fireStepComplete(.osc, ["status": "complete"])
         } else {
             stepsSkipped.append("osc")
+            stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
+            print("[Pipeline] ○ Step 5/5: OSC - Hub not configured (\(stepTimings["osc"] ?? 0)ms)")
+            await fireStepComplete(.osc, ["skipped": true, "status": "skipped"])
         }
-        
-        stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-        await fireStepComplete(.osc, [:])
         
         // Build result
         let totalTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)

@@ -7,17 +7,13 @@ import SwiftVJCore
 struct PipelineStatusView: View {
     @EnvironmentObject var appState: AppState
     
-    // Pipeline step definitions
+    // Pipeline step definitions - must match PipelineModule step names
     let pipelineStepDefs: [(name: String, icon: String)] = [
-        ("detect_track", "music.note"),
-        ("fetch_lyrics", "text.quote"),
-        ("parse_lrc", "doc.text"),
-        ("analyze_refrain", "repeat"),
-        ("extract_keywords", "tag"),
-        ("categorize_song", "brain"),
-        ("match_shader", "sparkles"),
-        ("fetch_images", "photo.on.rectangle"),
-        ("broadcast_osc", "antenna.radiowaves.left.and.right")
+        ("lyrics", "text.quote"),
+        ("ai", "brain"),
+        ("shaders", "sparkles"),
+        ("images", "photo.on.rectangle"),
+        ("osc", "antenna.radiowaves.left.and.right")
     ]
     
     var body: some View {
@@ -148,11 +144,11 @@ struct PipelineStepRow: View {
     }
     
     var statusColor: Color {
-        switch status {
-        case "complete", "completed": return .green
+        switch status.lowercased() {
+        case let s where s.contains("complete") || s.hasPrefix("✓"): return .green
         case "running": return .blue
-        case "skipped": return .orange
-        case "error": return .red
+        case let s where s.contains("skip") || s == "skipped": return .orange
+        case let s where s.contains("error"): return .red
         default: return .secondary
         }
     }
@@ -160,24 +156,23 @@ struct PipelineStepRow: View {
     @ViewBuilder
     var statusBadge: some View {
         HStack(spacing: 4) {
-            switch status {
-            case "running":
+            if status == "running" {
                 ProgressView()
                     .scaleEffect(0.6)
                 Text("Running")
-            case "complete", "completed":
+            } else if status.hasPrefix("✓") || status.lowercased().contains("complete") {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.green)
-                Text("Complete")
-            case "skipped":
+                Text(status.hasPrefix("✓") ? status : "Complete")
+            } else if status.lowercased() == "skipped" || status.lowercased().contains("skip") {
                 Image(systemName: "arrow.right.circle")
                     .foregroundColor(.orange)
                 Text("Skipped")
-            case "error":
+            } else if status.lowercased().contains("error") {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.red)
-                Text("Error")
-            default:
+                Text(status)
+            } else {
                 Image(systemName: "circle")
                     .foregroundColor(.secondary)
                 Text("Pending")

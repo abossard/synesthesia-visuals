@@ -213,6 +213,23 @@ final class AppState: ObservableObject {
         // NOW start playback module (after callbacks registered)
         try await playbackModule?.start()
         
+        // Register pipeline step callbacks for real-time UI updates
+        await pipelineModule?.onStepStart { @Sendable [weak self] stepName in
+            guard let self = self else { return }
+            await MainActor.run {
+                self.updatePipelineStep(stepName, status: "running")
+                self.log("Pipeline: \(stepName) started", level: .debug)
+            }
+        }
+        
+        await pipelineModule?.onStepComplete { @Sendable [weak self] stepName, info in
+            guard let self = self else { return }
+            let status = (info["status"] as? String) ?? "complete"
+            await MainActor.run {
+                self.updatePipelineStep(stepName, status: status)
+            }
+        }
+        
         // Set initial source (this also triggers VDJ subscription)
         let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(source)
@@ -366,6 +383,17 @@ final class AppState: ObservableObject {
     // MARK: - Private
     
     private func updatePipelineStep(_ step: String, status: String) {
+        // If status is "running", we're starting a new pipeline - reset all steps to pending first
+        if status == "running" && step == "lyrics" {
+            pipelineSteps = [
+                PipelineStep(name: "lyrics", status: "pending", timestamp: Date()),
+                PipelineStep(name: "ai", status: "pending", timestamp: Date()),
+                PipelineStep(name: "shaders", status: "pending", timestamp: Date()),
+                PipelineStep(name: "images", status: "pending", timestamp: Date()),
+                PipelineStep(name: "osc", status: "pending", timestamp: Date())
+            ]
+        }
+        
         if let index = pipelineSteps.firstIndex(where: { $0.name == step }) {
             pipelineSteps[index].status = status
             pipelineSteps[index].timestamp = Date()
