@@ -262,7 +262,7 @@
 | Pipeline status | ✅ | Step-by-step progress with icons |
 | Settings panel | ✅ | Tabs: General, Playback, AI, Appearance |
 
-**UI Screenshots**: Available at `/tmp/swiftvjapp_main.png`
+**UI Screenshots**: Available at [docs/screenshots/swiftvjapp_main.png](docs/screenshots/swiftvjapp_main.png)
 
 **Files Created**:
 - `Sources/SwiftVJApp/SwiftVJApp.swift` - Main app entry + AppState
@@ -273,6 +273,20 @@
 - `Sources/SwiftVJApp/OSCDebugView.swift` - OSC debug/test
 - `Sources/SwiftVJApp/LogViewerView.swift` - Log viewer
 - `Sources/SwiftVJApp/SettingsView.swift` - Settings panel
+
+**Rendering Module** (`Sources/SwiftVJApp/Rendering/`):
+- `RenderEngine.swift` - Main orchestrator with TileManager actor
+- `RenderingTypes.swift` - AudioState, LyricLine, ShaderUniforms, TileConfig
+- `RenderingViews.swift` - SwiftUI views (RenderingView, TilePreviewView, AudioVisualizerView)
+- `Tile.swift` - Base Tile protocol and BaseTile/TextTile classes
+- `ShaderTile.swift` - GLSL shader rendering with Metal pipeline
+- `MaskShaderTile.swift` - Grayscale mask shader for compositing
+- `TextTiles.swift` - LyricsTile, RefrainTile, SongInfoTile
+- `ImageTile.swift` - Image display with crossfade and beat-sync cycling
+- `AudioProcessor.swift` - Audio analysis and smoothing (port of SynesthesiaAudioOSC.pde)
+- `SyphonOutput.swift` - Syphon server management (stub implementation)
+
+**Syphon Integration**: See [docs/syphon-integration.md](docs/syphon-integration.md) for XCFramework build instructions
 
 ---
 
