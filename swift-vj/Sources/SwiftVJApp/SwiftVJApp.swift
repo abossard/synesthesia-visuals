@@ -156,37 +156,21 @@ final class AppState: ObservableObject {
         // Track changes via playback module (registered in start())
     }
     
+    // VDJ query task for periodic position updates
+    private var vdjQueryTask: Task<Void, Never>?
+    
     func start() async throws {
-        // Start OSC hub first (must be started before VDJ subscription)
-        try oscHub.start()
-        log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
-        
-        // Wire VDJ OSC messages to VDJMonitor
-        // VDJ sends on /deck/N/... and /vdj/deck/N/... addresses
-        oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
-            guard let self = self else { return }
-            Task {
-                await self.playbackModule?.handleVDJOSC(address: address, values: values)
-            }
-        }
-        oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
-            guard let self = self else { return }
-            Task {
-                await self.playbackModule?.handleVDJOSC(address: address, values: values)
-            }
-        }
-        oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
-            guard let self = self else { return }
-            Task {
-                await self.playbackModule?.handleVDJOSC(address: address, values: values)
-            }
-        }
-        
         // Start playback module
         try await playbackModule?.start()
         
         // Set initial source (this also triggers VDJ subscription)
-        await playbackModule?.setSource(playbackSource == "vdj" ? .vdj : .spotify)
+        let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
+        await playbackModule?.setSource(source)
+        
+        // If VDJ, send subscriptions and start periodic queries
+        if source == .vdj {
+            await setupVDJSubscriptionsAndQueries()
+        }
         
         // Capture references for Sendable closure (avoid capturing self)
         let pipeline = pipelineModule
