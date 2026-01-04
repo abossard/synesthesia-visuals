@@ -60,11 +60,25 @@ public struct AudioState: Sendable, Equatable {
     /// Tempo detection confidence (0-1)
     public let bpmConfidence: Float
 
+    // MARK: - Presence (slow-moving structural energy)
+
+    /// Bass presence (0-1) - slow-moving bass energy for palette shifts
+    public let bassPresence: Float
+
+    /// Mid presence (0-1) - slow-moving mid energy
+    public let midPresence: Float
+
+    /// High presence (0-1) - slow-moving high energy
+    public let highPresence: Float
+
     // MARK: - Audio-Reactive Speed
 
     /// Audio-reactive time scaling (0.02 - 1.20)
     /// Near-standstill in silence, accelerates with energy
     public let speed: Float
+
+    /// Accumulated audio-reactive time (for shader TIME uniform)
+    public let audioTime: Float
 
     // MARK: - Timestamp
 
@@ -100,7 +114,11 @@ public struct AudioState: Sendable, Equatable {
         bpmTwitcher: Float = 0,
         bpmSin4: Float = 0,
         bpmConfidence: Float = 0,
+        bassPresence: Float = 0,
+        midPresence: Float = 0,
+        highPresence: Float = 0,
         speed: Float = 0.02,
+        audioTime: Float = 0,
         timestamp: Date = Date()
     ) {
         self.bass = bass
@@ -117,7 +135,11 @@ public struct AudioState: Sendable, Equatable {
         self.bpmTwitcher = bpmTwitcher
         self.bpmSin4 = bpmSin4
         self.bpmConfidence = bpmConfidence
+        self.bassPresence = bassPresence
+        self.midPresence = midPresence
+        self.highPresence = highPresence
         self.speed = speed
+        self.audioTime = audioTime
         self.timestamp = timestamp
     }
 
@@ -143,6 +165,11 @@ public struct RawAudioLevels: Sendable {
     public let bpmSin4: Float
     public let bpmConfidence: Float
     public let energyIntensity: Float
+    
+    // Presence (slow-moving structural energy from Synesthesia)
+    public let bassPresence: Float
+    public let midPresence: Float
+    public let highPresence: Float
 
     public init(
         bass: Float = 0,
@@ -156,7 +183,10 @@ public struct RawAudioLevels: Sendable {
         bpmTwitcher: Float = 0,
         bpmSin4: Float = 0,
         bpmConfidence: Float = 0,
-        energyIntensity: Float = 0
+        energyIntensity: Float = 0,
+        bassPresence: Float = 0,
+        midPresence: Float = 0,
+        highPresence: Float = 0
     ) {
         self.bass = bass
         self.lowMid = lowMid
@@ -170,6 +200,9 @@ public struct RawAudioLevels: Sendable {
         self.bpmSin4 = bpmSin4
         self.bpmConfidence = bpmConfidence
         self.energyIntensity = energyIntensity
+        self.bassPresence = bassPresence
+        self.midPresence = midPresence
+        self.highPresence = highPresence
     }
 }
 

@@ -415,27 +415,22 @@ struct RenderingView: View {
                 shaderControlsView(title: "Mask", binding: $selectedMaskShader)
             }
             
-            // Tile selector grid (simple buttons, no Syphon overhead)
+            // Tile selector grid with Syphon client previews
             GroupBox("Tiles → Syphon") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(["shader", "mask", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
+                    ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo"], id: \.self) { tile in
                         VStack(spacing: 4) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(tileColor(for: tile))
+                            SyphonThumbnailView(serverName: "SwiftVJ/\(tile)")
                                 .aspectRatio(16/9, contentMode: .fit)
                                 .frame(height: 60)
-                                .overlay(
-                                    Text(tile == selectedTile ? "●" : "")
-                                        .foregroundColor(.white)
-                                        .font(.title)
-                                )
+                                .cornerRadius(4)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .stroke(selectedTile == tile ? Color.blue : Color.clear, lineWidth: 2)
+                                        .stroke(selectedTile == tile.lowercased() ? Color.blue : Color.clear, lineWidth: 2)
                                 )
-                                .onTapGesture { selectedTile = tile }
+                                .onTapGesture { selectedTile = tile.lowercased() }
                             
-                            Text(tile.capitalized).font(.caption2)
+                            Text(tile).font(.caption2)
                         }
                     }
                 }
@@ -453,16 +448,17 @@ struct RenderingView: View {
             ShaderTileView(
                 shaderName: selectedShader,
                 frameCount: $frameCount,
-                audioTime: $audioTime
+                audioTime: $audioTime,
+                audioState: renderEngine.audioManager.state
             )
         case "mask":
-            MaskTileView(shaderName: selectedMaskShader, audioState: .silent)
+            MaskTileView(shaderName: selectedMaskShader, audioState: renderEngine.audioManager.state)
         case "lyrics":
-            LyricsTileView(lyricsState: demoLyrics, audioState: .silent)
+            LyricsTileView(lyricsState: demoLyrics, audioState: renderEngine.audioManager.state)
         case "refrain":
-            RefrainTileView(refrainState: demoRefrain, audioState: .silent)
+            RefrainTileView(refrainState: demoRefrain, audioState: renderEngine.audioManager.state)
         case "songInfo":
-            SongInfoTileView(songInfoState: demoSongInfo, audioState: .silent)
+            SongInfoTileView(songInfoState: demoSongInfo, audioState: renderEngine.audioManager.state)
         default:
             Color.black
         }

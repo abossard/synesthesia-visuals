@@ -1,6 +1,6 @@
 /*{
   "DESCRIPTION": "Precalculated Voronoi Heightmap Raymarch by Inigo Quilez (iq) and others, converted to ISF with parameter smoothing. Original ShaderToy: https://www.shadertoy.com/view/MdX3Rr",
-  "CREDIT": "Original ShaderToy by InigoQuilez (@iq), @Nimitz, @Fabrice, @Coyote. ISF version by @dot2dot (bareimage).",
+  "CREDIT": "Original ShaderToy by InigoQuilez (@iq), @Nimitz, @Fabrice, @Coyote. ISF version by @dot2dot (bareimage). Fixed for wider ISF GLSL compatibility.",
   "ISFVSN": "2.0",
   "CATEGORIES": ["FILTER", "3D", "TEXTURE"],
   "INPUTS": [
@@ -17,7 +17,7 @@
     { "NAME": "curveAmpInit", "TYPE": "float", "DEFAULT": 0.525, "MIN": 0.0, "MAX": 2.0, "LABEL": "Curve Initial Amplitude" },
     { "NAME": "aoSamples", "TYPE": "float", "DEFAULT": 5.0, "MIN": 1.0, "MAX": 10.0, "LABEL": "AO Samples" },
     { "NAME": "aoIntensity", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.0, "MAX": 2.0, "LABEL": "AO Intensity" },
-    { "NAME": "noiseTexture", "TYPE": "image", "LABEL": "Noise Detail Texture (for Buffer A)"},
+    { "NAME": "noiseTexture", "TYPE": "image", "LABEL": "Noise Detail Texture (for Buffer A)" },
     { "NAME": "showHeightmap", "TYPE": "bool", "DEFAULT": false, "LABEL": "Show Heightmap Only (Image Pass)" },
     { "NAME": "transitionSpeed", "TYPE": "float", "DEFAULT": 1.0, "MIN": 0.1, "MAX": 10.0, "LABEL": "Parameter Transition Smoothness" }
   ],
@@ -27,13 +27,12 @@
     { "TARGET": "lightingParamsBuffer", "PERSISTENT": true, "FLOAT": true, "WIDTH": 1, "HEIGHT": 1 },
     { "TARGET": "aoCurveParamsBuffer", "PERSISTENT": true, "FLOAT": true, "WIDTH": 1, "HEIGHT": 1 },
     { "TARGET": "sceneBuffer", "PERSISTENT": true, "FLOAT": true },
-    { "TARGET": "finalOutput" }
+    {}
   ]
 }*/
 
-precision highp float;
+// NOTE: Removed `precision highp float;` for desktop GLSL ISF hosts.
 
-// --- Global smoothed parameters (populated by smoothing passes) ---
 float currentOverallSpeed;
 float currentVoronoiFrequency1;
 float currentVoronoiFrequency2;
@@ -45,35 +44,12 @@ float currentSpecularPower;
 float currentFresnelPower;
 float currentCurveAmp;
 float currentCurveAmpInit;
-float currentAOSamples_float; // Stores the smoothed AO samples as a float
+float currentAOSamples_float;
 float currentAOIntensity;
-bool currentShowHeightmap;
+bool  currentShowHeightmap;
 
-// Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
-//
-// This work is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 
-// 3.0 Unported License. To view a copy of this license, visit 
-// http://creativecommons.org/licenses/by-nc-sa/3.0/ or send a letter to Creative Commons, 
-// PO Box 1866, Mountain View, CA 94042, USA.
-//
-// You are free to:
-// - Share: copy and redistribute the material in any medium or format
-// - Adapt: remix, transform, and build upon the material
-//
-// Under the following terms:
-// - Attribution: You must give appropriate credit, provide a link to the license, 
-//   and indicate if changes were made. You may do so in any reasonable manner, 
-//   but not in any way that suggests the licensor endorses you or your use.
-// - NonCommercial: You may not use the material for commercial purposes.
-// - ShareAlike: If you remix, transform, or build upon the material, you must 
-//   distribute your contributions under the same license as the original.
-//
-// No additional restrictions: You may not apply legal terms or technological 
-// measures that legally restrict others from doing anything the license permits.
-//
-// DISCLAIMER: This work is provided "AS IS" without warranty of any kind, express 
-// or implied. The licensor makes no warranties regarding this work and disclaims 
-// liability for damages resulting from its use to the fullest extent possible
+// Use texture2D for GLSL 1.20-style hosts
+vec4 tex2D(sampler2D s, vec2 uv) { return texture2D(s, uv); }
 
 // --- Helper Functions ---
 vec2 hash22(vec2 p) {
@@ -103,7 +79,9 @@ vec3 triplanarTexture(sampler2D tex, vec3 p, vec3 n) {
     p = fract(p);
     n = max(n * n, vec3(0.001));
     n /= (n.x + n.y + n.z);
-    return (texture(tex, p.yz) * n.x + texture(tex, p.zx) * n.y + texture(tex, p.xy) * n.z).xyz;
+    return (tex2D(tex, p.yz) * n.x +
+            tex2D(tex, p.zx) * n.y +
+            tex2D(tex, p.xy) * n.z).xyz;
 }
 
 // --- Pass 4: Buffer A - Generate Stone Texture and Heightmap ---
@@ -111,7 +89,7 @@ void bufferA_main(out vec4 fragColor, vec2 fragCoord_norm) {
     vec2 p = fragCoord_norm;
 
     if (floor(hash22(p + TIME).x * 8.0) < 1.0 || FRAMEINDEX == 0) {
-        vec3 tx = texture(noiseTexture, p).xyz;
+        vec3 tx = tex2D(noiseTexture, p).xyz;
         tx *= tx;
         tx = smoothstep(0.0, 0.5, tx);
 
@@ -133,7 +111,7 @@ void bufferA_main(out vec4 fragColor, vec2 fragCoord_norm) {
 
 // --- Pass 5: Image - Raymarching with Heightmap ---
 float heightMap_image(vec2 p, sampler2D heightMapTex) {
-    return texture(heightMapTex, fract(p / 2.0)).w;
+    return tex2D(heightMapTex, fract(p / 2.0)).w;
 }
 
 float map_image(vec3 p, sampler2D heightMapTex) {
@@ -151,12 +129,12 @@ vec3 getNormal_image(vec3 pos, sampler2D heightMapTex) {
     );
 }
 
-// calculateAO_image now takes an int for numSamples
 float calculateAO_image(vec3 p, vec3 n, sampler2D heightMapTex, int numSamples, float intensity) {
     float r = 1.0;
     float w = 1.0;
-    for (int i = 1; i <= numSamples; i++) { // Loop with int
-        float d0 = float(i) / float(numSamples); // Cast i to float for division
+    for (int i = 1; i <= 10; i++) { // keep a fixed upper bound for GLSL compilers
+        if (i > numSamples) break;
+        float d0 = float(i) / float(max(numSamples, 1));
         r += w * (map_image(p + n * d0, heightMapTex) - d0);
         w *= 0.5 * intensity;
     }
@@ -184,7 +162,7 @@ void image_main(out vec4 fragColor, vec2 fragCoord_norm, sampler2D heightMapTex)
     vec3 lp = ro + vec3(cos(tm / 4.0) * 0.5, sin(tm / 4.0) * 0.5, -0.5);
 
     float t = 0.0;
-    float d;
+    float d = 0.0;
     for (int j = 0; j < 32; j++) {
         d = map_image(ro + rd * t, heightMapTex);
         if (d < 0.001) break;
@@ -195,7 +173,7 @@ void image_main(out vec4 fragColor, vec2 fragCoord_norm, sampler2D heightMapTex)
     vec3 sn = getNormal_image(sp, heightMapTex);
     vec3 ld = lp - sp;
 
-    float tSize0 = 1.0 / currentTextureScale;
+    float tSize0 = 1.0 / max(currentTextureScale, 0.001);
     float c_height = heightMap_image(sp.xy, heightMapTex);
 
     vec3 oC = triplanarTexture(heightMapTex, sp * tSize0, sn);
@@ -208,16 +186,15 @@ void image_main(out vec4 fragColor, vec2 fragCoord_norm, sampler2D heightMapTex)
     float diff = max(dot(ld, sn), 0.0);
     diff = pow(diff, 4.0) * 2.0;
     float spec = pow(max(dot(reflect(-ld, sn), -rd), 0.0), currentSpecularPower);
-    float fre = pow(clamp(dot(sn, rd) + 1.0, 0.0, 1.0), currentFresnelPower);
+    float fre  = pow(clamp(dot(sn, rd) + 1.0, 0.0, 1.0), currentFresnelPower);
     float Schlick = pow(1.0 - max(dot(rd, normalize(rd + ld)), 0.0), 5.0);
     float fre2 = mix(0.5, 1.0, Schlick);
 
     float crv = curve_image(sp, heightMapTex, currentCurveAmp, currentCurveAmpInit);
-    
-    // Convert currentAOSamples_float to int for the AO calculation
-    int final_ao_samples = int(floor(currentAOSamples_float + 0.5)); // floor + 0.5 for rounding
-    float ao = calculateAO_image(sp, sn, heightMapTex, final_ao_samples, currentAOIntensity);
 
+    int final_ao_samples = int(floor(currentAOSamples_float + 0.5));
+    final_ao_samples = clamp(final_ao_samples, 1, 10);
+    float ao = calculateAO_image(sp, sn, heightMapTex, final_ao_samples, currentAOIntensity);
 
     vec3 col = (oC * (diff + 0.25 + vec3(0.5, 0.7, 1.0) * spec * fre2 * 4.0 + vec3(1.0, 0.1, 0.2) * fre * 8.0));
     col *= atten * crv * ao;
@@ -226,15 +203,13 @@ void image_main(out vec4 fragColor, vec2 fragCoord_norm, sampler2D heightMapTex)
         vec2 uv_heightmap = fragCoord_norm;
         uv_heightmap = mat2(th.x, th.y, -th.y, th.x) * uv_heightmap;
         uv_heightmap += vec2(TIME, cos(TIME / 4.0)) / 2.0;
-        vec4 tex_heightmap = texture(heightMapTex, fract(uv_heightmap / 1.0));
+        vec4 tex_heightmap = tex2D(heightMapTex, fract(uv_heightmap));
         col = sqrt(tex_heightmap.xyz) * tex_heightmap.w;
     }
 
     fragColor = vec4(sqrt(clamp(col, 0.0, 1.0)), 1.0);
 }
 
-
-// --- ISF Main Function ---
 void main() {
     if (PASSINDEX == 0) {
         vec4 prevData = IMG_NORM_PIXEL(timeBuffer, vec2(0.5));
@@ -245,65 +220,62 @@ void main() {
 
     if (PASSINDEX == 1) {
         vec4 prevData = IMG_NORM_PIXEL(voronoiParamsBuffer, vec2(0.5));
-        float smVoronoiFrequency1 = (FRAMEINDEX == 0) ? voronoiFrequency1 : mix(prevData.r, voronoiFrequency1, min(1.0, TIMEDELTA * transitionSpeed));
-        float smVoronoiFrequency2 = (FRAMEINDEX == 0) ? voronoiFrequency2 : mix(prevData.g, voronoiFrequency2, min(1.0, TIMEDELTA * transitionSpeed));
-        float smVoronoiFrequency3 = (FRAMEINDEX == 0) ? voronoiFrequency3 : mix(prevData.b, voronoiFrequency3, min(1.0, TIMEDELTA * transitionSpeed));
-        float smVoronoiPerturbAmount = (FRAMEINDEX == 0) ? voronoiPerturbAmount : mix(prevData.a, voronoiPerturbAmount, min(1.0, TIMEDELTA * transitionSpeed));
-        gl_FragColor = vec4(smVoronoiFrequency1, smVoronoiFrequency2, smVoronoiFrequency3, smVoronoiPerturbAmount);
+        float sm1 = (FRAMEINDEX == 0) ? voronoiFrequency1     : mix(prevData.r, voronoiFrequency1,     min(1.0, TIMEDELTA * transitionSpeed));
+        float sm2 = (FRAMEINDEX == 0) ? voronoiFrequency2     : mix(prevData.g, voronoiFrequency2,     min(1.0, TIMEDELTA * transitionSpeed));
+        float sm3 = (FRAMEINDEX == 0) ? voronoiFrequency3     : mix(prevData.b, voronoiFrequency3,     min(1.0, TIMEDELTA * transitionSpeed));
+        float smP = (FRAMEINDEX == 0) ? voronoiPerturbAmount  : mix(prevData.a, voronoiPerturbAmount,  min(1.0, TIMEDELTA * transitionSpeed));
+        gl_FragColor = vec4(sm1, sm2, sm3, smP);
         return;
     }
 
     if (PASSINDEX == 2) {
         vec4 prevData = IMG_NORM_PIXEL(lightingParamsBuffer, vec2(0.5));
-        float smTextureScale = (FRAMEINDEX == 0) ? textureScale : mix(prevData.r, textureScale, min(1.0, TIMEDELTA * transitionSpeed));
-        float smLightDistanceFactor = (FRAMEINDEX == 0) ? lightDistanceFactor : mix(prevData.g, lightDistanceFactor, min(1.0, TIMEDELTA * transitionSpeed));
-        float smSpecularPower = (FRAMEINDEX == 0) ? specularPower : mix(prevData.b, specularPower, min(1.0, TIMEDELTA * transitionSpeed));
-        float smFresnelPower = (FRAMEINDEX == 0) ? fresnelPower : mix(prevData.a, fresnelPower, min(1.0, TIMEDELTA * transitionSpeed));
-        gl_FragColor = vec4(smTextureScale, smLightDistanceFactor, smSpecularPower, smFresnelPower);
+        float smTS = (FRAMEINDEX == 0) ? textureScale        : mix(prevData.r, textureScale,        min(1.0, TIMEDELTA * transitionSpeed));
+        float smLD = (FRAMEINDEX == 0) ? lightDistanceFactor : mix(prevData.g, lightDistanceFactor, min(1.0, TIMEDELTA * transitionSpeed));
+        float smSP = (FRAMEINDEX == 0) ? specularPower       : mix(prevData.b, specularPower,       min(1.0, TIMEDELTA * transitionSpeed));
+        float smFP = (FRAMEINDEX == 0) ? fresnelPower        : mix(prevData.a, fresnelPower,        min(1.0, TIMEDELTA * transitionSpeed));
+        gl_FragColor = vec4(smTS, smLD, smSP, smFP);
         return;
     }
 
-    if (PASSINDEX == 3) { // AO and Curve parameters smoothing
+    if (PASSINDEX == 3) {
         vec4 prevData = IMG_NORM_PIXEL(aoCurveParamsBuffer, vec2(0.5));
-        float smCurveAmp = (FRAMEINDEX == 0) ? curveAmp : mix(prevData.r, curveAmp, min(1.0, TIMEDELTA * transitionSpeed));
-        float smCurveAmpInit = (FRAMEINDEX == 0) ? curveAmpInit : mix(prevData.g, curveAmpInit, min(1.0, TIMEDELTA * transitionSpeed));
-        // aoSamples is now a float input. Smooth it as a float.
-        float smAOSamples_float_val = (FRAMEINDEX == 0) ? aoSamples : mix(prevData.b, aoSamples, min(1.0, TIMEDELTA * transitionSpeed));
-        float smAOIntensity = (FRAMEINDEX == 0) ? aoIntensity : mix(prevData.a, aoIntensity, min(1.0, TIMEDELTA * transitionSpeed));
-        gl_FragColor = vec4(smCurveAmp, smCurveAmpInit, smAOSamples_float_val, smAOIntensity); // Store the smoothed float
+        float smCA = (FRAMEINDEX == 0) ? curveAmp     : mix(prevData.r, curveAmp,     min(1.0, TIMEDELTA * transitionSpeed));
+        float smCI = (FRAMEINDEX == 0) ? curveAmpInit : mix(prevData.g, curveAmpInit, min(1.0, TIMEDELTA * transitionSpeed));
+        float smAS = (FRAMEINDEX == 0) ? aoSamples    : mix(prevData.b, aoSamples,    min(1.0, TIMEDELTA * transitionSpeed));
+        float smAI = (FRAMEINDEX == 0) ? aoIntensity  : mix(prevData.a, aoIntensity,  min(1.0, TIMEDELTA * transitionSpeed));
+        gl_FragColor = vec4(smCA, smCI, smAS, smAI);
         return;
     }
 
-    if (PASSINDEX == 4) { // Render Buffer A
-        vec4 voronoiParams = IMG_NORM_PIXEL(voronoiParamsBuffer, vec2(0.5));
-        currentVoronoiFrequency1 = voronoiParams.r;
-        currentVoronoiFrequency2 = voronoiParams.g;
-        currentVoronoiFrequency3 = voronoiParams.b;
-        currentVoronoiPerturbAmount = voronoiParams.a;
+    if (PASSINDEX == 4) {
+        vec4 vorParams = IMG_NORM_PIXEL(voronoiParamsBuffer, vec2(0.5));
+        currentVoronoiFrequency1 = vorParams.r;
+        currentVoronoiFrequency2 = vorParams.g;
+        currentVoronoiFrequency3 = vorParams.b;
+        currentVoronoiPerturbAmount = vorParams.a;
 
         bufferA_main(gl_FragColor, isf_FragNormCoord);
         return;
     }
 
-    if (PASSINDEX == 5) { // Render Image
-        vec4 timeData = IMG_NORM_PIXEL(timeBuffer, vec2(0.5));
-        currentOverallSpeed = timeData.r;
+    // PASSINDEX == 5 : final on-screen render
+    vec4 timeData = IMG_NORM_PIXEL(timeBuffer, vec2(0.5));
+    currentOverallSpeed = timeData.r;
 
-        vec4 lightingParams = IMG_NORM_PIXEL(lightingParamsBuffer, vec2(0.5));
-        currentTextureScale = lightingParams.r;
-        currentLightDistanceFactor = lightingParams.g;
-        currentSpecularPower = lightingParams.b;
-        currentFresnelPower = lightingParams.a;
+    vec4 lightParams = IMG_NORM_PIXEL(lightingParamsBuffer, vec2(0.5));
+    currentTextureScale = lightParams.r;
+    currentLightDistanceFactor = lightParams.g;
+    currentSpecularPower = lightParams.b;
+    currentFresnelPower = lightParams.a;
 
-        vec4 aoCurveParams = IMG_NORM_PIXEL(aoCurveParamsBuffer, vec2(0.5));
-        currentCurveAmp = aoCurveParams.r;
-        currentCurveAmpInit = aoCurveParams.g;
-        currentAOSamples_float = aoCurveParams.b; // Retrieve the smoothed float value
-        currentAOIntensity = aoCurveParams.a;
+    vec4 aoCurveParams = IMG_NORM_PIXEL(aoCurveParamsBuffer, vec2(0.5));
+    currentCurveAmp = aoCurveParams.r;
+    currentCurveAmpInit = aoCurveParams.g;
+    currentAOSamples_float = aoCurveParams.b;
+    currentAOIntensity = aoCurveParams.a;
 
-        currentShowHeightmap = showHeightmap;
+    currentShowHeightmap = showHeightmap;
 
-        image_main(gl_FragColor, isf_FragNormCoord, sceneBuffer);
-        return;
-    }
+    image_main(gl_FragColor, isf_FragNormCoord, sceneBuffer);
 }

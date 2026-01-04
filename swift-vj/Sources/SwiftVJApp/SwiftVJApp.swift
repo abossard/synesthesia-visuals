@@ -71,6 +71,9 @@ final class AppState: ObservableObject {
     var imagesModule: ImagesModule?
     var pipelineModule: PipelineModule?
 
+    // Audio processing from Synesthesia OSC
+    let synesthesiaAudio = SynesthesiaAudioProcessor()
+
     // Rendering Engine (Phase 6)
     @Published var renderEngine: RenderEngine?
 
@@ -137,6 +140,21 @@ final class AppState: ObservableObject {
             oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
                 guard let self = self else { return }
                 Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+            }
+            
+            // Wire Synesthesia audio OSC to audio processor and render engine
+            oscHub.subscribe(pattern: "/audio/*") { [weak self] address, values in
+                guard let self = self else { return }
+                Task {
+                    // Parse and accumulate in SynesthesiaAudioProcessor
+                    await self.synesthesiaAudio.handleOSC(address, values)
+                    
+                    // Get processed raw levels and send to render engine on MainActor
+                    let rawLevels = await self.synesthesiaAudio.getRawLevels()
+                    Task { @MainActor in
+                        await self.renderEngine?.onAudioUpdate(rawLevels)
+                    }
+                }
             }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)

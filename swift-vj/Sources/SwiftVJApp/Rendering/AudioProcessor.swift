@@ -2,35 +2,7 @@
 // Port of SynesthesiaAudioOSC.pde to Swift
 
 import Foundation
-
-/// Raw audio levels from external source (Synesthesia, VDJ, etc.)
-struct RawAudioLevels: Sendable {
-    let bass: Float
-    let lowMid: Float
-    let mid: Float
-    let highs: Float
-    let level: Float
-
-    // Beat/kick detection
-    let hitsBass: Float
-    let onBeat: Float
-    let beatTime: Float
-
-    // Energy
-    let intensity: Float
-
-    // BPM LFOs
-    let bpmTwitcher: Float
-    let bpmSin4: Float
-    let bpmConfidence: Float
-
-    static let silent = RawAudioLevels(
-        bass: 0, lowMid: 0, mid: 0, highs: 0, level: 0,
-        hitsBass: 0, onBeat: 0, beatTime: 0,
-        intensity: 0,
-        bpmTwitcher: 0, bpmSin4: 0, bpmConfidence: 0
-    )
-}
+import SwiftVJCore
 
 /// Processes audio input and produces smoothed analysis state
 /// Port of SynesthesiaAudioOSC.pde update logic
@@ -55,9 +27,18 @@ actor AudioProcessor {
     private var bpmSin4: Float = 0
     private var bpmConfidence: Float = 0
 
+    // Presence (slow-moving structural energy)
+    private var bassPresence: Float = 0
+    private var midPresence: Float = 0
+    private var highPresence: Float = 0
+
     // Ramp state for Magic-style speed buildup
     private var rampedSpeed: Float = 0.02
     private var beatBoostAccum: Float = 0.0
+
+    // Audio-reactive time accumulator
+    private var audioTime: Float = 0
+    private var lastUpdateTime: Date = Date()
 
     // Kick detection
     private var lastKickPulseTime: Date = .distantPast
@@ -72,6 +53,7 @@ actor AudioProcessor {
     private let energyFastSmoothing: Float = 0.60
     private let energySlowSmoothing: Float = 0.92
     private let kickEnvSmoothing: Float = 0.55
+    private let presenceSmoothing: Float = 0.92
     private let kickPulseThreshold: Float = 0.65
     private let kickCooldownSec: TimeInterval = 0.140
     private let beatPhaseDecay: Float = 0.87
@@ -108,7 +90,11 @@ actor AudioProcessor {
             bpmTwitcher: bpmTwitcher,
             bpmSin4: bpmSin4,
             bpmConfidence: bpmConfidence,
+            bassPresence: bassPresence,
+            midPresence: midPresence,
+            highPresence: highPresence,
             speed: computeAudioReactiveSpeed(),
+            audioTime: audioTime,
             timestamp: Date()
         )
     }
@@ -116,7 +102,10 @@ actor AudioProcessor {
     /// Update from raw audio levels
     /// Call this when receiving audio data from OSC or other source
     func update(rawLevels: RawAudioLevels) -> AudioState {
-        lastMessageTime = Date()
+        let now = Date()
+        let deltaTime = Float(now.timeIntervalSince(lastUpdateTime))
+        lastUpdateTime = now
+        lastMessageTime = now
 
         // Apply exponential smoothing to band levels
         smoothBass = lerp(smoothBass, rawLevels.bass, 1 - audioSmoothing)
@@ -126,13 +115,17 @@ actor AudioProcessor {
         smoothLevel = lerp(smoothLevel, rawLevels.level, 1 - audioSmoothing)
 
         // Energy envelopes
-        energyFast = lerp(energyFast, rawLevels.intensity, 1 - energyFastSmoothing)
+        energyFast = lerp(energyFast, rawLevels.energyIntensity, 1 - energyFastSmoothing)
         energySlow = lerp(energySlow, energyFast, 1 - energySlowSmoothing)
+
+        // Presence smoothing (very slow, structural energy)
+        bassPresence = lerp(bassPresence, rawLevels.bassPresence, 1 - presenceSmoothing)
+        midPresence = lerp(midPresence, rawLevels.midPresence, 1 - presenceSmoothing)
+        highPresence = lerp(highPresence, rawLevels.highPresence, 1 - presenceSmoothing)
 
         // Kick detection with cooldown
         kickEnv = lerp(kickEnv, rawLevels.hitsBass, 1 - kickEnvSmoothing)
         kickPulse = false
-        let now = Date()
         if rawLevels.hitsBass > kickPulseThreshold &&
            now.timeIntervalSince(lastKickPulseTime) > kickCooldownSec {
             kickPulse = true
@@ -158,6 +151,10 @@ actor AudioProcessor {
         bpmSin4 = lerp(bpmSin4, rawLevels.bpmSin4, 1 - bpmLfoSmoothing)
         bpmConfidence = lerp(bpmConfidence, rawLevels.bpmConfidence, 1 - bpmLfoSmoothing)
 
+        // Accumulate audio-reactive time (Magic-style: time moves faster with audio)
+        let speed = computeAudioReactiveSpeed()
+        audioTime += deltaTime * speed
+
         return currentState
     }
 
@@ -165,6 +162,10 @@ actor AudioProcessor {
     /// Call this periodically to decay values during silence
     func updateWithTimeoutDecay() -> AudioState {
         guard !isActive else { return currentState }
+
+        let now = Date()
+        let deltaTime = Float(now.timeIntervalSince(lastUpdateTime))
+        lastUpdateTime = now
 
         // Apply timeout decay to all values
         smoothBass *= timeoutDecay
@@ -179,10 +180,16 @@ actor AudioProcessor {
         bpmTwitcher *= timeoutDecay
         bpmSin4 *= timeoutDecay
         bpmConfidence *= timeoutDecay
+        bassPresence *= timeoutDecay
+        midPresence *= timeoutDecay
+        highPresence *= timeoutDecay
 
         // Decay speed toward floor
         rampedSpeed = lerp(rampedSpeed, baseSpeedFloor, speedRampDown)
         beatBoostAccum *= beatBoostDecay
+
+        // Still accumulate time at minimum speed
+        audioTime += deltaTime * baseSpeedFloor
 
         return currentState
     }
@@ -208,9 +215,14 @@ actor AudioProcessor {
         bpmTwitcher = 0
         bpmSin4 = 0
         bpmConfidence = 0
+        bassPresence = 0
+        midPresence = 0
+        highPresence = 0
         rampedSpeed = baseSpeedFloor
         beatBoostAccum = 0
+        audioTime = 0
         lastMessageTime = .distantPast
+        lastUpdateTime = Date()
     }
 
     // MARK: - Private
@@ -291,10 +303,13 @@ final class AudioStateManager: ObservableObject {
             hitsBass: bass * 1.2,  // Estimate hits from level
             onBeat: 0,
             beatTime: 0,
-            intensity: level,
             bpmTwitcher: 0,
             bpmSin4: 0,
-            bpmConfidence: 0
+            bpmConfidence: 0,
+            energyIntensity: level,
+            bassPresence: 0,
+            midPresence: 0,
+            highPresence: 0
         )
         state = await processor.update(rawLevels: raw)
     }

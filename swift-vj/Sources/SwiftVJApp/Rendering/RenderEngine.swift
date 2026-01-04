@@ -6,6 +6,7 @@ import Metal
 import MetalKit
 import Combine
 import SwiftUI
+import SwiftVJCore
 
 // MARK: - Tile Manager Actor
 

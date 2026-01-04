@@ -31,8 +31,16 @@ struct AudioState: Sendable, Equatable {
     let bpmSin4: Float      // 4-beat sine LFO
     let bpmConfidence: Float
 
+    // Presence (slow-moving structural energy)
+    let bassPresence: Float
+    let midPresence: Float
+    let highPresence: Float
+
     // Audio-reactive speed (Magic-style ramping)
     let speed: Float        // 0.02 - 1.20
+
+    // Accumulated audio-reactive time
+    let audioTime: Float
 
     // Timestamp
     let timestamp: Date
@@ -46,7 +54,8 @@ struct AudioState: Sendable, Equatable {
         energyFast: 0, energySlow: 0,
         kickEnv: 0, kickPulse: false, beatPhase: 0,
         beat4: 0, bpmTwitcher: 0, bpmSin4: 0, bpmConfidence: 0,
-        speed: 0.02,
+        bassPresence: 0, midPresence: 0, highPresence: 0,
+        speed: 0.02, audioTime: 0,
         timestamp: Date()
     )
 }
@@ -277,6 +286,19 @@ struct ShaderUniforms {
     var energyFast: Float = 0     // offset 60
     var energySlow: Float = 0     // offset 64
 
+    // Presence (slow-moving structural energy)
+    var bassPresence: Float = 0   // offset 68
+    var midPresence: Float = 0    // offset 72
+    var highPresence: Float = 0   // offset 76
+
+    // BPM LFOs
+    var bpmTwitcher: Float = 0    // offset 80
+    var bpmSin4: Float = 0        // offset 84
+    var bpmConfidence: Float = 0  // offset 88
+
+    // Audio-reactive time (accumulated, not wall clock)
+    var audioTime: Float = 0      // offset 92
+
     /// Update from AudioState
     mutating func update(from audio: AudioState) {
         bass = audio.bass
@@ -290,6 +312,13 @@ struct ShaderUniforms {
         energyFast = audio.energyFast
         energySlow = audio.energySlow
         speed = audio.speed
+        bassPresence = audio.bassPresence
+        midPresence = audio.midPresence
+        highPresence = audio.highPresence
+        bpmTwitcher = audio.bpmTwitcher
+        bpmSin4 = audio.bpmSin4
+        bpmConfidence = audio.bpmConfidence
+        audioTime = audio.audioTime
     }
 }
 

@@ -334,12 +334,13 @@
 
 ## MORE STUFF
 
-- [ ] 9.1 Syphon background seems to be black and not transparent
+- [x] 9.1 Syphon background seems to be black and not transparent
 - [ ] 9.2 Make shaders audio reactivate again based on the Synesthesia OSC messages it receives
 - [ ] 9.3 Make the font/text size and of the lyrics and refrain and songinfo configurable
 - [ ] 9.4 Autocompile new shaders on startup of the app
 - [ ] 9.5 Make sure shader change is possible from OSC
- 
+- [ ] 9.6 make the little previews actually working
+
 ---
 
 ### Phase 6: Process Management ❌ NOT STARTED

@@ -1,8 +1,6 @@
 // MTKViewTiles.swift - Unified MTKView-based tile system
 // All tiles use MTKView's built-in 60fps render loop for reliable animation
 // DRY architecture: BaseMTKViewTile → specialized subclasses
-//
-// PERFORMANCE: Single render to syphonTexture, then blit to screen with scaling
 
 import SwiftUI
 import MetalKit
@@ -10,11 +8,119 @@ import CoreText
 import AppKit
 import SyphonKit
 
+// MARK: - Syphon Thumbnail View (receives from app's own Syphon servers)
+
+/// Displays a Syphon client preview - connects to this app's own Syphon servers
+struct SyphonThumbnailView: NSViewRepresentable {
+    let serverName: String
+    
+    func makeNSView(context: Context) -> SyphonClientMTKView {
+        let view = SyphonClientMTKView(serverName: serverName)
+        return view
+    }
+    
+    func updateNSView(_ nsView: SyphonClientMTKView, context: Context) {}
+}
+
+/// MTKView that acts as Syphon client, displaying received frames
+class SyphonClientMTKView: MTKView, MTKViewDelegate {
+    private var syphonClient: SyphonMetalClient?
+    private var commandQueue: MTLCommandQueue?
+    private var blitPipelineState: MTLRenderPipelineState?
+    private let serverName: String
+    
+    init(serverName: String) {
+        self.serverName = serverName
+        super.init(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        setupView()
+    }
+    
+    required init(coder: NSCoder) {
+        self.serverName = ""
+        super.init(coder: coder)
+        setupView()
+    }
+    
+    private func setupView() {
+        guard let device = self.device else { return }
+        self.delegate = self
+        self.isPaused = false
+        self.enableSetNeedsDisplay = false
+        self.preferredFramesPerSecond = 30
+        self.colorPixelFormat = .bgra8Unorm
+        self.clearColor = MTLClearColor(red: 0.1, green: 0.1, blue: 0.15, alpha: 1)
+        commandQueue = device.makeCommandQueue()
+        setupBlitPipeline()
+        connectToServer()
+    }
+    
+    private func connectToServer() {
+        guard let device = self.device,
+              let servers = SyphonServerDirectory.shared().servers as? [[String: Any]] else { return }
+        let appName = Bundle.main.infoDictionary?[kCFBundleNameKey as String] as? String ?? "SwiftVJApp"
+        for serverInfo in servers {
+            let name = serverInfo[SyphonServerDescriptionNameKey] as? String ?? ""
+            let app = serverInfo[SyphonServerDescriptionAppNameKey] as? String ?? ""
+            if name == serverName && app == appName {
+                syphonClient = SyphonMetalClient(
+                    serverDescription: serverInfo,
+                    device: device,
+                    options: nil,
+                    newFrameHandler: nil
+                )
+                return
+            }
+        }
+    }
+    
+    private func setupBlitPipeline() {
+        guard let device = self.device else { return }
+        let src = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct V { float4 p [[position]]; float2 t; };
+        vertex V bV(uint i [[vertex_id]]) { float2 ps[4]={{-1,-1},{1,-1},{-1,1},{1,1}}; float2 ts[4]={{0,1},{1,1},{0,0},{1,0}}; V o; o.p=float4(ps[i],0,1); o.t=ts[i]; return o; }
+        fragment float4 bF(V in [[stage_in]], texture2d<float> t [[texture(0)]]) { return t.sample(sampler(filter::linear), in.t); }
+        """
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            let d = MTLRenderPipelineDescriptor()
+            d.vertexFunction = lib.makeFunction(name: "bV")
+            d.fragmentFunction = lib.makeFunction(name: "bF")
+            d.colorAttachments[0].pixelFormat = .bgra8Unorm
+            blitPipelineState = try device.makeRenderPipelineState(descriptor: d)
+        } catch {}
+    }
+    
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+    
+    func draw(in view: MTKView) {
+        if syphonClient == nil { connectToServer() }
+        guard let cq = commandQueue, let cb = cq.makeCommandBuffer(), let drawable = view.currentDrawable else { return }
+        let desc = MTLRenderPassDescriptor()
+        desc.colorAttachments[0].texture = drawable.texture
+        desc.colorAttachments[0].loadAction = .clear
+        desc.colorAttachments[0].storeAction = .store
+        desc.colorAttachments[0].clearColor = self.clearColor
+        if let client = syphonClient, client.hasNewFrame, let tex = client.newFrameImage(), let pipe = blitPipelineState {
+            if let enc = cb.makeRenderCommandEncoder(descriptor: desc) {
+                enc.setRenderPipelineState(pipe)
+                enc.setFragmentTexture(tex, index: 0)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                enc.endEncoding()
+            }
+        } else {
+            if let enc = cb.makeRenderCommandEncoder(descriptor: desc) { enc.endEncoding() }
+        }
+        cb.present(drawable)
+        cb.commit()
+    }
+}
+
 // MARK: - Base MTKView Tile
 
 /// Base class for all MTKView-based tiles
 /// Provides: device setup, render loop, uniform buffer, Syphon-ready texture
-/// OPTIMIZED: Single render to syphonTexture, blit to screen with scaling
 class BaseMTKViewTile: MTKView, MTKViewDelegate {
     
     // Metal resources
@@ -165,10 +271,10 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         lastFrameTime = now
         frameCount += 1
         
-        // Update audio time
-        let baseSpeed: Float = 1.0
-        let audioSpeedBoost: Float = 0.5 + audioState.level * 0.5
-        audioTime += deltaTime * baseSpeed * audioSpeedBoost
+        // Audio-reactive time accumulation (matches VJUniverse.pde exactly)
+        // Uses speed from AudioProcessor's 4-stage algorithm, accumulates locally
+        let frameSpeed = max(audioState.speed, 0.02)  // Floor at 0.02
+        audioTime += deltaTime * frameSpeed
         
         // Update uniforms
         updateUniforms()
