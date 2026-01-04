@@ -18,10 +18,18 @@ let package = Package(
         .executable(
             name: "SwiftVJApp",
             targets: ["SwiftVJApp"]),
+        // Shader compilation CLI
+        .executable(
+            name: "shader-compile",
+            targets: ["ShaderCompile"]),
         // Core library (for embedding)
         .library(
             name: "SwiftVJCore",
             targets: ["SwiftVJCore"]),
+        // Shadertoy Runtime library
+        .library(
+            name: "ShadertoyRuntime",
+            targets: ["ShadertoyRuntime"]),
     ],
     dependencies: [
         // OSC communication
@@ -68,6 +76,25 @@ let package = Package(
             name: "SwiftVJCore",
             dependencies: [
                 .product(name: "OSCKit", package: "OSCKit"),
+            ]),
+
+        // Shadertoy Runtime - GLSL to Metal shader runtime
+        .target(
+            name: "ShadertoyRuntime",
+            dependencies: [],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("CoreGraphics"),
+            ]
+        ),
+
+        // Shader compilation CLI tool
+        .executableTarget(
+            name: "ShaderCompile",
+            dependencies: [
+                "ShadertoyRuntime",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]),
 
         // Behavior tests - pure functions, no external dependencies

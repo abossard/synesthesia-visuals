@@ -1,0 +1,37 @@
+{
+  "passes": [
+    {
+      "name": "Image",
+      "output": {
+        "sizeMode": "screen"
+      },
+      "pingPong": false,
+      "channels": [
+        {
+          "index": 0,
+          "source": "none"
+        },
+        {
+          "index": 1,
+          "source": "none"
+        },
+        {
+          "index": 2,
+          "source": "none"
+        },
+        {
+          "index": 3,
+          "source": "none"
+        }
+      ]
+    }
+  ],
+  "global": {
+    "name": "SinglePass Example",
+    "author": "Shadertoy Runtime",
+    "description": "A simple single-pass shader example with no external inputs",
+    "tags": ["example", "single-pass", "procedural"],
+    "defaultFilter": "linear",
+    "defaultWrap": "repeat"
+  }
+}
