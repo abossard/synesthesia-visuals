@@ -322,7 +322,6 @@ struct RenderControlsView: View {
 /// Full rendering tab for the sidebar - ALL tiles use MTKView for 60fps
 struct RenderingView: View {
     @EnvironmentObject var appState: AppState
-    @StateObject private var renderEngine = RenderEngine()
     @State private var useDirectMTKView: Bool = true
     @State private var frameCount: Int = 0
     @State private var audioTime: Float = 0
@@ -342,6 +341,10 @@ struct RenderingView: View {
     @State private var demoRefrain = RefrainDisplayState(text: "♪ This is the chorus! ♪", opacity: 255, active: true, lastChangeTime: Date())
     @State private var demoSongInfo = SongInfoDisplayState(artist: "SwiftVJ", title: "Ready for music...", album: "Waiting for track", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date())
 
+    // Use appState.renderEngine (receives OSC updates) instead of local instance
+    private var renderEngine: RenderEngine? { appState.renderEngine }
+    private var audioState: AudioState { appState.renderEngine?.audioManager.state ?? .silent }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -349,8 +352,10 @@ struct RenderingView: View {
                 mtkViewTiles
 
                 // Shader browser
-                GroupBox("Shader Library") {
-                    ShaderListView(shaderManager: renderEngine.shaderManager)
+                if let shaderManager = renderEngine?.shaderManager {
+                    GroupBox("Shader Library") {
+                        ShaderListView(shaderManager: shaderManager)
+                    }
                 }
 
                 // Text controls
@@ -361,10 +366,10 @@ struct RenderingView: View {
             .padding()
         }
         .onAppear {
-            Task { try? await renderEngine.start() }
+            Task { try? await renderEngine?.start() }
         }
         .onDisappear {
-            Task { await renderEngine.stop() }
+            Task { await renderEngine?.stop() }
         }
     }
     
@@ -449,16 +454,16 @@ struct RenderingView: View {
                 shaderName: selectedShader,
                 frameCount: $frameCount,
                 audioTime: $audioTime,
-                audioState: renderEngine.audioManager.state
+                audioState: audioState
             )
         case "mask":
-            MaskTileView(shaderName: selectedMaskShader, audioState: renderEngine.audioManager.state)
+            MaskTileView(shaderName: selectedMaskShader, audioState: audioState)
         case "lyrics":
-            LyricsTileView(lyricsState: demoLyrics, audioState: renderEngine.audioManager.state)
+            LyricsTileView(lyricsState: demoLyrics, audioState: audioState)
         case "refrain":
-            RefrainTileView(refrainState: demoRefrain, audioState: renderEngine.audioManager.state)
+            RefrainTileView(refrainState: demoRefrain, audioState: audioState)
         case "songInfo":
-            SongInfoTileView(songInfoState: demoSongInfo, audioState: renderEngine.audioManager.state)
+            SongInfoTileView(songInfoState: demoSongInfo, audioState: audioState)
         default:
             Color.black
         }
@@ -486,7 +491,7 @@ struct RenderingView: View {
                 Text("\(title):")
                 
                 Button {
-                    let shaders = renderEngine.shaderManager.availableShaders
+                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
                     if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
                         let prev = (current - 1 + shaders.count) % shaders.count
                         binding.wrappedValue = shaders[prev].name
@@ -504,7 +509,7 @@ struct RenderingView: View {
                     .cornerRadius(4)
                 
                 Button {
-                    let shaders = renderEngine.shaderManager.availableShaders
+                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
                     if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
                         let next = (current + 1) % shaders.count
                         binding.wrappedValue = shaders[next].name
@@ -515,7 +520,7 @@ struct RenderingView: View {
                 .buttonStyle(.bordered)
                 
                 Button("Random") {
-                    let shaders = renderEngine.shaderManager.availableShaders
+                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
                     if !shaders.isEmpty {
                         binding.wrappedValue = shaders.randomElement()?.name ?? binding.wrappedValue
                     }

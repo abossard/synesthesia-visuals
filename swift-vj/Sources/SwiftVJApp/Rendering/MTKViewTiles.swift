@@ -138,6 +138,22 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
     private var lastFrameTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     private(set) var frameCount: Int = 0
     
+    // Draw-loop speed computation (matches VJUniverse.pde computeAudioReactiveSpeed)
+    // These MUST be computed every frame, not just on OSC updates!
+    private var rampedSpeed: Float = 0.02        // Current ramped speed
+    private var beatBoostAccum: Float = 0.0      // Beat boost accumulator (decays)
+    private var smoothedAudioSpeed: Float = 0.02 // Final smoothed speed for time accumulation
+    
+    // Constants from VJUniverse.pde (SynesthesiaAudioOSC.pde)
+    private let baseSpeedFloor: Float = 0.02     // BASE_SPEED_FLOOR
+    private let audioSpeedMax: Float = 1.20      // AUDIO_SPEED_MAX
+    private let speedRampUp: Float = 0.008       // SPEED_RAMP_UP
+    private let speedRampDown: Float = 0.025     // SPEED_RAMP_DOWN
+    private let bassBoostWeight: Float = 0.35    // BASS_BOOST_WEIGHT
+    private let beatBoostAmount: Float = 0.15    // BEAT_BOOST_AMOUNT
+    private let beatBoostDecay: Float = 0.92     // BEAT_BOOST_DECAY
+    private let audioSpeedSmoothing: Float = 0.65 // AUDIO_SPEED_SMOOTHING (draw-loop)
+    
     // Audio state (updated externally)
     var audioState: AudioState = .silent
     
@@ -267,13 +283,62 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
     func draw(in view: MTKView) {
         // Calculate delta time
         let now = CFAbsoluteTimeGetCurrent()
-        let deltaTime = Float(now - lastFrameTime)
+        var deltaTime = Float(now - lastFrameTime)
         lastFrameTime = now
         frameCount += 1
         
-        // Audio-reactive time accumulation (matches VJUniverse.pde exactly)
-        // Uses speed from AudioProcessor's 4-stage algorithm, accumulates locally
-        let frameSpeed = max(audioState.speed, 0.02)  // Floor at 0.02
+        // Clamp deltaTime to avoid jumps (matches VJUniverse.pde)
+        if deltaTime <= 0 || deltaTime > 1.0 {
+            deltaTime = 1.0 / 60.0  // Fallback to ~60fps
+        }
+        
+        // ============================================
+        // Audio-reactive speed computation (VJUniverse.pde computeAudioReactiveSpeed)
+        // This MUST run every frame, not just on OSC updates!
+        // ============================================
+        
+        // Check if we have active audio (level > 0.01)
+        let hasActiveAudio = audioState.level > 0.01
+        
+        if !hasActiveAudio {
+            // No audio → decay to floor
+            rampedSpeed = lerp(rampedSpeed, baseSpeedFloor, speedRampDown)
+            beatBoostAccum *= beatBoostDecay
+        } else {
+            // 1. SMOOTH (already done in AudioProcessor)
+            // 2. SCALE: Map volume → target speed
+            // Blend overall level with bass emphasis for "thump" response
+            let volumeDriver = audioState.level * (1.0 - bassBoostWeight) + audioState.bass * bassBoostWeight
+            let clampedDriver = min(max(volumeDriver, 0), 1)
+            
+            // Scale to speed range: floor at silence, max at loud
+            let targetSpeed = baseSpeedFloor + clampedDriver * (audioSpeedMax - baseSpeedFloor)
+            
+            // 3. RAMP: Gradual buildup / faster decay
+            if targetSpeed > rampedSpeed {
+                // Ramp UP slowly (sustained loud builds momentum)
+                rampedSpeed = lerp(rampedSpeed, targetSpeed, speedRampUp)
+            } else {
+                // Ramp DOWN faster (quiet sections decay quicker)
+                rampedSpeed = lerp(rampedSpeed, targetSpeed, speedRampDown)
+            }
+            
+            // 4. BEAT BOOST: Transient punch on kicks/beats
+            // Accumulate beat energy (kick hits add boost, decays over time)
+            let beatTrigger = max(audioState.kickEnv, audioState.beatPhase) * beatBoostAmount
+            beatBoostAccum = max(beatBoostAccum * beatBoostDecay, beatTrigger)
+        }
+        
+        // Compute raw speed = ramped base + beat transient
+        let rawSpeed = min(max(rampedSpeed + beatBoostAccum, baseSpeedFloor), audioSpeedMax)
+        
+        // Apply final draw-loop smoothing (AUDIO_SPEED_SMOOTHING = 0.65)
+        smoothedAudioSpeed = lerp(smoothedAudioSpeed, rawSpeed, 1 - audioSpeedSmoothing)
+        
+        // Clamp to valid range
+        let frameSpeed = min(max(smoothedAudioSpeed, baseSpeedFloor), audioSpeedMax)
+        
+        // Accumulate audio-reactive time
         audioTime += deltaTime * frameSpeed
         
         // Update uniforms

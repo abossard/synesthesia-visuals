@@ -95,15 +95,20 @@ public actor SynesthesiaAudioProcessor {
         
         switch category {
         case "level":
+            // VJUniverse.pde mapping:
+            // /audio/level/bass -> smoothAudioBass
+            // /audio/level/mid -> smoothAudioLowMid (low-mid frequency)
+            // /audio/level/midhigh -> smoothAudioMid (mid frequency)
+            // /audio/level/high -> smoothAudioHighs
+            // /audio/level/all -> smoothAudioLevel
             switch band {
             case "bass": rawBass = value
-            case "mid": rawMid = value
+            case "mid": rawLowMid = value  // Note: 'mid' OSC = lowMid in VJUniverse
+            case "midhigh": rawMid = value  // Note: 'midhigh' OSC = mid in VJUniverse
             case "high": rawHighs = value
             case "all": rawLevel = value
             default: break
             }
-            // Compute low-mid as interpolation
-            rawLowMid = (rawBass + rawMid) * 0.5
             // Compute intensity from overall level
             rawIntensity = rawLevel
             
