@@ -323,13 +323,60 @@ struct RenderControlsView: View {
 struct RenderingView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var renderEngine = RenderEngine()
+    @State private var useDirectMTKView: Bool = true
+    @State private var frameCount: Int = 0
+    @State private var audioTime: Float = 0
+    @State private var selectedShader: String = "3isacrowd"
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Main preview
-                GroupBox("Visual Output") {
-                    RenderPreviewView(renderEngine: renderEngine)
+                // Toggle between old and new rendering
+                Toggle("Use MTKView (Direct Metal)", isOn: $useDirectMTKView)
+                    .padding(.horizontal)
+                
+                if useDirectMTKView {
+                    // NEW: Direct MTKView-based rendering (continuous 60fps)
+                    GroupBox("Visual Output (MTKView)") {
+                        VStack {
+                            // Direct Metal view
+                            MetalShaderView(
+                                shaderName: selectedShader,
+                                frameCount: $frameCount,
+                                audioTime: $audioTime
+                            )
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .frame(minHeight: 360)
+                            .background(Color.black)
+                            .cornerRadius(8)
+                            
+                            // Stats
+                            HStack {
+                                Text("Frame: \(frameCount)")
+                                    .font(.caption.monospacedDigit())
+                                Spacer()
+                                Text("Time: \(String(format: "%.2f", audioTime))")
+                                    .font(.caption.monospacedDigit())
+                            }
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                            
+                            // Shader selector
+                            HStack {
+                                Text("Shader:")
+                                TextField("shader name", text: $selectedShader)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 200)
+                            }
+                            .padding(.top, 8)
+                        }
+                        .padding()
+                    }
+                } else {
+                    // OLD: RenderEngine-based rendering (Timer + texture copy)
+                    GroupBox("Visual Output (RenderEngine)") {
+                        RenderPreviewView(renderEngine: renderEngine)
+                    }
                 }
 
                 // Shader browser

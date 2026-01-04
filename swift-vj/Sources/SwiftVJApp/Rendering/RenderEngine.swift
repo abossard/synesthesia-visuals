@@ -149,6 +149,7 @@ final class RenderEngine: ObservableObject {
     private var displayLink: CVDisplayLink?
     private var renderTimer: Timer?
     private var dispatchTimer: DispatchSourceTimer?
+    private var renderThread: Thread?
 
     // Syphon output
     var syphonManager: SyphonOutputManager?
@@ -227,27 +228,54 @@ final class RenderEngine: ObservableObject {
 
     private func startRenderLoop() {
         lastFrameTime = Date()
-
-        // Use DispatchSourceTimer for reliable render loop
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
-        timer.schedule(deadline: .now(), repeating: 1.0 / targetFPS)
-        timer.setEventHandler { [weak self] in
+        
+        // Use a dedicated thread with its own run loop for reliable timing
+        let thread = Thread { [weak self] in
             guard let self = self else { return }
-            Task { @MainActor in
-                await self.renderFrame()
+            
+            let interval = 1.0 / self.targetFPS
+            var lastTime = CFAbsoluteTimeGetCurrent()
+            
+            while !Thread.current.isCancelled {
+                let currentTime = CFAbsoluteTimeGetCurrent()
+                let elapsed = currentTime - lastTime
+                
+                if elapsed >= interval {
+                    lastTime = currentTime
+                    
+                    // Dispatch render to main actor
+                    DispatchQueue.main.async {
+                        Task { @MainActor in
+                            await self.renderFrame()
+                        }
+                    }
+                }
+                
+                // Sleep briefly to avoid spinning CPU
+                Thread.sleep(forTimeInterval: 0.001)
             }
         }
-        timer.resume()
-        dispatchTimer = timer
+        thread.name = "RenderLoop"
+        thread.qualityOfService = .userInteractive
+        renderThread = thread
+        thread.start()
         
-        print("[RenderEngine] Render loop started at \(targetFPS) FPS")
+        print("[RenderEngine] Render loop started on dedicated thread at \(targetFPS) FPS")
     }
 
     private func stopRenderLoop() {
+        renderThread?.cancel()
+        renderThread = nil
+        
         renderTimer?.invalidate()
         renderTimer = nil
         dispatchTimer?.cancel()
         dispatchTimer = nil
+        
+        if let link = displayLink {
+            CVDisplayLinkStop(link)
+            self.displayLink = nil
+        }
     }
 
     private func renderFrame() async {
