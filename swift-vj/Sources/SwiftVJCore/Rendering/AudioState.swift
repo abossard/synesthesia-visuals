@@ -149,10 +149,10 @@ public struct AudioState: Sendable, Equatable {
     }
 }
 
-// MARK: - Raw Audio Levels (Input)
+// MARK: - OSC Audio Levels (Input)
 
-/// Raw audio levels before smoothing
-public struct RawAudioLevels: Sendable {
+/// Audio levels from Synesthesia OSC (already normalized 0-1)
+public struct OSCAudioLevels: Sendable {
     public let bass: Float
     public let lowMid: Float
     public let mid: Float

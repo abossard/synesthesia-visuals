@@ -36,12 +36,6 @@ struct AudioState: Sendable, Equatable {
     let midPresence: Float
     let highPresence: Float
 
-    // Audio-reactive speed (Magic-style ramping)
-    let speed: Float        // 0.02 - 1.20
-
-    // Accumulated audio-reactive time
-    let audioTime: Float
-
     // Timestamp
     let timestamp: Date
 
@@ -55,7 +49,6 @@ struct AudioState: Sendable, Equatable {
         kickEnv: 0, kickPulse: false, beatPhase: 0,
         beat4: 0, bpmTwitcher: 0, bpmSin4: 0, bpmConfidence: 0,
         bassPresence: 0, midPresence: 0, highPresence: 0,
-        speed: 0.02, audioTime: 0,
         timestamp: Date()
     )
 }
@@ -299,7 +292,7 @@ struct ShaderUniforms {
     // Audio-reactive time (accumulated, not wall clock)
     var audioTime: Float = 0      // offset 92
 
-    /// Update from AudioState
+    /// Update from AudioState (speed and audioTime set separately by tile)
     mutating func update(from audio: AudioState) {
         bass = audio.bass
         lowMid = audio.lowMid
@@ -311,14 +304,13 @@ struct ShaderUniforms {
         beat = audio.beatPhase
         energyFast = audio.energyFast
         energySlow = audio.energySlow
-        speed = audio.speed
         bassPresence = audio.bassPresence
         midPresence = audio.midPresence
         highPresence = audio.highPresence
         bpmTwitcher = audio.bpmTwitcher
         bpmSin4 = audio.bpmSin4
         bpmConfidence = audio.bpmConfidence
-        audioTime = audio.audioTime
+        // Note: speed and audioTime are computed by the tile, not copied from AudioState
     }
 }
 

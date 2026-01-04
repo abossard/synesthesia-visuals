@@ -7,8 +7,8 @@ import OSCKit
 
 // MARK: - Synesthesia Audio Processor
 
-/// Parses Synesthesia audio OSC messages and produces smoothed audio state.
-/// Thread-safe actor that accumulates raw values and applies per-frame smoothing.
+/// Parses Synesthesia audio OSC messages and produces audio state.
+/// Thread-safe actor that accumulates OSC values.
 ///
 /// OSC Address Patterns (from Synesthesia):
 /// - /audio/level/{bass, mid, high, all}
@@ -24,45 +24,45 @@ import OSCKit
 ///     await processor.handleOSC(address, values)
 /// }
 /// // Per frame:
-/// let rawLevels = await processor.getRawLevels()
+/// let levels = await processor.getLevels()
 /// ```
 public actor SynesthesiaAudioProcessor {
     
-    // MARK: - Raw OSC Values (accumulator)
+    // MARK: - OSC Values (accumulator)
     
-    // Levels (0.0 - 1.0)
-    private var rawBass: Float = 0
-    private var rawMid: Float = 0
-    private var rawHighs: Float = 0
-    private var rawLevel: Float = 0
+    // Levels (0.0 - 1.0, normalized by Synesthesia)
+    private var oscBass: Float = 0
+    private var oscMid: Float = 0
+    private var oscHighs: Float = 0
+    private var oscLevel: Float = 0
     
     // Low-mid (interpolated from bass/mid)
-    private var rawLowMid: Float = 0
+    private var oscLowMid: Float = 0
     
     // Presence (slow-moving structural energy)
-    private var rawBassPresence: Float = 0
-    private var rawMidPresence: Float = 0
-    private var rawHighPresence: Float = 0
+    private var oscBassPresence: Float = 0
+    private var oscMidPresence: Float = 0
+    private var oscHighPresence: Float = 0
     
     // Hits (transients)
-    private var rawBassHits: Float = 0
-    private var rawMidHits: Float = 0
-    private var rawHighHits: Float = 0
+    private var oscBassHits: Float = 0
+    private var oscMidHits: Float = 0
+    private var oscHighHits: Float = 0
     
     // Beat detection
-    private var rawOnBeat: Float = 0
-    private var rawBeatTime: Float = 0
-    private var rawToggleOnBeat: Float = 0
-    private var rawRandomOnBeat: Float = 0
+    private var oscOnBeat: Float = 0
+    private var oscBeatTime: Float = 0
+    private var oscToggleOnBeat: Float = 0
+    private var oscRandomOnBeat: Float = 0
     
     // BPM LFOs
-    private var rawBpmTwitcher: Float = 0
-    private var rawBpmSin4: Float = 0
-    private var rawBpmConfidence: Float = 0
-    private var rawBpm: Float = 120
+    private var oscBpmTwitcher: Float = 0
+    private var oscBpmSin4: Float = 0
+    private var oscBpmConfidence: Float = 0
+    private var oscBpm: Float = 120
     
     // Intensity (overall energy)
-    private var rawIntensity: Float = 0
+    private var oscIntensity: Float = 0
     
     // Tracking
     private var lastMessageTime: Date = .distantPast
@@ -102,55 +102,54 @@ public actor SynesthesiaAudioProcessor {
             // /audio/level/high -> smoothAudioHighs
             // /audio/level/all -> smoothAudioLevel
             switch band {
-            case "bass": rawBass = value
-            case "mid": rawLowMid = value  // Note: 'mid' OSC = lowMid in VJUniverse
-            case "midhigh": rawMid = value  // Note: 'midhigh' OSC = mid in VJUniverse
-            case "high": rawHighs = value
-            case "all": rawLevel = value
+            case "bass": oscBass = value
+            case "mid": oscLowMid = value  // Note: 'mid' OSC = lowMid in VJUniverse
+            case "midhigh": oscMid = value  // Note: 'midhigh' OSC = mid in VJUniverse
+            case "high": oscHighs = value
+            case "all": oscLevel = value
             default: break
             }
             // Compute intensity from overall level
-            rawIntensity = rawLevel
+            oscIntensity = oscLevel
             
         case "presence":
             switch band {
-            case "bass": rawBassPresence = value
-            case "mid": rawMidPresence = value
-            case "high": rawHighPresence = value
+            case "bass": oscBassPresence = value
+            case "mid": oscMidPresence = value
+            case "high": oscHighPresence = value
             case "all": break // Not used directly
             default: break
             }
             
         case "hits":
             switch band {
-            case "bass": rawBassHits = value
-            case "mid": rawMidHits = value
-            case "high": rawHighHits = value
+            case "bass": oscBassHits = value
+            case "mid": oscMidHits = value
+            case "high": oscHighHits = value
             default: break
             }
             
         case "beat":
             switch band {
-            case "onbeat": rawOnBeat = value
-            case "beattime": rawBeatTime = value
-            case "toggleonbeat": rawToggleOnBeat = value
-            case "randomonbeat": rawRandomOnBeat = value
+            case "onbeat": oscOnBeat = value
+            case "beattime": oscBeatTime = value
+            case "toggleonbeat": oscToggleOnBeat = value
+            case "randomonbeat": oscRandomOnBeat = value
             default: break
             }
             
         case "bpm":
             switch band {
-            case "bpmtwitcher": rawBpmTwitcher = value
-            case "bpmsin4": rawBpmSin4 = value
-            case "bpmconfidence": rawBpmConfidence = value
-            case "bpm": rawBpm = value
+            case "bpmtwitcher": oscBpmTwitcher = value
+            case "bpmsin4": oscBpmSin4 = value
+            case "bpmconfidence": oscBpmConfidence = value
+            case "bpm": oscBpm = value
             default: break
             }
             
         case "energy":
-            // /audio/energy/intensity - use as rawIntensity
             if band == "intensity" {
-                rawIntensity = value
+                oscIntensity = value
             }
             
         default:
@@ -158,25 +157,24 @@ public actor SynesthesiaAudioProcessor {
         }
     }
     
-    /// Get current raw levels for processing
-    /// Call this once per frame, then pass to AudioProcessor for smoothing
-    public func getRawLevels() -> RawAudioLevels {
-        RawAudioLevels(
-            bass: rawBass,
-            lowMid: rawLowMid,
-            mid: rawMid,
-            highs: rawHighs,
-            level: rawLevel,
-            hitsBass: rawBassHits,
-            onBeat: rawOnBeat,
-            beatTime: rawBeatTime,
-            bpmTwitcher: rawBpmTwitcher,
-            bpmSin4: rawBpmSin4,
-            bpmConfidence: rawBpmConfidence,
-            energyIntensity: rawIntensity,
-            bassPresence: rawBassPresence,
-            midPresence: rawMidPresence,
-            highPresence: rawHighPresence
+    /// Get current audio levels for processing
+    public func getLevels() -> OSCAudioLevels {
+        OSCAudioLevels(
+            bass: oscBass,
+            lowMid: oscLowMid,
+            mid: oscMid,
+            highs: oscHighs,
+            level: oscLevel,
+            hitsBass: oscBassHits,
+            onBeat: oscOnBeat,
+            beatTime: oscBeatTime,
+            bpmTwitcher: oscBpmTwitcher,
+            bpmSin4: oscBpmSin4,
+            bpmConfidence: oscBpmConfidence,
+            energyIntensity: oscIntensity,
+            bassPresence: oscBassPresence,
+            midPresence: oscMidPresence,
+            highPresence: oscHighPresence
         )
     }
     
@@ -192,26 +190,26 @@ public actor SynesthesiaAudioProcessor {
     
     /// Reset all values to silent
     public func reset() {
-        rawBass = 0
-        rawMid = 0
-        rawHighs = 0
-        rawLevel = 0
-        rawLowMid = 0
-        rawBassPresence = 0
-        rawMidPresence = 0
-        rawHighPresence = 0
-        rawBassHits = 0
-        rawMidHits = 0
-        rawHighHits = 0
-        rawOnBeat = 0
-        rawBeatTime = 0
-        rawToggleOnBeat = 0
-        rawRandomOnBeat = 0
-        rawBpmTwitcher = 0
-        rawBpmSin4 = 0
-        rawBpmConfidence = 0
-        rawBpm = 120
-        rawIntensity = 0
+        oscBass = 0
+        oscMid = 0
+        oscHighs = 0
+        oscLevel = 0
+        oscLowMid = 0
+        oscBassPresence = 0
+        oscMidPresence = 0
+        oscHighPresence = 0
+        oscBassHits = 0
+        oscMidHits = 0
+        oscHighHits = 0
+        oscOnBeat = 0
+        oscBeatTime = 0
+        oscToggleOnBeat = 0
+        oscRandomOnBeat = 0
+        oscBpmTwitcher = 0
+        oscBpmSin4 = 0
+        oscBpmConfidence = 0
+        oscBpm = 120
+        oscIntensity = 0
         messageCount = 0
         lastMessageTime = .distantPast
     }
@@ -220,12 +218,12 @@ public actor SynesthesiaAudioProcessor {
     
     /// Get presence values (slow-moving structural energy)
     public func getPresence() -> (bass: Float, mid: Float, high: Float) {
-        (rawBassPresence, rawMidPresence, rawHighPresence)
+        (oscBassPresence, oscMidPresence, oscHighPresence)
     }
     
     /// Get BPM info
     public func getBPM() -> (bpm: Float, confidence: Float, twitcher: Float) {
-        (rawBpm, rawBpmConfidence, rawBpmTwitcher)
+        (oscBpm, oscBpmConfidence, oscBpmTwitcher)
     }
     
     // MARK: - Private Helpers
@@ -241,7 +239,7 @@ public actor SynesthesiaAudioProcessor {
     }
 }
 
-// MARK: - Re-export RawAudioLevels for convenience
+// MARK: - Re-export OSCAudioLevels for convenience
 
-// RawAudioLevels is already defined in AudioState.swift (SwiftVJCore/Rendering)
+// OSCAudioLevels is already defined in AudioState.swift (SwiftVJCore/Rendering)
 // This actor uses that type directly

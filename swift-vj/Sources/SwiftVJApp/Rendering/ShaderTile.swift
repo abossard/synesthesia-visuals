@@ -20,6 +20,19 @@ final class ShaderTile: BaseTile {
     // Audio-reactive time
     private var audioTime: Float = 0
     private var syntheticMouse: SIMD2<Float> = SIMD2(0.5, 0.5)
+    
+    // Per-tile speed computation state (matches VJUniverse.pde)
+    private var rampedSpeed: Float = 0.02
+    private var beatBoostAccum: Float = 0.0
+    
+    // Speed constants
+    private let baseSpeedFloor: Float = 0.02
+    private let audioSpeedMax: Float = 1.20
+    private let speedRampUp: Float = 0.008
+    private let speedRampDown: Float = 0.025
+    private let bassBoostWeight: Float = 0.35
+    private let beatBoostAmount: Float = 0.15
+    private let beatBoostDecay: Float = 0.92
 
     // Shader library cache
     private var shaderCache: [String: MTLRenderPipelineState] = [:]
@@ -423,11 +436,28 @@ final class ShaderTile: BaseTile {
     // MARK: - Tile Protocol
 
     override func update(audioState: AudioState, deltaTime: Float) {
-        // Update audio-reactive time
-        // Base speed is 1.0, audioState.speed provides audio-reactive scaling
-        let baseSpeed: Float = 1.0
-        let audioSpeedBoost = max(audioState.speed, 0.5)  // Minimum 0.5x speed
-        audioTime += deltaTime * baseSpeed * audioSpeedBoost
+        // Compute audio-reactive speed (per-tile, matches VJUniverse.pde)
+        let hasActiveAudio = audioState.level > 0.01
+        
+        if !hasActiveAudio {
+            rampedSpeed = lerp(rampedSpeed, baseSpeedFloor, speedRampDown)
+            beatBoostAccum *= beatBoostDecay
+        } else {
+            let volumeDriver = audioState.level * (1.0 - bassBoostWeight) + audioState.bass * bassBoostWeight
+            let targetSpeed = baseSpeedFloor + min(max(volumeDriver, 0), 1) * (audioSpeedMax - baseSpeedFloor)
+            
+            if targetSpeed > rampedSpeed {
+                rampedSpeed = lerp(rampedSpeed, targetSpeed, speedRampUp)
+            } else {
+                rampedSpeed = lerp(rampedSpeed, targetSpeed, speedRampDown)
+            }
+            
+            let beatTrigger = max(audioState.kickEnv, audioState.beatPhase) * beatBoostAmount
+            beatBoostAccum = max(beatBoostAccum * beatBoostDecay, beatTrigger)
+        }
+        
+        let frameSpeed = min(max(rampedSpeed + beatBoostAccum, baseSpeedFloor), audioSpeedMax)
+        audioTime += deltaTime * frameSpeed
 
         // Update synthetic mouse (Lissajous curve)
         syntheticMouse = calcSyntheticMouse(

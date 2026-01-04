@@ -377,8 +377,8 @@ final class RenderEngine: ObservableObject {
     }
 
     /// Called with audio update (from pipeline or OSC)
-    func onAudioUpdate(_ levels: RawAudioLevels) async {
-        await audioManager.update(rawLevels: levels)
+    func onAudioUpdate(_ levels: OSCAudioLevels) async {
+        await audioManager.update(oscLevels: levels)
     }
 }
 

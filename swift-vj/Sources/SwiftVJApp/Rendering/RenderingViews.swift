@@ -51,7 +51,7 @@ struct RenderPreviewView: View {
             Divider()
 
             // Audio visualization
-            AudioVisualizerView(audioState: renderEngine.audioManager.state)
+            AudioVisualizerView(audioManager: renderEngine.audioManager)
                 .frame(height: 60)
                 .padding(.horizontal)
 
@@ -211,13 +211,29 @@ struct TilePreviewView: View {
 
 // MARK: - Audio Visualizer View
 
-/// Displays audio levels as bar graph
+/// Displays audio levels as bar graph with speed debug info
 struct AudioVisualizerView: View {
-    let audioState: AudioState
+    @ObservedObject var audioManager: AudioStateManager
+    
+    private var audioState: AudioState { audioManager.state }
+
+    // Compute approximate speed from audio state (same algorithm as tiles)
+    private var estimatedSpeed: Float {
+        let baseSpeedFloor: Float = 0.02
+        let audioSpeedMax: Float = 1.20
+        let bassBoostWeight: Float = 0.35
+        
+        guard audioState.level > 0.01 else { return baseSpeedFloor }
+        
+        let volumeDriver = audioState.level * (1.0 - bassBoostWeight) + audioState.bass * bassBoostWeight
+        let targetSpeed = baseSpeedFloor + min(max(volumeDriver, 0), 1) * (audioSpeedMax - baseSpeedFloor)
+        return targetSpeed
+    }
 
     var body: some View {
         GeometryReader { geometry in
             HStack(spacing: 4) {
+                // Audio bands
                 AudioBar(label: "BASS", value: audioState.bass, color: .red)
                 AudioBar(label: "LOW", value: audioState.lowMid, color: .orange)
                 AudioBar(label: "MID", value: audioState.mid, color: .yellow)
@@ -229,9 +245,29 @@ struct AudioVisualizerView: View {
                     .background(Color.gray.opacity(0.3))
                     .padding(.horizontal, 4)
 
+                // Beat/energy
                 AudioBar(label: "KICK", value: audioState.kickEnv, color: .purple)
                 AudioBar(label: "E-F", value: audioState.energyFast, color: .pink)
                 AudioBar(label: "E-S", value: audioState.energySlow, color: .cyan)
+                
+                Divider()
+                    .frame(width: 1)
+                    .background(Color.gray.opacity(0.3))
+                    .padding(.horizontal, 4)
+                
+                // Speed indicator (0.02-1.20 range normalized to 0-1)
+                AudioBar(label: "SPD", value: (estimatedSpeed - 0.02) / 1.18, color: .white)
+                
+                // Speed numeric display
+                VStack(spacing: 2) {
+                    Text(String(format: "%.2f", estimatedSpeed))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(estimatedSpeed > 0.1 ? .green : .red)
+                    Text("SPD")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 35)
             }
             .padding(.horizontal, 8)
         }
@@ -348,6 +384,14 @@ struct RenderingView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Audio visualization (top for visibility)
+                if let audioManager = renderEngine?.audioManager {
+                    GroupBox("Audio Levels") {
+                        AudioVisualizerView(audioManager: audioManager)
+                            .frame(height: 70)
+                    }
+                }
+                
                 // MTKView-based tiles (60fps Direct Metal)
                 mtkViewTiles
 

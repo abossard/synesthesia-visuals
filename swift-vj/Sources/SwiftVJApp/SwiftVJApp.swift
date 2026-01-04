@@ -146,13 +146,10 @@ final class AppState: ObservableObject {
             oscHub.subscribe(pattern: "/audio/*") { [weak self] address, values in
                 guard let self = self else { return }
                 Task {
-                    // Parse and accumulate in SynesthesiaAudioProcessor
                     await self.synesthesiaAudio.handleOSC(address, values)
-                    
-                    // Get processed raw levels and send to render engine on MainActor
-                    let rawLevels = await self.synesthesiaAudio.getRawLevels()
+                    let levels = await self.synesthesiaAudio.getLevels()
                     Task { @MainActor in
-                        await self.renderEngine?.onAudioUpdate(rawLevels)
+                        await self.renderEngine?.onAudioUpdate(levels)
                     }
                 }
             }
