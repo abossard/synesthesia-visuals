@@ -154,14 +154,20 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
     private let beatBoostDecay: Float = 0.92     // BEAT_BOOST_DECAY
     private let audioSpeedSmoothing: Float = 0.65 // AUDIO_SPEED_SMOOTHING (draw-loop)
     
-    // Audio state (updated externally)
+    // Audio state - no lock needed: both updateNSView and draw(in:) run on main thread
     var audioState: AudioState = .silent
-    
+
+    // Cached audio state for current frame (snapshot at frame start for consistent reads)
+    private var frameAudioState: AudioState = .silent
+
     // Callbacks
     var onFrameRendered: ((Int, Float) -> Void)?
-    
+
     // Syphon publishing callback (set by TileManager)
     var onTextureReady: ((MTLTexture, MTLCommandBuffer) -> Void)?
+
+    // Triple buffering semaphore to prevent GPU stalls
+    private let inflightSemaphore = DispatchSemaphore(value: 3)
     
     // Tile identity
     let tileName: String
@@ -281,25 +287,31 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
     }
     
     func draw(in view: MTKView) {
+        // Wait for available command buffer slot (triple buffering)
+        _ = inflightSemaphore.wait(timeout: .now() + .milliseconds(16))
+
+        // Cache audio state once at frame start (atomic read, used throughout frame)
+        frameAudioState = audioState
+
         // Calculate delta time
         let now = CFAbsoluteTimeGetCurrent()
         var deltaTime = Float(now - lastFrameTime)
         lastFrameTime = now
         frameCount += 1
-        
+
         // Clamp deltaTime to avoid jumps (matches VJUniverse.pde)
-        if deltaTime <= 0 || deltaTime > 1.0 {
-            deltaTime = 1.0 / 60.0  // Fallback to ~60fps
+        if deltaTime <= 0 || deltaTime > 0.1 {
+            deltaTime = 1.0 / 60.0  // Fallback to ~60fps (tighter clamp: 100ms max)
         }
-        
+
         // ============================================
         // Audio-reactive speed computation (VJUniverse.pde computeAudioReactiveSpeed)
-        // This MUST run every frame, not just on OSC updates!
+        // Uses cached frameAudioState for consistent reads
         // ============================================
-        
+
         // Check if we have active audio (level > 0.01)
-        let hasActiveAudio = audioState.level > 0.01
-        
+        let hasActiveAudio = frameAudioState.level > 0.01
+
         if !hasActiveAudio {
             // No audio → decay to floor
             rampedSpeed = lerp(rampedSpeed, baseSpeedFloor, speedRampDown)
@@ -308,12 +320,12 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
             // 1. SMOOTH (already done in AudioProcessor)
             // 2. SCALE: Map volume → target speed
             // Blend overall level with bass emphasis for "thump" response
-            let volumeDriver = audioState.level * (1.0 - bassBoostWeight) + audioState.bass * bassBoostWeight
+            let volumeDriver = frameAudioState.level * (1.0 - bassBoostWeight) + frameAudioState.bass * bassBoostWeight
             let clampedDriver = min(max(volumeDriver, 0), 1)
-            
+
             // Scale to speed range: floor at silence, max at loud
             let targetSpeed = baseSpeedFloor + clampedDriver * (audioSpeedMax - baseSpeedFloor)
-            
+
             // 3. RAMP: Gradual buildup / faster decay
             if targetSpeed > rampedSpeed {
                 // Ramp UP slowly (sustained loud builds momentum)
@@ -322,41 +334,48 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
                 // Ramp DOWN faster (quiet sections decay quicker)
                 rampedSpeed = lerp(rampedSpeed, targetSpeed, speedRampDown)
             }
-            
+
             // 4. BEAT BOOST: Transient punch on kicks/beats
             // Accumulate beat energy (kick hits add boost, decays over time)
-            let beatTrigger = max(audioState.kickEnv, audioState.beatPhase) * beatBoostAmount
+            let beatTrigger = max(frameAudioState.kickEnv, frameAudioState.beatPhase) * beatBoostAmount
             beatBoostAccum = max(beatBoostAccum * beatBoostDecay, beatTrigger)
         }
-        
+
         // Compute raw speed = ramped base + beat transient
         let rawSpeed = min(max(rampedSpeed + beatBoostAccum, baseSpeedFloor), audioSpeedMax)
-        
+
         // Apply final draw-loop smoothing (AUDIO_SPEED_SMOOTHING = 0.65)
         smoothedAudioSpeed = lerp(smoothedAudioSpeed, rawSpeed, 1 - audioSpeedSmoothing)
-        
+
         // Clamp to valid range
         let frameSpeed = min(max(smoothedAudioSpeed, baseSpeedFloor), audioSpeedMax)
-        
+
         // Accumulate audio-reactive time
         audioTime += deltaTime * frameSpeed
-        
-        // Update uniforms
-        updateUniforms()
-        
+
+        // Update uniforms with cached audio state
+        updateUniformsWithState(frameAudioState)
+
         guard let commandQueue = commandQueue,
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let syphonTexture = syphonTexture else {
+            inflightSemaphore.signal()
             return
         }
-        
+
+        // Signal semaphore when GPU completes this frame
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.inflightSemaphore.signal()
+        }
+
         // 1. SINGLE RENDER to syphonTexture (1280x720)
         renderTile(to: syphonTexture, commandBuffer: commandBuffer)
-        
+
         // 2. Notify Syphon (before commit!)
         onTextureReady?(syphonTexture, commandBuffer)
-        
+
         // 3. BLIT syphonTexture to drawable with scaling
+        // Use nextDrawable for more predictable timing (may return nil if all in flight)
         if let drawable = view.currentDrawable,
            let blitPipeline = blitPipelineState {
             let descriptor = MTLRenderPassDescriptor()
@@ -364,7 +383,7 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
             descriptor.colorAttachments[0].loadAction = .clear
             descriptor.colorAttachments[0].storeAction = .store
             descriptor.colorAttachments[0].clearColor = self.clearColor
-            
+
             if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
                 encoder.setRenderPipelineState(blitPipeline)
                 encoder.setFragmentTexture(syphonTexture, index: 0)
@@ -373,10 +392,10 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
             }
             commandBuffer.present(drawable)
         }
-        
+
         commandBuffer.commit()
-        
-        // Callback
+
+        // Callback (already on main thread, no dispatch needed)
         onFrameRendered?(frameCount, audioTime)
     }
     
@@ -386,15 +405,22 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
     }
     
     private func updateUniforms() {
+        updateUniformsWithState(audioState)
+    }
+
+    private func updateUniformsWithState(_ state: AudioState) {
         guard let buffer = uniformBuffer else { return }
-        
+
         var uniforms = ShaderUniforms()
         uniforms.time = audioTime
+        uniforms.audioTime = audioTime
+        uniforms.speed = smoothedAudioSpeed
         // Use syphon texture size for uniforms (consistent 1280x720)
         uniforms.resolution = SIMD2<Float>(1280, 720)
-        uniforms.update(from: audioState)
-        
-        buffer.contents().copyMemory(from: [uniforms], byteCount: MemoryLayout<ShaderUniforms>.stride)
+        uniforms.update(from: state)
+
+        // Use memcpy for faster copy (avoids array allocation)
+        memcpy(buffer.contents(), &uniforms, MemoryLayout<ShaderUniforms>.stride)
     }
 }
 
@@ -829,10 +855,9 @@ struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
         }
         let tile = tileFactory(device)
         tile.onFrameRendered = { frame, time in
-            DispatchQueue.main.async {
-                self.frameCount = frame
-                self.audioTime = time
-            }
+            // Already on main thread from MTKView delegate
+            self.frameCount = frame
+            self.audioTime = time
         }
         configure(tile)
         return tile
@@ -866,10 +891,9 @@ struct ShaderTileView: NSViewRepresentable {
         let tile = ShaderMTKViewTile(tileName: "shader", device: device)
         tile.loadShader(name: shaderName)
         tile.onFrameRendered = { frame, time in
-            DispatchQueue.main.async {
-                self.frameCount = frame
-                self.audioTime = time
-            }
+            // Already on main thread from MTKView delegate
+            self.frameCount = frame
+            self.audioTime = time
         }
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         let syphonServerName = syphonName

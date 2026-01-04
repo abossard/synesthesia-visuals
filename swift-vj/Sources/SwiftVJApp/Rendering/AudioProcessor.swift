@@ -200,24 +200,43 @@ final class AudioStateManager: ObservableObject {
     @Published private(set) var oscMessageCount: Int = 0
     @Published private(set) var oscIsActive: Bool = false
 
-    private let processor = AudioProcessor()
+    let processor = AudioProcessor()
     private var decayTask: Task<Void, Never>?
+
+    // Throttling: only push to @Published every N frames or when significant change
+    private var framesSinceLastPublish: Int = 0
+    private let publishEveryNFrames: Int = 6  // ~10fps UI updates instead of 60fps
+    private let significantChangeThreshold: Float = 0.05
 
     init() {}
 
     func start() {
         // Start periodic decay update on background thread
+        // Only pushes to MainActor when needed (throttled)
         decayTask = Task.detached(priority: .utility) { [weak self] in
+            var lastPublishedLevel: Float = 0
+            var frameCount = 0
+
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(16))  // ~60 FPS
+                try? await Task.sleep(for: .milliseconds(16))  // ~60 FPS processing
                 guard let self = self else { break }
 
                 // Perform decay on the processor (off main thread)
                 let newState = await self.processor.updateWithTimeoutDecay()
+                frameCount += 1
 
-                // Only hop to main thread to update published state
-                await MainActor.run {
-                    self.state = newState
+                // Only push to MainActor if:
+                // 1. Significant change in audio level, OR
+                // 2. Every N frames for UI responsiveness
+                let levelDelta = abs(newState.level - lastPublishedLevel)
+                let shouldPublish = levelDelta > 0.05 || frameCount >= 6
+
+                if shouldPublish {
+                    frameCount = 0
+                    lastPublishedLevel = newState.level
+                    await MainActor.run {
+                        self.state = newState
+                    }
                 }
             }
         }
@@ -235,21 +254,28 @@ final class AudioStateManager: ObservableObject {
     }
 
     /// Process audio levels off-MainActor, returning new state
-    /// Call this from render loop, then set state in single MainActor hop
+    /// Call this from render loop - does NOT touch MainActor
     nonisolated func processAudioOffMain(oscLevels: OSCAudioLevels) async -> AudioState {
         await processor.update(oscLevels: oscLevels)
     }
 
-    /// Set state directly (call from MainActor context)
+    /// Set state directly (call from MainActor context, for UI sync)
     func setStateDirectly(_ newState: AudioState) {
         state = newState
     }
-    
-    /// Update OSC stats from processor
+
+    /// Update OSC stats - only when changed
     func updateStats(messageRate: Int, messageCount: Int, isActive: Bool) {
-        oscMessageRate = messageRate
-        oscMessageCount = messageCount
-        oscIsActive = isActive
+        // Only update if changed to avoid unnecessary SwiftUI updates
+        if oscMessageRate != messageRate {
+            oscMessageRate = messageRate
+        }
+        if oscMessageCount != messageCount {
+            oscMessageCount = messageCount
+        }
+        if oscIsActive != isActive {
+            oscIsActive = isActive
+        }
     }
 
     /// Update from simplified levels (convenience)
