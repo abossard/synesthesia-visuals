@@ -1,0 +1,776 @@
+// MTKViewTiles.swift - Unified MTKView-based tile system
+// All tiles use MTKView's built-in 60fps render loop for reliable animation
+// DRY architecture: BaseMTKViewTile → specialized subclasses
+
+import SwiftUI
+import MetalKit
+import CoreText
+import AppKit
+
+// MARK: - Base MTKView Tile
+
+/// Base class for all MTKView-based tiles
+/// Provides: device setup, render loop, uniform buffer, Syphon-ready texture
+class BaseMTKViewTile: MTKView, MTKViewDelegate {
+    
+    // Metal resources
+    var commandQueue: MTLCommandQueue?
+    var uniformBuffer: MTLBuffer?
+    
+    // Offscreen texture for Syphon output
+    private(set) var syphonTexture: MTLTexture?
+    
+    // Timing
+    var audioTime: Float = 0
+    private var lastFrameTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+    private(set) var frameCount: Int = 0
+    
+    // Audio state (updated externally)
+    var audioState: AudioState = .silent
+    
+    // Callbacks
+    var onFrameRendered: ((Int, Float) -> Void)?
+    
+    // Syphon publishing callback (set by TileManager)
+    var onTextureReady: ((MTLTexture, MTLCommandBuffer) -> Void)?
+    
+    // Tile identity
+    let tileName: String
+    
+    required init(coder: NSCoder) {
+        self.tileName = "base"
+        super.init(coder: coder)
+        commonInit()
+    }
+    
+    init(tileName: String, device: MTLDevice?) {
+        self.tileName = tileName
+        super.init(frame: .zero, device: device)
+        commonInit()
+    }
+    
+    private func commonInit() {
+        guard let device = self.device else {
+            print("[BaseMTKViewTile] No Metal device!")
+            return
+        }
+        
+        self.delegate = self
+        
+        // KEY: Configure for continuous 60fps animation
+        self.isPaused = false
+        self.enableSetNeedsDisplay = false
+        self.preferredFramesPerSecond = 60
+        
+        // Pixel format with alpha for compositing
+        self.colorPixelFormat = .bgra8Unorm
+        self.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0) // Transparent!
+        
+        // Create command queue
+        commandQueue = device.makeCommandQueue()
+        
+        // Create uniform buffer
+        uniformBuffer = device.makeBuffer(
+            length: MemoryLayout<ShaderUniforms>.stride,
+            options: .storageModeShared
+        )
+        
+        // Create offscreen texture for Syphon (1280x720)
+        createSyphonTexture(width: 1280, height: 720)
+        
+        // Subclass-specific setup
+        setupTile()
+    }
+    
+    private func createSyphonTexture(width: Int, height: Int) {
+        guard let device = self.device else { return }
+        
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        
+        syphonTexture = device.makeTexture(descriptor: descriptor)
+    }
+    
+    /// Override in subclasses for tile-specific setup
+    func setupTile() {
+        // Override in subclasses
+    }
+    
+    // MARK: - MTKViewDelegate
+    
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        // Override in subclasses if needed
+    }
+    
+    func draw(in view: MTKView) {
+        // Calculate delta time
+        let now = CFAbsoluteTimeGetCurrent()
+        let deltaTime = Float(now - lastFrameTime)
+        lastFrameTime = now
+        frameCount += 1
+        
+        // Update audio time
+        let baseSpeed: Float = 1.0
+        let audioSpeedBoost: Float = 0.5 + audioState.level * 0.5
+        audioTime += deltaTime * baseSpeed * audioSpeedBoost
+        
+        // Update uniforms
+        updateUniforms()
+        
+        guard let commandQueue = commandQueue,
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return
+        }
+        
+        // 1. Render to Syphon texture (offscreen)
+        if let syphonTexture = syphonTexture {
+            renderTile(to: syphonTexture, commandBuffer: commandBuffer)
+            
+            // Notify Syphon callback
+            onTextureReady?(syphonTexture, commandBuffer)
+        }
+        
+        // 2. Render to drawable (screen)
+        if let drawable = view.currentDrawable {
+            renderTile(to: drawable.texture, commandBuffer: commandBuffer)
+            commandBuffer.present(drawable)
+        }
+        
+        commandBuffer.commit()
+        
+        // Callback
+        onFrameRendered?(frameCount, audioTime)
+    }
+    
+    /// Override in subclasses to render tile content
+    func renderTile(to texture: MTLTexture, commandBuffer: MTLCommandBuffer) {
+        // Override in subclasses
+    }
+    
+    private func updateUniforms() {
+        guard let buffer = uniformBuffer else { return }
+        
+        var uniforms = ShaderUniforms()
+        uniforms.time = audioTime
+        uniforms.resolution = SIMD2<Float>(Float(drawableSize.width), Float(drawableSize.height))
+        uniforms.update(from: audioState)
+        
+        buffer.contents().copyMemory(from: [uniforms], byteCount: MemoryLayout<ShaderUniforms>.stride)
+    }
+}
+
+// MARK: - Shader MTKView Tile
+
+/// MTKView tile that renders GLSL shaders from metallib
+class ShaderMTKViewTile: BaseMTKViewTile {
+    
+    private var pipelineState: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
+    private var metallibLibrary: MTLLibrary?
+    
+    private(set) var currentShaderName: String = ""
+    
+    override func setupTile() {
+        guard let device = self.device else { return }
+        
+        // Create vertex buffer for fullscreen quad
+        let vertices: [Float] = [
+            -1,  1, 0, 0,  // top-left
+             1,  1, 1, 0,  // top-right
+            -1, -1, 0, 1,  // bottom-left
+             1, -1, 1, 1,  // bottom-right
+        ]
+        vertexBuffer = device.makeBuffer(
+            bytes: vertices,
+            length: vertices.count * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+        
+        // Load metallib
+        loadMetalLib()
+    }
+    
+    private func loadMetalLib() {
+        guard let device = self.device else { return }
+        
+        let execURL = Bundle.main.bundleURL
+        let searchPaths = [
+            execURL.appendingPathComponent("Shaders.metallib").path,
+            execURL.appendingPathComponent("Contents/Resources/Shaders.metallib").path,
+            Bundle.main.path(forResource: "Shaders", ofType: "metallib") ?? "",
+            "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Sources/SwiftVJApp/Resources/Shaders.metallib",
+            "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Build/Shaders.metallib"
+        ].filter { !$0.isEmpty }
+        
+        for path in searchPaths {
+            if FileManager.default.fileExists(atPath: path) {
+                if let lib = try? device.makeLibrary(URL: URL(fileURLWithPath: path)) {
+                    metallibLibrary = lib
+                    print("[ShaderMTKViewTile] Loaded metallib: \(path)")
+                    return
+                }
+            }
+        }
+        print("[ShaderMTKViewTile] Failed to load metallib")
+    }
+    
+    func loadShader(name: String) {
+        guard let device = self.device,
+              let library = metallibLibrary else { return }
+        
+        let fragmentName = "fragment_\(name)"
+        guard let fragmentFunction = library.makeFunction(name: fragmentName),
+              let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else {
+            print("[ShaderMTKViewTile] Functions not found: \(fragmentName)")
+            return
+        }
+        
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertexFunction
+        descriptor.fragmentFunction = fragmentFunction
+        descriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
+        
+        do {
+            pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+            currentShaderName = name
+            print("[ShaderMTKViewTile] Loaded: \(fragmentName)")
+        } catch {
+            print("[ShaderMTKViewTile] Pipeline error: \(error)")
+        }
+    }
+    
+    override func renderTile(to texture: MTLTexture, commandBuffer: MTLCommandBuffer) {
+        guard let pipelineState = pipelineState else { return }
+        
+        let passDescriptor = MTLRenderPassDescriptor()
+        passDescriptor.colorAttachments[0].texture = texture
+        passDescriptor.colorAttachments[0].loadAction = .clear
+        passDescriptor.colorAttachments[0].storeAction = .store
+        passDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
+        
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+    }
+}
+
+// MARK: - Text MTKView Tile
+
+/// MTKView tile that renders text using Core Graphics
+class TextMTKViewTile: BaseMTKViewTile {
+    
+    // Core Graphics context for text rendering
+    private var cgContext: CGContext?
+    private var cgTexture: MTLTexture?
+    private var copyPipelineState: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
+    private var samplerState: MTLSamplerState?
+    
+    // Text state (set externally)
+    var textLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = []
+    
+    override func setupTile() {
+        guard let device = self.device else { return }
+        
+        let width = 1280
+        let height = 720
+        
+        // Create CG context for text rendering - BGRA format to match Metal
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        // Use premultipliedFirst (ARGB) + byteOrder32Little = BGRA in memory
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        
+        cgContext = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        )
+        
+        // Create texture for CG -> Metal transfer - BGRA to match CGContext
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .managed
+        cgTexture = device.makeTexture(descriptor: descriptor)
+        
+        // Create vertex buffer for fullscreen quad
+        let vertices: [Float] = [
+            -1,  1, 0, 0,  // top-left (pos.xy, uv.xy)
+             1,  1, 1, 0,  // top-right
+            -1, -1, 0, 1,  // bottom-left
+             1, -1, 1, 1,  // bottom-right
+        ]
+        vertexBuffer = device.makeBuffer(
+            bytes: vertices,
+            length: vertices.count * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+        
+        // Create sampler state
+        let samplerDescriptor = MTLSamplerDescriptor()
+        samplerDescriptor.minFilter = .linear
+        samplerDescriptor.magFilter = .linear
+        samplerDescriptor.sAddressMode = .clampToEdge
+        samplerDescriptor.tAddressMode = .clampToEdge
+        samplerState = device.makeSamplerState(descriptor: samplerDescriptor)
+        
+        // Create texture copy pipeline using default library
+        setupCopyPipeline()
+    }
+    
+    private func setupCopyPipeline() {
+        guard let device = self.device else { return }
+        
+        // Create simple passthrough shader inline
+        let shaderSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+        
+        struct VertexOut {
+            float4 position [[position]];
+            float2 uv;
+        };
+        
+        vertex VertexOut textCopyVertex(uint vid [[vertex_id]],
+                                         constant float4 *vertices [[buffer(0)]]) {
+            float4 v = vertices[vid];
+            VertexOut out;
+            out.position = float4(v.xy, 0, 1);
+            out.uv = v.zw;
+            return out;
+        }
+        
+        fragment float4 textCopyFragment(VertexOut in [[stage_in]],
+                                          texture2d<float> tex [[texture(0)]],
+                                          sampler s [[sampler(0)]]) {
+            return tex.sample(s, in.uv);
+        }
+        """
+        
+        do {
+            let library = try device.makeLibrary(source: shaderSource, options: nil)
+            guard let vertexFunc = library.makeFunction(name: "textCopyVertex"),
+                  let fragmentFunc = library.makeFunction(name: "textCopyFragment") else {
+                print("[TextMTKViewTile] Failed to create shader functions")
+                return
+            }
+            
+            let pipelineDescriptor = MTLRenderPipelineDescriptor()
+            pipelineDescriptor.vertexFunction = vertexFunc
+            pipelineDescriptor.fragmentFunction = fragmentFunc
+            pipelineDescriptor.colorAttachments[0].pixelFormat = self.colorPixelFormat
+            
+            // Enable alpha blending
+            pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
+            pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
+            pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
+            pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .one
+            pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+            pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+            pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            
+            copyPipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+        } catch {
+            print("[TextMTKViewTile] Pipeline error: \(error)")
+        }
+    }
+    
+    override func renderTile(to texture: MTLTexture, commandBuffer: MTLCommandBuffer) {
+        guard let ctx = cgContext,
+              let cgTexture = cgTexture,
+              let pipelineState = copyPipelineState,
+              let vertexBuffer = vertexBuffer,
+              let samplerState = samplerState else { return }
+        
+        // Clear context with transparent black
+        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
+        ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+        
+        // Draw all text lines
+        for line in textLines {
+            drawText(line.text, fontSize: line.fontSize, opacity: line.opacity, yPosition: line.yPosition, context: ctx)
+        }
+        
+        // Upload CG context to texture
+        if let data = ctx.data {
+            let region = MTLRegion(
+                origin: MTLOrigin(x: 0, y: 0, z: 0),
+                size: MTLSize(width: ctx.width, height: ctx.height, depth: 1)
+            )
+            cgTexture.replace(region: region, mipmapLevel: 0, withBytes: data, bytesPerRow: ctx.width * 4)
+        }
+        
+        // Render fullscreen quad with CG texture scaled to target size
+        let passDescriptor = MTLRenderPassDescriptor()
+        passDescriptor.colorAttachments[0].texture = texture
+        passDescriptor.colorAttachments[0].loadAction = .clear
+        passDescriptor.colorAttachments[0].storeAction = .store
+        passDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
+        
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        encoder.setFragmentTexture(cgTexture, index: 0)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+    }
+    
+    private func drawText(_ text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat, context: CGContext) {
+        guard !text.isEmpty, opacity > 0.01 else { return }
+        
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+        let color = NSColor.white.withAlphaComponent(opacity / 255.0)
+        
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        
+        let attrString = NSAttributedString(string: text, attributes: attributes)
+        let line = CTLineCreateWithAttributedString(attrString)
+        let bounds = CTLineGetBoundsWithOptions(line, [])
+        
+        let x = (CGFloat(context.width) - bounds.width) / 2
+        let y = CGFloat(context.height) * (1 - yPosition) - bounds.height / 2
+        
+        context.saveGState()
+        context.textPosition = CGPoint(x: x, y: y)
+        CTLineDraw(line, context)
+        context.restoreGState()
+    }
+    
+    /// Auto-size font to fit within max width
+    func calcAutoFitFontSize(for text: String, maxWidth: CGFloat, minSize: CGFloat = 24, maxSize: CGFloat = 96) -> CGFloat {
+        var size = maxSize
+        while size > minSize {
+            let font = NSFont.systemFont(ofSize: size, weight: .medium)
+            let textSize = (text as NSString).size(withAttributes: [.font: font])
+            if textSize.width <= maxWidth {
+                return size
+            }
+            size -= 2
+        }
+        return minSize
+    }
+}
+
+// MARK: - Lyrics MTKView Tile
+
+/// Specialized text tile for lyrics display with prev/current/next lines
+class LyricsMTKViewTile: TextMTKViewTile {
+    
+    var lyricsState: LyricsDisplayState = .empty {
+        didSet { updateTextLines() }
+    }
+    
+    private func updateTextLines() {
+        guard lyricsState.activeIndex >= 0 else {
+            textLines = []
+            return
+        }
+        
+        let maxWidth: CGFloat = 1280 * 0.92
+        let prevText = lyricsState.prevLine ?? ""
+        let currText = lyricsState.currentLine ?? ""
+        let nextText = lyricsState.nextLine ?? ""
+        
+        // Calculate auto-fit font size
+        var autoSize: CGFloat = 72
+        for text in [prevText, currText, nextText].filter({ !$0.isEmpty }) {
+            autoSize = min(autoSize, calcAutoFitFontSize(for: text, maxWidth: maxWidth, minSize: 28, maxSize: 96))
+        }
+        
+        var lines: [(String, CGFloat, CGFloat, CGFloat)] = []
+        
+        // Previous: 70% size, 35% opacity, y=0.28
+        if !prevText.isEmpty {
+            lines.append((prevText, autoSize * 0.7, CGFloat(lyricsState.textOpacity) * 0.35, 0.28))
+        }
+        
+        // Current: 100% size, 100% opacity, y=0.50
+        if !currText.isEmpty {
+            lines.append((currText, autoSize, CGFloat(lyricsState.textOpacity), 0.50))
+        }
+        
+        // Next: 70% size, 25% opacity, y=0.72
+        if !nextText.isEmpty {
+            lines.append((nextText, autoSize * 0.7, CGFloat(lyricsState.textOpacity) * 0.25, 0.72))
+        }
+        
+        textLines = lines
+    }
+}
+
+// MARK: - Refrain MTKView Tile
+
+/// Specialized text tile for refrain/chorus display
+class RefrainMTKViewTile: TextMTKViewTile {
+    
+    var refrainState: RefrainDisplayState = .empty {
+        didSet { updateTextLines() }
+    }
+    
+    private func updateTextLines() {
+        guard !refrainState.text.isEmpty, refrainState.opacity > 0.01 else {
+            textLines = []
+            return
+        }
+        
+        let maxWidth: CGFloat = 1280 * 0.85
+        let fontSize = calcAutoFitFontSize(for: refrainState.text, maxWidth: maxWidth, minSize: 36, maxSize: 120)
+        
+        textLines = [(refrainState.text, fontSize, CGFloat(refrainState.opacity), 0.50)]
+    }
+}
+
+// MARK: - Song Info MTKView Tile
+
+/// Specialized text tile for artist/title display
+class SongInfoMTKViewTile: TextMTKViewTile {
+    
+    var songInfoState: SongInfoDisplayState = .empty {
+        didSet { updateTextLines() }
+    }
+    
+    private func updateTextLines() {
+        let opacity = songInfoState.computeOpacity()
+        guard songInfoState.active, opacity > 0.01 else {
+            textLines = []
+            return
+        }
+        
+        var lines: [(String, CGFloat, CGFloat, CGFloat)] = []
+        let baseFontSize: CGFloat = 72
+        let maxWidth: CGFloat = 1280 * 0.8
+        
+        // Artist: above center
+        if !songInfoState.artist.isEmpty {
+            let size = calcAutoFitFontSize(for: songInfoState.artist, maxWidth: maxWidth, minSize: 24, maxSize: baseFontSize * 0.65)
+            lines.append((songInfoState.artist, size, CGFloat(opacity), 0.42))
+        }
+        
+        // Title: below center
+        if !songInfoState.title.isEmpty {
+            let size = calcAutoFitFontSize(for: songInfoState.title, maxWidth: maxWidth, minSize: 28, maxSize: baseFontSize)
+            lines.append((songInfoState.title, size, CGFloat(opacity), 0.55))
+        }
+        
+        textLines = lines
+    }
+}
+
+// MARK: - SwiftUI Wrappers
+
+/// Generic SwiftUI wrapper for any MTKView tile
+struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
+    let tileFactory: (MTLDevice) -> T
+    let configure: (T) -> Void
+    
+    @Binding var frameCount: Int
+    @Binding var audioTime: Float
+    var audioState: AudioState
+    
+    func makeNSView(context: Context) -> T {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = tileFactory(device)
+        tile.onFrameRendered = { frame, time in
+            DispatchQueue.main.async {
+                self.frameCount = frame
+                self.audioTime = time
+            }
+        }
+        configure(tile)
+        return tile
+    }
+    
+    func updateNSView(_ nsView: T, context: Context) {
+        nsView.audioState = audioState
+    }
+}
+
+/// Convenience: Shader tile view
+struct ShaderTileView: NSViewRepresentable {
+    let shaderName: String
+    @Binding var frameCount: Int
+    @Binding var audioTime: Float
+    var audioState: AudioState
+    
+    init(shaderName: String, frameCount: Binding<Int> = .constant(0), audioTime: Binding<Float> = .constant(0), audioState: AudioState = .silent) {
+        self.shaderName = shaderName
+        self._frameCount = frameCount
+        self._audioTime = audioTime
+        self.audioState = audioState
+    }
+    
+    func makeNSView(context: Context) -> ShaderMTKViewTile {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = ShaderMTKViewTile(tileName: "shader", device: device)
+        tile.loadShader(name: shaderName)
+        tile.onFrameRendered = { frame, time in
+            DispatchQueue.main.async {
+                self.frameCount = frame
+                self.audioTime = time
+            }
+        }
+        return tile
+    }
+    
+    func updateNSView(_ nsView: ShaderMTKViewTile, context: Context) {
+        nsView.audioState = audioState
+        if nsView.currentShaderName != shaderName {
+            nsView.loadShader(name: shaderName)
+        }
+    }
+}
+
+/// Convenience: Lyrics tile view
+struct LyricsTileView: NSViewRepresentable {
+    var lyricsState: LyricsDisplayState
+    var audioState: AudioState
+    
+    func makeNSView(context: Context) -> LyricsMTKViewTile {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = LyricsMTKViewTile(tileName: "lyrics", device: device)
+        tile.lyricsState = lyricsState
+        return tile
+    }
+    
+    func updateNSView(_ nsView: LyricsMTKViewTile, context: Context) {
+        nsView.lyricsState = lyricsState
+        nsView.audioState = audioState
+    }
+}
+
+/// Convenience: Refrain tile view
+struct RefrainTileView: NSViewRepresentable {
+    var refrainState: RefrainDisplayState
+    var audioState: AudioState
+    
+    func makeNSView(context: Context) -> RefrainMTKViewTile {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = RefrainMTKViewTile(tileName: "refrain", device: device)
+        tile.refrainState = refrainState
+        return tile
+    }
+    
+    func updateNSView(_ nsView: RefrainMTKViewTile, context: Context) {
+        nsView.refrainState = refrainState
+        nsView.audioState = audioState
+    }
+}
+
+/// Convenience: Song Info tile view
+struct SongInfoTileView: NSViewRepresentable {
+    var songInfoState: SongInfoDisplayState
+    var audioState: AudioState
+    
+    func makeNSView(context: Context) -> SongInfoMTKViewTile {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = SongInfoMTKViewTile(tileName: "songInfo", device: device)
+        tile.songInfoState = songInfoState
+        return tile
+    }
+    
+    func updateNSView(_ nsView: SongInfoMTKViewTile, context: Context) {
+        nsView.songInfoState = songInfoState
+        nsView.audioState = audioState
+    }
+}
+
+// MARK: - Preview
+
+#Preview("All Tiles") {
+    VStack(spacing: 20) {
+        GroupBox("Shader") {
+            ShaderTileView(shaderName: "3isacrowd")
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(height: 200)
+        }
+        
+        GroupBox("Lyrics") {
+            LyricsTileView(
+                lyricsState: LyricsDisplayState(
+                    lines: [
+                        LyricLine(id: 0, timeSec: 0, text: "Previous line here"),
+                        LyricLine(id: 1, timeSec: 1, text: "Current line is displayed"),
+                        LyricLine(id: 2, timeSec: 2, text: "Next line coming up")
+                    ],
+                    activeIndex: 1,
+                    textOpacity: 255,
+                    fadeDelayMs: 5000,
+                    fadeDurationMs: 1000,
+                    lastChangeTime: Date()
+                ),
+                audioState: .silent
+            )
+            .aspectRatio(16/9, contentMode: .fit)
+            .frame(height: 150)
+            .background(Color.black)
+        }
+        
+        GroupBox("Refrain") {
+            RefrainTileView(
+                refrainState: RefrainDisplayState(
+                    text: "♪ This is the chorus! ♪",
+                    opacity: 255,
+                    active: true,
+                    lastChangeTime: Date()
+                ),
+                audioState: .silent
+            )
+            .aspectRatio(16/9, contentMode: .fit)
+            .frame(height: 100)
+            .background(Color.black)
+        }
+        
+        GroupBox("Song Info") {
+            SongInfoTileView(
+                songInfoState: SongInfoDisplayState(
+                    artist: "Artist Name",
+                    title: "Song Title",
+                    album: "Album",
+                    opacity: 255,
+                    displayTime: 0,
+                    active: true,
+                    lastChangeTime: Date()
+                ),
+                audioState: .silent
+            )
+            .aspectRatio(16/9, contentMode: .fit)
+            .frame(height: 100)
+            .background(Color.black)
+        }
+    }
+    .padding()
+    .frame(width: 800)
+}

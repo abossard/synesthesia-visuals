@@ -319,7 +319,7 @@ struct RenderControlsView: View {
 
 // MARK: - Rendering Tab View
 
-/// Full rendering tab for the sidebar
+/// Full rendering tab for the sidebar - ALL tiles use MTKView for 60fps
 struct RenderingView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var renderEngine = RenderEngine()
@@ -327,80 +327,266 @@ struct RenderingView: View {
     @State private var frameCount: Int = 0
     @State private var audioTime: Float = 0
     @State private var selectedShader: String = "3isacrowd"
+    @State private var selectedTile: String = "shader"
+    
+    // Demo text state for preview
+    @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
+        lines: [
+            LyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
+            LyricLine(id: 1, timeSec: 1, text: "Current line is bright and clear"),
+            LyricLine(id: 2, timeSec: 2, text: "Next line waits in shadow ♪")
+        ],
+        activeIndex: 1, textOpacity: 255, fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
+    )
+    @State private var demoRefrain = RefrainDisplayState(text: "♪ This is the chorus! ♪", opacity: 255, active: true, lastChangeTime: Date())
+    @State private var demoSongInfo = SongInfoDisplayState(artist: "Demo Artist", title: "Demo Track", album: "Demo Album", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date())
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Toggle between old and new rendering
-                Toggle("Use MTKView (Direct Metal)", isOn: $useDirectMTKView)
-                    .padding(.horizontal)
-                
-                if useDirectMTKView {
-                    // NEW: Direct MTKView-based rendering (continuous 60fps)
-                    GroupBox("Visual Output (MTKView)") {
-                        VStack {
-                            // Direct Metal view
-                            MetalShaderView(
-                                shaderName: selectedShader,
-                                frameCount: $frameCount,
-                                audioTime: $audioTime
-                            )
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .frame(minHeight: 360)
-                            .background(Color.black)
-                            .cornerRadius(8)
-                            
-                            // Stats
-                            HStack {
-                                Text("Frame: \(frameCount)")
-                                    .font(.caption.monospacedDigit())
-                                Spacer()
-                                Text("Time: \(String(format: "%.2f", audioTime))")
-                                    .font(.caption.monospacedDigit())
-                            }
-                            .foregroundColor(.secondary)
-                            .padding(.top, 4)
-                            
-                            // Shader selector
-                            HStack {
-                                Text("Shader:")
-                                TextField("shader name", text: $selectedShader)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 200)
-                            }
-                            .padding(.top, 8)
-                        }
-                        .padding()
-                    }
-                } else {
-                    // OLD: RenderEngine-based rendering (Timer + texture copy)
-                    GroupBox("Visual Output (RenderEngine)") {
-                        RenderPreviewView(renderEngine: renderEngine)
-                    }
-                }
+            VStack(spacing: 16) {
+                // MTKView-based tiles (60fps Direct Metal)
+                mtkViewTiles
 
                 // Shader browser
-                GroupBox("Shaders") {
+                GroupBox("Shader Library") {
                     ShaderListView(shaderManager: renderEngine.shaderManager)
                 }
 
-                // Text state
-                GroupBox("Text Overlays") {
-                    TextStateView(textManager: renderEngine.textManager)
+                // Text controls
+                GroupBox("Text Controls") {
+                    textControlsView
                 }
             }
             .padding()
         }
         .onAppear {
-            Task {
-                try? await renderEngine.start()
-            }
+            Task { try? await renderEngine.start() }
         }
         .onDisappear {
-            Task {
-                await renderEngine.stop()
+            Task { await renderEngine.stop() }
+        }
+    }
+    
+    // MARK: - MTKView Tiles Grid
+    
+    @ViewBuilder
+    private var mtkViewTiles: some View {
+        VStack(spacing: 16) {
+            // Tile selector tabs
+            HStack(spacing: 12) {
+                ForEach(["shader", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
+                    Button {
+                        selectedTile = tile
+                    } label: {
+                        Text(tile.capitalized)
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(selectedTile == tile ? .blue : .gray)
+                }
+                
+                Spacer()
+                
+                // Stats
+                Text("Frame: \(frameCount)")
+                    .font(.caption.monospacedDigit())
+                Text("Time: \(String(format: "%.1f", audioTime))s")
+                    .font(.caption.monospacedDigit())
+            }
+            .padding(.horizontal)
+            
+            // Main tile preview
+            GroupBox(selectedTile.capitalized) {
+                selectedTileView
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .frame(minHeight: 360)
+                    .background(Color.black)
+                    .cornerRadius(8)
+            }
+            
+            // Shader selector (when shader tile selected)
+            if selectedTile == "shader" {
+                HStack {
+                    Text("Shader:")
+                    TextField("shader name", text: $selectedShader)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                    
+                    Button("Random") {
+                        let shaders = renderEngine.shaderManager.availableShaders
+                        if !shaders.isEmpty {
+                            selectedShader = shaders.randomElement()?.name ?? selectedShader
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
+            }
+            
+            // Thumbnail grid of all tiles
+            GroupBox("All Tiles (60fps MTKView)") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    // Shader
+                    VStack(spacing: 4) {
+                        ShaderTileView(
+                            shaderName: selectedShader,
+                            frameCount: $frameCount,
+                            audioTime: $audioTime
+                        )
+                        .aspectRatio(16/9, contentMode: .fit)
+                        .frame(height: 120)
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(selectedTile == "shader" ? Color.blue : Color.clear, lineWidth: 2)
+                        )
+                        .onTapGesture { selectedTile = "shader" }
+                        
+                        Text("Shader").font(.caption2)
+                    }
+                    
+                    // Lyrics
+                    VStack(spacing: 4) {
+                        LyricsTileView(lyricsState: demoLyrics, audioState: .silent)
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .frame(height: 120)
+                            .background(Color.black)
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(selectedTile == "lyrics" ? Color.blue : Color.clear, lineWidth: 2)
+                            )
+                            .onTapGesture { selectedTile = "lyrics" }
+                        
+                        Text("Lyrics").font(.caption2)
+                    }
+                    
+                    // Refrain
+                    VStack(spacing: 4) {
+                        RefrainTileView(refrainState: demoRefrain, audioState: .silent)
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .frame(height: 120)
+                            .background(Color.black)
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(selectedTile == "refrain" ? Color.blue : Color.clear, lineWidth: 2)
+                            )
+                            .onTapGesture { selectedTile = "refrain" }
+                        
+                        Text("Refrain").font(.caption2)
+                    }
+                    
+                    // Song Info
+                    VStack(spacing: 4) {
+                        SongInfoTileView(songInfoState: demoSongInfo, audioState: .silent)
+                            .aspectRatio(16/9, contentMode: .fit)
+                            .frame(height: 120)
+                            .background(Color.black)
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(selectedTile == "songInfo" ? Color.blue : Color.clear, lineWidth: 2)
+                            )
+                            .onTapGesture { selectedTile = "songInfo" }
+                        
+                        Text("Song Info").font(.caption2)
+                    }
+                }
+                .padding()
             }
         }
+    }
+    
+    @ViewBuilder
+    private var selectedTileView: some View {
+        switch selectedTile {
+        case "shader":
+            ShaderTileView(
+                shaderName: selectedShader,
+                frameCount: $frameCount,
+                audioTime: $audioTime
+            )
+        case "lyrics":
+            LyricsTileView(lyricsState: demoLyrics, audioState: .silent)
+        case "refrain":
+            RefrainTileView(refrainState: demoRefrain, audioState: .silent)
+        case "songInfo":
+            SongInfoTileView(songInfoState: demoSongInfo, audioState: .silent)
+        default:
+            Color.black
+        }
+    }
+    
+    // MARK: - Text Controls
+    
+    @ViewBuilder
+    private var textControlsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Lyrics controls
+            HStack {
+                Text("Lyrics line:")
+                Button("Prev") {
+                    let newIndex = max(0, demoLyrics.activeIndex - 1)
+                    demoLyrics = LyricsDisplayState(
+                        lines: demoLyrics.lines,
+                        activeIndex: newIndex,
+                        textOpacity: 255,
+                        fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
+                    )
+                }
+                Button("Next") {
+                    let newIndex = min(demoLyrics.lines.count - 1, demoLyrics.activeIndex + 1)
+                    demoLyrics = LyricsDisplayState(
+                        lines: demoLyrics.lines,
+                        activeIndex: newIndex,
+                        textOpacity: 255,
+                        fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
+                    )
+                }
+                Text("(\(demoLyrics.activeIndex + 1)/\(demoLyrics.lines.count))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Refrain toggle
+            HStack {
+                Text("Refrain:")
+                Toggle("Active", isOn: Binding(
+                    get: { demoRefrain.active },
+                    set: { active in
+                        demoRefrain = RefrainDisplayState(
+                            text: demoRefrain.text,
+                            opacity: active ? 255 : 0,
+                            active: active,
+                            lastChangeTime: Date()
+                        )
+                    }
+                ))
+            }
+            
+            // Song info toggle
+            HStack {
+                Text("Song Info:")
+                Toggle("Active", isOn: Binding(
+                    get: { demoSongInfo.active },
+                    set: { active in
+                        demoSongInfo = SongInfoDisplayState(
+                            artist: demoSongInfo.artist,
+                            title: demoSongInfo.title,
+                            album: demoSongInfo.album,
+                            opacity: active ? 255 : 0,
+                            displayTime: 0,
+                            active: active,
+                            lastChangeTime: Date()
+                        )
+                    }
+                ))
+            }
+        }
+        .padding()
     }
 }
 

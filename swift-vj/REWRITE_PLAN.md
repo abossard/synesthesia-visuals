@@ -322,6 +322,7 @@
 - `Sources/SwiftVJCore/Launchpad/LaunchpadModule.swift` - Module wrapper with lifecycle
 
 **TDD Checkpoints**:
+
 - [x] Pad press generates correct OSC effect
 - [x] SELECTOR mode deactivates previous in group
 - [x] TOGGLE alternates between osc_on/osc_off
@@ -331,6 +332,14 @@
 - [x] Group hierarchy resets child groups on parent change
 - [x] Beat sync blinks LEDs correctly (BPM-based timer + beat pulse)
 
+## MORE STUFF
+
+- [ ] 9.1 Syphon background seems to be black and not transparent
+- [ ] 9.2 Make shaders audio reactivate again based on the Synesthesia OSC messages it receives
+- [ ] 9.3 Make the font/text size and of the lyrics and refrain and songinfo configurable
+- [ ] 9.4 Autocompile new shaders on startup of the app
+- [ ] 9.5 Make sure shader change is possible from OSC
+ 
 ---
 
 ### Phase 6: Process Management ❌ NOT STARTED
