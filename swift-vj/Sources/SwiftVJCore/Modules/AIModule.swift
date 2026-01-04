@@ -37,14 +37,12 @@ public actor AIModule: Module {
         await llmClient.start()
         
         isStarted = true
-        print("[AI] Started - backend: \(await llmClient.backendInfo)")
     }
     
     public func stop() async {
         isStarted = false
         lastAnalysis = nil
         lastCategories = nil
-        print("[AI] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -86,12 +84,9 @@ public actor AIModule: Module {
             )
             
             lastAnalysis = analysis
-            
-            print("[AI] Analyzed: \(track.title) → mood=\(analysis.mood), energy=\(String(format: "%.2f", analysis.energy))")
             return analysis
             
         } catch {
-            print("[AI] Analysis failed: \(error)")
             // Return basic analysis
             let basic = SongAnalysis(mood: "unknown", energy: 0.5, valence: 0.0)
             lastAnalysis = basic
@@ -100,6 +95,7 @@ public actor AIModule: Module {
     }
     
     /// Just categorize (lighter weight than full analysis)
+    /// Also sets a basic analysis with energy/valence estimates
     public func categorize(track: Track, lyrics: String?) async -> SongCategories {
         let categories = await llmClient.categorize(
             artist: track.artist,
@@ -108,6 +104,21 @@ public actor AIModule: Module {
         )
         
         lastCategories = categories
+        
+        // Create basic analysis from categories
+        // This ensures we always have SOME analysis for shader/image matching
+        let mood = categories.primaryMood.isEmpty ? "unknown" : categories.primaryMood
+        let energy = categories.estimatedEnergy
+        let valence = categories.estimatedValence
+        
+        lastAnalysis = SongAnalysis(
+            mood: mood,
+            energy: energy,
+            valence: valence,
+            categories: categories.scores
+        )
+        print("[AI] Categorized: \(track.title) → mood=\(mood), energy=\(String(format: "%.2f", energy)), valence=\(String(format: "%.2f", valence))")
+        
         return categories
     }
     

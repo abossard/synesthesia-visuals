@@ -33,12 +33,10 @@ public actor ImagesModule: Module {
     public func start() async throws {
         guard !isStarted else { throw ModuleError.alreadyStarted }
         isStarted = true
-        print("[Images] Started")
     }
     
     public func stop() async {
         isStarted = false
-        print("[Images] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -58,6 +56,16 @@ public actor ImagesModule: Module {
         return status
     }
     
+    /// Get available image sources info
+    public var availableSources: String {
+        get async { await scraper.availableSources }
+    }
+    
+    /// Check if image APIs are configured
+    public var hasImageAPIs: Bool {
+        get async { await scraper.hasImageAPIs }
+    }
+    
     // MARK: - Public API
     
     /// Fetch and cache images for a track
@@ -74,10 +82,6 @@ public actor ImagesModule: Module {
         
         let result = await scraper.fetchImages(for: track, metadata: metadata)
         lastResult = result
-        
-        if let result = result {
-            print("[Images] Fetched \(result.totalImages) images for \(track.title)")
-        }
         
         return result
     }

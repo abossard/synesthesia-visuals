@@ -64,6 +64,7 @@ struct PipelineStatusView: View {
             if let result = appState.pipelineResult {
                 GroupBox("Result") {
                     VStack(alignment: .leading, spacing: 8) {
+                        // Lyrics
                         HStack {
                             Label("Lyrics", systemImage: result.lyricsFound ? "checkmark.circle.fill" : "xmark.circle")
                                 .foregroundColor(result.lyricsFound ? .green : .secondary)
@@ -74,30 +75,94 @@ struct PipelineStatusView: View {
                             }
                         }
                         
-                        if result.shaderMatched {
-                            HStack {
-                                Label("Shader", systemImage: "sparkles")
-                                    .foregroundColor(.purple)
+                        // Keywords (if any)
+                        if !result.keywords.isEmpty {
+                            HStack(alignment: .top) {
+                                Label("Keywords", systemImage: "tag")
+                                    .foregroundColor(.blue)
                                 Spacer()
+                                Text(result.keywords.prefix(5).joined(separator: ", "))
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .frame(maxWidth: 200, alignment: .trailing)
+                            }
+                        }
+                        
+                        // Themes (if any)
+                        if !result.themes.isEmpty {
+                            HStack(alignment: .top) {
+                                Label("Themes", systemImage: "lightbulb")
+                                    .foregroundColor(.cyan)
+                                Spacer()
+                                Text(result.themes.prefix(3).joined(separator: ", "))
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                                    .frame(maxWidth: 150, alignment: .trailing)
+                            }
+                        }
+                        
+                        // Mood
+                        HStack {
+                            Label("Mood", systemImage: "face.smiling")
+                                .foregroundColor(.yellow)
+                            Spacer()
+                            Text(result.mood)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Energy & Valence
+                        HStack {
+                            Label("Energy", systemImage: "bolt.fill")
+                                .foregroundColor(.orange)
+                            ProgressView(value: result.energy)
+                                .frame(width: 80)
+                            Text(String(format: "%.1f", result.energy))
+                                .foregroundColor(.secondary)
+                                .frame(width: 30)
+                            
+                            Spacer()
+                            
+                            Label("Valence", systemImage: "heart.fill")
+                                .foregroundColor(.pink)
+                            ProgressView(value: (result.valence + 1) / 2)  // -1..1 → 0..1
+                                .frame(width: 80)
+                            Text(String(format: "%.1f", result.valence))
+                                .foregroundColor(.secondary)
+                                .frame(width: 30)
+                        }
+                        
+                        Divider()
+                        
+                        // Shader
+                        HStack {
+                            Label("Shader", systemImage: "sparkles")
+                                .foregroundColor(result.shaderMatched ? .purple : .secondary)
+                            Spacer()
+                            if result.shaderMatched {
                                 Text(result.shaderName)
+                                    .foregroundColor(.secondary)
+                                Text("(\(String(format: "%.0f%%", result.shaderScore * 100)))")
+                                    .foregroundColor(.secondary)
+                                    .font(.caption)
+                            } else {
+                                Text("No match")
                                     .foregroundColor(.secondary)
                             }
                         }
                         
+                        // Images
                         HStack {
-                            Label("Energy", systemImage: "bolt.fill")
-                                .foregroundColor(.orange)
+                            Label("Images", systemImage: "photo.on.rectangle")
+                                .foregroundColor(result.imagesFound ? .green : .secondary)
                             Spacer()
-                            Text(String(format: "%.2f", result.energy))
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        HStack {
-                            Label("Valence", systemImage: "face.smiling")
-                                .foregroundColor(.yellow)
-                            Spacer()
-                            Text(String(format: "%.2f", result.valence))
-                                .foregroundColor(.secondary)
+                            if result.imagesFound {
+                                Text("\(result.imagesCount) images")
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("None fetched")
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                     .padding()
@@ -145,9 +210,9 @@ struct PipelineStepRow: View {
     
     var statusColor: Color {
         switch status.lowercased() {
-        case let s where s.contains("complete") || s.hasPrefix("✓"): return .green
+        case let s where s.hasPrefix("✓"): return .green
         case "running": return .blue
-        case let s where s.contains("skip") || s == "skipped": return .orange
+        case let s where s.hasPrefix("✗"): return .orange  // Ran but no result
         case let s where s.contains("error"): return .red
         default: return .secondary
         }
@@ -160,14 +225,14 @@ struct PipelineStepRow: View {
                 ProgressView()
                     .scaleEffect(0.6)
                 Text("Running")
-            } else if status.hasPrefix("✓") || status.lowercased().contains("complete") {
+            } else if status.hasPrefix("✓") {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundColor(.green)
-                Text(status.hasPrefix("✓") ? status : "Complete")
-            } else if status.lowercased() == "skipped" || status.lowercased().contains("skip") {
-                Image(systemName: "arrow.right.circle")
+                Text(status)  // Shows "✓ 42 lines" etc
+            } else if status.hasPrefix("✗") {
+                Image(systemName: "minus.circle")
                     .foregroundColor(.orange)
-                Text("Skipped")
+                Text(String(status.dropFirst(2)))  // Remove "✗ " prefix, shows "Not found" etc
             } else if status.lowercased().contains("error") {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.red)

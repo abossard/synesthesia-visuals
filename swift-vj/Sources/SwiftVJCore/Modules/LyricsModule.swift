@@ -44,7 +44,6 @@ public actor LyricsModule: Module {
     public func start() async throws {
         guard !isStarted else { throw ModuleError.alreadyStarted }
         isStarted = true
-        print("[Lyrics] Started")
     }
     
     public func stop() async {
@@ -52,7 +51,6 @@ public actor LyricsModule: Module {
         currentTrack = nil
         currentLines = []
         currentActiveIndex = -1
-        print("[Lyrics] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -81,21 +79,17 @@ public actor LyricsModule: Module {
             guard let lrcText = try await fetcher.fetch(artist: track.artist, title: track.title) else {
                 currentLines = []
                 hasLyrics = false
-                print("[Lyrics] Not found: \(track.artist) - \(track.title)")
                 return []
             }
             
             // Parse LRC into lines
             currentLines = parseLRC(lrcText)
             hasLyrics = !currentLines.isEmpty
-            
-            print("[Lyrics] Loaded \(currentLines.count) lines for: \(track.artist) - \(track.title)")
             return currentLines
             
         } catch {
             currentLines = []
             hasLyrics = false
-            print("[Lyrics] Error: \(track.artist) - \(track.title): \(error)")
             return []
         }
     }

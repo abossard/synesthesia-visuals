@@ -38,12 +38,10 @@ public actor ShadersModule: Module {
     public func start() async throws {
         guard !isStarted else { throw ModuleError.alreadyStarted }
         isStarted = true
-        print("[Shaders] Started")
     }
     
     public func stop() async {
         isStarted = false
-        print("[Shaders] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -151,8 +149,6 @@ public actor ShadersModule: Module {
         usageCounts[best.0.name, default: 0] += 1
         lastSelected = best.0.name
         
-        print("[Shaders] Selected: \(best.0.name) (score=\(String(format: "%.2f", best.1)))")
-        
         return best.0
     }
     
@@ -170,7 +166,6 @@ public actor ShadersModule: Module {
     public func resetUsage() {
         usageCounts.removeAll()
         lastSelected = nil
-        print("[Shaders] Usage counts reset")
     }
     
     /// Get all loaded shaders

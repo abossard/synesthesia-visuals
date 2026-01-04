@@ -94,7 +94,6 @@ public actor PipelineModule: Module {
         }
         
         isStarted = true
-        print("[Pipeline] Started (cache: \(resultCache.count) entries)")
     }
     
     public func stop() async {
@@ -114,7 +113,6 @@ public actor PipelineModule: Module {
         
         isStarted = false
         isProcessing = false
-        print("[Pipeline] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -144,7 +142,6 @@ public actor PipelineModule: Module {
         
         // Check cache
         if let cached = resultCache[track.key] {
-            print("[Pipeline] Cache hit: \(track.artist) - \(track.title)")
             lastResult = cached
             await fireComplete(cached)
             return cached
@@ -154,64 +151,61 @@ public actor PipelineModule: Module {
         var stepsSkipped: [String] = []
         var stepTimings: [String: Int] = [:]
         
-        // === STEP 1: Lyrics ===
-        print("[Pipeline] ▶ Step 1/5: LYRICS - Fetching lyrics for \(track.artist) - \(track.title)")
+        // === STEP 1: Lyrics (LRC from LRCLIB) ===
         await fireStepStart(.lyrics)
         let lyricsStart = Date()
         
         let lines = await lyricsModule.loadLyrics(for: track)
-        let lyricsFound = !lines.isEmpty
-        let refrainLines = await lyricsModule.refrainLines.map { $0.text }
-        let keywords = await lyricsModule.keywords
+        let lrcLyricsFound = !lines.isEmpty
+        var refrainLines = await lyricsModule.refrainLines.map { $0.text }
+        var keywords = await lyricsModule.keywords
         let plainLyrics = lines.map { $0.text }.joined(separator: "\n")
         
         stepTimings["lyrics"] = Int(Date().timeIntervalSince(lyricsStart) * 1000)
         
-        if lyricsFound {
+        if lrcLyricsFound {
             stepsCompleted.append("lyrics")
-            print("[Pipeline] ✓ Step 1/5: LYRICS - Found \(lines.count) lines, \(refrainLines.count) refrain (\(stepTimings["lyrics"] ?? 0)ms)")
-            await fireStepComplete(.lyrics, ["line_count": lines.count, "status": "complete"])
+            await fireStepComplete(.lyrics, [
+                "status": "✓ \(lines.count) lines",
+                "line_count": lines.count
+            ])
         } else {
-            stepsSkipped.append("lyrics")
-            print("[Pipeline] ○ Step 1/5: LYRICS - No lyrics found (\(stepTimings["lyrics"] ?? 0)ms)")
-            await fireStepComplete(.lyrics, ["skipped": true, "status": "skipped"])
+            await fireStepComplete(.lyrics, ["status": "pending_llm"])
         }
         
-        // === STEP 2: AI Analysis ===
-        print("[Pipeline] ▶ Step 2/5: AI - Analyzing song...")
+        // === STEP 2: AI Analysis (always runs) ===
         await fireStepStart(.ai)
         let aiStart = Date()
         
-        var analysis: SongAnalysis?
-        if lyricsFound {
-            analysis = await aiModule.analyze(track: track, lyrics: plainLyrics)
-            stepsCompleted.append("ai")
-        } else {
-            // Run basic categorization without lyrics
-            let _ = await aiModule.categorize(track: track, lyrics: nil)
-            analysis = await aiModule.currentAnalysis
-            if analysis != nil {
-                stepsCompleted.append("ai")
+        let analysis = await aiModule.analyze(track: track, lyrics: plainLyrics)
+        
+        // If LRC didn't have lyrics but LLM found some, update data
+        if !lrcLyricsFound {
+            if !analysis.keywords.isEmpty {
+                keywords = analysis.keywords.flatMap { $0.split(separator: " ").map(String.init) }
+            }
+            if !analysis.refrainLines.isEmpty {
+                refrainLines = analysis.refrainLines
+            }
+            if !analysis.keywords.isEmpty || !analysis.themes.isEmpty {
+                stepsCompleted.append("lyrics")
             } else {
-                stepsSkipped.append("ai")
+                stepsSkipped.append("lyrics")
             }
         }
         
+        stepsCompleted.append("ai")
         stepTimings["ai"] = Int(Date().timeIntervalSince(aiStart) * 1000)
-        
-        if let a = analysis {
-            print("[Pipeline] ✓ Step 2/5: AI - mood=\(a.mood), energy=\(String(format: "%.2f", a.energy)), valence=\(String(format: "%.2f", a.valence)) (\(stepTimings["ai"] ?? 0)ms)")
-            await fireStepComplete(.ai, ["mood": a.mood, "status": "complete"])
-        } else {
-            print("[Pipeline] ○ Step 2/5: AI - No analysis available (\(stepTimings["ai"] ?? 0)ms)")
-            await fireStepComplete(.ai, ["skipped": true, "status": "skipped"])
-        }
+        await fireStepComplete(.ai, [
+            "status": "✓ \(analysis.mood)",
+            "mood": analysis.mood,
+            "energy": analysis.energy,
+            "valence": analysis.valence
+        ])
         
         // === STEP 3 & 4: Shaders + Images (parallel) ===
         var shaderMatch: ShaderMatchResult?
         var imageResult: ImageResult?
-        
-        print("[Pipeline] ▶ Steps 3-4: SHADERS+IMAGES (parallel)...")
         
         await withTaskGroup(of: Void.self) { group in
             // Shader matching
@@ -220,30 +214,27 @@ public actor PipelineModule: Module {
                     await self.fireStepStart(.shaders)
                     let shaderStart = Date()
                     
-                    let energy = analysis?.energy ?? 0.5
-                    let valence = analysis?.valence ?? 0.0
-                    print("[Pipeline] ▶ Step 3/5: SHADERS - Matching (energy=\(String(format: "%.2f", energy)), valence=\(String(format: "%.2f", valence)))")
-                    
                     shaderMatch = await shadersModule.selectForSong(
                         categories: nil,
-                        energy: energy,
-                        valence: valence
+                        energy: analysis.energy,
+                        valence: analysis.valence
                     )
                     
                     stepTimings["shaders"] = Int(Date().timeIntervalSince(shaderStart) * 1000)
                     
                     if let match = shaderMatch {
                         stepsCompleted.append("shaders")
-                        print("[Pipeline] ✓ Step 3/5: SHADERS - Matched '\(match.name)' (score=\(String(format: "%.2f", match.score))) (\(stepTimings["shaders"] ?? 0)ms)")
-                        await self.fireStepComplete(.shaders, ["shader": match.name, "status": "complete"])
+                        await self.fireStepComplete(.shaders, [
+                            "status": "✓ \(match.name) (\(Int(match.score * 100))%)",
+                            "shader": match.name,
+                            "score": match.score
+                        ])
                     } else {
                         stepsSkipped.append("shaders")
-                        print("[Pipeline] ○ Step 3/5: SHADERS - No match found (\(stepTimings["shaders"] ?? 0)ms)")
-                        await self.fireStepComplete(.shaders, ["skipped": true, "status": "skipped"])
+                        await self.fireStepComplete(.shaders, ["status": "✗ No match"])
                     }
                 }
             } else {
-                print("[Pipeline] ○ Step 3/5: SHADERS - Module not configured")
                 stepsSkipped.append("shaders")
             }
             
@@ -253,38 +244,33 @@ public actor PipelineModule: Module {
                     await self.fireStepStart(.images)
                     let imagesStart = Date()
                     
-                    let visuals = analysis?.visualAdjectives ?? []
-                    let themes = analysis?.themes ?? []
-                    let mood = analysis?.mood ?? "unknown"
-                    print("[Pipeline] ▶ Step 4/5: IMAGES - Fetching (visuals=\(visuals.prefix(3)), themes=\(themes.prefix(3)))")
-                    
                     imageResult = await imagesModule.fetchImages(
                         for: track,
-                        visualAdjectives: visuals,
-                        themes: themes,
-                        mood: mood
+                        visualAdjectives: analysis.visualAdjectives,
+                        themes: analysis.themes,
+                        mood: analysis.mood
                     )
                     
                     stepTimings["images"] = Int(Date().timeIntervalSince(imagesStart) * 1000)
                     
                     if let result = imageResult {
                         stepsCompleted.append("images")
-                        print("[Pipeline] ✓ Step 4/5: IMAGES - Fetched \(result.totalImages) images to \(result.folder.lastPathComponent) (\(stepTimings["images"] ?? 0)ms)")
-                        await self.fireStepComplete(.images, ["count": result.totalImages, "status": "complete"])
+                        let sourceInfo = result.cached ? "cached" : result.source
+                        await self.fireStepComplete(.images, [
+                            "status": "✓ \(result.totalImages) images (\(sourceInfo))",
+                            "count": result.totalImages
+                        ])
                     } else {
                         stepsSkipped.append("images")
-                        print("[Pipeline] ○ Step 4/5: IMAGES - No images fetched (\(stepTimings["images"] ?? 0)ms)")
-                        await self.fireStepComplete(.images, ["skipped": true, "status": "skipped"])
+                        await self.fireStepComplete(.images, ["status": "✗ No images"])
                     }
                 }
             } else {
-                print("[Pipeline] ○ Step 4/5: IMAGES - Module not configured")
                 stepsSkipped.append("images")
             }
         }
         
         // === STEP 5: OSC Broadcast ===
-        print("[Pipeline] ▶ Step 5/5: OSC - Broadcasting results...")
         await fireStepStart(.osc)
         let oscStart = Date()
         
@@ -292,38 +278,39 @@ public actor PipelineModule: Module {
             await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis, shader: shaderMatch, images: imageResult)
             stepsCompleted.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            print("[Pipeline] ✓ Step 5/5: OSC - Sent track, \(lines.count) lines, shader=\(shaderMatch?.name ?? "none") (\(stepTimings["osc"] ?? 0)ms)")
-            await fireStepComplete(.osc, ["status": "complete"])
+            await fireStepComplete(.osc, ["status": "✓ Sent"])
         } else {
             stepsSkipped.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            print("[Pipeline] ○ Step 5/5: OSC - Hub not configured (\(stepTimings["osc"] ?? 0)ms)")
-            await fireStepComplete(.osc, ["skipped": true, "status": "skipped"])
+            await fireStepComplete(.osc, ["status": "✗ No hub"])
         }
         
         // Build result
         let totalTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)
         
+        // Lyrics found = either from LRC or from LLM analysis
+        let lyricsFound = lrcLyricsFound || !analysis.keywords.isEmpty || !analysis.themes.isEmpty
+        
         let result = PipelineResult(
             artist: track.artist,
             title: track.title,
             album: track.album,
-            success: lyricsFound || analysis != nil,
+            success: true,
             lyricsFound: lyricsFound,
             lyricsLineCount: lines.count,
             lyricsLines: lines,
             refrainLines: refrainLines,
             lyricsKeywords: keywords,
-            metadataFound: analysis != nil,
+            metadataFound: true,
             plainLyrics: plainLyrics,
-            keywords: analysis?.keywords ?? [],
-            themes: analysis?.themes ?? [],
-            visualAdjectives: analysis?.visualAdjectives ?? [],
-            aiAvailable: analysis != nil,
-            mood: analysis?.mood ?? "unknown",
-            energy: analysis?.energy ?? 0.5,
-            valence: analysis?.valence ?? 0.0,
-            categories: analysis?.categories ?? [:],
+            keywords: analysis.keywords,
+            themes: analysis.themes,
+            visualAdjectives: analysis.visualAdjectives,
+            aiAvailable: true,
+            mood: analysis.mood,
+            energy: analysis.energy,
+            valence: analysis.valence,
+            categories: analysis.categories,
             shaderMatched: shaderMatch != nil,
             shaderName: shaderMatch?.name ?? "",
             shaderScore: shaderMatch?.score ?? 0.0,
@@ -337,8 +324,6 @@ public actor PipelineModule: Module {
         // Cache result
         resultCache[track.key] = result
         lastResult = result
-        
-        print("[Pipeline] Complete: \(track.title) in \(totalTimeMs)ms (\(stepsCompleted.count) steps)")
         await fireComplete(result)
         
         return result
@@ -384,7 +369,6 @@ public actor PipelineModule: Module {
     
     private func loadCacheFromDisk() {
         guard FileManager.default.fileExists(atPath: cacheFile.path) else {
-            print("[Pipeline] No cache file found")
             return
         }
         
@@ -402,10 +386,7 @@ public actor PipelineModule: Module {
                     validCount += 1
                 }
             }
-            
-            print("[Pipeline] Loaded \(validCount) cached results (filtered \(cacheData.entries.count - validCount) expired)")
         } catch {
-            print("[Pipeline] Cache load error: \(error.localizedDescription)")
         }
     }
     
@@ -421,15 +402,14 @@ public actor PipelineModule: Module {
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(cacheData)
             try data.write(to: cacheFile)
-            print("[Pipeline] Saved \(entries.count) cache entries to disk")
         } catch {
-            print("[Pipeline] Cache save error: \(error.localizedDescription)")
+            // Cache save error - silent
         }
     }
     
     // MARK: - Private
     
-    private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis?, shader: ShaderMatchResult?, images: ImageResult?) async {
+    private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis, shader: ShaderMatchResult?, images: ImageResult?) async {
         // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
         try? hub.sendToProcessing(
             "/textler/track",
@@ -480,41 +460,39 @@ public actor PipelineModule: Module {
             }
         }
         
-        // Send metadata if available (from LLM analysis)
-        if let analysis = analysis {
-            // Keywords: /textler/metadata/keywords [comma-separated]
-            let keywordsJoined = analysis.keywords.joined(separator: ",")
-            if !keywordsJoined.isEmpty {
-                try? hub.sendToProcessing("/textler/metadata/keywords", values: [keywordsJoined])
-            }
-            
-            // Themes: /textler/metadata/themes [comma-separated]
-            let themesJoined = analysis.themes.joined(separator: ",")
-            if !themesJoined.isEmpty {
-                try? hub.sendToProcessing("/textler/metadata/themes", values: [themesJoined])
-            }
-            
-            // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
-            let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
-            if !visualsJoined.isEmpty {
-                try? hub.sendToProcessing("/textler/metadata/visuals", values: [visualsJoined])
-            }
-            
-            // Mood: /textler/metadata/mood [string]
-            if !analysis.mood.isEmpty {
-                try? hub.sendToProcessing("/textler/metadata/mood", values: [analysis.mood])
-            }
-            
-            // AI analysis summary: /ai/analysis [mood, energy, valence]
-            try? hub.sendToProcessing(
-                "/ai/analysis",
-                values: [
-                    analysis.mood,
-                    Float32(analysis.energy),
-                    Float32(analysis.valence)
-                ]
-            )
+        // Send metadata from LLM analysis (always available now)
+        // Keywords: /textler/metadata/keywords [comma-separated]
+        let keywordsJoined = analysis.keywords.joined(separator: ",")
+        if !keywordsJoined.isEmpty {
+            try? hub.sendToProcessing("/textler/metadata/keywords", values: [keywordsJoined])
         }
+        
+        // Themes: /textler/metadata/themes [comma-separated]
+        let themesJoined = analysis.themes.joined(separator: ",")
+        if !themesJoined.isEmpty {
+            try? hub.sendToProcessing("/textler/metadata/themes", values: [themesJoined])
+        }
+        
+        // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
+        let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
+        if !visualsJoined.isEmpty {
+            try? hub.sendToProcessing("/textler/metadata/visuals", values: [visualsJoined])
+        }
+        
+        // Mood: /textler/metadata/mood [string]
+        if !analysis.mood.isEmpty {
+            try? hub.sendToProcessing("/textler/metadata/mood", values: [analysis.mood])
+        }
+        
+        // AI analysis summary: /ai/analysis [mood, energy, valence]
+        try? hub.sendToProcessing(
+            "/ai/analysis",
+            values: [
+                analysis.mood,
+                Float32(analysis.energy),
+                Float32(analysis.valence)
+            ]
+        )
         
         // Send shader if matched: /shader/load [name, energy, valence]
         if let shader = shader {

@@ -465,7 +465,6 @@ public actor LLMClient {
         if let model = await checkLMStudio() {
             backend = .lmStudio(model: model)
             await health.markAvailable(message: "LM Studio (\(model))")
-            print("[LLM] ✓ LM Studio (\(model))")
             return
         }
         
@@ -473,12 +472,10 @@ public actor LLMClient {
         if checkOpenAI() {
             backend = .openAI
             await health.markAvailable(message: "OpenAI")
-            print("[LLM] ✓ OpenAI")
             return
         }
         
         backend = .none
-        print("[LLM] Using basic analysis (no AI)")
     }
     
     private func checkLMStudio() async -> String? {

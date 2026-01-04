@@ -65,8 +65,6 @@ public actor PlaybackModule: Module {
         pollTask = Task { [weak self] in
             await self?.pollLoop()
         }
-        
-        print("[Playback] Started with source: \(sourceType.rawValue)")
     }
     
     public func stop() async {
@@ -74,7 +72,6 @@ public actor PlaybackModule: Module {
         pollTask = nil
         
         isStarted = false
-        print("[Playback] Stopped")
     }
     
     public func getStatus() -> [String: Any] {
@@ -115,7 +112,6 @@ public actor PlaybackModule: Module {
     public func setSource(_ source: PlaybackSourceType) async {
         guard source != sourceType else { return }
         
-        let previousSource = sourceType
         sourceType = source
         
         // Start VDJ subscription if switching to VDJ
@@ -125,8 +121,6 @@ public actor PlaybackModule: Module {
         
         // Clear current state when switching
         currentState = PlaybackState()
-        
-        print("[Playback] Source changed: \(previousSource.rawValue) → \(source.rawValue)")
     }
     
     /// Register callback for track changes
@@ -253,11 +247,9 @@ public actor PlaybackModule: Module {
     }
     
     private func fireTrackChange(_ track: Track) async {
-        print("[Playback] 🎵 Track changed: \(track.artist) - \(track.title) (\(trackChangeCallbacks.count) callbacks)")
         for callback in trackChangeCallbacks {
             await callback(track)
         }
-        print("[Playback] ✅ All callbacks executed")
     }
     
     private func firePositionUpdate(_ position: Double, _ isPlaying: Bool) async {

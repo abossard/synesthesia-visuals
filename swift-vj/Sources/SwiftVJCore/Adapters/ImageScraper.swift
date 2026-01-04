@@ -82,16 +82,70 @@ public actor ImageScraper {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         self.cacheDir = cacheDir ?? appSupport.appendingPathComponent("SwiftVJ/song_images")
         
-        // Load API keys from environment
-        self.unsplashKey = ProcessInfo.processInfo.environment["UNSPLASH_ACCESS_KEY"]
-        self.pexelsKey = ProcessInfo.processInfo.environment["PEXELS_API_KEY"]
-        self.pixabayKey = ProcessInfo.processInfo.environment["PIXABAY_API_KEY"]
+        // Load API keys from .env file first, then fall back to environment variables
+        let envKeys = Self.loadEnvFile()
+        self.unsplashKey = envKeys["UNSPLASH_ACCESS_KEY"] ?? ProcessInfo.processInfo.environment["UNSPLASH_ACCESS_KEY"]
+        self.pexelsKey = envKeys["PEXELS_API_KEY"] ?? ProcessInfo.processInfo.environment["PEXELS_API_KEY"]
+        self.pixabayKey = envKeys["PIXABAY_API_KEY"] ?? ProcessInfo.processInfo.environment["PIXABAY_API_KEY"]
         
         // Ensure cache directory exists
         try? FileManager.default.createDirectory(at: self.cacheDir, withIntermediateDirectories: true)
     }
     
+    /// Load API keys from .env file in working directory or project root
+    private static func loadEnvFile() -> [String: String] {
+        var result: [String: String] = [:]
+        
+        // Try multiple locations for .env file
+        let cwd = FileManager.default.currentDirectoryPath
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        
+        let paths = [
+            cwd + "/.env",
+            home + "/Desktop/projects/synesthesia-visuals/swift-vj/.env",
+            home + "/Desktop/projects/synesthesia-visuals/python-vj/.env",
+            Bundle.main.bundlePath + "/../.env",
+            Bundle.main.bundlePath + "/../../.env",
+            Bundle.main.bundlePath + "/../../../.env",
+            Bundle.main.bundlePath + "/../../../../.env"
+        ]
+        
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path),
+               let content = try? String(contentsOfFile: path, encoding: .utf8) {
+                for line in content.components(separatedBy: .newlines) {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+                    
+                    let parts = trimmed.components(separatedBy: "=")
+                    if parts.count >= 2 {
+                        let key = parts[0].trimmingCharacters(in: .whitespaces)
+                        let value = parts.dropFirst().joined(separator: "=").trimmingCharacters(in: .whitespaces)
+                        result[key] = value
+                    }
+                }
+                break  // Stop after first found .env
+            }
+        }
+        
+        return result
+    }
+    
     // MARK: - Public API
+    
+    /// Get available API sources info
+    public var availableSources: String {
+        var sources: [String] = ["coverart"]  // Always available
+        if pexelsKey != nil { sources.append("pexels") }
+        if pixabayKey != nil { sources.append("pixabay") }
+        if unsplashKey != nil { sources.append("unsplash") }
+        return sources.joined(separator: ", ")
+    }
+    
+    /// Check if any image APIs are configured
+    public var hasImageAPIs: Bool {
+        pexelsKey != nil || pixabayKey != nil || unsplashKey != nil
+    }
     
     /// Fetch and cache images for a track from ALL sources
     ///

@@ -190,7 +190,6 @@ public actor VDJMonitor {
             sentCount += 1
         }
         
-        print("📤 VDJMonitor: sent \(sentCount) subscribe commands to VDJ port 9009")
         isSubscribed = true
     }
     

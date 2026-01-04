@@ -66,23 +66,32 @@ struct RenderPreviewView: View {
 
 // MARK: - Tile Preview View
 
-/// Metal-based preview of a single tile
+/// Metal-based preview of a single tile - displays actual rendered texture
 struct TilePreviewView: View {
     let tileName: String
     @ObservedObject var renderEngine: RenderEngine
-
+    @State private var previewImage: NSImage?
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Placeholder background
+                // Background
                 Color.black
-
+                
+                // Actual texture preview
+                if let image = previewImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                }
+                
                 // Status overlay
                 VStack {
                     Text(tileName.capitalized)
                         .font(.headline)
                         .foregroundColor(.white)
-
+                        .shadow(radius: 2)
+                    
                     if renderEngine.isRunning {
                         Text("Frame: \(renderEngine.frameCount)")
                             .font(.caption.monospacedDigit())
@@ -95,6 +104,65 @@ struct TilePreviewView: View {
                 }
             }
         }
+        .onAppear {
+            startPreviewUpdates()
+        }
+        .onReceive(Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()) { _ in
+            updatePreview()
+        }
+    }
+    
+    private func startPreviewUpdates() {
+        updatePreview()
+    }
+    
+    private func updatePreview() {
+        Task {
+            guard let manager = renderEngine.tileManager else { return }
+            guard let texture = await manager.getTexture(tileName) else { return }
+            
+            // Convert Metal texture to NSImage for display
+            if let image = textureToNSImage(texture) {
+                await MainActor.run {
+                    self.previewImage = image
+                }
+            }
+        }
+    }
+    
+    /// Convert Metal texture to NSImage for SwiftUI display
+    private func textureToNSImage(_ texture: MTLTexture) -> NSImage? {
+        let width = texture.width
+        let height = texture.height
+        let bytesPerRow = width * 4
+        
+        // Read texture data
+        var imageBytes = [UInt8](repeating: 0, count: bytesPerRow * height)
+        texture.getBytes(
+            &imageBytes,
+            bytesPerRow: bytesPerRow,
+            from: MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0),
+                           size: MTLSize(width: width, height: height, depth: 1)),
+            mipmapLevel: 0
+        )
+        
+        // Create CGImage
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        
+        guard let context = CGContext(
+            data: &imageBytes,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else { return nil }
+        
+        guard let cgImage = context.makeImage() else { return nil }
+        
+        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
     }
 }
 
@@ -254,9 +322,28 @@ struct ShaderListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Available: \(shaderManager.availableShaders.count)")
+                // Navigation buttons
+                Button {
+                    shaderManager.prevShader()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                .disabled(shaderManager.availableShaders.isEmpty)
+                
+                Button {
+                    shaderManager.nextShader()
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.bordered)
+                .disabled(shaderManager.availableShaders.isEmpty)
+                
+                Text("\(shaderManager.currentIndex + 1)/\(shaderManager.availableShaders.count)")
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundColor(.secondary)
+                    .frame(width: 60)
 
                 Spacer()
 

@@ -187,22 +187,56 @@ final class ShaderTile: BaseTile {
                         audioTime: self.state.audioTime,
                         syntheticMouse: self.state.syntheticMouse
                     )
+                    // Remove any previous error file on successful load
+                    self.removeErrorFile(for: info)
                 }
             } catch {
+                let errorMessage = error.localizedDescription
                 await MainActor.run {
                     self.state = ShaderDisplayState(
                         current: info,
                         isLoaded: false,
-                        error: error.localizedDescription,
+                        error: errorMessage,
                         audioTime: self.state.audioTime,
                         syntheticMouse: self.state.syntheticMouse
                     )
                     // Fall back to default shader
                     self.currentPipelineState = self.defaultPipelineState
+                    // Write error to file for later fixing
+                    self.writeErrorFile(for: info, error: errorMessage)
                 }
                 print("[ShaderTile] Failed to load \(info.name): \(error)")
             }
         }
+    }
+    
+    // MARK: - Error File Management
+    
+    /// Write shader compilation error to a file alongside the shader
+    private func writeErrorFile(for info: ShaderInfo, error: String) {
+        let errorFileURL = info.path.deletingPathExtension().appendingPathExtension("error.txt")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let content = """
+        Shader: \(info.name)
+        Time: \(timestamp)
+        Error:
+        \(error)
+        
+        Original file: \(info.path.path)
+        """
+        
+        do {
+            try content.write(to: errorFileURL, atomically: true, encoding: .utf8)
+            print("[ShaderTile] Wrote error file: \(errorFileURL.lastPathComponent)")
+        } catch {
+            print("[ShaderTile] Failed to write error file: \(error)")
+        }
+    }
+    
+    /// Remove error file when shader loads successfully
+    private func removeErrorFile(for info: ShaderInfo) {
+        let errorFileURL = info.path.deletingPathExtension().appendingPathExtension("error.txt")
+        try? FileManager.default.removeItem(at: errorFileURL)
     }
 
     // MARK: - GLSL to Metal Conversion
@@ -439,6 +473,11 @@ final class ShaderStateManager: ObservableObject {
             .sorted { $0.name < $1.name }
         
         print("[ShaderStateManager] Loaded \(availableShaders.count) shaders from \(url.path)")
+        
+        // Auto-select first shader if available
+        if !availableShaders.isEmpty {
+            selectShader(at: 0)
+        }
     }
 
     func selectShader(at index: Int) {

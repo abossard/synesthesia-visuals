@@ -306,8 +306,11 @@ struct TileConfig: Sendable {
 
 // MARK: - Utility Functions
 
+/// Synthetic mouse rotation speed (matches VJUniverse synthMouseSpeed)
+private let synthMouseSpeed: Float = 0.3
+
 /// Calculate synthetic mouse position (Lissajous curve)
-/// Pure function from VJUniverse
+/// Pure function from VJUniverse - matches Processing's calcSynthMousePosition exactly
 func calcSyntheticMouse(
     time: Float,
     energySlow: Float,
@@ -315,22 +318,28 @@ func calcSyntheticMouse(
     mid: Float,
     beatPhase: Float
 ) -> SIMD2<Float> {
-    // Base radius (expands with energy)
-    let radius = 0.12 + energySlow * 0.18
-
-    // Figure-8 pattern: x = sin(t), y = sin(2t)
-    let x = 0.5 + sin(time) * radius * (1 + bass * 0.3)
-    let y = 0.5 + sin(time * 2) * radius * (1 + mid * 0.2)
-
-    // Phase offset on beats
-    let phaseOffset = beatPhase * 0.1
-
-    return SIMD2<Float>(
-        min(max(x + phaseOffset, 0), 1),
-        min(max(y, 0), 1)
-    )
+    // Base rotation with configurable speed (matches Processing)
+    var t = time * synthMouseSpeed
+    
+    // Phase shift on beat for rhythmic variation
+    let phaseOffset = beatPhase * 0.4
+    t += phaseOffset
+    
+    // Figure-8 Lissajous curve: x = sin(t), y = sin(2t)
+    let fig8X = sin(t)
+    let fig8Y = sin(t * 2.0)
+    
+    // Audio-modulated amplitude (smooth, avoids jitter)
+    let baseRadius: Float = 0.12 + energySlow * 0.18  // 0.12-0.30 range
+    let radiusX = baseRadius + bass * 0.12            // Bass widens X
+    let radiusY = baseRadius + mid * 0.08             // Mids affect Y
+    
+    // Final position (centered at 0.5, clamped to valid range)
+    let x = min(max(0.5 + fig8X * radiusX, 0.05), 0.95)
+    let y = min(max(0.5 + fig8Y * radiusY, 0.05), 0.95)
+    
+    return SIMD2<Float>(x, y)
 }
-
 /// Quadratic ease-in-out for animations
 /// Pure function
 func easeInOutQuad(_ t: Float) -> Float {

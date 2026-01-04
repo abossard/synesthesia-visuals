@@ -165,6 +165,46 @@ public struct SongCategories: Sendable, Equatable, Codable {
     public func score(for category: String) -> Double {
         scores[category] ?? 0
     }
+    
+    /// Estimate energy from category scores (0.0 - 1.0)
+    /// High energy categories: energetic, party, intense, upbeat
+    /// Low energy categories: chill, calm, sad, melancholy
+    public var estimatedEnergy: Double {
+        let highEnergy = ["energetic", "party", "intense", "upbeat", "dance", "hype", "power", "driving"]
+        let lowEnergy = ["chill", "calm", "sad", "melancholy", "ambient", "relaxed", "slow", "ballad"]
+        
+        var energy = 0.5  // default neutral
+        for (category, score) in scores {
+            let cat = category.lowercased()
+            if highEnergy.contains(where: { cat.contains($0) }) {
+                energy += score * 0.3
+            }
+            if lowEnergy.contains(where: { cat.contains($0) }) {
+                energy -= score * 0.3
+            }
+        }
+        return max(0.0, min(1.0, energy))
+    }
+    
+    /// Estimate valence from category scores (-1.0 to 1.0)
+    /// Positive valence: happy, joyful, uplifting
+    /// Negative valence: sad, dark, angry
+    public var estimatedValence: Double {
+        let positive = ["happy", "joyful", "uplifting", "fun", "love", "romantic", "hopeful", "bright"]
+        let negative = ["sad", "dark", "angry", "melancholy", "gloomy", "aggressive", "tense", "anxious"]
+        
+        var valence = 0.0  // default neutral
+        for (category, score) in scores {
+            let cat = category.lowercased()
+            if positive.contains(where: { cat.contains($0) }) {
+                valence += score * 0.5
+            }
+            if negative.contains(where: { cat.contains($0) }) {
+                valence -= score * 0.5
+            }
+        }
+        return max(-1.0, min(1.0, valence))
+    }
 
     private static func computePrimaryMood(from scores: [String: Double]) -> String {
         scores.max(by: { $0.value < $1.value })?.key ?? ""

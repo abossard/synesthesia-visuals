@@ -68,6 +68,7 @@ final class AppState: ObservableObject {
     var lyricsModule: LyricsModule?
     var aiModule: AIModule?
     var shadersModule: ShadersModule?
+    var imagesModule: ImagesModule?
     var pipelineModule: PipelineModule?
 
     // Rendering Engine (Phase 6)
@@ -159,7 +160,7 @@ final class AppState: ObservableObject {
         lyricsModule = LyricsModule(fetcher: lyricsFetcher)
         aiModule = AIModule(llmClient: llmClient)
         shadersModule = ShadersModule(matcher: shaderMatcher)
-        let imagesModule = ImagesModule(scraper: imageScraper)
+        imagesModule = ImagesModule(scraper: imageScraper)
         
         // Pipeline
         pipelineModule = PipelineModule(
@@ -188,15 +189,17 @@ final class AppState: ObservableObject {
             // Update UI state on main thread
             await MainActor.run { [weak self] in
                 self?.currentTrack = track
-                self?.log("Track: \(track.artist) - \(track.title)", level: .info)
+                self?.log("♪ \(track.artist) - \(track.title)", level: .info)
             }
             
             // Process through pipeline
             if let pipeline = pipeline {
                 let result = await pipeline.process(track: track)
                 await MainActor.run { [weak self] in
-                    self?.pipelineResult = result
-                    self?.updatePipelineSteps(from: result)
+                    guard let self = self else { return }
+                    self.pipelineResult = result
+                    self.updatePipelineSteps(from: result)
+                    self.logPipelineResult(result)
                 }
             }
         }
@@ -213,12 +216,11 @@ final class AppState: ObservableObject {
         // NOW start playback module (after callbacks registered)
         try await playbackModule?.start()
         
-        // Register pipeline step callbacks for real-time UI updates
+        // Register pipeline step callbacks for real-time UI updates (no logging - results logged at end)
         await pipelineModule?.onStepStart { @Sendable [weak self] stepName in
             guard let self = self else { return }
             await MainActor.run {
                 self.updatePipelineStep(stepName, status: "running")
-                self.log("Pipeline: \(stepName) started", level: .debug)
             }
         }
         
@@ -237,54 +239,73 @@ final class AppState: ObservableObject {
         // If VDJ, send subscriptions and start periodic queries
         if source == .vdj {
             await setupVDJSubscriptionsAndQueries()
+            log("VDJ subscribed", level: .info)
         }
         
         try await pipelineModule?.start()
         isRunning = true
-        log("Pipeline started", level: .info)
         
-        // Update shader count
+        // Log startup summary
+        if let backend = await aiModule?.backendInfo {
+            log("AI: \(backend)", level: .info)
+        }
         if let count = await shadersModule?.shaderCount {
             shaderCount = count
+            log("Shaders: \(count) loaded", level: .info)
         }
+        if let sources = await imagesModule?.availableSources {
+            log("Images: \(sources)", level: .info)
+        }
+        log("Pipeline started", level: .info)
         
         // Process current track immediately if one is already playing
-        // (Don't wait for track *change* - process what's playing NOW)
-        log("Waiting for VDJ data...", level: .debug)
-        try? await Task.sleep(for: .milliseconds(1000))  // Give VDJ time to respond to queries
-        await playbackModule?.poll()  // Force a poll
+        try? await Task.sleep(for: .milliseconds(1000))  // Give VDJ time to respond
+        await playbackModule?.poll()
         
-        let track = await playbackModule?.currentTrack
-        log("After poll: track = \(track?.title ?? "nil")", level: .debug)
-        
-        if let track = track {
-            log("Initial track detected: \(track.artist) - \(track.title)", level: .info)
+        if let track = await playbackModule?.currentTrack {
+            log("♪ \(track.artist) - \(track.title)", level: .info)
             currentTrack = track
             if let pipeline = pipelineModule {
-                log("Starting pipeline processing...", level: .debug)
                 let result = await pipeline.process(track: track)
-                log("Pipeline completed: \(result.stepsCompleted.joined(separator: ", "))", level: .info)
                 await MainActor.run {
                     self.updatePipelineSteps(from: result)
                     self.pipelineResult = result
+                    self.logPipelineResult(result)
                 }
-            } else {
-                log("ERROR: pipelineModule is nil!", level: .error)
             }
-        } else {
-            log("No track detected after poll", level: .warning)
         }
     }
     
     @MainActor
     private func updatePipelineSteps(from result: PipelineResult) {
         // Update pipeline steps from result
+        // Differentiate between "not found" (ran but no results) vs "skipped" (didn't run)
         pipelineSteps = [
-            PipelineStep(name: "lyrics", status: result.lyricsFound ? "✓ \(result.lyricsLineCount) lines" : "skipped", timestamp: Date()),
-            PipelineStep(name: "ai", status: result.aiAvailable ? "✓ \(result.mood)" : "skipped", timestamp: Date()),
-            PipelineStep(name: "shaders", status: result.shaderMatched ? "✓ \(result.shaderName)" : "skipped", timestamp: Date()),
-            PipelineStep(name: "images", status: result.imagesFound ? "✓ \(result.imagesCount) images" : "skipped", timestamp: Date()),
-            PipelineStep(name: "osc", status: result.stepsCompleted.contains("osc") ? "✓" : "skipped", timestamp: Date())
+            PipelineStep(
+                name: "lyrics",
+                status: result.lyricsFound ? "✓ \(result.lyricsLineCount) lines" : "✗ Not found",
+                timestamp: Date()
+            ),
+            PipelineStep(
+                name: "ai",
+                status: result.aiAvailable ? "✓ \(result.mood)" : "✗ Unavailable",
+                timestamp: Date()
+            ),
+            PipelineStep(
+                name: "shaders",
+                status: result.shaderMatched ? "✓ \(result.shaderName)" : "✗ No match",
+                timestamp: Date()
+            ),
+            PipelineStep(
+                name: "images",
+                status: result.imagesFound ? "✓ \(result.imagesCount) images" : "✗ None fetched",
+                timestamp: Date()
+            ),
+            PipelineStep(
+                name: "osc",
+                status: result.stepsCompleted.contains("osc") ? "✓ Sent" : "✗ Failed",
+                timestamp: Date()
+            )
         ]
     }
     
@@ -407,6 +428,36 @@ final class AppState: ObservableObject {
         logEntries.append(entry)
         if logEntries.count > maxLogEntries {
             logEntries.removeFirst(logEntries.count - maxLogEntries)
+        }
+    }
+    
+    /// Log pipeline result summary with timing
+    private func logPipelineResult(_ result: PipelineResult) {
+        // Summary line with timing
+        log("Pipeline: \(result.totalTimeMs)ms - \(result.artist) - \(result.title)", level: .info)
+        
+        // Lyrics
+        if result.lyricsFound {
+            log("  Lyrics: \(result.lyricsLineCount) lines, \(result.keywords.count) keywords", level: .info)
+        } else {
+            log("  Lyrics: not found", level: .debug)
+        }
+        
+        // AI
+        log("  AI: \(result.mood) (E:\(String(format: "%.1f", result.energy)) V:\(String(format: "%.1f", result.valence)))", level: .info)
+        
+        // Shader
+        if result.shaderMatched {
+            log("  Shader: \(result.shaderName) (\(Int(result.shaderScore * 100))%)", level: .info)
+        } else {
+            log("  Shader: no match", level: .debug)
+        }
+        
+        // Images - show folder path for easy access
+        if result.imagesFound {
+            log("  Images: \(result.imagesCount) files → \(result.imagesFolder)", level: .info)
+        } else {
+            log("  Images: none", level: .debug)
         }
     }
     
