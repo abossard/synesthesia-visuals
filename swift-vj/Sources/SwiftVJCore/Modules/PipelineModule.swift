@@ -165,12 +165,11 @@ public actor PipelineModule: Module {
         
         if lrcLyricsFound {
             stepsCompleted.append("lyrics")
-            await fireStepComplete(.lyrics, [
-                "status": "✓ \(lines.count) lines",
-                "line_count": lines.count
-            ])
+            let refrainCount = lines.filter { $0.isRefrain }.count
+            let kwCount = lines.filter { !$0.keywords.isEmpty }.count
+            await fireStepComplete(.lyrics, .lyrics(lineCount: lines.count, refrainCount: refrainCount, keywordCount: kwCount))
         } else {
-            await fireStepComplete(.lyrics, ["status": "pending_llm"])
+            await fireStepComplete(.lyrics, .skipped(reason: "pending LLM"))
         }
         
         // === STEP 2: AI Analysis (always runs) ===
@@ -196,12 +195,13 @@ public actor PipelineModule: Module {
         
         stepsCompleted.append("ai")
         stepTimings["ai"] = Int(Date().timeIntervalSince(aiStart) * 1000)
-        await fireStepComplete(.ai, [
-            "status": "✓ \(analysis.mood)",
-            "mood": analysis.mood,
-            "energy": analysis.energy,
-            "valence": analysis.valence
-        ])
+        await fireStepComplete(.ai, .ai(
+            mood: analysis.mood,
+            energy: analysis.energy,
+            valence: analysis.valence,
+            keywords: analysis.keywords,
+            themes: analysis.themes
+        ))
         
         // === STEP 3 & 4: Shaders + Images (parallel) ===
         var shaderMatch: ShaderMatchResult?
@@ -224,14 +224,10 @@ public actor PipelineModule: Module {
                     
                     if let match = shaderMatch {
                         stepsCompleted.append("shaders")
-                        await self.fireStepComplete(.shaders, [
-                            "status": "✓ \(match.name) (\(Int(match.score * 100))%)",
-                            "shader": match.name,
-                            "score": match.score
-                        ])
+                        await self.fireStepComplete(.shaders, .shaders(name: match.name, score: match.score))
                     } else {
                         stepsSkipped.append("shaders")
-                        await self.fireStepComplete(.shaders, ["status": "✗ No match"])
+                        await self.fireStepComplete(.shaders, .skipped(reason: "No match"))
                     }
                 }
             } else {
@@ -255,14 +251,15 @@ public actor PipelineModule: Module {
                     
                     if let result = imageResult {
                         stepsCompleted.append("images")
-                        let sourceInfo = result.cached ? "cached" : result.source
-                        await self.fireStepComplete(.images, [
-                            "status": "✓ \(result.totalImages) images (\(sourceInfo))",
-                            "count": result.totalImages
-                        ])
+                        await self.fireStepComplete(.images, .images(
+                            count: result.totalImages,
+                            folder: result.folder.path,
+                            source: result.source,
+                            cached: result.cached
+                        ))
                     } else {
                         stepsSkipped.append("images")
-                        await self.fireStepComplete(.images, ["status": "✗ No images"])
+                        await self.fireStepComplete(.images, .skipped(reason: "No images"))
                     }
                 }
             } else {
@@ -278,11 +275,11 @@ public actor PipelineModule: Module {
             await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis, shader: shaderMatch, images: imageResult)
             stepsCompleted.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            await fireStepComplete(.osc, ["status": "✓ Sent"])
+            await fireStepComplete(.osc, .osc(sent: true))
         } else {
             stepsSkipped.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            await fireStepComplete(.osc, ["status": "✗ No hub"])
+            await fireStepComplete(.osc, .osc(sent: false))
         }
         
         // Build result
@@ -527,9 +524,9 @@ public actor PipelineModule: Module {
         }
     }
     
-    private func fireStepComplete(_ step: PipelineStep, _ info: [String: Any]) async {
+    private func fireStepComplete(_ step: PipelineStep, _ status: PipelineStepStatus) async {
         for callback in stepCompleteCallbacks {
-            await callback(step.rawValue, info)
+            await callback(step.rawValue, status)
         }
     }
     

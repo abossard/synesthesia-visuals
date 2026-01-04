@@ -220,15 +220,27 @@ final class AppState: ObservableObject {
         await pipelineModule?.onStepStart { @Sendable [weak self] stepName in
             guard let self = self else { return }
             await MainActor.run {
-                self.updatePipelineStep(stepName, status: "running")
+                self.updatePipelineStep(stepName, status: "running", details: nil)
             }
         }
         
-        await pipelineModule?.onStepComplete { @Sendable [weak self] stepName, info in
+        await pipelineModule?.onStepComplete { @Sendable [weak self] stepName, stepStatus in
             guard let self = self else { return }
-            let status = (info["status"] as? String) ?? "complete"
             await MainActor.run {
-                self.updatePipelineStep(stepName, status: status)
+                self.updatePipelineStep(stepName, status: stepStatus.displayText, details: stepStatus.logDetails)
+                // Log detailed info for AI step (keywords, themes)
+                if case .ai(_, _, _, let keywords, let themes) = stepStatus {
+                    if !keywords.isEmpty {
+                        self.log("  Keywords: \(keywords.joined(separator: ", "))", level: .info)
+                    }
+                    if !themes.isEmpty {
+                        self.log("  Themes: \(themes.joined(separator: ", "))", level: .info)
+                    }
+                }
+                // Log image folder for easy access
+                if case .images(let count, let folder, _, _) = stepStatus, count > 0 {
+                    self.log("  Images: \(count) → \(folder)", level: .info)
+                }
             }
         }
         
@@ -403,23 +415,24 @@ final class AppState: ObservableObject {
     
     // MARK: - Private
     
-    private func updatePipelineStep(_ step: String, status: String) {
+    private func updatePipelineStep(_ step: String, status: String, details: [String]?) {
         // If status is "running", we're starting a new pipeline - reset all steps to pending first
         if status == "running" && step == "lyrics" {
             pipelineSteps = [
-                PipelineStep(name: "lyrics", status: "pending", timestamp: Date()),
-                PipelineStep(name: "ai", status: "pending", timestamp: Date()),
-                PipelineStep(name: "shaders", status: "pending", timestamp: Date()),
-                PipelineStep(name: "images", status: "pending", timestamp: Date()),
-                PipelineStep(name: "osc", status: "pending", timestamp: Date())
+                PipelineStep(name: "lyrics", status: "pending", details: nil, timestamp: Date()),
+                PipelineStep(name: "ai", status: "pending", details: nil, timestamp: Date()),
+                PipelineStep(name: "shaders", status: "pending", details: nil, timestamp: Date()),
+                PipelineStep(name: "images", status: "pending", details: nil, timestamp: Date()),
+                PipelineStep(name: "osc", status: "pending", details: nil, timestamp: Date())
             ]
         }
         
         if let index = pipelineSteps.firstIndex(where: { $0.name == step }) {
             pipelineSteps[index].status = status
+            pipelineSteps[index].details = details
             pipelineSteps[index].timestamp = Date()
         } else {
-            pipelineSteps.append(PipelineStep(name: step, status: status, timestamp: Date()))
+            pipelineSteps.append(PipelineStep(name: step, status: status, details: details, timestamp: Date()))
         }
     }
     
@@ -481,6 +494,7 @@ struct PipelineStep: Identifiable {
     let id = UUID()
     let name: String
     var status: String
+    var details: [String]?  // Extra info for modal/hover
     var timestamp: Date
 }
 

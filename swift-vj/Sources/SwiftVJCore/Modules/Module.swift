@@ -81,8 +81,8 @@ public typealias PositionUpdateCallback = @Sendable (Double, Bool) async -> Void
 /// Callback fired when pipeline step starts
 public typealias PipelineStepStartCallback = @Sendable (String) async -> Void
 
-/// Callback fired when pipeline step completes
-public typealias PipelineStepCompleteCallback = @Sendable (String, [String: Any]) async -> Void
+/// Callback fired when pipeline step completes with type-safe status
+public typealias PipelineStepCompleteCallback = @Sendable (String, PipelineStepStatus) async -> Void
 
 /// Callback fired when pipeline completes
 public typealias PipelineCompleteCallback = @Sendable (PipelineResult) async -> Void

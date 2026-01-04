@@ -51,6 +51,7 @@ struct PipelineStatusView: View {
                             name: stepDef.name,
                             icon: stepDef.icon,
                             status: step?.status ?? "pending",
+                            details: step?.details,
                             timestamp: step?.timestamp
                         )
                     }
@@ -177,35 +178,73 @@ struct PipelineStepRow: View {
     let name: String
     let icon: String
     let status: String
+    let details: [String]?
     let timestamp: Date?
     
+    @State private var showingDetails = false
+    
     var body: some View {
-        HStack {
-            // Icon
-            Image(systemName: icon)
-                .frame(width: 24)
-                .foregroundColor(statusColor)
+        VStack(alignment: .leading, spacing: 0) {
+            // Main row
+            HStack {
+                // Icon
+                Image(systemName: icon)
+                    .frame(width: 24)
+                    .foregroundColor(statusColor)
+                
+                // Name
+                Text(name.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .frame(width: 150, alignment: .leading)
+                
+                // Status
+                statusBadge
+                
+                Spacer()
+                
+                // Details disclosure
+                if let details = details, !details.isEmpty {
+                    Button(action: { showingDetails.toggle() }) {
+                        Image(systemName: showingDetails ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                // Timestamp
+                if let timestamp = timestamp {
+                    Text(timestamp, style: .time)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(status == "running" ? Color.blue.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if details != nil && !details!.isEmpty {
+                    showingDetails.toggle()
+                }
+            }
             
-            // Name
-            Text(name.replacingOccurrences(of: "_", with: " ").capitalized)
-                .frame(width: 150, alignment: .leading)
-            
-            // Status
-            statusBadge
-            
-            Spacer()
-            
-            // Timestamp
-            if let timestamp = timestamp {
-                Text(timestamp, style: .time)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            // Details panel (collapsible)
+            if showingDetails, let details = details {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(details, id: \.self) { detail in
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 36)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(4)
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(status == "running" ? Color.blue.opacity(0.1) : Color.clear)
-        .cornerRadius(8)
     }
     
     var statusColor: Color {

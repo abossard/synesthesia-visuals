@@ -213,6 +213,61 @@ public struct SongCategories: Sendable, Equatable, Codable {
 
 // MARK: - Pipeline Result
 
+/// Type-safe step completion status with rich data
+public enum PipelineStepStatus: Sendable {
+    case lyrics(lineCount: Int, refrainCount: Int, keywordCount: Int)
+    case ai(mood: String, energy: Double, valence: Double, keywords: [String], themes: [String])
+    case shaders(name: String, score: Double)
+    case images(count: Int, folder: String, source: String, cached: Bool)
+    case osc(sent: Bool)
+    case skipped(reason: String)
+    case error(message: String)
+    
+    /// Human-readable status string for UI
+    public var displayText: String {
+        switch self {
+        case .lyrics(let lineCount, let refrainCount, let keywordCount):
+            return "✓ \(lineCount) lines, \(refrainCount) refrain, \(keywordCount) kw"
+        case .ai(let mood, let energy, let valence, let keywords, _):
+            return "✓ \(mood) (E:\(String(format: "%.1f", energy)) V:\(String(format: "%.1f", valence))) [\(keywords.count) kw]"
+        case .shaders(let name, let score):
+            return "✓ \(name) (\(Int(score * 100))%)"
+        case .images(let count, _, let source, let cached):
+            let cacheStr = cached ? "cached" : source
+            return "✓ \(count) images (\(cacheStr))"
+        case .osc(let sent):
+            return sent ? "✓ Sent" : "✗ Not sent"
+        case .skipped(let reason):
+            return "○ \(reason)"
+        case .error(let message):
+            return "✗ \(message)"
+        }
+    }
+    
+    /// Detailed log output
+    public var logDetails: [String] {
+        switch self {
+        case .lyrics(let lineCount, let refrainCount, let keywordCount):
+            return ["Lines: \(lineCount)", "Refrain: \(refrainCount)", "Keywords: \(keywordCount)"]
+        case .ai(let mood, let energy, let valence, let keywords, let themes):
+            var details = ["Mood: \(mood)", "Energy: \(String(format: "%.2f", energy))", "Valence: \(String(format: "%.2f", valence))"]
+            if !keywords.isEmpty { details.append("Keywords: \(keywords.joined(separator: ", "))") }
+            if !themes.isEmpty { details.append("Themes: \(themes.joined(separator: ", "))") }
+            return details
+        case .shaders(let name, let score):
+            return ["Shader: \(name)", "Score: \(Int(score * 100))%"]
+        case .images(let count, let folder, let source, let cached):
+            return ["Count: \(count)", "Source: \(source)", "Cached: \(cached)", "Folder: \(folder)"]
+        case .osc(let sent):
+            return ["Sent: \(sent)"]
+        case .skipped(let reason):
+            return ["Reason: \(reason)"]
+        case .error(let message):
+            return ["Error: \(message)"]
+        }
+    }
+}
+
 /// Result from full pipeline processing.
 public struct PipelineResult: Sendable, Equatable, Codable {
     public let artist: String
