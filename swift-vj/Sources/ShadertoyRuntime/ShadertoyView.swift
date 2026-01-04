@@ -95,13 +95,23 @@ public struct ShadertoyView: NSViewRepresentable {
         Coordinator(self)
     }
 
-    public class Coordinator: NSObject {
+    public class Coordinator: NSObject, MTKViewDelegate {
         var parent: ShadertoyView
         var renderer: ShadertoyRenderer?
         weak var mtkView: MTKView?
 
         init(_ parent: ShadertoyView) {
             self.parent = parent
+        }
+        
+        public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+            // Forward to renderer when available
+            renderer?.mtkView(view, drawableSizeWillChange: size)
+        }
+        
+        public func draw(in view: MTKView) {
+            // Forward to renderer when available
+            renderer?.draw(in: view)
         }
     }
 }

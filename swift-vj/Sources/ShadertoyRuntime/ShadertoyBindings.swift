@@ -3,6 +3,7 @@
 
 import Foundation
 import Metal
+import CoreGraphics
 import simd
 
 // MARK: - Binding Constants
@@ -234,13 +235,9 @@ public final class ArgumentBufferEncoder: @unchecked Sendable {
         self.device = device
 
         // Create argument encoder from function reflection
-        if let encoder = function.makeArgumentEncoder(bufferIndex: bufferIndex) {
-            self.argumentEncoder = encoder
-            self.encodedLength = encoder.encodedLength
-        } else {
-            self.argumentEncoder = nil
-            self.encodedLength = 0
-        }
+        let encoder = function.makeArgumentEncoder(bufferIndex: bufferIndex)
+        self.argumentEncoder = encoder
+        self.encodedLength = encoder.encodedLength
     }
 
     /// Create an argument buffer

@@ -251,12 +251,20 @@ public struct ShaderMetadata: Codable, Sendable {
 // MARK: - Shader Folder Structure
 
 /// Represents a shader folder with all its components
-public struct ShaderFolder: Sendable {
+public struct ShaderFolder: Sendable, Hashable {
     public let url: URL
     public let name: String
     public let metadata: ShaderMetadata
     public let hasCommon: Bool
     public let availablePasses: [PassName]
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+    }
+    
+    public static func == (lhs: ShaderFolder, rhs: ShaderFolder) -> Bool {
+        lhs.url == rhs.url
+    }
 
     /// Initialize from a shader folder URL
     public init(url: URL) throws {

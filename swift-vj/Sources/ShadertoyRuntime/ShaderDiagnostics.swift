@@ -52,6 +52,16 @@ public struct PassDiagnosticReport: Codable, Sendable {
     public let spirvCrossDiagnostics: [Diagnostic]
     public let metalDiagnostics: [Diagnostic]
     public let mitigationsApplied: [String]
+    
+    public init(passName: String, wrapperDiagnostics: [Diagnostic], glslangDiagnostics: [Diagnostic], 
+                spirvCrossDiagnostics: [Diagnostic], metalDiagnostics: [Diagnostic], mitigationsApplied: [String]) {
+        self.passName = passName
+        self.wrapperDiagnostics = wrapperDiagnostics
+        self.glslangDiagnostics = glslangDiagnostics
+        self.spirvCrossDiagnostics = spirvCrossDiagnostics
+        self.metalDiagnostics = metalDiagnostics
+        self.mitigationsApplied = mitigationsApplied
+    }
 
     public var hasErrors: Bool {
         let allDiagnostics = wrapperDiagnostics + glslangDiagnostics + spirvCrossDiagnostics + metalDiagnostics
@@ -76,6 +86,15 @@ public struct ShaderDiagnosticReport: Codable, Sendable {
     public let passes: [PassDiagnosticReport]
     public let compilationTime: TimeInterval
     public let timestamp: Date
+    
+    public init(shaderName: String, shaderPath: String, passes: [PassDiagnosticReport], 
+                compilationTime: TimeInterval, timestamp: Date) {
+        self.shaderName = shaderName
+        self.shaderPath = shaderPath
+        self.passes = passes
+        self.compilationTime = compilationTime
+        self.timestamp = timestamp
+    }
 
     public var success: Bool {
         !passes.contains { $0.hasErrors }
@@ -264,7 +283,8 @@ public struct ShaderMitigations {
 
             """
             // Insert after #version
-            if let versionEnd = result.range(of: "\n", options: [], range: result.range(of: "#version")?.upperBound..<result.endIndex) {
+            if let versionRange = result.range(of: "#version"),
+               let versionEnd = result.range(of: "\n", options: [], range: versionRange.upperBound..<result.endIndex) {
                 result.insert(contentsOf: "\n" + precisionBlock, at: versionEnd.lowerBound)
                 applied.append(.precisionQualifiers)
             }

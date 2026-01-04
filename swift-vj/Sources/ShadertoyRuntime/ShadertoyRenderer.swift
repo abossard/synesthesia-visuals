@@ -202,7 +202,7 @@ public final class ShadertoyRenderer: NSObject, MTKViewDelegate {
             let mslPath = folderURL.appendingPathComponent("\(passConfig.name.rawValue).metal")
             if FileManager.default.fileExists(atPath: mslPath.path) {
                 let mslSource = try String(contentsOf: mslPath, encoding: .utf8)
-                let library = try device.makeLibrary(source: mslSource, options: nil)
+                let library = try await device.makeLibrary(source: mslSource, options: nil)
 
                 let pipelineState = try createPipelineState(from: library)
                 passState.pipelineState = pipelineState
@@ -239,13 +239,13 @@ public final class ShadertoyRenderer: NSObject, MTKViewDelegate {
         let metalSource = convertToMetal(glsl: wrappedGLSL, passConfig: passState.config)
 
         do {
-            let library = try device.makeLibrary(source: metalSource, options: nil)
+            let library = try await device.makeLibrary(source: metalSource, options: nil)
             let pipelineState = try createPipelineState(from: library)
             passState.pipelineState = pipelineState
         } catch {
             // Try simplified conversion
             let simplifiedMetal = createFallbackMetal(for: passState.passName)
-            let library = try device.makeLibrary(source: simplifiedMetal, options: nil)
+            let library = try await device.makeLibrary(source: simplifiedMetal, options: nil)
             passState.pipelineState = try createPipelineState(from: library)
             print("[ShadertoyRenderer] Using fallback shader for \(passState.passName.rawValue): \(error)")
         }

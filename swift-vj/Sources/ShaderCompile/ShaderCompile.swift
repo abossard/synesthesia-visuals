@@ -251,7 +251,7 @@ struct CompileCommand: AsyncParsableCommand {
 
         htmlContent += "</body></html>"
 
-        try htmlContent.write(to: htmlPath, atomically: true, encoding: .utf8)
+        try htmlContent.write(to: htmlPath, atomically: true, encoding: String.Encoding.utf8)
         print("HTML report: \(htmlPath.path)")
     }
 }

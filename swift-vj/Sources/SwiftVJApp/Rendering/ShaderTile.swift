@@ -26,13 +26,43 @@ final class ShaderTile: BaseTile {
 
     // Default shader (fallback)
     private var defaultPipelineState: MTLRenderPipelineState?
+    
+    // Pre-compiled Metal library (Option A)
+    private var precompiledLibrary: MTLLibrary?
+    private static let metallibName = "Shaders.metallib"
 
     // MARK: - Init
 
     init(device: MTLDevice) {
         super.init(device: device, config: .shader)
         setupBuffers()
+        loadPrecompiledLibrary()
         setupDefaultShader()
+    }
+    
+    /// Load pre-compiled .metallib if available
+    private func loadPrecompiledLibrary() {
+        // Search paths for metallib
+        let searchPaths = [
+            Bundle.main.resourceURL,
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Build"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop/projects/synesthesia-visuals/swift-vj/Build")
+        ].compactMap { $0 }
+        
+        for basePath in searchPaths {
+            let metallibURL = basePath.appendingPathComponent(Self.metallibName)
+            if FileManager.default.fileExists(atPath: metallibURL.path) {
+                do {
+                    precompiledLibrary = try commandQueue.device.makeLibrary(URL: metallibURL)
+                    print("[ShaderTile] Loaded pre-compiled library: \(metallibURL.lastPathComponent) (\(precompiledLibrary?.functionNames.count ?? 0) functions)")
+                    return
+                } catch {
+                    print("[ShaderTile] Failed to load metallib: \(error)")
+                }
+            }
+        }
+        print("[ShaderTile] No pre-compiled .metallib found, will use runtime compilation")
     }
 
     private func setupBuffers() {
@@ -163,19 +193,38 @@ final class ShaderTile: BaseTile {
 
         Task {
             do {
-                let glslSource = try String(contentsOf: info.path, encoding: .utf8)
-                let metalSource = convertGLSLToMetal(glslSource)
+                let pipelineState: MTLRenderPipelineState
+                
+                // Option A: Try pre-compiled metallib first
+                if let functionName = info.metalFunctionName,
+                   let library = precompiledLibrary,
+                   let fragmentFunction = library.makeFunction(name: functionName) {
+                    // Use pre-compiled function from metallib
+                    let vertexFunction = library.makeFunction(name: "vertex_main")
+                    
+                    let descriptor = MTLRenderPipelineDescriptor()
+                    descriptor.vertexFunction = vertexFunction
+                    descriptor.fragmentFunction = fragmentFunction
+                    descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                    
+                    pipelineState = try await commandQueue.device.makeRenderPipelineState(descriptor: descriptor)
+                    print("[ShaderTile] Loaded from metallib: \(info.name)")
+                } else {
+                    // Fallback: Runtime compile from GLSL source
+                    let glslSource = try String(contentsOf: info.path, encoding: .utf8)
+                    let metalSource = convertGLSLToMetal(glslSource)
 
-                let library = try await commandQueue.device.makeLibrary(source: metalSource, options: nil)
-                let vertexFunction = library.makeFunction(name: "vertex_main")
-                let fragmentFunction = library.makeFunction(name: "fragment_main")
+                    let library = try await commandQueue.device.makeLibrary(source: metalSource, options: nil)
+                    let vertexFunction = library.makeFunction(name: "vertex_main")
+                    let fragmentFunction = library.makeFunction(name: "fragment_main")
 
-                let descriptor = MTLRenderPipelineDescriptor()
-                descriptor.vertexFunction = vertexFunction
-                descriptor.fragmentFunction = fragmentFunction
-                descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                    let descriptor = MTLRenderPipelineDescriptor()
+                    descriptor.vertexFunction = vertexFunction
+                    descriptor.fragmentFunction = fragmentFunction
+                    descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
 
-                let pipelineState = try await commandQueue.device.makeRenderPipelineState(descriptor: descriptor)
+                    pipelineState = try await commandQueue.device.makeRenderPipelineState(descriptor: descriptor)
+                }
 
                 await MainActor.run {
                     self.shaderCache[info.name] = pipelineState

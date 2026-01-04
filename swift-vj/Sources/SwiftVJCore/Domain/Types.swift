@@ -396,6 +396,9 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
     public let colors: [String]
     public let effects: [String]
     public let rating: ShaderRating
+    
+    // Pre-compiled Metal support
+    public let metalFunctionName: String?  // Function name in .metallib (nil = runtime compile)
 
     public init(
         name: String,
@@ -407,7 +410,8 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
         mood: String = "",
         colors: [String] = [],
         effects: [String] = [],
-        rating: ShaderRating = .normal
+        rating: ShaderRating = .normal,
+        metalFunctionName: String? = nil
     ) {
         self.name = name
         self.path = path
@@ -419,6 +423,7 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
         self.colors = colors
         self.effects = effects
         self.rating = rating
+        self.metalFunctionName = metalFunctionName
     }
 }
 

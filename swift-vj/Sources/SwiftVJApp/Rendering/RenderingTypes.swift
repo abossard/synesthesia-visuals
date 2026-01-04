@@ -222,12 +222,15 @@ struct ShaderInfo: Sendable, Equatable, Identifiable {
     let name: String
     let path: URL
     let rating: ShaderRating
+    /// Metal function name in pre-compiled .metallib (nil = runtime compile)
+    let metalFunctionName: String?
 
-    init(name: String, path: URL, rating: ShaderRating = .good) {
+    init(name: String, path: URL, rating: ShaderRating = .good, metalFunctionName: String? = nil) {
         self.id = name
         self.name = name
         self.path = path
         self.rating = rating
+        self.metalFunctionName = metalFunctionName
     }
 }
 
