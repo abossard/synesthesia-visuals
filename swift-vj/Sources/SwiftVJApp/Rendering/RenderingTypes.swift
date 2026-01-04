@@ -254,25 +254,28 @@ struct ShaderDisplayState: Sendable, Equatable {
 // MARK: - Shader Uniforms
 
 /// Uniform buffer for shader rendering
+/// IMPORTANT: Must match Metal uniform block layout (std140)
+/// vec2 requires 8-byte alignment, so we need padding after single floats
 struct ShaderUniforms {
-    var time: Float = 0
-    var resolution: SIMD2<Float> = SIMD2(1280, 720)
-    var mouse: SIMD2<Float> = SIMD2(0.5, 0.5)
-    var speed: Float = 0.02
-
-    // Audio bands (0.0 - 1.0)
-    var bass: Float = 0
-    var lowMid: Float = 0
-    var mid: Float = 0
-    var highs: Float = 0
-    var level: Float = 0
+    var time: Float = 0           // offset 0
+    var _pad0: Float = 0          // offset 4 (padding for vec2 alignment)
+    var resolution: SIMD2<Float> = SIMD2(1280, 720)  // offset 8
+    var mouse: SIMD2<Float> = SIMD2(0.5, 0.5)        // offset 16
+    var speed: Float = 0.02       // offset 24
+    
+    // Audio bands (0.0 - 1.0) - these are consecutive floats, no padding needed
+    var bass: Float = 0           // offset 28
+    var lowMid: Float = 0         // offset 32
+    var mid: Float = 0            // offset 36
+    var highs: Float = 0          // offset 40
+    var level: Float = 0          // offset 44
 
     // Beat/kick
-    var kickEnv: Float = 0
-    var kickPulse: Float = 0
-    var beat: Float = 0
-    var energyFast: Float = 0
-    var energySlow: Float = 0
+    var kickEnv: Float = 0        // offset 48
+    var kickPulse: Float = 0      // offset 52
+    var beat: Float = 0           // offset 56
+    var energyFast: Float = 0     // offset 60
+    var energySlow: Float = 0     // offset 64
 
     /// Update from AudioState
     mutating func update(from audio: AudioState) {

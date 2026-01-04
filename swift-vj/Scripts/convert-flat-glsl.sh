@@ -35,28 +35,46 @@ layout(binding = 0) uniform Uniforms {
     float beat;
     float energyFast;
     float energySlow;
-} u;
+} _uniforms_;
 
-layout(binding = 1) uniform sampler2D bb;
+layout(binding = 1) uniform sampler2D backbuffer;
 
 layout(location = 0) out vec4 fragColor;
 
 // GLSL compatibility - remap old uniforms to block members
-#define time u.time
-#define resolution u.resolution
-#define mouse u.mouse
+#define time _uniforms_.time
+#define resolution _uniforms_.resolution
+#define mouse _uniforms_.mouse
 
 // texture2D -> texture for GLSL 4.5
 #define texture2D texture
 
+// Remove precision qualifiers (not needed in GLSL 450)
+#define lowp
+#define mediump  
+#define highp
+
 EOF
 
 # Extract the main function body from the original shader
-# Strip the uniform declarations and GL_ES precision stuff
-sed -e '/^#ifdef GL_ES/,/^#endif/d' \
-    -e '/^uniform /d' \
-    -e '/^precision /d' \
+# Strip the uniform declarations, GL_ES blocks, precision stuff, varying
+# Handle both leading whitespace and no whitespace variations
+# Also rename local variables that shadow uniforms, and rename conflicting functions
+sed -E \
+    -e '/^[[:space:]]*#ifdef GL_ES/,/^[[:space:]]*#endif/d' \
+    -e '/^[[:space:]]*uniform /d' \
+    -e '/^[[:space:]]*precision /d' \
+    -e '/^[[:space:]]*varying /d' \
+    -e '/^[[:space:]]*attribute /d' \
     -e 's/gl_FragColor/fragColor/g' \
+    -e 's/vec2 mouse([[:space:]]*=[[:space:]])/vec2 _mouse\1/g' \
+    -e 's/float time([[:space:]]*=[[:space:]])/float _time\1/g' \
+    -e 's/float round\(/float _round(/g' \
+    -e 's/float sinh\(/float _sinh(/g' \
+    -e 's/float cosh\(/float _cosh(/g' \
+    -e 's/([^_a-zA-Z0-9])round\(/\1_round(/g' \
+    -e 's/([^_a-zA-Z0-9])sinh\(/\1_sinh(/g' \
+    -e 's/([^_a-zA-Z0-9])cosh\(/\1_cosh(/g' \
     "$INPUT" >> "$WRAPPED"
 
 # Compile to SPIR-V

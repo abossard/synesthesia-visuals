@@ -29,6 +29,7 @@ final class ShaderTile: BaseTile {
     
     // Pre-compiled Metal library (Option A)
     private var precompiledLibrary: MTLLibrary?
+    private var vertexFunction: MTLFunction?
     private static let metallibName = "Shaders.metallib"
 
     // MARK: - Init
@@ -37,7 +38,22 @@ final class ShaderTile: BaseTile {
         super.init(device: device, config: .shader)
         setupBuffers()
         loadPrecompiledLibrary()
+        setupVertexFunction()  // Must be after loadPrecompiledLibrary
         setupDefaultShader()
+    }
+    
+    /// Setup vertex function from precompiled metallib
+    private func setupVertexFunction() {
+        guard let library = precompiledLibrary else {
+            print("[ShaderTile] No precompiled library for vertex function")
+            return
+        }
+        vertexFunction = library.makeFunction(name: "vertex_fullscreen")
+        if vertexFunction == nil {
+            print("[ShaderTile] vertex_fullscreen not found in metallib")
+        } else {
+            print("[ShaderTile] vertex_fullscreen loaded from metallib")
+        }
     }
     
     /// Load pre-compiled .metallib if available
@@ -46,23 +62,27 @@ final class ShaderTile: BaseTile {
         let searchPaths = [
             Bundle.main.resourceURL,
             Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"),
+            Bundle.module.resourceURL,  // SPM resource bundle
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Build"),
             URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop/projects/synesthesia-visuals/swift-vj/Build")
         ].compactMap { $0 }
         
+        print("[ShaderTile] Searching for metallib in \(searchPaths.count) paths...")
+        
         for basePath in searchPaths {
             let metallibURL = basePath.appendingPathComponent(Self.metallibName)
+            print("[ShaderTile]   Checking: \(metallibURL.path)")
             if FileManager.default.fileExists(atPath: metallibURL.path) {
                 do {
                     precompiledLibrary = try commandQueue.device.makeLibrary(URL: metallibURL)
-                    print("[ShaderTile] Loaded pre-compiled library: \(metallibURL.lastPathComponent) (\(precompiledLibrary?.functionNames.count ?? 0) functions)")
+                    print("[ShaderTile] ✓ Loaded pre-compiled library: \(metallibURL.lastPathComponent) (\(precompiledLibrary?.functionNames.count ?? 0) functions)")
                     return
                 } catch {
-                    print("[ShaderTile] Failed to load metallib: \(error)")
+                    print("[ShaderTile] ✗ Failed to load metallib: \(error)")
                 }
             }
         }
-        print("[ShaderTile] No pre-compiled .metallib found, will use runtime compilation")
+        print("[ShaderTile] ⚠ No pre-compiled .metallib found, will use runtime compilation")
     }
 
     private func setupBuffers() {
@@ -190,40 +210,45 @@ final class ShaderTile: BaseTile {
             )
             return
         }
+        
+        // Generate function name from shader name
+        let functionName = info.metalFunctionName ?? "fragment_\(info.name.replacingOccurrences(of: "[^a-zA-Z0-9_]", with: "_", options: .regularExpression))"
 
         Task {
             do {
                 let pipelineState: MTLRenderPipelineState
                 
-                // Option A: Try pre-compiled metallib first
-                if let functionName = info.metalFunctionName,
-                   let library = precompiledLibrary,
-                   let fragmentFunction = library.makeFunction(name: functionName) {
-                    // Use pre-compiled function from metallib
-                    let vertexFunction = library.makeFunction(name: "vertex_main")
-                    
+                // Try pre-compiled metallib first
+                if let library = precompiledLibrary,
+                   let fragmentFunction = library.makeFunction(name: functionName),
+                   let vf = vertexFunction {
+                    // Use pre-compiled fragment from metallib + local vertex
                     let descriptor = MTLRenderPipelineDescriptor()
-                    descriptor.vertexFunction = vertexFunction
+                    descriptor.vertexFunction = vf
                     descriptor.fragmentFunction = fragmentFunction
                     descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
                     
                     pipelineState = try await commandQueue.device.makeRenderPipelineState(descriptor: descriptor)
-                    print("[ShaderTile] Loaded from metallib: \(info.name)")
+                    print("[ShaderTile] Loaded from metallib: \(functionName)")
                 } else {
                     // Fallback: Runtime compile from GLSL source
+                    guard FileManager.default.fileExists(atPath: info.path.path) else {
+                        throw NSError(domain: "ShaderTile", code: 1, userInfo: [NSLocalizedDescriptionKey: "Shader file not found: \(info.path.path)"])
+                    }
                     let glslSource = try String(contentsOf: info.path, encoding: .utf8)
                     let metalSource = convertGLSLToMetal(glslSource)
 
                     let library = try await commandQueue.device.makeLibrary(source: metalSource, options: nil)
-                    let vertexFunction = library.makeFunction(name: "vertex_main")
-                    let fragmentFunction = library.makeFunction(name: "fragment_main")
+                    let vertexFunc = library.makeFunction(name: "vertex_main")
+                    let fragmentFunc = library.makeFunction(name: "fragment_main")
 
                     let descriptor = MTLRenderPipelineDescriptor()
-                    descriptor.vertexFunction = vertexFunction
-                    descriptor.fragmentFunction = fragmentFunction
+                    descriptor.vertexFunction = vertexFunc
+                    descriptor.fragmentFunction = fragmentFunc
                     descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
 
                     pipelineState = try await commandQueue.device.makeRenderPipelineState(descriptor: descriptor)
+                    print("[ShaderTile] Compiled at runtime: \(info.name)")
                 }
 
                 await MainActor.run {
@@ -399,7 +424,10 @@ final class ShaderTile: BaseTile {
 
     override func update(audioState: AudioState, deltaTime: Float) {
         // Update audio-reactive time
-        audioTime += deltaTime * audioState.speed
+        // Base speed is 1.0, audioState.speed provides audio-reactive scaling
+        let baseSpeed: Float = 1.0
+        let audioSpeedBoost = max(audioState.speed, 0.5)  // Minimum 0.5x speed
+        audioTime += deltaTime * baseSpeed * audioSpeedBoost
 
         // Update synthetic mouse (Lissajous curve)
         syntheticMouse = calcSyntheticMouse(

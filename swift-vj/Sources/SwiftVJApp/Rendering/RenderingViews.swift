@@ -136,9 +136,52 @@ struct TilePreviewView: View {
         let height = texture.height
         let bytesPerRow = width * 4
         
-        // Read texture data
+        // For private storage textures, we need to copy to a readable texture first
+        var readableTexture: MTLTexture = texture
+        
+        if texture.storageMode == .private {
+            // Create a managed texture to copy into
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: texture.pixelFormat,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            descriptor.storageMode = .managed
+            descriptor.usage = .shaderRead
+            
+            let device = texture.device
+            guard let managedTexture = device.makeTexture(descriptor: descriptor),
+                  let commandQueue = device.makeCommandQueue(),
+                  let commandBuffer = commandQueue.makeCommandBuffer(),
+                  let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+                return nil
+            }
+            
+            // Copy from private to managed texture
+            blitEncoder.copy(
+                from: texture,
+                sourceSlice: 0,
+                sourceLevel: 0,
+                sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                sourceSize: MTLSize(width: width, height: height, depth: 1),
+                to: managedTexture,
+                destinationSlice: 0,
+                destinationLevel: 0,
+                destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+            )
+            blitEncoder.synchronize(resource: managedTexture)
+            blitEncoder.endEncoding()
+            
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+            
+            readableTexture = managedTexture
+        }
+        
+        // Read texture data from the readable texture
         var imageBytes = [UInt8](repeating: 0, count: bytesPerRow * height)
-        texture.getBytes(
+        readableTexture.getBytes(
             &imageBytes,
             bytesPerRow: bytesPerRow,
             from: MTLRegion(origin: MTLOrigin(x: 0, y: 0, z: 0),

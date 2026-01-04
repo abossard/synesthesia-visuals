@@ -24,7 +24,7 @@ help:
 	@echo "  clean                - Clean build artifacts"
 	@echo ""
 	@echo "Shader compilation:"
-	@echo "  Input:  $(SHADERS_DIR)/glsl/*.txt"
+	@echo "  Input:  $(SHADERS_DIR)/glsl/*.txt, $(SHADERS_DIR)/masks/*.txt"
 	@echo "  Output: $(METALLIB)"
 
 all: build compile-flat-shaders
@@ -56,6 +56,33 @@ compile-shaders: build $(BUILD_DIR)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/air
+
+# Compile all flat GLSL shaders (glsl/ and masks/) + SharedVertex
+compile-flat-shaders: $(BUILD_DIR)
+	@echo "Converting GLSL shaders to Metal..."
+	@SUCCESS=0; FAIL=0; \
+	for f in $(SHADERS_DIR)/glsl/*.txt $(SHADERS_DIR)/masks/*.txt; do \
+		[ -f "$$f" ] || continue; \
+		b=$$(basename "$$f" .txt); \
+		if ./Scripts/convert-flat-glsl.sh "$$f" "$(BUILD_DIR)/$$b.metal" >/dev/null 2>&1; then \
+			SUCCESS=$$((SUCCESS+1)); \
+		else \
+			FAIL=$$((FAIL+1)); \
+		fi; \
+	done; \
+	echo "Converted: $$SUCCESS, Failed: $$FAIL"
+	@echo "Including shared vertex function..."
+	@cp Sources/SwiftVJApp/Resources/SharedVertex.metal $(BUILD_DIR)/SharedVertex.metal
+	@echo "Compiling to Metal bytecode..."
+	@for f in $(BUILD_DIR)/*.metal; do \
+		[ -f "$$f" ] || continue; \
+		$(XCRUN) metal -c "$$f" -o "$(BUILD_DIR)/air/$$(basename "$$f" .metal).air" 2>/dev/null; \
+	done
+	@echo "Linking metallib..."
+	@$(XCRUN) metallib $(BUILD_DIR)/air/*.air -o $(METALLIB)
+	@cp $(METALLIB) Sources/SwiftVJApp/Resources/
+	@ls -lh $(METALLIB)
 
 clean:
 	rm -rf $(BUILD_DIR)

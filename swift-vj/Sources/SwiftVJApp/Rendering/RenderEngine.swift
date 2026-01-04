@@ -148,6 +148,7 @@ final class RenderEngine: ObservableObject {
     private(set) var tileManager: TileManager?
     private var displayLink: CVDisplayLink?
     private var renderTimer: Timer?
+    private var dispatchTimer: DispatchSourceTimer?
 
     // Syphon output
     var syphonManager: SyphonOutputManager?
@@ -227,20 +228,26 @@ final class RenderEngine: ObservableObject {
     private func startRenderLoop() {
         lastFrameTime = Date()
 
-        // Use timer for render loop (simpler than CVDisplayLink for now)
-        renderTimer = Timer.scheduledTimer(
-            withTimeInterval: 1.0 / targetFPS,
-            repeats: true
-        ) { [weak self] _ in
+        // Use DispatchSourceTimer for reliable render loop
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        timer.schedule(deadline: .now(), repeating: 1.0 / targetFPS)
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
             Task { @MainActor in
-                await self?.renderFrame()
+                await self.renderFrame()
             }
         }
+        timer.resume()
+        dispatchTimer = timer
+        
+        print("[RenderEngine] Render loop started at \(targetFPS) FPS")
     }
 
     private func stopRenderLoop() {
         renderTimer?.invalidate()
         renderTimer = nil
+        dispatchTimer?.cancel()
+        dispatchTimer = nil
     }
 
     private func renderFrame() async {
@@ -255,6 +262,8 @@ final class RenderEngine: ObservableObject {
             fps = Double(fpsUpdateCounter) / frameTimeAccum
             frameTimeAccum = 0
             fpsUpdateCounter = 0
+            // Debug: log every 30 frames
+            // print("[RenderEngine] Frame \(frameCount), FPS: \(Int(fps))")
         }
 
         frameCount += 1
