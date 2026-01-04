@@ -59,15 +59,8 @@ actor TileManager {
             tile.render(commandBuffer: commandBuffer)
         }
 
-        // Publish to Syphon
-        if let syphon = syphonManager {
-            for (name, tile) in tiles {
-                if let texture = tile.texture {
-                    let syphonName = syphonNameForTile(name)
-                    syphon.publish(name: syphonName, texture: texture, commandBuffer: commandBuffer)
-                }
-            }
-        }
+        // NOTE: Syphon publishing now handled by MTKView tiles via onTextureReady callback
+        // The old actor-based tiles here are deprecated in favor of MTKViewTiles.swift
 
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()

@@ -1,23 +1,30 @@
 // MTKViewTiles.swift - Unified MTKView-based tile system
 // All tiles use MTKView's built-in 60fps render loop for reliable animation
 // DRY architecture: BaseMTKViewTile → specialized subclasses
+//
+// PERFORMANCE: Single render to syphonTexture, then blit to screen with scaling
 
 import SwiftUI
 import MetalKit
 import CoreText
 import AppKit
+import SyphonKit
 
 // MARK: - Base MTKView Tile
 
 /// Base class for all MTKView-based tiles
 /// Provides: device setup, render loop, uniform buffer, Syphon-ready texture
+/// OPTIMIZED: Single render to syphonTexture, blit to screen with scaling
 class BaseMTKViewTile: MTKView, MTKViewDelegate {
     
     // Metal resources
     var commandQueue: MTLCommandQueue?
     var uniformBuffer: MTLBuffer?
     
-    // Offscreen texture for Syphon output
+    // Blit pipeline for scaled copy to drawable
+    private var blitPipelineState: MTLRenderPipelineState?
+    
+    // Offscreen texture for Syphon output (1280x720)
     private(set) var syphonTexture: MTLTexture?
     
     // Timing
@@ -57,14 +64,14 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         
         self.delegate = self
         
-        // KEY: Configure for continuous 60fps animation
+        // Configure for continuous 60fps animation
         self.isPaused = false
         self.enableSetNeedsDisplay = false
         self.preferredFramesPerSecond = 60
         
         // Pixel format with alpha for compositing
         self.colorPixelFormat = .bgra8Unorm
-        self.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0) // Transparent!
+        self.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         
         // Create command queue
         commandQueue = device.makeCommandQueue()
@@ -77,6 +84,9 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         
         // Create offscreen texture for Syphon (1280x720)
         createSyphonTexture(width: 1280, height: 720)
+        
+        // Create blit pipeline for scaled copy to drawable
+        setupBlitPipeline()
         
         // Subclass-specific setup
         setupTile()
@@ -95,6 +105,46 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         descriptor.storageMode = .private
         
         syphonTexture = device.makeTexture(descriptor: descriptor)
+    }
+    
+    private func setupBlitPipeline() {
+        guard let device = self.device else { return }
+        
+        let shaderSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+        
+        struct VertexOut {
+            float4 position [[position]];
+            float2 texCoord;
+        };
+        
+        vertex VertexOut blitVertex(uint vid [[vertex_id]]) {
+            float2 positions[4] = { {-1,-1}, {1,-1}, {-1,1}, {1,1} };
+            float2 texCoords[4] = { {0,1}, {1,1}, {0,0}, {1,0} };
+            VertexOut out;
+            out.position = float4(positions[vid], 0, 1);
+            out.texCoord = texCoords[vid];
+            return out;
+        }
+        
+        fragment float4 blitFragment(VertexOut in [[stage_in]],
+                                     texture2d<float> tex [[texture(0)]]) {
+            constexpr sampler s(filter::linear);
+            return tex.sample(s, in.texCoord);
+        }
+        """
+        
+        do {
+            let library = try device.makeLibrary(source: shaderSource, options: nil)
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = library.makeFunction(name: "blitVertex")
+            descriptor.fragmentFunction = library.makeFunction(name: "blitFragment")
+            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+            blitPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+        } catch {
+            print("[BaseMTKViewTile] Blit pipeline error: \(error)")
+        }
     }
     
     /// Override in subclasses for tile-specific setup
@@ -124,21 +174,32 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         updateUniforms()
         
         guard let commandQueue = commandQueue,
-              let commandBuffer = commandQueue.makeCommandBuffer() else {
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let syphonTexture = syphonTexture else {
             return
         }
         
-        // 1. Render to Syphon texture (offscreen)
-        if let syphonTexture = syphonTexture {
-            renderTile(to: syphonTexture, commandBuffer: commandBuffer)
-            
-            // Notify Syphon callback
-            onTextureReady?(syphonTexture, commandBuffer)
-        }
+        // 1. SINGLE RENDER to syphonTexture (1280x720)
+        renderTile(to: syphonTexture, commandBuffer: commandBuffer)
         
-        // 2. Render to drawable (screen)
-        if let drawable = view.currentDrawable {
-            renderTile(to: drawable.texture, commandBuffer: commandBuffer)
+        // 2. Notify Syphon (before commit!)
+        onTextureReady?(syphonTexture, commandBuffer)
+        
+        // 3. BLIT syphonTexture to drawable with scaling
+        if let drawable = view.currentDrawable,
+           let blitPipeline = blitPipelineState {
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = drawable.texture
+            descriptor.colorAttachments[0].loadAction = .clear
+            descriptor.colorAttachments[0].storeAction = .store
+            descriptor.colorAttachments[0].clearColor = self.clearColor
+            
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) {
+                encoder.setRenderPipelineState(blitPipeline)
+                encoder.setFragmentTexture(syphonTexture, index: 0)
+                encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+                encoder.endEncoding()
+            }
             commandBuffer.present(drawable)
         }
         
@@ -158,7 +219,8 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         
         var uniforms = ShaderUniforms()
         uniforms.time = audioTime
-        uniforms.resolution = SIMD2<Float>(Float(drawableSize.width), Float(drawableSize.height))
+        // Use syphon texture size for uniforms (consistent 1280x720)
+        uniforms.resolution = SIMD2<Float>(1280, 720)
         uniforms.update(from: audioState)
         
         buffer.contents().copyMemory(from: [uniforms], byteCount: MemoryLayout<ShaderUniforms>.stride)
@@ -610,15 +672,17 @@ struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
     }
 }
 
-/// Convenience: Shader tile view
+/// Convenience: Shader tile view (wired to Syphon)
 struct ShaderTileView: NSViewRepresentable {
     let shaderName: String
+    let syphonName: String
     @Binding var frameCount: Int
     @Binding var audioTime: Float
     var audioState: AudioState
     
-    init(shaderName: String, frameCount: Binding<Int> = .constant(0), audioTime: Binding<Float> = .constant(0), audioState: AudioState = .silent) {
+    init(shaderName: String, syphonName: String = TileConfig.shader.syphonName, frameCount: Binding<Int> = .constant(0), audioTime: Binding<Float> = .constant(0), audioState: AudioState = .silent) {
         self.shaderName = shaderName
+        self.syphonName = syphonName
         self._frameCount = frameCount
         self._audioTime = audioTime
         self.audioState = audioState
@@ -636,6 +700,13 @@ struct ShaderTileView: NSViewRepresentable {
                 self.audioTime = time
             }
         }
+        // Wire to Syphon - synchronous call since MTKView draw is on main thread
+        let syphonServerName = syphonName
+        tile.onTextureReady = { texture, commandBuffer in
+            MainActor.assumeIsolated {
+                SyphonOutputManager.shared.publish(name: syphonServerName, texture: texture, commandBuffer: commandBuffer)
+            }
+        }
         return tile
     }
     
@@ -647,7 +718,7 @@ struct ShaderTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Lyrics tile view
+/// Convenience: Lyrics tile view (wired to Syphon)
 struct LyricsTileView: NSViewRepresentable {
     var lyricsState: LyricsDisplayState
     var audioState: AudioState
@@ -658,6 +729,12 @@ struct LyricsTileView: NSViewRepresentable {
         }
         let tile = LyricsMTKViewTile(tileName: "lyrics", device: device)
         tile.lyricsState = lyricsState
+        // Wire to Syphon - synchronous call since MTKView draw is on main thread
+        tile.onTextureReady = { texture, commandBuffer in
+            MainActor.assumeIsolated {
+                SyphonOutputManager.shared.publish(name: TileConfig.lyrics.syphonName, texture: texture, commandBuffer: commandBuffer)
+            }
+        }
         return tile
     }
     
@@ -667,7 +744,7 @@ struct LyricsTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Refrain tile view
+/// Convenience: Refrain tile view (wired to Syphon)
 struct RefrainTileView: NSViewRepresentable {
     var refrainState: RefrainDisplayState
     var audioState: AudioState
@@ -678,6 +755,12 @@ struct RefrainTileView: NSViewRepresentable {
         }
         let tile = RefrainMTKViewTile(tileName: "refrain", device: device)
         tile.refrainState = refrainState
+        // Wire to Syphon - synchronous call since MTKView draw is on main thread
+        tile.onTextureReady = { texture, commandBuffer in
+            MainActor.assumeIsolated {
+                SyphonOutputManager.shared.publish(name: TileConfig.refrain.syphonName, texture: texture, commandBuffer: commandBuffer)
+            }
+        }
         return tile
     }
     
@@ -687,7 +770,7 @@ struct RefrainTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Song Info tile view
+/// Convenience: Song Info tile view (wired to Syphon)
 struct SongInfoTileView: NSViewRepresentable {
     var songInfoState: SongInfoDisplayState
     var audioState: AudioState
@@ -698,12 +781,51 @@ struct SongInfoTileView: NSViewRepresentable {
         }
         let tile = SongInfoMTKViewTile(tileName: "songInfo", device: device)
         tile.songInfoState = songInfoState
+        // Wire to Syphon - synchronous call since MTKView draw is on main thread
+        tile.onTextureReady = { texture, commandBuffer in
+            MainActor.assumeIsolated {
+                SyphonOutputManager.shared.publish(name: TileConfig.songInfo.syphonName, texture: texture, commandBuffer: commandBuffer)
+            }
+        }
         return tile
     }
     
     func updateNSView(_ nsView: SongInfoMTKViewTile, context: Context) {
         nsView.songInfoState = songInfoState
         nsView.audioState = audioState
+    }
+}
+
+/// Convenience: Mask shader tile view (wired to Syphon, independent from main shader)
+struct MaskTileView: NSViewRepresentable {
+    let shaderName: String
+    var audioState: AudioState
+    
+    init(shaderName: String, audioState: AudioState = .silent) {
+        self.shaderName = shaderName
+        self.audioState = audioState
+    }
+    
+    func makeNSView(context: Context) -> ShaderMTKViewTile {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device")
+        }
+        let tile = ShaderMTKViewTile(tileName: "mask", device: device)
+        tile.loadShader(name: shaderName)
+        // Wire to Syphon - synchronous call since MTKView draw is on main thread
+        tile.onTextureReady = { texture, commandBuffer in
+            MainActor.assumeIsolated {
+                SyphonOutputManager.shared.publish(name: TileConfig.mask.syphonName, texture: texture, commandBuffer: commandBuffer)
+            }
+        }
+        return tile
+    }
+    
+    func updateNSView(_ nsView: ShaderMTKViewTile, context: Context) {
+        nsView.audioState = audioState
+        if nsView.currentShaderName != shaderName {
+            nsView.loadShader(name: shaderName)
+        }
     }
 }
 

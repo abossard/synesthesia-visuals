@@ -327,9 +327,10 @@ struct RenderingView: View {
     @State private var frameCount: Int = 0
     @State private var audioTime: Float = 0
     @State private var selectedShader: String = "3isacrowd"
+    @State private var selectedMaskShader: String = "BWcarbonlattice"  // Independent mask shader
     @State private var selectedTile: String = "shader"
     
-    // Demo text state for preview
+    // Demo text state for preview (shown until real data arrives)
     @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
         lines: [
             LyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
@@ -339,7 +340,7 @@ struct RenderingView: View {
         activeIndex: 1, textOpacity: 255, fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
     )
     @State private var demoRefrain = RefrainDisplayState(text: "♪ This is the chorus! ♪", opacity: 255, active: true, lastChangeTime: Date())
-    @State private var demoSongInfo = SongInfoDisplayState(artist: "Demo Artist", title: "Demo Track", album: "Demo Album", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date())
+    @State private var demoSongInfo = SongInfoDisplayState(artist: "SwiftVJ", title: "Ready for music...", album: "Waiting for track", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date())
 
     var body: some View {
         ScrollView {
@@ -374,7 +375,7 @@ struct RenderingView: View {
         VStack(spacing: 16) {
             // Tile selector tabs
             HStack(spacing: 12) {
-                ForEach(["shader", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
+                ForEach(["shader", "mask", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
                     Button {
                         selectedTile = tile
                     } label: {
@@ -397,7 +398,7 @@ struct RenderingView: View {
             }
             .padding(.horizontal)
             
-            // Main tile preview
+            // Main tile preview - only render the selected tile
             GroupBox(selectedTile.capitalized) {
                 selectedTileView
                     .aspectRatio(16/9, contentMode: .fit)
@@ -406,99 +407,44 @@ struct RenderingView: View {
                     .cornerRadius(8)
             }
             
-            // Shader selector (when shader tile selected)
+            // Shader selector (when shader or mask tile selected)
             if selectedTile == "shader" {
-                HStack {
-                    Text("Shader:")
-                    TextField("shader name", text: $selectedShader)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 200)
-                    
-                    Button("Random") {
-                        let shaders = renderEngine.shaderManager.availableShaders
-                        if !shaders.isEmpty {
-                            selectedShader = shaders.randomElement()?.name ?? selectedShader
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.horizontal)
+                shaderControlsView(title: "Shader", binding: $selectedShader)
+            }
+            if selectedTile == "mask" {
+                shaderControlsView(title: "Mask", binding: $selectedMaskShader)
             }
             
-            // Thumbnail grid of all tiles
-            GroupBox("All Tiles (60fps MTKView)") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    // Shader
-                    VStack(spacing: 4) {
-                        ShaderTileView(
-                            shaderName: selectedShader,
-                            frameCount: $frameCount,
-                            audioTime: $audioTime
-                        )
-                        .aspectRatio(16/9, contentMode: .fit)
-                        .frame(height: 120)
-                        .cornerRadius(4)
-                        .overlay(
+            // Tile selector grid (simple buttons, no Syphon overhead)
+            GroupBox("Tiles → Syphon") {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(["shader", "mask", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
+                        VStack(spacing: 4) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(selectedTile == "shader" ? Color.blue : Color.clear, lineWidth: 2)
-                        )
-                        .onTapGesture { selectedTile = "shader" }
-                        
-                        Text("Shader").font(.caption2)
-                    }
-                    
-                    // Lyrics
-                    VStack(spacing: 4) {
-                        LyricsTileView(lyricsState: demoLyrics, audioState: .silent)
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .frame(height: 120)
-                            .background(Color.black)
-                            .cornerRadius(4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(selectedTile == "lyrics" ? Color.blue : Color.clear, lineWidth: 2)
-                            )
-                            .onTapGesture { selectedTile = "lyrics" }
-                        
-                        Text("Lyrics").font(.caption2)
-                    }
-                    
-                    // Refrain
-                    VStack(spacing: 4) {
-                        RefrainTileView(refrainState: demoRefrain, audioState: .silent)
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .frame(height: 120)
-                            .background(Color.black)
-                            .cornerRadius(4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(selectedTile == "refrain" ? Color.blue : Color.clear, lineWidth: 2)
-                            )
-                            .onTapGesture { selectedTile = "refrain" }
-                        
-                        Text("Refrain").font(.caption2)
-                    }
-                    
-                    // Song Info
-                    VStack(spacing: 4) {
-                        SongInfoTileView(songInfoState: demoSongInfo, audioState: .silent)
-                            .aspectRatio(16/9, contentMode: .fit)
-                            .frame(height: 120)
-                            .background(Color.black)
-                            .cornerRadius(4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .stroke(selectedTile == "songInfo" ? Color.blue : Color.clear, lineWidth: 2)
-                            )
-                            .onTapGesture { selectedTile = "songInfo" }
-                        
-                        Text("Song Info").font(.caption2)
+                                .fill(tileColor(for: tile))
+                                .aspectRatio(16/9, contentMode: .fit)
+                                .frame(height: 60)
+                                .overlay(
+                                    Text(tile == selectedTile ? "●" : "")
+                                        .foregroundColor(.white)
+                                        .font(.title)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(selectedTile == tile ? Color.blue : Color.clear, lineWidth: 2)
+                                )
+                                .onTapGesture { selectedTile = tile }
+                            
+                            Text(tile.capitalized).font(.caption2)
+                        }
                     }
                 }
                 .padding()
             }
         }
     }
+    
+    // MARK: - Selected Tile View (renders only one tile at a time)
     
     @ViewBuilder
     private var selectedTileView: some View {
@@ -509,6 +455,8 @@ struct RenderingView: View {
                 frameCount: $frameCount,
                 audioTime: $audioTime
             )
+        case "mask":
+            MaskTileView(shaderName: selectedMaskShader, audioState: .silent)
         case "lyrics":
             LyricsTileView(lyricsState: demoLyrics, audioState: .silent)
         case "refrain":
@@ -518,6 +466,68 @@ struct RenderingView: View {
         default:
             Color.black
         }
+    }
+    
+    // MARK: - Tile Colors (for thumbnail grid)
+    
+    private func tileColor(for tile: String) -> Color {
+        switch tile {
+        case "shader": return Color.purple.opacity(0.6)
+        case "mask": return Color.orange.opacity(0.6)
+        case "lyrics": return Color.blue.opacity(0.6)
+        case "refrain": return Color.green.opacity(0.6)
+        case "songInfo": return Color.cyan.opacity(0.6)
+        default: return Color.gray.opacity(0.6)
+        }
+    }
+    
+    // MARK: - Shader Controls (reusable for Shader and Mask)
+    
+    @ViewBuilder
+    private func shaderControlsView(title: String, binding: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(title):")
+                
+                Button {
+                    let shaders = renderEngine.shaderManager.availableShaders
+                    if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
+                        let prev = (current - 1 + shaders.count) % shaders.count
+                        binding.wrappedValue = shaders[prev].name
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                
+                Text(binding.wrappedValue)
+                    .font(.caption.monospaced())
+                    .frame(minWidth: 150)
+                    .padding(.horizontal, 8)
+                    .background(Color.secondary.opacity(0.2))
+                    .cornerRadius(4)
+                
+                Button {
+                    let shaders = renderEngine.shaderManager.availableShaders
+                    if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
+                        let next = (current + 1) % shaders.count
+                        binding.wrappedValue = shaders[next].name
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Random") {
+                    let shaders = renderEngine.shaderManager.availableShaders
+                    if !shaders.isEmpty {
+                        binding.wrappedValue = shaders.randomElement()?.name ?? binding.wrappedValue
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.horizontal)
     }
     
     // MARK: - Text Controls

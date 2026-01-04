@@ -6,12 +6,15 @@
 import Foundation
 import Metal
 import SyphonKit
+import Combine
 
 // MARK: - Syphon Output Manager
 
 /// Manages Syphon servers for all tile outputs
 /// Each tile gets its own Syphon server for OBS/Resolume compositing
-final class SyphonOutputManager {
+/// Now an ObservableObject for SwiftUI @EnvironmentObject injection
+@MainActor
+final class SyphonOutputManager: ObservableObject {
     // MARK: - Properties
 
     private var senders: [String: SyphonSender] = [:]
@@ -19,7 +22,7 @@ final class SyphonOutputManager {
     private let commandQueue: MTLCommandQueue
 
     /// Whether Syphon output is enabled
-    var isEnabled: Bool = true
+    @Published var isEnabled: Bool = true
 
     /// Number of active servers
     var serverCount: Int { senders.count }
@@ -29,6 +32,16 @@ final class SyphonOutputManager {
 
     /// Whether using stub (vs real Syphon) - now always false with real framework
     var isUsingStub: Bool { false }
+    
+    /// Shared instance for global access
+    static let shared: SyphonOutputManager = {
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            fatalError("No Metal device available for Syphon")
+        }
+        let manager = SyphonOutputManager(device: device)
+        manager.createStandardServers()
+        return manager
+    }()
 
     // MARK: - Init
 
@@ -38,7 +51,8 @@ final class SyphonOutputManager {
     }
 
     deinit {
-        stopAll()
+        // Note: Can't call stopAll() in deinit due to MainActor isolation
+        // Servers will be stopped when the object is deallocated
     }
 
     // MARK: - Server Management
