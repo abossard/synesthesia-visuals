@@ -1,0 +1,72 @@
+{
+  "passes": [
+    {
+      "name": "BufA",
+      "output": {
+        "sizeMode": "screen"
+      },
+      "pingPong": true,
+      "channels": [
+        {
+          "index": 0,
+          "source": "bufferPrev",
+          "ref": "BufA",
+          "samplerType": "2D",
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": false
+        },
+        {
+          "index": 1,
+          "source": "none"
+        },
+        {
+          "index": 2,
+          "source": "none"
+        },
+        {
+          "index": 3,
+          "source": "none"
+        }
+      ]
+    },
+    {
+      "name": "Image",
+      "output": {
+        "sizeMode": "screen"
+      },
+      "pingPong": false,
+      "channels": [
+        {
+          "index": 0,
+          "source": "buffer",
+          "ref": "BufA",
+          "samplerType": "2D",
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": false
+        },
+        {
+          "index": 1,
+          "source": "none"
+        },
+        {
+          "index": 2,
+          "source": "none"
+        },
+        {
+          "index": 3,
+          "source": "none"
+        }
+      ]
+    }
+  ],
+  "global": {
+    "name": "Feedback Example",
+    "author": "Shadertoy Runtime",
+    "description": "Feedback shader: BufA reads its previous frame output for trail/persistence effects",
+    "tags": ["example", "feedback", "ping-pong", "trails"],
+    "defaultFilter": "linear",
+    "defaultWrap": "clamp"
+  }
+}

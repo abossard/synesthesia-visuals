@@ -1,0 +1,67 @@
+{
+  "passes": [
+    {
+      "name": "BufA",
+      "output": {
+        "sizeMode": "screen"
+      },
+      "pingPong": false,
+      "channels": [
+        {
+          "index": 0,
+          "source": "none"
+        },
+        {
+          "index": 1,
+          "source": "none"
+        },
+        {
+          "index": 2,
+          "source": "none"
+        },
+        {
+          "index": 3,
+          "source": "none"
+        }
+      ]
+    },
+    {
+      "name": "Image",
+      "output": {
+        "sizeMode": "screen"
+      },
+      "pingPong": false,
+      "channels": [
+        {
+          "index": 0,
+          "source": "buffer",
+          "ref": "BufA",
+          "samplerType": "2D",
+          "filter": "linear",
+          "wrap": "clamp",
+          "vflip": false
+        },
+        {
+          "index": 1,
+          "source": "none"
+        },
+        {
+          "index": 2,
+          "source": "none"
+        },
+        {
+          "index": 3,
+          "source": "none"
+        }
+      ]
+    }
+  ],
+  "global": {
+    "name": "MultiPass Example",
+    "author": "Shadertoy Runtime",
+    "description": "Multi-pass shader: BufA generates a pattern, Image post-processes it",
+    "tags": ["example", "multi-pass", "post-process"],
+    "defaultFilter": "linear",
+    "defaultWrap": "repeat"
+  }
+}
