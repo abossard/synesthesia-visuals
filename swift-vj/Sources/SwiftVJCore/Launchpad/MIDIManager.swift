@@ -305,6 +305,12 @@ public final class MIDIManager: @unchecked Sendable {
         isConnected = true
         
         print("[MIDI] ✓ Connected to \(input.name)")
+        
+        // Switch to Programmer Mode immediately
+        if input.isLaunchpad {
+            sendProgrammerModeSysEx()
+        }
+        
         return true
     }
     
@@ -410,17 +416,106 @@ public final class MIDIManager: @unchecked Sendable {
         }
     }
     
+    /// Send a control change message
+    public func sendControlChange(channel: Int, controller: Int, value: Int) {
+        guard isConnected, connectedOutput != 0 else { return }
+        
+        var packet = MIDIEventPacket()
+        packet.timeStamp = 0
+        packet.wordCount = 1
+        // MT=2 (MIDI 1.0), Status=B (CC)
+        packet.words.0 = UInt32(0x20B00000) | UInt32((channel & 0xF) << 16) | UInt32((controller & 0x7F) << 8) | UInt32(value & 0x7F)
+        
+        withUnsafePointer(to: packet) { packetPtr in
+            var list = MIDIEventList()
+            list.protocol = ._1_0
+            list.numPackets = 1
+            
+            withUnsafeMutablePointer(to: &list.packet) { listPacketPtr in
+                listPacketPtr.pointee = packetPtr.pointee
+            }
+            
+            MIDISendEventList(outputPort, connectedOutput, &list)
+        }
+    }
+    
+    /// Send Programmer Mode SysEx (Launchpad Mini MK3)
+    public func sendProgrammerModeSysEx() {
+        guard isConnected, connectedOutput != 0 else { return }
+        
+        // Launchpad Mini MK3 Programmer Mode: F0 00 20 29 02 0D 0E 01 F7
+        // Split into two UMP SysEx7 messages
+        
+        // Msg 1: Start (Status=1), 6 bytes: F0 00 20 29 02 0D
+        var packet1 = MIDIEventPacket()
+        packet1.timeStamp = 0
+        packet1.wordCount = 2
+        // MT=3, G=0, S=1, C=6 -> 0x3016
+        packet1.words.0 = 0x3016F000
+        packet1.words.1 = 0x2029020D
+        
+        // Msg 2: End (Status=3), 3 bytes: 0E 01 F7
+        var packet2 = MIDIEventPacket()
+        packet2.timeStamp = 0
+        packet2.wordCount = 2
+        // MT=3, G=0, S=3, C=3 -> 0x3033
+        packet2.words.0 = 0x30330E01
+        packet2.words.1 = 0xF7000000
+        
+        // Send as list
+        var list = MIDIEventList()
+        list.protocol = ._1_0
+        list.numPackets = 2
+        
+        // We need to append packets manually to the list
+        // This is tricky with Swift's MIDIEventList structure which is a C struct with a trailing array
+        // Easier to send them one by one for now, or use a helper
+        
+        // Send Msg 1
+        withUnsafePointer(to: packet1) { ptr1 in
+            var list1 = MIDIEventList()
+            list1.protocol = ._1_0
+            list1.numPackets = 1
+            withUnsafeMutablePointer(to: &list1.packet) { listPtr in
+                listPtr.pointee = ptr1.pointee
+            }
+            MIDISendEventList(outputPort, connectedOutput, &list1)
+        }
+        
+        // Send Msg 2
+        withUnsafePointer(to: packet2) { ptr2 in
+            var list2 = MIDIEventList()
+            list2.protocol = ._1_0
+            list2.numPackets = 1
+            withUnsafeMutablePointer(to: &list2.packet) { listPtr in
+                listPtr.pointee = ptr2.pointee
+            }
+            MIDISendEventList(outputPort, connectedOutput, &list2)
+        }
+        
+        print("[MIDI] Sent Programmer Mode SysEx")
+    }
+    
     /// Set LED color on Launchpad pad
     public func setLed(padId: ButtonId, color: Int) {
-        sendNoteOn(channel: 0, note: padId.midiNote, velocity: color)
+        if padId.isTopRow {
+            // Top row uses CC 91-98
+            let controller = 91 + padId.x
+            sendControlChange(channel: 0, controller: controller, value: color)
+        } else {
+            // Grid and Scene buttons use Note On
+            sendNoteOn(channel: 0, note: padId.midiNote, velocity: color)
+        }
     }
     
     /// Clear all LEDs
     public func clearAllLeds() {
         guard isConnected else { return }
-        for y in 0..<8 {
-            for x in 0..<9 {  // Include scene buttons
+        for y in -1..<8 {  // Include top row (-1)
+            for x in 0..<9 {  // Include scene buttons (8)
                 let padId = ButtonId(x: x, y: y)
+                // Skip invalid pads (e.g. (-1, -1) or (8, -1) corner)
+                if padId.isTopRow && x == 8 { continue }
                 setLed(padId: padId, color: LP.off)
             }
         }

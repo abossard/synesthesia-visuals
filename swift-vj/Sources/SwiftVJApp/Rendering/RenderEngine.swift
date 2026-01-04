@@ -48,7 +48,7 @@ actor TileManager {
         }
 
         commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+            // Removed blocking waitUntilCompleted
     }
 
     /// Render with Syphon publishing
@@ -64,7 +64,7 @@ actor TileManager {
         // The old actor-based tiles here are deprecated in favor of MTKViewTiles.swift
 
         commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+            // Removed blocking waitUntilCompleted
     }
 
     /// Map tile name to Syphon server name
@@ -121,7 +121,7 @@ actor TileManager {
 
 /// Main rendering engine that orchestrates tiles, audio, and output
 /// Observable for SwiftUI integration
-@MainActor
+/// NOTE: Not main-actor isolated; only minimal UI-facing mutations hop to main.
 final class RenderEngine: ObservableObject {
     // MARK: - Published State
 
@@ -135,6 +135,9 @@ final class RenderEngine: ObservableObject {
     @Published var shaderManager: ShaderStateManager
     @Published var maskManager: MaskStateManager
     @Published var imageManager: ImageStateManager
+
+    // Audio Processor (injected)
+    private var synesthesiaAudio: SynesthesiaAudioProcessor?
 
     // MARK: - Private
 
@@ -158,12 +161,37 @@ final class RenderEngine: ObservableObject {
 
     // MARK: - Init
 
-    init() {
-        audioManager = AudioStateManager()
-        textManager = TextStateManager()
-        shaderManager = ShaderStateManager()
-        maskManager = MaskStateManager()
-        imageManager = ImageStateManager()
+    static func create(synesthesiaAudio: SynesthesiaAudioProcessor? = nil) async -> RenderEngine {
+        let audioManager = await MainActor.run { AudioStateManager() }
+        let textManager = await MainActor.run { TextStateManager() }
+        let shaderManager = await MainActor.run { ShaderStateManager() }
+        let maskManager = await MainActor.run { MaskStateManager() }
+        let imageManager = await MainActor.run { ImageStateManager() }
+
+        return RenderEngine(
+            synesthesiaAudio: synesthesiaAudio,
+            audioManager: audioManager,
+            textManager: textManager,
+            shaderManager: shaderManager,
+            maskManager: maskManager,
+            imageManager: imageManager
+        )
+    }
+
+    private init(
+        synesthesiaAudio: SynesthesiaAudioProcessor?,
+        audioManager: AudioStateManager,
+        textManager: TextStateManager,
+        shaderManager: ShaderStateManager,
+        maskManager: MaskStateManager,
+        imageManager: ImageStateManager
+    ) {
+        self.synesthesiaAudio = synesthesiaAudio
+        self.audioManager = audioManager
+        self.textManager = textManager
+        self.shaderManager = shaderManager
+        self.maskManager = maskManager
+        self.imageManager = imageManager
     }
 
     // MARK: - Lifecycle
@@ -183,17 +211,18 @@ final class RenderEngine: ObservableObject {
         self.tileManager = manager
 
         // Create Syphon output manager
-        syphonManager = SyphonOutputManager(device: device)
-        syphonManager?.createStandardServers()
-
-        // Start state managers
-        audioManager.start()
-        textManager.start()
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            self.syphonManager = SyphonOutputManager(device: device)
+            self.syphonManager?.createStandardServers()
+            self.audioManager.start()
+            self.textManager.start()
+        }
 
         // Start render loop
         startRenderLoop()
 
-        isRunning = true
+        DispatchQueue.main.async { [weak self] in self?.isRunning = true }
         print("[RenderEngine] Started with Syphon output")
     }
 
@@ -201,21 +230,25 @@ final class RenderEngine: ObservableObject {
         guard isRunning else { return }
 
         stopRenderLoop()
-        audioManager.stop()
-        textManager.stop()
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            self.audioManager.stop()
+            self.textManager.stop()
+            self.syphonManager?.stopAll()
+            self.syphonManager = nil
+        }
 
-        // Stop Syphon servers
-        syphonManager?.stopAll()
-        syphonManager = nil
-
-        isRunning = false
+        DispatchQueue.main.async { [weak self] in self?.isRunning = false }
         print("[RenderEngine] Stopped")
     }
 
     /// Toggle Syphon output
     func setSyphonEnabled(_ enabled: Bool) {
-        syphonEnabled = enabled
-        syphonManager?.isEnabled = enabled
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            self.syphonEnabled = enabled
+            self.syphonManager?.isEnabled = enabled
+        }
     }
 
     // MARK: - Render Loop
@@ -231,20 +264,16 @@ final class RenderEngine: ObservableObject {
             var lastTime = CFAbsoluteTimeGetCurrent()
             
             while !Thread.current.isCancelled {
-                let currentTime = CFAbsoluteTimeGetCurrent()
-                let elapsed = currentTime - lastTime
-                
-                if elapsed >= interval {
-                    lastTime = currentTime
+                autoreleasepool {
+                    let currentTime = CFAbsoluteTimeGetCurrent()
+                    let elapsed = currentTime - lastTime
                     
-                    // Dispatch render to main actor
-                    DispatchQueue.main.async {
-                        Task { @MainActor in
-                            await self.renderFrame()
-                        }
+                    if elapsed >= interval {
+                        lastTime = currentTime
+                        // Run render loop directly on this thread (off main)
+                        Task { await self.renderFrame() }
                     }
                 }
-                
                 // Sleep briefly to avoid spinning CPU
                 Thread.sleep(forTimeInterval: 0.001)
             }
@@ -277,21 +306,30 @@ final class RenderEngine: ObservableObject {
         let deltaTime = Float(now.timeIntervalSince(lastFrameTime))
         lastFrameTime = now
 
-        // Update FPS
+        // Update FPS (main-thread hop only when we publish)
         frameTimeAccum += Double(deltaTime)
         fpsUpdateCounter += 1
         if fpsUpdateCounter >= 30 {
-            fps = Double(fpsUpdateCounter) / frameTimeAccum
+            let newFPS = Double(fpsUpdateCounter) / frameTimeAccum
             frameTimeAccum = 0
             fpsUpdateCounter = 0
-            // Debug: log every 30 frames
-            // print("[RenderEngine] Frame \(frameCount), FPS: \(Int(fps))")
+            DispatchQueue.main.async { [weak self] in self?.fps = newFPS }
         }
 
-        frameCount += 1
+        let newFrame = frameCount + 1
+        frameCount = newFrame
+        DispatchQueue.main.async { [weak self] in self?.frameCount = newFrame }
 
         // Get current audio state
-        let audioState = audioManager.state
+        if let processor = synesthesiaAudio {
+            let levels = await processor.getLevels()
+            let stats = await processor.stats
+            await audioManager.update(oscLevels: levels)
+            await MainActor.run { [audioManager] in
+                audioManager.updateStats(messageRate: stats.messageRate, messageCount: stats.messageCount, isActive: stats.isActive)
+            }
+        }
+        let audioState = await MainActor.run { audioManager.state }
 
         // Update tile states from managers
         await updateTileStates()
@@ -306,34 +344,42 @@ final class RenderEngine: ObservableObject {
     private func updateTileStates() async {
         guard let manager = tileManager else { return }
 
+        // Snapshot states on the main actor to avoid isolation violations
+        let lyricsState = await MainActor.run { textManager.lyricsState }
+        let refrainState = await MainActor.run { textManager.refrainState }
+        let songInfoState = await MainActor.run { textManager.songInfoState }
+        let shaderState = await MainActor.run { shaderManager.state }
+        let maskState = await MainActor.run { maskManager.state }
+        let imageState = await MainActor.run { imageManager.state }
+
         // Update lyrics tile
         if let lyricsTile = await manager.lyricsTile {
-            lyricsTile.updateState(textManager.lyricsState)
+            lyricsTile.updateState(lyricsState)
         }
 
         // Update refrain tile
         if let refrainTile = await manager.refrainTile {
-            refrainTile.updateState(textManager.refrainState)
+            refrainTile.updateState(refrainState)
         }
 
         // Update song info tile
         if let songInfoTile = await manager.songInfoTile {
-            songInfoTile.updateState(textManager.songInfoState)
+            songInfoTile.updateState(songInfoState)
         }
 
         // Update shader tile
         if let shaderTile = await manager.shaderTile {
-            shaderTile.updateState(shaderManager.state)
+            shaderTile.updateState(shaderState)
         }
 
         // Update mask tile
         if let maskTile = await manager.maskTile {
-            maskTile.updateState(maskManager.state)
+            maskTile.updateState(maskState)
         }
 
         // Update image tile
         if let imageTile = await manager.imageTile {
-            imageTile.updateState(imageManager.state)
+            imageTile.updateState(imageState)
         }
     }
 
@@ -353,34 +399,46 @@ final class RenderEngine: ObservableObject {
 
     /// Called when track changes (from pipeline)
     func onTrackChange(artist: String, title: String, album: String) {
-        textManager.setSongInfo(artist: artist, title: title, album: album)
+        Task { @MainActor [textManager] in
+            textManager.setSongInfo(artist: artist, title: title, album: album)
+        }
     }
 
     /// Called when lyrics are loaded (from pipeline)
     func onLyricsLoaded(_ lines: [LyricLine]) {
-        textManager.setLyrics(lines)
+        Task { @MainActor [textManager] in
+            textManager.setLyrics(lines)
+        }
     }
 
     /// Called when active lyric line changes (from pipeline)
     func onActiveLine(_ index: Int) {
-        textManager.setActiveLine(index)
+        Task { @MainActor [textManager] in
+            textManager.setActiveLine(index)
+        }
     }
 
     /// Called when refrain is active (from pipeline)
     func onRefrain(_ text: String) {
-        textManager.setRefrain(text)
+        Task { @MainActor [textManager] in
+            textManager.setRefrain(text)
+        }
     }
 
     /// Called when shader should change (from pipeline)
     func onShaderChange(name: String) {
-        shaderManager.selectShader(name: name)
+        Task { @MainActor [shaderManager] in
+            shaderManager.selectShader(name: name)
+        }
     }
 
     /// Called with audio update (from pipeline or OSC)
     func onAudioUpdate(_ levels: OSCAudioLevels, stats: (messageRate: Int, messageCount: Int, isActive: Bool)? = nil) async {
         await audioManager.update(oscLevels: levels)
         if let s = stats {
-            audioManager.updateStats(messageRate: s.messageRate, messageCount: s.messageCount, isActive: s.isActive)
+            await MainActor.run { [audioManager] in
+                audioManager.updateStats(messageRate: s.messageRate, messageCount: s.messageCount, isActive: s.isActive)
+            }
         }
     }
 }

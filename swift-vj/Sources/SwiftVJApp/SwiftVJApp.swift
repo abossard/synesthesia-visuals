@@ -155,17 +155,9 @@ final class AppState: ObservableObject {
                 // FAST PATH: nonisolated accumulator, no await
                 self.synesthesiaAudio.handleOSCFast(address, values)
                 
-                // Per-frame processing happens via getLevels() in render loop
-                // Only update render engine periodically (once per frame, not per message)
-                Task { @MainActor in
-                    let levels = await self.synesthesiaAudio.getLevels()
-                    let stats = await self.synesthesiaAudio.stats
-                    // Log once per second
-                    if stats.messageCount % 600 == 0 {
-                        self.log("Audio OSC: \(stats.messageRate) msg/s, bass=\(String(format: "%.2f", levels.bass)) level=\(String(format: "%.2f", levels.level))", level: .debug)
-                    }
-                    await self.renderEngine?.onAudioUpdate(levels, stats: (stats.messageRate, stats.messageCount, stats.isActive))
-                }
+                // NOTE: RenderEngine now pulls audio levels directly from synesthesiaAudio
+                // in its render loop (60fps). We NO LONGER dispatch to MainActor here
+                // to avoid flooding the main thread with 1000+ tasks/sec.
             }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
@@ -174,7 +166,14 @@ final class AppState: ObservableObject {
 
     private func setupRenderEngine() {
         // Create render engine for VJUniverse visual output
-        renderEngine = RenderEngine()
+        // Inject synesthesiaAudio processor so RenderEngine can pull levels in render loop
+        Task { [weak self] in
+            guard let self = self else { return }
+            let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
+            await MainActor.run { [weak self] in
+                self?.renderEngine = engine
+            }
+        }
     }
     
     private func setupModules() {
