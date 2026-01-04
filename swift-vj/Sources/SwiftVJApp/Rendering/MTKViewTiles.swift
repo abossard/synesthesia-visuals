@@ -534,9 +534,12 @@ class TextMTKViewTile: BaseMTKViewTile {
     private var copyPipelineState: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
     private var samplerState: MTLSamplerState?
+    private var needsRedraw = true
     
     // Text state (set externally)
-    var textLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = []
+    var textLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = [] {
+        didSet { needsRedraw = true }
+    }
     
     override func setupTile() {
         guard let device = self.device else { return }
@@ -659,22 +662,24 @@ class TextMTKViewTile: BaseMTKViewTile {
               let vertexBuffer = vertexBuffer,
               let samplerState = samplerState else { return }
         
-        // Clear context with transparent black
-        ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
-        ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
-        
-        // Draw all text lines
-        for line in textLines {
-            drawText(line.text, fontSize: line.fontSize, opacity: line.opacity, yPosition: line.yPosition, context: ctx)
-        }
-        
-        // Upload CG context to texture
-        if let data = ctx.data {
-            let region = MTLRegion(
-                origin: MTLOrigin(x: 0, y: 0, z: 0),
-                size: MTLSize(width: ctx.width, height: ctx.height, depth: 1)
-            )
-            cgTexture.replace(region: region, mipmapLevel: 0, withBytes: data, bytesPerRow: ctx.width * 4)
+        // Only redraw/upload when text changes to keep main thread light
+        if needsRedraw {
+            ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
+            ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+
+            for line in textLines {
+                drawText(line.text, fontSize: line.fontSize, opacity: line.opacity, yPosition: line.yPosition, context: ctx)
+            }
+
+            if let data = ctx.data {
+                let region = MTLRegion(
+                    origin: MTLOrigin(x: 0, y: 0, z: 0),
+                    size: MTLSize(width: ctx.width, height: ctx.height, depth: 1)
+                )
+                cgTexture.replace(region: region, mipmapLevel: 0, withBytes: data, bytesPerRow: ctx.width * 4)
+            }
+
+            needsRedraw = false
         }
         
         // Render fullscreen quad with CG texture scaled to target size
@@ -848,6 +853,12 @@ struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
     @Binding var frameCount: Int
     @Binding var audioTime: Float
     var audioState: AudioState
+
+    final class Coordinator {
+        var lastUIUpdate: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
     
     func makeNSView(context: Context) -> T {
         guard let device = MTLCreateSystemDefaultDevice() else {
@@ -855,9 +866,13 @@ struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
         }
         let tile = tileFactory(device)
         tile.onFrameRendered = { frame, time in
-            // Already on main thread from MTKView delegate
-            self.frameCount = frame
-            self.audioTime = time
+            // Throttle UI bindings to ~10 Hz to avoid SwiftUI churn
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - context.coordinator.lastUIUpdate >= 0.1 {
+                context.coordinator.lastUIUpdate = now
+                self.frameCount = frame
+                self.audioTime = time
+            }
         }
         configure(tile)
         return tile
@@ -891,16 +906,19 @@ struct ShaderTileView: NSViewRepresentable {
         let tile = ShaderMTKViewTile(tileName: "shader", device: device)
         tile.loadShader(name: shaderName)
         tile.onFrameRendered = { frame, time in
-            // Already on main thread from MTKView delegate
-            self.frameCount = frame
-            self.audioTime = time
+            // Throttle UI bindings to ~10 Hz to avoid SwiftUI churn
+            struct Holder { static var last: CFAbsoluteTime = CFAbsoluteTimeGetCurrent() }
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - Holder.last >= 0.1 {
+                Holder.last = now
+                self.frameCount = frame
+                self.audioTime = time
+            }
         }
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         let syphonServerName = syphonName
         tile.onTextureReady = { texture, commandBuffer in
-            MainActor.assumeIsolated {
-                SyphonOutputManager.shared.publish(name: syphonServerName, texture: texture, commandBuffer: commandBuffer)
-            }
+            SyphonOutputManager.shared.publish(name: syphonServerName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }
@@ -926,9 +944,7 @@ struct LyricsTileView: NSViewRepresentable {
         tile.lyricsState = lyricsState
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         tile.onTextureReady = { texture, commandBuffer in
-            MainActor.assumeIsolated {
-                SyphonOutputManager.shared.publish(name: TileConfig.lyrics.syphonName, texture: texture, commandBuffer: commandBuffer)
-            }
+            SyphonOutputManager.shared.publish(name: TileConfig.lyrics.syphonName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }
@@ -952,9 +968,7 @@ struct RefrainTileView: NSViewRepresentable {
         tile.refrainState = refrainState
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         tile.onTextureReady = { texture, commandBuffer in
-            MainActor.assumeIsolated {
-                SyphonOutputManager.shared.publish(name: TileConfig.refrain.syphonName, texture: texture, commandBuffer: commandBuffer)
-            }
+            SyphonOutputManager.shared.publish(name: TileConfig.refrain.syphonName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }
@@ -978,9 +992,7 @@ struct SongInfoTileView: NSViewRepresentable {
         tile.songInfoState = songInfoState
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         tile.onTextureReady = { texture, commandBuffer in
-            MainActor.assumeIsolated {
-                SyphonOutputManager.shared.publish(name: TileConfig.songInfo.syphonName, texture: texture, commandBuffer: commandBuffer)
-            }
+            SyphonOutputManager.shared.publish(name: TileConfig.songInfo.syphonName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }
@@ -1009,9 +1021,7 @@ struct MaskTileView: NSViewRepresentable {
         tile.loadShader(name: shaderName)
         // Wire to Syphon - synchronous call since MTKView draw is on main thread
         tile.onTextureReady = { texture, commandBuffer in
-            MainActor.assumeIsolated {
-                SyphonOutputManager.shared.publish(name: TileConfig.mask.syphonName, texture: texture, commandBuffer: commandBuffer)
-            }
+            SyphonOutputManager.shared.publish(name: TileConfig.mask.syphonName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }

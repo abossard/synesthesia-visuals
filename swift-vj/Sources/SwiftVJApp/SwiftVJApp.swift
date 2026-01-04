@@ -235,23 +235,31 @@ final class AppState: ObservableObject {
             }
         }
         
-        // Subscribe Launchpad to incoming OSC (for Learn Mode recording)
+        // Subscribe Launchpad only to Synesthesia control/selectable prefixes (ignore audio)
         // Capture the module reference to avoid main actor isolation issues
         let lpModule = launchpadModule
-        oscHub.subscribe(pattern: "*") { address, values in
-            guard let module = lpModule else { return }
-            
-            // Convert OSCKit values to OscArg
-            let args: [OscArg] = values.compactMap { value in
-                if let v = value as? Int32 { return .int(Int(v)) }
-                if let v = value as? Float32 { return .float(Float(v)) }
-                if let v = value as? String { return .string(v) }
-                if let v = value as? Bool { return .bool(v) }
-                return nil
+        let launchpadPrefixes = [
+            "/scenes/*",
+            "/presets/*",
+            "/favslots/*",
+            "/playlist/*",
+            "/controls/meta/*",
+            "/controls/global/*"
+        ]
+        for pattern in launchpadPrefixes {
+            oscHub.subscribe(pattern: pattern) { address, values in
+                guard let module = lpModule else { return }
+
+                let args: [OscArg] = values.compactMap { value in
+                    if let v = value as? Int32 { return .int(Int(v)) }
+                    if let v = value as? Float32 { return .float(Float(v)) }
+                    if let v = value as? String { return .string(v) }
+                    if let v = value as? Bool { return .bool(v) }
+                    return nil
+                }
+
+                module.receiveOscEvent(OscEvent(address: address, args: args))
             }
-            
-            // Forward to Launchpad
-            module.receiveOscEvent(OscEvent(address: address, args: args))
         }
         
         // Pipeline
