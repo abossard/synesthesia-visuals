@@ -218,10 +218,6 @@ final class AudioStateManager: ObservableObject {
     func update(oscLevels: OSCAudioLevels) async {
         let newState = await processor.update(oscLevels: oscLevels)
         state = newState
-        // DEBUG: Log state changes (every 60th update)
-        if Int(Date().timeIntervalSince1970 * 60) % 60 == 0 {
-            print("[AudioStateManager] state.bass=\(String(format: "%.2f", state.bass)) state.level=\(String(format: "%.2f", state.level))")
-        }
     }
 
     /// Update from simplified levels (convenience)
