@@ -87,8 +87,9 @@ public actor SynesthesiaAudioProcessor {
         
         // Parse address and store value
         // Pattern: /audio/{category}/{band}
-        let parts = address.lowercased().split(separator: "/")
-        guard parts.count >= 3, parts[0] == "audio" else { return }
+        // Split gives ["", "audio", "level", "bass"] for "/audio/level/bass"
+        let parts = address.lowercased().split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 3, String(parts[0]) == "audio" else { return }
         
         let category = String(parts[1])
         let band = String(parts[2])
@@ -111,7 +112,6 @@ public actor SynesthesiaAudioProcessor {
             }
             // Compute intensity from overall level
             oscIntensity = oscLevel
-            
         case "presence":
             switch band {
             case "bass": oscBassPresence = value
@@ -234,6 +234,7 @@ public actor SynesthesiaAudioProcessor {
         if let d = value as? Double { return Float(d) }
         if let i = value as? Int { return Float(i) }
         if let i = value as? Int32 { return Float(i) }
+        if let anyNumber = value as? AnyOSCNumberValue { return Float(anyNumber.doubleValue) }
         if let s = value as? String { return Float(s) }
         return nil
     }

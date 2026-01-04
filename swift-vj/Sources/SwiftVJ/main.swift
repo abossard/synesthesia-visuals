@@ -14,6 +14,7 @@ struct SwiftVJCLI: AsyncParsableCommand {
         subcommands: [
             LyricsCommand.self,
             LaunchpadTestCommand.self,
+            LaunchpadE2ECommand.self,
             // PipelineCommand.self,  // TODO: Implement
             // PlaybackCommand.self,  // TODO: Implement
             // ShadersCommand.self,   // TODO: Implement
@@ -128,5 +129,18 @@ struct LaunchpadTestCommand: ParsableCommand {
         }
         
         runLaunchpadInteractiveTests(testNumber: testNumber)
+    }
+}
+
+// MARK: - Launchpad E2E Command
+
+struct LaunchpadE2ECommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "launchpad-e2e",
+        abstract: "End-to-end guided test for all Launchpad features"
+    )
+    
+    func run() throws {
+        runLaunchpadE2ETest()
     }
 }

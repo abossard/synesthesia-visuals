@@ -216,7 +216,12 @@ final class AudioStateManager: ObservableObject {
 
     /// Update from raw audio levels (call when receiving OSC/audio data)
     func update(oscLevels: OSCAudioLevels) async {
-        state = await processor.update(oscLevels: oscLevels)
+        let newState = await processor.update(oscLevels: oscLevels)
+        state = newState
+        // DEBUG: Log state changes (every 60th update)
+        if Int(Date().timeIntervalSince1970 * 60) % 60 == 0 {
+            print("[AudioStateManager] state.bass=\(String(format: "%.2f", state.bass)) state.level=\(String(format: "%.2f", state.level))")
+        }
     }
 
     /// Update from simplified levels (convenience)

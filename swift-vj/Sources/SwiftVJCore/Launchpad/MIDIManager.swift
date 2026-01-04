@@ -32,33 +32,43 @@ public enum MIDIMessage: Sendable {
     case noteOff(channel: Int, note: Int, velocity: Int)
     case controlChange(channel: Int, controller: Int, value: Int)
     
-    /// Convert note to ButtonId (Launchpad Programmer mode)
+    /// Convert to ButtonId (Launchpad Programmer mode)
+    /// - Notes 11-88: grid pads (y=0-7) and scene buttons (x=8)
+    /// - CC 91-98: top row buttons (x=0-7, y=-1)
     public var buttonId: ButtonId? {
         switch self {
         case .noteOn(_, let note, _), .noteOff(_, let note, _):
             return ButtonId(midiNote: note)
-        default:
+        case .controlChange(_, let controller, _):
+            // Top row: CC 91-98 → x=0-7, y=-1
+            if controller >= 91 && controller <= 98 {
+                return ButtonId(x: controller - 91, y: -1)
+            }
             return nil
         }
     }
     
-    /// Whether this is a press (noteOn with velocity > 0)
+    /// Whether this is a press (noteOn with velocity > 0, or CC with value > 0)
     public var isPress: Bool {
-        if case .noteOn(_, _, let velocity) = self {
+        switch self {
+        case .noteOn(_, _, let velocity):
             return velocity > 0
+        case .controlChange(_, _, let value):
+            return value > 0
+        default:
+            return false
         }
-        return false
     }
     
-    /// Whether this is a release (noteOff or noteOn with velocity 0)
+    /// Whether this is a release (noteOff, noteOn with velocity 0, or CC with value 0)
     public var isRelease: Bool {
         switch self {
         case .noteOff:
             return true
         case .noteOn(_, _, let velocity):
             return velocity == 0
-        default:
-            return false
+        case .controlChange(_, _, let value):
+            return value == 0
         }
     }
 }

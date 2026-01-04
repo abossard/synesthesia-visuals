@@ -145,12 +145,15 @@ final class AppState: ObservableObject {
             // Wire Synesthesia audio OSC to audio processor and render engine
             oscHub.subscribe(pattern: "/audio/*") { [weak self] address, values in
                 guard let self = self else { return }
-                Task {
+                Task { @MainActor in
                     await self.synesthesiaAudio.handleOSC(address, values)
                     let levels = await self.synesthesiaAudio.getLevels()
-                    Task { @MainActor in
-                        await self.renderEngine?.onAudioUpdate(levels)
+                    // DEBUG: Log every 60th message (once per second at 60fps)
+                    let stats = await self.synesthesiaAudio.stats
+                    if stats.messageCount % 60 == 0 {
+                        self.log("Audio OSC: bass=\(String(format: "%.2f", levels.bass)) mid=\(String(format: "%.2f", levels.mid)) level=\(String(format: "%.2f", levels.level))", level: .debug)
                     }
+                    await self.renderEngine?.onAudioUpdate(levels)
                 }
             }
         } catch {
