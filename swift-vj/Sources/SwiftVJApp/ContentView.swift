@@ -84,22 +84,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("SwiftVJ")
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task {
-                        if appState.isRunning {
-                            await appState.stop()
-                        } else {
-                            try? await appState.start()
-                        }
-                    }
-                } label: {
-                    Label(appState.isRunning ? "Stop" : "Start",
-                          systemImage: appState.isRunning ? "stop.fill" : "play.fill")
-                }
-                .keyboardShortcut(.space, modifiers: [.command])
-            }
+        .task {
+            // Autostart pipeline when app launches
+            try? await appState.start()
         }
     }
 }

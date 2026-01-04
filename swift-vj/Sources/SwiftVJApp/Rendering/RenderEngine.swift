@@ -8,6 +8,20 @@ import Combine
 import SwiftUI
 import SwiftVJCore
 
+// MARK: - Render Frame Context
+
+/// Snapshot of all state needed for one render frame
+/// Gathered in a single MainActor hop to minimize thread switching
+struct RenderFrameContext: Sendable {
+    let audioState: AudioState
+    let lyricsState: LyricsDisplayState
+    let refrainState: RefrainDisplayState
+    let songInfoState: SongInfoDisplayState
+    let shaderState: ShaderDisplayState
+    let maskState: ShaderDisplayState
+    let imageState: ImageDisplayState
+}
+
 // MARK: - Tile Manager Actor
 
 /// Manages all tiles and their lifecycle
@@ -306,80 +320,109 @@ final class RenderEngine: ObservableObject {
         let deltaTime = Float(now.timeIntervalSince(lastFrameTime))
         lastFrameTime = now
 
-        // Update FPS (main-thread hop only when we publish)
+        // Update FPS counter (only publish every 30 frames to reduce main thread hops)
         frameTimeAccum += Double(deltaTime)
         fpsUpdateCounter += 1
-        if fpsUpdateCounter >= 30 {
-            let newFPS = Double(fpsUpdateCounter) / frameTimeAccum
-            frameTimeAccum = 0
+        let shouldPublishFPS = fpsUpdateCounter >= 30
+        if shouldPublishFPS {
             fpsUpdateCounter = 0
-            DispatchQueue.main.async { [weak self] in self?.fps = newFPS }
         }
-
         let newFrame = frameCount + 1
         frameCount = newFrame
-        DispatchQueue.main.async { [weak self] in self?.frameCount = newFrame }
 
-        // Get current audio state
+        // Get audio levels from processor (off main thread)
+        var audioLevels: OSCAudioLevels?
+        var audioStats: (messageCount: Int, lastMessage: Date, isActive: Bool, messageRate: Int)?
         if let processor = synesthesiaAudio {
-            let levels = await processor.getLevels()
-            let stats = await processor.stats
-            await audioManager.update(oscLevels: levels)
-            await MainActor.run { [audioManager] in
-                audioManager.updateStats(messageRate: stats.messageRate, messageCount: stats.messageCount, isActive: stats.isActive)
-            }
+            audioLevels = await processor.getLevels()
+            audioStats = await processor.stats
         }
-        let audioState = await MainActor.run { audioManager.state }
 
-        // Update tile states from managers
-        await updateTileStates()
+        // Process audio OFF MainActor (AudioProcessor is an actor, not @MainActor)
+        var processedAudioState: AudioState?
+        if let levels = audioLevels {
+            processedAudioState = await audioManager.processAudioOffMain(oscLevels: levels)
+        }
+
+        // Capture for closure
+        let capturedStats = audioStats
+        let capturedAudioState = processedAudioState
+
+        // SINGLE MainActor hop to set state and gather ALL state
+        let context = await MainActor.run { [weak self] () -> RenderFrameContext? in
+            guard let self = self else { return nil }
+
+            // Set processed audio state directly (no async needed)
+            if let audioState = capturedAudioState {
+                self.audioManager.setStateDirectly(audioState)
+            }
+
+            // Update stats (lightweight, no async needed)
+            if let stats = capturedStats {
+                self.audioManager.updateStats(
+                    messageRate: stats.messageRate,
+                    messageCount: stats.messageCount,
+                    isActive: stats.isActive
+                )
+            }
+
+            // Publish FPS only when batched
+            if shouldPublishFPS {
+                self.fps = Double(30) / self.frameTimeAccum
+                self.frameTimeAccum = 0
+            }
+
+            // Gather all state in one hop
+            return RenderFrameContext(
+                audioState: self.audioManager.state,
+                lyricsState: self.textManager.lyricsState,
+                refrainState: self.textManager.refrainState,
+                songInfoState: self.textManager.songInfoState,
+                shaderState: self.shaderManager.state,
+                maskState: self.maskManager.state,
+                imageState: self.imageManager.state
+            )
+        }
+
+        guard let context = context, let manager = tileManager else { return }
+
+        // Update tile states from context (no MainActor hops needed)
+        await updateTileStates(with: context, manager: manager)
 
         // Update and render all tiles
-        guard let manager = tileManager else { return }
-
-        await manager.update(audioState: audioState, deltaTime: deltaTime)
+        await manager.update(audioState: context.audioState, deltaTime: deltaTime)
         await manager.renderAndPublish(syphonManager: syphonManager)
     }
 
-    private func updateTileStates() async {
-        guard let manager = tileManager else { return }
-
-        // Snapshot states on the main actor to avoid isolation violations
-        let lyricsState = await MainActor.run { textManager.lyricsState }
-        let refrainState = await MainActor.run { textManager.refrainState }
-        let songInfoState = await MainActor.run { textManager.songInfoState }
-        let shaderState = await MainActor.run { shaderManager.state }
-        let maskState = await MainActor.run { maskManager.state }
-        let imageState = await MainActor.run { imageManager.state }
-
+    private func updateTileStates(with context: RenderFrameContext, manager: TileManager) async {
         // Update lyrics tile
         if let lyricsTile = await manager.lyricsTile {
-            lyricsTile.updateState(lyricsState)
+            lyricsTile.updateState(context.lyricsState)
         }
 
         // Update refrain tile
         if let refrainTile = await manager.refrainTile {
-            refrainTile.updateState(refrainState)
+            refrainTile.updateState(context.refrainState)
         }
 
         // Update song info tile
         if let songInfoTile = await manager.songInfoTile {
-            songInfoTile.updateState(songInfoState)
+            songInfoTile.updateState(context.songInfoState)
         }
 
         // Update shader tile
         if let shaderTile = await manager.shaderTile {
-            shaderTile.updateState(shaderState)
+            shaderTile.updateState(context.shaderState)
         }
 
         // Update mask tile
         if let maskTile = await manager.maskTile {
-            maskTile.updateState(maskState)
+            maskTile.updateState(context.maskState)
         }
 
         // Update image tile
         if let imageTile = await manager.imageTile {
-            imageTile.updateState(imageState)
+            imageTile.updateState(context.imageState)
         }
     }
 

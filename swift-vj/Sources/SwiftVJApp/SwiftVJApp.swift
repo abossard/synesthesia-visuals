@@ -84,7 +84,7 @@ final class AppState: ObservableObject {
     @Published var currentTrack: Track?
     @Published var playbackPosition: Double = 0
     @Published var isPlaying: Bool = false
-    @Published var playbackSource: String = "vdj"
+    @Published var playbackSource: String = UserDefaults.standard.string(forKey: "playbackSource") ?? "vdj"
     @Published var timingOffsetMs: Int = 0
     
     // Launchpad State
@@ -99,7 +99,11 @@ final class AppState: ObservableObject {
     @Published var oscMessages: [String: OSCLogEntry] = [:]  // Grouped by address
     @Published var oscMessageCount: Int = 0
     @Published var oscFilter: String = ""  // Filter at capture time
-    @Published var oscDebugEnabled: Bool = false  // Only capture when OSC view is active
+    @Published var oscDebugEnabled: Bool = false {  // Only capture when OSC view is active
+        didSet { _oscDebugEnabledUnsafe = oscDebugEnabled }
+    }
+    // Nonisolated mirror for high-frequency OSC callback (avoids 1000+ MainActor hops/sec)
+    nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
 
     // Shader State
     @Published var shaderCount: Int = 0
@@ -121,9 +125,13 @@ final class AppState: ObservableObject {
             try oscHub.start()
             log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
             
-            // Debug: Log ALL incoming OSC messages
+            // Debug: Log OSC messages (excludes high-frequency /audio/* to avoid flooding)
             oscHub.subscribe(pattern: "*") { [weak self] address, values in
                 guard let self = self else { return }
+                // Skip high-frequency audio messages - they flood the debug view
+                guard !address.hasPrefix("/audio/") else { return }
+                // Check debug flag BEFORE creating Task to avoid 1000+ Task allocations/sec
+                guard self._oscDebugEnabledUnsafe else { return }
                 let argsStr = values.map { "\($0)" }.joined(separator: ", ")
                 Task { @MainActor in
                     self.recordOSCMessage(address, args: [argsStr])
@@ -421,6 +429,7 @@ final class AppState: ObservableObject {
     
     func setPlaybackSource(_ source: String) async {
         playbackSource = source
+        UserDefaults.standard.set(source, forKey: "playbackSource")
         let sourceType: PlaybackSourceType = source == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(sourceType)
         
