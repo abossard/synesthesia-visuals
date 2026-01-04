@@ -194,6 +194,11 @@ actor AudioProcessor {
 @MainActor
 final class AudioStateManager: ObservableObject {
     @Published private(set) var state: AudioState = .silent
+    
+    // OSC stats for UI display
+    @Published private(set) var oscMessageRate: Int = 0
+    @Published private(set) var oscMessageCount: Int = 0
+    @Published private(set) var oscIsActive: Bool = false
 
     private let processor = AudioProcessor()
     private var updateTimer: Timer?
@@ -218,6 +223,13 @@ final class AudioStateManager: ObservableObject {
     func update(oscLevels: OSCAudioLevels) async {
         let newState = await processor.update(oscLevels: oscLevels)
         state = newState
+    }
+    
+    /// Update OSC stats from processor
+    func updateStats(messageRate: Int, messageCount: Int, isActive: Bool) {
+        oscMessageRate = messageRate
+        oscMessageCount = messageCount
+        oscIsActive = isActive
     }
 
     /// Update from simplified levels (convenience)

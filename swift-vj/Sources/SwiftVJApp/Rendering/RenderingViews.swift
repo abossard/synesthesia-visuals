@@ -268,6 +268,22 @@ struct AudioVisualizerView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(width: 35)
+                
+                Divider()
+                    .frame(width: 1)
+                    .background(Color.gray.opacity(0.3))
+                    .padding(.horizontal, 4)
+                
+                // OSC message rate display
+                VStack(spacing: 2) {
+                    Text("\(audioManager.oscMessageRate)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(audioManager.oscIsActive ? .green : .red)
+                    Text("MSG/S")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 45)
             }
             .padding(.horizontal, 8)
         }

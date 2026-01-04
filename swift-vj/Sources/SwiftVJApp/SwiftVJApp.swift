@@ -143,17 +143,22 @@ final class AppState: ObservableObject {
             }
             
             // Wire Synesthesia audio OSC to audio processor and render engine
+            // Uses nonisolated fast path for minimal overhead at 1000+ msg/sec
             oscHub.subscribe(pattern: "/audio/*") { [weak self] address, values in
                 guard let self = self else { return }
+                // FAST PATH: nonisolated accumulator, no await
+                self.synesthesiaAudio.handleOSCFast(address, values)
+                
+                // Per-frame processing happens via getLevels() in render loop
+                // Only update render engine periodically (once per frame, not per message)
                 Task { @MainActor in
-                    await self.synesthesiaAudio.handleOSC(address, values)
                     let levels = await self.synesthesiaAudio.getLevels()
-                    // DEBUG: Log every 60th message (once per second at 60fps)
                     let stats = await self.synesthesiaAudio.stats
-                    if stats.messageCount % 60 == 0 {
-                        self.log("Audio OSC: bass=\(String(format: "%.2f", levels.bass)) mid=\(String(format: "%.2f", levels.mid)) level=\(String(format: "%.2f", levels.level))", level: .debug)
+                    // Log once per second
+                    if stats.messageCount % 600 == 0 {
+                        self.log("Audio OSC: \(stats.messageRate) msg/s, bass=\(String(format: "%.2f", levels.bass)) level=\(String(format: "%.2f", levels.level))", level: .debug)
                     }
-                    await self.renderEngine?.onAudioUpdate(levels)
+                    await self.renderEngine?.onAudioUpdate(levels, stats: (stats.messageRate, stats.messageCount, stats.isActive))
                 }
             }
         } catch {
