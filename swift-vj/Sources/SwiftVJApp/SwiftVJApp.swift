@@ -6,6 +6,7 @@ import SwiftUI
 import SwiftVJCore
 import Metal
 import AppKit
+import OSCKit
 
 @main
 struct SwiftVJApp: App {
@@ -70,6 +71,7 @@ final class AppState: ObservableObject {
     var shadersModule: ShadersModule?
     var imagesModule: ImagesModule?
     var pipelineModule: PipelineModule?
+    var launchpadModule: LaunchpadModule?
 
     // Audio processing from Synesthesia OSC
     let synesthesiaAudio = SynesthesiaAudioProcessor()
@@ -84,6 +86,10 @@ final class AppState: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var playbackSource: String = "vdj"
     @Published var timingOffsetMs: Int = 0
+    
+    // Launchpad State
+    @Published var launchpadStatus: LaunchpadStatus?
+    @Published var launchpadState: ControllerState?
 
     // Pipeline State
     @Published var pipelineSteps: [PipelineStep] = []
@@ -185,6 +191,62 @@ final class AppState: ObservableObject {
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
         
+        // Launchpad Module
+        launchpadModule = LaunchpadModule(oscSender: { [weak self] (command: OscCommand) -> Void in
+            guard let self = self else { return }
+            // Convert OscCommand to OSCKit values
+            let values: [any OSCValue] = command.args.map { (arg: OscArg) -> any OSCValue in
+                switch arg {
+                case .int(let v): return Int32(v)
+                case .float(let v): return Float32(v)
+                case .string(let v): return v
+                case .bool(let v): return v ? Int32(1) : Int32(0)
+                }
+            }
+            
+            // Send to Synesthesia (port 7777)
+            try? self.oscHub.sendToSynesthesia(command.address, values: values)
+            
+            // Also log it
+            Task { @MainActor in
+                self.recordOSCMessage(command.address, args: values.map { "\($0)" })
+            }
+        })
+        
+        // Wire up Launchpad callbacks
+        launchpadModule?.onConnectionChange = { [weak self] connected, deviceName in
+            Task { @MainActor in
+                self?.launchpadStatus = self?.launchpadModule?.getStatus()
+                self?.log("Launchpad: \(connected ? "Connected to \(deviceName ?? "device")" : "Disconnected")", level: .info)
+            }
+        }
+        
+        launchpadModule?.onStateChange = { [weak self] state in
+            Task { @MainActor in
+                self?.launchpadState = state
+                self?.launchpadStatus = self?.launchpadModule?.getStatus()
+            }
+        }
+        
+        // Subscribe Launchpad to incoming OSC (for Learn Mode recording)
+        // Capture the module reference to avoid main actor isolation issues
+        let lpModule = launchpadModule
+        oscHub.subscribe(pattern: "*") { address, values in
+            guard let module = lpModule else { return }
+            
+            // Convert OSCKit values to OscArg
+            let args: [OscArg] = values.compactMap { value in
+                if let v = value as? Int32 { return .int(Int(v)) }
+                if let v = value as? Float32 { return .float(Float(v)) }
+                if let v = value as? String { return .string(v) }
+                if let v = value as? Bool { return .bool(v) }
+                return nil
+            }
+            
+            // Forward to Launchpad
+            module.receiveOscEvent(OscEvent(address: address, args: args))
+        }
+        
         // Pipeline
         pipelineModule = PipelineModule(
             lyricsModule: lyricsModule!,
@@ -238,6 +300,10 @@ final class AppState: ObservableObject {
         
         // NOW start playback module (after callbacks registered)
         try await playbackModule?.start()
+        
+        // Start Launchpad
+        launchpadModule?.start()
+        launchpadStatus = launchpadModule?.getStatus()
         
         // Register pipeline step callbacks for real-time UI updates (no logging - results logged at end)
         await pipelineModule?.onStepStart { @Sendable [weak self] stepName in
@@ -349,6 +415,7 @@ final class AppState: ObservableObject {
         vdjQueryTask = nil
         await playbackModule?.stop()
         await pipelineModule?.stop()
+        launchpadModule?.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)
     }

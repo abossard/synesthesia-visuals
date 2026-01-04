@@ -564,7 +564,8 @@ public final class ShadertoyRenderer: NSObject, MTKViewDelegate {
                                       sampler s1 [[sampler(1)]],
                                       sampler s2 [[sampler(2)]],
                                       sampler s3 [[sampler(3)]]) {
-            float2 fragCoord = in.position.xy;
+            // Flip Y to match OpenGL/Shadertoy coordinate system (Y=0 at bottom)
+            float2 fragCoord = float2(in.position.x, u.iResolution.y - in.position.y);
             float2 uv = fragCoord / u.iResolution.xy;
 
             // Fallback procedural pattern

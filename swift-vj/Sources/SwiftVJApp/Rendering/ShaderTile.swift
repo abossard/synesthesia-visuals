@@ -392,7 +392,8 @@ final class ShaderTile: BaseTile {
 
         fragment float4 fragment_main(VertexOut in [[stage_in]],
                                       constant Uniforms &u [[buffer(0)]]) {
-            float2 fragCoord = in.position.xy;
+            // Flip Y to match OpenGL/Shadertoy coordinate system (Y=0 at bottom)
+            float2 fragCoord = float2(in.position.x, u.resolution.y - in.position.y);
             float2 resolution = u.resolution;
             float2 uv = fragCoord / resolution;
 

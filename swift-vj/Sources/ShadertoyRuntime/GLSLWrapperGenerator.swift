@@ -172,6 +172,14 @@ public struct GLSLWrapperGenerator {
             // Compatibility Macros (Shadertoy/WebGL style)
             // ============================================
 
+            // Y-flip for Metal coordinate system compatibility
+            // Metal has Y=0 at top, OpenGL/Shadertoy has Y=0 at bottom
+            // This flips gl_FragCoord.y to match Shadertoy expectations
+            vec4 _shadertoy_FragCoord() {
+                return vec4(gl_FragCoord.x, iResolution.y - gl_FragCoord.y, gl_FragCoord.zw);
+            }
+            #define gl_FragCoord _shadertoy_FragCoord()
+
             // Legacy Shadertoy uniform names
             #define iGlobalTime iTime
             #define time iTime

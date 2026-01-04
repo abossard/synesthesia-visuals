@@ -14,6 +14,7 @@ struct ContentView: View {
         case pipeline = "Pipeline"
         case shaders = "Shaders"
         case osc = "OSC"
+        case launchpad = "Launchpad"
         case logs = "Logs"
         case settings = "Settings"
 
@@ -26,6 +27,7 @@ struct ContentView: View {
             case .pipeline: return "arrow.triangle.branch"
             case .shaders: return "sparkles"
             case .osc: return "antenna.radiowaves.left.and.right"
+            case .launchpad: return "square.grid.3x3.fill"
             case .logs: return "doc.text"
             case .settings: return "gearshape"
             }
@@ -71,6 +73,8 @@ struct ContentView: View {
                     ShaderBrowserView()
                 case .osc:
                     OSCDebugView()
+                case .launchpad:
+                    LaunchpadView()
                 case .logs:
                     LogViewerView()
                 case .settings:

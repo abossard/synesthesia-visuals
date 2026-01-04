@@ -41,6 +41,13 @@ layout(binding = 1) uniform sampler2D backbuffer;
 
 layout(location = 0) out vec4 fragColor;
 
+// Y-flip for Metal coordinate system compatibility
+// Metal has Y=0 at top, OpenGL/Shadertoy has Y=0 at bottom
+// MUST be defined BEFORE the macros to avoid _uniforms_.resolution expansion
+vec4 _flipped_FragCoord() {
+    return vec4(gl_FragCoord.x, _uniforms_.resolution.y - gl_FragCoord.y, gl_FragCoord.zw);
+}
+
 // GLSL compatibility - remap old uniforms to block members
 #define time _uniforms_.time
 #define resolution _uniforms_.resolution
@@ -60,6 +67,7 @@ EOF
 # Strip the uniform declarations, GL_ES blocks, precision stuff, varying
 # Handle both leading whitespace and no whitespace variations
 # Also rename local variables that shadow uniforms, and rename conflicting functions
+# Replace gl_FragCoord with Y-flipped version for Metal compatibility
 sed -E \
     -e '/^[[:space:]]*#ifdef GL_ES/,/^[[:space:]]*#endif/d' \
     -e '/^[[:space:]]*uniform /d' \
@@ -67,6 +75,7 @@ sed -E \
     -e '/^[[:space:]]*varying /d' \
     -e '/^[[:space:]]*attribute /d' \
     -e 's/gl_FragColor/fragColor/g' \
+    -e 's/gl_FragCoord/_flipped_FragCoord()/g' \
     -e 's/vec2 mouse([[:space:]]*=[[:space:]])/vec2 _mouse\1/g' \
     -e 's/float time([[:space:]]*=[[:space:]])/float _time\1/g' \
     -e 's/float round\(/float _round(/g' \

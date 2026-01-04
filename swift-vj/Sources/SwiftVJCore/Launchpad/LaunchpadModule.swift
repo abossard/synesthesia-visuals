@@ -35,6 +35,9 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Connection state change callback
     public var onConnectionChange: ((Bool, String?) -> Void)?
     
+    /// State change callback for UI observability
+    public var onStateChange: ((ControllerState) -> Void)?
+    
     // Beat-sync blinking
     private var blinkTimer: Timer?
     private var blinkEnabled = true  // User preference
@@ -166,6 +169,12 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Update state
         state = result.state
         
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         // Update executor configs if save happened
         let needsSave = result.effects.contains { effect in
             if case .saveConfig = effect { return true }
@@ -195,6 +204,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.lock()
         let result = enterLearnMode(state)
         state = result.state
+        
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         lock.unlock()
         executor.executeAll(result.effects)
     }
@@ -204,6 +220,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.lock()
         let result = exitLearnMode(state)
         state = result.state
+        
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         lock.unlock()
         executor.executeAll(result.effects)
     }
@@ -229,6 +252,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.lock()
         let result = handleOscEvent(state, event: event)
         state = result.state
+        
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         lock.unlock()
         executor.executeAll(result.effects)
     }
@@ -241,6 +271,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         let result = addPadBehavior(state, behavior: behavior)
         state = result.state
         executor.updateConfig(padId: padId, behavior: behavior)
+        
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         lock.unlock()
         executor.executeAll(result.effects)
     }
@@ -251,6 +288,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         let result = removePad(state, padId: padId)
         state = result.state
         executor.removeConfig(padId: padId)
+        
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
         lock.unlock()
         executor.executeAll(result.effects)
     }
@@ -342,6 +386,12 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Toggle blink state
         state = toggleBlink(state)
         let blinkOn = state.blinkOn
+        
+        // Notify UI (for blink visualization)
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
         
         // Update LEDs for pads that should blink (active selectors)
         for (padId, behavior) in state.pads {
