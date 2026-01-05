@@ -64,15 +64,15 @@ final class OSCE2ETests: XCTestCase {
     
     // MARK: - Send Tests (require running target)
     
-    func test_oscHub_sendToProcessing_deliversMessage() async throws {
-        try require(.vjUniverseListening)
+    func test_oscHub_sendToMagic_deliversMessage() async throws {
+        try require(.magicListening)
         
-        // Given: Running hub and VJUniverse listening
+        // Given: Running hub and Magic listening
         try hub.start()
         
         // When: Sending a message
         // Then: No error thrown (delivery is best-effort UDP)
-        try hub.sendToProcessing("/test/ping", values: ["hello"])
+        try hub.sendToMagic("/test/ping", values: ["hello"])
         
         // Verify stats updated
         let stats = hub.stats()
@@ -166,7 +166,7 @@ final class OSCE2ETests: XCTestCase {
     // MARK: - Stats Tests
     
     func test_oscHub_statsTracksMessages() throws {
-        try require(.vjUniverseListening)
+        try require(.magicListening)
         
         // Given: Running hub
         try hub.start()
@@ -183,7 +183,7 @@ final class OSCE2ETests: XCTestCase {
     }
     
     func test_oscHub_resetStats() throws {
-        try require(.vjUniverseListening)
+        try require(.magicListening)
         
         // Given: Hub with some stats
         try hub.start()
@@ -204,7 +204,7 @@ final class OSCE2ETests: XCTestCase {
     // MARK: - Convenience Extension Tests
     
     func test_oscHub_sendString() throws {
-        try require(.vjUniverseListening)
+        try require(.magicListening)
         
         try hub.start()
         
@@ -217,7 +217,7 @@ final class OSCE2ETests: XCTestCase {
     }
     
     func test_oscHub_sendInt() throws {
-        try require(.vjUniverseListening)
+        try require(.magicListening)
         
         try hub.start()
         
@@ -230,7 +230,7 @@ final class OSCE2ETests: XCTestCase {
     }
     
     func test_oscHub_sendFloat() throws {
-        try require(.vjUniverseListening)
+        try require(.magicListening)
         
         try hub.start()
         

@@ -376,8 +376,8 @@ struct RenderingView: View {
     @State private var useDirectMTKView: Bool = true
     @State private var frameCount: Int = 0
     @State private var audioTime: Float = 0
-    @State private var selectedShader: String = "3isacrowd"
-    @State private var selectedMaskShader: String = "BWcarbonlattice"  // Independent mask shader
+    @AppStorage("lastSelectedShader") private var selectedShader: String = "3isacrowd"
+    @AppStorage("lastSelectedMaskShader") private var selectedMaskShader: String = "BWcarbonlattice"
     @State private var selectedTile: String = "shader"
     
     // Demo text state for preview (shown until real data arrives)
@@ -426,6 +426,9 @@ struct RenderingView: View {
         }
         .onAppear {
             Task { try? await renderEngine?.start() }
+            // Load last selected shaders from UserDefaults
+            renderEngine?.shaderManager.selectShader(name: selectedShader)
+            renderEngine?.maskManager.selectMask(name: selectedMaskShader)
         }
         // NOTE: Removed onDisappear stop() - render engine should keep running
         // when switching tabs. It only stops when app quits.

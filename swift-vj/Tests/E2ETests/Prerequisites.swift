@@ -12,7 +12,7 @@ public enum Prerequisite: String, CaseIterable {
     case vdjPlaying = "VirtualDJ Playing Music"
     case spotifyRunning = "Spotify Running"
     case lmStudioAvailable = "LM Studio (port 1234)"
-    case vjUniverseListening = "VJUniverse (port 10000)"
+    case magicListening = "Magic Music Visuals (port 11111)"
     case synesthesiaRunning = "Synesthesia Running"
 }
 

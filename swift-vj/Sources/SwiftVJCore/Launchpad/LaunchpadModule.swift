@@ -385,7 +385,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         blinkTimer = nil
     }
     
-    private func updateBpm(_ bpm: Float) {
+    public func updateBpm(_ bpm: Float) {
         guard bpm > 20 && bpm < 300 else { return }  // Sanity check
         
         let bpmChanged = abs(currentBpm - bpm) > 1.0

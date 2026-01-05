@@ -149,6 +149,26 @@ struct OSCDebugView: View {
                 
                 // Stats bar
                 HStack {
+                    // Hub status
+                    let stats = appState.oscHub.stats()
+                    let running = stats["running"] as? Bool ?? false
+                    let received = stats["messagesReceived"] as? Int ?? 0
+                    
+                    Image(systemName: running ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                        .foregroundColor(running ? .green : .red)
+                    Text(":\(OSCHub.receivePort)")
+                        .font(.caption.monospaced())
+                        .foregroundColor(.secondary)
+                    
+                    Text("•")
+                        .foregroundColor(.secondary)
+                    
+                    Text("\(received) recv")
+                        .font(.caption.monospaced())
+                        .foregroundColor(received > 0 ? .primary : .secondary)
+                    
+                    Divider().frame(height: 14)
+                    
                     Text("\(appState.oscMessages.count) addresses (\(appState.oscMessageCount) total)")
                         .foregroundColor(.secondary)
                     Spacer()
@@ -212,7 +232,6 @@ struct OSCDebugView: View {
                 GroupBox("Connection Status") {
                     VStack(alignment: .leading, spacing: 8) {
                         StatusRow(label: "Receive Port", value: "9999", isActive: true)
-                        StatusRow(label: "Forward: Processing", value: "10000", isActive: true)
                         StatusRow(label: "Forward: Magic", value: "11111", isActive: true)
                         StatusRow(label: "VirtualDJ", value: "9009", isActive: true)
                         StatusRow(label: "Synesthesia", value: "7777", isActive: true)
@@ -238,7 +257,7 @@ struct OSCDebugView: View {
     
     private func sendTestMessage() {
         do {
-            try appState.oscHub.sendToProcessing(testAddress, values: [testArg1, Float(testArg2) ?? Float(0)])
+            try appState.oscHub.sendToMagic(testAddress, values: [testArg1, Float(testArg2) ?? Float(0)])
             appState.recordOSCMessage(testAddress, args: [testArg1, testArg2])
         } catch {
             appState.log("OSC send failed: \(error)", level: .error)
@@ -252,7 +271,7 @@ struct OSCDebugView: View {
                 if let int = Int32(arg) { return int }
                 return arg
             }
-            try appState.oscHub.sendToProcessing(address, values: values)
+            try appState.oscHub.sendToMagic(address, values: values)
             appState.recordOSCMessage(address, args: args)
         } catch {
             appState.log("OSC send failed: \(error)", level: .error)

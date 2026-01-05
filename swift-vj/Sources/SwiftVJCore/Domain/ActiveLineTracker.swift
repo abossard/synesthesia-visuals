@@ -12,7 +12,7 @@ public protocol OSCSending {
 /// Extension to make OSCHub conform to OSCSending
 extension OSCHub: OSCSending {
     public func send(_ address: String, values: [any OSCValue]) throws {
-        try sendToProcessing(address, values: values)
+        try sendToMagic(address, values: values)
     }
 }
 

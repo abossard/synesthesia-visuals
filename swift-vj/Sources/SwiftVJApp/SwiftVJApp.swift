@@ -120,6 +120,20 @@ final class AppState: ObservableObject {
         setupModules()
         setupRenderEngine()
         startOSCHub()
+        startBPMSync()
+    }
+    
+    private func startBPMSync() {
+        // Sync BPM every 5 seconds
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let (bpm, _, _) = await self.synesthesiaAudio.getBPM()
+                if bpm > 0 {
+                    self.launchpadModule?.updateBpm(bpm)
+                }
+            }
+        }
     }
     
     /// Start OSC hub immediately on app launch
@@ -128,11 +142,10 @@ final class AppState: ObservableObject {
             try oscHub.start()
             log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
             
-            // Debug: Log OSC messages (excludes high-frequency /audio/* to avoid flooding)
+            // Debug: Log OSC messages (when oscDebugEnabled is true)
+            // Audio messages are recorded but filtered in OSCDebugView display
             oscHub.subscribe(pattern: "*") { [weak self] address, values in
                 guard let self = self else { return }
-                // Skip high-frequency audio messages - they flood the debug view
-                guard !address.hasPrefix("/audio/") else { return }
                 // Check debug flag BEFORE creating Task to avoid 1000+ Task allocations/sec
                 guard self._oscDebugEnabledUnsafe else { return }
                 let argsStr = values.map { "\($0)" }.joined(separator: ", ")
@@ -533,9 +546,9 @@ final class AppState: ObservableObject {
     
     func selectShader(_ name: String) async {
         selectedShader = name
-        // Send shader load command via OSC
+        // Send shader load command via OSC to Magic
         do {
-            try oscHub.sendToProcessing("/shader/load", values: [name, Float(0.5), Float(0.0)])
+            try oscHub.sendToMagic("/shader/load", values: [name, Float(0.5), Float(0.0)])
             log("Selected shader: \(name)", level: .info)
         } catch {
             log("Failed to send shader: \(error)", level: .error)

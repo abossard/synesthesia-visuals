@@ -113,12 +113,10 @@ struct SettingsView: View {
                     LabeledContent("Receive Port", value: "9999")
                     LabeledContent("VirtualDJ", value: "9009")
                     LabeledContent("Synesthesia", value: "7777")
-                    LabeledContent("Processing", value: "10000")
                     LabeledContent("Magic", value: "11111")
                 }
                 
                 Section("Forward Targets") {
-                    Toggle("Forward to Processing", isOn: .constant(true))
                     Toggle("Forward to Magic", isOn: .constant(true))
                 }
             }

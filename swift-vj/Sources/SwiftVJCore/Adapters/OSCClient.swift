@@ -39,8 +39,8 @@ public struct OSCLatencyStats: Sendable {
 ///
 /// Architecture:
 /// - Single receive port: 9999 (all incoming OSC)
-/// - Forwards received messages to: 10000 (Processing), 11111 (Magic)
-/// - Send channels: VDJ (9009), Synesthesia (7777), Processing (10000)
+/// - Forwards received messages to: Magic (11111)
+/// - Send channels: VDJ (9009), Synesthesia (7777), Magic (11111)
 /// - Uses PrefixTrie for O(n) pattern matching
 /// - Tracks latency for monitoring
 ///
@@ -53,12 +53,10 @@ public final class OSCHub: @unchecked Sendable {
     public static let receivePort: UInt16 = 9999
     public static let vdjPort: UInt16 = 9009
     public static let synesthesiaPort: UInt16 = 7777
-    public static let processingPort: UInt16 = 10000
     public static let magicPort: UInt16 = 11111
 
-    /// Forward targets for received messages
+    /// Forward targets for received messages (Magic only - Swift VJ handles rendering directly)
     public static let forwardTargets: [(host: String, port: UInt16)] = [
-        ("127.0.0.1", processingPort),
         ("127.0.0.1", magicPort)
     ]
 
@@ -154,9 +152,9 @@ public final class OSCHub: @unchecked Sendable {
         try send(address, values: values, host: "127.0.0.1", port: Self.synesthesiaPort)
     }
 
-    /// Send OSC message to Processing/VJUniverse
-    public func sendToProcessing(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: Self.processingPort)
+    /// Send OSC message to Magic Music Visuals
+    public func sendToMagic(_ address: String, values: [any OSCValue] = []) throws {
+        try send(address, values: values, host: "127.0.0.1", port: Self.magicPort)
     }
 
     /// Send OSC message to specific host and port
@@ -443,10 +441,5 @@ public extension OSCHub {
     /// Send a simple float message to VDJ
     func sendToVDJ(_ address: String, _ floatValue: Float32) throws {
         try sendToVDJ(address, values: [floatValue])
-    }
-
-    /// Send a simple string message to Processing
-    func sendToProcessing(_ address: String, _ stringValue: String) throws {
-        try sendToProcessing(address, values: [stringValue])
     }
 }

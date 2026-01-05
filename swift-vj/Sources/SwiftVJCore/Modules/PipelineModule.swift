@@ -408,7 +408,7 @@ public actor PipelineModule: Module {
     
     private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis, shader: ShaderMatchResult?, images: ImageResult?) async {
         // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
-        try? hub.sendToProcessing(
+        try? hub.sendToMagic(
             "/textler/track",
             values: [
                 Int32(1),  // active
@@ -422,35 +422,35 @@ public actor PipelineModule: Module {
         )
         
         // Send lyrics reset: /textler/lyrics/reset
-        try? hub.sendToProcessing("/textler/lyrics/reset")
+        try? hub.sendToMagic("/textler/lyrics/reset")
         
         // Send each line: /textler/lyrics/line [index, time, text]
         for (index, line) in lines.enumerated() {
-            try? hub.sendToProcessing(
+            try? hub.sendToMagic(
                 "/textler/lyrics/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
             )
         }
         
         // Send refrain reset: /textler/refrain/reset
-        try? hub.sendToProcessing("/textler/refrain/reset")
+        try? hub.sendToMagic("/textler/refrain/reset")
         
         // Send refrain lines: /textler/refrain/line [index, time, text]
         let refrainLines = lines.filter { $0.isRefrain }
         for (index, line) in refrainLines.enumerated() {
-            try? hub.sendToProcessing(
+            try? hub.sendToMagic(
                 "/textler/refrain/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
             )
         }
         
         // Send keywords reset: /textler/keywords/reset
-        try? hub.sendToProcessing("/textler/keywords/reset")
+        try? hub.sendToMagic("/textler/keywords/reset")
         
         // Send keywords per line: /textler/keywords/line [index, time, keywords]
         for (index, line) in lines.enumerated() {
             if !line.keywords.isEmpty {
-                try? hub.sendToProcessing(
+                try? hub.sendToMagic(
                     "/textler/keywords/line",
                     values: [Int32(index), Float32(line.timeSec), line.keywords]
                 )
@@ -461,28 +461,28 @@ public actor PipelineModule: Module {
         // Keywords: /textler/metadata/keywords [comma-separated]
         let keywordsJoined = analysis.keywords.joined(separator: ",")
         if !keywordsJoined.isEmpty {
-            try? hub.sendToProcessing("/textler/metadata/keywords", values: [keywordsJoined])
+            try? hub.sendToMagic("/textler/metadata/keywords", values: [keywordsJoined])
         }
         
         // Themes: /textler/metadata/themes [comma-separated]
         let themesJoined = analysis.themes.joined(separator: ",")
         if !themesJoined.isEmpty {
-            try? hub.sendToProcessing("/textler/metadata/themes", values: [themesJoined])
+            try? hub.sendToMagic("/textler/metadata/themes", values: [themesJoined])
         }
         
         // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
         let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
         if !visualsJoined.isEmpty {
-            try? hub.sendToProcessing("/textler/metadata/visuals", values: [visualsJoined])
+            try? hub.sendToMagic("/textler/metadata/visuals", values: [visualsJoined])
         }
         
         // Mood: /textler/metadata/mood [string]
         if !analysis.mood.isEmpty {
-            try? hub.sendToProcessing("/textler/metadata/mood", values: [analysis.mood])
+            try? hub.sendToMagic("/textler/metadata/mood", values: [analysis.mood])
         }
         
         // AI analysis summary: /ai/analysis [mood, energy, valence]
-        try? hub.sendToProcessing(
+        try? hub.sendToMagic(
             "/ai/analysis",
             values: [
                 analysis.mood,
@@ -493,7 +493,7 @@ public actor PipelineModule: Module {
         
         // Send shader if matched: /shader/load [name, energy, valence]
         if let shader = shader {
-            try? hub.sendToProcessing(
+            try? hub.sendToMagic(
                 "/shader/load",
                 values: [
                     shader.name,
@@ -506,12 +506,12 @@ public actor PipelineModule: Module {
         // Send image folder if available
         if let images = images {
             // Send fit mode first: /image/fit [mode]
-            try? hub.sendToProcessing(
+            try? hub.sendToMagic(
                 "/image/fit",
                 values: ["cover"]
             )
             // Send folder path: /image/folder [path]
-            try? hub.sendToProcessing(
+            try? hub.sendToMagic(
                 "/image/folder",
                 values: [images.folder.path]
             )
