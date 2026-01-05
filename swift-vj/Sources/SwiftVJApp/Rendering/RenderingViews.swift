@@ -427,9 +427,9 @@ struct RenderingView: View {
         .onAppear {
             Task { try? await renderEngine?.start() }
         }
-        .onDisappear {
-            Task { await renderEngine?.stop() }
-        }
+        // NOTE: Removed onDisappear stop() - render engine should keep running
+        // when switching tabs. It only stops when app quits.
+        
         // Sync shader selection to state managers for HeadlessRenderer
         .onChange(of: selectedShader) { _, newValue in
             renderEngine?.shaderManager.selectShader(name: newValue)

@@ -112,7 +112,10 @@ struct SyphonThumbnailView: View {
         )
         
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        
+        // BGRA texture format: use 32Little byte order + premultipliedFirst alpha
+        // This matches Metal's .bgra8Unorm format
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
         
         guard let context = CGContext(
             data: &imageBytes,
@@ -121,7 +124,7 @@ struct SyphonThumbnailView: View {
             bitsPerComponent: 8,
             bytesPerRow: bytesPerRow,
             space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
+            bitmapInfo: bitmapInfo
         ) else { return nil }
         
         guard let cgImage = context.makeImage() else { return nil }
