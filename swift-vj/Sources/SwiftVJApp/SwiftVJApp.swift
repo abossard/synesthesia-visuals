@@ -8,6 +8,9 @@ import Metal
 import AppKit
 import OSCKit
 
+// Serial queue to process high-rate playback OSC off the main actor
+private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
+
 @main
 struct SwiftVJApp: App {
     @StateObject private var appState = AppState()
@@ -141,19 +144,24 @@ final class AppState: ObservableObject {
             // Wire VDJ OSC messages to VDJMonitor (no logging - use OSC view instead)
             oscHub.subscribe(pattern: "/deck/*") { [weak self] address, values in
                 guard let self = self else { return }
-                Task {
-                    await self.playbackModule?.handleVDJOSC(address: address, values: values)
+                playbackOSCQueue.async { [weak self] in
+                    guard let self = self else { return }
+                    Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
                 }
             }
             oscHub.subscribe(pattern: "/vdj/*") { [weak self] address, values in
                 guard let self = self else { return }
-                Task {
-                    await self.playbackModule?.handleVDJOSC(address: address, values: values)
+                playbackOSCQueue.async { [weak self] in
+                    guard let self = self else { return }
+                    Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
                 }
             }
             oscHub.subscribe(pattern: "/crossfader") { [weak self] address, values in
                 guard let self = self else { return }
-                Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+                playbackOSCQueue.async { [weak self] in
+                    guard let self = self else { return }
+                    Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
+                }
             }
             
             // Wire Synesthesia audio OSC to audio processor and render engine
@@ -473,11 +481,26 @@ final class AppState: ObservableObject {
         await queryVDJState()
         
         // Start periodic query task for position updates
-        vdjQueryTask = Task { [weak self] in
+        vdjQueryTask = Task.detached { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self = self else { break }
-                await self.queryVDJState()
+                // Capture hub on main actor, then send on background queue
+                let hub = await MainActor.run(body: { self.oscHub })
+                playbackOSCQueue.async {
+                    do {
+                        for deck in [1, 2] {
+                            for verb in ["get_title", "get_artist", "get_album", "get_bpm", "get_songlength"] {
+                                try hub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
+                            }
+                            for verb in ["song_pos", "play", "volume", "is_audible"] {
+                                try hub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
+                            }
+                        }
+                    } catch {
+                        // ignore transient VDJ errors
+                    }
+                }
             }
         }
     }

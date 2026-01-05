@@ -15,8 +15,7 @@ struct SyphonThumbnailView: NSViewRepresentable {
     let serverName: String
     
     func makeNSView(context: Context) -> SyphonClientMTKView {
-        let view = SyphonClientMTKView(serverName: serverName)
-        return view
+        SyphonClientMTKView(serverName: serverName)
     }
     
     func updateNSView(_ nsView: SyphonClientMTKView, context: Context) {}
@@ -55,8 +54,9 @@ class SyphonClientMTKView: MTKView, MTKViewDelegate {
     }
     
     private func connectToServer() {
-        guard let device = self.device,
-              let servers = SyphonServerDirectory.shared().servers as? [[String: Any]] else { return }
+        guard let device = self.device else { return }
+        // Syphon returns NSArray of NSDictionary; bridge per element to silence unconditional-cast warning
+        let servers = (SyphonServerDirectory.shared().servers as NSArray).compactMap { $0 as? [String: Any] }
         let appName = Bundle.main.infoDictionary?[kCFBundleNameKey as String] as? String ?? "SwiftVJApp"
         for serverInfo in servers {
             let name = serverInfo[SyphonServerDescriptionNameKey] as? String ?? ""
@@ -159,6 +159,12 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
 
     // Cached audio state for current frame (snapshot at frame start for consistent reads)
     private var frameAudioState: AudioState = .silent
+
+    // Optional frame time logging
+    private static var frameTimeLoggingEnabled = false
+    private var frameTimeSum: Float = 0
+    private var frameTimeMax: Float = 0
+    private var frameTimeSamples: Int = 0
 
     // Callbacks
     var onFrameRendered: ((Int, Float) -> Void)?
@@ -353,6 +359,20 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
         // Accumulate audio-reactive time
         audioTime += deltaTime * frameSpeed
 
+        if Self.frameTimeLoggingEnabled {
+            frameTimeSum += deltaTime
+            frameTimeMax = max(frameTimeMax, deltaTime)
+            frameTimeSamples += 1
+            if frameTimeSamples >= 180 { // ~3 seconds at 60fps
+                let avgMs = (frameTimeSum / Float(frameTimeSamples)) * 1000.0
+                let maxMs = frameTimeMax * 1000.0
+                print("[MTK] \(tileName) avg \(String(format: "%.3f", avgMs)) ms, max \(String(format: "%.3f", maxMs)) ms over \(frameTimeSamples) frames")
+                frameTimeSum = 0
+                frameTimeMax = 0
+                frameTimeSamples = 0
+            }
+        }
+
         // Update uniforms with cached audio state
         updateUniformsWithState(frameAudioState)
 
@@ -421,6 +441,11 @@ class BaseMTKViewTile: MTKView, MTKViewDelegate {
 
         // Use memcpy for faster copy (avoids array allocation)
         memcpy(buffer.contents(), &uniforms, MemoryLayout<ShaderUniforms>.stride)
+    }
+
+    // Toggle frame time logging
+    static func setFrameTimeLogging(enabled: Bool) {
+        frameTimeLoggingEnabled = enabled
     }
 }
 
@@ -883,7 +908,7 @@ struct MTKViewTileWrapper<T: BaseMTKViewTile>: NSViewRepresentable {
     }
 }
 
-/// Convenience: Shader tile view (wired to Syphon)
+/// Convenience: Shader tile view (preview only - Syphon handled by HeadlessRenderer)
 struct ShaderTileView: NSViewRepresentable {
     let shaderName: String
     let syphonName: String
@@ -905,6 +930,7 @@ struct ShaderTileView: NSViewRepresentable {
         }
         let tile = ShaderMTKViewTile(tileName: "shader", device: device)
         tile.loadShader(name: shaderName)
+        // NOTE: No onTextureReady Syphon publishing - HeadlessRenderer handles all Syphon output
         tile.onFrameRendered = { frame, time in
             // Throttle UI bindings to ~10 Hz to avoid SwiftUI churn
             struct Holder { static var last: CFAbsoluteTime = CFAbsoluteTimeGetCurrent() }
@@ -914,11 +940,6 @@ struct ShaderTileView: NSViewRepresentable {
                 self.frameCount = frame
                 self.audioTime = time
             }
-        }
-        // Wire to Syphon - synchronous call since MTKView draw is on main thread
-        let syphonServerName = syphonName
-        tile.onTextureReady = { texture, commandBuffer in
-            SyphonOutputManager.shared.publish(name: syphonServerName, texture: texture, commandBuffer: commandBuffer)
         }
         return tile
     }
@@ -931,7 +952,7 @@ struct ShaderTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Lyrics tile view (wired to Syphon)
+/// Convenience: Lyrics tile view (preview only - Syphon handled by HeadlessRenderer)
 struct LyricsTileView: NSViewRepresentable {
     var lyricsState: LyricsDisplayState
     var audioState: AudioState
@@ -942,10 +963,7 @@ struct LyricsTileView: NSViewRepresentable {
         }
         let tile = LyricsMTKViewTile(tileName: "lyrics", device: device)
         tile.lyricsState = lyricsState
-        // Wire to Syphon - synchronous call since MTKView draw is on main thread
-        tile.onTextureReady = { texture, commandBuffer in
-            SyphonOutputManager.shared.publish(name: TileConfig.lyrics.syphonName, texture: texture, commandBuffer: commandBuffer)
-        }
+        // NOTE: No onTextureReady Syphon publishing - HeadlessRenderer handles all Syphon output
         return tile
     }
     
@@ -955,7 +973,7 @@ struct LyricsTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Refrain tile view (wired to Syphon)
+/// Convenience: Refrain tile view (preview only - Syphon handled by HeadlessRenderer)
 struct RefrainTileView: NSViewRepresentable {
     var refrainState: RefrainDisplayState
     var audioState: AudioState
@@ -966,10 +984,7 @@ struct RefrainTileView: NSViewRepresentable {
         }
         let tile = RefrainMTKViewTile(tileName: "refrain", device: device)
         tile.refrainState = refrainState
-        // Wire to Syphon - synchronous call since MTKView draw is on main thread
-        tile.onTextureReady = { texture, commandBuffer in
-            SyphonOutputManager.shared.publish(name: TileConfig.refrain.syphonName, texture: texture, commandBuffer: commandBuffer)
-        }
+        // NOTE: No onTextureReady Syphon publishing - HeadlessRenderer handles all Syphon output
         return tile
     }
     
@@ -979,7 +994,7 @@ struct RefrainTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Song Info tile view (wired to Syphon)
+/// Convenience: Song Info tile view (preview only - Syphon handled by HeadlessRenderer)
 struct SongInfoTileView: NSViewRepresentable {
     var songInfoState: SongInfoDisplayState
     var audioState: AudioState
@@ -990,10 +1005,7 @@ struct SongInfoTileView: NSViewRepresentable {
         }
         let tile = SongInfoMTKViewTile(tileName: "songInfo", device: device)
         tile.songInfoState = songInfoState
-        // Wire to Syphon - synchronous call since MTKView draw is on main thread
-        tile.onTextureReady = { texture, commandBuffer in
-            SyphonOutputManager.shared.publish(name: TileConfig.songInfo.syphonName, texture: texture, commandBuffer: commandBuffer)
-        }
+        // NOTE: No onTextureReady Syphon publishing - HeadlessRenderer handles all Syphon output
         return tile
     }
     
@@ -1003,7 +1015,7 @@ struct SongInfoTileView: NSViewRepresentable {
     }
 }
 
-/// Convenience: Mask shader tile view (wired to Syphon, independent from main shader)
+/// Convenience: Mask shader tile view (preview only - Syphon handled by HeadlessRenderer)
 struct MaskTileView: NSViewRepresentable {
     let shaderName: String
     var audioState: AudioState
@@ -1019,10 +1031,7 @@ struct MaskTileView: NSViewRepresentable {
         }
         let tile = ShaderMTKViewTile(tileName: "mask", device: device)
         tile.loadShader(name: shaderName)
-        // Wire to Syphon - synchronous call since MTKView draw is on main thread
-        tile.onTextureReady = { texture, commandBuffer in
-            SyphonOutputManager.shared.publish(name: TileConfig.mask.syphonName, texture: texture, commandBuffer: commandBuffer)
-        }
+        // NOTE: No onTextureReady Syphon publishing - HeadlessRenderer handles all Syphon output
         return tile
     }
     

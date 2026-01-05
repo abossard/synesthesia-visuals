@@ -120,6 +120,10 @@ struct LaunchpadView: View {
                         Text("Diagnostics")
                             .font(.headline)
                         
+                        Button("Force Programmer Mode") {
+                            appState.launchpadModule?.forceProgrammerMode()
+                        }
+                        
                         Button("Flash All LEDs") {
                             // Simple diagnostic pattern
                             let allPads = (0...8).flatMap { x in (0...8).map { y in ButtonId(x: x, y: y) } }

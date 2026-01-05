@@ -52,9 +52,14 @@ public final class SyphonSender {
     }
     
     /// Publishes a Metal texture to connected clients
+    /// 
+    /// IMPORTANT: Call this BEFORE commandBuffer.commit().
+    /// Syphon requires publish on the same command buffer that rendered the texture.
+    /// Caller is responsible for committing the buffer after all publishes.
+    ///
     /// - Parameters:
     ///   - texture: The texture to publish
-    ///   - commandBuffer: The command buffer for synchronization
+    ///   - commandBuffer: The command buffer for synchronization (caller commits after)
     ///   - flipped: Whether to flip the texture vertically (default: false)
     public func publish(
         texture: MTLTexture,
@@ -62,6 +67,8 @@ public final class SyphonSender {
         flipped: Bool = false
     ) {
         guard let server = server else { return }
+        // Do NOT add completed handler - caller commits the buffer
+        // Syphon.publishFrameTexture encodes into the buffer, must be called before commit
         
         let region = CGRect(
             x: 0,

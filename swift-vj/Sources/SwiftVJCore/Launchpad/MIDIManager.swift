@@ -164,9 +164,8 @@ public final class MIDIManager: @unchecked Sendable {
         case .msgObjectRemoved:
             print("[MIDI] Device removed")
             // Check if our device was removed
-            if isConnected && !isEndpointValid(connectedInput) {
-                print("[MIDI] Connected device was removed")
-                handleDisconnection()
+            callbackQueue.async { [weak self] in
+                self?.handleDeviceChange()
             }
             
         default:
@@ -175,6 +174,18 @@ public final class MIDIManager: @unchecked Sendable {
     }
     
     private func handleDeviceChange() {
+        // If connected, check if device is still available
+        if isConnected {
+            let inputs = availableInputs()
+            let stillExists = inputs.contains { $0.id == connectedInput }
+            
+            if !stillExists {
+                print("[MIDI] Connected device no longer available")
+                handleDisconnection()
+                return
+            }
+        }
+        
         // If not connected but auto-reconnect is enabled, try to connect
         if !isConnected && autoReconnectEnabled {
             if let _ = findLaunchpad() {
@@ -308,7 +319,13 @@ public final class MIDIManager: @unchecked Sendable {
         
         // Switch to Programmer Mode immediately
         if input.isLaunchpad {
-            sendProgrammerModeSysEx()
+            // 1. Enter DAW Mode
+            sendDAWModeSysEx()
+            
+            // 2. Enter Programmer Mode (after small delay)
+            callbackQueue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.sendProgrammerModeSysEx()
+            }
         }
         
         return true
@@ -439,6 +456,52 @@ public final class MIDIManager: @unchecked Sendable {
         }
     }
     
+    /// Send DAW Mode SysEx (Launchpad Mini MK3)
+    public func sendDAWModeSysEx() {
+        guard isConnected, connectedOutput != 0 else { return }
+        
+        // Launchpad Mini MK3 Enter DAW Mode: F0 00 20 29 02 0D 10 01 F7
+        
+        // Msg 1: Start (Status=1), 6 bytes: F0 00 20 29 02 0D
+        var packet1 = MIDIEventPacket()
+        packet1.timeStamp = 0
+        packet1.wordCount = 2
+        packet1.words.0 = 0x3016F000
+        packet1.words.1 = 0x2029020D
+        
+        // Msg 2: End (Status=3), 3 bytes: 10 01 F7
+        var packet2 = MIDIEventPacket()
+        packet2.timeStamp = 0
+        packet2.wordCount = 2
+        // MT=3, G=0, S=3, C=3 -> 0x3033
+        packet2.words.0 = 0x30331001
+        packet2.words.1 = 0xF7000000
+        
+        // Send Msg 1
+        withUnsafePointer(to: packet1) { ptr1 in
+            var list1 = MIDIEventList()
+            list1.protocol = ._1_0
+            list1.numPackets = 1
+            withUnsafeMutablePointer(to: &list1.packet) { listPtr in
+                listPtr.pointee = ptr1.pointee
+            }
+            MIDISendEventList(outputPort, connectedOutput, &list1)
+        }
+        
+        // Send Msg 2
+        withUnsafePointer(to: packet2) { ptr2 in
+            var list2 = MIDIEventList()
+            list2.protocol = ._1_0
+            list2.numPackets = 1
+            withUnsafeMutablePointer(to: &list2.packet) { listPtr in
+                listPtr.pointee = ptr2.pointee
+            }
+            MIDISendEventList(outputPort, connectedOutput, &list2)
+        }
+        
+        print("[MIDI] Sent DAW Mode SysEx")
+    }
+
     /// Send Programmer Mode SysEx (Launchpad Mini MK3)
     public func sendProgrammerModeSysEx() {
         guard isConnected, connectedOutput != 0 else { return }

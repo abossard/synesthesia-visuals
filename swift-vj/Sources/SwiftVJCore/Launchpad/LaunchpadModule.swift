@@ -332,6 +332,15 @@ public final class LaunchpadModule: @unchecked Sendable {
         midi.isLaunchpadAvailable
     }
     
+    /// Force Programmer Mode (send SysEx sequence)
+    public func forceProgrammerMode() {
+        guard isEnabled else { return }
+        midi.sendDAWModeSysEx()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.midi.sendProgrammerModeSysEx()
+        }
+    }
+    
     // MARK: - Beat-Sync Blinking
     
     /// Enable or disable beat-sync LED blinking

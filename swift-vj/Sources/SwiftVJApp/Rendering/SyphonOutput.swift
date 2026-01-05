@@ -38,9 +38,7 @@ final class SyphonOutputManager: ObservableObject {
         guard let device = MTLCreateSystemDefaultDevice() else {
             fatalError("No Metal device available for Syphon")
         }
-        let manager = SyphonOutputManager(device: device)
-        manager.createStandardServers()
-        return manager
+        return SyphonOutputManager(device: device)
     }()
 
     // MARK: - Init

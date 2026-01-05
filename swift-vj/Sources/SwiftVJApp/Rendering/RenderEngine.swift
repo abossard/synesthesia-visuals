@@ -1,5 +1,6 @@
 // RenderEngine.swift - Main rendering orchestrator for VJ system
-// Port of TileManager.pde and VJUniverse main loop to Swift
+// Headless rendering with single command buffer per frame
+// All UI previews consume via Syphon clients only
 
 import Foundation
 import Metal
@@ -22,120 +23,11 @@ struct RenderFrameContext: Sendable {
     let imageState: ImageDisplayState
 }
 
-// MARK: - Tile Manager Actor
-
-/// Manages all tiles and their lifecycle
-/// Port of TileManager.pde
-actor TileManager {
-    private var tiles: [String: any Tile] = [:]
-    private let device: MTLDevice
-    private let commandQueue: MTLCommandQueue
-
-    init(device: MTLDevice) {
-        self.device = device
-        self.commandQueue = device.makeCommandQueue()!
-    }
-
-    func setup() async {
-        // Create tiles
-        tiles["shader"] = ShaderTile(device: device)
-        tiles["mask"] = MaskShaderTile(device: device)
-        tiles["lyrics"] = LyricsTile(device: device)
-        tiles["refrain"] = RefrainTile(device: device)
-        tiles["songInfo"] = SongInfoTile(device: device)
-        tiles["image"] = ImageTile(device: device)
-
-        print("[TileManager] Created \(tiles.count) tiles")
-    }
-
-    func update(audioState: AudioState, deltaTime: Float) async {
-        for tile in tiles.values {
-            tile.update(audioState: audioState, deltaTime: deltaTime)
-        }
-    }
-
-    func render() async {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
-
-        for tile in tiles.values {
-            tile.render(commandBuffer: commandBuffer)
-        }
-
-        commandBuffer.commit()
-            // Removed blocking waitUntilCompleted
-    }
-
-    /// Render with Syphon publishing
-    func renderAndPublish(syphonManager: SyphonOutputManager?) async {
-        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return }
-
-        // Render all tiles
-        for tile in tiles.values {
-            tile.render(commandBuffer: commandBuffer)
-        }
-
-        // NOTE: Syphon publishing now handled by MTKView tiles via onTextureReady callback
-        // The old actor-based tiles here are deprecated in favor of MTKViewTiles.swift
-
-        commandBuffer.commit()
-            // Removed blocking waitUntilCompleted
-    }
-
-    /// Map tile name to Syphon server name
-    private func syphonNameForTile(_ tileName: String) -> String {
-        switch tileName {
-        case "shader": return TileConfig.shader.syphonName
-        case "mask": return TileConfig.mask.syphonName
-        case "lyrics": return TileConfig.lyrics.syphonName
-        case "refrain": return TileConfig.refrain.syphonName
-        case "songInfo": return TileConfig.songInfo.syphonName
-        case "image": return TileConfig.image.syphonName
-        default: return "SwiftVJ/\(tileName.capitalized)"
-        }
-    }
-
-    func getTile(_ name: String) -> (any Tile)? {
-        tiles[name]
-    }
-
-    func getTexture(_ name: String) -> MTLTexture? {
-        tiles[name]?.texture
-    }
-
-    func getAllTileNames() -> [String] {
-        Array(tiles.keys).sorted()
-    }
-
-    var shaderTile: ShaderTile? {
-        tiles["shader"] as? ShaderTile
-    }
-
-    var lyricsTile: LyricsTile? {
-        tiles["lyrics"] as? LyricsTile
-    }
-
-    var refrainTile: RefrainTile? {
-        tiles["refrain"] as? RefrainTile
-    }
-
-    var songInfoTile: SongInfoTile? {
-        tiles["songInfo"] as? SongInfoTile
-    }
-
-    var imageTile: ImageTile? {
-        tiles["image"] as? ImageTile
-    }
-
-    var maskTile: MaskShaderTile? {
-        tiles["mask"] as? MaskShaderTile
-    }
-}
-
 // MARK: - Render Engine
 
-/// Main rendering engine that orchestrates tiles, audio, and output
+/// Main rendering engine that orchestrates headless tile rendering and Syphon output
 /// Observable for SwiftUI integration
-/// NOTE: Not main-actor isolated; only minimal UI-facing mutations hop to main.
+/// NOTE: All rendering is headless - UI previews consume via Syphon clients only
 final class RenderEngine: ObservableObject {
     // MARK: - Published State
 
@@ -156,7 +48,7 @@ final class RenderEngine: ObservableObject {
     // MARK: - Private
 
     private var device: MTLDevice?
-    private(set) var tileManager: TileManager?
+    private(set) var headlessRenderer: HeadlessRenderer?
     private var displayLink: CVDisplayLink?
     private var renderTimer: Timer?
     private var dispatchTimer: DispatchSourceTimer?
@@ -219,15 +111,18 @@ final class RenderEngine: ObservableObject {
         }
         self.device = device
 
-        // Create tile manager
-        let manager = TileManager(device: device)
-        await manager.setup()
-        self.tileManager = manager
+        // Create headless renderer (replaces TileManager)
+        let renderer = HeadlessRenderer(device: device)
+        self.headlessRenderer = renderer
+        
+        // Load default shader
+        renderer.shaderRenderer.loadShader(name: "oscillate")
+        renderer.maskRenderer.loadShader(name: "mask_circular")
 
-        // Create Syphon output manager
+        // Create Syphon output manager (singleton to avoid duplicate servers)
         await MainActor.run { [weak self] in
             guard let self = self else { return }
-            self.syphonManager = SyphonOutputManager(device: device)
+            self.syphonManager = SyphonOutputManager.shared
             self.syphonManager?.createStandardServers()
             self.audioManager.start()
             self.textManager.start()
@@ -237,7 +132,7 @@ final class RenderEngine: ObservableObject {
         startRenderLoop()
 
         DispatchQueue.main.async { [weak self] in self?.isRunning = true }
-        print("[RenderEngine] Started with Syphon output")
+        print("[RenderEngine] Started with headless rendering + Syphon output")
     }
 
     func stop() async {
@@ -384,58 +279,51 @@ final class RenderEngine: ObservableObject {
             )
         }
 
-        guard let context = context, let manager = tileManager else { return }
-
-        // Update tile states from context (no MainActor hops needed)
-        await updateTileStates(with: context, manager: manager)
-
-        // Update and render all tiles
-        await manager.update(audioState: context.audioState, deltaTime: deltaTime)
-        await manager.renderAndPublish(syphonManager: syphonManager)
-    }
-
-    private func updateTileStates(with context: RenderFrameContext, manager: TileManager) async {
-        // Update lyrics tile
-        if let lyricsTile = await manager.lyricsTile {
-            lyricsTile.updateState(context.lyricsState)
+        guard let context = context, let renderer = headlessRenderer else { return }
+        
+        // Update renderer state from context
+        renderer.lyricsRenderer.lyricsState = context.lyricsState
+        renderer.refrainRenderer.refrainState = context.refrainState
+        renderer.songInfoRenderer.songInfoState = context.songInfoState
+        
+        // Handle shader changes
+        if let shaderName = context.shaderState.current?.name,
+           shaderName != renderer.shaderRenderer.currentShaderName {
+            renderer.shaderRenderer.loadShader(name: shaderName)
+        }
+        if let maskName = context.maskState.current?.name,
+           maskName != renderer.maskRenderer.currentShaderName {
+            renderer.maskRenderer.loadShader(name: maskName)
         }
 
-        // Update refrain tile
-        if let refrainTile = await manager.refrainTile {
-            refrainTile.updateState(context.refrainState)
-        }
-
-        // Update song info tile
-        if let songInfoTile = await manager.songInfoTile {
-            songInfoTile.updateState(context.songInfoState)
-        }
-
-        // Update shader tile
-        if let shaderTile = await manager.shaderTile {
-            shaderTile.updateState(context.shaderState)
-        }
-
-        // Update mask tile
-        if let maskTile = await manager.maskTile {
-            maskTile.updateState(context.maskState)
-        }
-
-        // Update image tile
-        if let imageTile = await manager.imageTile {
-            imageTile.updateState(context.imageState)
+        // Render all tiles in single command buffer → publish → commit
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            renderer.renderFrame(
+                audioState: context.audioState,
+                syphonManager: self.syphonManager
+            )
         }
     }
 
     // MARK: - Convenience Methods
 
-    /// Get texture for a specific tile (for SwiftUI preview)
-    func getTexture(for tileName: String) async -> MTLTexture? {
-        await tileManager?.getTexture(tileName)
+    /// Get texture for a specific tile (for debugging only - UI should use Syphon clients)
+    func getTexture(for tileName: String) -> MTLTexture? {
+        guard let renderer = headlessRenderer else { return nil }
+        switch tileName {
+        case "shader": return renderer.shaderRenderer.texture
+        case "mask": return renderer.maskRenderer.texture
+        case "lyrics": return renderer.lyricsRenderer.texture
+        case "refrain": return renderer.refrainRenderer.texture
+        case "songInfo": return renderer.songInfoRenderer.texture
+        default: return nil
+        }
     }
 
     /// Get all tile names
-    func getTileNames() async -> [String] {
-        await tileManager?.getAllTileNames() ?? []
+    func getTileNames() -> [String] {
+        ["shader", "mask", "lyrics", "refrain", "songInfo"]
     }
 
     // MARK: - Pipeline Integration

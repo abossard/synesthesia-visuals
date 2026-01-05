@@ -9,8 +9,29 @@
 
 import Foundation
 
+/// Interface for test input/output (allows running in CLI or UI)
+public protocol LaunchpadTestIO: Sendable {
+    func print(_ message: String)
+    func askYesNo(_ prompt: String) async -> Bool
+}
+
+/// Default CLI implementation
+public struct CLIInputOutput: LaunchpadTestIO {
+    public init() {}
+    public func print(_ message: String) {
+        Swift.print(message)
+    }
+    public func askYesNo(_ prompt: String) async -> Bool {
+        Swift.print(prompt, terminator: "")
+        // In CLI, we can block on readLine, but to satisfy async protocol we wrap it
+        return await Task {
+            readLine()?.lowercased() == "y"
+        }.value
+    }
+}
+
 /// End-to-end test runner for Launchpad hardware
-public final class LaunchpadE2ETest {
+public final class LaunchpadE2ETest: @unchecked Sendable {
     
     // MARK: - Test Result Tracking
     
@@ -23,6 +44,7 @@ public final class LaunchpadE2ETest {
     
     private var results: [TestResult] = []
     private let midi: MIDIManager
+    private let io: LaunchpadTestIO
     private var module: LaunchpadModule?
     private var receivedMessages: [MIDIMessage] = []
     private var oscLog: [String] = []
@@ -41,35 +63,36 @@ public final class LaunchpadE2ETest {
     
     // MARK: - Init
     
-    public init() {
+    public init(io: LaunchpadTestIO = CLIInputOutput()) {
         self.midi = MIDIManager()
+        self.io = io
     }
     
     // MARK: - Public Entry Point
     
-    public func run() {
+    public func run() async {
         printHeader()
         
         guard connect() else {
-            print("❌ Cannot run E2E test without Launchpad connection")
+            io.print("❌ Cannot run E2E test without Launchpad connection")
             return
         }
         
         defer { cleanup() }
         
         // Run all test steps
-        runStep(1, "Connection") { self.testConnection() }
-        runStep(2, "Grid LEDs") { self.testGridLeds() }
-        runStep(3, "Top Row (CC)") { self.testTopRow() }
-        runStep(4, "Scene Buttons") { self.testSceneButtons() }
-        runStep(5, "Learn Mode Entry") { self.testLearnModeEntry() }
-        runStep(6, "Pad Selection") { self.testPadSelection() }
-        runStep(7, "OSC Recording") { self.testOscRecording() }
-        runStep(8, "Config Save") { self.testConfigSave() }
-        runStep(9, "Selector Mode") { self.testSelectorMode() }
-        runStep(10, "Toggle Mode") { self.testToggleMode() }
-        runStep(11, "Push Mode") { self.testPushMode() }
-        runStep(12, "Config Persistence") { self.testConfigPersistence() }
+        await runStep(1, "Connection") { self.testConnection() }
+        await runStep(2, "Grid LEDs") { await self.testGridLeds() }
+        await runStep(3, "Top Row (CC)") { self.testTopRow() }
+        await runStep(4, "Scene Buttons") { self.testSceneButtons() }
+        await runStep(5, "Learn Mode Entry") { self.testLearnModeEntry() }
+        await runStep(6, "Pad Selection") { self.testPadSelection() }
+        await runStep(7, "OSC Recording") { self.testOscRecording() }
+        await runStep(8, "Config Save") { self.testConfigSave() }
+        await runStep(9, "Selector Mode") { self.testSelectorMode() }
+        await runStep(10, "Toggle Mode") { self.testToggleMode() }
+        await runStep(11, "Push Mode") { self.testPushMode() }
+        await runStep(12, "Config Persistence") { self.testConfigPersistence() }
         
         printSummary()
     }
@@ -77,16 +100,16 @@ public final class LaunchpadE2ETest {
     // MARK: - Connection
     
     private func connect() -> Bool {
-        print("🔌 Connecting to Launchpad...")
-        print()
+        io.print("🔌 Connecting to Launchpad...")
+        io.print("")
         
         midi.enableAutoReconnect(
             messageCallback: { [weak self] message in
                 self?.handleMessage(message)
             },
-            connectionCallback: { connected, name in
+            connectionCallback: { [weak self] connected, name in
                 if connected {
-                    print("  ✓ Auto-reconnect enabled: \(name ?? "device")")
+                    self?.io.print("  ✓ Auto-reconnect enabled: \(name ?? "device")")
                 }
             }
         )
@@ -94,14 +117,14 @@ public final class LaunchpadE2ETest {
         Thread.sleep(forTimeInterval: 0.5)
         
         if midi.isConnected {
-            print("  ✓ Connected to: \(midi.connectedDeviceName ?? "Launchpad")")
-            print()
+            io.print("  ✓ Connected to: \(midi.connectedDeviceName ?? "Launchpad")")
+            io.print("")
             return true
         } else {
-            print("  ✗ No Launchpad found")
-            print()
-            print("  Make sure Launchpad is connected and in PROGRAMMER mode:")
-            print("  → Hold Session → Press orange button → Release")
+            io.print("  ✗ No Launchpad found")
+            io.print("")
+            io.print("  Make sure Launchpad is connected and in PROGRAMMER mode:")
+            io.print("  → Hold Session → Press orange button → Release")
             return false
         }
     }
@@ -163,16 +186,16 @@ public final class LaunchpadE2ETest {
     // MARK: - Test Framework
     
     private func runStep(_ step: Int, _ name: String, _ test: () -> (Bool, String)) {
-        print()
-        print("─────────────────────────────────────────────────")
-        print("Step \(step)/12: \(name)")
-        print("─────────────────────────────────────────────────")
+        io.print("")
+        io.print("─────────────────────────────────────────────────")
+        io.print("Step \(step)/12: \(name)")
+        io.print("─────────────────────────────────────────────────")
         
         let (passed, message) = test()
         
         let icon = passed ? "✅" : "❌"
-        print()
-        print("\(icon) \(name): \(message)")
+        io.print("")
+        io.print("\(icon) \(name): \(message)")
         
         results.append(TestResult(step: step, name: name, passed: passed, message: message))
         
@@ -181,48 +204,48 @@ public final class LaunchpadE2ETest {
     }
     
     private func printHeader() {
-        print()
-        print("═══════════════════════════════════════════════════")
-        print("🧪 LAUNCHPAD E2E TEST - Full Feature Validation")
-        print("═══════════════════════════════════════════════════")
-        print()
-        print("This test validates all Launchpad features:")
-        print("  • Connection & auto-reconnect")
-        print("  • Grid LEDs (8x8)")
-        print("  • Top row buttons (CC messages)")
-        print("  • Scene buttons (right column)")
-        print("  • Learn mode workflow")
-        print("  • All pad modes (selector, toggle, push)")
-        print("  • OSC send verification")
-        print("  • Config persistence")
-        print()
+        io.print("")
+        io.print("═══════════════════════════════════════════════════")
+        io.print("🧪 LAUNCHPAD E2E TEST - Full Feature Validation")
+        io.print("═══════════════════════════════════════════════════")
+        io.print("")
+        io.print("This test validates all Launchpad features:")
+        io.print("  • Connection & auto-reconnect")
+        io.print("  • Grid LEDs (8x8)")
+        io.print("  • Top row buttons (CC messages)")
+        io.print("  • Scene buttons (right column)")
+        io.print("  • Learn mode workflow")
+        io.print("  • All pad modes (selector, toggle, push)")
+        io.print("  • OSC send verification")
+        io.print("  • Config persistence")
+        io.print("")
     }
     
     private func printSummary() {
         let passed = results.filter { $0.passed }.count
         let failed = results.filter { !$0.passed }.count
         
-        print()
-        print("═══════════════════════════════════════════════════")
-        print("RESULTS: \(passed)/\(results.count) passed")
-        print("═══════════════════════════════════════════════════")
-        print()
+        io.print("")
+        io.print("═══════════════════════════════════════════════════")
+        io.print("RESULTS: \(passed)/\(results.count) passed")
+        io.print("═══════════════════════════════════════════════════")
+        io.print("")
         
         for result in results {
             let icon = result.passed ? "✅" : "❌"
-            print("  \(icon) Step \(result.step): \(result.name)")
+            io.print("  \(icon) Step \(result.step): \(result.name)")
             if !result.passed {
-                print("       → \(result.message)")
+                io.print("       → \(result.message)")
             }
         }
         
-        print()
+        io.print("")
         if failed == 0 {
-            print("🎉 ALL TESTS PASSED!")
+            io.print("🎉 ALL TESTS PASSED!")
         } else {
-            print("⚠️  \(failed) test(s) failed - see details above")
+            io.print("⚠️  \(failed) test(s) failed - see details above")
         }
-        print()
+        io.print("")
     }
     
     // MARK: - Test Implementations
@@ -237,7 +260,7 @@ public final class LaunchpadE2ETest {
     
     // Step 2: Grid LEDs
     private func testGridLeds() -> (Bool, String) {
-        print("  Cycling colors on all grid pads...")
+        io.print("  Cycling colors on all grid pads...")
         
         // Light up grid with rainbow pattern
         for (index, (name, color)) in colors.enumerated() {
@@ -245,7 +268,7 @@ public final class LaunchpadE2ETest {
             for col in 0..<8 {
                 midi.setLed(padId: ButtonId(x: col, y: row), color: color)
             }
-            print("    Row \(row): \(name)")
+            io.print("    Row \(row): \(name)")
             Thread.sleep(forTimeInterval: 0.15)
         }
         
@@ -258,9 +281,8 @@ public final class LaunchpadE2ETest {
             }
         }
         
-        print()
-        print("  Did you see 8 rows of colors? [y/n]: ", terminator: "")
-        guard let input = readLine()?.lowercased(), input == "y" else {
+        io.print("")
+        if !io.askYesNo("  Did you see 8 rows of colors? [y/n]: ") {
             return (false, "User reported LEDs not visible")
         }
         
@@ -269,22 +291,22 @@ public final class LaunchpadE2ETest {
     
     // Step 3: Top Row (CC messages)
     private func testTopRow() -> (Bool, String) {
-        print("  Press each TOP ROW button (above the 8x8 grid)")
-        print("  These use CC messages (91-98) → y=-1 in our system")
-        print()
+        io.print("  Press each TOP ROW button (above the 8x8 grid)")
+        io.print("  These use CC messages (91-98) → y=-1 in our system")
+        io.print("")
         
         // Light top grid row for reference
         for col in 0..<8 {
             midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.cyan)
         }
-        print("  Cyan row 7 lit for reference - press buttons ABOVE it")
-        print()
+        io.print("  Cyan row 7 lit for reference - press buttons ABOVE it")
+        io.print("")
         
         var detected: Set<Int> = []
         let needed = 3  // Need at least 3 top row buttons
         
-        print("  Press at least \(needed) different top row buttons...")
-        print("  (Press any grid pad to finish)")
+        io.print("  Press at least \(needed) different top row buttons...")
+        io.print("  (Press any grid pad to finish)")
         
         clearMessageQueue()
         
@@ -294,10 +316,10 @@ public final class LaunchpadE2ETest {
                     if !detected.contains(buttonId.x) {
                         detected.insert(buttonId.x)
                         let name = topRowNames[buttonId.x]
-                        print("    ✓ Top row \(buttonId.x) (\(name)) detected!")
+                        io.print("    ✓ Top row \(buttonId.x) (\(name)) detected!")
                     }
                 } else if buttonId.isGrid {
-                    print("    (Grid pad pressed - finishing)")
+                    io.print("    (Grid pad pressed - finishing)")
                     break
                 }
             } else {
@@ -319,21 +341,21 @@ public final class LaunchpadE2ETest {
     
     // Step 4: Scene Buttons
     private func testSceneButtons() -> (Bool, String) {
-        print("  Press the SCENE buttons (right column, x=8)")
-        print()
+        io.print("  Press the SCENE buttons (right column, x=8)")
+        io.print("")
         
         // Light rightmost grid column for reference
         for row in 0..<8 {
             midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.orange)
         }
-        print("  Orange column 7 lit - press buttons to the RIGHT of it")
-        print()
+        io.print("  Orange column 7 lit - press buttons to the RIGHT of it")
+        io.print("")
         
         var detected: Set<Int> = []
         let needed = 3
         
-        print("  Press at least \(needed) scene buttons...")
-        print("  (Press any grid pad to finish)")
+        io.print("  Press at least \(needed) scene buttons...")
+        io.print("  (Press any grid pad to finish)")
         
         clearMessageQueue()
         
@@ -342,10 +364,10 @@ public final class LaunchpadE2ETest {
                 if buttonId.isSceneButton {
                     if !detected.contains(buttonId.y) {
                         detected.insert(buttonId.y)
-                        print("    ✓ Scene button \(buttonId.y) (x=8) detected!")
+                        io.print("    ✓ Scene button \(buttonId.y) (x=8) detected!")
                     }
                 } else if buttonId.isGrid && buttonId.x < 7 {
-                    print("    (Grid pad pressed - finishing)")
+                    io.print("    (Grid pad pressed - finishing)")
                     break
                 }
             } else {
@@ -367,14 +389,14 @@ public final class LaunchpadE2ETest {
     
     // Step 5: Learn Mode Entry
     private func testLearnModeEntry() -> (Bool, String) {
-        print("  Creating LaunchpadModule with OSC logging...")
+        io.print("  Creating LaunchpadModule with OSC logging...")
         
         oscLog.removeAll()
         module = LaunchpadModule(
             midi: midi,
             oscSender: { [weak self] command in
                 self?.oscLog.append(command.address)
-                print("    [OSC] → \(command.address) \(command.args)")
+                self?.io.print("    [OSC] → \(command.address) \(command.args)")
             }
         )
         
@@ -404,7 +426,7 @@ public final class LaunchpadE2ETest {
     
     // Step 6: Pad Selection
     private func testPadSelection() -> (Bool, String) {
-        print("  Now press any GRID pad to select it for configuration...")
+        io.print("  Now press any GRID pad to select it for configuration...")
         
         clearMessageQueue()
         
@@ -412,7 +434,7 @@ public final class LaunchpadE2ETest {
             if buttonId.isGrid {
                 Thread.sleep(forTimeInterval: 0.2)
                 let status = module?.getStatus()
-                print("    Selected pad: \(buttonId)")
+                io.print("    Selected pad: \(buttonId)")
                 return (true, "Selected \(buttonId) for configuration")
             } else {
                 return (false, "Not a grid pad: \(buttonId)")
@@ -424,8 +446,8 @@ public final class LaunchpadE2ETest {
     
     // Step 7: OSC Recording (simulated)
     private func testOscRecording() -> (Bool, String) {
-        print("  Simulating OSC event recording...")
-        print("  (In real use, you'd trigger an event from Synesthesia)")
+        io.print("  Simulating OSC event recording...")
+        io.print("  (In real use, you'd trigger an event from Synesthesia)")
         
         // Create a simulated OSC event
         let testEvent = OscEvent(
@@ -435,7 +457,7 @@ public final class LaunchpadE2ETest {
         )
         
         // We can't easily inject into the running module, so we simulate
-        print("    → Simulated: /scenes/TestScene/load")
+        io.print("    → Simulated: /scenes/TestScene/load")
         Thread.sleep(forTimeInterval: 0.5)
         
         return (true, "OSC recording simulated (trigger real events in production)")
@@ -443,8 +465,8 @@ public final class LaunchpadE2ETest {
     
     // Step 8: Config Save
     private func testConfigSave() -> (Bool, String) {
-        print("  Press SAVE pad at (0,0) - bottom left - to save config")
-        print("  Or press CANCEL pad at (7,0) to cancel")
+        io.print("  Press SAVE pad at (0,0) - bottom left - to save config")
+        io.print("  Or press CANCEL pad at (7,0) to cancel")
         
         clearMessageQueue()
         
@@ -462,7 +484,7 @@ public final class LaunchpadE2ETest {
         
         // Exit learn mode if still in it
         if module?.getStatus().isLearnMode == true {
-            print("    (Exiting learn mode)")
+            io.print("    (Exiting learn mode)")
             // Press learn button to exit
         }
         
@@ -471,8 +493,8 @@ public final class LaunchpadE2ETest {
     
     // Step 9: Selector Mode
     private func testSelectorMode() -> (Bool, String) {
-        print("  Testing SELECTOR mode (radio button behavior)")
-        print()
+        io.print("  Testing SELECTOR mode (radio button behavior)")
+        io.print("")
         
         // Configure two pads as selectors in same group
         let pad1 = ButtonId(x: 0, y: 2)
@@ -494,9 +516,9 @@ public final class LaunchpadE2ETest {
         module?.configurePad(pad1, behavior: behavior1)
         module?.configurePad(pad2, behavior: behavior2)
         
-        print("  Two selector pads configured at (0,2) and (1,2)")
-        print("  Press each one - only one should be active at a time")
-        print("  Press any other grid pad when done...")
+        io.print("  Two selector pads configured at (0,2) and (1,2)")
+        io.print("  Press each one - only one should be active at a time")
+        io.print("  Press any other grid pad when done...")
         
         clearMessageQueue()
         var pressCount = 0
@@ -504,7 +526,7 @@ public final class LaunchpadE2ETest {
         while pressCount < 4 {
             if let buttonId = waitForPress(timeout: 15) {
                 if buttonId == pad1 || buttonId == pad2 {
-                    print("    Selector \(buttonId) pressed")
+                    io.print("    Selector \(buttonId) pressed")
                     pressCount += 1
                 } else if buttonId.isGrid {
                     break
@@ -528,8 +550,8 @@ public final class LaunchpadE2ETest {
     
     // Step 10: Toggle Mode
     private func testToggleMode() -> (Bool, String) {
-        print("  Testing TOGGLE mode (on/off)")
-        print()
+        io.print("  Testing TOGGLE mode (on/off)")
+        io.print("")
         
         let pad = ButtonId(x: 3, y: 2)
         let behavior = PadBehavior(
@@ -542,9 +564,9 @@ public final class LaunchpadE2ETest {
         
         module?.configurePad(pad, behavior: behavior)
         
-        print("  Toggle pad at (3,2)")
-        print("  Press it twice to see ON → OFF")
-        print("  Press any other grid pad when done...")
+        io.print("  Toggle pad at (3,2)")
+        io.print("  Press it twice to see ON → OFF")
+        io.print("  Press any other grid pad when done...")
         
         clearMessageQueue()
         var pressCount = 0
@@ -553,7 +575,7 @@ public final class LaunchpadE2ETest {
             if let buttonId = waitForPress(timeout: 15) {
                 if buttonId == pad {
                     pressCount += 1
-                    print("    Toggle press #\(pressCount)")
+                    io.print("    Toggle press #\(pressCount)")
                 } else if buttonId.isGrid {
                     break
                 }
@@ -572,8 +594,8 @@ public final class LaunchpadE2ETest {
     
     // Step 11: Push Mode
     private func testPushMode() -> (Bool, String) {
-        print("  Testing PUSH mode (momentary)")
-        print()
+        io.print("  Testing PUSH mode (momentary)")
+        io.print("")
         
         let pad = ButtonId(x: 5, y: 2)
         let behavior = PadBehavior(
@@ -585,10 +607,10 @@ public final class LaunchpadE2ETest {
         
         module?.configurePad(pad, behavior: behavior)
         
-        print("  Push pad at (5,2)")
-        print("  HOLD it - should be bright while held, dim on release")
-        print("  OSC sends 1.0 on press, 0.0 on release")
-        print("  Press any other grid pad when done...")
+        io.print("  Push pad at (5,2)")
+        io.print("  HOLD it - should be bright while held, dim on release")
+        io.print("  OSC sends 1.0 on press, 0.0 on release")
+        io.print("  Press any other grid pad when done...")
         
         clearMessageQueue()
         var gotPress = false
@@ -604,10 +626,10 @@ public final class LaunchpadE2ETest {
                 if let buttonId = msg.buttonId, buttonId == pad {
                     if msg.isPress {
                         gotPress = true
-                        print("    Push PRESSED (OSC 1.0)")
+                        io.print("    Push PRESSED (OSC 1.0)")
                     } else if msg.isRelease {
                         gotRelease = true
-                        print("    Push RELEASED (OSC 0.0)")
+                        io.print("    Push RELEASED (OSC 0.0)")
                     }
                 } else if let buttonId = msg.buttonId, buttonId.isGrid, msg.isPress {
                     gotRelease = true  // Exit
@@ -633,23 +655,23 @@ public final class LaunchpadE2ETest {
     
     // Step 12: Config Persistence
     private func testConfigPersistence() -> (Bool, String) {
-        print("  Testing config persistence...")
+        io.print("  Testing config persistence...")
         
         let status = module?.getStatus()
         let padCount = status?.configuredPadCount ?? 0
         
-        print("  Currently \(padCount) pads configured")
+        io.print("  Currently \(padCount) pads configured")
         
         // Stop and restart module
-        print("  Stopping module...")
+        io.print("  Stopping module...")
         module?.stop()
         Thread.sleep(forTimeInterval: 0.3)
         
-        print("  Restarting module...")
+        io.print("  Restarting module...")
         module = LaunchpadModule(
             midi: midi,
-            oscSender: { command in
-                print("    [OSC] → \(command.address)")
+            oscSender: { [weak self] command in
+                self?.io.print("    [OSC] → \(command.address)")
             }
         )
         _ = module?.start()
@@ -658,7 +680,7 @@ public final class LaunchpadE2ETest {
         let newStatus = module?.getStatus()
         let newPadCount = newStatus?.configuredPadCount ?? 0
         
-        print("  After restart: \(newPadCount) pads configured")
+        io.print("  After restart: \(newPadCount) pads configured")
         
         // Note: Configs from this test session aren't saved to disk
         // unless we explicitly called save. This tests the reload mechanism.

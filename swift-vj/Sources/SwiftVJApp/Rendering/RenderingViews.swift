@@ -118,8 +118,7 @@ struct TilePreviewView: View {
     
     private func updatePreview() {
         Task {
-            guard let manager = renderEngine.tileManager else { return }
-            guard let texture = await manager.getTexture(tileName) else { return }
+            guard let texture = renderEngine.getTexture(for: tileName) else { return }
             
             // Convert Metal texture to NSImage for display
             if let image = textureToNSImage(texture) {
