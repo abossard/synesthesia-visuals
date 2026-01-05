@@ -290,6 +290,11 @@ final class RenderEngine: ObservableObject {
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
         
+        // Sync imageManager state with renderer (imageRenderer is source of truth)
+        await MainActor.run { [weak self] in
+            self?.imageManager.state = renderer.imageRenderer.imageState
+        }
+        
         // Handle shader changes
         if let shaderName = context.shaderState.current?.name,
            shaderName != renderer.shaderRenderer.currentShaderName {

@@ -595,11 +595,6 @@ final class ImageRenderer: TileRenderer {
         #include <metal_stdlib>
         using namespace metal;
         
-        struct VertexIn {
-            float2 position [[attribute(0)]];
-            float2 texCoord [[attribute(1)]];
-        };
-        
         struct VertexOut {
             float4 position [[position]];
             float2 texCoord;
@@ -608,8 +603,9 @@ final class ImageRenderer: TileRenderer {
         vertex VertexOut vertex_image(uint vid [[vertex_id]],
                                        constant float4* vertices [[buffer(0)]]) {
             VertexOut out;
-            out.position = float4(vertices[vid].xy, 0, 1);
-            out.texCoord = vertices[vid].zw;
+            float4 v = vertices[vid];
+            out.position = float4(v.xy, 0, 1);
+            out.texCoord = v.zw;
             return out;
         }
         
@@ -694,10 +690,14 @@ final class ImageRenderer: TileRenderer {
         
         // Count beats
         if beat4 != lastBeatCount {
+            let prevCounter = beatCounter
             lastBeatCount = beat4
             beatCounter += 1
             
-            logger?("[ImageRenderer] Beat: \(beatCounter)/\(imageState.beatsPerChange) (beat4=\(beat4))")
+            // Only log when counter changes (not every frame)
+            if prevCounter != beatCounter {
+                logger?("[ImageRenderer] Beat: \(beatCounter)/\(imageState.beatsPerChange) (beat4=\(beat4))")
+            }
             
             // Auto-advance on beat count
             if beatCounter >= imageState.beatsPerChange {
@@ -729,8 +729,11 @@ final class ImageRenderer: TileRenderer {
     }
     
     private func updateImageState(folderIndex: Int) {
-        let current = imageState.folderImages.indices.contains(folderIndex) ? imageState.folderImages[folderIndex] : nil
-        let next = imageState.folderImages.indices.contains((folderIndex + 1) % imageState.folderImages.count) ? imageState.folderImages[(folderIndex + 1) % imageState.folderImages.count] : nil
+        guard !imageState.folderImages.isEmpty else { return }
+        
+        let current = imageState.folderImages[folderIndex]
+        let nextIndex = (folderIndex + 1) % imageState.folderImages.count
+        let next = imageState.folderImages[nextIndex]
         
         imageState = ImageDisplayState(
             currentImageURL: current,
