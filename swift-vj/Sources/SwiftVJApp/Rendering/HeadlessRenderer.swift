@@ -536,6 +536,9 @@ final class ImageRenderer: TileRenderer {
     // Logger closure for UI logging
     var logger: ((String) -> Void)?
     
+    // Track first successful render
+    private var hasRenderedFirstFrame: Bool = false
+    
     init(device: MTLDevice) {
         self.device = device
         setupTexture()
@@ -746,6 +749,12 @@ final class ImageRenderer: TileRenderer {
               let pipelineState = blendPipelineState,
               let current = currentImageTexture else {
             return
+        }
+        
+        // Log first successful render
+        if !hasRenderedFirstFrame {
+            hasRenderedFirstFrame = true
+            logger?("[ImageRenderer] 🎬 Rendering to Syphon server 'Image'")
         }
         
         // Update crossfade uniform

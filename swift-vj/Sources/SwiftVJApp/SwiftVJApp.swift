@@ -383,6 +383,8 @@ final class AppState: ObservableObject {
                 // Log image folder for easy access
                 if case .images(let count, let folder, _, _) = stepStatus, count > 0 {
                     self.log("  Images: \(count) → \(folder)", level: .info)
+                    // Auto-load images into renderer
+                    self.loadImagesIntoRenderer(folder: folder)
                 }
             }
         }
@@ -632,6 +634,51 @@ final class AppState: ObservableObject {
         } else {
             log("  Images: none", level: .debug)
         }
+    }
+    
+    /// Load images into the image renderer from a folder path
+    private func loadImagesIntoRenderer(folder: String) {
+        guard let renderEngine = renderEngine,
+              let imageRenderer = renderEngine.headlessRenderer?.imageRenderer else {
+            log("[Images] ⚠️ Renderer not ready", level: .warning)
+            return
+        }
+        
+        let folderURL = URL(fileURLWithPath: folder)
+        log("[Images] Auto-loading from: \(folderURL.lastPathComponent)", level: .info)
+        
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: folderURL,
+            includingPropertiesForKeys: nil
+        ) else {
+            log("[Images] ❌ Failed to read directory", level: .error)
+            return
+        }
+        
+        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]
+        let imageFiles = files.filter { file in
+            imageExtensions.contains(file.pathExtension.lowercased())
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        
+        guard !imageFiles.isEmpty else {
+            log("[Images] ⚠️ No images found", level: .warning)
+            return
+        }
+        
+        log("[Images] Found \(imageFiles.count) images", level: .info)
+        
+        imageRenderer.imageState = ImageDisplayState(
+            currentImageURL: imageFiles.first,
+            nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
+            crossfadeProgress: 0.0,
+            isFading: false,
+            coverMode: false,
+            folderImages: imageFiles,
+            folderIndex: 0,
+            beatsPerChange: 8  // Default to 8-beat auto-cycle
+        )
+        
+        log("[Images] ✓ Auto-loaded with 8-beat cycle", level: .info)
     }
     
     func recordOSCMessage(_ address: String, args: [String]) {
