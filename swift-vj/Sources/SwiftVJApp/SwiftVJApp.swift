@@ -200,7 +200,12 @@ final class AppState: ObservableObject {
             guard let self = self else { return }
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run { [weak self] in
-                self?.renderEngine = engine
+                guard let self = self else { return }
+                // Wire up logger for image renderer
+                engine.logger = { [weak self] message in
+                    self?.log(message, level: .info)
+                }
+                self.renderEngine = engine
             }
         }
     }
