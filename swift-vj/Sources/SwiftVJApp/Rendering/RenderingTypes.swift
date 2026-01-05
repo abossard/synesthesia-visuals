@@ -334,10 +334,70 @@ struct TileConfig: Sendable {
 // MARK: - Utility Functions
 
 /// Synthetic mouse rotation speed (matches VJUniverse synthMouseSpeed)
-private let synthMouseSpeed: Float = 0.3
+private let synthMouseSpeed: Float = 0.25
 
-/// Calculate synthetic mouse position (Lissajous curve)
-/// Pure function from VJUniverse - matches Processing's calcSynthMousePosition exactly
+/// Calculate target mouse position (pure Lissajous curve)
+/// This is the "desired" position - actual mouse is smoothed toward this
+func calcSyntheticMouseTarget(
+    time: Float,
+    energySlow: Float
+) -> SIMD2<Float> {
+    // Base rotation
+    let t = time * synthMouseSpeed
+    
+    // Figure-8 Lissajous curve: x = sin(t), y = sin(2t)
+    let fig8X = sin(t)
+    let fig8Y = sin(t * 2.0)
+    
+    // Energy-modulated amplitude (only slow energy, no jittery bass/mid)
+    let radius: Float = 0.18 + energySlow * 0.12  // 0.18-0.30 range
+    
+    // Final position (centered at 0.5)
+    let x = 0.5 + fig8X * radius
+    let y = 0.5 + fig8Y * radius
+    
+    return SIMD2<Float>(x, y)
+}
+
+/// Smooth mouse position with momentum (eliminates jitter, keeps reactivity)
+/// Uses critically damped spring for natural movement
+func smoothMouse(
+    current: SIMD2<Float>,
+    target: SIMD2<Float>,
+    velocity: inout SIMD2<Float>,
+    deltaTime: Float,
+    smoothing: Float,
+    energyBoost: Float
+) -> SIMD2<Float> {
+    // Adaptive smoothing: faster response during high energy
+    let adaptiveSmoothing = smoothing - energyBoost * 0.15  // 0.92 → 0.77 at full energy
+    let smoothingFactor = pow(adaptiveSmoothing, deltaTime * 60.0)  // Frame-rate independent
+    
+    // Spring-damper system for natural movement
+    let springStrength: Float = 8.0  // How fast to chase target
+    let damping: Float = 0.85  // Momentum decay
+    
+    // Calculate spring force toward target
+    let displacement = target - current
+    let springForce = displacement * springStrength
+    
+    // Update velocity with spring force and damping
+    velocity = velocity * damping + springForce * deltaTime
+    
+    // Apply velocity to position
+    var newPos = current + velocity * deltaTime
+    
+    // Also blend toward target for stability
+    newPos = newPos * smoothingFactor + target * (1.0 - smoothingFactor)
+    
+    // Clamp to valid range
+    newPos.x = min(max(newPos.x, 0.05), 0.95)
+    newPos.y = min(max(newPos.y, 0.05), 0.95)
+    
+    return newPos
+}
+
+/// Legacy function for compatibility
 func calcSyntheticMouse(
     time: Float,
     energySlow: Float,
@@ -345,27 +405,7 @@ func calcSyntheticMouse(
     mid: Float,
     beatPhase: Float
 ) -> SIMD2<Float> {
-    // Base rotation with configurable speed (matches Processing)
-    var t = time * synthMouseSpeed
-    
-    // Phase shift on beat for rhythmic variation
-    let phaseOffset = beatPhase * 0.4
-    t += phaseOffset
-    
-    // Figure-8 Lissajous curve: x = sin(t), y = sin(2t)
-    let fig8X = sin(t)
-    let fig8Y = sin(t * 2.0)
-    
-    // Audio-modulated amplitude (smooth, avoids jitter)
-    let baseRadius: Float = 0.12 + energySlow * 0.18  // 0.12-0.30 range
-    let radiusX = baseRadius + bass * 0.12            // Bass widens X
-    let radiusY = baseRadius + mid * 0.08             // Mids affect Y
-    
-    // Final position (centered at 0.5, clamped to valid range)
-    let x = min(max(0.5 + fig8X * radiusX, 0.05), 0.95)
-    let y = min(max(0.5 + fig8Y * radiusY, 0.05), 0.95)
-    
-    return SIMD2<Float>(x, y)
+    return calcSyntheticMouseTarget(time: time, energySlow: energySlow)
 }
 /// Quadratic ease-in-out for animations
 /// Pure function

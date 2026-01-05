@@ -516,18 +516,9 @@ struct RenderingView: View {
     private var selectedTileView: some View {
         // All rendering is done headlessly by HeadlessRenderer
         // UI only displays Syphon client previews
-        let serverName: String = {
-            switch selectedTile {
-            case "shader": return "Shader"
-            case "mask": return "Mask"
-            case "lyrics": return "Lyrics"
-            case "refrain": return "Refrain"
-            case "songInfo": return "SongInfo"
-            default: return "Shader"
-            }
-        }()
-        
-        SyphonThumbnailView(serverName: serverName)
+        // Server names are simple: "Shader", "Mask", "Lyrics", etc.
+        SyphonThumbnailView(serverName: selectedTile.capitalized)
+            .id(selectedTile)  // Force view recreation when tile changes
     }
     
     // MARK: - Tile Colors (for thumbnail grid)

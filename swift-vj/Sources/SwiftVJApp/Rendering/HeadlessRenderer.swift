@@ -525,6 +525,10 @@ final class HeadlessRenderer {
     private var beatBoostAccum: Float = 0.0
     private var smoothedAudioSpeed: Float = 0.02
     
+    // Smoothed mouse (exponential smoothing to eliminate jitter)
+    private var smoothedMouse: SIMD2<Float> = SIMD2(0.5, 0.5)
+    private var mouseVelocity: SIMD2<Float> = SIMD2(0, 0)  // For momentum
+    
     // Speed constants (from VJUniverse.pde)
     private let baseSpeedFloor: Float = 0.02
     private let audioSpeedMax: Float = 1.20
@@ -553,8 +557,6 @@ final class HeadlessRenderer {
         lyricsRenderer = LyricsRenderer(device: device)
         refrainRenderer = RefrainRenderer(device: device)
         songInfoRenderer = SongInfoRenderer(device: device)
-        
-        print("[HeadlessRenderer] Initialized with 5 tile renderers")
     }
     
     // MARK: - Render Frame
@@ -590,13 +592,24 @@ final class HeadlessRenderer {
         uniforms.audioTime = audioTime
         uniforms.speed = frameSpeed
         uniforms.resolution = SIMD2<Float>(1280, 720)
-        uniforms.mouse = calcSyntheticMouse(
+        
+        // Calculate target mouse position (pure function)
+        let targetMouse = calcSyntheticMouseTarget(
             time: audioTime,
-            energySlow: audioState.energySlow,
-            bass: audioState.bass,
-            mid: audioState.mid,
-            beatPhase: audioState.beatPhase
+            energySlow: audioState.energySlow
         )
+        
+        // Smooth the mouse with exponential decay (eliminates jitter)
+        smoothedMouse = smoothMouse(
+            current: smoothedMouse,
+            target: targetMouse,
+            velocity: &mouseVelocity,
+            deltaTime: deltaTime,
+            smoothing: 0.92,  // Higher = smoother but slower response
+            energyBoost: audioState.energySlow  // Faster response during high energy
+        )
+        uniforms.mouse = smoothedMouse
+        
         uniforms.update(from: audioState)
         
         // Create single command buffer
@@ -640,23 +653,10 @@ final class HeadlessRenderer {
                 manager.publish(name: TileConfig.songInfo.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }
-            
-            // Debug: log publish count every 60 frames
-            if frameCount % 60 == 0 {
-                print("[HeadlessRenderer] Published \(publishCount) textures to Syphon")
-            }
-        } else if frameCount % 60 == 0 {
-            print("[HeadlessRenderer] WARNING: No Syphon manager!")
         }
         
         // 3. Single commit
         commandBuffer.commit()
-        
-        // Debug: log every 60 frames
-        if frameCount % 60 == 0 {
-            let hasPipeline = shaderRenderer.pipelineState != nil
-            print("[HeadlessRenderer] Frame \(frameCount), shader pipeline: \(hasPipeline ? "✓" : "✗"), current: \(shaderRenderer.currentShaderName)")
-        }
     }
     
     // MARK: - Audio Reactive Speed
