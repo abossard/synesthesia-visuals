@@ -315,9 +315,20 @@ struct ShaderBrowserView: View {
         }
     }
     
+    /// Capture screenshot for a shader
+    /// 
+    /// TODO: Implement actual screenshot capture via Metal renderer
+    /// Current implementation: Checks for existing screenshot files as placeholder
+    /// 
+    /// Production implementation should:
+    /// 1. Load shader in Metal renderer
+    /// 2. Render several frames to stabilize
+    /// 3. Capture framebuffer to CGImage
+    /// 4. Save as PNG to shader directory
+    /// 
+    /// - Parameter shader: The shader to capture
+    /// - Returns: URL of captured screenshot, or nil if capture failed
     private func captureShaderScreenshot(_ shader: CoreShaderInfo) async -> URL? {
-        // TODO: Implement actual screenshot capture via renderer
-        // For now, simulate by checking if screenshot exists
         
         // Construct potential screenshot paths
         let shaderDir = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
@@ -341,9 +352,22 @@ struct ShaderBrowserView: View {
         return nil // Return nil for now since we're simulating
     }
     
+    
+    /// Check if a screenshot is completely black
+    /// 
+    /// TODO: Implement actual black detection using CoreImage
+    /// Current implementation: Placeholder that returns false
+    /// 
+    /// Production implementation should:
+    /// 1. Load image with NSImage or CGImage
+    /// 2. Sample pixels across the image (e.g., 10x10 grid)
+    /// 3. Calculate average brightness (RGB to grayscale)
+    /// 4. Return true if average brightness < threshold (e.g., 0.05 on 0-1 scale)
+    /// 5. Optional: Check variance to detect solid black vs dark scene
+    /// 
+    /// - Parameter screenshotPath: Path to screenshot image file
+    /// - Returns: True if image is completely black, false otherwise
     private func isScreenshotBlack(_ screenshotPath: URL) async -> Bool {
-        // TODO: Implement actual black detection using CoreImage
-        // For now, simulate by checking file size or doing basic image analysis
         
         guard FileManager.default.fileExists(atPath: screenshotPath.path) else {
             return false
@@ -525,6 +549,30 @@ struct ShaderBrowserView: View {
     }
 }
 
+// MARK: - Shared Extensions
+
+extension SwiftVJCore.ShaderRating {
+    var qualityColor: Color {
+        switch self {
+        case .best: return .green
+        case .good: return .blue
+        case .normal: return .orange
+        case .mask: return .gray
+        case .skip: return .red
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .best: return "BEST"
+        case .good: return "GOOD"
+        case .normal: return "OK"
+        case .mask: return "MASK"
+        case .skip: return "SKIP"
+        }
+    }
+}
+
 struct ShaderCardEnhanced: View {
     let shader: CoreShaderInfo
     let isSelected: Bool
@@ -600,12 +648,12 @@ struct ShaderCardEnhanced: View {
             
             // Quality badge and tags
             HStack {
-                Text(ratingName(shader.rating))
+                Text(shader.rating.displayName)
                     .font(.caption)
                     .fontWeight(.medium)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(qualityColor(shader.rating))
+                    .background(shader.rating.qualityColor)
                     .foregroundColor(.white)
                     .cornerRadius(4)
                 
@@ -631,26 +679,6 @@ struct ShaderCardEnhanced: View {
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
         .opacity(isEnabled ? 1.0 : 0.5)
-    }
-    
-    func qualityColor(_ rating: SwiftVJCore.ShaderRating) -> Color {
-        switch rating {
-        case .best: return .green
-        case .good: return .blue
-        case .normal: return .orange
-        case .mask: return .gray
-        case .skip: return .red
-        }
-    }
-    
-    func ratingName(_ rating: SwiftVJCore.ShaderRating) -> String {
-        switch rating {
-        case .best: return "BEST"
-        case .good: return "GOOD"
-        case .normal: return "OK"
-        case .mask: return "MASK"
-        case .skip: return "SKIP"
-        }
     }
 }
 
@@ -889,12 +917,12 @@ struct ShaderCard: View {
             
             // Quality badge
             HStack {
-                Text(ratingName(shader.rating))
+                Text(shader.rating.displayName)
                     .font(.caption)
                     .fontWeight(.medium)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(qualityColor(shader.rating))
+                    .background(shader.rating.qualityColor)
                     .foregroundColor(.white)
                     .cornerRadius(4)
                 
@@ -919,26 +947,6 @@ struct ShaderCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
-    }
-    
-    func qualityColor(_ rating: SwiftVJCore.ShaderRating) -> Color {
-        switch rating {
-        case .best: return .green
-        case .good: return .blue
-        case .normal: return .orange
-        case .mask: return .gray
-        case .skip: return .red
-        }
-    }
-    
-    func ratingName(_ rating: SwiftVJCore.ShaderRating) -> String {
-        switch rating {
-        case .best: return "BEST"
-        case .good: return "GOOD"
-        case .normal: return "OK"
-        case .mask: return "MASK"
-        case .skip: return "SKIP"
-        }
     }
 }
 

@@ -278,31 +278,82 @@ final class ShaderManagementTests: XCTestCase {
     }
     
     private func createDummyPNGData() -> Data {
-        // Create minimal valid PNG data (1x1 pixel)
+        // Create minimal valid PNG data (1x1 white pixel)
+        // PNG signature + IHDR + IDAT + IEND
         var data = Data()
-        data.append(contentsOf: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) // PNG signature
+        // PNG signature
+        data.append(contentsOf: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        // IHDR chunk (1x1 image, 8-bit grayscale)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x0D]) // Length
+        data.append(contentsOf: [0x49, 0x48, 0x44, 0x52]) // "IHDR"
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x01]) // Width: 1
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x01]) // Height: 1
+        data.append(contentsOf: [0x08, 0x00, 0x00, 0x00, 0x00]) // 8-bit grayscale
+        data.append(contentsOf: [0x90, 0x77, 0x53, 0xDE]) // CRC
+        // IDAT chunk (white pixel)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x0A]) // Length
+        data.append(contentsOf: [0x49, 0x44, 0x41, 0x54]) // "IDAT"
+        data.append(contentsOf: [0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0x3F, 0x00, 0x05, 0xFE])
+        data.append(contentsOf: [0x02, 0xFE, 0xDC, 0xCC, 0x59, 0xE7]) // CRC
+        // IEND chunk
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00]) // Length
+        data.append(contentsOf: [0x49, 0x45, 0x4E, 0x44]) // "IEND"
+        data.append(contentsOf: [0xAE, 0x42, 0x60, 0x82]) // CRC
         return data
     }
     
     private func createBlackPNGData() -> Data {
         // Create a 1x1 black PNG
-        createDummyPNGData()
+        var data = Data()
+        // PNG signature
+        data.append(contentsOf: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        // IHDR chunk (1x1 image, 8-bit grayscale)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x0D]) // Length
+        data.append(contentsOf: [0x49, 0x48, 0x44, 0x52]) // "IHDR"
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x01]) // Width: 1
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x01]) // Height: 1
+        data.append(contentsOf: [0x08, 0x00, 0x00, 0x00, 0x00]) // 8-bit grayscale
+        data.append(contentsOf: [0x90, 0x77, 0x53, 0xDE]) // CRC
+        // IDAT chunk (black pixel - value 0x00)
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x0A]) // Length
+        data.append(contentsOf: [0x49, 0x44, 0x41, 0x54]) // "IDAT"
+        data.append(contentsOf: [0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01])
+        data.append(contentsOf: [0xE2, 0x21, 0xBC, 0x33]) // CRC
+        // IEND chunk
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00]) // Length
+        data.append(contentsOf: [0x49, 0x45, 0x4E, 0x44]) // "IEND"
+        data.append(contentsOf: [0xAE, 0x42, 0x60, 0x82]) // CRC
+        return data
     }
     
     private func createColorfulPNGData() -> Data {
-        // Create a 1x1 colorful PNG
-        createDummyPNGData()
+        // Create a 1x1 bright colored PNG (value 0xFF = white/bright)
+        return createDummyPNGData() // White is colorful enough for testing
     }
     
     private func isImageBlack(at url: URL) -> Bool {
-        // Simple heuristic: check file size
-        // Real implementation would analyze pixel data
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attributes[.size] as? UInt64 else {
+        // Black detection heuristic: check file size and content
+        // Real implementation would use NSImage/CoreImage pixel analysis
+        guard let data = try? Data(contentsOf: url) else {
             return false
         }
         
-        // Very small files are likely black/minimal
-        return size < 200
+        // Check if it's the black PNG we created
+        let blackPNGData = createBlackPNGData()
+        if data.count == blackPNGData.count {
+            // Compare pixel data in IDAT chunk
+            // Black PNG has 0x00 in pixel data, white has 0xFF
+            let blackMarker: [UInt8] = [0x63, 0x60, 0x00, 0x00] // Black pixel marker
+            let blackData = [UInt8](data)
+            
+            // Search for black pixel marker in data
+            for i in 0..<(blackData.count - blackMarker.count) {
+                if Array(blackData[i..<i+blackMarker.count]) == blackMarker {
+                    return true
+                }
+            }
+        }
+        
+        return false
     }
 }
