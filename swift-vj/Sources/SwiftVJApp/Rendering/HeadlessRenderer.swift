@@ -25,7 +25,7 @@ final class ShaderRenderer: TileRenderer {
     private(set) var texture: MTLTexture?
     
     private let device: MTLDevice
-    private var pipelineState: MTLRenderPipelineState?
+    private(set) var pipelineState: MTLRenderPipelineState?
     private var uniformBuffer: MTLBuffer?
     private var vertexBuffer: MTLBuffer?
     private var metallibLibrary: MTLLibrary?
@@ -118,9 +118,17 @@ final class ShaderRenderer: TileRenderer {
     }
     
     func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
-        guard let texture = texture,
-              let pipelineState = pipelineState,
-              let uniformBuffer = uniformBuffer else { return }
+        guard let texture = texture else {
+            // print("[ShaderRenderer:\(name)] No texture")
+            return
+        }
+        guard let pipelineState = pipelineState else {
+            // Only log once per shader to avoid spam
+            return
+        }
+        guard let uniformBuffer = uniformBuffer else {
+            return
+        }
         
         // Update uniforms
         var u = uniforms
@@ -611,25 +619,44 @@ final class HeadlessRenderer {
         
         // 2. Publish ALL to Syphon (SAME command buffer, before commit)
         if let manager = syphonManager {
+            var publishCount = 0
             if let tex = shaderRenderer.texture {
                 manager.publish(name: TileConfig.shader.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
             }
             if let tex = maskRenderer.texture {
                 manager.publish(name: TileConfig.mask.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
             }
             if let tex = lyricsRenderer.texture {
                 manager.publish(name: TileConfig.lyrics.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
             }
             if let tex = refrainRenderer.texture {
                 manager.publish(name: TileConfig.refrain.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
             }
             if let tex = songInfoRenderer.texture {
                 manager.publish(name: TileConfig.songInfo.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
             }
+            
+            // Debug: log publish count every 60 frames
+            if frameCount % 60 == 0 {
+                print("[HeadlessRenderer] Published \(publishCount) textures to Syphon")
+            }
+        } else if frameCount % 60 == 0 {
+            print("[HeadlessRenderer] WARNING: No Syphon manager!")
         }
         
         // 3. Single commit
         commandBuffer.commit()
+        
+        // Debug: log every 60 frames
+        if frameCount % 60 == 0 {
+            let hasPipeline = shaderRenderer.pipelineState != nil
+            print("[HeadlessRenderer] Frame \(frameCount), shader pipeline: \(hasPipeline ? "✓" : "✗"), current: \(shaderRenderer.currentShaderName)")
+        }
     }
     
     // MARK: - Audio Reactive Speed
