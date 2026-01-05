@@ -51,7 +51,11 @@ public func enterLearnMode(_ state: ControllerState) -> FSMResult {
     
     return FSMResult(
         state: newState,
-        effects: [.log(message: "Entered learn mode - press a pad to configure", level: .info)]
+        effects: [
+            // Learn button blinks RED when recording
+            .setLed(padId: LaunchpadButton.learn, color: LP.red, blink: true),
+            .log(message: "Entered learn mode - press a pad to configure", level: .info)
+        ]
     )
 }
 
@@ -63,7 +67,11 @@ public func exitLearnMode(_ state: ControllerState) -> FSMResult {
     
     return FSMResult(
         state: newState,
-        effects: [.log(message: "Exited learn mode", level: .info)]
+        effects: [
+            // Learn button solid RED when idle (ready to record)
+            .setLed(padId: LaunchpadButton.learn, color: LP.red, blink: false),
+            .log(message: "Exited learn mode", level: .info)
+        ]
     )
 }
 
@@ -690,11 +698,20 @@ public func toggleBlink(_ state: ControllerState) -> ControllerState {
 public func refreshAllLeds(_ state: ControllerState) -> [LaunchpadEffect] {
     var effects: [LaunchpadEffect] = []
     
+    // Configured pads
     for (padId, behavior) in state.pads {
         let runtime = state.padRuntime[padId] ?? PadRuntimeState()
         let blink = runtime.isActive && behavior.mode == .selector
         effects.append(.setLed(padId: padId, color: runtime.currentColor, blink: blink))
     }
+    
+    // Learn button (Scene 0) - RED when idle, blinking RED when in learn mode
+    let isInLearnMode = state.learnState.phase != .idle
+    effects.append(.setLed(
+        padId: LaunchpadButton.learn,
+        color: LP.red,
+        blink: isInLearnMode
+    ))
     
     return effects
 }

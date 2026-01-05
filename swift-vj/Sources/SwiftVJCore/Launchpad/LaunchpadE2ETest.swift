@@ -200,7 +200,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         results.append(TestResult(step: step, name: name, passed: passed, message: message))
         
         // Brief pause between tests
-        Thread.sleep(forTimeInterval: 0.3)
+        try? await Task.sleep(for: .milliseconds(300))
     }
     
     private func printHeader() {
@@ -269,10 +269,10 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
                 midi.setLed(padId: ButtonId(x: col, y: row), color: color)
             }
             io.print("    Row \(row): \(name)")
-            Thread.sleep(forTimeInterval: 0.15)
+            try? await Task.sleep(for: .milliseconds(150))
         }
         
-        Thread.sleep(forTimeInterval: 0.5)
+        try? await Task.sleep(for: .milliseconds(500))
         
         // Clear
         for y in 0..<8 {
@@ -443,13 +443,6 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private func testOscRecording() -> (Bool, String) {
         io.print("  Simulating OSC event recording...")
         io.print("  (In real use, you'd trigger an event from Synesthesia)")
-        
-        // Create a simulated OSC event
-        let testEvent = OscEvent(
-            address: "/scenes/TestScene/load",
-            args: [.float(1.0)],
-            priority: 1
-        )
         
         // We can't easily inject into the running module, so we simulate
         io.print("    → Simulated: /scenes/TestScene/load")
