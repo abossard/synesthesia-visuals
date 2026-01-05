@@ -6,9 +6,9 @@ This guide shows how to use Synesthesia for audio analysis in your VJ setup.
 
 **Synesthesia** (professional audio analysis engine)
   ↓ OSC messages (port 9999)
-**Python OSC Hub** (central router in python-vj)
+**Swift-VJ OSC Hub** (central router in swift-vj)
   ↓ OSC messages (port 9000)
-**Processing/Magic/VPT** (VJ visuals)
+**Swift-VJ/Magic/Resolume** (VJ visuals)
   ↓ Syphon frames
 **Final output** (projectors, screens, streaming)
 
@@ -46,57 +46,37 @@ Download from [synesthesia.live](https://synesthesia.live/)
 1. Open Synesthesia preferences
 2. Navigate to OSC settings
 3. Enable "Send audio analysis via OSC"
-4. **Set target to localhost:9999** (Python Hub receives here)
+4. **Set target to localhost:9999** (Swift-VJ Hub receives here)
 5. Configure which features to send (bass, mid, high, spectrum, etc.)
 
-### 4. Start Python OSC Hub
+### 4. Start Swift-VJ
 
-The Python Hub receives OSC from Synesthesia (port 9999) and routes/forwards to other applications:
+Swift-VJ includes an OSC hub that receives audio data from Synesthesia and routes it to other applications:
 
 ```bash
-cd python-vj
-python vj_console.py  # Starts OSC hub automatically
+cd swift-vj
+swift build
+swift run swift-vj  # Starts OSC hub automatically
 ```
 
-Or run standalone:
-```bash
-cd python-vj
-python -c "from osc_hub import osc; osc.start(); import time; time.sleep(3600)"
-```
-
-## Using with Processing/VJ Software
+## Using with VJ Software
 
 ### Architecture Overview
 
 ```
-Synesthesia (port 9999) → Python OSC Hub (port 9000) → Processing/VJ Apps
+Synesthesia (port 9999) → Swift-VJ OSC Hub (port 9000) → VJ Apps/Rendering
 ```
 
-The Python Hub acts as a central router, receiving OSC from Synesthesia and forwarding to all VJ applications.
+Swift-VJ acts as a central router, receiving OSC from Synesthesia and forwarding to all VJ applications. It also uses the audio data for its own Metal-based rendering engine.
 
-### Processing Integration
+### Swift-VJ Rendering
 
-Processing sketches receive OSC from the Python Hub on port 9000:
+Swift-VJ includes built-in rendering that receives audio data directly from the OSC hub:
 
-```processing
-import oscP5.*;
-import netP5.*;
-
-OscP5 oscP5;
-
-void setup() {
-  oscP5 = new OscP5(this, 9000);  // Synesthesia default port
-}
-
-void oscEvent(OscMessage msg) {
-  if (msg.checkAddrPattern("/audio/bass")) {
-    float bassLevel = msg.get(0).floatValue();
-    // Use bassLevel for visuals
-  }
-}
-```
-
-See `processing-vj/src/VJSims/` for examples of Synesthesia OSC integration.
+- **Shader tiles**: Audio-reactive GLSL shaders rendered with Metal
+- **Text tiles**: Lyrics and song info with beat-synced animations
+- **Image tiles**: Beat-synced image cycling with crossfades
+- **Syphon output**: Send to Magic, Resolume, VDMX, etc.
 
 ### VJ Software Integration
 
@@ -105,17 +85,20 @@ See `processing-vj/src/VJSims/` for examples of Synesthesia OSC integration.
 - **VDMX**: Configure OSC input
 - **MadMapper**: OSC control mapping
 
-## Migrating from Python Audio Analyzer
+## Migrating from Python-VJ
 
-The Python/Essentia audio analyzer has been removed. Benefits of switching to Synesthesia:
+Python-VJ has been archived and replaced by Swift-VJ. See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md) for details.
 
-| Feature | Python Analyzer | Synesthesia |
-|---------|-----------------|-------------|
-| Latency | ~50-100ms | ~10-30ms |
-| Accuracy | Good | Excellent |
-| Setup | Complex (dependencies) | Simple (standalone) |
-| Reliability | Occasional crashes | Rock solid |
-| Integration | Custom OSC | Native + OSC |
+Benefits of Swift-VJ:
+
+| Feature | Python-VJ | Swift-VJ |
+|---------|-----------|----------|
+| Rendering | Processing/Java | Metal (2x faster) |
+| UI | Textual TUI | Native SwiftUI |
+| MIDI | rtmidi wrapper | CoreMIDI |
+| OSC | python-osc | Native Swift |
+| Platform | Cross-platform | macOS optimized |
+| Tests | Some | 197 tests |
 
 ## Troubleshooting
 
@@ -126,10 +109,10 @@ The Python/Essentia audio analyzer has been removed. Benefits of switching to Sy
 
 **OSC not working:**
 - Verify OSC enabled in Synesthesia preferences
-- Check port number matches (default 9000)
-- Test with OSC monitor tool
+- Check port number matches (default 9999 for Synesthesia → Swift-VJ)
+- Check Swift-VJ OSC debug view for incoming messages
 
-**Previous Python analyzer removed:**
+**Migration from Python analyzer:**
 - Synesthesia provides all audio analysis features
 - Superior quality and reliability
 - Native shader integration
@@ -137,5 +120,6 @@ The Python/Essentia audio analyzer has been removed. Benefits of switching to Sy
 ## Next Steps
 
 - Explore Synesthesia's built-in shaders with audio reactivity
-- Create custom shaders using the [Shadertoy to Synesthesia converter](.github/prompts/shadertoy-to-synesthesia-converter.prompt.md)
-- Build interactive visuals in Processing with VJSims framework
+- Create custom shaders using the [Shadertoy to Synesthesia converter](../../.github/prompts/shadertoy-to-synesthesia-converter.prompt.md)
+- Configure Swift-VJ rendering with custom tiles and parameters
+- Set up Launchpad MIDI control for live performance

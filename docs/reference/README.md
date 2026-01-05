@@ -2,28 +2,42 @@
 
 Technical references, guides, and API documentation for the VJ toolkit components.
 
-## Processing Guides
+## Swift-VJ Reference
 
-### Comprehensive Guide Series
+### Core Documentation
+- **[Swift-VJ README](../../swift-vj/README.md)** - Overview and quick start
+- **[Swift-VJ Rewrite Plan](../../swift-vj/REWRITE_PLAN.md)** - Complete architecture and feature inventory
+  - Domain types and pure functions
+  - Adapters (LyricsFetcher, OSCHub, VDJMonitor, etc.)
+  - Modules (Playback, Lyrics, AI, Shaders, Pipeline, Launchpad)
+  - SwiftUI application and Metal rendering
+  - 197 tests with TDD approach
+
+### Metal Rendering
+- **Shader tiles**: GLSL shaders rendered with Metal pipeline
+- **Text tiles**: Lyrics, refrain, song info with SwiftUI
+- **Image tiles**: Beat-synced image cycling with crossfades
+- **Syphon output**: Frame sharing to VJ software
+
+### Launchpad MIDI Control
+- **CoreMIDI integration**: Native device discovery
+- **4 pad modes**: SELECTOR, TOGGLE, ONE_SHOT, PUSH
+- **Learn mode**: Interactive pad mapping
+- **LED control**: 10 colors × 3 brightness levels
+- **Beat sync**: BPM-based LED blinking
+
+## Archived: Processing Guides
+
+> **⚠️ ARCHIVED:** Processing guides have been archived as of 2026-01-05. See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md).
+
+### Comprehensive Guide Series (Archived)
 - **[Processing VJ Guides](processing-guides/README.md)** - Complete series for creating interactive, audio-reactive simulations
-  - [Overview](processing-guides/00-overview.md) - System architecture, quick start, performance targets
-  - [Core Concepts](processing-guides/01-core-concepts.md) - Module lifecycle, coordinate systems, anti-patterns
-  - [Audio Reactivity](processing-guides/02-audio-reactivity.md) - FFT analysis, beat detection, BPM calculation
-  - [Particle Systems](processing-guides/03-particle-systems.md) - CPU & GPU particles, PixelFlow (100k+ particles)
-  - [Fluid Simulations](processing-guides/04-fluid-simulations.md) - Reaction-diffusion, flow fields, GPU fluids
-  - [Design Philosophy](processing-guides/05-design-philosophy.md) - VJ design principles and best practices
-  - [Interactivity](processing-guides/06-interactivity.md) - MIDI, OSC, and user input patterns
-  - [Code Patterns](processing-guides/08-code-patterns.md) - Copy-paste ready modules and algorithms
-  - [Resources](processing-guides/09-resources.md) - Libraries, tools, examples, learning materials
+  - Preserved for reference in `archive/processing-vj/`
+  - Replaced by Swift-VJ Metal rendering
 
-### Advanced Examples
+### Advanced Examples (Archived)
 - **[Processing Levels](processing-levels/README.md)** - 14 detailed visual concept implementations
-  - Gravity Wells, Jelly Blobs, Agent Trails
-  - Reaction Diffusion, Recursive City, Liquid Floor
-  - Cellular Automata, Portal Raymarcher, Rope Simulation
-  - Logo Wind Tunnel, Swarm Cameras, Time Smear
-  - Mirror Rooms, Text Engine
-  - [Common Reference](processing-levels/00-common.md) - Shared patterns and conventions
+  - Archived - use Swift-VJ shader tiles instead
 
 ## Shader References
 
@@ -35,37 +49,37 @@ Technical references, guides, and API documentation for the VJ toolkit component
 
 ## Audio & Analysis
 
-See also: [Python VJ Documentation](../../python-vj/README.md)
+### Synesthesia Integration
+- **Primary audio analysis**: Synesthesia native OSC output (port 9999)
+- **Swift-VJ integration**: OSCHub receives and forwards audio data
+- **Low latency**: ~10-30ms for tight audio reactivity
+- **Features**: Bass/mid/high levels, beat detection, BPM, spectrum
 
-### Core Documentation
-- **Audio Analyzer** - Essentia-based audio analysis
-  - [Essentia Integration](../../python-vj/ESSENTIA_INTEGRATION.md) - Advanced beat/tempo/pitch detection
-  - [EDM Features Guide](../../python-vj/EDM_FEATURES_GUIDE.md) - Electronic music feature extraction
-  - [OSC Visual Mapping](../../python-vj/OSC_VISUAL_MAPPING_GUIDE.md) - Audio → Visual parameter mapping
-
-### MIDI Routing
-- **[MIDI Router](../../python-vj/MIDI_ROUTER.md)** - Stateful MIDI middleware with toggle management
-- **[MIDI Router Quick Reference](../../python-vj/MIDI_ROUTER_QUICK_REF.md)** - Command cheat sheet
-
-### Feature Comparisons
-- **[Python vs MMV Features](../../python-vj/FEATURE_COMPARISON_PYTHON_VS_MMV.md)** - Capability comparison
+### Archived: Python-VJ Audio
+- **[Python VJ Documentation](../../archive/python-vj/README.md)** - Legacy Python VJ Console
+- **Audio Analyzer** - Replaced by Synesthesia native OSC
+  - Archived Essentia-based implementation
+  - See migration guide for feature parity
 
 ## Key Technologies
 
-### Processing
-- **Resolution**: Always use 1920x1080 (Full HD) for VJ output
-- **Renderer**: Use P3D (required for Syphon on macOS)
-- **Libraries**: The MidiBus, Syphon, PixelFlow
+### Swift-VJ
+- **Platform**: macOS 14.0+ (Sonoma)
+- **Language**: Swift 5.9+
+- **Rendering**: Metal for GLSL shaders
+- **UI**: SwiftUI native
+- **MIDI**: CoreMIDI
+- **Tests**: 197 tests with TDD
 
 ### Synesthesia (SSF Format)
 - **Auto-injected uniforms**: TIME, RENDERSIZE, syn_BassLevel, syn_Spectrum, etc.
 - **File structure**: .synScene/ directories with main.glsl, scene.json, optional script.js
 - **Audio reactivity**: Built-in audio analysis uniforms
 
-### Python VJ Stack
-- **Audio**: sounddevice, Essentia, NumPy FFT
-- **Communication**: python-osc, MIDI via mido
-- **UI**: Textual for terminal interface
+### Archived: Processing
+- **Status**: Archived 2026-01-05
+- **Replacement**: Swift-VJ Metal rendering
+- **Legacy docs**: See `archive/processing-vj/` for preserved code
 
 ### Frame Sharing
 - **Syphon** (macOS) - Low-latency frame sharing between apps
@@ -74,16 +88,19 @@ See also: [Python VJ Documentation](../../python-vj/README.md)
 
 ## Conventions & Standards
 
-### Processing Type Safety
-```java
-// Use float for hue/saturation/brightness
-float hue = 0.5f;  // Add 'f' suffix to literals
+### Swift-VJ OSC Messages
+```swift
+// Playback
+/textler/track [active, source, artist, title, album, duration, has_lyrics]
+/textler/line/active [index]
 
-// Cast explicitly when mixing types
-int x = (int)pos.x;
+// Audio (from Synesthesia)
+/audio/bass [level]
+/audio/mid [level]
+/audio/high [level]
 
-// PVector coordinates
-PVector pos = new PVector(100, 200);
+// Shaders
+/shader/load [name, energy, valence]
 ```
 
 ### Launchpad Grid (Programmer Mode)
@@ -91,10 +108,8 @@ PVector pos = new PVector(100, 200);
 8x8 pad grid: notes 11-88
 note = (row+1)*10 + (col+1)
 
-Utility functions in lib/LaunchpadUtils.pde:
-- noteToGrid(note) → PVector(col, row)
-- gridToNote(col, row) → MIDI note
-- isValidPad(note) → boolean
+Swift-VJ provides learn mode for easy pad mapping
+CoreMIDI handles device discovery automatically
 ```
 
 ### SSF Shader Pattern
@@ -113,60 +128,63 @@ vec4 renderMain(void) {
 ### VJ Output Design Principles
 1. **No UI on screen** - No status text, scores, or instructions
 2. **Design for overlay compositing** - Black backgrounds, high contrast
-3. **Emphasize particle effects** - Dramatic, dynamic, always moving
+3. **Emphasize dynamic motion** - Particle effects, animations, always moving
 4. **Separate controller and visual logic** - MIDI for performer, screen for audience
 
 ## Performance Targets
 
-### Processing Sketches
-- **Target**: 60 fps at 1920x1080
-- **CPU**: <15% per sketch
-- **Particles**: 100k+ with GPU acceleration (PixelFlow)
-
-### Python Audio Analyzer
-- **Latency**: ~10ms analysis + <1ms OSC transmission
-- **CPU**: 5-10%
-- **Frame rate**: 60+ fps
+### Swift-VJ
+- **Rendering**: 60 fps at configurable resolution
+- **Metal shaders**: GPU-accelerated, minimal CPU overhead
+- **Latency**: ~30ms total (audio → visual output)
+- **CPU usage**: <10% for typical workload
 
 ### End-to-End Pipeline
-- **Total latency**: ~30ms (audio → visual output)
-- **Combined CPU**: ~10-15%
+- **Synesthesia analysis**: ~10-30ms latency
+- **OSC transmission**: <1ms
+- **Swift-VJ rendering**: ~16ms (60 fps)
+- **Total latency**: ~30-50ms (audio → visual output)
 
 ## API Quick Reference
 
-### Processing + Syphon
-```java
-import codeanticode.syphon.*;
-SyphonServer syphon;
+### Swift-VJ + Syphon
+```swift
+import Syphon
 
-void settings() { size(1920, 1080, P3D); }
-void setup() { syphon = new SyphonServer(this, "GameName"); }
-void draw() { 
-    // render
-    syphon.sendScreen();
+class SyphonOutput {
+    private var server: SyphonServer?
+    
+    func start(name: String) {
+        server = SyphonServer(name: name)
+    }
+    
+    func publish(texture: MTLTexture) {
+        server?.publish(texture: texture)
+    }
 }
 ```
 
-### Processing + MIDI
-```java
-import themidibus.*;
-MidiBus midi;
+### Swift-VJ + CoreMIDI
+```swift
+import CoreMIDI
 
-void setup() {
-    midi = new MidiBus(this, "Launchpad Mini MK3", "Launchpad Mini MK3");
-}
-
-void noteOn(int channel, int pitch, int velocity) {
-    // handle MIDI input
+class MIDIManager {
+    func discoverDevices() -> [MIDIDevice] {
+        // Automatic device discovery
+    }
+    
+    func sendNoteOn(note: UInt8, velocity: UInt8) {
+        // Send MIDI note
+    }
 }
 ```
 
-### Python OSC
-```python
-from pythonosc import osc_message_builder, udp_client
+### Swift OSC
+```swift
+import OSCKit
 
-client = udp_client.SimpleUDPClient("127.0.0.1", 9000)
-client.send_message("/audio/level", [0.5, 0.3, 0.8])
+let client = OSCClient(host: "127.0.0.1", port: 9000)
+client.send("/audio/level", [0.5, 0.3, 0.8])
 ```
 
 ## See Also
@@ -174,4 +192,5 @@ client.send_message("/audio/level", [0.5, 0.3, 0.8])
 - [Setup Guides](../setup/) - Installation and configuration
 - [Operation Guides](../operation/) - How to use in performance
 - [Development Plans](../development/) - Implementation roadmaps
-- [Architecture](../architecture/) - System design (when created)
+- [Migration Guide](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md) - Python-VJ/Processing-VJ to Swift-VJ
+- [Archived Components](../../archive/README.md) - Legacy systems and documentation
