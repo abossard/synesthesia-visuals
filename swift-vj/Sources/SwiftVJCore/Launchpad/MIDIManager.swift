@@ -407,7 +407,12 @@ public final class MIDIManager: @unchecked Sendable {
                 listPacketPtr.pointee = packetPtr.pointee
             }
             
-            MIDISendEventList(outputPort, connectedOutput, &list)
+            let result = MIDISendEventList(outputPort, connectedOutput, &list)
+            if result != noErr {
+                print("[MIDI] Error sending NoteOn: \(result)")
+            } else {
+                // print("[MIDI] Sent NoteOn ch=\(channel) note=\(note) vel=\(velocity)")
+            }
         }
     }
     
@@ -429,7 +434,10 @@ public final class MIDIManager: @unchecked Sendable {
                 listPacketPtr.pointee = packetPtr.pointee
             }
             
-            MIDISendEventList(outputPort, connectedOutput, &list)
+            let result = MIDISendEventList(outputPort, connectedOutput, &list)
+            if result != noErr {
+                print("[MIDI] Error sending NoteOff: \(result)")
+            }
         }
     }
     
@@ -452,7 +460,12 @@ public final class MIDIManager: @unchecked Sendable {
                 listPacketPtr.pointee = packetPtr.pointee
             }
             
-            MIDISendEventList(outputPort, connectedOutput, &list)
+            let result = MIDISendEventList(outputPort, connectedOutput, &list)
+            if result != noErr {
+                print("[MIDI] Error sending CC: \(result)")
+            } else {
+                // print("[MIDI] Sent CC ch=\(channel) ctrl=\(controller) val=\(value)")
+            }
         }
     }
     
@@ -485,7 +498,8 @@ public final class MIDIManager: @unchecked Sendable {
             withUnsafeMutablePointer(to: &list1.packet) { listPtr in
                 listPtr.pointee = ptr1.pointee
             }
-            MIDISendEventList(outputPort, connectedOutput, &list1)
+            let res1 = MIDISendEventList(outputPort, connectedOutput, &list1)
+            if res1 != noErr { print("[MIDI] Error sending DAW SysEx 1: \(res1)") }
         }
         
         // Send Msg 2
@@ -496,7 +510,8 @@ public final class MIDIManager: @unchecked Sendable {
             withUnsafeMutablePointer(to: &list2.packet) { listPtr in
                 listPtr.pointee = ptr2.pointee
             }
-            MIDISendEventList(outputPort, connectedOutput, &list2)
+            let res2 = MIDISendEventList(outputPort, connectedOutput, &list2)
+            if res2 != noErr { print("[MIDI] Error sending DAW SysEx 2: \(res2)") }
         }
         
         print("[MIDI] Sent DAW Mode SysEx")
@@ -525,15 +540,6 @@ public final class MIDIManager: @unchecked Sendable {
         packet2.words.0 = 0x30330E01
         packet2.words.1 = 0xF7000000
         
-        // Send as list
-        var list = MIDIEventList()
-        list.protocol = ._1_0
-        list.numPackets = 2
-        
-        // We need to append packets manually to the list
-        // This is tricky with Swift's MIDIEventList structure which is a C struct with a trailing array
-        // Easier to send them one by one for now, or use a helper
-        
         // Send Msg 1
         withUnsafePointer(to: packet1) { ptr1 in
             var list1 = MIDIEventList()
@@ -542,7 +548,8 @@ public final class MIDIManager: @unchecked Sendable {
             withUnsafeMutablePointer(to: &list1.packet) { listPtr in
                 listPtr.pointee = ptr1.pointee
             }
-            MIDISendEventList(outputPort, connectedOutput, &list1)
+            let res1 = MIDISendEventList(outputPort, connectedOutput, &list1)
+            if res1 != noErr { print("[MIDI] Error sending ProgMode SysEx 1: \(res1)") }
         }
         
         // Send Msg 2
@@ -553,7 +560,8 @@ public final class MIDIManager: @unchecked Sendable {
             withUnsafeMutablePointer(to: &list2.packet) { listPtr in
                 listPtr.pointee = ptr2.pointee
             }
-            MIDISendEventList(outputPort, connectedOutput, &list2)
+            let res2 = MIDISendEventList(outputPort, connectedOutput, &list2)
+            if res2 != noErr { print("[MIDI] Error sending ProgMode SysEx 2: \(res2)") }
         }
         
         print("[MIDI] Sent Programmer Mode SysEx")

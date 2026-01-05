@@ -323,12 +323,12 @@ struct TileConfig: Sendable {
     let width: Int
     let height: Int
 
-    static let shader = TileConfig(name: "Shader", syphonName: "SwiftVJ/Shader", width: 1280, height: 720)
-    static let mask = TileConfig(name: "Mask", syphonName: "SwiftVJ/Mask", width: 1280, height: 720)
-    static let lyrics = TileConfig(name: "Lyrics", syphonName: "SwiftVJ/Lyrics", width: 1280, height: 720)
-    static let refrain = TileConfig(name: "Refrain", syphonName: "SwiftVJ/Refrain", width: 1280, height: 720)
-    static let songInfo = TileConfig(name: "SongInfo", syphonName: "SwiftVJ/SongInfo", width: 1280, height: 720)
-    static let image = TileConfig(name: "Image", syphonName: "SwiftVJ/Image", width: 1280, height: 720)
+    static let shader = TileConfig(name: "Shader", syphonName: "Shader", width: 1280, height: 720)
+    static let mask = TileConfig(name: "Mask", syphonName: "Mask", width: 1280, height: 720)
+    static let lyrics = TileConfig(name: "Lyrics", syphonName: "Lyrics", width: 1280, height: 720)
+    static let refrain = TileConfig(name: "Refrain", syphonName: "Refrain", width: 1280, height: 720)
+    static let songInfo = TileConfig(name: "SongInfo", syphonName: "SongInfo", width: 1280, height: 720)
+    static let image = TileConfig(name: "Image", syphonName: "Image", width: 1280, height: 720)
 }
 
 // MARK: - Utility Functions

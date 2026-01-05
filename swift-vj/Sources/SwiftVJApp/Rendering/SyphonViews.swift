@@ -13,8 +13,8 @@ import SyphonKit
 struct SyphonThumbnailView: View {
     let serverName: String
     
+    @StateObject private var receiver = SyphonReceiverHolder()
     @State private var previewImage: NSImage?
-    @State private var isConnected: Bool = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -27,7 +27,7 @@ struct SyphonThumbnailView: View {
                         .aspectRatio(contentMode: .fit)
                 } else {
                     VStack(spacing: 4) {
-                        Image(systemName: "video.slash")
+                        Image(systemName: receiver.isConnected ? "antenna.radiowaves.left.and.right" : "video.slash")
                             .font(.title2)
                             .foregroundColor(.gray)
                         Text(serverName)
@@ -38,48 +38,22 @@ struct SyphonThumbnailView: View {
             }
         }
         .onAppear {
-            startReceiving()
+            receiver.connect(serverName: serverName)
+        }
+        .onDisappear {
+            receiver.disconnect()
         }
         .onReceive(Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()) { _ in
             updatePreview()
         }
     }
     
-    private func startReceiving() {
-        updatePreview()
-    }
-    
     private func updatePreview() {
-        Task { @MainActor in
-            guard let texture = getSyphonTexture() else {
-                isConnected = false
-                return
-            }
-            
-            isConnected = true
-            if let image = textureToNSImage(texture) {
-                previewImage = image
-            }
+        guard let texture = receiver.currentFrame() else { return }
+        
+        if let image = textureToNSImage(texture) {
+            previewImage = image
         }
-    }
-    
-    private func getSyphonTexture() -> MTLTexture? {
-        // Find and connect to the server
-        guard let device = MTLCreateSystemDefaultDevice() else { return nil }
-        
-        let receiver = SyphonReceiver(device: device)
-        
-        // Try to connect to the server by name
-        // Server name format: "SwiftVJ/Shader" -> app="SwiftVJ", server="Shader"
-        let parts = serverName.split(separator: "/")
-        let appName = parts.first.map(String.init) ?? "SwiftVJ"
-        let name = parts.count > 1 ? String(parts[1]) : nil
-        
-        if receiver.connect(appName: appName, serverName: name) {
-            return receiver.currentFrame()
-        }
-        
-        return nil
     }
     
     private func textureToNSImage(_ texture: MTLTexture) -> NSImage? {
@@ -91,7 +65,6 @@ struct SyphonThumbnailView: View {
         var readableTexture: MTLTexture = texture
         
         if texture.storageMode == .private {
-            // Create a managed texture to copy into
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: texture.pixelFormat,
                 width: width,
@@ -109,7 +82,6 @@ struct SyphonThumbnailView: View {
                 return nil
             }
             
-            // Copy from private to managed texture
             blitEncoder.copy(
                 from: texture,
                 sourceSlice: 0,
@@ -130,7 +102,6 @@ struct SyphonThumbnailView: View {
             readableTexture = managedTexture
         }
         
-        // Read texture data from the readable texture
         var imageBytes = [UInt8](repeating: 0, count: bytesPerRow * height)
         readableTexture.getBytes(
             &imageBytes,
@@ -140,7 +111,6 @@ struct SyphonThumbnailView: View {
             mipmapLevel: 0
         )
         
-        // Create CGImage
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
         
@@ -160,15 +130,69 @@ struct SyphonThumbnailView: View {
     }
 }
 
+// MARK: - Syphon Receiver Holder
+
+/// Observable holder for SyphonReceiver to persist across view updates
+final class SyphonReceiverHolder: ObservableObject {
+    private var receiver: SyphonReceiver?
+    private let device: MTLDevice?
+    private var targetServerName: String = ""
+    private var retryCount = 0
+    private let maxRetries = 10
+    
+    @Published var isConnected: Bool = false
+    
+    init() {
+        self.device = MTLCreateSystemDefaultDevice()
+    }
+    
+    func connect(serverName: String) {
+        guard let device = device else { return }
+        
+        targetServerName = serverName
+        receiver = SyphonReceiver(device: device)
+        
+        // Simple server name lookup (e.g., "Shader") - app name is auto-detected
+        if receiver?.connect(appName: nil, serverName: serverName) == true {
+            isConnected = true
+            retryCount = 0
+            print("[SyphonThumbnail] Connected to \(serverName)")
+        } else {
+            isConnected = false
+            // Retry after a delay (server might not be ready yet)
+            if retryCount < maxRetries {
+                retryCount += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.connect(serverName: serverName)
+                }
+            }
+        }
+    }
+    
+    func disconnect() {
+        receiver?.disconnect()
+        receiver = nil
+        isConnected = false
+    }
+    
+    func currentFrame() -> MTLTexture? {
+        // Try to reconnect if not connected
+        if !isConnected && retryCount < maxRetries {
+            connect(serverName: targetServerName)
+        }
+        return receiver?.currentFrame()
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
     VStack {
-        SyphonThumbnailView(serverName: "SwiftVJ/Shader")
+        SyphonThumbnailView(serverName: "Shader")
             .aspectRatio(16/9, contentMode: .fit)
             .frame(height: 200)
         
-        SyphonThumbnailView(serverName: "SwiftVJ/Lyrics")
+        SyphonThumbnailView(serverName: "Lyrics")
             .aspectRatio(16/9, contentMode: .fit)
             .frame(height: 200)
     }

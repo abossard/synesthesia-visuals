@@ -132,11 +132,20 @@ public final class LaunchpadModule: @unchecked Sendable {
             print("[Launchpad] ✓ Enabled - connected to \(deviceName ?? "device")")
             lock.unlock()
             
+            // Force Programmer Mode immediately
+            forceProgrammerMode()
+            
             // Refresh LEDs now that we're connected
             refreshLeds()
             
             // Start beat-sync blink timer
             startBlinkTimer()
+            
+            // Notify UI of initial state
+            let currentState = state
+            DispatchQueue.main.async { [weak self] in
+                self?.onStateChange?(currentState)
+            }
         } else {
             isEnabled = false
             stopBlinkTimer()

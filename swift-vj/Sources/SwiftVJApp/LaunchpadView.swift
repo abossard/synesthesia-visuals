@@ -163,7 +163,30 @@ struct LaunchpadView: View {
                             let clears = allPads.map { ($0, LP.off) }
                             appState.launchpadModule?.setLeds(clears)
                         }
-                    } else {
+                    }
+                    
+                    // Always show Diagnostics if connected, even if state is missing
+                    if appState.launchpadStatus?.isConnected == true && appState.launchpadState == nil {
+                        Divider()
+                        Text("Diagnostics (State Missing)")
+                            .font(.headline)
+                            .foregroundColor(.orange)
+                        
+                        Button("Force Programmer Mode") {
+                            appState.launchpadModule?.forceProgrammerMode()
+                        }
+                        
+                        Button("Flash All LEDs") {
+                            let allPads = (0...8).flatMap { x in (0...8).map { y in ButtonId(x: x, y: y) } }
+                            let updates = allPads.map { ($0, LP.red) }
+                            appState.launchpadModule?.setLeds(updates)
+                            
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                let clears = allPads.map { ($0, LP.off) }
+                                appState.launchpadModule?.setLeds(clears)
+                            }
+                        }
+                    } else if appState.launchpadState == nil {
                         Text("No state available")
                             .foregroundColor(.secondary)
                     }

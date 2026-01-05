@@ -491,7 +491,7 @@ struct RenderingView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo"], id: \.self) { tile in
                         VStack(spacing: 4) {
-                            SyphonThumbnailView(serverName: "SwiftVJ/\(tile)")
+                            SyphonThumbnailView(serverName: tile)
                                 .aspectRatio(16/9, contentMode: .fit)
                                 .frame(height: 60)
                                 .cornerRadius(4)
@@ -518,12 +518,12 @@ struct RenderingView: View {
         // UI only displays Syphon client previews
         let serverName: String = {
             switch selectedTile {
-            case "shader": return "SwiftVJ/Shader"
-            case "mask": return "SwiftVJ/Mask"
-            case "lyrics": return "SwiftVJ/Lyrics"
-            case "refrain": return "SwiftVJ/Refrain"
-            case "songInfo": return "SwiftVJ/SongInfo"
-            default: return "SwiftVJ/Shader"
+            case "shader": return "Shader"
+            case "mask": return "Mask"
+            case "lyrics": return "Lyrics"
+            case "refrain": return "Refrain"
+            case "songInfo": return "SongInfo"
+            default: return "Shader"
             }
         }()
         
