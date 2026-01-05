@@ -33,8 +33,9 @@ public enum MIDIMessage: Sendable {
     case controlChange(channel: Int, controller: Int, value: Int)
     
     /// Convert to ButtonId (Launchpad Programmer mode)
-    /// - Notes 11-88: grid pads (y=0-7) and scene buttons (x=8)
+    /// - Notes 11-88: grid pads (y=0-7)
     /// - CC 91-98: top row buttons (x=0-7, y=-1)
+    /// - CC 19,29,39,49,59,69,79,89: scene buttons (x=8, y=0-7)
     public var buttonId: ButtonId? {
         switch self {
         case .noteOn(_, let note, _), .noteOff(_, let note, _):
@@ -43,6 +44,11 @@ public enum MIDIMessage: Sendable {
             // Top row: CC 91-98 → x=0-7, y=-1
             if controller >= 91 && controller <= 98 {
                 return ButtonId(x: controller - 91, y: -1)
+            }
+            // Scene buttons (right column): CC 19,29,39,49,59,69,79,89 → x=8, y=0-7
+            if controller >= 19 && controller <= 89 && controller % 10 == 9 {
+                let row = (controller / 10) - 1  // CC 19→row 0, CC 89→row 7
+                return ButtonId(x: 8, y: row)
             }
             return nil
         }
@@ -133,7 +139,7 @@ public final class MIDIManager: @unchecked Sendable {
         }
         
         // Create input port
-        MIDIInputPortCreateWithProtocol(
+        let inputStatus = MIDIInputPortCreateWithProtocol(
             client,
             "Input" as CFString,
             ._1_0,
@@ -142,8 +148,16 @@ public final class MIDIManager: @unchecked Sendable {
             self?.handleMIDIEvents(eventList)
         }
         
+        if inputStatus != noErr {
+            print("[MIDI] Failed to create input port: \(inputStatus)")
+        }
+        
         // Create output port
-        MIDIOutputPortCreate(client, "Output" as CFString, &outputPort)
+        let outputStatus = MIDIOutputPortCreate(client, "Output" as CFString, &outputPort)
+        
+        if outputStatus != noErr {
+            print("[MIDI] Failed to create output port: \(outputStatus)")
+        }
         
         print("[MIDI] CoreMIDI initialized - \(MIDIGetNumberOfSources()) sources, \(MIDIGetNumberOfDestinations()) destinations")
     }
@@ -274,14 +288,34 @@ public final class MIDIManager: @unchecked Sendable {
     }
     
     /// Find first Launchpad device
+    /// Prefers the MIDI port over the DAW port for Programmer mode LED control
     public func findLaunchpad() -> (input: MIDIDeviceInfo, output: MIDIDeviceInfo)? {
         let inputs = availableInputs().filter { $0.isLaunchpad }
         let outputs = availableOutputs().filter { $0.isLaunchpad }
         
-        guard let input = inputs.first, let output = outputs.first else {
+        // Debug: show all Launchpad ports
+        print("[MIDI] Available Launchpad inputs: \(inputs.map { $0.name })")
+        print("[MIDI] Available Launchpad outputs: \(outputs.map { $0.name })")
+        
+        // Prefer MIDI port over DAW port for LED control in Programmer mode
+        // DAW ports contain "DAW" in their name, MIDI ports contain "MIDI" or neither
+        let preferMIDI: (MIDIDeviceInfo, MIDIDeviceInfo) -> Bool = { a, b in
+            let aIsDAW = a.name.lowercased().contains("daw")
+            let bIsDAW = b.name.lowercased().contains("daw")
+            // Prefer non-DAW (MIDI) ports
+            if aIsDAW && !bIsDAW { return false }
+            if !aIsDAW && bIsDAW { return true }
+            return true // Keep original order otherwise
+        }
+        
+        let sortedInputs = inputs.sorted(by: preferMIDI)
+        let sortedOutputs = outputs.sorted(by: preferMIDI)
+        
+        guard let input = sortedInputs.first, let output = sortedOutputs.first else {
             return nil
         }
         
+        print("[MIDI] Selected Launchpad: IN=\(input.name) / OUT=\(output.name)")
         return (input, output)
     }
     
@@ -389,8 +423,13 @@ public final class MIDIManager: @unchecked Sendable {
     
     // MARK: - Send
     
+    private var sendCount = 0
+    
     private func sendBytes(_ bytes: [UInt8]) {
-        guard isConnected, connectedOutput != 0 else { return }
+        guard isConnected, connectedOutput != 0 else {
+            print("[MIDI] sendBytes skipped - not connected (isConnected=\(isConnected), output=\(connectedOutput))")
+            return
+        }
         
         var packet = MIDIPacket()
         packet.timeStamp = 0
@@ -411,8 +450,12 @@ public final class MIDIManager: @unchecked Sendable {
         
         withUnsafePointer(to: packetList) { ptr in
             let result = MIDISend(outputPort, connectedOutput, ptr)
+            sendCount += 1
             if result != noErr {
-                print("[MIDI] Error sending legacy packet: \(result)")
+                print("[MIDI] Error sending packet: \(result) (OSStatus)")
+            } else if sendCount <= 5 || sendCount % 100 == 0 {
+                // Log first few sends and then periodically
+                print("[MIDI] Sent \(sendCount): \(bytes.map { String(format: "%02X", $0) }.joined(separator: " ")) to endpoint \(connectedOutput)")
             }
         }
     }
@@ -452,8 +495,12 @@ public final class MIDIManager: @unchecked Sendable {
             // Top row uses CC 91-98
             let controller = 91 + padId.x
             sendControlChange(channel: 0, controller: controller, value: color)
+        } else if padId.isSceneButton {
+            // Scene buttons (right column) use CC 19,29,39,49,59,69,79,89
+            let controller = (padId.y + 1) * 10 + 9  // y=0→CC19, y=7→CC89
+            sendControlChange(channel: 0, controller: controller, value: color)
         } else {
-            // Grid and Scene buttons use Note On
+            // Grid pads use Note On
             sendNoteOn(channel: 0, note: padId.midiNote, velocity: color)
         }
     }
@@ -477,22 +524,40 @@ public final class MIDIManager: @unchecked Sendable {
         let packet = eventList.pointee.packet
         let word = packet.words.0
         
-        // Parse MIDI 1.0 message
-        let messageType = (word >> 20) & 0xF
+        // Parse MIDI 1.0 Channel Voice Message in UMP format:
+        // Bits 28-31: Message Type (0x2 for MIDI 1.0 CV)
+        // Bits 24-27: Group
+        // Bits 20-23: Status/Opcode (0x9=NoteOn, 0x8=NoteOff, 0xB=CC)
+        // Bits 16-19: Channel
+        // Bits 8-15: Data1 (note/controller)
+        // Bits 0-7: Data2 (velocity/value)
+        
+        let umpType = (word >> 28) & 0xF
+        let status = (word >> 20) & 0xF
         let channel = Int((word >> 16) & 0xF)
         let data1 = Int((word >> 8) & 0x7F)
         let data2 = Int(word & 0x7F)
         
+        // Debug: log raw MIDI receive
+        if umpType == 0x2 {  // MIDI 1.0 Channel Voice
+            print("[MIDI] RX: type=\(umpType) status=\(String(format: "0x%X", status)) ch=\(channel) d1=\(data1) d2=\(data2)")
+        }
+        
         let message: MIDIMessage?
         
-        switch messageType {
-        case 0x9:  // Note On
-            message = .noteOn(channel: channel, note: data1, velocity: data2)
-        case 0x8:  // Note Off
-            message = .noteOff(channel: channel, note: data1, velocity: data2)
-        case 0xB:  // Control Change
-            message = .controlChange(channel: channel, controller: data1, value: data2)
-        default:
+        // Only process MIDI 1.0 Channel Voice Messages (UMP type 0x2)
+        if umpType == 0x2 {
+            switch status {
+            case 0x9:  // Note On
+                message = .noteOn(channel: channel, note: data1, velocity: data2)
+            case 0x8:  // Note Off
+                message = .noteOff(channel: channel, note: data1, velocity: data2)
+            case 0xB:  // Control Change
+                message = .controlChange(channel: channel, controller: data1, value: data2)
+            default:
+                message = nil
+            }
+        } else {
             message = nil
         }
         
