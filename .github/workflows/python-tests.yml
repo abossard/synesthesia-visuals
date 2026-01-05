@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r python-vj/requirements.txt
+          # Install core dependencies for testing (skip optional audio deps)
+          pip install pydantic>=2.0.0 python-osc>=1.8.3 psutil>=5.9.0 python-dotenv>=1.0.0 requests>=2.31.0
       
       - name: Syntax check all Python files
         run: |
@@ -43,12 +44,29 @@ jobs:
           python -m py_compile karaoke_engine.py
           python -m py_compile vj_console.py
           python -m py_compile process_manager.py
+          # Compile vj_bus library
+          python -m py_compile vj_bus/*.py
+          # Compile worker files
+          python -m py_compile vj_*_worker.py
+          python -m py_compile worker_coordinator.py
           echo "All Python files have valid syntax"
       
-      - name: Run unit tests
+      - name: Run vj_bus unit tests
         run: |
           cd python-vj
-          python test_python_vj.py -v
+          python -m unittest tests.test_vj_bus -v
+      
+      - name: Run integration tests
+        run: |
+          cd python-vj
+          python -m unittest tests.test_integration -v
+      
+      # Legacy tests disabled - they test old monolithic architecture
+      # New multi-process architecture uses tests.test_vj_bus and tests.test_integration
+      # - name: Run legacy unit tests
+      #   run: |
+      #     cd python-vj
+      #     python test_python_vj.py -v
       
       - name: Test CLI help commands
         run: |
