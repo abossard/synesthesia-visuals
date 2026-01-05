@@ -569,8 +569,8 @@ public final class LaunchpadInteractiveTests {
                 padId: ButtonId(x: 0, y: 0),
                 mode: .selector,
                 group: .scenes,
-                idleColor: LaunchpadColor.red.velocities.normal,
-                activeColor: LaunchpadColor.red.velocities.bright,
+                idleColor: LaunchpadColor.red.rawValue,
+                activeColor: LaunchpadColor.red.rawValue,
                 oscAction: OscCommand(address: "/test/selector", args: [.float(1.0)])
             )
             module.configurePad(ButtonId(x: 0, y: 0), behavior: behavior1)
@@ -578,8 +578,8 @@ public final class LaunchpadInteractiveTests {
             let behavior2 = PadBehavior(
                 padId: ButtonId(x: 1, y: 0),
                 mode: .toggle,
-                idleColor: LaunchpadColor.green.velocities.normal,
-                activeColor: LaunchpadColor.green.velocities.bright,
+                idleColor: LaunchpadColor.green.rawValue,
+                activeColor: LaunchpadColor.green.rawValue,
                 oscOn: OscCommand(address: "/test/toggle", args: [.float(1.0)]),
                 oscOff: OscCommand(address: "/test/toggle", args: [.float(0.0)])
             )

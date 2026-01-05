@@ -68,29 +68,35 @@ public func exitLearnMode(_ state: ControllerState) -> FSMResult {
     return FSMResult(
         state: newState,
         effects: [
-            // Learn button solid RED when idle (ready to record)
-            .setLed(padId: LaunchpadButton.learn, color: LP.red, blink: false),
+            // Learn button solid GREEN when idle (ready to learn)
+            .setLed(padId: LaunchpadButton.learn, color: LP.greenDim, blink: false),
             .log(message: "Exited learn mode", level: .info)
         ]
     )
 }
 
-/// User selected a pad to configure - start recording OSC
+/// User selected a pad to configure - go directly to CONFIG with live capture
 public func selectPadForConfig(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     var newState = state
-    newState.learnState.phase = .recordOsc
+    newState.learnState.phase = .config
     newState.learnState.selectedPad = padId
-    newState.learnState.recordedEvents = []
+    newState.learnState.capturedOsc = []
+    newState.learnState.activeRegister = .oscSelect
     
     return FSMResult(
         state: newState,
-        effects: [.log(message: "Recording OSC for pad \(padId)", level: .info)]
+        effects: [.log(message: "Config mode for pad \(padId) - interact with Synesthesia", level: .info)]
     )
 }
 
-/// Record an incoming OSC event during recording phase
-public func recordOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResult {
-    guard state.learnState.phase == .recordOsc else {
+/// Capture an incoming OSC event during config phase (live capture)
+public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResult {
+    guard state.learnState.phase == .config else {
+        return FSMResult(state: state)
+    }
+    
+    // Skip audio messages - never capture these
+    if event.address.hasPrefix("/audio/") {
         return FSMResult(state: state)
     }
     
@@ -100,48 +106,67 @@ public func recordOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResu
     }
     
     var newState = state
-    newState.learnState.recordedEvents.append(event)
     
-    let uniqueCount = Set(newState.learnState.recordedEvents.map { $0.address }).count
-    return FSMResult(
-        state: newState,
-        effects: [.log(message: "Recorded (\(uniqueCount)): \(event.address)", level: .info)]
-    )
+    // Check if already captured
+    let existingIndex = newState.learnState.capturedOsc.firstIndex { $0.command.address == event.address }
+    
+    if existingIndex == nil {
+        // New OSC - only enable if it's the first one (highest priority)
+        // After sorting, check if this would become the first
+        let isFirst = newState.learnState.capturedOsc.isEmpty
+        
+        let captured = CapturedOsc(
+            command: event.toCommand(),
+            priority: event.priority,
+            isEnabled: isFirst  // Only first (highest priority) enabled by default
+        )
+        newState.learnState.capturedOsc.append(captured)
+        
+        // Sort by priority
+        newState.learnState.capturedOsc.sort { $0.priority < $1.priority }
+        
+        // After sorting, ensure only the first one is enabled
+        // (in case a higher priority one arrived later)
+        if let firstIndex = newState.learnState.capturedOsc.indices.first {
+            for i in newState.learnState.capturedOsc.indices {
+                newState.learnState.capturedOsc[i].isEnabled = (i == firstIndex)
+            }
+        }
+        
+        // Auto-suggest mode from highest priority enabled
+        if let primary = newState.learnState.primaryCommand, newState.learnState.selectedMode == nil {
+            newState.learnState.selectedMode = categorizeOsc(primary.address).mode
+        }
+        
+        return FSMResult(
+            state: newState,
+            effects: [.log(message: "Captured: \(event.address)", level: .info)]
+        )
+    }
+    
+    return FSMResult(state: state)
 }
 
-/// Finish OSC recording and move to config phase
-public func finishRecording(_ state: ControllerState) -> FSMResult {
-    let events = state.learnState.recordedEvents
-    
-    if events.isEmpty {
-        return exitLearnMode(state)
+/// Toggle enable/disable for a captured OSC
+public func toggleOscEnabled(_ state: ControllerState, index: Int) -> FSMResult {
+    guard state.learnState.phase == .config,
+          index >= 0 && index < state.learnState.capturedOsc.count else {
+        return FSMResult(state: state)
     }
-    
-    // Sort by priority and dedupe
-    let sortedEvents = events.sorted { ($0.priority, $0.timestamp) < ($1.priority, $1.timestamp) }
-    var seenAddresses = Set<String>()
-    var uniqueCommands: [OscCommand] = []
-    
-    for event in sortedEvents {
-        if !seenAddresses.contains(event.address) {
-            seenAddresses.insert(event.address)
-            uniqueCommands.append(event.toCommand())
-        }
-    }
-    
-    // Suggest mode based on first command
-    let suggestedMode: PadMode = uniqueCommands.first.flatMap { categorizeOsc($0.address).mode } ?? .toggle
     
     var newState = state
-    newState.learnState.phase = .config
-    newState.learnState.candidateCommands = uniqueCommands
-    newState.learnState.selectedOscIndex = 0
-    newState.learnState.selectedMode = suggestedMode
-    newState.learnState.activeRegister = .oscSelect
+    newState.learnState.capturedOsc[index].isEnabled.toggle()
     
+    // Update suggested mode based on new primary
+    if let primary = newState.learnState.primaryCommand {
+        newState.learnState.selectedMode = categorizeOsc(primary.address).mode
+    }
+    
+    let osc = newState.learnState.capturedOsc[index]
+    let status = osc.isEnabled ? "enabled" : "disabled"
     return FSMResult(
         state: newState,
-        effects: [.log(message: "Recorded \(uniqueCommands.count) unique commands", level: .info)]
+        effects: [.log(message: "\(osc.command.address) \(status)", level: .info)]
     )
 }
 
@@ -151,9 +176,18 @@ public func finishRecording(_ state: ControllerState) -> FSMResult {
 public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     let phase = state.learnState.phase
     
-    // Learn button toggles learn mode
+    // Learn button behavior depends on phase
     if padId == LaunchpadButton.learn {
-        return phase == .idle ? enterLearnMode(state) : exitLearnMode(state)
+        switch phase {
+        case .idle:
+            return enterLearnMode(state)
+        case .waitPad:
+            // Cancel - exit learn mode
+            return exitLearnMode(state)
+        case .config:
+            // Exit config (cancel)
+            return exitLearnMode(state)
+        }
     }
     
     switch phase {
@@ -161,13 +195,6 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
         return handleNormalPress(state, padId: padId)
     case .waitPad:
         return padId.isGrid ? selectPadForConfig(state, padId: padId) : FSMResult(state: state)
-    case .recordOsc:
-        if padId == LaunchpadButton.save {
-            return saveFromRecording(state)
-        } else if padId == LaunchpadButton.cancel {
-            return exitLearnMode(state)
-        }
-        return FSMResult(state: state)
     case .config:
         return handleConfigPadPress(state, padId: padId)
     }
@@ -354,6 +381,7 @@ private func handleConfigPadPress(_ state: ControllerState, padId: ButtonId) -> 
 private func handleOscSelectInput(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     var newState = state
     let learn = state.learnState
+    let slotsPerPage = 32  // 4 rows × 8 columns
     
     // Pagination
     if padId == LaunchpadButton.oscPagePrev && learn.oscPage > 0 {
@@ -361,22 +389,17 @@ private func handleOscSelectInput(_ state: ControllerState, padId: ButtonId) -> 
         return FSMResult(state: newState)
     }
     
-    let maxPages = (learn.candidateCommands.count - 1) / 8
+    let maxPages = (learn.capturedOsc.count - 1) / slotsPerPage
     if padId == LaunchpadButton.oscPageNext && learn.oscPage < maxPages {
         newState.learnState.oscPage += 1
         return FSMResult(state: newState)
     }
     
-    // OSC selection (row 3, columns 0-7)
-    if padId.y == 3 && padId.x >= 0 && padId.x <= 7 {
-        let index = learn.oscPage * 8 + padId.x
-        if index < learn.candidateCommands.count {
-            let cmd = learn.candidateCommands[index]
-            let suggestedMode = categorizeOsc(cmd.address).mode
-            newState.learnState.selectedOscIndex = index
-            newState.learnState.selectedMode = suggestedMode
-            return FSMResult(state: newState)
-        }
+    // OSC toggle (rows 5,4,3,2 top to bottom, columns 0-7) - toggle enable/disable
+    if padId.y >= 2 && padId.y <= 5 && padId.x >= 0 && padId.x <= 7 {
+        let rowOffset = 5 - padId.y  // row 5 = offset 0, row 4 = offset 1, etc.
+        let index = learn.oscPage * slotsPerPage + rowOffset * 8 + padId.x
+        return toggleOscEnabled(state, index: index)
     }
     
     return FSMResult(state: state)
@@ -397,22 +420,11 @@ private func handleColorSelectInput(_ state: ControllerState, padId: ButtonId) -
     var newState = state
     let colors = LaunchpadColor.allCases
     
-    // Idle color grid (rows 2-3, cols 0-3)
-    if padId.x >= 0 && padId.x <= 3 && padId.y >= 2 && padId.y <= 3 {
-        let idx = (padId.y - 2) * 4 + padId.x
+    // Color grid: rows 0-3, cols 0-7 (32 colors)
+    if padId.y >= 0 && padId.y <= 3 && padId.x >= 0 && padId.x <= 7 {
+        let idx = padId.y * 8 + padId.x
         if idx < colors.count {
-            let brightness = state.learnState.idleBrightness
-            newState.learnState.selectedIdleColor = colors[idx].velocity(at: brightness)
-            return FSMResult(state: newState)
-        }
-    }
-    
-    // Active color grid (rows 2-3, cols 4-7)
-    if padId.x >= 4 && padId.x <= 7 && padId.y >= 2 && padId.y <= 3 {
-        let idx = (padId.y - 2) * 4 + (padId.x - 4)
-        if idx < colors.count {
-            let brightness = state.learnState.activeBrightness
-            newState.learnState.selectedActiveColor = colors[idx].velocity(at: brightness)
+            newState.learnState.selectedColor = colors[idx].rawValue
             return FSMResult(state: newState)
         }
     }
@@ -422,58 +434,21 @@ private func handleColorSelectInput(_ state: ControllerState, padId: ButtonId) -
 
 // MARK: - Save/Test Config
 
-private func saveFromRecording(_ state: ControllerState) -> FSMResult {
-    let learn = state.learnState
-    guard let selectedPad = learn.selectedPad,
-          let lastEvent = learn.recordedEvents.last else {
-        return exitLearnMode(state)
-    }
-    
-    let cmd = lastEvent.toCommand()
-    let (_, suggestedMode, group) = categorizeOsc(cmd.address)
-    
-    let behavior = createPadBehavior(
-        padId: selectedPad,
-        mode: suggestedMode,
-        oscCommand: cmd,
-        idleColor: learn.selectedIdleColor,
-        activeColor: learn.selectedActiveColor,
-        label: cmd.address.components(separatedBy: "/").last ?? "",
-        group: group
-    )
-    
-    var newState = state
-    newState.pads[selectedPad] = behavior
-    newState.padRuntime[selectedPad] = PadRuntimeState(
-        isActive: false,
-        currentColor: learn.selectedIdleColor
-    )
-    
-    let result = exitLearnMode(newState)
-    var effects = result.effects
-    effects.append(.saveConfig)
-    effects.append(.log(message: "Saved: \(cmd.address) for pad \(selectedPad)", level: .info))
-    
-    return FSMResult(state: result.state, effects: effects)
-}
-
 private func saveConfig(_ state: ControllerState) -> FSMResult {
     let learn = state.learnState
     guard let selectedPad = learn.selectedPad,
-          !learn.candidateCommands.isEmpty,
-          learn.selectedOscIndex < learn.candidateCommands.count else {
+          let cmd = learn.primaryCommand else {
         return exitLearnMode(state)
     }
     
-    let cmd = learn.candidateCommands[learn.selectedOscIndex]
     let (_, _, group) = categorizeOsc(cmd.address)
     
     let behavior = createPadBehavior(
         padId: selectedPad,
         mode: learn.selectedMode ?? .toggle,
         oscCommand: cmd,
-        idleColor: learn.selectedIdleColor,
-        activeColor: learn.selectedActiveColor,
+        idleColor: learn.selectedColor,
+        activeColor: learn.selectedColor,  // Same color - active state shown via blinking
         label: cmd.address.components(separatedBy: "/").last ?? "",
         group: group
     )
@@ -482,7 +457,7 @@ private func saveConfig(_ state: ControllerState) -> FSMResult {
     newState.pads[selectedPad] = behavior
     newState.padRuntime[selectedPad] = PadRuntimeState(
         isActive: false,
-        currentColor: learn.selectedIdleColor
+        currentColor: learn.selectedColor
     )
     
     let result = exitLearnMode(newState)
@@ -495,12 +470,10 @@ private func saveConfig(_ state: ControllerState) -> FSMResult {
 
 private func testConfig(_ state: ControllerState) -> FSMResult {
     let learn = state.learnState
-    guard !learn.candidateCommands.isEmpty,
-          learn.selectedOscIndex < learn.candidateCommands.count else {
+    guard let cmd = learn.primaryCommand else {
         return FSMResult(state: state)
     }
     
-    let cmd = learn.candidateCommands[learn.selectedOscIndex]
     let testCmd: OscCommand
     
     if learn.selectedMode == .toggle || learn.selectedMode == .push {
@@ -562,17 +535,10 @@ private func createPadBehavior(
 
 // MARK: - OSC Event Handling
 
-/// Handle incoming OSC event
+/// Handle incoming OSC event (for sync with external changes)
 public func handleOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResult {
     var newState = state
     var effects: [LaunchpadEffect] = []
-    
-    // Record during record phase
-    if state.learnState.phase == .recordOsc {
-        let result = recordOscEvent(state, event: event)
-        newState = result.state
-        effects.append(contentsOf: result.effects)
-    }
     
     // Handle beat events
     if event.address == "/audio/beat/onbeat" {
@@ -673,18 +639,109 @@ private func resetSubgroup(_ state: ControllerState, parentGroup: ButtonGroupTyp
 
 // MARK: - Utility Functions
 
-/// Categorize an OSC address to determine suggested mode and group
-public func categorizeOsc(_ address: String) -> (category: String, mode: PadMode, group: ButtonGroupType?) {
-    if address.hasPrefix("/syn/scene/") || address.hasPrefix("/scenes/") {
-        return ("scene", .selector, .scenes)
+// Priority levels for OSC recording (lower = higher priority)
+public let PRIORITY_SCENE = 1       // Scenes - highest priority, stops recording immediately
+public let PRIORITY_PRESET = 2      // Presets - high priority
+public let PRIORITY_CONTROL = 3     // Toggle/Push controls
+public let PRIORITY_NOISE = 99      // Ignore completely (audio levels, etc.)
+
+/// Categorize an OSC address to determine suggested mode, group, and priority
+/// Matches Python synesthesia_config.py categorize_osc()
+public func categorizeOsc(_ address: String) -> (priority: Int, mode: PadMode, group: ButtonGroupType?) {
+    // Scenes - highest priority, selector mode
+    if address.hasPrefix("/scenes/") {
+        return (PRIORITY_SCENE, .selector, .scenes)
     }
-    if address.hasPrefix("/syn/preset/") || address.hasPrefix("/presets/") {
-        return ("preset", .selector, .presets)
+    
+    // Presets - high priority, selector mode
+    if address.hasPrefix("/presets/") {
+        return (PRIORITY_PRESET, .selector, .presets)
     }
-    if address.hasPrefix("/syn/control/") || address.hasPrefix("/controls/") {
-        return ("control", .toggle, nil)
+    
+    // Favorite slots - similar to presets
+    if address.hasPrefix("/favslots/") {
+        return (PRIORITY_PRESET, .selector, .presets)
     }
-    return ("other", .toggle, nil)
+    
+    // Media selection - high priority selector (like scenes)
+    if address.hasPrefix("/media/") {
+        return (PRIORITY_SCENE, .selector, nil)
+    }
+    
+    // Playlist controls - high priority one-shot
+    if address.hasPrefix("/playlist/") {
+        return (PRIORITY_PRESET, .oneShot, nil)
+    }
+    
+    // Render settings - toggle
+    if address.hasPrefix("/render/") {
+        return (PRIORITY_CONTROL, .toggle, nil)
+    }
+    
+    // Global controls - toggle
+    if address.hasPrefix("/controls/global/") {
+        return (PRIORITY_CONTROL, .toggle, nil)
+    }
+    
+    // Meta controls - toggle (or selector for hue)
+    if address.hasPrefix("/controls/meta/") {
+        if address.contains("hue") {
+            return (PRIORITY_CONTROL, .selector, .colors)
+        }
+        return (PRIORITY_CONTROL, .toggle, nil)
+    }
+    
+    // General controls - toggle
+    if address.hasPrefix("/controls/") {
+        return (PRIORITY_CONTROL, .toggle, nil)
+    }
+    
+    // Audio/beat messages - noise, ignore
+    if address.hasPrefix("/audio/") {
+        return (PRIORITY_NOISE, .oneShot, nil)
+    }
+    
+    // Unknown - default to toggle
+    return (50, .toggle, nil)
+}
+
+/// Check if receiving this address should stop OSC recording
+public func shouldStopRecording(_ address: String) -> Bool {
+    let (priority, _, _) = categorizeOsc(address)
+    return priority <= PRIORITY_CONTROL
+}
+
+/// Check if an OSC address is noisy (high-frequency, should be filtered from UI)
+public func isNoisyAudio(_ address: String) -> Bool {
+    let noisyPrefixes = [
+        "/audio/level",      // Audio levels (sent every frame)
+        "/audio/fft/",       // FFT data (sent every frame)
+        "/audio/timecode",   // Timecode (sent continuously)
+    ]
+    return noisyPrefixes.contains { address.hasPrefix($0) }
+}
+
+/// Get suggested LED colors for an OSC address category
+public func suggestedColors(for address: String) -> (idle: Int, active: Int) {
+    if address.hasPrefix("/scenes/") {
+        return (LP.greenDim, LP.red)        // Green dim -> Red
+    }
+    if address.hasPrefix("/presets/") {
+        return (LP.blue, LP.green)          // Blue -> Green
+    }
+    if address.hasPrefix("/favslots/") {
+        return (LP.cyan, LP.green)          // Cyan -> Green
+    }
+    if address.hasPrefix("/playlist/") {
+        return (LP.orange, LP.yellow)       // Orange -> Yellow
+    }
+    if address.hasPrefix("/controls/meta/") {
+        return (LP.purple, LP.pink)         // Purple -> Pink
+    }
+    if address.hasPrefix("/controls/global/") {
+        return (LP.yellow, LP.red)          // Yellow -> Red
+    }
+    return (LP.off, LP.red)                 // Default: off -> red
 }
 
 /// Toggle blink state for animations

@@ -67,40 +67,48 @@ extension ButtonId: CustomStringConvertible {
 // MARK: - LED Colors
 
 /// Base colors with 3 brightness levels: [DIM, NORMAL, BRIGHT]
-public enum LaunchpadColor: String, CaseIterable, Sendable {
-    case red, orange, yellow, lime, green, cyan, blue, purple, pink, white
+/// Extended color palette for Launchpad Mini Mk3
+/// 32 colors arranged in 4 rows x 8 columns
+public enum LaunchpadColor: Int, CaseIterable, Sendable {
+    // Row 1: Warm colors
+    case red = 5
+    case redBright = 6
+    case orange = 9
+    case orangeBright = 10
+    case amber = 96
+    case yellow = 13
+    case yellowBright = 14
+    case lime = 17
     
-    /// Velocity values for each brightness level
-    public var velocities: (dim: Int, normal: Int, bright: Int) {
-        switch self {
-        case .red:    return (1, 5, 6)
-        case .orange: return (7, 9, 10)
-        case .yellow: return (11, 13, 14)
-        case .lime:   return (15, 17, 18)
-        case .green:  return (19, 21, 22)
-        case .cyan:   return (33, 37, 38)
-        case .blue:   return (41, 45, 46)
-        case .purple: return (49, 53, 54)
-        case .pink:   return (55, 57, 58)
-        case .white:  return (1, 3, 119)
-        }
-    }
+    // Row 2: Cool greens
+    case green = 21
+    case greenBright = 22
+    case mint = 29
+    case teal = 33
+    case cyan = 37
+    case cyanBright = 38
+    case sky = 40
+    case azure = 44
     
-    /// Get velocity for a brightness level
-    public func velocity(at brightness: BrightnessLevel) -> Int {
-        switch brightness {
-        case .dim:    return velocities.dim
-        case .normal: return velocities.normal
-        case .bright: return velocities.bright
-        }
-    }
-}
-
-/// Brightness levels for Launchpad LEDs
-public enum BrightnessLevel: Int, Sendable {
-    case dim = 0      // ~33% brightness
-    case normal = 1   // ~66% brightness
-    case bright = 2   // 100% brightness
+    // Row 3: Blues and purples
+    case blue = 45
+    case blueBright = 46
+    case indigo = 50
+    case purple = 53
+    case purpleBright = 54
+    case violet = 48
+    case magenta = 57
+    case pink = 58
+    
+    // Row 4: Special colors
+    case hotPink = 56
+    case coral = 4
+    case peach = 8
+    case gold = 12
+    case spring = 16
+    case aqua = 36
+    case lavender = 52
+    case white = 3
 }
 
 /// LED display mode
@@ -116,15 +124,21 @@ public enum LP {
     public static let red = 5
     public static let redDim = 1
     public static let orange = 9
+    public static let orangeDim = 10
     public static let yellow = 13
+    public static let yellowDim = 14
     public static let green = 21
     public static let greenDim = 19
     public static let cyan = 37
+    public static let cyanDim = 35
     public static let blue = 45
     public static let blueDim = 41
     public static let purple = 53
+    public static let purpleDim = 51
     public static let pink = 57
+    public static let pinkDim = 55
     public static let white = 3
+    public static let whiteDim = 2
 }
 
 // MARK: - Pad Mode
@@ -178,14 +192,15 @@ public struct OscCommand: Hashable, Codable, Sendable {
     
     /// Check if this OSC address is controllable (can be mapped to pads)
     public var isControllable: Bool {
-        // Controllable addresses for Synesthesia
+        // Controllable addresses for Synesthesia (matches Python synesthesia_config.py)
         let controllablePrefixes = [
-            "/syn/scene/",
-            "/syn/preset/",
-            "/syn/control/",
-            "/shader/",
-            "/image/",
-            "/midi/"
+            "/scenes/",
+            "/presets/",
+            "/favslots/",
+            "/playlist/",
+            "/media/",
+            "/render/",
+            "/controls/",  // All controls (meta, global, etc.)
         ]
         return controllablePrefixes.contains { address.hasPrefix($0) }
     }
@@ -282,9 +297,7 @@ public enum LearnPhase: Sendable {
     case idle
     /// Blinking all pads, waiting for user to press a pad to configure
     case waitPad
-    /// Recording OSC messages after pad selected
-    case recordOsc
-    /// Configuration phase - selecting OSC/mode/colors
+    /// Configuration phase - live capture + selecting OSC/mode/colors
     case config
 }
 
@@ -293,6 +306,27 @@ public enum LearnRegister: Sendable {
     case oscSelect
     case modeSelect
     case colorSelect
+}
+
+/// Captured OSC command with enabled state
+public struct CapturedOsc: Sendable, Hashable {
+    public let command: OscCommand
+    public let priority: Int
+    public var isEnabled: Bool
+    
+    public init(command: OscCommand, priority: Int, isEnabled: Bool = true) {
+        self.command = command
+        self.priority = priority
+        self.isEnabled = isEnabled
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(command.address)
+    }
+    
+    public static func == (lhs: CapturedOsc, rhs: CapturedOsc) -> Bool {
+        lhs.command.address == rhs.command.address
+    }
 }
 
 /// Received OSC event with timestamp
@@ -319,34 +353,37 @@ public struct OscEvent: Sendable {
 public struct LearnState: Sendable {
     public var phase: LearnPhase
     public var selectedPad: ButtonId?
-    public var recordedEvents: [OscEvent]
-    public var candidateCommands: [OscCommand]
+    public var capturedOsc: [CapturedOsc]  // Live-captured with enable/disable
     
     // CONFIG phase state
     public var activeRegister: LearnRegister
-    public var selectedOscIndex: Int
     public var selectedMode: PadMode?
     public var selectedGroup: ButtonGroupType?
-    public var selectedIdleColor: Int
-    public var selectedActiveColor: Int
-    public var idleBrightness: BrightnessLevel
-    public var activeBrightness: BrightnessLevel
+    public var selectedColor: Int  // Single color - blinks on active/pressed=white
     public var oscPage: Int
     
     public init() {
         self.phase = .idle
         self.selectedPad = nil
-        self.recordedEvents = []
-        self.candidateCommands = []
+        self.capturedOsc = []
         self.activeRegister = .oscSelect
-        self.selectedOscIndex = 0
         self.selectedMode = nil
         self.selectedGroup = nil
-        self.selectedIdleColor = LP.greenDim
-        self.selectedActiveColor = LP.green
-        self.idleBrightness = .normal
-        self.activeBrightness = .bright
+        self.selectedColor = LP.green
         self.oscPage = 0
+    }
+    
+    /// Get enabled commands sorted by priority
+    public var enabledCommands: [OscCommand] {
+        capturedOsc
+            .filter { $0.isEnabled }
+            .sorted { $0.priority < $1.priority }
+            .map { $0.command }
+    }
+    
+    /// Get primary (first enabled, highest priority) command
+    public var primaryCommand: OscCommand? {
+        enabledCommands.first
     }
 }
 

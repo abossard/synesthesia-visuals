@@ -475,6 +475,70 @@ public final class MIDIManager: @unchecked Sendable {
         sendBytes([0xB0 | UInt8(channel & 0xF), UInt8(controller & 0x7F), UInt8(value & 0x7F)])
     }
     
+    // MARK: - MIDI Beat Clock
+    
+    /// MIDI Clock messages (System Real-Time)
+    private let MIDI_CLOCK: UInt8 = 0xF8      // Timing clock (24 per quarter note)
+    private let MIDI_START: UInt8 = 0xFA      // Start
+    private let MIDI_CONTINUE: UInt8 = 0xFB  // Continue
+    private let MIDI_STOP: UInt8 = 0xFC       // Stop
+    
+    private var clockTimer: Timer?
+    private var currentClockBpm: Float = 120.0
+    
+    /// Start sending MIDI clock at the specified BPM
+    /// The Launchpad syncs flashing LEDs to this clock (24 PPQN)
+    public func startMidiClock(bpm: Float) {
+        stopMidiClock()
+        
+        guard bpm > 20 && bpm < 300 else { return }
+        currentClockBpm = bpm
+        
+        // MIDI clock: 24 pulses per quarter note
+        // Interval = 60 seconds / BPM / 24
+        let interval = 60.0 / Double(bpm) / 24.0
+        
+        // Send MIDI Start
+        sendBytes([MIDI_START])
+        print("[MIDI] Clock started at \(bpm) BPM (interval: \(String(format: "%.2f", interval * 1000))ms)")
+        
+        // Start clock timer
+        clockTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.sendClockTick()
+        }
+        
+        // Add to main run loop to ensure it fires during UI events
+        if let timer = clockTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    
+    /// Update MIDI clock BPM (restarts clock with new tempo)
+    public func updateMidiClockBpm(_ bpm: Float) {
+        guard bpm > 20 && bpm < 300 else { return }
+        guard abs(currentClockBpm - bpm) > 0.5 else { return }  // Ignore tiny changes
+        
+        if clockTimer != nil {
+            startMidiClock(bpm: bpm)
+        }
+    }
+    
+    /// Stop sending MIDI clock
+    public func stopMidiClock() {
+        clockTimer?.invalidate()
+        clockTimer = nil
+        
+        // Send MIDI Stop
+        if isConnected {
+            sendBytes([MIDI_STOP])
+        }
+    }
+    
+    private func sendClockTick() {
+        guard isConnected else { return }
+        sendBytes([MIDI_CLOCK])
+    }
+    
     /// Send DAW Mode SysEx (Launchpad Mini MK3)
     public func sendDAWModeSysEx() {
         // Launchpad Mini MK3 Enter DAW Mode: F0 00 20 29 02 0D 10 01 F7
@@ -489,33 +553,106 @@ public final class MIDIManager: @unchecked Sendable {
         print("[MIDI] Sent Programmer Mode SysEx")
     }
     
-    /// Set LED color on Launchpad pad
-    public func setLed(padId: ButtonId, color: Int) {
+    /// LED lighting mode (Launchpad Mini MK3 SysEx types)
+    public enum LedMode: UInt8 {
+        case solid = 0   // Static colour from palette
+        case flash = 1   // Flashing colour (alternates between two colors)
+        case pulse = 2   // Pulsing colour (fades in/out)
+        case rgb = 3     // RGB colour (3 bytes)
+    }
+    
+    // MARK: - SysEx LED Lighting
+    
+    /// LED lighting SysEx header: F0 00 20 29 02 0D 03
+    private let ledSysExHeader: [UInt8] = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03]
+    
+    /// Get LED index for a ButtonId (Programmer mode layout)
+    private func ledIndex(for padId: ButtonId) -> UInt8 {
         if padId.isTopRow {
-            // Top row uses CC 91-98
-            let controller = 91 + padId.x
-            sendControlChange(channel: 0, controller: controller, value: color)
+            // Top row: indices 91-98
+            return UInt8(91 + padId.x)
         } else if padId.isSceneButton {
-            // Scene buttons (right column) use CC 19,29,39,49,59,69,79,89
-            let controller = (padId.y + 1) * 10 + 9  // y=0→CC19, y=7→CC89
-            sendControlChange(channel: 0, controller: controller, value: color)
+            // Scene buttons: indices 19, 29, 39, 49, 59, 69, 79, 89
+            return UInt8((padId.y + 1) * 10 + 9)
         } else {
-            // Grid pads use Note On
-            sendNoteOn(channel: 0, note: padId.midiNote, velocity: color)
+            // Grid: note = (y+1)*10 + (x+1), e.g. (0,0)→11, (7,7)→88
+            return UInt8(padId.midiNote)
         }
     }
     
-    /// Clear all LEDs
-    public func clearAllLeds() {
-        guard isConnected else { return }
-        for y in -1..<8 {  // Include top row (-1)
-            for x in 0..<9 {  // Include scene buttons (8)
-                let padId = ButtonId(x: x, y: y)
-                // Skip invalid pads (e.g. (-1, -1) or (8, -1) corner)
-                if padId.isTopRow && x == 8 { continue }
-                setLed(padId: padId, color: LP.off)
+    /// Set LED color using SysEx message (more reliable than MIDI channel method)
+    public func setLed(padId: ButtonId, color: Int, mode: LedMode = .solid) {
+        let index = ledIndex(for: padId)
+        var message = ledSysExHeader
+        
+        switch mode {
+        case .solid:
+            // Type 0: Static - 1 byte color
+            message += [0x00, index, UInt8(color & 0x7F)]
+        case .flash:
+            // Type 1: Flashing - 2 bytes (color B = off/dim, color A = bright)
+            // Flash between off and the color
+            message += [0x01, index, 0x00, UInt8(color & 0x7F)]
+        case .pulse:
+            // Type 2: Pulsing - 1 byte color
+            message += [0x02, index, UInt8(color & 0x7F)]
+        case .rgb:
+            // Type 3: RGB - 3 bytes (not used for palette colors)
+            // For RGB, color encodes R/G/B packed, but we don't use this path normally
+            message += [0x03, index, UInt8((color >> 14) & 0x7F), UInt8((color >> 7) & 0x7F), UInt8(color & 0x7F)]
+        }
+        
+        message.append(0xF7)  // SysEx end
+        sendBytes(message)
+    }
+    
+    /// Set multiple LEDs in a single SysEx message (efficient batch update)
+    public func setLeds(_ updates: [(padId: ButtonId, color: Int, mode: LedMode)]) {
+        guard !updates.isEmpty else { return }
+        
+        var message = ledSysExHeader
+        
+        for (padId, color, mode) in updates {
+            let index = ledIndex(for: padId)
+            switch mode {
+            case .solid:
+                message += [0x00, index, UInt8(color & 0x7F)]
+            case .flash:
+                message += [0x01, index, 0x00, UInt8(color & 0x7F)]
+            case .pulse:
+                message += [0x02, index, UInt8(color & 0x7F)]
+            case .rgb:
+                message += [0x03, index, UInt8((color >> 14) & 0x7F), UInt8((color >> 7) & 0x7F), UInt8(color & 0x7F)]
             }
         }
+        
+        message.append(0xF7)
+        sendBytes(message)
+        print("[MIDI] SysEx LED batch: \(updates.count) LEDs")
+    }
+    
+    /// Clear all LEDs using SysEx batch
+    public func clearAllLeds() {
+        guard isConnected else { return }
+        
+        var updates: [(padId: ButtonId, color: Int, mode: LedMode)] = []
+        
+        // Grid 8x8
+        for y in 0..<8 {
+            for x in 0..<8 {
+                updates.append((ButtonId(x: x, y: y), LP.off, .solid))
+            }
+        }
+        // Top row
+        for x in 0..<8 {
+            updates.append((ButtonId(x: x, y: -1), LP.off, .solid))
+        }
+        // Scene buttons
+        for y in 0..<8 {
+            updates.append((ButtonId(x: 8, y: y), LP.off, .solid))
+        }
+        
+        setLeds(updates)
     }
     
     // MARK: - Receive

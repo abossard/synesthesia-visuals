@@ -76,8 +76,8 @@ struct LaunchpadView: View {
                         Color.clear.frame(width: 30, height: 30)
                     }
                     
-                    // Main Grid Rows
-                    ForEach(0..<8) { y in
+                    // Main Grid Rows (row 7 at top, row 0 at bottom - matches physical Launchpad)
+                    ForEach((0..<8).reversed(), id: \.self) { y in
                         HStack(spacing: spacing) {
                             // Grid Pads (0-7)
                             ForEach(0..<8) { x in
@@ -111,9 +111,71 @@ struct LaunchpadView: View {
                         Text("Learn Mode")
                             .font(.headline)
                         
-                        DetailRow(label: "Phase", value: "\(state.learnState.phase)")
+                        DetailRow(label: "Phase", value: phaseDisplayName(state.learnState.phase))
                         if let selected = state.learnState.selectedPad {
                             DetailRow(label: "Selected Pad", value: "(\(selected.x), \(selected.y))")
+                        }
+                        
+                        // Show captured OSC during CONFIG phase (live capture with enable/disable)
+                        if state.learnState.phase == .config {
+                            let captured = state.learnState.capturedOsc
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                if captured.isEmpty {
+                                    Text("Waiting for OSC...")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                        .italic()
+                                } else {
+                                    Text("Captured OSC (\(captured.count))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                ScrollView {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        ForEach(Array(captured.enumerated()), id: \.element) { idx, osc in
+                                            HStack {
+                                                // Enable/disable toggle indicator
+                                                Image(systemName: osc.isEnabled ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundColor(osc.isEnabled ? .green : .gray)
+                                                    .font(.caption)
+                                                
+                                                // Priority label
+                                                Text(priorityLabel(osc.priority))
+                                                    .font(.system(.caption2, design: .rounded))
+                                                    .foregroundColor(priorityColor(osc.priority))
+                                                    .frame(width: 16)
+                                                
+                                                Text(osc.command.address)
+                                                    .font(.system(.caption2, design: .monospaced))
+                                                    .foregroundColor(osc.isEnabled ? .white : .gray)
+                                            }
+                                        }
+                                    }
+                                }
+                                .frame(maxHeight: 100)
+                                .background(Color.black.opacity(0.3))
+                                .cornerRadius(4)
+                                
+                                // Show current selection details
+                                HStack {
+                                    Text("Mode:")
+                                        .foregroundColor(.secondary)
+                                    Text(modeDisplayName(state.learnState.selectedMode))
+                                        .font(.system(.caption, design: .monospaced))
+                                }
+                                .font(.caption)
+                                
+                                HStack {
+                                    Text("Color:")
+                                        .foregroundColor(.secondary)
+                                    Circle()
+                                        .fill(launchpadColorToSwiftUI(state.learnState.selectedColor))
+                                        .frame(width: 12, height: 12)
+                                }
+                                .font(.caption)
+                            }
                         }
                         
                         Divider()
@@ -284,5 +346,64 @@ struct DetailRow: View {
             Text(value)
                 .font(.system(.body, design: .monospaced))
         }
+    }
+}
+
+// MARK: - Helper Functions
+
+/// Convert learn phase to display name
+func phaseDisplayName(_ phase: LearnPhase) -> String {
+    switch phase {
+    case .idle: return "Idle"
+    case .waitPad: return "Select Pad"
+    case .config: return "Configure"
+    }
+}
+
+/// Convert pad mode to display name
+func modeDisplayName(_ mode: PadMode?) -> String {
+    guard let mode = mode else { return "-" }
+    switch mode {
+    case .selector: return "Selector"
+    case .toggle: return "Toggle"
+    case .oneShot: return "One-Shot"
+    case .push: return "Push"
+    }
+}
+
+/// Helper to convert Launchpad color index to SwiftUI Color (standalone version)
+func launchpadColorToSwiftUI(_ lpColor: Int) -> Color {
+    switch lpColor {
+    case LP.off: return Color(white: 0.2)
+    case LP.red, LP.redDim: return .red
+    case LP.orange: return .orange
+    case LP.yellow: return .yellow
+    case LP.green, LP.greenDim: return .green
+    case LP.cyan: return .cyan
+    case LP.blue, LP.blueDim: return .blue
+    case LP.purple: return .purple
+    case LP.pink: return .pink
+    case LP.white: return .white
+    default: return Color(white: 0.3)
+    }
+}
+
+/// Get short label for priority level
+func priorityLabel(_ priority: Int) -> String {
+    switch priority {
+    case 1: return "S"   // Scene
+    case 2: return "P"   // Preset
+    case 3: return "C"   // Control
+    default: return "?"
+    }
+}
+
+/// Get color for priority level
+func priorityColor(_ priority: Int) -> Color {
+    switch priority {
+    case 1: return .red      // Scene - highest priority
+    case 2: return .orange   // Preset
+    case 3: return .yellow   // Control
+    default: return .gray
     }
 }

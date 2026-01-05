@@ -256,7 +256,7 @@ final class AppState: ObservableObject {
             }
         }
         
-        // Subscribe Launchpad only to Synesthesia control/selectable prefixes (ignore audio)
+        // Subscribe Launchpad to control prefixes + specific audio for beat-sync
         // Capture the module reference to avoid main actor isolation issues
         let lpModule = launchpadModule
         let launchpadPrefixes = [
@@ -264,8 +264,11 @@ final class AppState: ObservableObject {
             "/presets/*",
             "/favslots/*",
             "/playlist/*",
-            "/controls/meta/*",
-            "/controls/global/*"
+            "/controls/*",          // All controls (meta, global, etc.)
+            "/media/*",             // Media selection
+            "/render/*",            // Render settings
+            "/audio/bpm/bpm",       // BPM for beat-sync blinking
+            "/audio/beat/onbeat"    // Beat pulse for blink toggle
         ]
         for pattern in launchpadPrefixes {
             oscHub.subscribe(pattern: pattern) { address, values in
@@ -273,13 +276,23 @@ final class AppState: ObservableObject {
 
                 let args: [OscArg] = values.compactMap { value in
                     if let v = value as? Int32 { return .int(Int(v)) }
+                    if let v = value as? Int { return .int(v) }
                     if let v = value as? Float32 { return .float(Float(v)) }
+                    if let v = value as? Float { return .float(v) }
+                    if let v = value as? Double { return .float(Float(v)) }
                     if let v = value as? String { return .string(v) }
                     if let v = value as? Bool { return .bool(v) }
+                    // Fallback: try String(describing:) for other types
+                    let desc = String(describing: value)
+                    if !desc.isEmpty && desc != "()" {
+                        return .string(desc)
+                    }
                     return nil
                 }
 
-                module.receiveOscEvent(OscEvent(address: address, args: args))
+                // Get priority from categorization
+                let (priority, _, _) = categorizeOsc(address)
+                module.receiveOscEvent(OscEvent(address: address, args: args, priority: priority))
             }
         }
         

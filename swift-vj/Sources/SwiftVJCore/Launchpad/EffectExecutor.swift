@@ -73,10 +73,11 @@ public final class EffectExecutor {
     }
     
     private func executeLed(padId: ButtonId, color: Int, blink: Bool) {
-        midi.setLed(padId: padId, color: color)
-        // TODO: Handle blink mode (requires SysEx for Launchpad)
+        // Use native Launchpad pulsing for blink mode
         if blink {
-            print("[LED] Blink not yet implemented for \(padId)")
+            midi.setLed(padId: padId, color: color, mode: .pulse)
+        } else {
+            midi.setLed(padId: padId, color: color, mode: .solid)
         }
     }
     
