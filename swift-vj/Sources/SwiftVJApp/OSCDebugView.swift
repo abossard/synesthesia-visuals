@@ -10,26 +10,70 @@ struct OSCDebugView: View {
     @State private var testAddress = "/test/message"
     @State private var testArg1 = "hello"
     @State private var testArg2 = "1.0"
-    @State private var showSentOnly = false
-    @State private var showReceivedOnly = false
+    @State private var showAudioMessages = false  // Audio messages hidden by default (noisy)
+    @State private var expandedGroups: Set<String> = ["shader", "textler", "image", "other"]  // Expanded by default
     
-    /// Sorted OSC messages by address for consistent display
-    private var sortedOSCMessages: [OSCLogEntry] {
-        appState.oscMessages.values.sorted { $0.address < $1.address }
+    /// Group OSC messages by category
+    private var groupedMessages: [(group: String, messages: [OSCLogEntry])] {
+        let sorted = appState.oscMessages.values.sorted { $0.address < $1.address }
+        
+        // Filter audio if hidden
+        let filtered = showAudioMessages ? sorted : sorted.filter { !$0.address.hasPrefix("/audio/") }
+        
+        // Group by first path component
+        var groups: [String: [OSCLogEntry]] = [:]
+        for msg in filtered {
+            let group = extractGroup(from: msg.address)
+            groups[group, default: []].append(msg)
+        }
+        
+        // Sort groups: audio last (if shown), then alphabetically
+        let sortedGroups = groups.keys.sorted { lhs, rhs in
+            if lhs == "audio" { return false }
+            if rhs == "audio" { return true }
+            return lhs < rhs
+        }
+        
+        return sortedGroups.map { (group: $0, messages: groups[$0]!) }
+    }
+    
+    /// Extract group name from OSC address
+    private func extractGroup(from address: String) -> String {
+        let parts = address.split(separator: "/").map(String.init)
+        guard parts.count >= 1 else { return "other" }
+        let first = parts[0].lowercased()
+        // Known groups
+        if ["audio", "shader", "textler", "image", "vj", "beat", "bpm", "level"].contains(first) {
+            return first
+        }
+        return "other"
+    }
+    
+    /// Color for group header
+    private func groupColor(_ group: String) -> Color {
+        switch group {
+        case "audio": return .orange
+        case "shader": return .purple
+        case "textler": return .blue
+        case "image": return .green
+        case "vj": return .pink
+        case "beat", "bpm": return .red
+        case "level": return .yellow
+        default: return .gray
+        }
     }
     
     var body: some View {
         HSplitView {
             // Message log (left)
             VStack(spacing: 0) {
-                // Filter bar (filters at CAPTURE time, not display)
+                // Filter bar
                 HStack {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundColor(.secondary)
                     TextField("Capture filter...", text: $appState.oscFilter)
                         .textFieldStyle(.plain)
                         .onChange(of: appState.oscFilter) { _, _ in
-                            // Clear buffer when filter changes to start fresh
                             appState.oscMessages.removeAll()
                         }
                     
@@ -42,6 +86,16 @@ struct OSCDebugView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    
+                    Divider().frame(height: 20)
+                    
+                    // Audio toggle
+                    Toggle(isOn: $showAudioMessages) {
+                        Label("Audio", systemImage: "waveform")
+                    }
+                    .toggleStyle(.button)
+                    .buttonStyle(.bordered)
+                    .tint(showAudioMessages ? .orange : .gray)
                 }
                 .padding(8)
                 .background(.quaternary)
@@ -50,14 +104,45 @@ struct OSCDebugView: View {
                 
                 Divider()
                 
-                // Message list (all messages are already filtered at capture, grouped by address)
+                // Grouped message list
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(sortedOSCMessages) { msg in
-                            OSCMessageRow(message: msg)
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(groupedMessages, id: \.group) { group in
+                            DisclosureGroup(
+                                isExpanded: Binding(
+                                    get: { expandedGroups.contains(group.group) },
+                                    set: { isExpanded in
+                                        if isExpanded {
+                                            expandedGroups.insert(group.group)
+                                        } else {
+                                            expandedGroups.remove(group.group)
+                                        }
+                                    }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    ForEach(group.messages) { msg in
+                                        OSCMessageRow(message: msg, groupColor: groupColor(group.group))
+                                    }
+                                }
+                                .padding(.leading, 8)
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(groupColor(group.group))
+                                        .frame(width: 10, height: 10)
+                                    Text(group.group.uppercased())
+                                        .font(.headline)
+                                        .foregroundColor(groupColor(group.group))
+                                    Text("(\(group.messages.count))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .padding(.horizontal)
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.vertical)
                 }
                 
                 Divider()
@@ -145,6 +230,9 @@ struct OSCDebugView: View {
         }
         .onDisappear {
             appState.oscDebugEnabled = false
+            // Free memory - clear captured messages when view hidden
+            appState.oscMessages.removeAll()
+            appState.oscMessageCount = 0
         }
     }
     
@@ -174,6 +262,7 @@ struct OSCDebugView: View {
 
 struct OSCMessageRow: View {
     let message: OSCLogEntry
+    var groupColor: Color = .blue
     
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -184,7 +273,7 @@ struct OSCMessageRow: View {
             
             Text(message.address)
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(.blue)
+                .foregroundColor(groupColor)
             
             Text(message.args.joined(separator: ", "))
                 .font(.system(.body, design: .monospaced))
@@ -195,7 +284,7 @@ struct OSCMessageRow: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .background(Color.blue.opacity(0.05))
+        .background(groupColor.opacity(0.05))
         .cornerRadius(4)
     }
 }

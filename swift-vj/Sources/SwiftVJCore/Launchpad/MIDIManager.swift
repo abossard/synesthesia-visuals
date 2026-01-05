@@ -389,181 +389,60 @@ public final class MIDIManager: @unchecked Sendable {
     
     // MARK: - Send
     
-    /// Send a note on message
-    public func sendNoteOn(channel: Int, note: Int, velocity: Int) {
+    private func sendBytes(_ bytes: [UInt8]) {
         guard isConnected, connectedOutput != 0 else { return }
         
-        var packet = MIDIEventPacket()
+        var packet = MIDIPacket()
         packet.timeStamp = 0
-        packet.wordCount = 1
-        packet.words.0 = UInt32(0x20900000) | UInt32((channel & 0xF) << 16) | UInt32((note & 0x7F) << 8) | UInt32(velocity & 0x7F)
+        packet.length = UInt16(bytes.count)
         
-        withUnsafePointer(to: packet) { packetPtr in
-            var list = MIDIEventList()
-            list.protocol = ._1_0
-            list.numPackets = 1
-            
-            withUnsafeMutablePointer(to: &list.packet) { listPacketPtr in
-                listPacketPtr.pointee = packetPtr.pointee
-            }
-            
-            let result = MIDISendEventList(outputPort, connectedOutput, &list)
-            if result != noErr {
-                print("[MIDI] Error sending NoteOn: \(result)")
-            } else {
-                // print("[MIDI] Sent NoteOn ch=\(channel) note=\(note) vel=\(velocity)")
+        // Unsafe copy to packet.data tuple
+        withUnsafeMutablePointer(to: &packet.data) { dataPtr in
+            bytes.withUnsafeBytes { bytesPtr in
+                dataPtr.withMemoryRebound(to: UInt8.self, capacity: 256) { destPtr in
+                    destPtr.update(from: bytesPtr.baseAddress!.assumingMemoryBound(to: UInt8.self), count: bytes.count)
+                }
             }
         }
+        
+        var packetList = MIDIPacketList()
+        packetList.numPackets = 1
+        packetList.packet = packet
+        
+        withUnsafePointer(to: packetList) { ptr in
+            let result = MIDISend(outputPort, connectedOutput, ptr)
+            if result != noErr {
+                print("[MIDI] Error sending legacy packet: \(result)")
+            }
+        }
+    }
+
+    /// Send a note on message
+    public func sendNoteOn(channel: Int, note: Int, velocity: Int) {
+        sendBytes([0x90 | UInt8(channel & 0xF), UInt8(note & 0x7F), UInt8(velocity & 0x7F)])
     }
     
     /// Send a note off message
     public func sendNoteOff(channel: Int, note: Int, velocity: Int = 0) {
-        guard isConnected, connectedOutput != 0 else { return }
-        
-        var packet = MIDIEventPacket()
-        packet.timeStamp = 0
-        packet.wordCount = 1
-        packet.words.0 = UInt32(0x20800000) | UInt32((channel & 0xF) << 16) | UInt32((note & 0x7F) << 8) | UInt32(velocity & 0x7F)
-        
-        withUnsafePointer(to: packet) { packetPtr in
-            var list = MIDIEventList()
-            list.protocol = ._1_0
-            list.numPackets = 1
-            
-            withUnsafeMutablePointer(to: &list.packet) { listPacketPtr in
-                listPacketPtr.pointee = packetPtr.pointee
-            }
-            
-            let result = MIDISendEventList(outputPort, connectedOutput, &list)
-            if result != noErr {
-                print("[MIDI] Error sending NoteOff: \(result)")
-            }
-        }
+        sendBytes([0x80 | UInt8(channel & 0xF), UInt8(note & 0x7F), UInt8(velocity & 0x7F)])
     }
     
     /// Send a control change message
     public func sendControlChange(channel: Int, controller: Int, value: Int) {
-        guard isConnected, connectedOutput != 0 else { return }
-        
-        var packet = MIDIEventPacket()
-        packet.timeStamp = 0
-        packet.wordCount = 1
-        // MT=2 (MIDI 1.0), Status=B (CC)
-        packet.words.0 = UInt32(0x20B00000) | UInt32((channel & 0xF) << 16) | UInt32((controller & 0x7F) << 8) | UInt32(value & 0x7F)
-        
-        withUnsafePointer(to: packet) { packetPtr in
-            var list = MIDIEventList()
-            list.protocol = ._1_0
-            list.numPackets = 1
-            
-            withUnsafeMutablePointer(to: &list.packet) { listPacketPtr in
-                listPacketPtr.pointee = packetPtr.pointee
-            }
-            
-            let result = MIDISendEventList(outputPort, connectedOutput, &list)
-            if result != noErr {
-                print("[MIDI] Error sending CC: \(result)")
-            } else {
-                // print("[MIDI] Sent CC ch=\(channel) ctrl=\(controller) val=\(value)")
-            }
-        }
+        sendBytes([0xB0 | UInt8(channel & 0xF), UInt8(controller & 0x7F), UInt8(value & 0x7F)])
     }
     
     /// Send DAW Mode SysEx (Launchpad Mini MK3)
     public func sendDAWModeSysEx() {
-        guard isConnected, connectedOutput != 0 else { return }
-        
         // Launchpad Mini MK3 Enter DAW Mode: F0 00 20 29 02 0D 10 01 F7
-        
-        // Msg 1: Start (Status=1), 6 bytes: F0 00 20 29 02 0D
-        var packet1 = MIDIEventPacket()
-        packet1.timeStamp = 0
-        packet1.wordCount = 2
-        packet1.words.0 = 0x3016F000
-        packet1.words.1 = 0x2029020D
-        
-        // Msg 2: End (Status=3), 3 bytes: 10 01 F7
-        var packet2 = MIDIEventPacket()
-        packet2.timeStamp = 0
-        packet2.wordCount = 2
-        // MT=3, G=0, S=3, C=3 -> 0x3033
-        packet2.words.0 = 0x30331001
-        packet2.words.1 = 0xF7000000
-        
-        // Send Msg 1
-        withUnsafePointer(to: packet1) { ptr1 in
-            var list1 = MIDIEventList()
-            list1.protocol = ._1_0
-            list1.numPackets = 1
-            withUnsafeMutablePointer(to: &list1.packet) { listPtr in
-                listPtr.pointee = ptr1.pointee
-            }
-            let res1 = MIDISendEventList(outputPort, connectedOutput, &list1)
-            if res1 != noErr { print("[MIDI] Error sending DAW SysEx 1: \(res1)") }
-        }
-        
-        // Send Msg 2
-        withUnsafePointer(to: packet2) { ptr2 in
-            var list2 = MIDIEventList()
-            list2.protocol = ._1_0
-            list2.numPackets = 1
-            withUnsafeMutablePointer(to: &list2.packet) { listPtr in
-                listPtr.pointee = ptr2.pointee
-            }
-            let res2 = MIDISendEventList(outputPort, connectedOutput, &list2)
-            if res2 != noErr { print("[MIDI] Error sending DAW SysEx 2: \(res2)") }
-        }
-        
+        sendBytes([0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x10, 0x01, 0xF7])
         print("[MIDI] Sent DAW Mode SysEx")
     }
 
     /// Send Programmer Mode SysEx (Launchpad Mini MK3)
     public func sendProgrammerModeSysEx() {
-        guard isConnected, connectedOutput != 0 else { return }
-        
         // Launchpad Mini MK3 Programmer Mode: F0 00 20 29 02 0D 0E 01 F7
-        // Split into two UMP SysEx7 messages
-        
-        // Msg 1: Start (Status=1), 6 bytes: F0 00 20 29 02 0D
-        var packet1 = MIDIEventPacket()
-        packet1.timeStamp = 0
-        packet1.wordCount = 2
-        // MT=3, G=0, S=1, C=6 -> 0x3016
-        packet1.words.0 = 0x3016F000
-        packet1.words.1 = 0x2029020D
-        
-        // Msg 2: End (Status=3), 3 bytes: 0E 01 F7
-        var packet2 = MIDIEventPacket()
-        packet2.timeStamp = 0
-        packet2.wordCount = 2
-        // MT=3, G=0, S=3, C=3 -> 0x3033
-        packet2.words.0 = 0x30330E01
-        packet2.words.1 = 0xF7000000
-        
-        // Send Msg 1
-        withUnsafePointer(to: packet1) { ptr1 in
-            var list1 = MIDIEventList()
-            list1.protocol = ._1_0
-            list1.numPackets = 1
-            withUnsafeMutablePointer(to: &list1.packet) { listPtr in
-                listPtr.pointee = ptr1.pointee
-            }
-            let res1 = MIDISendEventList(outputPort, connectedOutput, &list1)
-            if res1 != noErr { print("[MIDI] Error sending ProgMode SysEx 1: \(res1)") }
-        }
-        
-        // Send Msg 2
-        withUnsafePointer(to: packet2) { ptr2 in
-            var list2 = MIDIEventList()
-            list2.protocol = ._1_0
-            list2.numPackets = 1
-            withUnsafeMutablePointer(to: &list2.packet) { listPtr in
-                listPtr.pointee = ptr2.pointee
-            }
-            let res2 = MIDISendEventList(outputPort, connectedOutput, &list2)
-            if res2 != noErr { print("[MIDI] Error sending ProgMode SysEx 2: \(res2)") }
-        }
-        
+        sendBytes([0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7])
         print("[MIDI] Sent Programmer Mode SysEx")
     }
     
