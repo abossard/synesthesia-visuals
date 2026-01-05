@@ -430,6 +430,13 @@ struct RenderingView: View {
         .onDisappear {
             Task { await renderEngine?.stop() }
         }
+        // Sync shader selection to state managers for HeadlessRenderer
+        .onChange(of: selectedShader) { _, newValue in
+            renderEngine?.shaderManager.selectShader(name: newValue)
+        }
+        .onChange(of: selectedMaskShader) { _, newValue in
+            renderEngine?.maskManager.selectMask(name: newValue)
+        }
     }
     
     // MARK: - MTKView Tiles Grid
@@ -503,29 +510,24 @@ struct RenderingView: View {
         }
     }
     
-    // MARK: - Selected Tile View (renders only one tile at a time)
+    // MARK: - Selected Tile View (Syphon client - headless rendering only)
     
     @ViewBuilder
     private var selectedTileView: some View {
-        switch selectedTile {
-        case "shader":
-            ShaderTileView(
-                shaderName: selectedShader,
-                frameCount: $frameCount,
-                audioTime: $audioTime,
-                audioState: audioState
-            )
-        case "mask":
-            MaskTileView(shaderName: selectedMaskShader, audioState: audioState)
-        case "lyrics":
-            LyricsTileView(lyricsState: demoLyrics, audioState: audioState)
-        case "refrain":
-            RefrainTileView(refrainState: demoRefrain, audioState: audioState)
-        case "songInfo":
-            SongInfoTileView(songInfoState: demoSongInfo, audioState: audioState)
-        default:
-            Color.black
-        }
+        // All rendering is done headlessly by HeadlessRenderer
+        // UI only displays Syphon client previews
+        let serverName: String = {
+            switch selectedTile {
+            case "shader": return "SwiftVJ/Shader"
+            case "mask": return "SwiftVJ/Mask"
+            case "lyrics": return "SwiftVJ/Lyrics"
+            case "refrain": return "SwiftVJ/Refrain"
+            case "songInfo": return "SwiftVJ/SongInfo"
+            default: return "SwiftVJ/Shader"
+            }
+        }()
+        
+        SyphonThumbnailView(serverName: serverName)
     }
     
     // MARK: - Tile Colors (for thumbnail grid)

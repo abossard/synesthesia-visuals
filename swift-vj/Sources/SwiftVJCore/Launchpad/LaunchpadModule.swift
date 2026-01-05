@@ -14,6 +14,7 @@ public struct LaunchpadStatus: Sendable {
     public let deviceName: String?
     public let isLearnMode: Bool
     public let configuredPadCount: Int
+    public let currentBpm: Float
 }
 
 /// Launchpad controller module - requires real hardware
@@ -116,7 +117,8 @@ public final class LaunchpadModule: @unchecked Sendable {
             isConnected: midi.isConnected,
             deviceName: midi.connectedDeviceName,
             isLearnMode: state.learnState.phase != .idle,
-            configuredPadCount: state.pads.count
+            configuredPadCount: state.pads.count,
+            currentBpm: currentBpm
         )
     }
     
@@ -236,7 +238,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         guard isEnabled else { return }
         
         // Handle BPM updates for beat-sync blinking
-        if event.address == "/audio/bpm/bpm" || event.address == "/syn/bpm" {
+        if event.address == "/audio/bpm/bpm" || event.address == "/syn/bpm" || event.address == "/audio/bpm" {
             if case .float(let bpm) = event.args.first, bpm > 0 {
                 updateBpm(bpm)
             }
@@ -319,7 +321,11 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Set multiple LEDs (requires device connected)
     public func setLeds(_ updates: [(ButtonId, Int)]) {
-        guard isEnabled else { return }
+        guard isEnabled else {
+            print("[Launchpad] setLeds ignored - module disabled")
+            return
+        }
+        print("[Launchpad] setLeds: updating \(updates.count) pads")
         for (padId, color) in updates {
             midi.setLed(padId: padId, color: color)
         }

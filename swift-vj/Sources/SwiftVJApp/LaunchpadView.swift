@@ -6,6 +6,7 @@ import SwiftVJCore
 
 struct LaunchpadView: View {
     @EnvironmentObject var appState: AppState
+    @State private var showTestSheet = false
     
     // Grid layout constants
     private let gridSize = 8
@@ -101,7 +102,7 @@ struct LaunchpadView: View {
                         Group {
                             DetailRow(label: "Active Scene", value: state.activeScene ?? "-")
                             DetailRow(label: "Active Preset", value: state.activePreset ?? "-")
-                            DetailRow(label: "BPM", value: String(format: "%.1f", 120.0)) // Placeholder
+                            DetailRow(label: "BPM", value: String(format: "%.1f", appState.launchpadStatus?.currentBpm ?? 0.0))
                             DetailRow(label: "Beat Phase", value: String(format: "%.2f", state.beatPhase))
                         }
                         
@@ -119,6 +120,13 @@ struct LaunchpadView: View {
                         
                         Text("Diagnostics")
                             .font(.headline)
+                        
+                        Button("Run E2E Test Sequence") {
+                            showTestSheet = true
+                        }
+                        .sheet(isPresented: $showTestSheet) {
+                            LaunchpadTestView()
+                        }
                         
                         Button("Force Programmer Mode") {
                             appState.launchpadModule?.forceProgrammerMode()

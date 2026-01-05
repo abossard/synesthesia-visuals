@@ -115,9 +115,9 @@ final class RenderEngine: ObservableObject {
         let renderer = HeadlessRenderer(device: device)
         self.headlessRenderer = renderer
         
-        // Load default shader
-        renderer.shaderRenderer.loadShader(name: "oscillate")
-        renderer.maskRenderer.loadShader(name: "mask_circular")
+        // Load default shaders (verified to exist in metallib)
+        renderer.shaderRenderer.loadShader(name: "3isacrowd")
+        renderer.maskRenderer.loadShader(name: "BWrevolvingswirl")
 
         // Create Syphon output manager (singleton to avoid duplicate servers)
         await MainActor.run { [weak self] in

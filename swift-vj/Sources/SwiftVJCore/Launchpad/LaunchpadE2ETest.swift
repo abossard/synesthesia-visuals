@@ -185,13 +185,13 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     
     // MARK: - Test Framework
     
-    private func runStep(_ step: Int, _ name: String, _ test: () -> (Bool, String)) {
+    private func runStep(_ step: Int, _ name: String, _ test: () async -> (Bool, String)) async {
         io.print("")
         io.print("─────────────────────────────────────────────────")
         io.print("Step \(step)/12: \(name)")
         io.print("─────────────────────────────────────────────────")
         
-        let (passed, message) = test()
+        let (passed, message) = await test()
         
         let icon = passed ? "✅" : "❌"
         io.print("")
@@ -259,7 +259,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     }
     
     // Step 2: Grid LEDs
-    private func testGridLeds() -> (Bool, String) {
+    private func testGridLeds() async -> (Bool, String) {
         io.print("  Cycling colors on all grid pads...")
         
         // Light up grid with rainbow pattern
@@ -282,7 +282,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         }
         
         io.print("")
-        if !io.askYesNo("  Did you see 8 rows of colors? [y/n]: ") {
+        if await !io.askYesNo("  Did you see 8 rows of colors? [y/n]: ") {
             return (false, "User reported LEDs not visible")
         }
         
@@ -692,7 +692,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
 // MARK: - Public Entry Point
 
 /// Run the Launchpad E2E test from command line
-public func runLaunchpadE2ETest() {
+public func runLaunchpadE2ETest() async {
     let test = LaunchpadE2ETest()
-    test.run()
+    await test.run()
 }

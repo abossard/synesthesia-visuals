@@ -134,13 +134,13 @@ struct LaunchpadTestCommand: ParsableCommand {
 
 // MARK: - Launchpad E2E Command
 
-struct LaunchpadE2ECommand: ParsableCommand {
+struct LaunchpadE2ECommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "launchpad-e2e",
         abstract: "End-to-end guided test for all Launchpad features"
     )
     
-    func run() throws {
-        runLaunchpadE2ETest()
+    func run() async throws {
+        await runLaunchpadE2ETest()
     }
 }
