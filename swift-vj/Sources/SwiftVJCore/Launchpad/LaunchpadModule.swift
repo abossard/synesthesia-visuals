@@ -347,6 +347,11 @@ public final class LaunchpadModule: @unchecked Sendable {
         midi.isLaunchpadAvailable
     }
     
+    /// YAML configuration for bank names/colors (if loaded)
+    public var yamlConfig: LaunchpadYAMLConfig? {
+        executor.yamlConfig
+    }
+    
     /// Force Programmer Mode (send SysEx sequence)
     public func forceProgrammerMode() {
         guard isEnabled else { return }

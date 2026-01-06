@@ -100,7 +100,7 @@ struct LaunchpadView: View {
                     
                     if let state = appState.launchpadState {
                         // Get YAML config for bank names/colors
-                        let yamlConfig = appState.launchpadModule?.effectExecutor.yamlConfig
+                        let yamlConfig = appState.launchpadModule?.yamlConfig
                         
                         Group {
                             // Bank indicator with names from YAML
