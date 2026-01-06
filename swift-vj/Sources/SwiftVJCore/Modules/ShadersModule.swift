@@ -55,7 +55,7 @@ public actor ShadersModule: Module {
     
     // MARK: - Public API
     
-    /// Load shaders from directory
+    /// Load shaders from directory (only those with analysis.json)
     ///
     /// - Parameter directory: Path to shaders directory (containing isf/ and glsl/ subdirs)
     /// - Returns: Number of shaders loaded
@@ -63,6 +63,16 @@ public actor ShadersModule: Module {
     public func loadShaders(from directory: URL) async -> Int {
         shadersDir = directory
         return await matcher.loadShaders(from: directory)
+    }
+    
+    /// Load all shader files that have analysis.json from directory
+    ///
+    /// - Parameter directory: Path to shaders directory (containing glsl/ and/or masks/ subdirs)
+    /// - Returns: Number of shaders loaded
+    @discardableResult
+    public func loadAllShaderFiles(from directory: URL) async -> Int {
+        shadersDir = directory
+        return await matcher.loadAllShaderFiles(from: directory)
     }
     
     /// Match shaders to energy and valence values

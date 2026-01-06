@@ -69,8 +69,8 @@ actor ShaderScreenshotCapture {
             dataInfo: nil,
             data: data,
             size: rowBytes * height,
-            releaseData: { _, data, _ in
-                free(data)
+            releaseData: { _, dataPtr, _ in
+                dataPtr.deallocate()
             }
         ) else {
             free(data)
@@ -205,13 +205,4 @@ actor ShaderScreenshotCapture {
             return false
         }
     }
-}
-
-// MARK: - LogLevel enum (if not already defined)
-
-enum LogLevel: String {
-    case debug = "DEBUG"
-    case info = "INFO"
-    case warning = "WARN"
-    case error = "ERROR"
 }

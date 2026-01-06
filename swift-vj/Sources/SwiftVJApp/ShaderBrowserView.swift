@@ -195,26 +195,85 @@ struct ShaderBrowserView: View {
     }
     
     private func loadShaders() async {
-        appState.log("Loading shaders...", level: .debug)
+        appState.log("Loading shaders from swift-vj/Shaders...", level: .debug)
         
         // Get shaders from module
         if let module = appState.shadersModule {
-            shaders = await module.allShaders
+            // First check if shaders are already loaded
+            var loadedShaders = await module.allShaders
+            
+            // If no shaders loaded, load from Shaders directory
+            if loadedShaders.isEmpty {
+                let shadersDir = findShadersDirectory()
+                if let dir = shadersDir {
+                    appState.log("Loading shaders from: \(dir.path)", level: .debug)
+                    let count = await module.loadAllShaderFiles(from: dir)
+                    appState.log("Found \(count) shaders with analysis.json", level: .info)
+                    loadedShaders = await module.allShaders
+                } else {
+                    appState.log("Could not find Shaders directory", level: .warning)
+                }
+            }
+            
+            shaders = loadedShaders
             let maskCount = shaders.filter { $0.rating == .mask }.count
             let regularCount = shaders.count - maskCount
             appState.log("Loaded \(shaders.count) shader(s): \(regularCount) regular, \(maskCount) masks", level: .info)
-        } else {
-            // Demo data
-            shaders = [
-                CoreShaderInfo(name: "neon_giza", path: "", energyScore: 0.8, moodValence: 0.5, mood: "energetic", colors: ["neon", "cyan"], effects: ["geometric", "pyramid"], rating: .best),
-                CoreShaderInfo(name: "fluid_noise", path: "", energyScore: 0.5, moodValence: 0.3, mood: "organic", colors: ["blue", "purple"], effects: ["fluid", "flow"], rating: .good),
-                CoreShaderInfo(name: "traced_tunnel", path: "", energyScore: 0.7, moodValence: -0.3, mood: "dark", colors: ["dark", "red"], effects: ["raymarching", "tunnel"], rating: .best),
-                CoreShaderInfo(name: "vortex_flythrough", path: "", energyScore: 0.9, moodValence: 0.2, mood: "psychedelic", colors: ["rainbow"], effects: ["vortex"], rating: .good),
-                CoreShaderInfo(name: "stained_glass", path: "", energyScore: 0.4, moodValence: 0.6, mood: "calm", colors: ["warm"], effects: ["glass", "colorful"], rating: .normal),
-                CoreShaderInfo(name: "cosmic_web", path: "", energyScore: 0.6, moodValence: 0.1, mood: "ambient", colors: ["blue", "white"], effects: ["space", "network"], rating: .best),
-            ]
-            appState.log("Using demo data: \(shaders.count) shader(s)", level: .debug)
         }
+        
+        // If still empty, show message
+        if shaders.isEmpty {
+            appState.log("No shaders with analysis.json found. Run AI analysis first.", level: .warning)
+        }
+    }
+    
+    /// Find the Shaders directory in known locations
+    private func findShadersDirectory() -> URL? {
+        let fileManager = FileManager.default
+        
+        // Check user-configured shaderDirectory from settings
+        let configuredPath = UserDefaults.standard.string(forKey: "shaderDirectory") ?? ""
+        if !configuredPath.isEmpty {
+            let configuredURL = URL(fileURLWithPath: configuredPath)
+            if fileManager.fileExists(atPath: configuredURL.path) {
+                return configuredURL
+            }
+        }
+        
+        // Try relative to the executable (for development)
+        let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        
+        // Go up from executable to find swift-vj/Shaders
+        var currentURL = executableURL.deletingLastPathComponent()
+        for _ in 0..<10 {
+            let shadersURL = currentURL.appendingPathComponent("Shaders")
+            if fileManager.fileExists(atPath: shadersURL.appendingPathComponent("glsl").path) {
+                return shadersURL
+            }
+            
+            // Also check swift-vj/Shaders
+            let swiftVJShaders = currentURL.appendingPathComponent("swift-vj/Shaders")
+            if fileManager.fileExists(atPath: swiftVJShaders.appendingPathComponent("glsl").path) {
+                return swiftVJShaders
+            }
+            
+            currentURL = currentURL.deletingLastPathComponent()
+        }
+        
+        // Fallback: hardcoded development path
+        let devPaths = [
+            URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Shaders"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("swift-vj/Shaders"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Shaders")
+        ]
+        
+        for devPath in devPaths {
+            if fileManager.fileExists(atPath: devPath.appendingPathComponent("glsl").path) {
+                return devPath
+            }
+        }
+        
+        return nil
     }
     
     private func loadEnabledStates() {
@@ -345,7 +404,7 @@ struct ShaderBrowserView: View {
             return .failure
         }
         
-        guard let shaderTexture = headlessRenderer.shaderRenderer?.texture else {
+        guard let shaderTexture = headlessRenderer.shaderRenderer.texture else {
             appState.log("  ✗ Shader renderer texture not available", level: .error)
             return .failure
         }
@@ -481,6 +540,28 @@ struct ShaderBrowserView: View {
             directory.appendingPathComponent("\(shaderName).glsl"),
             directory.appendingPathComponent("fragment.glsl"),
             directory.appendingPathComponent("renderpasses/main.glsl")
+        ]
+        
+        for file in possibleFiles {
+            if FileManager.default.fileExists(atPath: file.path) {
+                return file
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Find screenshot file for a shader
+    private func findScreenshot(for shader: CoreShaderInfo) -> URL? {
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
+        
+        // Check for existing screenshot
+        let possibleFiles = [
+            shaderDir.appendingPathComponent("\(shaderName).png"),
+            shaderDir.appendingPathComponent("screenshot.png"),
+            shaderDir.appendingPathComponent("preview.png")
         ]
         
         for file in possibleFiles {

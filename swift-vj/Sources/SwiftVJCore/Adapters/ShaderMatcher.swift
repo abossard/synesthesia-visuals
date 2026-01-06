@@ -207,7 +207,101 @@ public actor ShaderMatcher {
             }
         }
         
-        print("[ShaderMatcher] Loaded \(shaders.count) shaders")
+        print("[ShaderMatcher] Loaded \(shaders.count) shaders with analysis")
+        return shaders.count
+    }
+    
+    /// Load all shader files from directory (with or without analysis.json)
+    ///
+    /// Scans glsl/ and masks/ subdirectories for .txt shader files.
+    /// Only includes shaders that have an accompanying .analysis.json file.
+    ///
+    /// - Parameter directory: Path to shaders directory (containing glsl/ and/or masks/ subdirs)
+    /// - Returns: Number of shaders loaded
+    @discardableResult
+    public func loadAllShaderFiles(from directory: URL) async -> Int {
+        shadersDir = directory
+        shaders.removeAll()
+        analyses.removeAll()
+        
+        let fileManager = FileManager.default
+        
+        // Scan glsl/ and masks/ subdirectories
+        let subDirConfigs: [(name: String, ext: String, rating: ShaderRating)] = [
+            ("glsl", "txt", .normal),
+            ("masks", "txt", .mask)
+        ]
+        
+        for (subDir, ext, defaultRating) in subDirConfigs {
+            let subDirURL = directory.appendingPathComponent(subDir)
+            guard fileManager.fileExists(atPath: subDirURL.path) else { continue }
+            
+            // Find all shader files
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: subDirURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            
+            for fileURL in contents {
+                guard fileURL.pathExtension == ext else { continue }
+                
+                let shaderName = fileURL.deletingPathExtension().lastPathComponent
+                let prefixedName = "\(subDir)/\(shaderName)"
+                
+                // Check for analysis.json file
+                let analysisURL = fileURL.deletingPathExtension().appendingPathExtension("analysis.json")
+                
+                // Only load if analysis.json exists
+                guard fileManager.fileExists(atPath: analysisURL.path) else {
+                    continue
+                }
+                
+                // Try to load analysis
+                var loadedAnalysis: ShaderAnalysis? = nil
+                var rating = defaultRating
+                var energyScore = 0.5
+                var moodValence = 0.0
+                var colorWarmth = 0.5
+                var motionSpeed = 0.5
+                var mood = "unknown"
+                var colors: [String] = []
+                var effects: [String] = []
+                
+                if let data = try? Data(contentsOf: analysisURL),
+                   let analysis = try? JSONDecoder().decode(ShaderAnalysis.self, from: data) {
+                    loadedAnalysis = analysis
+                    energyScore = analysis.features.energyScore
+                    moodValence = analysis.features.moodValence
+                    colorWarmth = analysis.features.colorWarmth
+                    motionSpeed = analysis.features.motionSpeed
+                    mood = analysis.mood
+                    colors = analysis.colors
+                    effects = analysis.effects
+                }
+                
+                // Create ShaderInfo
+                let info = ShaderInfo(
+                    name: prefixedName,
+                    path: fileURL.path,
+                    energyScore: energyScore,
+                    moodValence: moodValence,
+                    colorWarmth: colorWarmth,
+                    motionSpeed: motionSpeed,
+                    mood: mood,
+                    colors: colors,
+                    effects: effects,
+                    rating: rating
+                )
+                
+                shaders[prefixedName] = info
+                if let analysis = loadedAnalysis {
+                    analyses[prefixedName] = analysis
+                }
+            }
+        }
+        
+        print("[ShaderMatcher] Loaded \(shaders.count) shader files with analysis")
         return shaders.count
     }
     

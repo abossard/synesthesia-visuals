@@ -91,19 +91,12 @@ global:
     - { cc: 97, bank: 6, name: "Audio",       idleColor: yellow,  activeColor: white }
     - { cc: 98, bank: 7, name: "Custom",      idleColor: grey,    activeColor: white }
 
-  # Scene column buttons (right side, notes 19, 29, 39...)
+  # Scene column buttons (right side, notes 19, 29, 39, 49)
   sceneButtons:
-    - note: 19
-      function: record
-      label: "Record"
-      idleColor: redDim
-      activeColor: red
-
-    - note: 29
-      function: shift
-      label: "Shift"
-      idleColor: grey
-      activeColor: white
+    - { note: 19, function: page, label: "Page 1", idleColor: purpleDim, activeColor: purple }
+    - { note: 29, function: page, label: "Page 2", idleColor: purpleDim, activeColor: purple }
+    - { note: 39, function: page, label: "Page 3", idleColor: purpleDim, activeColor: purple }
+    - { note: 49, function: page, label: "Page 4", idleColor: purpleDim, activeColor: purple }
 
 # ============================================================================
 # BANK 0: PLAYLIST CONTROL
