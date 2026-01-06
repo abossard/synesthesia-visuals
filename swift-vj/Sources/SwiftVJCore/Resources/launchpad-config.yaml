@@ -1,0 +1,769 @@
+# Launchpad Mini Mk3 Configuration
+# SwiftVJ - Complete layout and behavior definition
+#
+# STRUCTURE:
+#   - colors: Named color palette
+#   - groups: Selector groups with items (user lists or system references)
+#   - global: Fixed buttons across all banks (record, shift, bank switches)
+#   - banks: 8 banks (0-7), each with fixed and/or programmable pads
+#
+# PAD MODES:
+#   oneShot  - Single trigger on press, sends osc
+#   toggle   - On/Off, alternates between oscOn/oscOff
+#   selector - Radio button within group, one active at a time
+#   push     - Momentary, sends oscOn on press, oscOff on release
+
+version: 1
+
+# ============================================================================
+# COLOR PALETTE
+# ============================================================================
+
+colors:
+  off: 0
+  white: 3
+  grey: 1
+  red: 5
+  redDim: 1
+  redBright: 6
+  orange: 9
+  orangeDim: 7
+  yellow: 13
+  yellowDim: 11
+  yellowBright: 14
+  green: 21
+  greenDim: 19
+  greenBright: 22
+  cyan: 37
+  cyanDim: 35
+  blue: 45
+  blueDim: 41
+  blueBright: 46
+  purple: 53
+  purpleDim: 51
+  pink: 57
+  pinkDim: 55
+  magenta: 61
+
+# ============================================================================
+# SELECTOR GROUPS
+# ============================================================================
+# Groups define mutually exclusive selections. Items can be:
+# - A static list of strings (user data like playlist names)
+# - A reference to dynamic system data ($scenes, $presets, etc.)
+
+groups:
+  playlists:
+    type: static
+    items:
+      - "Chill Vibes"
+      - "High Energy"
+      - "Ambient"
+      - "Techno"
+      - "House"
+      - "Breaks"
+      - "Experimental"
+      - "Classics"
+
+  scenes:
+    type: dynamic
+    source: "$synesthesia/scenes"  # Populated from Synesthesia at runtime
+
+  presets:
+    type: dynamic
+    source: "$synesthesia/presets"
+    parent: scenes  # Resets when parent group changes
+
+# ============================================================================
+# GLOBAL FIXED ELEMENTS
+# ============================================================================
+# These are the same across ALL banks and cannot be reprogrammed.
+
+global:
+  # Top row bank buttons (CC 91-98)
+  bankButtons:
+    - { cc: 91, bank: 0, name: "Playlist",    idleColor: blue,    activeColor: white }
+    - { cc: 92, bank: 1, name: "Synesthesia", idleColor: purple,  activeColor: white }
+    - { cc: 93, bank: 2, name: "Magic",       idleColor: cyan,    activeColor: white }
+    - { cc: 94, bank: 3, name: "Processing",  idleColor: green,   activeColor: white }
+    - { cc: 95, bank: 4, name: "Effects",     idleColor: orange,  activeColor: white }
+    - { cc: 96, bank: 5, name: "Colors",      idleColor: pink,    activeColor: white }
+    - { cc: 97, bank: 6, name: "Audio",       idleColor: yellow,  activeColor: white }
+    - { cc: 98, bank: 7, name: "Custom",      idleColor: grey,    activeColor: white }
+
+  # Scene column buttons (right side, notes 19, 29, 39...)
+  sceneButtons:
+    - note: 19
+      function: record
+      label: "Record"
+      idleColor: redDim
+      activeColor: red
+
+    - note: 29
+      function: shift
+      label: "Shift"
+      idleColor: grey
+      activeColor: white
+
+# ============================================================================
+# BANK 0: PLAYLIST CONTROL
+# ============================================================================
+
+bank0:
+  name: "Playlist"
+  purpose: "Playlist selection and playback"
+
+  pads:
+    # Row 7: Playlist selection (uses 'playlists' group)
+    - { x: 0, y: 7, mode: selector, group: playlists, index: 0, idleColor: blueDim, activeColor: blue }
+    - { x: 1, y: 7, mode: selector, group: playlists, index: 1, idleColor: blueDim, activeColor: blue }
+    - { x: 2, y: 7, mode: selector, group: playlists, index: 2, idleColor: blueDim, activeColor: blue }
+    - { x: 3, y: 7, mode: selector, group: playlists, index: 3, idleColor: blueDim, activeColor: blue }
+    - { x: 4, y: 7, mode: selector, group: playlists, index: 4, idleColor: blueDim, activeColor: blue }
+    - { x: 5, y: 7, mode: selector, group: playlists, index: 5, idleColor: blueDim, activeColor: blue }
+    - { x: 6, y: 7, mode: selector, group: playlists, index: 6, idleColor: blueDim, activeColor: blue }
+    - { x: 7, y: 7, mode: selector, group: playlists, index: 7, idleColor: blueDim, activeColor: blue }
+
+    # Row 6: Playback controls
+    - x: 0
+      y: 6
+      mode: toggle
+      label: "Play"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/playlist/play", args: [1] }
+      oscOff: { address: "/playlist/play", args: [0] }
+
+    - x: 2
+      y: 6
+      mode: oneShot
+      label: "Previous"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/playlist/previous" }
+
+    - x: 4
+      y: 6
+      mode: oneShot
+      label: "Next"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/playlist/next" }
+
+    - x: 6
+      y: 6
+      mode: toggle
+      label: "Shuffle"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/playlist/shuffle", args: [1] }
+      oscOff: { address: "/playlist/shuffle", args: [0] }
+
+    - x: 7
+      y: 6
+      mode: toggle
+      label: "Auto"
+      idleColor: orangeDim
+      activeColor: orange
+      oscOn:  { address: "/playlist/auto", args: [1] }
+      oscOff: { address: "/playlist/auto", args: [0] }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 1: SYNESTHESIA
+# ============================================================================
+# Example: Scene selectors on row 7, preset controls on row 6, 
+# intensity/speed controls on row 5
+
+bank1:
+  name: "Synesthesia"
+  purpose: "Scene and preset control"
+  
+  pads:
+    # Row 7: Scene selection (dynamic group populated at runtime)
+    # These will show scene names from Synesthesia when connected
+    - { x: 0, y: 7, mode: selector, group: scenes, index: 0, idleColor: purpleDim, activeColor: purple }
+    - { x: 1, y: 7, mode: selector, group: scenes, index: 1, idleColor: purpleDim, activeColor: purple }
+    - { x: 2, y: 7, mode: selector, group: scenes, index: 2, idleColor: purpleDim, activeColor: purple }
+    - { x: 3, y: 7, mode: selector, group: scenes, index: 3, idleColor: purpleDim, activeColor: purple }
+    - { x: 4, y: 7, mode: selector, group: scenes, index: 4, idleColor: purpleDim, activeColor: purple }
+    - { x: 5, y: 7, mode: selector, group: scenes, index: 5, idleColor: purpleDim, activeColor: purple }
+    - { x: 6, y: 7, mode: selector, group: scenes, index: 6, idleColor: purpleDim, activeColor: purple }
+    - { x: 7, y: 7, mode: selector, group: scenes, index: 7, idleColor: purpleDim, activeColor: purple }
+
+    # Row 6: Preset selection (resets when scene changes)
+    - { x: 0, y: 6, mode: selector, group: presets, index: 0, idleColor: cyanDim, activeColor: cyan }
+    - { x: 1, y: 6, mode: selector, group: presets, index: 1, idleColor: cyanDim, activeColor: cyan }
+    - { x: 2, y: 6, mode: selector, group: presets, index: 2, idleColor: cyanDim, activeColor: cyan }
+    - { x: 3, y: 6, mode: selector, group: presets, index: 3, idleColor: cyanDim, activeColor: cyan }
+    - { x: 4, y: 6, mode: selector, group: presets, index: 4, idleColor: cyanDim, activeColor: cyan }
+    - { x: 5, y: 6, mode: selector, group: presets, index: 5, idleColor: cyanDim, activeColor: cyan }
+    - { x: 6, y: 6, mode: selector, group: presets, index: 6, idleColor: cyanDim, activeColor: cyan }
+    - { x: 7, y: 6, mode: selector, group: presets, index: 7, idleColor: cyanDim, activeColor: cyan }
+
+    # Row 5: Global controls
+    - x: 0
+      y: 5
+      mode: toggle
+      label: "Freeze"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/synesthesia/freeze", args: [1] }
+      oscOff: { address: "/synesthesia/freeze", args: [0] }
+
+    - x: 2
+      y: 5
+      mode: oneShot
+      label: "Prev Scene"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/synesthesia/scene/previous" }
+
+    - x: 3
+      y: 5
+      mode: oneShot
+      label: "Next Scene"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/synesthesia/scene/next" }
+
+    - x: 5
+      y: 5
+      mode: oneShot
+      label: "Prev Preset"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/synesthesia/preset/previous" }
+
+    - x: 6
+      y: 5
+      mode: oneShot
+      label: "Next Preset"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/synesthesia/preset/next" }
+
+    - x: 7
+      y: 5
+      mode: toggle
+      label: "Auto Preset"
+      idleColor: orangeDim
+      activeColor: orange
+      oscOn:  { address: "/synesthesia/autoPreset", args: [1] }
+      oscOff: { address: "/synesthesia/autoPreset", args: [0] }
+
+  programmableRows: [0, 1, 2, 3, 4]
+
+# ============================================================================
+# BANK 2: MAGIC
+# ============================================================================
+# Example: Layer opacity controls, effect toggles, crossfader
+
+bank2:
+  name: "Magic"
+  purpose: "Magic Music Visuals"
+  
+  pads:
+    # Row 7: Layer visibility toggles
+    - x: 0
+      y: 7
+      mode: toggle
+      label: "Layer 1"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/magic/layer/1/visible", args: [1] }
+      oscOff: { address: "/magic/layer/1/visible", args: [0] }
+
+    - x: 1
+      y: 7
+      mode: toggle
+      label: "Layer 2"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/magic/layer/2/visible", args: [1] }
+      oscOff: { address: "/magic/layer/2/visible", args: [0] }
+
+    - x: 2
+      y: 7
+      mode: toggle
+      label: "Layer 3"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/magic/layer/3/visible", args: [1] }
+      oscOff: { address: "/magic/layer/3/visible", args: [0] }
+
+    - x: 3
+      y: 7
+      mode: toggle
+      label: "Layer 4"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/magic/layer/4/visible", args: [1] }
+      oscOff: { address: "/magic/layer/4/visible", args: [0] }
+
+    - x: 5
+      y: 7
+      mode: toggle
+      label: "FX Bypass"
+      idleColor: redDim
+      activeColor: red
+      oscOn:  { address: "/magic/fx/bypass", args: [1] }
+      oscOff: { address: "/magic/fx/bypass", args: [0] }
+
+    - x: 7
+      y: 7
+      mode: toggle
+      label: "Output"
+      idleColor: white
+      activeColor: green
+      oscOn:  { address: "/magic/output/enable", args: [1] }
+      oscOff: { address: "/magic/output/enable", args: [0] }
+
+    # Row 6: Blend mode selection
+    - x: 0
+      y: 6
+      mode: oneShot
+      label: "Normal"
+      idleColor: blueDim
+      activeColor: blue
+      osc: { address: "/magic/blend", args: ["normal"] }
+
+    - x: 1
+      y: 6
+      mode: oneShot
+      label: "Add"
+      idleColor: blueDim
+      activeColor: blue
+      osc: { address: "/magic/blend", args: ["add"] }
+
+    - x: 2
+      y: 6
+      mode: oneShot
+      label: "Screen"
+      idleColor: blueDim
+      activeColor: blue
+      osc: { address: "/magic/blend", args: ["screen"] }
+
+    - x: 3
+      y: 6
+      mode: oneShot
+      label: "Multiply"
+      idleColor: blueDim
+      activeColor: blue
+      osc: { address: "/magic/blend", args: ["multiply"] }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 3: PROCESSING
+# ============================================================================
+# Example: VJUniverse tile controls, game launchers
+
+bank3:
+  name: "Processing"
+  purpose: "Processing VJ apps"
+  
+  pads:
+    # Row 7: Tile visibility
+    - x: 0
+      y: 7
+      mode: toggle
+      label: "Shader"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/vjuniverse/tile/shader/visible", args: [1] }
+      oscOff: { address: "/vjuniverse/tile/shader/visible", args: [0] }
+
+    - x: 1
+      y: 7
+      mode: toggle
+      label: "Lyrics"
+      idleColor: cyanDim
+      activeColor: cyan
+      oscOn:  { address: "/vjuniverse/tile/lyrics/visible", args: [1] }
+      oscOff: { address: "/vjuniverse/tile/lyrics/visible", args: [0] }
+
+    - x: 2
+      y: 7
+      mode: toggle
+      label: "Refrain"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/vjuniverse/tile/refrain/visible", args: [1] }
+      oscOff: { address: "/vjuniverse/tile/refrain/visible", args: [0] }
+
+    - x: 3
+      y: 7
+      mode: toggle
+      label: "Image"
+      idleColor: orangeDim
+      activeColor: orange
+      oscOn:  { address: "/vjuniverse/tile/image/visible", args: [1] }
+      oscOff: { address: "/vjuniverse/tile/image/visible", args: [0] }
+
+    # Row 6: Game launchers (oneShot to launch)
+    - x: 0
+      y: 6
+      mode: oneShot
+      label: "WhackMole"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/processing/launch", args: ["WhackAMole"] }
+
+    - x: 1
+      y: 6
+      mode: oneShot
+      label: "CrowdBattle"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/processing/launch", args: ["CrowdBattle"] }
+
+    - x: 2
+      y: 6
+      mode: oneShot
+      label: "BuildupRelease"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/processing/launch", args: ["BuildupRelease"] }
+
+    - x: 7
+      y: 6
+      mode: oneShot
+      label: "Stop All"
+      idleColor: redDim
+      activeColor: red
+      osc: { address: "/processing/stop" }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 4: EFFECTS
+# ============================================================================
+# Example: Post-processing effects with toggle controls
+
+bank4:
+  name: "Effects"
+  purpose: "Post-processing effects"
+  
+  pads:
+    # Row 7: Primary effects
+    - x: 0
+      y: 7
+      mode: toggle
+      label: "Bloom"
+      idleColor: pinkDim
+      activeColor: pink
+      oscOn:  { address: "/fx/bloom", args: [1] }
+      oscOff: { address: "/fx/bloom", args: [0] }
+
+    - x: 1
+      y: 7
+      mode: toggle
+      label: "Blur"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/fx/blur", args: [1] }
+      oscOff: { address: "/fx/blur", args: [0] }
+
+    - x: 2
+      y: 7
+      mode: toggle
+      label: "Sharpen"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/fx/sharpen", args: [1] }
+      oscOff: { address: "/fx/sharpen", args: [0] }
+
+    - x: 3
+      y: 7
+      mode: toggle
+      label: "Edge"
+      idleColor: cyanDim
+      activeColor: cyan
+      oscOn:  { address: "/fx/edge", args: [1] }
+      oscOff: { address: "/fx/edge", args: [0] }
+
+    - x: 4
+      y: 7
+      mode: toggle
+      label: "Invert"
+      idleColor: yellowDim
+      activeColor: yellow
+      oscOn:  { address: "/fx/invert", args: [1] }
+      oscOff: { address: "/fx/invert", args: [0] }
+
+    - x: 5
+      y: 7
+      mode: toggle
+      label: "Mirror"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/fx/mirror", args: [1] }
+      oscOff: { address: "/fx/mirror", args: [0] }
+
+    - x: 6
+      y: 7
+      mode: toggle
+      label: "Kaleid"
+      idleColor: magenta
+      activeColor: white
+      oscOn:  { address: "/fx/kaleidoscope", args: [1] }
+      oscOff: { address: "/fx/kaleidoscope", args: [0] }
+
+    - x: 7
+      y: 7
+      mode: oneShot
+      label: "Reset FX"
+      idleColor: redDim
+      activeColor: red
+      osc: { address: "/fx/reset" }
+
+    # Row 6: Flash/strobe effects (push = momentary)
+    - x: 0
+      y: 6
+      mode: push
+      label: "Flash White"
+      idleColor: white
+      activeColor: white
+      oscOn:  { address: "/fx/flash", args: [1.0, 1.0, 1.0] }
+      oscOff: { address: "/fx/flash", args: [0.0, 0.0, 0.0] }
+
+    - x: 1
+      y: 6
+      mode: push
+      label: "Flash Red"
+      idleColor: red
+      activeColor: redBright
+      oscOn:  { address: "/fx/flash", args: [1.0, 0.0, 0.0] }
+      oscOff: { address: "/fx/flash", args: [0.0, 0.0, 0.0] }
+
+    - x: 2
+      y: 6
+      mode: push
+      label: "Flash Blue"
+      idleColor: blue
+      activeColor: blueBright
+      oscOn:  { address: "/fx/flash", args: [0.0, 0.0, 1.0] }
+      oscOff: { address: "/fx/flash", args: [0.0, 0.0, 0.0] }
+
+    - x: 3
+      y: 6
+      mode: toggle
+      label: "Strobe"
+      idleColor: yellowDim
+      activeColor: yellow
+      oscOn:  { address: "/fx/strobe", args: [1] }
+      oscOff: { address: "/fx/strobe", args: [0] }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 5: COLORS
+# ============================================================================
+# Example: Color palette selection, hue/saturation controls
+
+bank5:
+  name: "Colors"
+  purpose: "Color palette control"
+  
+  pads:
+    # Row 7: Preset palettes
+    - x: 0
+      y: 7
+      mode: oneShot
+      label: "Sunset"
+      idleColor: orange
+      activeColor: orangeDim
+      osc: { address: "/colors/palette", args: ["sunset"] }
+
+    - x: 1
+      y: 7
+      mode: oneShot
+      label: "Ocean"
+      idleColor: blue
+      activeColor: cyan
+      osc: { address: "/colors/palette", args: ["ocean"] }
+
+    - x: 2
+      y: 7
+      mode: oneShot
+      label: "Forest"
+      idleColor: green
+      activeColor: greenBright
+      osc: { address: "/colors/palette", args: ["forest"] }
+
+    - x: 3
+      y: 7
+      mode: oneShot
+      label: "Neon"
+      idleColor: pink
+      activeColor: magenta
+      osc: { address: "/colors/palette", args: ["neon"] }
+
+    - x: 4
+      y: 7
+      mode: oneShot
+      label: "Mono"
+      idleColor: white
+      activeColor: grey
+      osc: { address: "/colors/palette", args: ["monochrome"] }
+
+    - x: 5
+      y: 7
+      mode: oneShot
+      label: "Rainbow"
+      idleColor: red
+      activeColor: purple
+      osc: { address: "/colors/palette", args: ["rainbow"] }
+
+    - x: 6
+      y: 7
+      mode: oneShot
+      label: "Fire"
+      idleColor: red
+      activeColor: yellow
+      osc: { address: "/colors/palette", args: ["fire"] }
+
+    - x: 7
+      y: 7
+      mode: oneShot
+      label: "Ice"
+      idleColor: cyan
+      activeColor: white
+      osc: { address: "/colors/palette", args: ["ice"] }
+
+    # Row 6: Color adjustments
+    - x: 0
+      y: 6
+      mode: toggle
+      label: "Auto Hue"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/colors/autoHue", args: [1] }
+      oscOff: { address: "/colors/autoHue", args: [0] }
+
+    - x: 7
+      y: 6
+      mode: oneShot
+      label: "Random"
+      idleColor: yellowDim
+      activeColor: yellow
+      osc: { address: "/colors/random" }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 6: AUDIO
+# ============================================================================
+# Example: Audio routing, input selection, level controls
+
+bank6:
+  name: "Audio"
+  purpose: "Audio routing and levels"
+  
+  pads:
+    # Row 7: Audio source selection
+    - x: 0
+      y: 7
+      mode: toggle
+      label: "BlackHole"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/audio/source", args: ["blackhole"] }
+      oscOff: { address: "/audio/source", args: ["default"] }
+
+    - x: 1
+      y: 7
+      mode: toggle
+      label: "Line In"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/audio/source", args: ["linein"] }
+      oscOff: { address: "/audio/source", args: ["default"] }
+
+    - x: 2
+      y: 7
+      mode: toggle
+      label: "Mic"
+      idleColor: redDim
+      activeColor: red
+      oscOn:  { address: "/audio/source", args: ["microphone"] }
+      oscOff: { address: "/audio/source", args: ["default"] }
+
+    # Row 6: Audio reactivity toggles
+    - x: 0
+      y: 6
+      mode: toggle
+      label: "Bass React"
+      idleColor: redDim
+      activeColor: red
+      oscOn:  { address: "/audio/react/bass", args: [1] }
+      oscOff: { address: "/audio/react/bass", args: [0] }
+
+    - x: 1
+      y: 6
+      mode: toggle
+      label: "Mid React"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/audio/react/mid", args: [1] }
+      oscOff: { address: "/audio/react/mid", args: [0] }
+
+    - x: 2
+      y: 6
+      mode: toggle
+      label: "High React"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/audio/react/high", args: [1] }
+      oscOff: { address: "/audio/react/high", args: [0] }
+
+    - x: 4
+      y: 6
+      mode: toggle
+      label: "Beat Sync"
+      idleColor: yellowDim
+      activeColor: yellow
+      oscOn:  { address: "/audio/beatSync", args: [1] }
+      oscOff: { address: "/audio/beatSync", args: [0] }
+
+    - x: 7
+      y: 6
+      mode: toggle
+      label: "Mute"
+      idleColor: grey
+      activeColor: red
+      oscOn:  { address: "/audio/mute", args: [1] }
+      oscOff: { address: "/audio/mute", args: [0] }
+
+  programmableRows: [0, 1, 2, 3, 4, 5]
+
+# ============================================================================
+# BANK 7: CUSTOM
+# ============================================================================
+# Example: User-defined mappings - mostly empty for learn mode
+
+bank7:
+  name: "Custom"
+  purpose: "User-defined mappings"
+  
+  pads:
+    # Just a few example pads, rest fully programmable via learn mode
+    - x: 7
+      y: 7
+      mode: oneShot
+      label: "Panic"
+      idleColor: red
+      activeColor: redBright
+      osc: { address: "/system/panic" }
+
+    - x: 0
+      y: 7
+      mode: oneShot
+      label: "Save State"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/system/save" }
+
+  programmableRows: [0, 1, 2, 3, 4, 5, 6, 7]
