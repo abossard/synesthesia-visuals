@@ -1,5 +1,11 @@
 # Processing VJ Games Development Guide
 
+> **⚠️ ARCHIVED:** Processing-VJ has been archived as of 2026-01-05. This guide is preserved for reference.
+> 
+> **New VJ System:** Swift-VJ now provides integrated rendering with Metal-based shaders, text tiles, and image tiles. See [../../swift-vj/README.md](../../swift-vj/README.md) and [../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md).
+>
+> **Archived Source:** Processing games and sketches are available in `archive/processing-vj/` but are no longer actively maintained.
+
 This guide covers how to create interactive VJ games and visuals using Processing (Java) with MIDI controller input from the Launchpad Mini Mk3.
 
 ## Prerequisites

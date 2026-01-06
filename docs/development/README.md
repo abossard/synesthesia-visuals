@@ -4,24 +4,39 @@ Implementation plans, future improvements, and development roadmaps for the VJ t
 
 ## Active Development Plans
 
-### Processing System
-- **[Processing Implementation Plan](processing-implementation-plan.md)** - Iterative plan for building the complete VJ system
-  - Phase 1: Core infrastructure (MIDI, state machine, level interface)
-  - Phase 2: Example levels implementation
-  - Phase 3: Advanced features and polish
-  - Current status and completed phases
+### Swift-VJ System (Current)
+- **[Swift-VJ Rewrite Plan](../../swift-vj/REWRITE_PLAN.md)** - Complete architecture and implementation roadmap
+  - Domain types and pure functions (Phase 1 ✅)
+  - Adapters for external services (Phase 2 ✅)
+  - Modules layer with business logic (Phase 3 ✅)
+  - SwiftUI application shell (Phase 4 ✅)
+  - Launchpad MIDI controller (Phase 5 ✅)
+  - Process management (Phase 6 - not started)
+  - Advanced OSC features (Phase 7 - not started)
+  - CLI tools (Phase 8 - not started)
 
-- **[Processing Syphon Idea Board](processing-syphon-idea-board.md)** - Visual concept brainstorming
-  - Links to 14 modular level files
-  - Design patterns and approaches
-  - Technical feasibility notes
+- **[Swift-VJ Code Examples](../../swift-vj/CODE_EXAMPLES.md)** - Design patterns and best practices
+  - Immutable data types
+  - Pure functions
+  - Adapter pattern
+  - Module lifecycle
+  - TDD approach
 
-### Python VJ Stack
-- **[Python VJ Refactor Plan](python-vj-refactor-plan.md)** - Architecture improvements
-  - Layer boundary implementation
-  - Domain/Infrastructure/Services/Orchestration/UI separation
-  - Modularization roadmap
-  - Testing and enforcement strategies
+### Archived Development Plans
+
+> **⚠️ ARCHIVED:** The following plans are for archived Python-VJ and Processing-VJ systems.
+
+- **[Processing Implementation Plan](processing-implementation-plan.md)** - Archived plan for Processing VJ system
+  - System completed and archived 2026-01-05
+  - Replaced by Swift-VJ Metal rendering
+
+- **[Processing Syphon Idea Board](processing-syphon-idea-board.md)** - Archived visual concepts
+  - 14 modular level implementations preserved in archive
+  - Reference for Swift-VJ shader tile ideas
+
+- **[Python VJ Refactor Plan](python-vj-refactor-plan.md)** - Archived architecture improvements
+  - Completed and superseded by Swift-VJ rewrite
+  - Clean architecture principles carried forward to Swift-VJ
 
 ### Shader Pipeline
 - **[Shader Orchestrator Implementation Plan](shader-orchestrator-implementation-plan.md)** - AI-powered shader selection
@@ -40,42 +55,52 @@ Implementation plans, future improvements, and development roadmaps for the VJ t
 ## Development Priorities
 
 ### High Priority
-1. **Python VJ Refactor** - Improve maintainability and testability
-2. **Processing Implementation** - Complete remaining levels and features
-3. **Documentation Updates** - Keep guides in sync with code changes
+1. **Swift-VJ Advanced Features** - Complete remaining phases (process management, advanced OSC)
+2. **Metal Shader Optimization** - Performance tuning for 60+ fps
+3. **Documentation Updates** - Keep guides in sync with Swift-VJ
 
 ### Medium Priority
-1. **Shader Orchestrator** - Automate shader selection with AI
-2. **Pipeline Planner** - Better tracking and visualization
-3. **Cross-platform Support** - Windows/Linux compatibility improvements
+1. **Shader Orchestrator** - Integrate with Swift-VJ shader module
+2. **Cross-platform Support** - Explore Windows/Linux compatibility
+3. **Additional Swift-VJ Modules** - Expand functionality
 
 ### Low Priority
-1. **Performance Optimization** - Further reduce latency and CPU usage
-2. **Additional Visual Effects** - Expand Processing level library
-3. **Advanced MIDI Features** - More complex routing and mapping
+1. **CLI Tools** - Swift-VJ command-line interfaces
+2. **Advanced MIDI Features** - Bank system for Launchpad
+3. **WebSocket Integration** - Remote control capabilities
 
 ## Architecture Principles
 
-### Clean Architecture
-- **Domain Layer**: Pure data and business logic, no dependencies
-- **Infrastructure Layer**: Configuration, state management, platform detection
-- **Services Layer**: External integrations (Spotify, AI, audio)
-- **Orchestration Layer**: Multi-service coordination, pipelines
-- **UI Layer**: Textual console, Processing management
+### Swift-VJ Clean Architecture
+- **Domain Layer**: Immutable data types (structs), pure functions
+- **Infrastructure Layer**: Config, Settings, ServiceHealth, Cache
+- **Adapters Layer**: External service integration (LyricsFetcher, OSCHub, VDJMonitor, etc.)
+- **Modules Layer**: Business logic with lifecycle (Playback, Lyrics, AI, Shaders, etc.)
+- **UI Layer**: SwiftUI application and Metal rendering
+
+### Design Patterns (from A Philosophy of Software Design)
+- **Deep Modules**: Simple interfaces (2-5 public methods max)
+- **Information Hiding**: Complex protocol details hidden in adapters
+- **General-Purpose Design**: Reusable components, not one-off solutions
+
+### Functional Principles (from Grokking Simplicity)
+- **Data**: Immutable frozen dataclasses/structs
+- **Calculations**: Pure functions with no side effects
+- **Actions**: Isolated side effects (network, file I/O, OSC)
 
 ### Dependency Rules
 - Inner layers never depend on outer layers
-- Dependencies point inward: UI → Orchestration → Services → Infrastructure → Domain
-- Interfaces define boundaries between layers
-- Testing isolation through dependency injection
+- Dependencies point inward: UI → Modules → Adapters → Infrastructure → Domain
+- Actors for thread safety in modules
+- AsyncStream for events instead of closures
 
 ### Code Quality Standards
-- Type hints for all Python code
-- Comprehensive error handling
-- No secrets in source code
-- Security scanning with CodeQL
-- Unit tests for business logic
-- Integration tests for pipelines
+- **Type Safety**: Swift's type system enforces correctness
+- **Comprehensive Error Handling**: Result types and throwing functions
+- **No Secrets**: Never commit credentials or API keys
+- **Security Scanning**: CodeQL for vulnerability detection
+- **Test Coverage**: 197 tests with TDD approach (behavior tests + E2E tests)
+- **Documentation**: Inline docs and comprehensive README files
 
 ## Development Workflow
 
@@ -103,36 +128,40 @@ Implementation plans, future improvements, and development roadmaps for the VJ t
 
 ## Testing Strategy
 
-### Unit Tests
-- Pure functions in domain layer
-- Service adapters with mocks
-- Utility functions and helpers
+### Behavior Tests (No External Dependencies)
+- Pure function tests (LRC parsing, refrain detection, keyword extraction)
+- Domain type validation
+- Settings and configuration
+- FSM state transitions
 
-### Integration Tests
-- OSC communication pipeline
-- Audio analyzer → visualizer flow
-- MIDI router state management
-- Lyrics fetch → parse → display
+### E2E Tests (Integration Tests)
+- Lyrics fetching from LRCLIB API (skips if service unavailable)
+- OSC send/receive (skips if ports unavailable)
+- Playback monitoring (Spotify/VDJ - skips if not running)
+- LLM client (LM Studio/OpenAI - skips if not available)
+- Shader matching (requires shader analysis files)
 
 ### Manual Testing
-- Visual verification of Processing sketches
+- SwiftUI application UI/UX
+- Metal shader rendering output
+- Syphon integration with VJ software
+- Launchpad MIDI interaction
 - Live performance scenarios
-- MIDI controller interaction
-- Syphon output validation
 
 ## Tools & Dependencies
 
-### Python Stack
-- **Testing**: pytest, pytest-arch for layer enforcement
-- **Type Checking**: mypy with strict mode
-- **Linting**: ruff for code quality
+### Swift Stack
+- **Testing**: XCTest with TDD approach, behavior tests + E2E tests
+- **Type Safety**: Swift 5.9+ type system with Sendable protocol
+- **Linting**: SwiftLint (potential future)
 - **Security**: CodeQL, dependency scanning
-- **Documentation**: Sphinx (potential future)
+- **Package Manager**: Swift Package Manager
 
-### Processing Stack
-- **Libraries**: The MidiBus, Syphon, PixelFlow
-- **Testing**: Manual visual verification
-- **Build**: Processing IDE or command-line build
+### Rendering Stack
+- **Graphics**: Metal for GPU-accelerated shader rendering
+- **UI**: SwiftUI for native macOS interface
+- **Frame Sharing**: Syphon for VJ software integration
+- **MIDI**: CoreMIDI for device discovery and communication
 
 ### Infrastructure
 - **Version Control**: Git with conventional commits
@@ -142,10 +171,10 @@ Implementation plans, future improvements, and development roadmaps for the VJ t
 ## Contributing Guidelines
 
 ### Code Style
-- **Python**: Follow PEP 8, use type hints
-- **Processing/Java**: Follow Processing conventions
+- **Swift**: Follow Swift API Design Guidelines
 - **GLSL**: Follow Synesthesia SSF patterns
 - **Documentation**: Markdown with clear headings
+- **Comments**: Minimal, prefer self-documenting code
 
 ### Commit Messages
 ```
@@ -160,7 +189,7 @@ Types: feat, fix, docs, style, refactor, test, chore
 
 ### Pull Request Process
 1. Create feature branch from main
-2. Implement changes with tests
+2. Implement changes with tests (behavior tests + E2E tests)
 3. Update documentation
 4. Request code review
 5. Address feedback
@@ -171,28 +200,28 @@ Types: feat, fix, docs, style, refactor, test, chore
 
 ### Potential Features
 - WebSocket support for remote control
-- Advanced AI visual generation
+- Advanced AI visual generation (integration with LLM for real-time shader generation)
 - Multi-screen projection mapping
-- DMX lighting integration
+- DMX lighting integration via Swift-VJ
 - Real-time collaboration features
 
-### Technical Debt
-- Migrate legacy Processing sketches to new architecture
-- Improve test coverage (currently manual-heavy)
-- Better error recovery in audio pipeline
-- Cross-platform Syphon alternative (NDI?)
+### Technical Improvements
+- Complete Phase 6: Process management (if needed for external tools)
+- Complete Phase 7: Advanced OSC features (prefix trie, drop detection, latency monitoring)
+- Complete Phase 8: CLI tools for standalone module testing
+- Cross-platform support (Windows/Linux via cross-compilation)
 
 ### Performance Optimization
-- GPU shader optimization
+- Metal shader compilation caching
 - Reduced OSC message overhead
 - Better CPU/GPU load balancing
-- Optimized particle systems
+- Optimized texture uploads
 
 ## See Also
 
 - [Setup Guides](../setup/) - Installation and configuration
 - [Operation Guides](../operation/) - Using in performance
 - [Reference Documentation](../reference/) - Technical details
-- [Architecture](../architecture/) - System design (when created)
-- [Python VJ README](../../python-vj/README.md) - Python stack details
-- [Processing README](../../processing-vj/README.md) - Processing projects
+- [Swift-VJ Documentation](../../swift-vj/README.md) - Swift VJ stack details
+- [Migration Guide](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md) - Python-VJ/Processing-VJ to Swift-VJ
+- [Archived Components](../../archive/README.md) - Legacy Python and Processing systems
