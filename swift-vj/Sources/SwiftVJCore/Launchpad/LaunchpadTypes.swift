@@ -241,6 +241,9 @@ public struct PadBehavior: Codable, Sendable {
     // Selector/One-shot specific
     public let oscAction: OscCommand?
     
+    // Additional OSC commands to send (e.g., control values after scene)
+    public let additionalOsc: [OscCommand]
+    
     public init(
         padId: ButtonId,
         mode: PadMode,
@@ -250,7 +253,8 @@ public struct PadBehavior: Codable, Sendable {
         label: String = "",
         oscOn: OscCommand? = nil,
         oscOff: OscCommand? = nil,
-        oscAction: OscCommand? = nil
+        oscAction: OscCommand? = nil,
+        additionalOsc: [OscCommand] = []
     ) {
         self.padId = padId
         self.mode = mode
@@ -261,6 +265,7 @@ public struct PadBehavior: Codable, Sendable {
         self.oscOn = oscOn
         self.oscOff = oscOff
         self.oscAction = oscAction
+        self.additionalOsc = additionalOsc
     }
 }
 
@@ -387,13 +392,76 @@ public struct LearnState: Sendable {
     }
 }
 
+// MARK: - Bank System
+
+/// Bank configuration - 8 banks, each with distinct color
+public struct BankConfig: Sendable {
+    public static let count = 8
+    
+    /// Colors for each bank (top row buttons)
+    public static let colors: [Int] = [
+        LP.red,      // Bank 0
+        LP.orange,   // Bank 1
+        LP.yellow,   // Bank 2
+        LP.green,    // Bank 3
+        LP.cyan,     // Bank 4
+        LP.blue,     // Bank 5
+        LP.purple,   // Bank 6
+        LP.pink      // Bank 7
+    ]
+    
+    /// Get color for bank index
+    public static func color(for bank: Int) -> Int {
+        guard bank >= 0 && bank < colors.count else { return LP.white }
+        return colors[bank]
+    }
+    
+    /// Dim version of bank color (for inactive banks)
+    public static func dimColor(for bank: Int) -> Int {
+        // Return a dimmer version - use offset in Launchpad palette
+        let baseColor = color(for: bank)
+        // Launchpad colors: bright versions are typically +2 from dim
+        // We'll use a simple mapping for common colors
+        switch baseColor {
+        case LP.red: return LP.redDim
+        case LP.green: return LP.greenDim
+        case LP.blue: return LP.blueDim
+        default: return baseColor  // No dim version, use same
+        }
+    }
+}
+
 // MARK: - Controller State
 
 /// Complete controller state (immutable pattern - create new instance for updates)
 public struct ControllerState: Sendable {
-    public var pads: [ButtonId: PadBehavior]
-    public var padRuntime: [ButtonId: PadRuntimeState]
-    public var activeSelectorByGroup: [ButtonGroupType: ButtonId?]
+    /// Active bank (0-7)
+    public var activeBank: Int
+    
+    /// Pad configurations per bank: [bankIndex: [ButtonId: PadBehavior]]
+    public var bankPads: [Int: [ButtonId: PadBehavior]]
+    
+    /// Runtime state per bank: [bankIndex: [ButtonId: PadRuntimeState]]
+    public var bankPadRuntime: [Int: [ButtonId: PadRuntimeState]]
+    
+    /// Active selector per group per bank
+    public var bankActiveSelectorByGroup: [Int: [ButtonGroupType: ButtonId?]]
+    
+    // Convenience accessors for current bank
+    public var pads: [ButtonId: PadBehavior] {
+        get { bankPads[activeBank] ?? [:] }
+        set { bankPads[activeBank] = newValue }
+    }
+    
+    public var padRuntime: [ButtonId: PadRuntimeState] {
+        get { bankPadRuntime[activeBank] ?? [:] }
+        set { bankPadRuntime[activeBank] = newValue }
+    }
+    
+    public var activeSelectorByGroup: [ButtonGroupType: ButtonId?] {
+        get { bankActiveSelectorByGroup[activeBank] ?? [:] }
+        set { bankActiveSelectorByGroup[activeBank] = newValue }
+    }
     
     // Synesthesia state
     public var activeScene: String?
@@ -411,9 +479,18 @@ public struct ControllerState: Sendable {
     public var blinkOn: Bool
     
     public init() {
-        self.pads = [:]
-        self.padRuntime = [:]
-        self.activeSelectorByGroup = [:]
+        self.activeBank = 0
+        self.bankPads = [:]
+        self.bankPadRuntime = [:]
+        self.bankActiveSelectorByGroup = [:]
+        
+        // Initialize empty banks
+        for i in 0..<BankConfig.count {
+            self.bankPads[i] = [:]
+            self.bankPadRuntime[i] = [:]
+            self.bankActiveSelectorByGroup[i] = [:]
+        }
+        
         self.activeScene = nil
         self.activePreset = nil
         self.activeColorHue = nil

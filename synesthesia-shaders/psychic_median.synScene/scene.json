@@ -1,0 +1,212 @@
+{
+   "CONTROLS" : [
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "smooth diffuse",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "melt",
+        "TYPE" : "bang smooth",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "catch fire",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "burn",
+        "TYPE" : "bang smooth",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "bristle",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "zap",
+        "TYPE" : "bang",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "re-initialize",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "seed",
+        "TYPE" : "bang",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 1.0,
+        "DESCRIPTION" : "melt/zap/burn/seed on beat",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "auto_weather",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "another way to be",
+        "MAX" : 0.9,
+        "MIN" : 0,
+        "NAME" : "smoothing",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "weather"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "go inside",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "dive",
+        "TYPE" : "bang",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "inside out",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "swap",
+        "TYPE" : "bang",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 0,
+        "DESCRIPTION" : "go down",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "fall",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 0,
+        "DESCRIPTION" : "concentric bands",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "ring",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 2,
+        "DESCRIPTION" : "expel",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "expand",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 1,
+        "DESCRIPTION" : "center symmetry",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "rift",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 0.2,
+        "DESCRIPTION" : "fall+ring+expand+rift with audio",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "react",
+        "TYPE" : "slider",
+        "UI_GROUP" : "tectonics"
+      },
+      {
+        "DEFAULT" : 0.5,
+        "DESCRIPTION" : "[no effect when 'zoom' disabled]",
+        "MAX" : 1,
+        "MIN" : 0,
+        "NAME" : "pan",
+        "TYPE" : "xy",
+        "UI_GROUP" : "detail"
+      },
+      {
+        "DEFAULT" : 1,
+        "DESCRIPTION" : "look closely",
+        "MAX" : 4,
+        "MIN" : 1,
+        "NAME" : "zoom",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "detail"
+      },
+      {
+        "DEFAULT" : 1.0,
+        "DESCRIPTION" : "beat waves",
+        "MAX" : 1.0,
+        "MIN" : 0,
+        "NAME" : "undulate",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "verticality"
+      },
+      {
+        "DEFAULT" : 0.0,
+        "DESCRIPTION" : "use media input for color",
+        "MAX" : 1.0,
+        "MIN" : 0,
+        "NAME" : "media_color",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "media"
+      },
+      {
+        "DEFAULT" : 1.0,
+        "DESCRIPTION" : "use media input for shape (disables tectonics and weather controls)",
+        "MAX" : 1.0,
+        "MIN" : 0,
+        "NAME" : "media_shape",
+        "TYPE" : "toggle",
+        "UI_GROUP" : "media"
+      }
+   ],
+   "CREDIT" : "fungal victor",
+   "DESCRIPTION" : "The eye of a pixel storm",
+   "WIDTH" : 1920,
+   "HEIGHT" : 1080,
+   "IMAGE_PATH" : "psychic_median.png",
+   "PASSES" : [
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 216,
+         "TARGET" : "fb0",
+         "WIDTH" : 216
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 216,
+         "TARGET" : "fb1",
+         "WIDTH" : 216
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 216,
+         "TARGET" : "fb2",
+         "WIDTH" : 216
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 216,
+         "TARGET" : "fb3",
+         "WIDTH" : 216
+      },
+      {
+        "FLOAT" : true,
+        "HEIGHT" : 280,
+        "TARGET" : "post0",
+        "WIDTH" : 384
+      },
+      {
+        "FLOAT" : false,
+        "HEIGHT" : 216,
+        "TARGET" : "post1",
+        "WIDTH" : 384
+      }
+   ],
+   "TITLE" : "Psychic Median",
+   "GPU" : 2,
+   "TAGS" : ["fluid", "colorful", "pixelated", "feedback"]
+}

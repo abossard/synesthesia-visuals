@@ -27,6 +27,9 @@ public final class LaunchpadModule: @unchecked Sendable {
     private let executor: EffectExecutor
     private var state: ControllerState
     
+    /// Public access to effect executor (for YAML config access)
+    public var effectExecutor: EffectExecutor { executor }
+    
     // MARK: - State
     
     /// Module is enabled only when real device is connected

@@ -99,11 +99,36 @@ struct LaunchpadView: View {
                         .font(.headline)
                     
                     if let state = appState.launchpadState {
+                        // Get YAML config for bank names/colors
+                        let yamlConfig = appState.launchpadModule?.effectExecutor.yamlConfig
+                        
                         Group {
+                            // Bank indicator with names from YAML
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Bank")
+                                        .foregroundColor(.secondary)
+                                    ForEach(0..<8, id: \.self) { i in
+                                        Circle()
+                                            .fill(bankColor(i, isActive: i == state.activeBank, yamlConfig: yamlConfig))
+                                            .frame(width: i == state.activeBank ? 14 : 10, height: i == state.activeBank ? 14 : 10)
+                                    }
+                                }
+                                .font(.caption)
+                                
+                                // Show current bank name
+                                Text(bankName(state.activeBank, yamlConfig: yamlConfig))
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 2)
+                                    .background(bankColor(state.activeBank, isActive: true, yamlConfig: yamlConfig))
+                                    .cornerRadius(4)
+                            }
+                            
                             DetailRow(label: "Active Scene", value: state.activeScene ?? "-")
                             DetailRow(label: "Active Preset", value: state.activePreset ?? "-")
                             DetailRow(label: "BPM", value: String(format: "%.1f", appState.launchpadStatus?.currentBpm ?? 0.0))
-                            DetailRow(label: "Beat Phase", value: String(format: "%.2f", state.beatPhase))
                         }
                         
                         Divider()
@@ -113,12 +138,14 @@ struct LaunchpadView: View {
                         
                         DetailRow(label: "Phase", value: phaseDisplayName(state.learnState.phase))
                         if let selected = state.learnState.selectedPad {
-                            DetailRow(label: "Selected Pad", value: "(\(selected.x), \(selected.y))")
+                            DetailRow(label: "Selected Pad", value: "(\(selected.x), \(selected.y)) in Bank \(state.activeBank)")
                         }
                         
                         // Show captured OSC during CONFIG phase (live capture with enable/disable)
                         if state.learnState.phase == .config {
                             let captured = state.learnState.capturedOsc
+                            let sceneCount = captured.filter { $0.command.address.hasPrefix("/scenes/") }.count
+                            let controlCount = captured.filter { $0.command.address.hasPrefix("/controls/") }.count
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 if captured.isEmpty {
@@ -126,10 +153,22 @@ struct LaunchpadView: View {
                                         .font(.caption)
                                         .foregroundColor(.orange)
                                         .italic()
-                                } else {
-                                    Text("Captured OSC (\(captured.count))")
-                                        .font(.caption)
+                                    Text("Select a scene in Synesthesia")
+                                        .font(.caption2)
                                         .foregroundColor(.secondary)
+                                } else {
+                                    HStack {
+                                        if sceneCount > 0 {
+                                            Label("\(sceneCount) scene", systemImage: "photo.artframe")
+                                                .font(.caption2)
+                                                .foregroundColor(.green)
+                                        }
+                                        if controlCount > 0 {
+                                            Label("\(controlCount) controls", systemImage: "slider.horizontal.3")
+                                                .font(.caption2)
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
                                 }
                                 
                                 ScrollView {
@@ -386,6 +425,27 @@ func launchpadColorToSwiftUI(_ lpColor: Int) -> Color {
     case LP.white: return .white
     default: return Color(white: 0.3)
     }
+}
+
+/// Bank index to SwiftUI Color (uses YAML config if available)
+func bankColor(_ index: Int, isActive: Bool, yamlConfig: LaunchpadYAMLConfig?) -> Color {
+    // Try YAML config colors first
+    if let yaml = yamlConfig,
+       let bankButton = yaml.global.bankButtons.first(where: { $0.bank == index }) {
+        let colorName = isActive ? bankButton.activeColor : bankButton.idleColor
+        let lpColor = yaml.color(colorName)
+        return launchpadColorToSwiftUI(lpColor)
+    }
+    
+    // Fallback to hardcoded colors
+    let colors: [Color] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink]
+    let baseColor = index < colors.count ? colors[index] : .gray
+    return isActive ? baseColor : baseColor.opacity(0.3)
+}
+
+/// Get bank name from YAML config
+func bankName(_ index: Int, yamlConfig: LaunchpadYAMLConfig?) -> String {
+    yamlConfig?.bankName(index) ?? "Bank \(index)"
 }
 
 /// Get short label for priority level

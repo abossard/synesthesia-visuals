@@ -1,0 +1,206 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 
+			[
+				1,
+				1
+			],
+			"DESCRIPTION" : "adjust fractal geometry",
+			"MAX" : 
+			[
+				2,
+				1
+			],
+			"MIN" : 
+			[
+				1,
+				0
+			],
+			"NAME" : "geometry1",
+			"PARAMS" : 0.04101,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "fractal"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0.3
+			],
+			"DESCRIPTION" : "adjust fractal geometry",
+			"MAX" : 
+			[
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0
+			],
+			"NAME" : "geometry2",
+			"PARAMS" : 0.02501,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "fractal"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Tunnel effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "tunnel",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "fractal"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Waves motion effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "waves",
+			"PARAMS" : 0.24901,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "animation"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Twist animation",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "twist",
+			"PARAMS" : 0.24901,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "animation"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Audio reactive animation",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "twist_audio",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "animation"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Global animation speed multiplier — increases overall motion rates.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "animation"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "camera field of view",
+			"MAX" : 2,
+			"MIN" : 0.2,
+			"NAME" : "FOV",
+			"PARAMS" : 0.25001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "cam"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "quick FOV zoom for the camera.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "zoom_pop",
+			"PARAMS" : 0.1,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "cam"
+		},
+		{
+			"DEFAULT" : 0.75,
+			"DESCRIPTION" : "Amount the camera look oscillates",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "cam_wave",
+			"PARAMS" : 0.3,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "cam"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "channels R & B rotation",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "RB_rotation",
+			"PARAMS" : 0.5,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "channels R & G rotation",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "RG_rotation",
+			"PARAMS" : 0.50801,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "channels G & B rotation",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "GB_rotation",
+			"PARAMS" : 0.50401,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Variation of color along Z axis",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Z_variation",
+			"PARAMS" : 0.49401,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "colors"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Toggle to render edge highlighting mode for the fractal surface.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "edges_mode",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "edges"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Selects the palette or tint used for rendered edges when edges are enabled.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "edges_color",
+			"TYPE" : "slider",
+			"UI_GROUP" : "edges"
+		}
+	],
+	"CREDIT" : "Kali",
+	"DESCRIPTION" : "A colorful fractal wonderland and Shadertoy classic, adapted for Synesthesia by the original artist.",
+	"GPU" : 3,
+	"TAGS": [
+		"fractal",
+		"shadertoy",
+		"colorful",
+		"3d",
+		"psychedelic",
+		"rainbow"
+	],
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "fractal_land.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Fractal Land",
+	"WIDTH" : 1920
+}

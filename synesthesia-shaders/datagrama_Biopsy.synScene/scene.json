@@ -1,0 +1,270 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Action on highs.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "fritzer",
+			"TYPE" : "slider",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Action on bass.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "warper",
+			"TYPE" : "slider",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds in constant flow with morphing shapes.",
+			"MAX" : 1.0,
+			"MIN" : 0,
+			"NAME" : "extra_liquid",
+			"TYPE" : "slider",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Slicing action automatically on beats in music.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_slice",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "modes"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds audio-reactive pushes from sides and top.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "rising",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "modes"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Changes the simulation to make it more drippy.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "drips",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "modes"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "More rapidly grow to fill black areas.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "faster_growth",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "modes"
+		},{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Separates the two layers of growth and adds more negative space overall.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "isolate_layers",
+			"PARAMS" : 0.03,
+			"TYPE" : "toggle",
+			"UI_GROUP" : "modes"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Choose from 6 different color palettes.",
+			"MAX" : 6,
+			"MIN" : 0,
+			"NAME" : "color_palette",
+			"TYPE" : "dropdown",
+			"LABELS":["psych-sunset", "teal/red/orange", "gold + green", "psych-lite", "cyan","black + white"],
+			"PARAMS":0.1,
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Flashes the highlight in time with the highs.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "flashing",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0.35,
+			"DESCRIPTION" : "How 'present' each color is. Best compositions are towards the bottom, brighter colors towards the top.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "color_presence",
+			"TYPE" : "slider",
+			"UI_GROUP" : "color"
+		},{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Pull colors from the chosen media and ignore the selected color palette.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_color",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This adds a 'smokey vignette' effect that will fade the edges or middle based on center_vig.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "vignette",
+			"TYPE" : "slider",
+			"UI_GROUP" : "vignette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This blurs the whole composition into softer smoke/haze.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "smoke",
+			"TYPE" : "slider",
+			"UI_GROUP" : "vignette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "When on, the vignette slider will affect the center instead of the edges.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "center_vig",
+			"PARAMS" : 0.5,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "vignette"
+		},
+		{
+			"DEFAULT" : -0.075,
+			"DESCRIPTION" : "Zoom forward into the liquid or away from the liquid.",
+			"MAX" : -1,
+			"MIN" : 1,
+			"NAME" : "zoom_in_out",
+			"TYPE" : "slider",
+			"UI_GROUP" : "zoom"
+		},{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds a 'fisheye effect' to the spatial distortion like a wormhole/portal. Play with combos of this and zoom_in_out.",
+			"MAX" : 0.75,
+			"MIN" : -0.75,
+			"NAME" : "portal",
+			"PARAMS" : 0.075,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "zoom"
+		},{
+			"DESCRIPTION" : "Adds a 'fisheye effect' to the spatial distortion like a wormhole/portal. Play with combos of this and the other zooms.",
+			"MAX" : -1.0,
+			"MIN" : 1.0,
+			"DEFAULT":-0.2,
+			"NAME" : "bass_zoom",
+			"PARAMS" : 0.075,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "zoom"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This feeds the simulation from the media, so it will grow where media is bright and shrink where media is dark.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_feed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "This adds a shimmery blinking/feedbacking effect where the media is bright. Can help give more media effect comboed with media_feed if feed isn't doing enough.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_dazzle",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Simple media multiply to mix simulation with your media. Try mixing with 'media color' toggle above, or with 'media add' slider.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_mult",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Simple media add to mix the simulation in to your media's colors. Try mixing with 'media color' toggle above, or with 'media mult' slider.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_add",
+			"TYPE" : "slider",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "reset_sim",
+			"TYPE" : "bang",
+			"UI_GROUP" : "reset"
+		}
+	],
+	"CREDIT" : "Datagrama",
+	"DESCRIPTION" : "Datagrama's 2024 edit of the classic Syn Scene Biopsy. The growth pattern was created by Felix Woitzel, and is generated by three stacked Reaction Diffusion systems that use his sophisticated Pyramid Blur technique. We made it move and gave it color. Reaction Diffusion systems look organic and natural because they are. The same system that is simulated here governs chemical reactions that give rise to tropical fish coloration, zebra stripes, coral shapes, and much more. Created by Meebs + Flexi",
+	"TAGS":["reaction diffusion", "psychedelic", "fluid", "organic", "feedback", "colorful", "cellular automata", "audio", "abstract", "media", "logo"],
+	"GPU" : 2,
+	"HEIGHT" : 1080,
+	"IMAGES" : 
+	[
+		{
+			"NAME" : "colornoise",
+			"PATH" : "images/colornoise.jpg"
+		}
+	],
+	"IMAGE_PATH" : "datagrama.Biopsy.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "mirror"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "buffB",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "buffB2",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "buffC",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "buffD",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "datagrama.Biopsy",
+	"WIDTH" : 1920
+}

@@ -1,0 +1,435 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Feedback blur",
+			"MAX" : 0.99,
+			"MIN" : 0,
+			"NAME" : "feedback",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Base"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Reset Feedback",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "reset_feedback",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Base"
+		},
+        {
+            "DEFAULT" : 0.5,
+            "DESCRIPTION" : "Speed of movement",
+            "MAX" : 1,
+            "MIN" : -1,
+            "NAME" : "speed",
+            "TYPE" : "slider",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Hard cut between different angles",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "bang_cut",
+            "TYPE" : "bang counter",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Bang movement",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "bang_move",
+            "PARAMS" : 0.06101,
+            "TYPE" : "bang smooth",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Wobble on command",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "bang_wobble",
+            "PARAMS" : 0.07301,
+            "TYPE" : "bang smooth",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "bang_explode",
+            "PARAMS" : 0.11701,
+            "TYPE" : "bang smooth",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Reset speed to zero",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "time_freeze",
+            "TYPE" : "bang",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0.5,
+            "DESCRIPTION" : "",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "particle_size",
+            "PARAMS" : 0.25701,
+            "TYPE" : "knob smooth",
+            "UI_GROUP" : "Base"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Wobble whole scene",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "wobble",
+            "PARAMS" : 0.24501,
+            "TYPE" : "toggle smooth",
+            "UI_GROUP" : "Audio Reactive"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Move the cam to the beat. Zoom and rotation amount controllable in camera section",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "cam_shake",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Audio Reactive"
+        },
+        {
+            "DEFAULT" : 0.25,
+            "DESCRIPTION" : "",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "audio_reactivity",
+            "TYPE" : "slider",
+            "UI_GROUP" : "Audio Reactive"
+        },
+        {
+            "DEFAULT" : 1,
+            "DESCRIPTION" : "Twist objects",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "twist_object",
+            "PARAMS" : 0.04501,
+            "TYPE" : "toggle smooth",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Duplicate",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "duplicate",
+            "PARAMS" : 0.13901,
+            "TYPE" : "toggle smooth",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Fold Object",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "fold_object",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Exploding Orb",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "exploding_orb",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Object Circle",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "object_circle",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "kaleidoscopic mandala effect",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "mandala",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 3,
+            "DESCRIPTION" : "Count of Kaleidoscope mirrors",
+            "MAX" : 8,
+            "MIN" : 2,
+            "NAME" : "mandala_folds",
+            "TYPE" : "slider",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 2,
+            "DESCRIPTION" : "Different glowing energy particles",
+            "MAX" : 10,
+            "MIN" : 0,
+            "NAME" : "energy_mode",
+            "TYPE" : "slider",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Poke random holes into the shapes",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "erode_object",
+            "PARAMS" : 0.16101,
+            "TYPE" : "toggle smooth",
+            "UI_GROUP" : "Shape"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Move camera automtically",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "auto_cam",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Camera"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Cam Z",
+            "MAX" : 6,
+            "MIN" : -10,
+            "NAME" : "cam_z",
+            "PARAMS" : 0.24601,
+            "TYPE" : "slider smooth",
+            "UI_GROUP" : "Camera"
+        },
+        {
+            "DEFAULT" : 
+            [
+                0,
+                0
+            ],
+            "DESCRIPTION" : "Cam XY",
+            "MAX" : 
+            [
+                1,
+                1
+            ],
+            "MIN" : 
+            [
+                -1,
+                -1
+            ],
+            "NAME" : "cam_xy",
+            "PARAMS" : 0.25501,
+            "TYPE" : "xy smooth",
+            "UI_GROUP" : "Camera"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Amount of rotation to apply",
+            "MAX" : 1,
+            "MIN" : -1,
+            "NAME" : "rotate_amount",
+            "PARAMS" : 0.15201,
+            "TYPE" : "knob smooth",
+            "UI_GROUP" : "Camera"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Do rotate",
+            "MAX" : 1,
+            "MIN" : -1,
+            "NAME" : "rotate_speed",
+            "TYPE" : "slider speed",
+            "UI_GROUP" : "Camera"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Color offset",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "color_offset",
+            "TYPE" : "knob",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 0.75,
+            "DESCRIPTION" : "Glow intensity",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "glow_intensity",
+            "TYPE" : "knob",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Modulate color across objects",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "alternate_color",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 1,
+            "DESCRIPTION" : "Color range",
+            "MAX" : 2,
+            "MIN" : 0,
+            "NAME" : "color_range",
+            "TYPE" : "knob",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 0.4,
+            "DESCRIPTION" : "Bump Mapping Scale",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "texture_scale",
+            "TYPE" : "knob",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 2,
+            "DESCRIPTION" : "Palette",
+            "LABELS" : 
+            [
+                "Vibrant Coral",
+                "Neon",
+                "Ocean Sunset",
+                "Electric Cosmos",
+                "Chameleon",
+                "Spectral Rainbow",
+                "Pastel",
+                "Vulcano",
+                "SciFi Machine",
+                "Black & White"
+            ],
+            "MAX" : 9,
+            "MIN" : 0,
+            "NAME" : "palette",
+            "TYPE" : "dropdown",
+            "UI_GROUP" : "Colors",
+            "VALUES" : 
+            [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+            ]
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Texture",
+            "LABELS" : 
+            [
+                "Shipibo",
+                "Illusion",
+                "Tribal",
+                "Retro",
+                "Elegant",
+                "Hexagons"
+            ],
+            "MAX" : 5,
+            "MIN" : 0,
+            "NAME" : "texture_name",
+            "TYPE" : "dropdown",
+            "UI_GROUP" : "Colors",
+            "VALUES" : 
+            [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5
+            ]
+        },
+        {
+            "DEFAULT" : 1,
+            "DESCRIPTION" : "",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "auto_color",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Colors"
+        },
+        {
+            "DEFAULT" : 0,
+            "DESCRIPTION" : "Add edge glow from current selected media",
+            "MAX" : 1,
+            "MIN" : 0,
+            "NAME" : "media_edge_glow",
+            "TYPE" : "toggle",
+            "UI_GROUP" : "Colors"
+        }
+    ],
+    "CREDIT" : "jiagual",
+    "DESCRIPTION" : "Dancing Platonic Solids, melting into fractals\n\n",
+    "GPU" : 5,
+    "TAGS" : [
+		"3d",
+		"raymarching",
+        "geometric",
+        "glow",
+        "shapes"
+    ],
+    "HEIGHT" : 1080,
+    "IMAGES" : 
+    [
+        {
+            "NAME" : "texShipibo",
+            "PATH" : "images/shipibo_pattern_bw.jpg"
+        },
+        {
+            "NAME" : "texElegant",
+            "PATH" : "images/elegant.jpg"
+        },
+        {
+            "NAME" : "texTribal",
+            "PATH" : "images/rhombus_tribal.jpg"
+        },
+        {
+            "NAME" : "texRetro",
+            "PATH" : "images/retro.jpg"
+        },
+        {
+            "NAME" : "texIllusion",
+            "PATH" : "images/illusion.jpg"
+        },
+        {
+            "NAME" : "texHexagons",
+            "PATH" : "images/hexagons.jpg"
+        }
+    ],
+    "IMAGE_PATH" : "platonic_solids_cover.jpg",
+    "MEDIA" : 
+    [
+        {
+            "FILTER" : "linear",
+            "WRAP" : "repeat"
+        }
+    ],
+    "TITLE" : "Platonic Solids",
+    "WIDTH" : 1920
+}

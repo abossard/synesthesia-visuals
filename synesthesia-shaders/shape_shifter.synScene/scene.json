@@ -1,0 +1,206 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Morph between shapes on the beat. Turn this off to take manual control over the shapes.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "morph_on_beat",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Sets the shape to a random new shape",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "random_shape",
+			"TYPE" : "bang",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Increase the shape size when the bass hits.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "shape_grow_on_beat",
+			"TYPE" : "slider",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Resize the main shapes",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "shape_sizer",
+			"TYPE" : "slider",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Blur the edges of the shapes.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "shape_blur",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0.1,
+			"DESCRIPTION" : "How quickly to morph between shapes.",
+			"MAX" : 0.5,
+			"MIN" : 0,
+			"NAME" : "morph_speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 300,
+			"DESCRIPTION" : "the minimum number of frames to hold each shape. raise this to prevent rapid changes",
+			"MAX" : 1000,
+			"MIN" : 0,
+			"NAME" : "shape_min_duration",
+			"TYPE" : "slider",
+			"UI_GROUP" : "main shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Switch to the chosen shape when selected. Note that this doesn't always represent the currently visible shape.",
+			"LABELS" : 
+			[
+				"circle",
+				"diamond",
+				"square",
+				"lines horizontal",
+				"1 line horizontal",
+				"lines vertical",
+				"1 line vertical",
+				"media"
+			],
+			"MAX" : 7,
+			"MIN" : 0,
+			"NAME" : "pick_shape",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "main shape",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Scatter the designs out into little dots",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scatter",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "scatter"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Organize or scatter the dots",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "scatter_sort",
+			"TYPE" : "slider",
+			"UI_GROUP" : "scatter"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Size of the scatter dots",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scatter_size",
+			"TYPE" : "slider",
+			"UI_GROUP" : "scatter"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Invert the colors on the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "invert_on_beat",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "invert"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds color to the scene",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "apply_palette",
+			"TYPE" : "slider",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0.61569,
+				0
+			],
+			"DESCRIPTION" : "Change this to pick a color palette",
+			"MAX" : 
+			[
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0
+			],
+			"NAME" : "palette_picker",
+			"PARAMS" : 0.01,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "this scene adds some little twinkly stars based on the audio, toggle this to prevent that",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "reactive_stars",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "reactive"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "this scene adds some little burst animations based on the audio, toggle this to prevent that",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "reactive_bursts",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "reactive"
+		}
+	],
+	"CREDIT" : "UFFFD",
+	"DESCRIPTION" : "Smoothly morphing 2D shapes with reactive elements that join based on the music. Clean black and white or pick a sound reactive color palette.",
+	"GPU" : 2,
+	"TAGS": [
+		"2D",
+		"shapes",
+		"minimal",
+		"morphing"
+	],
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "shape_shifter.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Shape Shifter",
+	"WIDTH" : 1920
+}

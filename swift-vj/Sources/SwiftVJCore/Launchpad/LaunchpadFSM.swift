@@ -8,24 +8,36 @@ import Foundation
 
 // MARK: - Button Constants
 
-/// Special button identifiers for Learn mode
+/// Special button identifiers for Learn mode and Banks
 public enum LaunchpadButton {
-    /// Bottom-right scene button triggers learn mode
+    /// Bottom-right scene button triggers learn mode (ALWAYS, regardless of bank)
     public static let learn = ButtonId(x: 8, y: 0)
     
-    /// Bottom row action buttons
+    /// Top row = Bank selection (cols 0-7, row 7)
+    public static func bank(_ index: Int) -> ButtonId {
+        ButtonId(x: index, y: 7)
+    }
+    
+    /// Check if a button is a bank selector
+    public static func isBankButton(_ id: ButtonId) -> Bool {
+        id.y == 7 && id.x >= 0 && id.x < 8
+    }
+    
+    /// Get bank index from button (nil if not a bank button)
+    public static func bankIndex(from id: ButtonId) -> Int? {
+        guard isBankButton(id) else { return nil }
+        return id.x
+    }
+    
+    /// Bottom row action buttons (during config)
     public static let save = ButtonId(x: 0, y: 0)
     public static let test = ButtonId(x: 1, y: 0)
     public static let cancel = ButtonId(x: 7, y: 0)
     
-    /// Top row register selection
-    public static let registerOsc = ButtonId(x: 0, y: 7)
-    public static let registerMode = ButtonId(x: 1, y: 7)
-    public static let registerColor = ButtonId(x: 2, y: 7)
-    
-    /// OSC pagination
-    public static let oscPagePrev = ButtonId(x: 6, y: 7)
-    public static let oscPageNext = ButtonId(x: 7, y: 7)
+    /// Scene buttons (right column, except learn button)
+    public static func isSceneButton(_ id: ButtonId) -> Bool {
+        id.x == 8 && id.y > 0  // y=0 is learn button
+    }
 }
 
 // MARK: - FSM Result Type
@@ -90,6 +102,13 @@ public func selectPadForConfig(_ state: ControllerState, padId: ButtonId) -> FSM
 }
 
 /// Capture an incoming OSC event during config phase (live capture)
+/// 
+/// Strategy:
+/// - `/scenes/*`: Keep the latest scene (replaces previous)
+/// - `/controls/*`: Group by address, keep latest value per control
+/// - All captured OSC enabled (they form complete state)
+/// 
+/// This way: scene + preset selection = scene + all final control values
 public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResult {
     guard state.learnState.phase == .config else {
         return FSMResult(state: state)
@@ -100,47 +119,60 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
         return FSMResult(state: state)
     }
     
-    // Skip non-controllable addresses
-    guard event.toCommand().isControllable else {
+    // Only capture scenes and controls (what Synesthesia actually outputs)
+    let isScene = event.address.hasPrefix("/scenes/")
+    let isControl = event.address.hasPrefix("/controls/")
+    
+    guard isScene || isControl else {
         return FSMResult(state: state)
     }
     
     var newState = state
     
-    // Check if already captured
-    let existingIndex = newState.learnState.capturedOsc.firstIndex { $0.command.address == event.address }
-    
-    if existingIndex == nil {
-        // New OSC - only enable if it's the first one (highest priority)
-        // After sorting, check if this would become the first
-        let isFirst = newState.learnState.capturedOsc.isEmpty
+    if isScene {
+        // Scene: remove any previous scene, keep only latest
+        newState.learnState.capturedOsc.removeAll { $0.command.address.hasPrefix("/scenes/") }
         
         let captured = CapturedOsc(
             command: event.toCommand(),
-            priority: event.priority,
-            isEnabled: isFirst  // Only first (highest priority) enabled by default
+            priority: PRIORITY_SCENE,
+            isEnabled: true
         )
         newState.learnState.capturedOsc.append(captured)
         
-        // Sort by priority
-        newState.learnState.capturedOsc.sort { $0.priority < $1.priority }
-        
-        // After sorting, ensure only the first one is enabled
-        // (in case a higher priority one arrived later)
-        if let firstIndex = newState.learnState.capturedOsc.indices.first {
-            for i in newState.learnState.capturedOsc.indices {
-                newState.learnState.capturedOsc[i].isEnabled = (i == firstIndex)
-            }
-        }
-        
-        // Auto-suggest mode from highest priority enabled
-        if let primary = newState.learnState.primaryCommand, newState.learnState.selectedMode == nil {
-            newState.learnState.selectedMode = categorizeOsc(primary.address).mode
+        // Auto-suggest selector mode for scenes
+        if newState.learnState.selectedMode == nil {
+            newState.learnState.selectedMode = .selector
         }
         
         return FSMResult(
             state: newState,
-            effects: [.log(message: "Captured: \(event.address)", level: .info)]
+            effects: [.log(message: "Scene: \(event.address)", level: .info)]
+        )
+    }
+    
+    if isControl {
+        // Control: replace existing with same address (keep latest value)
+        if let existingIndex = newState.learnState.capturedOsc.firstIndex(where: { $0.command.address == event.address }) {
+            // Update existing control with new value
+            newState.learnState.capturedOsc[existingIndex] = CapturedOsc(
+                command: event.toCommand(),
+                priority: PRIORITY_CONTROL,
+                isEnabled: true
+            )
+        } else {
+            // New control address
+            let captured = CapturedOsc(
+                command: event.toCommand(),
+                priority: PRIORITY_CONTROL,
+                isEnabled: true
+            )
+            newState.learnState.capturedOsc.append(captured)
+        }
+        
+        return FSMResult(
+            state: newState,
+            effects: [.log(message: "Control: \(event.address)", level: .debug)]
         )
     }
     
@@ -170,31 +202,86 @@ public func toggleOscEnabled(_ state: ControllerState, index: Int) -> FSMResult 
     )
 }
 
+// MARK: - Bank Switching
+
+/// Switch to a different bank
+public func switchBank(_ state: ControllerState, bankIndex: Int) -> FSMResult {
+    guard bankIndex >= 0 && bankIndex < BankConfig.count else {
+        return FSMResult(state: state)
+    }
+    
+    guard bankIndex != state.activeBank else {
+        return FSMResult(state: state)  // Already on this bank
+    }
+    
+    var newState = state
+    newState.activeBank = bankIndex
+    
+    var effects: [LaunchpadEffect] = [
+        .log(message: "Switched to bank \(bankIndex)", level: .info)
+    ]
+    
+    // Update bank button LEDs
+    for i in 0..<BankConfig.count {
+        let isActive = (i == bankIndex)
+        let color = isActive ? BankConfig.color(for: i) : BankConfig.dimColor(for: i)
+        effects.append(.setLed(padId: LaunchpadButton.bank(i), color: color, blink: false))
+    }
+    
+    // Refresh all pad LEDs for the new bank
+    for (padId, runtime) in newState.padRuntime {
+        if padId.isGrid && padId.y < 7 {  // Grid pads, not top row (banks)
+            effects.append(.setLed(padId: padId, color: runtime.currentColor, blink: runtime.isActive))
+        }
+    }
+    
+    // Also refresh scene buttons (right column) for current bank
+    for y in 1..<8 {  // Skip y=0 (learn button)
+        let sceneId = ButtonId(x: 8, y: y)
+        if let runtime = newState.padRuntime[sceneId] {
+            effects.append(.setLed(padId: sceneId, color: runtime.currentColor, blink: runtime.isActive))
+        } else if let behavior = newState.pads[sceneId] {
+            effects.append(.setLed(padId: sceneId, color: behavior.idleColor, blink: false))
+        } else {
+            effects.append(.setLed(padId: sceneId, color: LP.off, blink: false))
+        }
+    }
+    
+    return FSMResult(state: newState, effects: effects)
+}
+
 // MARK: - Main Pad Press Handler
 
 /// Main pad press handler - routes based on current phase
 public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     let phase = state.learnState.phase
     
-    // Learn button behavior depends on phase
+    // Learn button ALWAYS triggers learn mode (regardless of bank or phase)
     if padId == LaunchpadButton.learn {
         switch phase {
         case .idle:
             return enterLearnMode(state)
         case .waitPad:
-            // Cancel - exit learn mode
             return exitLearnMode(state)
         case .config:
-            // Exit config (cancel)
             return exitLearnMode(state)
         }
+    }
+    
+    // Bank buttons work in idle and config modes (for switching while configuring)
+    if let bankIndex = LaunchpadButton.bankIndex(from: padId) {
+        // In config mode, just switch bank (keep configuring)
+        // In idle mode, switch bank
+        return switchBank(state, bankIndex: bankIndex)
     }
     
     switch phase {
     case .idle:
         return handleNormalPress(state, padId: padId)
     case .waitPad:
-        return padId.isGrid ? selectPadForConfig(state, padId: padId) : FSMResult(state: state)
+        // Allow grid pads and scene buttons (except learn) for selection
+        let canSelect = padId.isGrid || (LaunchpadButton.isSceneButton(padId))
+        return canSelect ? selectPadForConfig(state, padId: padId) : FSMResult(state: state)
     case .config:
         return handleConfigPadPress(state, padId: padId)
     }
@@ -273,8 +360,14 @@ private func handleSelectorPress(_ state: ControllerState, padId: ButtonId, beha
     effects.append(.setLed(padId: padId, color: behavior.activeColor, blink: true))
     newState.activeSelectorByGroup[group] = padId
     
+    // Send primary OSC action
     if let oscAction = behavior.oscAction {
         effects.append(.sendOsc(oscAction))
+    }
+    
+    // Send additional OSC commands (e.g., control values after scene)
+    for additionalCmd in behavior.additionalOsc {
+        effects.append(.sendOsc(additionalCmd))
     }
     
     return FSMResult(state: newState, effects: effects)
@@ -296,8 +389,16 @@ private func handleTogglePress(_ state: ControllerState, padId: ButtonId, behavi
     )
     effects.append(.setLed(padId: padId, color: newColor, blink: false))
     
+    // Send primary OSC command
     if let cmd = oscCmd {
         effects.append(.sendOsc(cmd))
+    }
+    
+    // Send additional OSC commands only when turning ON
+    if newIsOn {
+        for additionalCmd in behavior.additionalOsc {
+            effects.append(.sendOsc(additionalCmd))
+        }
     }
     
     return FSMResult(state: newState, effects: effects)
@@ -313,8 +414,14 @@ private func handleOneShotPress(_ state: ControllerState, padId: ButtonId, behav
     )
     effects.append(.setLed(padId: padId, color: behavior.activeColor, blink: false))
     
+    // Send primary OSC action
     if let oscAction = behavior.oscAction {
         effects.append(.sendOsc(oscAction))
+    }
+    
+    // Send additional OSC commands
+    for additionalCmd in behavior.additionalOsc {
+        effects.append(.sendOsc(additionalCmd))
     }
     
     return FSMResult(state: newState, effects: effects)
@@ -340,10 +447,15 @@ private func handlePushPress(_ state: ControllerState, padId: ButtonId, behavior
 
 // MARK: - Config Phase Handlers
 
+/// Scene button positions for register selection during config
+private let registerOscButton = ButtonId(x: 8, y: 6)
+private let registerModeButton = ButtonId(x: 8, y: 5)
+private let registerColorButton = ButtonId(x: 8, y: 4)
+
 private func handleConfigPadPress(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     let learn = state.learnState
     
-    // Action buttons
+    // Action buttons (bottom row)
     if padId == LaunchpadButton.save {
         return saveConfig(state)
     } else if padId == LaunchpadButton.test {
@@ -352,16 +464,16 @@ private func handleConfigPadPress(_ state: ControllerState, padId: ButtonId) -> 
         return exitLearnMode(state)
     }
     
-    // Register selection
-    if padId == LaunchpadButton.registerOsc {
+    // Register selection via scene buttons
+    if padId == registerOscButton {
         var newState = state
         newState.learnState.activeRegister = .oscSelect
         return FSMResult(state: newState)
-    } else if padId == LaunchpadButton.registerMode {
+    } else if padId == registerModeButton {
         var newState = state
         newState.learnState.activeRegister = .modeSelect
         return FSMResult(state: newState)
-    } else if padId == LaunchpadButton.registerColor {
+    } else if padId == registerColorButton {
         var newState = state
         newState.learnState.activeRegister = .colorSelect
         return FSMResult(state: newState)
@@ -383,19 +495,22 @@ private func handleOscSelectInput(_ state: ControllerState, padId: ButtonId) -> 
     let learn = state.learnState
     let slotsPerPage = 32  // 4 rows × 8 columns
     
-    // Pagination
-    if padId == LaunchpadButton.oscPagePrev && learn.oscPage > 0 {
+    // Pagination via scene buttons y=2 (prev) and y=3 (next)
+    let oscPagePrev = ButtonId(x: 8, y: 2)
+    let oscPageNext = ButtonId(x: 8, y: 3)
+    
+    if padId == oscPagePrev && learn.oscPage > 0 {
         newState.learnState.oscPage -= 1
         return FSMResult(state: newState)
     }
     
-    let maxPages = (learn.capturedOsc.count - 1) / slotsPerPage
-    if padId == LaunchpadButton.oscPageNext && learn.oscPage < maxPages {
+    let maxPages = max(0, (learn.capturedOsc.count - 1) / slotsPerPage)
+    if padId == oscPageNext && learn.oscPage < maxPages {
         newState.learnState.oscPage += 1
         return FSMResult(state: newState)
     }
     
-    // OSC toggle (rows 5,4,3,2 top to bottom, columns 0-7) - toggle enable/disable
+    // OSC toggle (rows 2-5 for content, cols 0-7) - toggle enable/disable
     if padId.y >= 2 && padId.y <= 5 && padId.x >= 0 && padId.x <= 7 {
         let rowOffset = 5 - padId.y  // row 5 = offset 0, row 4 = offset 1, etc.
         let index = learn.oscPage * slotsPerPage + rowOffset * 8 + padId.x
@@ -436,21 +551,36 @@ private func handleColorSelectInput(_ state: ControllerState, padId: ButtonId) -
 
 private func saveConfig(_ state: ControllerState) -> FSMResult {
     let learn = state.learnState
-    guard let selectedPad = learn.selectedPad,
-          let cmd = learn.primaryCommand else {
+    guard let selectedPad = learn.selectedPad else {
         return exitLearnMode(state)
     }
     
-    let (_, _, group) = categorizeOsc(cmd.address)
+    // Get all enabled captured OSC, sorted: scenes first, then controls
+    let allCaptured = learn.capturedOsc.filter { $0.isEnabled }
+    
+    // Find the primary command (scene if present, otherwise first control)
+    let sceneCmd = allCaptured.first { $0.command.address.hasPrefix("/scenes/") }?.command
+    let controlCmds = allCaptured.filter { $0.command.address.hasPrefix("/controls/") }.map { $0.command }
+    
+    // Primary command determines the pad behavior
+    guard let primaryCmd = sceneCmd ?? controlCmds.first else {
+        return exitLearnMode(state)
+    }
+    
+    let (_, _, group) = categorizeOsc(primaryCmd.address)
+    
+    // Additional OSC = all controls (sent after primary)
+    let additionalOsc = sceneCmd != nil ? controlCmds : Array(controlCmds.dropFirst())
     
     let behavior = createPadBehavior(
         padId: selectedPad,
-        mode: learn.selectedMode ?? .toggle,
-        oscCommand: cmd,
+        mode: learn.selectedMode ?? .selector,
+        oscCommand: primaryCmd,
         idleColor: learn.selectedColor,
-        activeColor: learn.selectedColor,  // Same color - active state shown via blinking
-        label: cmd.address.components(separatedBy: "/").last ?? "",
-        group: group
+        activeColor: learn.selectedColor,
+        label: primaryCmd.address.components(separatedBy: "/").last ?? "",
+        group: group,
+        additionalOsc: additionalOsc
     )
     
     var newState = state
@@ -463,7 +593,11 @@ private func saveConfig(_ state: ControllerState) -> FSMResult {
     let result = exitLearnMode(newState)
     var effects = result.effects
     effects.append(.saveConfig)
-    effects.append(.log(message: "Saved config for pad \(selectedPad)", level: .info))
+    
+    let summary = sceneCmd != nil 
+        ? "1 scene + \(controlCmds.count) controls"
+        : "\(controlCmds.count) controls"
+    effects.append(.log(message: "Saved pad \(selectedPad): \(summary)", level: .info))
     
     return FSMResult(state: result.state, effects: effects)
 }
@@ -498,7 +632,8 @@ private func createPadBehavior(
     idleColor: Int,
     activeColor: Int,
     label: String,
-    group: ButtonGroupType?
+    group: ButtonGroupType?,
+    additionalOsc: [OscCommand] = []
 ) -> PadBehavior {
     switch mode {
     case .toggle:
@@ -509,7 +644,8 @@ private func createPadBehavior(
             activeColor: activeColor,
             label: label,
             oscOn: OscCommand(address: oscCommand.address, args: [.float(1.0)]),
-            oscOff: OscCommand(address: oscCommand.address, args: [.float(0.0)])
+            oscOff: OscCommand(address: oscCommand.address, args: [.float(0.0)]),
+            additionalOsc: additionalOsc
         )
     case .selector:
         return PadBehavior(
@@ -519,7 +655,8 @@ private func createPadBehavior(
             idleColor: idleColor,
             activeColor: activeColor,
             label: label,
-            oscAction: oscCommand
+            oscAction: oscCommand,
+            additionalOsc: additionalOsc
         )
     default:
         return PadBehavior(
@@ -528,7 +665,8 @@ private func createPadBehavior(
             idleColor: idleColor,
             activeColor: activeColor,
             label: label,
-            oscAction: oscCommand
+            oscAction: oscCommand,
+            additionalOsc: additionalOsc
         )
     }
 }

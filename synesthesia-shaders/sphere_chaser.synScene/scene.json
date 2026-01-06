@@ -1,0 +1,342 @@
+{
+   "CONTROLS" : [
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "auto apply a mirror effect on beat detected",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "auto_mirror",
+         "PARAMS" : 0.2,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "mirror"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "Enable different mirroring effects",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "multi_mirror",
+         "PARAMS" : 0.2,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "mirror"
+      },
+      {
+         "DEFAULT" : 0.3,
+         "DESCRIPTION" : "Control the amount of audio influence on the speed that the geometry moves.",
+         "IS_META" : false,
+         "MAX" : 0.5,
+         "MIN" : -0.5,
+         "NAME" : "audio_speed",
+         "PARAMS" : 0.2,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "geo"
+      },
+      {
+         "DEFAULT" : 0.3,
+         "DESCRIPTION" : "Control the constant speed that the geometry moves.",
+         "IS_META" : false,
+         "MAX" : 0.5,
+         "MIN" : -0.5,
+         "NAME" : "const_speed",
+         "PARAMS" : 0.2,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "geo"
+      },
+      {
+         "DEFAULT" : 0.200000002980232,
+         "DEF_COLOR" : [ 0.71484375, 0.50390625, 0.14453125 ],
+         "DESCRIPTION" : "Base color, complement is automatically applied",
+         "IS_META" : false,
+         "MAX" : 1,
+         "MIN" : 0,
+         "NAME" : "color_1",
+         "TYPE" : "color",
+         "UI_GROUP" : "geo_color"
+      },
+      {
+         "DEFAULT": 1.0,
+         "DESCRIPTION": "Mix in rainbow color",
+         "IS_META": false,
+         "MAX": 1.0,
+         "MIN": 0.0,
+         "NAME": "rainbow",
+		   "PARAMS": 0.019999993294477,
+         "TYPE": "toggle smooth",
+         "UI_GROUP": "geo_color"
+      },
+      {
+         "DEFAULT": 0.0,
+         "DESCRIPTION": "Make all objects the same color",
+         "IS_META": false,
+         "MAX": 1.0,
+         "MIN": 0.0,
+         "NAME": "one_color",
+         "TYPE": "toggle",
+         "UI_GROUP": "geo_color"
+      },
+      {
+         "DEFAULT" : 1.0,
+         "DESCRIPTION" : "Revel the media as if the geometry were a window to a screen.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "media_uv",
+         "PARAMS" : 0.100000001490116,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "geo_color"
+      },
+      {
+         "DEFAULT" : 3.5,
+         "DESCRIPTION" : "Field of View for the perspective of the camera",
+         "IS_META" : false,
+         "MAX" : 7.0,
+         "MIN" : 0.1,
+         "NAME" : "FOV",
+         "PARAMS" : 0.00950000001490116,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "camera"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "automated Field of View for the perspective of the camera",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "auto_fov",
+         "PARAMS" : 0.00950000001490116,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "camera"
+      },
+      {
+         "DEFAULT": 5.0,
+         "DESCRIPTION": "Controls how much the objects melt together.",
+         "IS_META": false,
+         "MAX": 30.0,
+         "MIN": 0.1,
+         "NAME": "_gooey",
+		   "PARAMS": 0.019999993294477,
+         "TYPE": "slider smooth",
+         "UI_GROUP": "geo_morph"
+      },
+      {
+         "DEFAULT": 0.0,
+         "DESCRIPTION": "Increase gooeyness on beat detected.",
+         "IS_META": false,
+         "MAX": 1.0,
+         "MIN": 0.0,
+         "NAME": "bass_goo",
+		   "PARAMS": 0.299999993294477,
+         "TYPE": "toggle smooth",
+         "UI_GROUP": "geo_morph"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "audioreactive feedback fading.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "bass_fade",
+         "TYPE" : "toggle",
+         "UI_GROUP" : "fb_color"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "How much the feedback fades. Lower values retain feedback for longer",
+         "IS_META" : false,
+         "MAX" : 0.2,
+         "MIN" : 0.0,
+         "NAME" : "fb_fade",
+         "PARAMS" : 0.3,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "fb_color"
+      },
+      {
+         "DEFAULT": 0.48,
+         "DESCRIPTION": "Mix in psychedelic palette",
+         "IS_META": false,
+         "MAX": 1.0,
+         "MIN": 0.0,
+         "NAME": "psychedelic_vibrancy",
+		   "PARAMS": 0.2,
+         "TYPE": "slider smooth",
+         "UI_GROUP": "fb_color"
+      },
+      {
+         "DEFAULT": 0.0,
+         "DESCRIPTION": "remove shading from the feedback",
+         "IS_META": false,
+         "MAX": 1.0,
+         "MIN": 0.0,
+         "NAME": "flat_fb",
+		   "PARAMS": 0.019999993294477,
+         "TYPE": "slider smooth",
+         "UI_GROUP": "fb_color"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "Audio reactive zoom for feedback.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "auto_zoom",
+         "PARAMS" : 0.0200000002980232,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "feedback_zoom"
+      },
+      {
+         "DEFAULT" : 1.0,
+         "DESCRIPTION" : "bass boosted zoom for feedback.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "bass_boost ",
+         "PARAMS" : 0.0200000002980232,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "feedback_zoom"
+      },
+      {
+         "DEFAULT" : 0.65,
+         "DESCRIPTION" : "Which direction the feedback zooms.  values > 0.5 are inward, values < 0.5 are outward, 0.5 is off",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "zoom_direction",
+         "PARAMS" : 0.100000001490116,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "feedback_zoom"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "automatically determine the flow rate of the feedback based on the audio.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "auto_flow",
+         "PARAMS" : 0.100000001490116,
+         "TYPE" : "toggle smooth",
+         "UI_GROUP" : "feedback_flow"
+      },
+      {
+         "DEFAULT" : 0.55,
+         "DESCRIPTION" : "Contorls the rate at which the feedback flows",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "flow_speed",
+         "PARAMS" : 0.100000001490116,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "feedback_flow"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "Contorls the rate at which the feedback flows",
+         "IS_META" : false,
+         "MAX" : 3.0,
+         "MIN" : -3.0,
+         "NAME" : "fb_pan",
+         "PARAMS" : 0.2,
+         "TYPE" : "xy smooth",
+         "UI_GROUP" : "feedback_flow"
+      },
+      {
+         "DEFAULT": 0.0,
+         "DESCRIPTION": "Glitch power along the x or y uv axis",
+         "IS_META": false,
+         "MAX": 0.5,
+         "MIN": 0.0,
+         "NAME": "_power",
+		   "PARAMS": 0.09999993294477,
+         "TYPE": "xy smooth",
+         "UI_GROUP": "feedback_glitch"
+      },
+      {
+         "DEFAULT" : 1.0,
+         "DESCRIPTION" : "Glitch the feedback on beat detected.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "on_beat_only",
+         "PARAMS" : 0.3,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "feedback_glitch"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "Apply a grid glitch effect to the feedback",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.0,
+         "NAME" : "grid_glitch",
+         "PARAMS" : 0.3,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "feedback_glitch"
+      },
+      {
+         "DEFAULT" : 0.0,
+         "DESCRIPTION" : "Increase the rate at which the feedback swirls towards the center of the screen.",
+         "IS_META" : false,
+         "MAX" : 1.0,
+         "MIN" : 0.00,
+         "NAME" : "spin_mix",
+         "PARAMS" : 0.100000001490116,
+         "TYPE" : "slider smooth",
+         "UI_GROUP" : "feedback_flow"
+      }
+   ],
+   "PASSES" : [
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "firstPass",
+         "WIDTH" : 1920
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "postFXPass",
+         "WIDTH" : 1920
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "secondPass",
+         "WIDTH" : 1920
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "rVertMirrPass",
+         "WIDTH" : 1920
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "fbEdge",
+         "WIDTH" : 1920
+      },
+      {
+         "FLOAT" : true,
+         "HEIGHT" : 1080,
+         "TARGET" : "fbLoop",
+         "WIDTH" : 1920
+      }
+   ],
+   "CREDIT" : "Psybernautics",
+   "DESCRIPTION" : "A 3D raymarch scene that paints psychedlic feedabck onto the screen. Features fine grained controls over the three major parts of the scene: 3D World, Geometry, and Feedback. The scene also includes a robust glitch effects suite for the feedback system.",
+   "HEIGHT" : 1080,
+   "IMAGE_PATH" : "sphere_chaser_sc.PNG",
+   "TITLE" : "Sphere Chaser",
+   "WIDTH" : 1920,
+   "TAGS": [
+      "fluid",
+      "psychedelic",
+      "feedback",
+      "glitch",
+      "colorful",
+      "raymarching"
+   ],
+   "GPU": 4,
+   "VERSION": 2
+}

@@ -14,6 +14,7 @@ public enum Prerequisite: String, CaseIterable {
     case lmStudioAvailable = "LM Studio (port 1234)"
     case magicListening = "Magic Music Visuals (port 11111)"
     case synesthesiaRunning = "Synesthesia Running"
+    case vjUniverseListening = "VJUniverse (port 10000)"
 }
 
 /// Checks and caches test prerequisites
@@ -81,6 +82,9 @@ public final class PrerequisiteChecker {
             // Would need to actually query VDJ via OSC
             // For now, just check if VDJ is running
             return isProcessRunning("VirtualDJ")
+            
+        case .magicListening:
+            return isPortOpen(11111)
         }
     }
 

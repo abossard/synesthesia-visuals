@@ -98,7 +98,7 @@ final class OSCE2ETests: XCTestCase {
         XCTAssertFalse(hub.running)
         
         // When/Then: Sending throws error
-        XCTAssertThrowsError(try hub.sendToProcessing("/test", values: [])) { error in
+        XCTAssertThrowsError(try hub.sendToMagic("/test", values: [])) { error in
             XCTAssertEqual(error as? OSCHubError, OSCHubError.notStarted)
         }
     }
@@ -172,9 +172,9 @@ final class OSCE2ETests: XCTestCase {
         try hub.start()
         
         // When: Sending multiple messages
-        try hub.sendToProcessing("/test/1")
-        try hub.sendToProcessing("/test/2")
-        try hub.sendToProcessing("/test/3")
+        try hub.sendToMagic("/test/1")
+        try hub.sendToMagic("/test/2")
+        try hub.sendToMagic("/test/3")
         
         // Then: Stats reflect sends
         let stats = hub.stats()
@@ -187,7 +187,7 @@ final class OSCE2ETests: XCTestCase {
         
         // Given: Hub with some stats
         try hub.start()
-        try hub.sendToProcessing("/test")
+        try hub.sendToMagic("/test")
         
         var stats = hub.stats()
         XCTAssertEqual(stats["messagesSent"] as? Int, 1)
@@ -209,7 +209,7 @@ final class OSCE2ETests: XCTestCase {
         try hub.start()
         
         // When: Using convenience method
-        try hub.sendToProcessing("/test/string", "hello world")
+        try hub.sendToMagic("/test/string", values: ["hello world"])
         
         // Then: No error
         let stats = hub.stats()

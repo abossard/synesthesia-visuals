@@ -36,6 +36,8 @@ let package = Package(
         .package(url: "https://github.com/orchetect/OSCKit", from: "0.6.0"),
         // Command-line argument parsing
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+        // YAML parsing for config files
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
     ],
     targets: [
         // Syphon binary framework (built from Syphon-Framework)
@@ -80,6 +82,10 @@ let package = Package(
             name: "SwiftVJCore",
             dependencies: [
                 .product(name: "OSCKit", package: "OSCKit"),
+                .product(name: "Yams", package: "Yams"),
+            ],
+            resources: [
+                .copy("Resources/launchpad-config.yaml"),
             ]),
 
         // Shadertoy Runtime - GLSL to Metal shader runtime
@@ -104,7 +110,10 @@ let package = Package(
         // Behavior tests - pure functions, no external dependencies
         .testTarget(
             name: "BehaviorTests",
-            dependencies: ["SwiftVJCore"]),
+            dependencies: [
+                "SwiftVJCore",
+                .product(name: "Yams", package: "Yams"),
+            ]),
 
         // E2E tests - require external services
         .testTarget(

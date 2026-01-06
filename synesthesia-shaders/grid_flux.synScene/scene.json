@@ -1,0 +1,442 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 
+			[
+				1,
+				1,
+				1
+			],
+			"DESCRIPTION" : "The first color used for the audio elements when the \"elements use scheme\" toggle is off",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "elements_color1",
+			"TYPE" : "color",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Select the color palette that the audio elements and feedback use",
+			"LABELS" : 
+			[
+				"summer time",
+				"verdant",
+				"Royalty",
+				"gamut"
+			],
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "color_select",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "color",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Moves through the selected palette, moving the starting position of selected scheme.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "color_offset",
+			"PARAMS" : 0.14201,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Changes the hue of the selected color palette. Use this knob to find the exact color combo you need",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "hue_offset",
+			"PARAMS" : 0.22301,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "When enabled, this toggle will make the elements use the selected palette. When disabled, it will use the custom elements color controls",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "elements_use_scheme",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0.86275,
+				1
+			],
+			"DESCRIPTION" : "The second color used for the audio elements when the \"elements use scheme\" toggle is off",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "elements_color2",
+			"PARAMS" : 0.01,
+			"TYPE" : "color smooth",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0.33,
+			"DESCRIPTION" : "Adjusts the frequency of the color palette, higher values create more color repetition",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "palette_mod",
+			"PARAMS" : 0.07401,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Sets the method for how the audio elements are colored",
+			"LABELS" : 
+			[
+				"diagonol",
+				"circle",
+				"noise",
+				"cells",
+				"luma"
+			],
+			"MAX" : 4,
+			"MIN" : 0,
+			"NAME" : "coloring_style",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "color",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Skews the scene colors towards bright primary colors. Use with the lighting knob for extra effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "neon_lighting",
+			"PARAMS" : 0.24901,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Creates a traveling vignette that brightens the scene and tampers the colors",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "lighting",
+			"PARAMS" : 0.25001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "lighting"
+		},
+		{
+			"DEFAULT" : 0.33,
+			"DESCRIPTION" : "Controls the over all level of feedback the elements and media produce",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "master_feedback",
+			"PARAMS" : 0.12501,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "feedback"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Changes the behavior of the feedback. Each selection behaves differently with the \"master feedback\" slider and \"unfurl feedback\" toggle",
+			"LABELS" : 
+			[
+				"fan out",
+				"ripple",
+				"worms"
+			],
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "feedback_style",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "feedback",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Fills empty space with waves of feedback. This effect is heavily affected by the \"master feedback\" slider",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "unfurl_feedback",
+			"PARAMS" : 0.36801,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Sets the audio elements grid size from 3 to 4, causing smaller elements and an overall noisier scene",
+			"MAX" : 2,
+			"MIN" : 1,
+			"NAME" : "noisy_grid",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Jump the position of all elements on screen",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "scramble_elements",
+			"TYPE" : "bang counter",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Adjusts the threshold for the number of elements on each grid level",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "element_count",
+			"TYPE" : "knob",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Toggles the depth of field and parallax effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "use_parallax",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Slide the elements across the vertical and horizontal axis",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "slide_rows",
+			"PARAMS" : 0.19801,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "grid"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0
+			],
+			"DESCRIPTION" : "Drift the camera based on the velocity of this control change",
+			"MAX" : 
+			[
+				5,
+				5
+			],
+			"MIN" : 
+			[
+				-5,
+				-5
+			],
+			"NAME" : "drift",
+			"PARAMS" : 0.05401,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Automatically drifts the camera in random directions in time with the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "cam_auto_pilot",
+			"PARAMS" : 0.28101,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Adjusts how intensely the auto pilot moves on beat. Requires the “cam auto pilot” toggle to be enabled",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_pilot_sensitivity",
+			"PARAMS" : 0.10701,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "camera"
+		},
+		{
+			"DEFAULT" : 0.44,
+			"DESCRIPTION" : "Moves the camera in and out of the grid. use the “set layer” bangs to quickly set a desired layer with the elements in focus",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "depth",
+			"PARAMS" : 0.23201,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Depth"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Quickly set the depth control to the bottom layer",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "set_bottom_layer",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Depth"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Quickly set the depth control to the middle layer",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "set_middle_layer",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Depth"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Quickly set the depth control to the top layer",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "set_top_layer",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Depth"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "randomly moves the depth slider in time to the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "depth_auto_pilot",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Depth"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Distort each grid layer with a barrel distortion that bounces to the bass",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "distortion_pulse",
+			"PARAMS" : 0.01301,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Masks out the scene with circuit like pulses that radiate from the center",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "circuits",
+			"PARAMS" : 0.01001,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "fx"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Sets the scene to use the media color instead of the color palette",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "use_media_col",
+			"PARAMS" : 0.37101,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Multiplies the media with the feedback layer, masking out the feedback",
+			"MAX" : 0,
+			"MIN" : 1,
+			"NAME" : "multiply_media",
+			"PARAMS" : 0.41801,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adjusts the amount that user media is mixed into the reactive elements. Use this slider to fine tune how much the media shows through",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_mix",
+			"PARAMS" : 0.07401,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "media"
+		}
+	],
+	"CREDIT" : "The Void",
+	"DESCRIPTION" : "A deeply audio-reactive cybernetic grid.",
+	"GPU" : 5,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "grid_flux.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "mipmap",
+			"WRAP" : "mirror"
+		}
+	],
+  "TAGS": [
+    "audio",
+    "colorful",
+    "2D",
+    "visualizer",
+    "media"
+  ],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : false,
+			"HEIGHT" : 1080,
+			"TARGET" : "Background",
+			"WIDTH" : 1920,
+			"WRAP" : "mirror"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : false,
+			"HEIGHT" : 1080,
+			"TARGET" : "Widgets",
+			"WIDTH" : 1920,
+			"WRAP" : "clamp"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : false,
+			"HEIGHT" : 1080,
+			"TARGET" : "Widgets_Secondary",
+			"WIDTH" : 1920,
+			"WRAP" : "mirror"
+		},
+		{
+			"FILTER" : "mipmap",
+			"FLOAT" : false,
+			"HEIGHT" : 1080,
+			"TARGET" : "Feedback1",
+			"WIDTH" : 1920,
+			"WRAP" : "repeat"
+		}
+	],
+	"TITLE" : "Grid Flux",
+	"WIDTH" : 1920
+}

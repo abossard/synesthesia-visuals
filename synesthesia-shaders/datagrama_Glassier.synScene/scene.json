@@ -1,0 +1,207 @@
+{
+ "CREDIT": "Datagrama",
+ "TITLE": "datagrama.Glassier",
+ "VERSION": 2,
+ "IMAGE_PATH": "datagrama.Glassier.png",
+ "DESCRIPTION" : "Datagrama's 2024 edit of the classic Syn Scene Glassier. The original scene, 'Expansive Reaction Diffusion' https://www.shadertoy.com/view/4dcGW2 , was created by Felix Woitzel and the effect dates back to Felix's work in Milkdrop. The Datagrama version features new color palettes, new ways to feed in media (especially effective with pure black/white linework and logos), and many new motion controls. Created by Meebs + Flexi",
+  "TAGS":["reaction diffusion", "psychedelic", "fluid", "organic", "feedback", "colorful", "cellular automata", "audio", "abstract", "media", "logo"],
+  "IMAGES": [],
+  "WIDTH":1920,
+  "HEIGHT":1080,
+ "PASSES": [
+   {  "TARGET":"buffA", "WIDTH":1600, "HEIGHT":900, "FLOAT": true
+    },
+   {  "TARGET":"buffA2", "WIDTH":1600, "HEIGHT":900, "FLOAT": true
+    },
+   {  "TARGET":"buffB", "WIDTH":1600, "HEIGHT":900, "FLOAT": true
+    },
+   {"TARGET":"buffC", "WIDTH":1600, "HEIGHT":900, "FLOAT": true} ],
+"CONTROLS":[
+  {
+  "NAME": "feed_audio_pulse", 
+  "DESCRIPTION": "Automatically pulses the media into the liquid with the bass.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.2, "TYPE":"toggle", 
+    "UI_GROUP": "media_feed"
+  },{
+  "NAME": "partial_reveal", 
+  "DESCRIPTION": "Animated mask (useful when media is static linework or logo).",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.2, "TYPE":"toggle smooth", 
+    "UI_GROUP": "media_feed"
+  },{
+  "NAME": "media_feed", 
+  "DESCRIPTION": "Feeds the simulation based on brightness in the media (interacts with other 'media feed' toggles). Try with black/white linework.",
+  "DEFAULT":0.3, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.2, "TYPE":"slider", 
+    "UI_GROUP": "media_feed"
+  },
+  {
+  "NAME": "glow_flicker_fast", 
+  "DESCRIPTION": "Add some a flicker of glow to the simulation on hit. Try with glow_tear.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"bang smooth", "PARAMS": 0.22, 
+    "UI_GROUP":"media_glow"
+  },
+  {
+  "NAME": "glow_flicker_slow", 
+  "DESCRIPTION": "Add some a much slower pulse of glow to the simulation (different colors for different palettes).",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"bang smooth", "PARAMS": 0.02, 
+    "UI_GROUP":"media_glow"
+  },
+  {
+  "NAME": "glow_rip", 
+  "DESCRIPTION": "Add some a much slower pulse of glow to the simulation (different colors for different palettes).",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"bang counter", "PARAMS": 0.02, 
+    "UI_GROUP":"media_glow"
+  },
+  {
+  "NAME": "media_glow_feed", 
+  "DESCRIPTION": "Feeds glow from media. The 'media feed' color will overrule glow color, but you can find nice mixes with the animated masks.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"slider smooth", "PARAMS": 0.2, 
+    "UI_GROUP":"media_glow"
+  },
+  {
+  "NAME": "glow_audio_pulse", 
+  "DESCRIPTION": "This adds audio-reactive glow flickering on the highs. Animated masks and audio reactivity only work if 'media glow feed' is on.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.2, "TYPE":"toggle", 
+    "UI_GROUP": "media_glow"
+  },
+  {
+  "NAME": "invert_glow_mask", 
+  "DESCRIPTION": "This inverts the media mask for glow so that you can use media feed and media glow at the same time.",
+  "DEFAULT":1.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"toggle smooth", "PARAMS": 0.2, 
+    "UI_GROUP":"media_glow"
+  },
+  {
+  "NAME": "in_out", 
+  "DESCRIPTION": "Zoom the fluid in or out.",
+  "DEFAULT":0.0, "MIN":-1.0, "MAX":1.0, 
+  "TYPE":"slider", "PARAMS": 0.3, 
+    "UI_GROUP": "zoom"
+  },
+  {
+  "NAME": "liquify_on", 
+  "DESCRIPTION": "This turns on the 'liquify' effect, then tap manual pulse or leave auto pulse on to animate the fluid.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"toggle", 
+    "UI_GROUP":"liquify"
+  },
+  {
+  "NAME": "manual_pulse", 
+  "DESCRIPTION": "Tap this on the beat when 'liquify on' is turned on.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"bang counter", "PARAMS": 0.2, 
+    "UI_GROUP":"liquify"
+  },
+  {
+  "NAME": "auto_pulse", 
+  "DESCRIPTION": "Leave this on if you want the liquify effect to animate with audio, otherwise turn off to use 'manual pulse'.",
+  "DEFAULT":1.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"toggle", "PARAMS": 0.2, 
+    "UI_GROUP":"liquify"
+  },
+  {
+  "NAME": "ornate_on", 
+  "DESCRIPTION": "Turn this on to turn on the 'ornate' effect. Then use the other two 'ornate' sliders to change the look.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"toggle", 
+    "UI_GROUP":"ornate"
+  },
+  {
+  "NAME": "ornate_dist", 
+  "DESCRIPTION": "Affects the spacing of the vortices in the 'ornate' effect. High values look great. If 'ornate' is not on this has no effect.",
+  "DEFAULT":0.9, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"slider smooth", 
+    "UI_GROUP":"ornate"
+  },
+  {
+  "NAME": "ornate_power", 
+  "DESCRIPTION": "This affects how strong the 'ornate' effect is. If 'ornate' is not on this has no effect.",
+  "DEFAULT":0.7, "MIN":0.0, "MAX":2.0, 
+  "PARAMS": 0.05, "TYPE":"slider smooth", 
+    "UI_GROUP":"ornate"
+  },
+  {
+  "NAME": "churning_on", 
+  "DESCRIPTION": "Turn this on to engage the 'churning' effect. Then toggle the mask below as needed to change the churning media mask.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"toggle", 
+    "UI_GROUP":"churning"
+  },
+  {
+  "NAME": "invert_churning_mask", 
+  "DESCRIPTION": "The churning effect is masked by the media brightness. Use this to invert the mask.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"toggle smooth", 
+    "UI_GROUP":"churning"
+  },
+  {
+  "NAME": "manual_position", 
+  "DESCRIPTION": "If 'auto move' is off you can use this to choose the direction the 'impulse' effect will push the fluid in.",
+  "DEFAULT":0.1, "MIN":-1.0, "MAX":1.0, 
+  "TYPE":"xy smooth", "PARAMS": 0.2, 
+    "UI_GROUP":"push"
+  },
+  {
+  "NAME": "impulse_amt", 
+  "DESCRIPTION": "This sets how strong the 'impulse' fluid push will be. Choose direction with 'manual position'.",
+  "DEFAULT":0.3, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"slider smooth", "PARAMS": 0.2, 
+    "UI_GROUP":"push"
+  },
+  {
+  "NAME": "auto_move", 
+  "DESCRIPTION": "Keep this on to automatically move the impulse direction around the screen so you don't have to. Yay.",
+  "DEFAULT":1.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"toggle", 
+    "UI_GROUP":"push"
+  },
+  {
+  "NAME": "color_palette", 
+  "DESCRIPTION": "Choose from 5 different color palettes. Each color palette also has a 'feed color' and a 'glow color' that you'll only see when using media feed or media glow.",
+  "DEFAULT":2.0, "MIN":0.0, "MAX":4.0, 
+  "LABELS":["metallic orange", "gold opulence", "juicy purple", "lava + ocean", "dark tech"],
+  "TYPE":"dropdown", "PARAMS": 0.2, 
+    "UI_GROUP": "color"
+  },
+  {
+  "NAME": "soft_flat", 
+  "DESCRIPTION": "By default the fluid is a bit see-through and 'glassy'. Turn this off for a softer, flatter look that can be better for highly detailed media when the glassy look is a bit messy.",
+  "DEFAULT":1.0, "MIN":1.0, "MAX":0.0, 
+  "TYPE":"toggle", 
+    "UI_GROUP":"color"
+  },
+  {
+  "NAME": "flashing_lights", 
+  "DESCRIPTION": "Turn this on for audio-reactive flashing lights.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.05, "TYPE":"toggle", 
+    "UI_GROUP":"color"
+  },
+  {
+  "NAME": "lights_rot", 
+  "DESCRIPTION": "When this is on the scene lights will rotate around the screen. This gives a much less reliable but more varied composition (brighter sometimes and darker other times).",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"toggle smooth", "PARAMS":0.05, 
+    "UI_GROUP": "color"
+  },
+  {
+  "NAME": "shock_back", 
+  "DESCRIPTION": "Tap this a little *before* the beat or drop. You can kind of 'build up' multiple hits for a bigger effect. This pulls the fluid in reverse for a moment, which results in a burst of life a little while after.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "TYPE":"bang smooth", "PARAMS": 0.01, 
+    "UI_GROUP": "reset"
+  },{
+  "NAME": "reset_sim", 
+  "DESCRIPTION": "This is just here in case the simulation dies or gets too bright and needs to be restarted.",
+  "DEFAULT":0.0, "MIN":0.0, "MAX":1.0, 
+  "PARAMS": 0.1, "TYPE":"bang smooth", 
+  "UI_GROUP":"reset"}
+]
+}

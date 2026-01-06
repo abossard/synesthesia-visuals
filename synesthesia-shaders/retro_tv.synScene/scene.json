@@ -1,0 +1,292 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Global speed",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "speed",
+			"TYPE" : "slider speed",
+			"UI_GROUP" : "Base"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Add plasma scan (using glow color)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "plasma",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Base"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "bang_mode",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Base"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Add glow (audio reactive)",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "glow",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0.17647,
+				0.81176,
+				0.95294
+			],
+			"DESCRIPTION" : "Color of the glow",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "glow_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0.36078,
+				0.35686,
+				0.27451
+			],
+			"DESCRIPTION" : "Color of the TV's",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Color mode for the screen (green, color, b&w)",
+			"MAX" : 2.99,
+			"MIN" : 0,
+			"NAME" : "color_mode",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Shift the screen hue",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "hue_shift_thres",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "How many screens show static",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "static_thres",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Spacing between the TVs",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "spacing",
+			"PARAMS" : 0.14001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Cycle through different looks",
+			"MAX" : 5,
+			"MIN" : 0,
+			"NAME" : "mode",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Twist the scene",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "twist",
+			"PARAMS" : 0.10201,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Apply kaleidoscopic folding",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "kaleidoscope",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Apply mirror",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "mirror",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Fly on auto-pilote: randomize mode and other shape params on the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_pilote",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "",
+			"MAX" : 4,
+			"MIN" : -4,
+			"NAME" : "cam_lookat",
+			"PARAMS" : 0.10101,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Auto cam movement for tunnel mode. 0.5-1: smooth sine, 1-2: on beat",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "auto_cam",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Camera distance",
+			"MAX" : 3,
+			"MIN" : -4,
+			"NAME" : "cam_z",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Wave movement synced with the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "beat_wave",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Audio Reactive"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Change individual zoom on screens in full screen mode",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "beat_refract",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Audio Reactive"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Move camera forward with the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "beat_forward",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Audio Reactive"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Brightness of the media on the screen",
+			"MAX" : 2,
+			"MIN" : 0.5,
+			"NAME" : "media_level",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Mapping of the media (0: auto toggle, 1: individual, 2: full screen)",
+			"MAX" : 2.99,
+			"MIN" : 0,
+			"NAME" : "mapping_mode",
+			"PARAMS" : 0.11701,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Media"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Blend media into the glow color",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "media_glow_blend",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Media"
+		}
+	],
+	"CREDIT" : "jiagual",
+	"CUBEMAPS" : 
+	[
+		{
+			"NAME" : "cubemap26",
+			"PATHS" : 
+			[
+				"cubemaps/26_0.png",
+				"cubemaps/26_1.png",
+				"cubemaps/26_2.png",
+				"cubemaps/26_3.png",
+				"cubemaps/26_4.png",
+				"cubemaps/26_5.png"
+			]
+		}
+	],
+	"DESCRIPTION" : "shadertoy.com/view/3Xy3DV\nThere seems to an universal upward moving and downward moving principle. \nExpansion and contraction. Emptiness and form. Creation and dissolution. An endless cycle.",
+	"GPU" : 4,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "thumbnail.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "mirror"
+		}
+	],
+	"TAGS" : 
+	[
+		"raymarching",
+		"retro",
+		"tv",
+		"glitch",
+		"3d"
+	],
+	"TITLE" : "Retro TV",
+	"WIDTH" : 1920
+}
