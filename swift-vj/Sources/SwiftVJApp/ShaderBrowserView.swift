@@ -283,13 +283,13 @@ struct ShaderBrowserView: View {
             }
             
             // Create utilities
-            let screenshotCapture = await ShaderScreenshotCapture(logger: { message, level in
+            let screenshotCapture = ShaderScreenshotCapture(logger: { message, level in
                 Task { @MainActor in
                     self.appState.log(message, level: level)
                 }
             })
             
-            let lmStudioClient = await LMStudioClient(logger: { message, level in
+            let lmStudioClient = LMStudioClient(logger: { message, level in
                 Task { @MainActor in
                     self.appState.log(message, level: level)
                 }

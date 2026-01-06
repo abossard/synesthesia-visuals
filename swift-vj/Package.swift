@@ -74,7 +74,8 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/Shaders.metallib"),
-                .process("Resources/SharedVertex.metal")
+                .process("Resources/SharedVertex.metal"),
+                .process("Resources/Assets.xcassets"),
             ]),
 
         // Core library containing all business logic
