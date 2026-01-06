@@ -21,6 +21,7 @@ struct ShaderBrowserView: View {
     @State private var currentAnalysisShader: String = ""
     @State private var showingAnalysisModal: Bool = false
     @State private var selectedAnalysis: ShaderAnalysis? = nil
+    @State private var refreshId = UUID() // Forces grid refresh after analysis
     
     var filteredShaders: [CoreShaderInfo] {
         shaders.filter { shader in
@@ -110,6 +111,7 @@ struct ShaderBrowserView: View {
                             isSelected: appState.selectedShader == shader.name,
                             isChecked: selectedShaders.contains(shader.name),
                             isEnabled: enabledShaders.contains(shader.name),
+                            refreshId: refreshId,
                             onTap: {
                                 Task {
                                     await appState.selectShader(shader.name)
@@ -432,12 +434,18 @@ struct ShaderBrowserView: View {
                 let elapsed = Date().timeIntervalSince(shaderStartTime)
                 appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s", level: .info)
                 analysisProgress = Double(index + 1) / Double(total)
+                
+                // Refresh grid to show new screenshot
+                refreshId = UUID()
             }
             
             let totalElapsed = Date().timeIntervalSince(startTime)
             
             isAnalyzing = false
             currentAnalysisShader = ""
+            
+            // Final refresh to ensure all screenshots are shown
+            refreshId = UUID()
             
             appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             appState.log("✅ ANALYSIS COMPLETE", level: .info)
@@ -642,10 +650,40 @@ struct ShaderCardEnhanced: View {
     let isSelected: Bool
     let isChecked: Bool
     let isEnabled: Bool
+    let refreshId: UUID // Forces screenshot reload when changed
     let onTap: () -> Void
     let onCheck: () -> Void
     let onEnable: () -> Void
     let onShowAnalysis: () -> Void
+    
+    @State private var screenshotImage: NSImage?
+    @State private var analysisData: ShaderAnalysisResult?
+    @State private var hasAnalysis: Bool = false
+    
+    /// Find screenshot path for this shader
+    private var screenshotPath: URL? {
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
+        
+        let possibleFiles = [
+            shaderDir.appendingPathComponent("\(shaderName).png"),
+            shaderDir.appendingPathComponent("screenshot.png"),
+            shaderDir.appendingPathComponent("preview.png")
+        ]
+        
+        return possibleFiles.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+    
+    /// Find analysis.json path for this shader
+    private var analysisPath: URL? {
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
+        
+        let path = shaderDir.appendingPathComponent("\(shaderName).analysis.json")
+        return FileManager.default.fileExists(atPath: path.path) ? path : nil
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -668,32 +706,45 @@ struct ShaderCardEnhanced: View {
                 .scaleEffect(0.8)
             }
             
-            // Preview placeholder / screenshot
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    LinearGradient(
-                        colors: [.purple.opacity(0.6), .blue.opacity(0.4), .cyan.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(height: 120)
-                .overlay {
-                    VStack {
-                        Image(systemName: "sparkles")
-                            .font(.largeTitle)
-                            .foregroundColor(.white.opacity(0.5))
-                        
-                        // Screenshot indicator
-                        Image(systemName: "camera.fill")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.3))
-                            .padding(4)
-                            .background(.black.opacity(0.3))
-                            .cornerRadius(4)
-                    }
+            // Preview screenshot or placeholder
+            ZStack {
+                if let image = screenshotImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 120)
+                        .clipped()
+                        .cornerRadius(8)
+                } else {
+                    // Placeholder when no screenshot
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            LinearGradient(
+                                colors: [.purple.opacity(0.6), .blue.opacity(0.4), .cyan.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(height: 120)
+                        .overlay {
+                            VStack {
+                                Image(systemName: "sparkles")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.white.opacity(0.5))
+                                
+                                Image(systemName: "camera.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.3))
+                                    .padding(4)
+                                    .background(.black.opacity(0.3))
+                                    .cornerRadius(4)
+                            }
+                        }
                 }
-                .onTapGesture(perform: onTap)
+            }
+            .onTapGesture(perform: onTap)
+            .onAppear { loadScreenshot(); loadAnalysis() }
+            .onChange(of: refreshId) { _, _ in loadScreenshot(); loadAnalysis() }
             
             // Name and analysis button
             HStack {
@@ -712,19 +763,32 @@ struct ShaderCardEnhanced: View {
             
             // Quality badge and tags
             HStack {
-                Text(shader.rating.displayName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(shader.rating.qualityColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(4)
+                // Analysis status badge
+                if hasAnalysis {
+                    Text("✓ Analyzed")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(4)
+                } else {
+                    Text("Not Analyzed")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.yellow)
+                        .foregroundColor(.black)
+                        .cornerRadius(4)
+                }
                 
                 Spacer()
                 
-                // Tags
-                ForEach(shader.colors.prefix(2), id: \.self) { tag in
+                // Tags from analysis or shader info
+                let displayTags = analysisData?.colors.prefix(2) ?? shader.colors.prefix(2)
+                ForEach(Array(displayTags), id: \.self) { tag in
                     Text(tag)
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -743,6 +807,50 @@ struct ShaderCardEnhanced: View {
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
         .opacity(isEnabled ? 1.0 : 0.5)
+    }
+    
+    /// Load screenshot from disk
+    private func loadScreenshot() {
+        guard let path = screenshotPath else {
+            screenshotImage = nil
+            return
+        }
+        
+        // Load image in background to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let image = NSImage(contentsOf: path) {
+                DispatchQueue.main.async {
+                    self.screenshotImage = image
+                }
+            }
+        }
+    }
+    
+    /// Load analysis JSON from disk
+    private func loadAnalysis() {
+        guard let path = analysisPath else {
+            hasAnalysis = false
+            analysisData = nil
+            return
+        }
+        
+        hasAnalysis = true
+        
+        // Load analysis in background
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let data = try Data(contentsOf: path)
+                let analysis = try JSONDecoder().decode(ShaderAnalysisResult.self, from: data)
+                DispatchQueue.main.async {
+                    self.analysisData = analysis
+                }
+            } catch {
+                // File exists but couldn't parse - still mark as analyzed
+                DispatchQueue.main.async {
+                    self.analysisData = nil
+                }
+            }
+        }
     }
 }
 

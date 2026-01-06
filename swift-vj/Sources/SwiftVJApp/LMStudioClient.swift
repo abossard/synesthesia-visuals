@@ -80,11 +80,20 @@ actor LMStudioClient {
     func analyzeShader(shaderName: String, shaderSource: String, screenshotPath: URL?) async -> ShaderAnalysisResult? {
         logger("🤖 Analyzing shader '\(shaderName)' with LM Studio", .info)
         
-        // Build prompt
-        let prompt = buildShaderAnalysisPrompt(shaderName: shaderName, shaderSource: shaderSource, screenshotPath: screenshotPath)
+        // Build prompt text
+        let promptText = buildShaderAnalysisPrompt(shaderName: shaderName, shaderSource: shaderSource, hasScreenshot: screenshotPath != nil)
         
-        // Make request
-        guard let result = await chatCompletion(prompt: prompt) else {
+        // Load and encode screenshot if available
+        var imageBase64: String? = nil
+        if let path = screenshotPath {
+            imageBase64 = loadImageAsBase64(from: path)
+            if imageBase64 != nil {
+                logger("  🖼️ Screenshot encoded (\(imageBase64!.count / 1024) KB base64)", .debug)
+            }
+        }
+        
+        // Make request with vision support
+        guard let result = await chatCompletionWithVision(prompt: promptText, imageBase64: imageBase64) else {
             logger("  ✗ LM Studio chat completion failed", .error)
             return nil
         }
@@ -93,10 +102,21 @@ actor LMStudioClient {
         return parseShaderAnalysis(content: result, shaderName: shaderName)
     }
     
-    /// Make chat completion request to LM Studio
-    /// - Parameter prompt: The prompt to send
+    /// Load image from disk and encode as base64
+    private func loadImageAsBase64(from path: URL) -> String? {
+        guard let imageData = try? Data(contentsOf: path) else {
+            logger("  ⚠️ Could not read screenshot file", .warning)
+            return nil
+        }
+        return imageData.base64EncodedString()
+    }
+    
+    /// Make chat completion request with vision support
+    /// - Parameters:
+    ///   - prompt: The text prompt
+    ///   - imageBase64: Optional base64-encoded image
     /// - Returns: Response content or nil if failed
-    private func chatCompletion(prompt: String) async -> String? {
+    private func chatCompletionWithVision(prompt: String, imageBase64: String?) async -> String? {
         guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
             logger("  ✗ Invalid chat completions URL", .error)
             return nil
@@ -107,9 +127,30 @@ actor LMStudioClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = timeout
         
+        // Build message content - either simple text or multi-part with image
+        let messageContent: Any
+        if let base64 = imageBase64 {
+            // Vision format: array of content parts (text + image)
+            messageContent = [
+                [
+                    "type": "text",
+                    "text": prompt
+                ],
+                [
+                    "type": "image_url",
+                    "image_url": [
+                        "url": "data:image/png;base64,\(base64)"
+                    ]
+                ]
+            ]
+        } else {
+            // Simple text format
+            messageContent = prompt
+        }
+        
         let payload: [String: Any] = [
             "messages": [
-                ["role": "user", "content": prompt]
+                ["role": "user", "content": messageContent]
             ],
             "max_tokens": 1200,
             "temperature": 0.7
@@ -122,7 +163,8 @@ actor LMStudioClient {
             return nil
         }
         
-        logger("  📡 Sending request to LM Studio (\(prompt.count) chars)", .debug)
+        let payloadSize = request.httpBody?.count ?? 0
+        logger("  📡 Sending request to LM Studio (\(payloadSize / 1024) KB payload)", .debug)
         
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
@@ -160,7 +202,7 @@ actor LMStudioClient {
     }
     
     /// Build shader analysis prompt
-    private func buildShaderAnalysisPrompt(shaderName: String, shaderSource: String, screenshotPath: URL?) -> String {
+    private func buildShaderAnalysisPrompt(shaderName: String, shaderSource: String, hasScreenshot: Bool) -> String {
         var prompt = """
         Analyze this GLSL shader for VJ music visualization matching.
         
@@ -171,8 +213,12 @@ actor LMStudioClient {
         
         """
         
-        if let _ = screenshotPath {
-            prompt += "\nA screenshot of the rendered shader is available for visual analysis.\n"
+        if hasScreenshot {
+            prompt += """
+            
+            I've included a screenshot of the rendered shader. Please analyze BOTH the code AND the visual output to provide an accurate description of colors, effects, and mood.
+            
+            """
         }
         
         prompt += """
@@ -183,7 +229,7 @@ actor LMStudioClient {
           "description": "Brief description of visual style (1-2 sentences)",
           "mood": "Primary mood (energetic|calm|dark|bright|psychedelic|dreamy|aggressive|peaceful|hypnotic)",
           "energy": 0.0-1.0 (calm=0, intense=1),
-          "colors": ["color1", "color2", "color3"] (dominant colors: neon, cyan, purple, warm, cool, rainbow, etc.),
+          "colors": ["color1", "color2", "color3"] (dominant colors from the screenshot: neon, cyan, purple, warm, cool, rainbow, etc.),
           "effects": ["effect1", "effect2"] (geometric, fluid, particles, raymarching, fractal, kaleidoscope, tunnel, vortex, etc.),
           "geometry": ["shape1", "shape2"] (triangles, circles, spirals, cubes, spheres, etc.),
           "objects": ["object1", "object2"] (stars, waves, shapes, grid, etc.),

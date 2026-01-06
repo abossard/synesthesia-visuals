@@ -407,6 +407,8 @@ func modeDisplayName(_ mode: PadMode?) -> String {
     case .toggle: return "Toggle"
     case .oneShot: return "One-Shot"
     case .push: return "Push"
+    case .increment: return "Increment"
+    case .decrement: return "Decrement"
     }
 }
 

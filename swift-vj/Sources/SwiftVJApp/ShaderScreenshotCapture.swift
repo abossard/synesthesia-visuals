@@ -60,32 +60,62 @@ actor ShaderScreenshotCapture {
         let width = texture.width
         let height = texture.height
         let rowBytes = width * 4 // BGRA8Unorm format
+        let bufferSize = rowBytes * height
         
-        // Allocate buffer for pixel data
-        guard let data = malloc(rowBytes * height) else {
-            logger("  ✗ Failed to allocate memory for texture data", .error)
+        let device = texture.device
+        
+        // Create a shared buffer for CPU access
+        guard let buffer = device.makeBuffer(length: bufferSize, options: .storageModeShared) else {
+            logger("    ✗ Failed to create Metal buffer", .error)
             return nil
         }
         
-        // Copy texture data to CPU memory
-        texture.getBytes(
-            data,
-            bytesPerRow: rowBytes,
-            from: MTLRegionMake2D(0, 0, width, height),
-            mipmapLevel: 0
-        )
+        // Create command buffer to copy texture to buffer
+        guard let commandQueue = device.makeCommandQueue(),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+            logger("    ✗ Failed to create blit command encoder", .error)
+            return nil
+        }
         
-        // Create data provider that owns the buffer
+        // Copy texture to buffer
+        blitEncoder.copy(
+            from: texture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: width, height: height, depth: 1),
+            to: buffer,
+            destinationOffset: 0,
+            destinationBytesPerRow: rowBytes,
+            destinationBytesPerImage: bufferSize
+        )
+        blitEncoder.endEncoding()
+        
+        // Wait for GPU to finish
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        
+        // Get pointer to buffer data
+        let data = buffer.contents()
+        
+        // Create data provider - copy the data since buffer will be released
+        guard let dataCopy = malloc(bufferSize) else {
+            logger("    ✗ Failed to allocate memory for image data", .error)
+            return nil
+        }
+        memcpy(dataCopy, data, bufferSize)
+        
         guard let provider = CGDataProvider(
             dataInfo: nil,
-            data: data,
-            size: rowBytes * height,
+            data: dataCopy,
+            size: bufferSize,
             releaseData: { _, dataPtr, _ in
-                dataPtr.deallocate()
+                free(UnsafeMutableRawPointer(mutating: dataPtr))
             }
         ) else {
-            free(data)
-            logger("  ✗ Failed to create CGDataProvider", .error)
+            free(dataCopy)
+            logger("    ✗ Failed to create CGDataProvider", .error)
             return nil
         }
         
