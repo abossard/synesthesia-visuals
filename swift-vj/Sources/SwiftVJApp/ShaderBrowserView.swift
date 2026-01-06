@@ -383,47 +383,84 @@ struct ShaderBrowserView: View {
             let shadersToAnalyze = Array(selectedShaders)
             let total = shadersToAnalyze.count
             
-            appState.log("Starting AI analysis for \(total) shader(s)", level: .info)
+            appState.log("🤖 Starting AI analysis for \(total) shader(s)", level: .info)
             
             var successCount = 0
             var errorCount = 0
             
+            // Create LM Studio client
+            let lmStudioClient = await LMStudioClient(logger: { message, level in
+                Task { @MainActor in
+                    self.appState.log(message, level: level)
+                }
+            })
+            
+            // Check if LM Studio is available
+            let isAvailable = await lmStudioClient.isAvailable()
+            if !isAvailable {
+                appState.log("  ⚠️ LM Studio is not available. Please start LM Studio server.", level: .warning)
+                appState.log("  ℹ️ Start with: lms server start --port 1234", level: .info)
+                isAnalyzing = false
+                return
+            }
+            
             for (index, shaderName) in shadersToAnalyze.enumerated() {
                 currentAnalysisShader = shaderName
-                appState.log("Analyzing shader [\(index+1)/\(total)]: \(shaderName)", level: .info)
+                appState.log("🔍 [\(index+1)/\(total)] Analyzing \(shaderName)...", level: .info)
                 
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
-                    appState.log("  ✗ Shader not found: \(shaderName)", level: .error)
+                    appState.log("  ✗ Shader not found in list: \(shaderName)", level: .error)
                     errorCount += 1
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
-                // 1. Load shader source code
+                // Load shader source code
                 let shaderPath = URL(fileURLWithPath: shader.path)
-                appState.log("  Loading shader source: \(shaderPath.lastPathComponent)", level: .debug)
+                let shaderDir = shaderPath.deletingLastPathComponent()
                 
-                // 2. Load screenshot if available
-                let screenshotPath = findScreenshot(for: shader)
-                if let screenshot = screenshotPath {
-                    appState.log("  Found screenshot: \(screenshot.lastPathComponent)", level: .debug)
-                } else {
-                    appState.log("  No screenshot available", level: .debug)
+                appState.log("  📂 Loading shader source: \(shaderDir.lastPathComponent)", level: .debug)
+                
+                // Find GLSL source file
+                let sourceFile = findShaderSourceFile(in: shaderDir, shaderName: shaderName)
+                guard let source = loadShaderSource(from: sourceFile) else {
+                    appState.log("  ⚠️ No shader source file found", level: .warning)
+                    errorCount += 1
+                    analysisProgress = Double(index + 1) / Double(total)
+                    continue
                 }
                 
-                // 3. Send to LM Studio via AI module
-                appState.log("  Sending to LM Studio for analysis...", level: .debug)
+                // Find screenshot if available
+                let screenshotPath = findScreenshot(for: shader)
+                if let screenshot = screenshotPath {
+                    appState.log("  📷 Found screenshot: \(screenshot.lastPathComponent)", level: .debug)
+                } else {
+                    appState.log("  ℹ️ No screenshot available (code-only analysis)", level: .debug)
+                }
                 
-                // TODO: Call actual AI module
-                // let analysis = await appState.aiModule?.analyzeShader(source: shaderSource, screenshot: screenshotPath)
+                // Analyze with LM Studio
+                appState.log("  ⏳ Sending to LM Studio for analysis...", level: .info)
                 
-                // Simulate analysis
-                try? await Task.sleep(for: .seconds(2))
+                guard let analysis = await lmStudioClient.analyzeShader(
+                    shaderName: shaderName,
+                    shaderSource: source,
+                    screenshotPath: screenshotPath
+                ) else {
+                    appState.log("  ✗ AI analysis failed", level: .error)
+                    errorCount += 1
+                    analysisProgress = Double(index + 1) / Double(total)
+                    continue
+                }
                 
-                // 4. Save analysis JSON
-                let analysisPath = shaderPath.deletingLastPathComponent().appendingPathComponent("\(shaderName).analysis.json")
-                appState.log("  ✓ Analysis saved: \(analysisPath.lastPathComponent)", level: .info)
-                successCount += 1
+                // Save analysis to JSON
+                let analysisPath = shaderDir.appendingPathComponent("\(shaderName).analysis.json")
+                if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
+                    appState.log("  ✓ Analysis saved: \(analysisPath.lastPathComponent)", level: .info)
+                    successCount += 1
+                } else {
+                    appState.log("  ✗ Failed to save analysis JSON", level: .error)
+                    errorCount += 1
+                }
                 
                 analysisProgress = Double(index + 1) / Double(total)
             }
@@ -431,36 +468,88 @@ struct ShaderBrowserView: View {
             isAnalyzing = false
             currentAnalysisShader = ""
             
-            appState.log("AI analysis complete: \(successCount) successful, \(errorCount) failed", level: .info)
+            appState.log("✅ AI analysis complete: \(successCount) successful, \(errorCount) failed", level: .info)
             
             await loadShaders()
         }
     }
     
-    private func findScreenshot(for shader: CoreShaderInfo) -> URL? {
-        let shaderDir = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
-        let screenshotPaths = [
-            shaderDir.appendingPathComponent("\(shader.name).png"),
-            shaderDir.appendingPathComponent("\(shader.name).jpg"),
-            shaderDir.appendingPathComponent("new_scene.png")
+    /// Find shader source file in directory
+    private func findShaderSourceFile(in directory: URL, shaderName: String) -> URL? {
+        let possibleFiles = [
+            directory.appendingPathComponent("main.glsl"),
+            directory.appendingPathComponent("\(shaderName).glsl"),
+            directory.appendingPathComponent("fragment.glsl"),
+            directory.appendingPathComponent("renderpasses/main.glsl")
         ]
         
-        for path in screenshotPaths {
-            if FileManager.default.fileExists(atPath: path.path) {
-                return path
+        for file in possibleFiles {
+            if FileManager.default.fileExists(atPath: file.path) {
+                return file
             }
         }
         
         return nil
     }
     
+    /// Load shader source code from file
+    private func loadShaderSource(from url: URL?) -> String? {
+        guard let url = url else { return nil }
+        
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            appState.log("  ✗ Failed to load shader source: \(error.localizedDescription)", level: .error)
+            return nil
+        }
+    }
+    
+    /// Save analysis result to JSON file
+    private func saveAnalysisJSON(_ analysis: ShaderAnalysisResult, to url: URL, shaderName: String) async -> Bool {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let jsonData = try encoder.encode(analysis)
+            
+            try jsonData.write(to: url)
+            
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+            let fileSizeKB = Double(fileSize) / 1024.0
+            
+            appState.log("  💾 JSON saved: \(String(format: "%.1f", fileSizeKB)) KB", level: .debug)
+            return true
+        } catch {
+            appState.log("  ✗ Failed to save analysis JSON: \(error.localizedDescription)", level: .error)
+            return false
+        }
+    }
+    
     private func moveToMasks() {
         Task {
             let count = selectedShaders.count
-            appState.log("Moving \(count) shader(s) to masks folder", level: .info)
+            appState.log("🔀 Moving \(count) shader(s) to masks folder", level: .info)
             
             var successCount = 0
             var errorCount = 0
+            
+            // Determine masks directory
+            guard let shadersDir = getShadersDirectory() else {
+                appState.log("  ✗ Could not determine shaders directory", level: .error)
+                return
+            }
+            
+            let masksDir = shadersDir.deletingLastPathComponent().appendingPathComponent("masks")
+            
+            // Create masks directory if it doesn't exist
+            do {
+                if !FileManager.default.fileExists(atPath: masksDir.path) {
+                    try FileManager.default.createDirectory(at: masksDir, withIntermediateDirectories: true)
+                    appState.log("  📁 Created masks directory: \(masksDir.path)", level: .info)
+                }
+            } catch {
+                appState.log("  ✗ Failed to create masks directory: \(error.localizedDescription)", level: .error)
+                return
+            }
             
             for shaderName in selectedShaders {
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
@@ -469,18 +558,34 @@ struct ShaderBrowserView: View {
                     continue
                 }
                 
-                let sourcePath = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
+                let sourceDir = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
+                let destDir = masksDir.appendingPathComponent(sourceDir.lastPathComponent)
                 
-                // TODO: Implement actual file copy
-                // 1. Create masks directory if needed
-                // 2. Copy shader directory
-                // 3. Update rating in copied analysis.json
+                appState.log("  📦 Copying \(sourceDir.lastPathComponent) to masks/", level: .info)
                 
-                appState.log("  Would move: \(sourcePath.lastPathComponent) → masks/\(sourcePath.lastPathComponent)", level: .debug)
-                successCount += 1
+                // Copy shader directory
+                do {
+                    // Remove destination if it exists
+                    if FileManager.default.fileExists(atPath: destDir.path) {
+                        try FileManager.default.removeItem(at: destDir)
+                        appState.log("    🗑️ Removed existing: \(destDir.lastPathComponent)", level: .debug)
+                    }
+                    
+                    try FileManager.default.copyItem(at: sourceDir, to: destDir)
+                    appState.log("    ✓ Copied to: \(destDir.path)", level: .info)
+                    
+                    // Update rating in analysis.json to "mask"
+                    let analysisPath = destDir.appendingPathComponent("\(shaderName).analysis.json")
+                    updateAnalysisRating(at: analysisPath, toMask: true)
+                    
+                    successCount += 1
+                } catch {
+                    appState.log("    ✗ Copy failed: \(error.localizedDescription)", level: .error)
+                    errorCount += 1
+                }
             }
             
-            appState.log("Move to masks complete: \(successCount) successful, \(errorCount) failed", level: .info)
+            appState.log("✅ Move to masks complete: \(successCount) successful, \(errorCount) failed", level: .info)
             selectedShaders.removeAll()
             await loadShaders()
         }
@@ -489,10 +594,29 @@ struct ShaderBrowserView: View {
     private func moveToShaders() {
         Task {
             let count = selectedShaders.count
-            appState.log("Moving \(count) mask(s) to shaders folder", level: .info)
+            appState.log("🔀 Moving \(count) mask(s) to shaders folder", level: .info)
             
             var successCount = 0
             var errorCount = 0
+            
+            // Determine directories
+            guard let masksDir = getMasksDirectory() else {
+                appState.log("  ✗ Could not determine masks directory", level: .error)
+                return
+            }
+            
+            let shadersDir = masksDir.deletingLastPathComponent().appendingPathComponent("shaders")
+            
+            // Create shaders directory if it doesn't exist
+            do {
+                if !FileManager.default.fileExists(atPath: shadersDir.path) {
+                    try FileManager.default.createDirectory(at: shadersDir, withIntermediateDirectories: true)
+                    appState.log("  📁 Created shaders directory: \(shadersDir.path)", level: .info)
+                }
+            } catch {
+                appState.log("  ✗ Failed to create shaders directory: \(error.localizedDescription)", level: .error)
+                return
+            }
             
             for maskName in selectedShaders {
                 guard let mask = shaders.first(where: { $0.name == maskName }) else {
@@ -501,19 +625,78 @@ struct ShaderBrowserView: View {
                     continue
                 }
                 
-                let sourcePath = URL(fileURLWithPath: mask.path).deletingLastPathComponent()
+                let sourceDir = URL(fileURLWithPath: mask.path).deletingLastPathComponent()
+                let destDir = shadersDir.appendingPathComponent(sourceDir.lastPathComponent)
                 
-                // TODO: Implement actual file copy
-                // 1. Copy mask directory to shaders
-                // 2. Update rating in copied analysis.json
+                appState.log("  📦 Copying \(sourceDir.lastPathComponent) to shaders/", level: .info)
                 
-                appState.log("  Would move: masks/\(sourcePath.lastPathComponent) → \(sourcePath.lastPathComponent)", level: .debug)
-                successCount += 1
+                // Copy mask directory
+                do {
+                    // Remove destination if it exists
+                    if FileManager.default.fileExists(atPath: destDir.path) {
+                        try FileManager.default.removeItem(at: destDir)
+                        appState.log("    🗑️ Removed existing: \(destDir.lastPathComponent)", level: .debug)
+                    }
+                    
+                    try FileManager.default.copyItem(at: sourceDir, to: destDir)
+                    appState.log("    ✓ Copied to: \(destDir.path)", level: .info)
+                    
+                    // Update rating in analysis.json to remove mask designation
+                    let analysisPath = destDir.appendingPathComponent("\(maskName).analysis.json")
+                    updateAnalysisRating(at: analysisPath, toMask: false)
+                    
+                    successCount += 1
+                } catch {
+                    appState.log("    ✗ Copy failed: \(error.localizedDescription)", level: .error)
+                    errorCount += 1
+                }
             }
             
-            appState.log("Move to shaders complete: \(successCount) successful, \(errorCount) failed", level: .info)
+            appState.log("✅ Move to shaders complete: \(successCount) successful, \(errorCount) failed", level: .info)
             selectedShaders.removeAll()
             await loadShaders()
+        }
+    }
+    
+    /// Get shaders directory from first shader's path
+    private func getShadersDirectory() -> URL? {
+        guard let firstShader = shaders.first else { return nil }
+        let path = URL(fileURLWithPath: firstShader.path).deletingLastPathComponent().deletingLastPathComponent()
+        return path
+    }
+    
+    /// Get masks directory
+    private func getMasksDirectory() -> URL? {
+        guard let firstShader = shaders.first else { return nil }
+        let path = URL(fileURLWithPath: firstShader.path).deletingLastPathComponent().deletingLastPathComponent()
+        return path
+    }
+    
+    /// Update rating in analysis JSON file
+    private func updateAnalysisRating(at path: URL, toMask: Bool) {
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            appState.log("    ℹ️ No analysis.json found to update", level: .debug)
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: path)
+            var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            
+            // Update rating field
+            if toMask {
+                json["rating"] = "mask"
+            } else {
+                // Restore to a default rating if coming from mask
+                json["rating"] = "normal"
+            }
+            
+            let updatedData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: path)
+            
+            appState.log("    🏷️ Updated rating: \(toMask ? "mask" : "normal")", level: .debug)
+        } catch {
+            appState.log("    ⚠️ Could not update analysis rating: \(error.localizedDescription)", level: .warning)
         }
     }
     
