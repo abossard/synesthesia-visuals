@@ -283,6 +283,10 @@ private func renderModeSelect(_ learn: LearnState) -> [LaunchpadEffect] {
             // 1s on, 4s dim (5s cycle)
             let phase = now.truncatingRemainder(dividingBy: 5.0)
             color = phase < 1.0 ? brightColor : dimColor
+        case .increment, .decrement:
+            // Fast flash (like stepping through values)
+            let phase = now.truncatingRemainder(dividingBy: 1.0)
+            color = phase < 0.3 ? brightColor : dimColor
         }
         
         effects.append(.setLed(padId: ButtonId(x: x, y: 3), color: color, blink: false))

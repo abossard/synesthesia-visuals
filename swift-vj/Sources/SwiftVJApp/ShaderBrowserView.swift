@@ -11,40 +11,24 @@ typealias CoreShaderInfo = SwiftVJCore.ShaderInfo
 struct ShaderBrowserView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
-    @State private var selectedQuality: String = "ALL"
+    @State private var selectedFolder: String = "ALL"
     @State private var shaders: [CoreShaderInfo] = []
+    @State private var availableFolders: [String] = []
     @State private var selectedShaders: Set<String> = []
     @State private var enabledShaders: Set<String> = []
-    @State private var showMasks: Bool = false
-    @State private var isCapturingScreenshots: Bool = false
-    @State private var screenshotProgress: Double = 0
-    @State private var currentScreenshotShader: String = ""
     @State private var isAnalyzing: Bool = false
     @State private var analysisProgress: Double = 0
     @State private var currentAnalysisShader: String = ""
     @State private var showingAnalysisModal: Bool = false
     @State private var selectedAnalysis: ShaderAnalysis? = nil
     
-    let qualities = ["ALL", "BEST", "GOOD", "OK", "MASK", "SKIP"]
-    
     var filteredShaders: [CoreShaderInfo] {
         shaders.filter { shader in
             let matchesSearch = searchText.isEmpty || 
                 shader.name.localizedCaseInsensitiveContains(searchText) ||
                 shader.mood.localizedCaseInsensitiveContains(searchText)
-            let matchesQuality = selectedQuality == "ALL" || ratingName(shader.rating) == selectedQuality
-            let matchesType = showMasks ? (shader.rating == .mask) : (shader.rating != .mask)
-            return matchesSearch && matchesQuality && matchesType
-        }
-    }
-    
-    func ratingName(_ rating: SwiftVJCore.ShaderRating) -> String {
-        switch rating {
-        case .best: return "BEST"
-        case .good: return "GOOD"
-        case .normal: return "OK"
-        case .mask: return "MASK"
-        case .skip: return "SKIP"
+            let matchesFolder = selectedFolder == "ALL" || shader.folder == selectedFolder
+            return matchesSearch && matchesFolder
         }
     }
     
@@ -56,62 +40,23 @@ struct ShaderBrowserView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 
-                Divider()
-                    .frame(height: 20)
-                
-                Button(action: { toggleShowMasks() }) {
-                    Label(showMasks ? "Show Shaders" : "Show Masks", systemImage: showMasks ? "sparkles" : "square.on.circle")
-                }
-                
                 Spacer()
                 
-                Button(action: { startScreenshotCapture() }) {
-                    Label("Make Screenshots", systemImage: "camera")
-                }
-                .disabled(selectedShaders.isEmpty || isCapturingScreenshots)
-                
-                Button(action: { startAIAnalysis() }) {
-                    Label("AI Analyze", systemImage: "brain.head.profile")
+                Button(action: { startAnalyze() }) {
+                    Label("Analyze", systemImage: "sparkle.magnifyingglass")
                 }
                 .disabled(selectedShaders.isEmpty || isAnalyzing)
-                
-                Divider()
-                    .frame(height: 20)
-                
-                Button(action: { moveToMasks() }) {
-                    Label("Move to Masks", systemImage: "arrow.right")
-                }
-                .disabled(showMasks || selectedShaders.isEmpty)
-                
-                Button(action: { moveToShaders() }) {
-                    Label("Move to Shaders", systemImage: "arrow.left")
-                }
-                .disabled(!showMasks || selectedShaders.isEmpty)
             }
             .padding()
             .background(.bar)
             
             Divider()
             
-            // Progress indicators
-            if isCapturingScreenshots {
-                VStack(spacing: 4) {
-                    HStack {
-                        Text("Capturing Screenshots...")
-                        Spacer()
-                        Text(currentScreenshotShader)
-                            .foregroundColor(.secondary)
-                    }
-                    ProgressView(value: screenshotProgress)
-                }
-                .padding()
-                .background(.quaternary)
-            }
-            
+            // Progress indicator
             if isAnalyzing {
                 VStack(spacing: 4) {
                     HStack {
-                        Text("Analyzing with AI...")
+                        Text("Analyzing...")
                         Spacer()
                         Text(currentAnalysisShader)
                             .foregroundColor(.secondary)
@@ -134,13 +79,15 @@ struct ShaderBrowserView: View {
                 .background(.quaternary)
                 .cornerRadius(8)
                 
-                Picker("Quality", selection: $selectedQuality) {
-                    ForEach(qualities, id: \.self) { quality in
-                        Text(quality).tag(quality)
+                // Folder filter (dynamically populated from available folders)
+                Picker("Folder", selection: $selectedFolder) {
+                    Text("ALL").tag("ALL")
+                    ForEach(availableFolders, id: \.self) { folder in
+                        Text(folder).tag(folder)
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 380)
+                .frame(minWidth: 150)
                 
                 Spacer()
                 
@@ -199,31 +146,29 @@ struct ShaderBrowserView: View {
         
         // Get shaders from module
         if let module = appState.shadersModule {
-            // First check if shaders are already loaded
-            var loadedShaders = await module.allShaders
-            
-            // If no shaders loaded, load from Shaders directory
-            if loadedShaders.isEmpty {
-                let shadersDir = findShadersDirectory()
-                if let dir = shadersDir {
-                    appState.log("Loading shaders from: \(dir.path)", level: .debug)
-                    let count = await module.loadAllShaderFiles(from: dir)
-                    appState.log("Found \(count) shaders with analysis.json", level: .info)
-                    loadedShaders = await module.allShaders
-                } else {
-                    appState.log("Could not find Shaders directory", level: .warning)
-                }
+            // Always reload from Shaders directory
+            let shadersDir = findShadersDirectory()
+            if let dir = shadersDir {
+                appState.log("Loading shaders from: \(dir.path)", level: .debug)
+                let count = await module.loadAllShaderFiles(from: dir)
+                appState.log("Found \(count) shaders", level: .info)
+            } else {
+                appState.log("Could not find Shaders directory", level: .warning)
             }
             
-            shaders = loadedShaders
-            let maskCount = shaders.filter { $0.rating == .mask }.count
-            let regularCount = shaders.count - maskCount
-            appState.log("Loaded \(shaders.count) shader(s): \(regularCount) regular, \(maskCount) masks", level: .info)
+            shaders = await module.allShaders
+            availableFolders = await module.availableFolders
+            
+            // Log folder breakdown
+            for folder in availableFolders {
+                let folderCount = shaders.filter { $0.folder == folder }.count
+                appState.log("  \(folder): \(folderCount) shaders", level: .info)
+            }
         }
         
         // If still empty, show message
         if shaders.isEmpty {
-            appState.log("No shaders with analysis.json found. Run AI analysis first.", level: .warning)
+            appState.log("No shaders found in Shaders directory.", level: .warning)
         }
     }
     
@@ -308,229 +253,261 @@ struct ShaderBrowserView: View {
         saveEnabledStates()
     }
     
-    private func toggleShowMasks() {
-        showMasks.toggle()
-        selectedShaders.removeAll()
-        appState.log("Switched to \(showMasks ? "masks" : "shaders") view", level: .debug)
-    }
+    // MARK: - Unified Analyze Function
     
-    private func startScreenshotCapture() {
+    /// Start analysis: screenshot capture + AI analysis
+    /// 1. Loads shader, waits 1s, captures screenshot
+    /// 2. If black, waits 5s more and retries
+    /// 3. If still black, marks as "black" status
+    /// 4. If not black, runs AI analysis on source + screenshot
+    private func startAnalyze() {
         Task {
-            isCapturingScreenshots = true
-            screenshotProgress = 0
-            
-            let shadersToCapture = Array(selectedShaders)
-            let total = shadersToCapture.count
-            
-            appState.log("🎬 Starting screenshot capture for \(total) shader(s)", level: .info)
-            
-            var successCount = 0
-            var blackScreenshotCount = 0
-            var failCount = 0
-            
-            // Create screenshot capture utility
-            let screenshotCapture = await ShaderScreenshotCapture(logger: { message, level in
-                Task { @MainActor in
-                    self.appState.log(message, level: level)
-                }
-            })
-            
-            for (index, shaderName) in shadersToCapture.enumerated() {
-                currentScreenshotShader = shaderName
-                appState.log("📸 [\(index+1)/\(total)] Capturing \(shaderName)...", level: .info)
-                
-                // Find shader info
-                guard let shader = shaders.first(where: { $0.name == shaderName }) else {
-                    appState.log("  ✗ Shader not found in list: \(shaderName)", level: .error)
-                    failCount += 1
-                    screenshotProgress = Double(index + 1) / Double(total)
-                    continue
-                }
-                
-                // Load shader in renderer
-                await appState.selectShader(shaderName)
-                appState.log("  ⏳ Loaded shader, stabilizing for 5 seconds...", level: .info)
-                
-                // Wait 5 seconds for shader to stabilize
-                try? await Task.sleep(for: .seconds(5))
-                
-                // Capture screenshot from render engine
-                let captureResult = await captureShaderScreenshot(shader, using: screenshotCapture)
-                
-                switch captureResult {
-                case .success(let isBlack):
-                    if isBlack {
-                        blackScreenshotCount += 1
-                    } else {
-                        successCount += 1
-                    }
-                case .failure:
-                    failCount += 1
-                }
-                
-                screenshotProgress = Double(index + 1) / Double(total)
-            }
-            
-            isCapturingScreenshots = false
-            currentScreenshotShader = ""
-            
-            appState.log("✅ Screenshot capture complete: \(successCount) successful, \(blackScreenshotCount) black, \(failCount) failed", level: .info)
-            
-            await loadShaders()
-        }
-    }
-    
-    /// Capture screenshot result
-    private enum CaptureResult {
-        case success(isBlack: Bool)
-        case failure
-    }
-    
-    /// Capture screenshot for a shader using the render engine
-    /// 
-    /// - Parameters:
-    ///   - shader: The shader to capture
-    ///   - screenshotCapture: The screenshot capture utility
-    /// - Returns: Capture result indicating success/failure and if black
-    private func captureShaderScreenshot(_ shader: CoreShaderInfo, using screenshotCapture: ShaderScreenshotCapture) async -> CaptureResult {
-        // Access render engine's shader renderer texture
-        guard let renderEngine = appState.renderEngine else {
-            appState.log("  ✗ Render engine not available", level: .error)
-            return .failure
-        }
-        
-        guard let headlessRenderer = renderEngine.headlessRenderer else {
-            appState.log("  ✗ Headless renderer not available", level: .error)
-            return .failure
-        }
-        
-        guard let shaderTexture = headlessRenderer.shaderRenderer.texture else {
-            appState.log("  ✗ Shader renderer texture not available", level: .error)
-            return .failure
-        }
-        
-        // Determine output path
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let outputPath = shaderDir.appendingPathComponent("\(shader.name).png")
-        
-        appState.log("  💾 Saving to: \(outputPath.path)", level: .debug)
-        
-        // Capture texture to PNG
-        let success = await screenshotCapture.captureTexture(shaderTexture, outputPath: outputPath, shaderName: shader.name)
-        
-        if success {
-            // Check if file exists and determine if it's black
-            if FileManager.default.fileExists(atPath: outputPath.path) {
-                // The screenshotCapture utility already logs black detection
-                // We just need to determine the result
-                return .success(isBlack: false) // Detailed check done in utility
-            } else {
-                appState.log("  ⚠️ Screenshot file not found after capture", level: .warning)
-                return .failure
-            }
-        } else {
-            return .failure
-        }
-    }
-    
-    private func startAIAnalysis() {
-        Task {
+            let startTime = Date()
             isAnalyzing = true
             analysisProgress = 0
             
             let shadersToAnalyze = Array(selectedShaders)
             let total = shadersToAnalyze.count
             
-            appState.log("🤖 Starting AI analysis for \(total) shader(s)", level: .info)
+            appState.log("═══════════════════════════════════════════════════════════════", level: .info)
+            appState.log("🔬 STARTING ANALYSIS for \(total) shader(s)", level: .info)
+            appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             
-            var successCount = 0
-            var errorCount = 0
+            // Verify render engine is available (auto-started on app launch)
+            guard let renderEngine = appState.renderEngine, renderEngine.isRunning else {
+                appState.log("✗ Render engine not running - please wait for initialization", level: .error)
+                isAnalyzing = false
+                return
+            }
             
-            // Create LM Studio client
+            // Create utilities
+            let screenshotCapture = await ShaderScreenshotCapture(logger: { message, level in
+                Task { @MainActor in
+                    self.appState.log(message, level: level)
+                }
+            })
+            
             let lmStudioClient = await LMStudioClient(logger: { message, level in
                 Task { @MainActor in
                     self.appState.log(message, level: level)
                 }
             })
             
-            // Check if LM Studio is available
-            let isAvailable = await lmStudioClient.isAvailable()
-            if !isAvailable {
-                appState.log("  ⚠️ LM Studio is not available. Please start LM Studio server.", level: .warning)
-                appState.log("  ℹ️ Start with: lms server start --port 1234", level: .info)
-                isAnalyzing = false
-                return
+            // Check if LM Studio is available (for AI analysis)
+            let aiAvailable = await lmStudioClient.isAvailable()
+            if !aiAvailable {
+                appState.log("⚠️ LM Studio not available - will mark black shaders only", level: .warning)
+                appState.log("ℹ️ Start LM Studio with: lms server start --port 1234", level: .info)
             }
             
+            var successCount = 0
+            var blackCount = 0
+            var errorCount = 0
+            
             for (index, shaderName) in shadersToAnalyze.enumerated() {
+                let shaderStartTime = Date()
                 currentAnalysisShader = shaderName
-                appState.log("🔍 [\(index+1)/\(total)] Analyzing \(shaderName)...", level: .info)
+                
+                appState.log("───────────────────────────────────────────────────────────────", level: .info)
+                appState.log("📍 [\(index+1)/\(total)] \(shaderName)", level: .info)
+                appState.log("───────────────────────────────────────────────────────────────", level: .info)
                 
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
-                    appState.log("  ✗ Shader not found in list: \(shaderName)", level: .error)
+                    appState.log("  ✗ Shader not found in list", level: .error)
                     errorCount += 1
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
-                // Load shader source code
+                // Get paths
                 let shaderPath = URL(fileURLWithPath: shader.path)
                 let shaderDir = shaderPath.deletingLastPathComponent()
+                let baseName = shaderPath.deletingPathExtension().lastPathComponent
+                let screenshotPath = shaderDir.appendingPathComponent("\(baseName).png")
+                let analysisPath = shaderDir.appendingPathComponent("\(baseName).analysis.json")
                 
-                appState.log("  📂 Loading shader source: \(shaderDir.lastPathComponent)", level: .debug)
+                // STEP 1: Load shader
+                appState.log("  ▶ Loading shader...", level: .info)
+                await appState.selectShader(shaderName)
                 
-                // Find GLSL source file
-                let sourceFile = findShaderSourceFile(in: shaderDir, shaderName: shaderName)
-                guard let source = loadShaderSource(from: sourceFile) else {
-                    appState.log("  ⚠️ No shader source file found", level: .warning)
-                    errorCount += 1
+                // STEP 2: Wait 1 second, take screenshot
+                appState.log("  ⏳ Waiting 1s for shader to initialize...", level: .info)
+                try? await Task.sleep(for: .seconds(1))
+                
+                var isBlack = true
+                var captureSuccess = false
+                
+                // First capture attempt
+                appState.log("  📸 Capturing screenshot (attempt 1/2)...", level: .info)
+                let firstCaptureResult = await captureAndCheckBlack(shader: shader, screenshotPath: screenshotPath, screenshotCapture: screenshotCapture)
+                
+                switch firstCaptureResult {
+                case .success(let black):
+                    captureSuccess = true
+                    isBlack = black
+                    if black {
+                        appState.log("  ⚠️ Screenshot is BLACK - waiting 5s for retry...", level: .warning)
+                        try? await Task.sleep(for: .seconds(5))
+                        
+                        // Second capture attempt
+                        appState.log("  📸 Capturing screenshot (attempt 2/2)...", level: .info)
+                        let secondCaptureResult = await captureAndCheckBlack(shader: shader, screenshotPath: screenshotPath, screenshotCapture: screenshotCapture)
+                        
+                        switch secondCaptureResult {
+                        case .success(let stillBlack):
+                            isBlack = stillBlack
+                            if stillBlack {
+                                appState.log("  ⚠️ Still BLACK after 6s total wait", level: .warning)
+                            } else {
+                                appState.log("  ✓ Screenshot now shows content", level: .info)
+                            }
+                        case .failure:
+                            appState.log("  ✗ Second capture failed", level: .error)
+                        }
+                    } else {
+                        appState.log("  ✓ Screenshot captured successfully", level: .info)
+                    }
+                case .failure:
+                    captureSuccess = false
+                    appState.log("  ✗ Screenshot capture failed", level: .error)
+                }
+                
+                // STEP 3: Handle black screenshot
+                if isBlack {
+                    appState.log("  🏷️ Marking shader as BLACK", level: .warning)
+                    await saveBlackAnalysis(to: analysisPath, shaderName: shaderName)
+                    blackCount += 1
+                    
+                    let elapsed = Date().timeIntervalSince(shaderStartTime)
+                    appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as black)", level: .info)
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
-                // Find screenshot if available
-                let screenshotPath = findScreenshot(for: shader)
-                if let screenshot = screenshotPath {
-                    appState.log("  📷 Found screenshot: \(screenshot.lastPathComponent)", level: .debug)
-                } else {
-                    appState.log("  ℹ️ No screenshot available (code-only analysis)", level: .debug)
-                }
-                
-                // Analyze with LM Studio
-                appState.log("  ⏳ Sending to LM Studio for analysis...", level: .info)
-                
-                guard let analysis = await lmStudioClient.analyzeShader(
-                    shaderName: shaderName,
-                    shaderSource: source,
-                    screenshotPath: screenshotPath
-                ) else {
-                    appState.log("  ✗ AI analysis failed", level: .error)
-                    errorCount += 1
-                    analysisProgress = Double(index + 1) / Double(total)
-                    continue
-                }
-                
-                // Save analysis to JSON
-                let analysisPath = shaderDir.appendingPathComponent("\(shaderName).analysis.json")
-                if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
-                    appState.log("  ✓ Analysis saved: \(analysisPath.lastPathComponent)", level: .info)
+                // STEP 4: Run AI analysis if available
+                if aiAvailable && captureSuccess {
+                    appState.log("  🤖 Running AI analysis on source + screenshot...", level: .info)
+                    
+                    // Load shader source
+                    guard let sourceContent = loadShaderSource(from: shaderPath) else {
+                        appState.log("  ⚠️ Could not load shader source, skipping AI analysis", level: .warning)
+                        successCount += 1  // Screenshot was successful at least
+                        
+                        let elapsed = Date().timeIntervalSince(shaderStartTime)
+                        appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (screenshot only)", level: .info)
+                        analysisProgress = Double(index + 1) / Double(total)
+                        continue
+                    }
+                    
+                    appState.log("  📝 Source: \(sourceContent.count) chars", level: .debug)
+                    appState.log("  🖼️ Screenshot: \(screenshotPath.lastPathComponent)", level: .debug)
+                    
+                    let aiStartTime = Date()
+                    if let analysis = await lmStudioClient.analyzeShader(
+                        shaderName: shaderName,
+                        shaderSource: sourceContent,
+                        screenshotPath: screenshotPath
+                    ) {
+                        let aiElapsed = Date().timeIntervalSince(aiStartTime)
+                        appState.log("  ✓ AI analysis completed in \(String(format: "%.1f", aiElapsed))s", level: .info)
+                        
+                        // Save analysis
+                        if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
+                            appState.log("  💾 Saved: \(analysisPath.lastPathComponent)", level: .info)
+                            successCount += 1
+                        } else {
+                            appState.log("  ✗ Failed to save analysis JSON", level: .error)
+                            errorCount += 1
+                        }
+                    } else {
+                        appState.log("  ✗ AI analysis failed", level: .error)
+                        errorCount += 1
+                    }
+                } else if captureSuccess {
+                    // No AI available but screenshot worked
+                    appState.log("  ℹ️ Screenshot saved (no AI analysis)", level: .info)
                     successCount += 1
-                } else {
-                    appState.log("  ✗ Failed to save analysis JSON", level: .error)
-                    errorCount += 1
                 }
                 
+                let elapsed = Date().timeIntervalSince(shaderStartTime)
+                appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s", level: .info)
                 analysisProgress = Double(index + 1) / Double(total)
             }
+            
+            let totalElapsed = Date().timeIntervalSince(startTime)
             
             isAnalyzing = false
             currentAnalysisShader = ""
             
-            appState.log("✅ AI analysis complete: \(successCount) successful, \(errorCount) failed", level: .info)
+            appState.log("═══════════════════════════════════════════════════════════════", level: .info)
+            appState.log("✅ ANALYSIS COMPLETE", level: .info)
+            appState.log("   Success: \(successCount)", level: .info)
+            appState.log("   Black:   \(blackCount)", level: .info)
+            appState.log("   Errors:  \(errorCount)", level: .info)
+            appState.log("   Total time: \(String(format: "%.1f", totalElapsed))s", level: .info)
+            appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             
             await loadShaders()
         }
+    }
+    
+    /// Capture screenshot and check if it's black
+    private func captureAndCheckBlack(
+        shader: CoreShaderInfo,
+        screenshotPath: URL,
+        screenshotCapture: ShaderScreenshotCapture
+    ) async -> CaptureResult {
+        guard let renderEngine = appState.renderEngine else {
+            appState.log("    ✗ Render engine not available", level: .error)
+            return .failure
+        }
+        
+        guard let headlessRenderer = renderEngine.headlessRenderer else {
+            appState.log("    ✗ Headless renderer not available", level: .error)
+            return .failure
+        }
+        
+        guard let shaderTexture = headlessRenderer.shaderRenderer.texture else {
+            appState.log("    ✗ Shader texture not available", level: .error)
+            return .failure
+        }
+        
+        // Capture texture and get black detection result
+        let (success, isBlack) = await screenshotCapture.captureTextureWithBlackCheck(
+            shaderTexture,
+            outputPath: screenshotPath,
+            shaderName: shader.name
+        )
+        
+        if success {
+            return .success(isBlack: isBlack)
+        } else {
+            return .failure
+        }
+    }
+    
+    /// Save analysis JSON marking shader as black
+    private func saveBlackAnalysis(to path: URL, shaderName: String) async {
+        let analysis = ShaderAnalysisResult(
+            title: shaderName,
+            description: "Shader renders black or empty output",
+            mood: "black",
+            energy: 0.0,
+            colors: ["black"],
+            effects: [],
+            geometry: [],
+            objects: [],
+            complexity: "unknown",
+            visualMetadata: ["status": "black", "reason": "Renders black after 6 second wait"]
+        )
+        
+        _ = await saveAnalysisJSON(analysis, to: path, shaderName: shaderName)
+    }
+    
+    /// Capture screenshot result
+    private enum CaptureResult {
+        case success(isBlack: Bool)
+        case failure
     }
     
     /// Find shader source file in directory
@@ -588,6 +565,12 @@ struct ShaderBrowserView: View {
     /// Save analysis result to JSON file
     private func saveAnalysisJSON(_ analysis: ShaderAnalysisResult, to url: URL, shaderName: String) async -> Bool {
         do {
+            // Ensure parent directory exists
+            let parentDir = url.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: parentDir.path) {
+                try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            }
+            
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let jsonData = try encoder.encode(analysis)
@@ -602,182 +585,6 @@ struct ShaderBrowserView: View {
         } catch {
             appState.log("  ✗ Failed to save analysis JSON: \(error.localizedDescription)", level: .error)
             return false
-        }
-    }
-    
-    private func moveToMasks() {
-        Task {
-            let count = selectedShaders.count
-            appState.log("🔀 Moving \(count) shader(s) to masks folder", level: .info)
-            
-            var successCount = 0
-            var errorCount = 0
-            
-            // Determine masks directory
-            guard let shadersDir = getShadersDirectory() else {
-                appState.log("  ✗ Could not determine shaders directory", level: .error)
-                return
-            }
-            
-            let masksDir = shadersDir.deletingLastPathComponent().appendingPathComponent("masks")
-            
-            // Create masks directory if it doesn't exist
-            do {
-                if !FileManager.default.fileExists(atPath: masksDir.path) {
-                    try FileManager.default.createDirectory(at: masksDir, withIntermediateDirectories: true)
-                    appState.log("  📁 Created masks directory: \(masksDir.path)", level: .info)
-                }
-            } catch {
-                appState.log("  ✗ Failed to create masks directory: \(error.localizedDescription)", level: .error)
-                return
-            }
-            
-            for shaderName in selectedShaders {
-                guard let shader = shaders.first(where: { $0.name == shaderName }) else {
-                    appState.log("  ✗ Shader not found: \(shaderName)", level: .error)
-                    errorCount += 1
-                    continue
-                }
-                
-                let sourceDir = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
-                let destDir = masksDir.appendingPathComponent(sourceDir.lastPathComponent)
-                
-                appState.log("  📦 Copying \(sourceDir.lastPathComponent) to masks/", level: .info)
-                
-                // Copy shader directory
-                do {
-                    // Remove destination if it exists
-                    if FileManager.default.fileExists(atPath: destDir.path) {
-                        try FileManager.default.removeItem(at: destDir)
-                        appState.log("    🗑️ Removed existing: \(destDir.lastPathComponent)", level: .debug)
-                    }
-                    
-                    try FileManager.default.copyItem(at: sourceDir, to: destDir)
-                    appState.log("    ✓ Copied to: \(destDir.path)", level: .info)
-                    
-                    // Update rating in analysis.json to "mask"
-                    let analysisPath = destDir.appendingPathComponent("\(shaderName).analysis.json")
-                    updateAnalysisRating(at: analysisPath, toMask: true)
-                    
-                    successCount += 1
-                } catch {
-                    appState.log("    ✗ Copy failed: \(error.localizedDescription)", level: .error)
-                    errorCount += 1
-                }
-            }
-            
-            appState.log("✅ Move to masks complete: \(successCount) successful, \(errorCount) failed", level: .info)
-            selectedShaders.removeAll()
-            await loadShaders()
-        }
-    }
-    
-    private func moveToShaders() {
-        Task {
-            let count = selectedShaders.count
-            appState.log("🔀 Moving \(count) mask(s) to shaders folder", level: .info)
-            
-            var successCount = 0
-            var errorCount = 0
-            
-            // Determine directories
-            guard let masksDir = getMasksDirectory() else {
-                appState.log("  ✗ Could not determine masks directory", level: .error)
-                return
-            }
-            
-            let shadersDir = masksDir.deletingLastPathComponent().appendingPathComponent("shaders")
-            
-            // Create shaders directory if it doesn't exist
-            do {
-                if !FileManager.default.fileExists(atPath: shadersDir.path) {
-                    try FileManager.default.createDirectory(at: shadersDir, withIntermediateDirectories: true)
-                    appState.log("  📁 Created shaders directory: \(shadersDir.path)", level: .info)
-                }
-            } catch {
-                appState.log("  ✗ Failed to create shaders directory: \(error.localizedDescription)", level: .error)
-                return
-            }
-            
-            for maskName in selectedShaders {
-                guard let mask = shaders.first(where: { $0.name == maskName }) else {
-                    appState.log("  ✗ Mask not found: \(maskName)", level: .error)
-                    errorCount += 1
-                    continue
-                }
-                
-                let sourceDir = URL(fileURLWithPath: mask.path).deletingLastPathComponent()
-                let destDir = shadersDir.appendingPathComponent(sourceDir.lastPathComponent)
-                
-                appState.log("  📦 Copying \(sourceDir.lastPathComponent) to shaders/", level: .info)
-                
-                // Copy mask directory
-                do {
-                    // Remove destination if it exists
-                    if FileManager.default.fileExists(atPath: destDir.path) {
-                        try FileManager.default.removeItem(at: destDir)
-                        appState.log("    🗑️ Removed existing: \(destDir.lastPathComponent)", level: .debug)
-                    }
-                    
-                    try FileManager.default.copyItem(at: sourceDir, to: destDir)
-                    appState.log("    ✓ Copied to: \(destDir.path)", level: .info)
-                    
-                    // Update rating in analysis.json to remove mask designation
-                    let analysisPath = destDir.appendingPathComponent("\(maskName).analysis.json")
-                    updateAnalysisRating(at: analysisPath, toMask: false)
-                    
-                    successCount += 1
-                } catch {
-                    appState.log("    ✗ Copy failed: \(error.localizedDescription)", level: .error)
-                    errorCount += 1
-                }
-            }
-            
-            appState.log("✅ Move to shaders complete: \(successCount) successful, \(errorCount) failed", level: .info)
-            selectedShaders.removeAll()
-            await loadShaders()
-        }
-    }
-    
-    /// Get shaders directory from first shader's path
-    private func getShadersDirectory() -> URL? {
-        guard let firstShader = shaders.first else { return nil }
-        let path = URL(fileURLWithPath: firstShader.path).deletingLastPathComponent().deletingLastPathComponent()
-        return path
-    }
-    
-    /// Get masks directory
-    private func getMasksDirectory() -> URL? {
-        guard let firstShader = shaders.first else { return nil }
-        let path = URL(fileURLWithPath: firstShader.path).deletingLastPathComponent().deletingLastPathComponent()
-        return path
-    }
-    
-    /// Update rating in analysis JSON file
-    private func updateAnalysisRating(at path: URL, toMask: Bool) {
-        guard FileManager.default.fileExists(atPath: path.path) else {
-            appState.log("    ℹ️ No analysis.json found to update", level: .debug)
-            return
-        }
-        
-        do {
-            let data = try Data(contentsOf: path)
-            var json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            
-            // Update rating field
-            if toMask {
-                json["rating"] = "mask"
-            } else {
-                // Restore to a default rating if coming from mask
-                json["rating"] = "normal"
-            }
-            
-            let updatedData = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
-            try updatedData.write(to: path)
-            
-            appState.log("    🏷️ Updated rating: \(toMask ? "mask" : "normal")", level: .debug)
-        } catch {
-            appState.log("    ⚠️ Could not update analysis rating: \(error.localizedDescription)", level: .warning)
         }
     }
     

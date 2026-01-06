@@ -22,24 +22,35 @@ actor ShaderScreenshotCapture {
     ///   - shaderName: Name of shader for logging
     /// - Returns: True if screenshot was captured successfully
     func captureTexture(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> Bool {
-        logger("  📸 Capturing texture: \(texture.width)x\(texture.height) for \(shaderName)", .debug)
+        let (success, _) = await captureTextureWithBlackCheck(texture, outputPath: outputPath, shaderName: shaderName)
+        return success
+    }
+    
+    /// Capture screenshot from Metal texture and check if black
+    /// - Parameters:
+    ///   - texture: The MTLTexture to capture
+    ///   - outputPath: Path where to save the PNG file
+    ///   - shaderName: Name of shader for logging
+    /// - Returns: Tuple of (success, isBlack)
+    func captureTextureWithBlackCheck(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> (success: Bool, isBlack: Bool) {
+        logger("    📸 Capturing texture: \(texture.width)x\(texture.height)", .debug)
         
         // Convert texture to CGImage
         guard let cgImage = textureToCGImage(texture) else {
-            logger("  ✗ Failed to convert texture to CGImage for \(shaderName)", .error)
-            return false
+            logger("    ✗ Failed to convert texture to CGImage", .error)
+            return (false, true)
         }
         
         // Check if image is completely black
-        if isImageBlack(cgImage) {
-            logger("  ⚠️ BLACK SCREENSHOT detected for \(shaderName)", .warning)
-        }
+        let isBlack = isImageBlack(cgImage)
         
         // Convert to NSImage
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: texture.width, height: texture.height))
         
         // Save as PNG
-        return await savePNG(image: nsImage, to: outputPath, shaderName: shaderName)
+        let success = await savePNG(image: nsImage, to: outputPath, shaderName: shaderName)
+        
+        return (success, isBlack)
     }
     
     /// Convert MTLTexture to CGImage

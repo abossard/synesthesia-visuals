@@ -153,6 +153,10 @@ public enum PadMode: String, Codable, CaseIterable, Sendable {
     case oneShot
     /// Momentary - sends 1.0 on press, 0.0 on release (like sustain pedal)
     case push
+    /// Increment value by step (normal: +step, shift: set to max)
+    case increment
+    /// Decrement value by step (normal: -step, shift: set to min)
+    case decrement
 }
 
 // MARK: - Button Group
@@ -244,6 +248,11 @@ public struct PadBehavior: Codable, Sendable {
     // Additional OSC commands to send (e.g., control values after scene)
     public let additionalOsc: [OscCommand]
     
+    // Increment/Decrement mode: step size and value range
+    public let step: Float
+    public let minValue: Float
+    public let maxValue: Float
+    
     public init(
         padId: ButtonId,
         mode: PadMode,
@@ -254,7 +263,10 @@ public struct PadBehavior: Codable, Sendable {
         oscOn: OscCommand? = nil,
         oscOff: OscCommand? = nil,
         oscAction: OscCommand? = nil,
-        additionalOsc: [OscCommand] = []
+        additionalOsc: [OscCommand] = [],
+        step: Float = 0.1,
+        minValue: Float = 0.0,
+        maxValue: Float = 1.0
     ) {
         self.padId = padId
         self.mode = mode
@@ -266,6 +278,9 @@ public struct PadBehavior: Codable, Sendable {
         self.oscOff = oscOff
         self.oscAction = oscAction
         self.additionalOsc = additionalOsc
+        self.step = step
+        self.minValue = minValue
+        self.maxValue = maxValue
     }
 }
 
@@ -278,19 +293,23 @@ public struct PadRuntimeState: Sendable {
     public var currentColor: Int
     public var blinkEnabled: Bool
     public var ledMode: LedMode
+    /// Current value for increment/decrement controls (0.0-1.0)
+    public var currentValue: Float
     
     public init(
         isActive: Bool = false,
         isOn: Bool = false,
         currentColor: Int = LP.off,
         blinkEnabled: Bool = false,
-        ledMode: LedMode = .static
+        ledMode: LedMode = .static,
+        currentValue: Float = 0.5
     ) {
         self.isActive = isActive
         self.isOn = isOn
         self.currentColor = currentColor
         self.blinkEnabled = blinkEnabled
         self.ledMode = ledMode
+        self.currentValue = currentValue
     }
 }
 
@@ -478,6 +497,12 @@ public struct ControllerState: Sendable {
     // Animation state
     public var blinkOn: Bool
     
+    // Modifier keys
+    /// Shift button held (scene button y=5)
+    public var isShiftHeld: Bool
+    /// Current page for paged content (0 or 1)
+    public var currentPage: Int
+    
     public init() {
         self.activeBank = 0
         self.bankPads = [:]
@@ -498,6 +523,8 @@ public struct ControllerState: Sendable {
         self.beatPulse = false
         self.learnState = LearnState()
         self.blinkOn = false
+        self.isShiftHeld = false
+        self.currentPage = 0
     }
 }
 

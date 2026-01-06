@@ -123,6 +123,11 @@ public actor ShaderMatcher {
     
     // MARK: - Public API
     
+    /// Get all unique folder names from loaded shaders
+    public var availableFolders: [String] {
+        Array(Set(shaders.values.map { $0.folder })).sorted()
+    }
+    
     /// Load all analyzed shaders from a directory
     ///
     /// Scans for .analysis.json files and loads shader metadata.
@@ -211,12 +216,12 @@ public actor ShaderMatcher {
         return shaders.count
     }
     
-    /// Load all shader files from directory (with or without analysis.json)
+    /// Load all shader files from directory (analysis.json optional)
     ///
-    /// Scans glsl/ and masks/ subdirectories for .txt shader files.
-    /// Only includes shaders that have an accompanying .analysis.json file.
+    /// Dynamically scans all subdirectories for .txt shader files.
+    /// Loads shaders with or without analysis.json.
     ///
-    /// - Parameter directory: Path to shaders directory (containing glsl/ and/or masks/ subdirs)
+    /// - Parameter directory: Path to shaders directory (containing subdirs like glsl/, masks/)
     /// - Returns: Number of shaders loaded
     @discardableResult
     public func loadAllShaderFiles(from directory: URL) async -> Int {
@@ -226,17 +231,24 @@ public actor ShaderMatcher {
         
         let fileManager = FileManager.default
         
-        // Scan glsl/ and masks/ subdirectories
-        let subDirConfigs: [(name: String, ext: String, rating: ShaderRating)] = [
-            ("glsl", "txt", .normal),
-            ("masks", "txt", .mask)
-        ]
+        // Dynamically discover all subdirectories
+        guard let subDirs = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            print("[ShaderMatcher] Could not list directory: \(directory.path)")
+            return 0
+        }
         
-        for (subDir, ext, defaultRating) in subDirConfigs {
-            let subDirURL = directory.appendingPathComponent(subDir)
-            guard fileManager.fileExists(atPath: subDirURL.path) else { continue }
+        for subDirURL in subDirs {
+            // Check if it's a directory
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: subDirURL.path, isDirectory: &isDir), isDir.boolValue else { continue }
             
-            // Find all shader files
+            let folderName = subDirURL.lastPathComponent
+            
+            // Find all .txt shader files in this folder
             guard let contents = try? fileManager.contentsOfDirectory(
                 at: subDirURL,
                 includingPropertiesForKeys: [.isRegularFileKey],
@@ -244,22 +256,14 @@ public actor ShaderMatcher {
             ) else { continue }
             
             for fileURL in contents {
-                guard fileURL.pathExtension == ext else { continue }
+                guard fileURL.pathExtension == "txt" else { continue }
                 
                 let shaderName = fileURL.deletingPathExtension().lastPathComponent
-                let prefixedName = "\(subDir)/\(shaderName)"
+                let prefixedName = "\(folderName)/\(shaderName)"
                 
-                // Check for analysis.json file
+                // Try to load analysis if it exists (optional)
                 let analysisURL = fileURL.deletingPathExtension().appendingPathExtension("analysis.json")
-                
-                // Only load if analysis.json exists
-                guard fileManager.fileExists(atPath: analysisURL.path) else {
-                    continue
-                }
-                
-                // Try to load analysis
                 var loadedAnalysis: ShaderAnalysis? = nil
-                var rating = defaultRating
                 var energyScore = 0.5
                 var moodValence = 0.0
                 var colorWarmth = 0.5
@@ -268,7 +272,8 @@ public actor ShaderMatcher {
                 var colors: [String] = []
                 var effects: [String] = []
                 
-                if let data = try? Data(contentsOf: analysisURL),
+                if fileManager.fileExists(atPath: analysisURL.path),
+                   let data = try? Data(contentsOf: analysisURL),
                    let analysis = try? JSONDecoder().decode(ShaderAnalysis.self, from: data) {
                     loadedAnalysis = analysis
                     energyScore = analysis.features.energyScore
@@ -280,10 +285,11 @@ public actor ShaderMatcher {
                     effects = analysis.effects
                 }
                 
-                // Create ShaderInfo
+                // Create ShaderInfo with folder
                 let info = ShaderInfo(
                     name: prefixedName,
                     path: fileURL.path,
+                    folder: folderName,
                     energyScore: energyScore,
                     moodValence: moodValence,
                     colorWarmth: colorWarmth,
@@ -291,7 +297,7 @@ public actor ShaderMatcher {
                     mood: mood,
                     colors: colors,
                     effects: effects,
-                    rating: rating
+                    rating: .normal  // Rating no longer used for filtering
                 )
                 
                 shaders[prefixedName] = info
@@ -301,7 +307,7 @@ public actor ShaderMatcher {
             }
         }
         
-        print("[ShaderMatcher] Loaded \(shaders.count) shader files with analysis")
+        print("[ShaderMatcher] Loaded \(shaders.count) shaders from \(subDirs.count) folders")
         return shaders.count
     }
     

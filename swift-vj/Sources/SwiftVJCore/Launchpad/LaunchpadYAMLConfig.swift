@@ -123,7 +123,7 @@ public struct BankYAMLConfig: Codable, Sendable {
 public struct PadYAMLConfig: Codable, Sendable {
     public let x: Int
     public let y: Int
-    public let mode: String  // "oneShot", "toggle", "selector", "push"
+    public let mode: String  // "oneShot", "toggle", "selector", "push", "increment", "decrement"
     public let label: String?
     public let group: String?      // For selector mode
     public let index: Int?         // For selector mode - index into group items
@@ -131,9 +131,14 @@ public struct PadYAMLConfig: Codable, Sendable {
     public let activeColor: String?
     
     // OSC commands
-    public let osc: OscYAMLConfig?     // For oneShot/push
+    public let osc: OscYAMLConfig?     // For oneShot/push/increment/decrement
     public let oscOn: OscYAMLConfig?   // For toggle
     public let oscOff: OscYAMLConfig?  // For toggle
+    
+    // Increment/Decrement mode settings
+    public let step: Double?       // Step size (default 0.1)
+    public let minValue: Double?   // Minimum value (default 0.0)
+    public let maxValue: Double?   // Maximum value (default 1.0)
 }
 
 public struct OscYAMLConfig: Codable, Sendable {
@@ -512,7 +517,10 @@ public extension LaunchpadYAMLConfig {
             label: label,
             oscOn: oscOn,
             oscOff: oscOff,
-            oscAction: oscAction
+            oscAction: oscAction,
+            step: Float(pad.step ?? 0.1),
+            minValue: Float(pad.minValue ?? 0.0),
+            maxValue: Float(pad.maxValue ?? 1.0)
         )
     }
     

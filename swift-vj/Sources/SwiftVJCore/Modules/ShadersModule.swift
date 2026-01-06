@@ -55,6 +55,11 @@ public actor ShadersModule: Module {
     
     // MARK: - Public API
     
+    /// Get all unique folder names from loaded shaders
+    public var availableFolders: [String] {
+        get async { await matcher.availableFolders }
+    }
+    
     /// Load shaders from directory (only those with analysis.json)
     ///
     /// - Parameter directory: Path to shaders directory (containing isf/ and glsl/ subdirs)

@@ -318,29 +318,21 @@ struct AudioBar: View {
 
 // MARK: - Render Controls View
 
-/// Controls for the render engine
+/// Controls for the render engine (always running)
 struct RenderControlsView: View {
     @ObservedObject var renderEngine: RenderEngine
 
     var body: some View {
         HStack(spacing: 16) {
-            // Start/Stop button
-            Button {
-                Task {
-                    if renderEngine.isRunning {
-                        await renderEngine.stop()
-                    } else {
-                        try? await renderEngine.start()
-                    }
-                }
-            } label: {
-                Label(
-                    renderEngine.isRunning ? "Stop Rendering" : "Start Rendering",
-                    systemImage: renderEngine.isRunning ? "stop.fill" : "play.fill"
-                )
+            // Status indicator
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(renderEngine.isRunning ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(renderEngine.isRunning ? "Rendering" : "Starting...")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(renderEngine.isRunning ? .red : .green)
 
             Spacer()
 

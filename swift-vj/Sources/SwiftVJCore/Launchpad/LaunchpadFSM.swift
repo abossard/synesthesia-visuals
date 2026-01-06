@@ -13,6 +13,15 @@ public enum LaunchpadButton {
     /// Bottom-right scene button triggers learn mode (ALWAYS, regardless of bank)
     public static let learn = ButtonId(x: 8, y: 0)
     
+    /// Shift button - scene button y=5 (second from bottom)
+    public static let shift = ButtonId(x: 8, y: 5)
+    
+    /// Page toggle button - scene button y=6 (third from bottom)
+    public static let page = ButtonId(x: 8, y: 6)
+    
+    /// Record/Program button - scene button y=7 ("Stop/Solo/Mute" label)
+    public static let record = ButtonId(x: 8, y: 7)
+    
     /// Top row = Bank selection (cols 0-7, row 7)
     public static func bank(_ index: Int) -> ButtonId {
         ButtonId(x: index, y: 7)
@@ -37,6 +46,11 @@ public enum LaunchpadButton {
     /// Scene buttons (right column, except learn button)
     public static func isSceneButton(_ id: ButtonId) -> Bool {
         id.x == 8 && id.y > 0  // y=0 is learn button
+    }
+    
+    /// Check if this is a special function scene button (shift, page, record)
+    public static func isSpecialSceneButton(_ id: ButtonId) -> Bool {
+        id == shift || id == page || id == record
     }
 }
 
@@ -268,6 +282,30 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
         }
     }
     
+    // Shift button - set shift held (momentary)
+    if padId == LaunchpadButton.shift {
+        var newState = state
+        newState.isShiftHeld = true
+        return FSMResult(
+            state: newState,
+            effects: [.setLed(padId: padId, color: LP.white, blink: false)]
+        )
+    }
+    
+    // Page button - toggle page (latch)
+    if padId == LaunchpadButton.page {
+        var newState = state
+        newState.currentPage = (state.currentPage + 1) % 2
+        let color = newState.currentPage == 0 ? LP.purpleDim : LP.purple
+        return FSMResult(
+            state: newState,
+            effects: [
+                .setLed(padId: padId, color: color, blink: false),
+                .log(message: "Page \(newState.currentPage + 1)", level: .info)
+            ]
+        )
+    }
+    
     // Bank buttons work in idle and config modes (for switching while configuring)
     if let bankIndex = LaunchpadButton.bankIndex(from: padId) {
         // In config mode, just switch bank (keep configuring)
@@ -280,7 +318,7 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
         return handleNormalPress(state, padId: padId)
     case .waitPad:
         // Allow grid pads and scene buttons (except learn) for selection
-        let canSelect = padId.isGrid || (LaunchpadButton.isSceneButton(padId))
+        let canSelect = padId.isGrid || (LaunchpadButton.isSceneButton(padId) && !LaunchpadButton.isSpecialSceneButton(padId))
         return canSelect ? selectPadForConfig(state, padId: padId) : FSMResult(state: state)
     case .config:
         return handleConfigPadPress(state, padId: padId)
@@ -302,11 +340,25 @@ public func handleNormalPress(_ state: ControllerState, padId: ButtonId) -> FSMR
         return handleOneShotPress(state, padId: padId, behavior: behavior)
     case .push:
         return handlePushPress(state, padId: padId, behavior: behavior)
+    case .increment:
+        return handleIncrementPress(state, padId: padId, behavior: behavior, isIncrement: true)
+    case .decrement:
+        return handleIncrementPress(state, padId: padId, behavior: behavior, isIncrement: false)
     }
 }
 
-/// Handle pad release (for PUSH mode)
+/// Handle pad release (for PUSH mode and shift)
 public func handlePadRelease(_ state: ControllerState, padId: ButtonId) -> FSMResult {
+    // Shift release
+    if padId == LaunchpadButton.shift {
+        var newState = state
+        newState.isShiftHeld = false
+        return FSMResult(
+            state: newState,
+            effects: [.setLed(padId: padId, color: LP.purpleDim, blink: false)]
+        )
+    }
+    
     guard state.learnState.phase == .idle,
           let behavior = state.pads[padId],
           behavior.mode == .push else {
@@ -441,6 +493,50 @@ private func handlePushPress(_ state: ControllerState, padId: ButtonId, behavior
     if let oscAction = behavior.oscAction {
         effects.append(.sendOsc(OscCommand(address: oscAction.address, args: [.float(1.0)])))
     }
+    
+    return FSMResult(state: newState, effects: effects)
+}
+
+/// Handle increment/decrement pad press
+/// - Normal press: adjust by step (±0.1)
+/// - Shift held: jump to min (decrement) or max (increment)
+private func handleIncrementPress(_ state: ControllerState, padId: ButtonId, behavior: PadBehavior, isIncrement: Bool) -> FSMResult {
+    var effects: [LaunchpadEffect] = []
+    var newState = state
+    
+    guard let oscAction = behavior.oscAction else {
+        return FSMResult(state: state)
+    }
+    
+    // Get current value from runtime state, or start at middle
+    let currentRuntime = state.padRuntime[padId] ?? PadRuntimeState(currentValue: 0.5)
+    let currentValue = currentRuntime.currentValue
+    
+    // Calculate new value
+    let newValue: Float
+    if state.isShiftHeld {
+        // Shift: jump to extreme
+        newValue = isIncrement ? behavior.maxValue : behavior.minValue
+    } else {
+        // Normal: increment/decrement by step
+        let delta = isIncrement ? behavior.step : -behavior.step
+        newValue = max(behavior.minValue, min(behavior.maxValue, currentValue + delta))
+    }
+    
+    // Update runtime state
+    newState.padRuntime[padId] = PadRuntimeState(
+        isActive: true,
+        isOn: false,
+        currentColor: behavior.activeColor,
+        currentValue: newValue
+    )
+    
+    // Flash the pad briefly
+    effects.append(.setLed(padId: padId, color: behavior.activeColor, blink: false))
+    
+    // Send OSC with new value
+    effects.append(.sendOsc(OscCommand(address: oscAction.address, args: [.float(newValue)])))
+    effects.append(.log(message: "\(behavior.label): \(String(format: "%.2f", newValue))", level: .debug))
     
     return FSMResult(state: newState, effects: effects)
 }

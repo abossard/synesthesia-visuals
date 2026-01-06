@@ -91,23 +91,34 @@ global:
     - { cc: 97, bank: 6, name: "Audio",       idleColor: yellow,  activeColor: white }
     - { cc: 98, bank: 7, name: "Custom",      idleColor: grey,    activeColor: white }
 
-  # Scene column buttons (right side, notes 19, 29, 39, 49)
+  # Scene column buttons (right side)
+  # y=0 is always Learn/Record (hardcoded in FSM)
+  # y=1-4 are configurable per bank
+  # y=5 is Shift (momentary modifier)
+  # y=6 is Page (toggle between page 0/1)
+  # y=7 is Record/Program mode (Stop/Solo/Mute button)
   sceneButtons:
-    - { note: 19, function: page, label: "Page 1", idleColor: purpleDim, activeColor: purple }
-    - { note: 29, function: page, label: "Page 2", idleColor: purpleDim, activeColor: purple }
-    - { note: 39, function: page, label: "Page 3", idleColor: purpleDim, activeColor: purple }
-    - { note: 49, function: page, label: "Page 4", idleColor: purpleDim, activeColor: purple }
+    - { note: 29, function: configurable, label: "Scene 1", idleColor: purpleDim, activeColor: purple }
+    - { note: 39, function: configurable, label: "Scene 2", idleColor: purpleDim, activeColor: purple }
+    - { note: 49, function: configurable, label: "Scene 3", idleColor: purpleDim, activeColor: purple }
+    - { note: 59, function: configurable, label: "Scene 4", idleColor: purpleDim, activeColor: purple }
+    - { note: 69, function: shift, label: "Shift", idleColor: purpleDim, activeColor: white }
+    - { note: 79, function: page, label: "Page", idleColor: purpleDim, activeColor: purple }
+    - { note: 89, function: record, label: "Record", idleColor: redDim, activeColor: red }
 
 # ============================================================================
-# BANK 0: PLAYLIST CONTROL
+# BANK 0: SYNESTHESIA MASTER CONTROLS
 # ============================================================================
+# Master control panel for Synesthesia: meta controls, playlist, media
 
 bank0:
-  name: "Playlist"
-  purpose: "Playlist selection and playback"
+  name: "Synesthesia"
+  purpose: "Master Synesthesia controls: meta, playlist, media"
 
   pads:
-    # Row 7: Playlist selection (uses 'playlists' group)
+    # -------------------------------------------------------------------------
+    # Row 7: Playlist Selection (8 playlists via selector group)
+    # -------------------------------------------------------------------------
     - { x: 0, y: 7, mode: selector, group: playlists, index: 0, idleColor: blueDim, activeColor: blue }
     - { x: 1, y: 7, mode: selector, group: playlists, index: 1, idleColor: blueDim, activeColor: blue }
     - { x: 2, y: 7, mode: selector, group: playlists, index: 2, idleColor: blueDim, activeColor: blue }
@@ -117,7 +128,9 @@ bank0:
     - { x: 6, y: 7, mode: selector, group: playlists, index: 6, idleColor: blueDim, activeColor: blue }
     - { x: 7, y: 7, mode: selector, group: playlists, index: 7, idleColor: blueDim, activeColor: blue }
 
-    # Row 6: Playback controls
+    # -------------------------------------------------------------------------
+    # Row 6: Playlist Navigation + Play Controls
+    # -------------------------------------------------------------------------
     - x: 0
       y: 6
       mode: toggle
@@ -127,6 +140,14 @@ bank0:
       oscOn:  { address: "/playlist/play", args: [1] }
       oscOff: { address: "/playlist/play", args: [0] }
 
+    - x: 1
+      y: 6
+      mode: oneShot
+      label: "Toggle Play"
+      idleColor: green
+      activeColor: greenBright
+      osc: { address: "/playlist/toggleplay" }
+
     - x: 2
       y: 6
       mode: oneShot
@@ -135,7 +156,7 @@ bank0:
       activeColor: yellowBright
       osc: { address: "/playlist/previous" }
 
-    - x: 4
+    - x: 3
       y: 6
       mode: oneShot
       label: "Next"
@@ -143,25 +164,526 @@ bank0:
       activeColor: yellowBright
       osc: { address: "/playlist/next" }
 
+    - x: 4
+      y: 6
+      mode: oneShot
+      label: "Pos 1"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/playlist/position", args: [1] }
+
+    - x: 5
+      y: 6
+      mode: oneShot
+      label: "Pos 2"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/playlist/position", args: [2] }
+
     - x: 6
       y: 6
-      mode: toggle
-      label: "Shuffle"
-      idleColor: purpleDim
-      activeColor: purple
-      oscOn:  { address: "/playlist/shuffle", args: [1] }
-      oscOff: { address: "/playlist/shuffle", args: [0] }
+      mode: oneShot
+      label: "Pos 3"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/playlist/position", args: [3] }
 
     - x: 7
       y: 6
+      mode: oneShot
+      label: "Pos 4"
+      idleColor: cyan
+      activeColor: cyanDim
+      osc: { address: "/playlist/position", args: [4] }
+
+    # -------------------------------------------------------------------------
+    # Row 5: Meta Color Controls (Invert, Hue, Saturation, Limit Colors)
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 5
       mode: toggle
-      label: "Auto"
+      label: "Invert"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/controls/meta/invert", args: [1.0] }
+      oscOff: { address: "/controls/meta/invert", args: [0.0] }
+
+    - x: 1
+      y: 5
+      mode: decrement
+      label: "Hue -"
+      idleColor: pinkDim
+      activeColor: pink
+      osc: { address: "/controls/meta/hue" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 2
+      y: 5
+      mode: increment
+      label: "Hue +"
+      idleColor: pinkDim
+      activeColor: pink
+      osc: { address: "/controls/meta/hue" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 3
+      y: 5
+      mode: decrement
+      label: "Sat -"
       idleColor: orangeDim
       activeColor: orange
-      oscOn:  { address: "/playlist/auto", args: [1] }
-      oscOff: { address: "/playlist/auto", args: [0] }
+      osc: { address: "/controls/meta/saturation" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
 
-  programmableRows: [0, 1, 2, 3, 4, 5]
+    - x: 4
+      y: 5
+      mode: increment
+      label: "Sat +"
+      idleColor: orangeDim
+      activeColor: orange
+      osc: { address: "/controls/meta/saturation" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 5
+      y: 5
+      mode: toggle
+      label: "Limit Colors"
+      idleColor: redDim
+      activeColor: red
+      oscOn:  { address: "/controls/meta/limit_colors", args: [1.0] }
+      oscOff: { address: "/controls/meta/limit_colors", args: [0.0] }
+
+    - x: 6
+      y: 5
+      mode: oneShot
+      label: "Low: Red"
+      idleColor: red
+      activeColor: redBright
+      osc: { address: "/controls/meta/low_color", args: [1.0, 0.0, 0.0] }
+
+    - x: 7
+      y: 5
+      mode: oneShot
+      label: "High: Yellow"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/controls/meta/high_color", args: [1.0, 1.0, 0.0] }
+
+    # -------------------------------------------------------------------------
+    # Row 4: Meta Image Controls (Brightness, Gamma, Contrast)
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 4
+      mode: decrement
+      label: "Bright -"
+      idleColor: white
+      activeColor: grey
+      osc: { address: "/controls/meta/brightness" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 1
+      y: 4
+      mode: increment
+      label: "Bright +"
+      idleColor: white
+      activeColor: grey
+      osc: { address: "/controls/meta/brightness" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 2
+      y: 4
+      mode: decrement
+      label: "Gamma -"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/gamma" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 3
+      y: 4
+      mode: increment
+      label: "Gamma +"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/gamma" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 4
+      y: 4
+      mode: decrement
+      label: "Contrast -"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/contrast" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 5
+      y: 4
+      mode: increment
+      label: "Contrast +"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/contrast" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 6
+      y: 4
+      mode: oneShot
+      label: "Reset Meta"
+      idleColor: redDim
+      activeColor: red
+      osc: { address: "/controls/banks/meta/default" }
+
+    - x: 7
+      y: 4
+      mode: oneShot
+      label: "Random Meta"
+      idleColor: yellowDim
+      activeColor: yellow
+      osc: { address: "/controls/banks/meta/random" }
+
+    # -------------------------------------------------------------------------
+    # Row 3: Mirror + Audio Control + General
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 3
+      mode: toggle
+      label: "V Mirror"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/controls/meta/vmirror", args: [1.0] }
+      oscOff: { address: "/controls/meta/vmirror", args: [0.0] }
+
+    - x: 1
+      y: 3
+      mode: toggle
+      label: "H Mirror"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/controls/meta/hmirror", args: [1.0] }
+      oscOff: { address: "/controls/meta/hmirror", args: [0.0] }
+
+    - x: 2
+      y: 3
+      mode: decrement
+      label: "React -"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/reactivity" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 3
+      y: 3
+      mode: increment
+      label: "React +"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/reactivity" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 4
+      y: 3
+      mode: decrement
+      label: "Speed -"
+      idleColor: orangeDim
+      activeColor: orange
+      osc: { address: "/controls/meta/audiospeed" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 5
+      y: 3
+      mode: increment
+      label: "Speed +"
+      idleColor: orangeDim
+      activeColor: orange
+      osc: { address: "/controls/meta/audiospeed" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 6
+      y: 3
+      mode: decrement
+      label: "Alpha -"
+      idleColor: purpleDim
+      activeColor: purple
+      osc: { address: "/controls/meta/alpha" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 7
+      y: 3
+      mode: increment
+      label: "Alpha +"
+      idleColor: purpleDim
+      activeColor: purple
+      osc: { address: "/controls/meta/alpha" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    # -------------------------------------------------------------------------
+    # Row 2: Media Controls (Scale, Fit/Fill, Flip, Invert)
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 2
+      mode: decrement
+      label: "Scale -"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/mediascale" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 1
+      y: 2
+      mode: increment
+      label: "Scale +"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/mediascale" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 2
+      y: 2
+      mode: toggle
+      label: "Fit/Fill"
+      idleColor: blueDim
+      activeColor: blue
+      oscOn:  { address: "/controls/meta/fitorfill", args: [1.0] }
+      oscOff: { address: "/controls/meta/fitorfill", args: [0.0] }
+
+    - x: 3
+      y: 2
+      mode: toggle
+      label: "V Flip"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/controls/meta/vertflip", args: [1.0] }
+      oscOff: { address: "/controls/meta/vertflip", args: [0.0] }
+
+    - x: 4
+      y: 2
+      mode: toggle
+      label: "H Flip"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/controls/meta/horflip", args: [1.0] }
+      oscOff: { address: "/controls/meta/horflip", args: [0.0] }
+
+    - x: 5
+      y: 2
+      mode: toggle
+      label: "Invert Media"
+      idleColor: purpleDim
+      activeColor: purple
+      oscOn:  { address: "/controls/meta/invertmedia", args: [1.0] }
+      oscOff: { address: "/controls/meta/invertmedia", args: [0.0] }
+
+    - x: 6
+      y: 2
+      mode: oneShot
+      label: "Prev Media"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/media/position", args: [-1] }
+
+    - x: 7
+      y: 2
+      mode: oneShot
+      label: "Next Media"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/media/position", args: [1] }
+
+    # -------------------------------------------------------------------------
+    # Row 1: Media Image Adjustments (Contrast, Gamma, Hue, Saturation)
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 1
+      mode: decrement
+      label: "M.Contrast -"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/mediacontrast" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 1
+      y: 1
+      mode: increment
+      label: "M.Contrast +"
+      idleColor: cyanDim
+      activeColor: cyan
+      osc: { address: "/controls/meta/mediacontrast" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 2
+      y: 1
+      mode: decrement
+      label: "M.Gamma -"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/mediagamma" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 3
+      y: 1
+      mode: increment
+      label: "M.Gamma +"
+      idleColor: greenDim
+      activeColor: green
+      osc: { address: "/controls/meta/mediagamma" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 4
+      y: 1
+      mode: decrement
+      label: "M.Hue -"
+      idleColor: pinkDim
+      activeColor: pink
+      osc: { address: "/controls/meta/mediahue" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 5
+      y: 1
+      mode: increment
+      label: "M.Hue +"
+      idleColor: pinkDim
+      activeColor: pink
+      osc: { address: "/controls/meta/mediahue" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 6
+      y: 1
+      mode: decrement
+      label: "M.Sat -"
+      idleColor: orangeDim
+      activeColor: orange
+      osc: { address: "/controls/meta/mediasaturation" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 7
+      y: 1
+      mode: increment
+      label: "M.Sat +"
+      idleColor: orangeDim
+      activeColor: orange
+      osc: { address: "/controls/meta/mediasaturation" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    # -------------------------------------------------------------------------
+    # Row 0: Transition + Render + Quick Actions
+    # -------------------------------------------------------------------------
+    - x: 0
+      y: 0
+      mode: decrement
+      label: "Trans -"
+      idleColor: purpleDim
+      activeColor: purple
+      osc: { address: "/controls/meta/transition" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 1
+      y: 0
+      mode: increment
+      label: "Trans +"
+      idleColor: purpleDim
+      activeColor: purple
+      osc: { address: "/controls/meta/transition" }
+      step: 0.1
+      minValue: 0.0
+      maxValue: 1.0
+
+    - x: 2
+      y: 0
+      mode: toggle
+      label: "Render"
+      idleColor: greenDim
+      activeColor: green
+      oscOn:  { address: "/render/enabled", args: [1] }
+      oscOff: { address: "/render/enabled", args: [0] }
+
+    - x: 4
+      y: 0
+      mode: oneShot
+      label: "Favslot 1"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/favslots/1" }
+
+    - x: 5
+      y: 0
+      mode: oneShot
+      label: "Favslot 2"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/favslots/2" }
+
+    - x: 6
+      y: 0
+      mode: oneShot
+      label: "Favslot 3"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/favslots/3" }
+
+    - x: 7
+      y: 0
+      mode: oneShot
+      label: "Favslot 4"
+      idleColor: yellow
+      activeColor: yellowBright
+      osc: { address: "/favslots/4" }
+
+  programmableRows: []  # All rows are fixed in Bank 0
 
 # ============================================================================
 # BANK 1: SYNESTHESIA

@@ -388,6 +388,7 @@ public enum ShaderRating: Int, Sendable, Codable, Comparable {
 public struct ShaderInfo: Sendable, Equatable, Codable {
     public let name: String
     public let path: String
+    public let folder: String  // Folder name (e.g. "glsl", "masks")
     public let energyScore: Double
     public let moodValence: Double
     public let colorWarmth: Double
@@ -403,6 +404,7 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
     public init(
         name: String,
         path: String,
+        folder: String = "glsl",
         energyScore: Double = 0.5,
         moodValence: Double = 0,
         colorWarmth: Double = 0.5,
@@ -415,6 +417,7 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
     ) {
         self.name = name
         self.path = path
+        self.folder = folder
         self.energyScore = energyScore
         self.moodValence = moodValence
         self.colorWarmth = colorWarmth

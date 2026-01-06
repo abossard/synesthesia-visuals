@@ -196,11 +196,19 @@ final class AppState: ObservableObject {
     private func setupRenderEngine() {
         // Create render engine for VJUniverse visual output
         // Inject synesthesiaAudio processor so RenderEngine can pull levels in render loop
+        // Auto-start on app launch
         Task { [weak self] in
             guard let self = self else { return }
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run { [weak self] in
                 self?.renderEngine = engine
+            }
+            // Auto-start the render engine
+            do {
+                try await engine.start()
+                print("[RenderEngine] Auto-started on app launch")
+            } catch {
+                print("[RenderEngine] Failed to auto-start: \(error)")
             }
         }
     }
