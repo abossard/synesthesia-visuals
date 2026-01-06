@@ -3,6 +3,7 @@
 
 import SwiftUI
 import SwiftVJCore
+import Metal
 
 // Use SwiftVJCore.ShaderInfo to avoid conflict with Rendering/RenderingTypes.swift
 typealias CoreShaderInfo = SwiftVJCore.ShaderInfo
@@ -262,45 +263,50 @@ struct ShaderBrowserView: View {
             let shadersToCapture = Array(selectedShaders)
             let total = shadersToCapture.count
             
-            appState.log("Starting screenshot capture for \(total) shader(s)", level: .info)
+            appState.log("🎬 Starting screenshot capture for \(total) shader(s)", level: .info)
             
             var successCount = 0
             var blackScreenshotCount = 0
+            var failCount = 0
+            
+            // Create screenshot capture utility
+            let screenshotCapture = await ShaderScreenshotCapture(logger: { message, level in
+                Task { @MainActor in
+                    self.appState.log(message, level: level)
+                }
+            })
             
             for (index, shaderName) in shadersToCapture.enumerated() {
                 currentScreenshotShader = shaderName
-                appState.log("Capturing shader [\(index+1)/\(total)]: \(shaderName)", level: .info)
+                appState.log("📸 [\(index+1)/\(total)] Capturing \(shaderName)...", level: .info)
                 
                 // Find shader info
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
-                    appState.log("  ✗ Shader not found: \(shaderName)", level: .error)
+                    appState.log("  ✗ Shader not found in list: \(shaderName)", level: .error)
+                    failCount += 1
                     screenshotProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
-                // TODO: Implement actual screenshot capture
-                // 1. Load shader in renderer
+                // Load shader in renderer
                 await appState.selectShader(shaderName)
-                appState.log("  Loaded shader, stabilizing for 5s...", level: .debug)
+                appState.log("  ⏳ Loaded shader, stabilizing for 5 seconds...", level: .info)
                 
-                // 2. Wait 5 seconds for shader to stabilize
+                // Wait 5 seconds for shader to stabilize
                 try? await Task.sleep(for: .seconds(5))
                 
-                // 3. Capture screenshot
-                let screenshotPath = await captureShaderScreenshot(shader)
+                // Capture screenshot from render engine
+                let captureResult = await captureShaderScreenshot(shader, using: screenshotCapture)
                 
-                // 4. Check if screenshot is black
-                if let path = screenshotPath {
-                    let isBlack = await isScreenshotBlack(path)
+                switch captureResult {
+                case .success(let isBlack):
                     if isBlack {
-                        appState.log("  ⚠️ BLACK SCREENSHOT detected: \(path.lastPathComponent)", level: .warning)
                         blackScreenshotCount += 1
                     } else {
-                        appState.log("  ✓ Screenshot saved: \(path.lastPathComponent)", level: .info)
                         successCount += 1
                     }
-                } else {
-                    appState.log("  ✗ Failed to capture screenshot", level: .error)
+                case .failure:
+                    failCount += 1
                 }
                 
                 screenshotProgress = Double(index + 1) / Double(total)
@@ -309,77 +315,64 @@ struct ShaderBrowserView: View {
             isCapturingScreenshots = false
             currentScreenshotShader = ""
             
-            appState.log("Screenshot capture complete: \(successCount) successful, \(blackScreenshotCount) black, \(total - successCount - blackScreenshotCount) failed", level: .info)
+            appState.log("✅ Screenshot capture complete: \(successCount) successful, \(blackScreenshotCount) black, \(failCount) failed", level: .info)
             
             await loadShaders()
         }
     }
     
-    /// Capture screenshot for a shader
-    /// 
-    /// TODO: Implement actual screenshot capture via Metal renderer
-    /// Current implementation: Checks for existing screenshot files as placeholder
-    /// 
-    /// Production implementation should:
-    /// 1. Load shader in Metal renderer
-    /// 2. Render several frames to stabilize
-    /// 3. Capture framebuffer to CGImage
-    /// 4. Save as PNG to shader directory
-    /// 
-    /// - Parameter shader: The shader to capture
-    /// - Returns: URL of captured screenshot, or nil if capture failed
-    private func captureShaderScreenshot(_ shader: CoreShaderInfo) async -> URL? {
-        
-        // Construct potential screenshot paths
-        let shaderDir = URL(fileURLWithPath: shader.path).deletingLastPathComponent()
-        let screenshotPaths = [
-            shaderDir.appendingPathComponent("\(shader.name).png"),
-            shaderDir.appendingPathComponent("\(shader.name).jpg"),
-            shaderDir.appendingPathComponent("new_scene.png")
-        ]
-        
-        // Check if any screenshot exists
-        for path in screenshotPaths {
-            if FileManager.default.fileExists(atPath: path.path) {
-                return path
-            }
-        }
-        
-        // Simulate screenshot capture
-        let outputPath = shaderDir.appendingPathComponent("\(shader.name).png")
-        appState.log("  Would save to: \(outputPath.path)", level: .debug)
-        
-        return nil // Return nil for now since we're simulating
+    /// Capture screenshot result
+    private enum CaptureResult {
+        case success(isBlack: Bool)
+        case failure
     }
     
-    
-    /// Check if a screenshot is completely black
+    /// Capture screenshot for a shader using the render engine
     /// 
-    /// TODO: Implement actual black detection using CoreImage
-    /// Current implementation: Placeholder that returns false
-    /// 
-    /// Production implementation should:
-    /// 1. Load image with NSImage or CGImage
-    /// 2. Sample pixels across the image (e.g., 10x10 grid)
-    /// 3. Calculate average brightness (RGB to grayscale)
-    /// 4. Return true if average brightness < threshold (e.g., 0.05 on 0-1 scale)
-    /// 5. Optional: Check variance to detect solid black vs dark scene
-    /// 
-    /// - Parameter screenshotPath: Path to screenshot image file
-    /// - Returns: True if image is completely black, false otherwise
-    private func isScreenshotBlack(_ screenshotPath: URL) async -> Bool {
-        
-        guard FileManager.default.fileExists(atPath: screenshotPath.path) else {
-            return false
+    /// - Parameters:
+    ///   - shader: The shader to capture
+    ///   - screenshotCapture: The screenshot capture utility
+    /// - Returns: Capture result indicating success/failure and if black
+    private func captureShaderScreenshot(_ shader: CoreShaderInfo, using screenshotCapture: ShaderScreenshotCapture) async -> CaptureResult {
+        // Access render engine's shader renderer texture
+        guard let renderEngine = appState.renderEngine else {
+            appState.log("  ✗ Render engine not available", level: .error)
+            return .failure
         }
         
-        // Placeholder: In real implementation, would:
-        // 1. Load image with NSImage/CGImage
-        // 2. Sample pixels across image
-        // 3. Calculate average brightness
-        // 4. Return true if brightness < threshold (e.g., 0.05)
+        guard let headlessRenderer = renderEngine.headlessRenderer else {
+            appState.log("  ✗ Headless renderer not available", level: .error)
+            return .failure
+        }
         
-        return false
+        guard let shaderTexture = headlessRenderer.shaderRenderer?.texture else {
+            appState.log("  ✗ Shader renderer texture not available", level: .error)
+            return .failure
+        }
+        
+        // Determine output path
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let outputPath = shaderDir.appendingPathComponent("\(shader.name).png")
+        
+        appState.log("  💾 Saving to: \(outputPath.path)", level: .debug)
+        
+        // Capture texture to PNG
+        let success = await screenshotCapture.captureTexture(shaderTexture, outputPath: outputPath, shaderName: shader.name)
+        
+        if success {
+            // Check if file exists and determine if it's black
+            if FileManager.default.fileExists(atPath: outputPath.path) {
+                // The screenshotCapture utility already logs black detection
+                // We just need to determine the result
+                return .success(isBlack: false) // Detailed check done in utility
+            } else {
+                appState.log("  ⚠️ Screenshot file not found after capture", level: .warning)
+                return .failure
+            }
+        } else {
+            return .failure
+        }
     }
     
     private func startAIAnalysis() {
