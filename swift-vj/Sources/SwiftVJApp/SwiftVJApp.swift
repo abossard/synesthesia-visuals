@@ -200,12 +200,7 @@ final class AppState: ObservableObject {
             guard let self = self else { return }
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run { [weak self] in
-                guard let self = self else { return }
-                // Wire up logger for image renderer
-                engine.logger = { [weak self] message in
-                    self?.log(message, level: .info)
-                }
-                self.renderEngine = engine
+                self?.renderEngine = engine
             }
         }
     }
@@ -261,7 +256,7 @@ final class AppState: ObservableObject {
             }
         }
         
-        // Subscribe Launchpad to control prefixes + specific audio for beat-sync
+        // Subscribe Launchpad only to Synesthesia control/selectable prefixes (ignore audio)
         // Capture the module reference to avoid main actor isolation issues
         let lpModule = launchpadModule
         let launchpadPrefixes = [
@@ -269,11 +264,8 @@ final class AppState: ObservableObject {
             "/presets/*",
             "/favslots/*",
             "/playlist/*",
-            "/controls/*",          // All controls (meta, global, etc.)
-            "/media/*",             // Media selection
-            "/render/*",            // Render settings
-            "/audio/bpm/bpm",       // BPM for beat-sync blinking
-            "/audio/beat/onbeat"    // Beat pulse for blink toggle
+            "/controls/meta/*",
+            "/controls/global/*"
         ]
         for pattern in launchpadPrefixes {
             oscHub.subscribe(pattern: pattern) { address, values in
@@ -281,23 +273,13 @@ final class AppState: ObservableObject {
 
                 let args: [OscArg] = values.compactMap { value in
                     if let v = value as? Int32 { return .int(Int(v)) }
-                    if let v = value as? Int { return .int(v) }
                     if let v = value as? Float32 { return .float(Float(v)) }
-                    if let v = value as? Float { return .float(v) }
-                    if let v = value as? Double { return .float(Float(v)) }
                     if let v = value as? String { return .string(v) }
                     if let v = value as? Bool { return .bool(v) }
-                    // Fallback: try String(describing:) for other types
-                    let desc = String(describing: value)
-                    if !desc.isEmpty && desc != "()" {
-                        return .string(desc)
-                    }
                     return nil
                 }
 
-                // Get priority from categorization
-                let (priority, _, _) = categorizeOsc(address)
-                module.receiveOscEvent(OscEvent(address: address, args: args, priority: priority))
+                module.receiveOscEvent(OscEvent(address: address, args: args))
             }
         }
         
@@ -383,8 +365,6 @@ final class AppState: ObservableObject {
                 // Log image folder for easy access
                 if case .images(let count, let folder, _, _) = stepStatus, count > 0 {
                     self.log("  Images: \(count) → \(folder)", level: .info)
-                    // Auto-load images into renderer
-                    self.loadImagesIntoRenderer(folder: folder)
                 }
             }
         }
@@ -634,51 +614,6 @@ final class AppState: ObservableObject {
         } else {
             log("  Images: none", level: .debug)
         }
-    }
-    
-    /// Load images into the image renderer from a folder path
-    private func loadImagesIntoRenderer(folder: String) {
-        guard let renderEngine = renderEngine,
-              let imageRenderer = renderEngine.headlessRenderer?.imageRenderer else {
-            log("[Images] ⚠️ Renderer not ready", level: .warning)
-            return
-        }
-        
-        let folderURL = URL(fileURLWithPath: folder)
-        log("[Images] Auto-loading from: \(folderURL.lastPathComponent)", level: .info)
-        
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: folderURL,
-            includingPropertiesForKeys: nil
-        ) else {
-            log("[Images] ❌ Failed to read directory", level: .error)
-            return
-        }
-        
-        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]
-        let imageFiles = files.filter { file in
-            imageExtensions.contains(file.pathExtension.lowercased())
-        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        
-        guard !imageFiles.isEmpty else {
-            log("[Images] ⚠️ No images found", level: .warning)
-            return
-        }
-        
-        log("[Images] Found \(imageFiles.count) images", level: .info)
-        
-        imageRenderer.imageState = ImageDisplayState(
-            currentImageURL: imageFiles.first,
-            nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
-            crossfadeProgress: 0.0,
-            isFading: false,
-            coverMode: false,
-            folderImages: imageFiles,
-            folderIndex: 0,
-            beatsPerChange: 8  // Default to 8-beat auto-cycle
-        )
-        
-        log("[Images] ✓ Auto-loaded with 8-beat cycle", level: .info)
     }
     
     func recordOSCMessage(_ address: String, args: [String]) {

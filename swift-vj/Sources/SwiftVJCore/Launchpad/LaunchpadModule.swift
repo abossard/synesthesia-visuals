@@ -27,9 +27,6 @@ public final class LaunchpadModule: @unchecked Sendable {
     private let executor: EffectExecutor
     private var state: ControllerState
     
-    /// Public access to effect executor (for YAML config access)
-    public var effectExecutor: EffectExecutor { executor }
-    
     // MARK: - State
     
     /// Module is enabled only when real device is connected
@@ -42,10 +39,10 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// State change callback for UI observability
     public var onStateChange: ((ControllerState) -> Void)?
     
-    // BPM tracking (throttled updates)
+    // Beat-sync blinking
+    private var blinkTimer: Timer?
+    private var blinkEnabled = true  // User preference
     private var currentBpm: Float = 120.0
-    private var lastBpmUpdate: Date = .distantPast
-    private let bpmUpdateInterval: TimeInterval = 4.0  // Max every 4 seconds
     
     // MARK: - Init
     
@@ -100,7 +97,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         
-        midi.stopMidiClock()
+        stopBlinkTimer()
         midi.disableAutoReconnect()
         if isEnabled {
             midi.clearAllLeds()
@@ -138,11 +135,11 @@ public final class LaunchpadModule: @unchecked Sendable {
             // Force Programmer Mode immediately
             forceProgrammerMode()
             
-            // Start MIDI clock for flash sync (default 120 BPM until OSC updates it)
-            midi.startMidiClock(bpm: currentBpm)
-            
             // Refresh LEDs now that we're connected
             refreshLeds()
+            
+            // Start beat-sync blink timer
+            startBlinkTimer()
             
             // Notify UI of initial state
             let currentState = state
@@ -151,7 +148,7 @@ public final class LaunchpadModule: @unchecked Sendable {
             }
         } else {
             isEnabled = false
-            midi.stopMidiClock()
+            stopBlinkTimer()
             print("[Launchpad] ○ Disabled - device disconnected")
             lock.unlock()
         }
@@ -204,9 +201,6 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         // Execute effects outside lock
         executor.executeAll(result.effects)
-        
-        // Update LED display to reflect new state
-        updateDisplay()
     }
     
     // MARK: - Learn Mode
@@ -230,9 +224,6 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         lock.unlock()
         executor.executeAll(result.effects)
-        
-        // Update LED display to show learn mode
-        updateDisplay()
     }
     
     /// Exit learn mode
@@ -249,53 +240,38 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         lock.unlock()
         executor.executeAll(result.effects)
-        
-        // Update LED display to show normal mode
-        updateDisplay()
     }
     
-    /// Handle incoming OSC event for live capture during config phase
+    /// Handle incoming OSC event for recording
     public func receiveOscEvent(_ event: OscEvent) {
         guard isEnabled else { return }
         
-        // Handle BPM updates (throttled, for status display only)
-        if event.address == "/audio/bpm/bpm" {
+        // Handle BPM updates for beat-sync blinking (Synesthesia control messages only)
+        if event.address == "/syn/bpm" || event.address == "/controls/meta/bpm" {
             if case .float(let bpm) = event.args.first, bpm > 0 {
                 updateBpm(bpm)
             }
-            return  // Don't forward to FSM
         }
         
-        // Ignore beat pulses - native Launchpad pulse handles timing
-        if event.address == "/audio/beat/onbeat" {
-            return  // Don't forward to FSM
+        // Handle beat pulse for immediate blink toggle (Synesthesia control messages only)
+        if event.address == "/syn/beat" || event.address == "/controls/meta/onbeat" {
+            if case .float(let val) = event.args.first, val > 0.5 {
+                handleBeatPulse()
+            }
         }
         
         lock.lock()
+        let result = handleOscEvent(state, event: event)
+        state = result.state
         
-        // During config phase, capture OSC live
-        if state.learnState.phase == .config {
-            let result = captureOscEvent(state, event: event)
-            let capturedCountBefore = state.learnState.capturedOsc.count
-            let capturedCountAfter = result.state.learnState.capturedOsc.count
-            state = result.state
-            
-            // Notify UI
-            let currentState = state
-            DispatchQueue.main.async { [weak self] in
-                self?.onStateChange?(currentState)
-            }
-            
-            lock.unlock()
-            executor.executeAll(result.effects)
-            
-            // Update LED display if new OSC was captured
-            if capturedCountAfter > capturedCountBefore {
-                updateDisplay()
-            }
-        } else {
-            lock.unlock()
+        // Notify UI
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
         }
+        
+        lock.unlock()
+        executor.executeAll(result.effects)
     }
     
     // MARK: - Manual Pad Config
@@ -339,17 +315,8 @@ public final class LaunchpadModule: @unchecked Sendable {
     private func refreshLeds() {
         guard isEnabled else { return }
         
-        // Use display renderer to get all LED effects for current state
-        let effects = renderState(state)
-        executor.executeAll(effects)
-    }
-    
-    /// Full display refresh - renders all LEDs based on current FSM state
-    /// Called after state transitions to update Launchpad display
-    private func updateDisplay() {
-        guard isEnabled else { return }
-        
-        let effects = renderState(state)
+        midi.clearAllLeds()
+        let effects = refreshAllLeds(state)
         executor.executeAll(effects)
     }
     
@@ -389,44 +356,79 @@ public final class LaunchpadModule: @unchecked Sendable {
         }
     }
     
-    // MARK: - BPM Tracking
+    // MARK: - Beat-Sync Blinking
     
-    /// Update BPM (throttled to max every 4 seconds)
-    public func updateBpm(_ bpm: Float) {
-        guard bpm > 20 && bpm < 300 else { return }  // Sanity check
-        
-        // Throttle updates
-        let now = Date()
-        guard now.timeIntervalSince(lastBpmUpdate) >= bpmUpdateInterval else { return }
-        
-        let bpmChanged = abs(currentBpm - bpm) > 1.0
-        if bpmChanged {
-            currentBpm = bpm
-            lastBpmUpdate = now
-            
-            // Update MIDI clock tempo for flash sync
-            midi.updateMidiClockBpm(bpm)
-            print("[Launchpad] BPM updated to \(bpm)")
+    /// Enable or disable beat-sync LED blinking
+    public func setBlinkEnabled(_ enabled: Bool) {
+        blinkEnabled = enabled
+        if !enabled {
+            // Reset all blinking pads to steady state
+            refreshLeds()
         }
     }
     
-    // MARK: - Native LED Pulse/Flash
-    
-    /// Set LED with native Launchpad pulsing (hardware-driven, no timer needed)
-    public func setLedPulsing(_ padId: ButtonId, color: Int) {
-        guard isEnabled else { return }
-        midi.setLed(padId: padId, color: color, mode: .pulse)
+    private func startBlinkTimer() {
+        stopBlinkTimer()
+        
+        // Default to 120 BPM = 500ms per beat = 250ms per half-beat (blink rate)
+        let interval = 60.0 / Double(currentBpm) / 2.0
+        
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.handleBlinkTick()
+        }
+        
+        print("[Launchpad] Beat-sync blink timer started at \(currentBpm) BPM")
     }
     
-    /// Set LED with native Launchpad flashing (hardware-driven, alternates with off)
-    public func setLedFlashing(_ padId: ButtonId, color: Int) {
-        guard isEnabled else { return }
-        midi.setLed(padId: padId, color: color, mode: .flash)
+    private func stopBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
     }
     
-    /// Set LED to solid (static, no animation)
-    public func setLedSolid(_ padId: ButtonId, color: Int) {
-        guard isEnabled else { return }
-        midi.setLed(padId: padId, color: color, mode: .solid)
+    public func updateBpm(_ bpm: Float) {
+        guard bpm > 20 && bpm < 300 else { return }  // Sanity check
+        
+        let bpmChanged = abs(currentBpm - bpm) > 1.0
+        currentBpm = bpm
+        
+        // Restart timer with new BPM if significantly changed
+        if bpmChanged && blinkTimer != nil {
+            startBlinkTimer()
+        }
+    }
+    
+    private func handleBeatPulse() {
+        // Immediate blink toggle on beat (more responsive than timer)
+        handleBlinkTick()
+    }
+    
+    private func handleBlinkTick() {
+        guard isEnabled && blinkEnabled else { return }
+        
+        lock.lock()
+        
+        // Toggle blink state
+        state = toggleBlink(state)
+        let blinkOn = state.blinkOn
+        
+        // Notify UI (for blink visualization)
+        let currentState = state
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChange?(currentState)
+        }
+        
+        // Update LEDs for pads that should blink (active selectors)
+        for (padId, behavior) in state.pads {
+            guard behavior.mode == .selector else { continue }
+            
+            let runtime = state.padRuntime[padId] ?? PadRuntimeState()
+            guard runtime.isActive else { continue }
+            
+            // Alternate between active and dimmed color
+            let color = blinkOn ? behavior.activeColor : behavior.idleColor
+            midi.setLed(padId: padId, color: color)
+        }
+        
+        lock.unlock()
     }
 }
