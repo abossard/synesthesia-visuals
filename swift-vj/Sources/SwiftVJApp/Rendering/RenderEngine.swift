@@ -44,6 +44,9 @@ final class RenderEngine: ObservableObject {
 
     // Audio Processor (injected)
     private var synesthesiaAudio: SynesthesiaAudioProcessor?
+    
+    // Logger closure for UI logging
+    var logger: ((String) -> Void)?
 
     // MARK: - Private
 
@@ -112,8 +115,9 @@ final class RenderEngine: ObservableObject {
         self.device = device
 
         // Create headless renderer (replaces TileManager)
-        let renderer = HeadlessRenderer(device: device)
+        let renderer = HeadlessRenderer(device: device, logger: logger)
         self.headlessRenderer = renderer
+        logger?("[RenderEngine] Initialized headless renderer")
         
         // Load default shaders (verified to exist in metallib)
         renderer.shaderRenderer.loadShader(name: "3isacrowd")
@@ -285,6 +289,11 @@ final class RenderEngine: ObservableObject {
         renderer.lyricsRenderer.lyricsState = context.lyricsState
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
+        
+        // Sync imageManager state with renderer (imageRenderer is source of truth)
+        await MainActor.run { [weak self] in
+            self?.imageManager.state = renderer.imageRenderer.imageState
+        }
         
         // Handle shader changes
         if let shaderName = context.shaderState.current?.name,

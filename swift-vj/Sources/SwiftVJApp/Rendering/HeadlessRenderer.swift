@@ -4,6 +4,7 @@
 
 import Foundation
 import Metal
+import MetalKit
 import CoreGraphics
 import AppKit
 import SyphonKit
@@ -503,6 +504,287 @@ final class SongInfoRenderer: TileRenderer {
     }
 }
 
+// MARK: - Image Renderer
+
+/// Headless image renderer with crossfade support
+final class ImageRenderer: TileRenderer {
+    let name = "image"
+    private(set) var texture: MTLTexture?
+    
+    private let device: MTLDevice
+    private let width: Int = 1280
+    private let height: Int = 720
+    
+    // Image textures
+    private var currentImageTexture: MTLTexture?
+    private var nextImageTexture: MTLTexture?
+    
+    // Crossfade pipeline
+    private var blendPipelineState: MTLRenderPipelineState?
+    private var vertexBuffer: MTLBuffer?
+    private var samplerState: MTLSamplerState?
+    private var uniformBuffer: MTLBuffer?
+    
+    // State
+    var imageState: ImageDisplayState = .empty {
+        didSet { updateImageTextures() }
+    }
+    
+    private var lastBeatCount: Int = 0
+    private var beatCounter: Int = 0
+    
+    // Logger closure for UI logging
+    var logger: ((String) -> Void)?
+    
+    // Track first successful render
+    private var hasRenderedFirstFrame: Bool = false
+    
+    init(device: MTLDevice) {
+        self.device = device
+        setupTexture()
+        setupBlendPipeline()
+        setupBuffers()
+        logger?("[ImageRenderer] Initialized with resolution \(width)x\(height)")
+    }
+    
+    private func setupTexture() {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        texture = device.makeTexture(descriptor: descriptor)
+        logger?("[ImageRenderer] Created output texture")
+    }
+    
+    private func setupBuffers() {
+        // Fullscreen quad vertices
+        let vertices: [Float] = [
+            -1, 1, 0, 0,   // top-left
+             1, 1, 1, 0,   // top-right
+            -1, -1, 0, 1,  // bottom-left
+             1, -1, 1, 1,  // bottom-right
+        ]
+        vertexBuffer = device.makeBuffer(
+            bytes: vertices,
+            length: vertices.count * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+        
+        // Uniform buffer for crossfade
+        uniformBuffer = device.makeBuffer(
+            length: MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+        
+        // Sampler state
+        let samplerDescriptor = MTLSamplerDescriptor()
+        samplerDescriptor.minFilter = .linear
+        samplerDescriptor.magFilter = .linear
+        samplerDescriptor.sAddressMode = .clampToEdge
+        samplerDescriptor.tAddressMode = .clampToEdge
+        samplerState = device.makeSamplerState(descriptor: samplerDescriptor)
+    }
+    
+    private func setupBlendPipeline() {
+        // Create simple blend shader
+        let source = """
+        #include <metal_stdlib>
+        using namespace metal;
+        
+        struct VertexOut {
+            float4 position [[position]];
+            float2 texCoord;
+        };
+        
+        vertex VertexOut vertex_image(uint vid [[vertex_id]],
+                                       constant float4* vertices [[buffer(0)]]) {
+            VertexOut out;
+            float4 v = vertices[vid];
+            out.position = float4(v.xy, 0, 1);
+            out.texCoord = v.zw;
+            return out;
+        }
+        
+        fragment float4 fragment_image_blend(VertexOut in [[stage_in]],
+                                             texture2d<float> currentTex [[texture(0)]],
+                                             texture2d<float> nextTex [[texture(1)]],
+                                             sampler texSampler [[sampler(0)]],
+                                             constant float& crossfade [[buffer(0)]]) {
+            float4 current = currentTex.sample(texSampler, in.texCoord);
+            float4 next = nextTex.sample(texSampler, in.texCoord);
+            return mix(current, next, crossfade);
+        }
+        """
+        
+        guard let library = try? device.makeLibrary(source: source, options: nil),
+              let vertexFunction = library.makeFunction(name: "vertex_image"),
+              let fragmentFunction = library.makeFunction(name: "fragment_image_blend") else {
+            logger?("[ImageRenderer] ❌ Failed to create blend shader")
+            return
+        }
+        
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertexFunction
+        descriptor.fragmentFunction = fragmentFunction
+        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        
+        do {
+            blendPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+            logger?("[ImageRenderer] ✓ Blend pipeline created")
+        } catch {
+            logger?("[ImageRenderer] ❌ Pipeline error: \(error)")
+        }
+    }
+    
+    private func updateImageTextures() {
+        // Load current image
+        if let url = imageState.currentImageURL {
+            let filename = url.lastPathComponent
+            logger?("[ImageRenderer] Loading current: \(filename)")
+            logger?("[ImageRenderer]   Path: \(url.path)")
+            currentImageTexture = loadImageTexture(from: url)
+            if currentImageTexture != nil {
+                logger?("[ImageRenderer] ✓ Current image loaded")
+            } else {
+                logger?("[ImageRenderer] ❌ Failed to load current image")
+            }
+        }
+        
+        // Load next image for crossfade
+        if let url = imageState.nextImageURL {
+            let filename = url.lastPathComponent
+            logger?("[ImageRenderer] Loading next: \(filename)")
+            nextImageTexture = loadImageTexture(from: url)
+            if nextImageTexture != nil {
+                logger?("[ImageRenderer] ✓ Next image loaded")
+            }
+        }
+    }
+    
+    private func loadImageTexture(from url: URL) -> MTLTexture? {
+        guard let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            logger?("[ImageRenderer] ❌ Failed to create NSImage from: \(url.lastPathComponent)")
+            return nil
+        }
+        
+        let textureLoader = MTKTextureLoader(device: device)
+        do {
+            let texture = try textureLoader.newTexture(cgImage: cgImage, options: [
+                .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+                .SRGB: false
+            ])
+            return texture
+        } catch {
+            logger?("[ImageRenderer] ❌ Texture load error: \(error)")
+            return nil
+        }
+    }
+    
+    func handleBeat(beat4: Int) {
+        guard imageState.beatsPerChange > 0 else { return }
+        
+        // Count beats
+        if beat4 != lastBeatCount {
+            let prevCounter = beatCounter
+            lastBeatCount = beat4
+            beatCounter += 1
+            
+            // Only log when counter changes (not every frame)
+            if prevCounter != beatCounter {
+                logger?("[ImageRenderer] Beat: \(beatCounter)/\(imageState.beatsPerChange) (beat4=\(beat4))")
+            }
+            
+            // Auto-advance on beat count
+            if beatCounter >= imageState.beatsPerChange {
+                beatCounter = 0
+                logger?("[ImageRenderer] 🔄 Auto-switching image (beat trigger)")
+                nextImage()
+            }
+        }
+    }
+    
+    func nextImage() {
+        guard !imageState.folderImages.isEmpty else {
+            logger?("[ImageRenderer] ⚠️ Next image: no images loaded")
+            return
+        }
+        let nextIndex = (imageState.folderIndex + 1) % imageState.folderImages.count
+        logger?("[ImageRenderer] → Next image: \(nextIndex + 1)/\(imageState.folderImages.count)")
+        updateImageState(folderIndex: nextIndex)
+    }
+    
+    func prevImage() {
+        guard !imageState.folderImages.isEmpty else {
+            logger?("[ImageRenderer] ⚠️ Prev image: no images loaded")
+            return
+        }
+        let prevIndex = (imageState.folderIndex - 1 + imageState.folderImages.count) % imageState.folderImages.count
+        logger?("[ImageRenderer] ← Prev image: \(prevIndex + 1)/\(imageState.folderImages.count)")
+        updateImageState(folderIndex: prevIndex)
+    }
+    
+    private func updateImageState(folderIndex: Int) {
+        guard !imageState.folderImages.isEmpty else { return }
+        
+        let current = imageState.folderImages[folderIndex]
+        let nextIndex = (folderIndex + 1) % imageState.folderImages.count
+        let next = imageState.folderImages[nextIndex]
+        
+        imageState = ImageDisplayState(
+            currentImageURL: current,
+            nextImageURL: next,
+            crossfadeProgress: 0.0,
+            isFading: true,
+            coverMode: imageState.coverMode,
+            folderImages: imageState.folderImages,
+            folderIndex: folderIndex,
+            beatsPerChange: imageState.beatsPerChange
+        )
+    }
+    
+    func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
+        guard let texture = texture,
+              let pipelineState = blendPipelineState,
+              let current = currentImageTexture else {
+            return
+        }
+        
+        // Log first successful render
+        if !hasRenderedFirstFrame {
+            hasRenderedFirstFrame = true
+            logger?("[ImageRenderer] 🎬 Rendering to Syphon server 'Image'")
+        }
+        
+        // Update crossfade uniform
+        var crossfade = imageState.crossfadeProgress
+        if let uniformBuffer = uniformBuffer {
+            memcpy(uniformBuffer.contents(), &crossfade, MemoryLayout<Float>.stride)
+        }
+        
+        let passDescriptor = MTLRenderPassDescriptor()
+        passDescriptor.colorAttachments[0].texture = texture
+        passDescriptor.colorAttachments[0].loadAction = .clear
+        passDescriptor.colorAttachments[0].storeAction = .store
+        passDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
+        
+        encoder.setRenderPipelineState(pipelineState)
+        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
+        encoder.setFragmentTexture(current, index: 0)
+        encoder.setFragmentTexture(nextImageTexture ?? current, index: 1)
+        encoder.setFragmentSamplerState(samplerState, index: 0)
+        encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+    }
+}
+
 // MARK: - Headless Renderer
 
 /// Main headless renderer - one command buffer per frame, all tiles rendered and published together
@@ -518,6 +800,7 @@ final class HeadlessRenderer {
     let lyricsRenderer: LyricsRenderer
     let refrainRenderer: RefrainRenderer
     let songInfoRenderer: SongInfoRenderer
+    let imageRenderer: ImageRenderer
     
     // Audio-reactive state
     private var audioTime: Float = 0
@@ -548,7 +831,7 @@ final class HeadlessRenderer {
     
     // MARK: - Init
     
-    init(device: MTLDevice) {
+    init(device: MTLDevice, logger: ((String) -> Void)? = nil) {
         self.device = device
         self.commandQueue = device.makeCommandQueue()!
         
@@ -557,6 +840,11 @@ final class HeadlessRenderer {
         lyricsRenderer = LyricsRenderer(device: device)
         refrainRenderer = RefrainRenderer(device: device)
         songInfoRenderer = SongInfoRenderer(device: device)
+        imageRenderer = ImageRenderer(device: device)
+        
+        // Wire up logger to imageRenderer
+        imageRenderer.logger = logger
+        logger?("[HeadlessRenderer] Initialized with 6 tiles (shader, mask, lyrics, refrain, songInfo, image)")
     }
     
     // MARK: - Render Frame
@@ -629,6 +917,10 @@ final class HeadlessRenderer {
         lyricsRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         refrainRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         songInfoRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        imageRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        
+        // Handle beat-based image switching
+        imageRenderer.handleBeat(beat4: Int(audioState.beat4))
         
         // 2. Publish ALL to Syphon (SAME command buffer, before commit)
         if let manager = syphonManager {
@@ -651,6 +943,10 @@ final class HeadlessRenderer {
             }
             if let tex = songInfoRenderer.texture {
                 manager.publish(name: TileConfig.songInfo.syphonName, texture: tex, commandBuffer: commandBuffer)
+                publishCount += 1
+            }
+            if let tex = imageRenderer.texture {
+                manager.publish(name: TileConfig.image.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }
         }

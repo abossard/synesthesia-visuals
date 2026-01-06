@@ -449,7 +449,7 @@ struct RenderingView: View {
         VStack(spacing: 16) {
             // Tile selector tabs
             HStack(spacing: 12) {
-                ForEach(["shader", "mask", "lyrics", "refrain", "songInfo"], id: \.self) { tile in
+                ForEach(["shader", "mask", "lyrics", "refrain", "songInfo", "image"], id: \.self) { tile in
                     Button {
                         selectedTile = tile
                     } label: {
@@ -489,10 +489,15 @@ struct RenderingView: View {
                 shaderControlsView(title: "Mask", binding: $selectedMaskShader)
             }
             
+            // Image controls (when image tile selected)
+            if selectedTile == "image" {
+                imageControlsView
+            }
+            
             // Tile selector grid with Syphon client previews
             GroupBox("Tiles → Syphon") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo"], id: \.self) { tile in
+                    ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo", "Image"], id: \.self) { tile in
                         VStack(spacing: 4) {
                             SyphonThumbnailView(serverName: tile)
                                 .aspectRatio(16/9, contentMode: .fit)
@@ -653,6 +658,149 @@ struct RenderingView: View {
             }
         }
         .padding()
+    }
+    
+    // MARK: - Image Controls
+    
+    @ViewBuilder
+    private var imageControlsView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Navigation
+            HStack {
+                Text("Image:")
+                
+                Button {
+                    renderEngine?.headlessRenderer?.imageRenderer.prevImage()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                
+                if let state = renderEngine?.headlessRenderer?.imageRenderer.imageState {
+                    Text("\(state.folderIndex + 1)/\(state.folderImages.count)")
+                        .font(.caption.monospaced())
+                        .frame(minWidth: 80)
+                        .padding(.horizontal, 8)
+                        .background(Color.secondary.opacity(0.2))
+                        .cornerRadius(4)
+                } else {
+                    Text("No images")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 80)
+                }
+                
+                Button {
+                    renderEngine?.headlessRenderer?.imageRenderer.nextImage()
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.bordered)
+            }
+            
+            // Beat cycling
+            HStack {
+                Text("Auto-switch:")
+                
+                ForEach([("Manual", 0), ("4 beats", 4), ("8 beats", 8), ("16 beats", 16)], id: \.0) { label, beats in
+                    Button {
+                        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
+                            var state = renderer.imageState
+                            renderer.imageState = ImageDisplayState(
+                                currentImageURL: state.currentImageURL,
+                                nextImageURL: state.nextImageURL,
+                                crossfadeProgress: state.crossfadeProgress,
+                                isFading: state.isFading,
+                                coverMode: state.coverMode,
+                                folderImages: state.folderImages,
+                                folderIndex: state.folderIndex,
+                                beatsPerChange: beats
+                            )
+                            if beats == 0 {
+                                appState.log("[Images] 🎛️ Auto-cycle: Manual", level: .info)
+                            } else {
+                                appState.log("[Images] 🎛️ Auto-cycle: \(beats) beats", level: .info)
+                            }
+                        }
+                    } label: {
+                        Text(label)
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint((renderEngine?.headlessRenderer?.imageRenderer.imageState.beatsPerChange ?? 0) == beats ? .blue : .gray)
+                }
+            }
+            
+            // Load folder button
+            HStack {
+                Text("Source:")
+                
+                Button("Load Folder") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = false
+                    panel.canChooseDirectories = true
+                    panel.allowsMultipleSelection = false
+                    
+                    if panel.runModal() == .OK, let url = panel.url {
+                        loadImagesFromFolder(url)
+                    }
+                }
+                .buttonStyle(.bordered)
+                
+                if let state = renderEngine?.headlessRenderer?.imageRenderer.imageState,
+                   !state.folderImages.isEmpty {
+                    Text("\(state.folderImages.count) images loaded")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+    }
+    
+    private func loadImagesFromFolder(_ url: URL) {
+        appState.log("[Images] Loading from folder: \(url.lastPathComponent)", level: .info)
+        appState.log("[Images]   Path: \(url.path)", level: .debug)
+        
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil
+        ) else {
+            appState.log("[Images] ❌ Failed to read directory", level: .error)
+            return
+        }
+        
+        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]
+        let imageFiles = files.filter { file in
+            imageExtensions.contains(file.pathExtension.lowercased())
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        
+        appState.log("[Images] Found \(imageFiles.count) image files", level: .info)
+        
+        guard !imageFiles.isEmpty else {
+            appState.log("[Images] ⚠️ No images found in folder", level: .warning)
+            return
+        }
+        
+        // Log first few filenames
+        let preview = imageFiles.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
+        appState.log("[Images]   Files: \(preview)\(imageFiles.count > 5 ? "..." : "")", level: .debug)
+        
+        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
+            renderer.imageState = ImageDisplayState(
+                currentImageURL: imageFiles.first,
+                nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
+                crossfadeProgress: 0.0,
+                isFading: false,
+                coverMode: false,
+                folderImages: imageFiles,
+                folderIndex: 0,
+                beatsPerChange: 8
+            )
+            appState.log("[Images] ✓ Loaded with 8-beat auto-cycle", level: .info)
+        } else {
+            appState.log("[Images] ❌ Renderer not available", level: .error)
+        }
     }
 }
 
