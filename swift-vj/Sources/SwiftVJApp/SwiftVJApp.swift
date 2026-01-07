@@ -235,7 +235,11 @@ final class AppState: ObservableObject {
         // Create adapters
         let lyricsFetcher = LyricsFetcher()
         let shaderMatcher = ShaderMatcher()
-        let imageScraper = ImageScraper()
+
+        // Store images in project folder instead of ~/Library/Application Support
+        let projectImagesDir = URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/data/song_images")
+        let imageScraper = ImageScraper(cacheDir: projectImagesDir)
+
         let llmClient = LLMClient()
         
         // Create modules - pass OSCHub to PlaybackModule for VDJ subscription
