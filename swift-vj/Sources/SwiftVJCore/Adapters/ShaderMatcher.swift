@@ -167,31 +167,20 @@ public actor ShaderMatcher {
                     let data = try Data(contentsOf: fileURL)
                     let analysis = try JSONDecoder().decode(ShaderAnalysis.self, from: data)
                     
-                    // Build prefixed name: "isf/shadername" or "glsl/shadername"
-                    let relativePath = fileURL.deletingLastPathComponent()
-                        .path
-                        .replacingOccurrences(of: subDirURL.path, with: "")
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                    
+                    // Use bare shader name (matches metallib function names)
                     let shaderName = fileURL.lastPathComponent
                         .replacingOccurrences(of: ".analysis.json", with: "")
-                    
-                    let prefixedName: String
-                    if relativePath.isEmpty {
-                        prefixedName = "\(subDir)/\(shaderName)"
-                    } else {
-                        prefixedName = "\(subDir)/\(relativePath)/\(shaderName)"
-                    }
                     
                     // Determine shader file path
                     let ext = subDir == "isf" ? "fs" : "txt"
                     let shaderPath = fileURL.deletingLastPathComponent()
                         .appendingPathComponent("\(shaderName).\(ext)")
                     
-                    // Create ShaderInfo
+                    // Create ShaderInfo with bare name
                     let info = ShaderInfo(
-                        name: prefixedName,
+                        name: shaderName,  // Bare name: matches metallib function names
                         path: shaderPath.path,
+                        folder: subDir,  // Folder for filtering: "isf", "glsl", etc.
                         energyScore: analysis.features.energyScore,
                         moodValence: analysis.features.moodValence,
                         colorWarmth: analysis.features.colorWarmth,
@@ -202,8 +191,8 @@ public actor ShaderMatcher {
                         rating: .normal
                     )
                     
-                    shaders[prefixedName] = info
-                    analyses[prefixedName] = analysis
+                    shaders[shaderName] = info
+                    analyses[shaderName] = analysis
                     
                 } catch {
                     // Skip invalid files
@@ -258,8 +247,8 @@ public actor ShaderMatcher {
             for fileURL in contents {
                 guard fileURL.pathExtension == "txt" else { continue }
                 
+                // Use bare shader name (matches metallib function names)
                 let shaderName = fileURL.deletingPathExtension().lastPathComponent
-                let prefixedName = "\(folderName)/\(shaderName)"
                 
                 // Try to load analysis if it exists (optional)
                 let analysisURL = fileURL.deletingPathExtension().appendingPathExtension("analysis.json")
@@ -285,11 +274,11 @@ public actor ShaderMatcher {
                     effects = analysis.effects
                 }
                 
-                // Create ShaderInfo with folder
+                // Create ShaderInfo with bare name (matches metallib) and folder for filtering
                 let info = ShaderInfo(
-                    name: prefixedName,
+                    name: shaderName,  // Bare name: "Electriclava" (matches fragment_Electriclava in metallib)
                     path: fileURL.path,
-                    folder: folderName,
+                    folder: folderName,  // Folder for filtering: "glsl" or "masks"
                     energyScore: energyScore,
                     moodValence: moodValence,
                     colorWarmth: colorWarmth,
@@ -300,9 +289,11 @@ public actor ShaderMatcher {
                     rating: .normal  // Rating no longer used for filtering
                 )
                 
-                shaders[prefixedName] = info
+                // Use bare name as key (avoids duplicates across folders with same name)
+                // If same shader name exists in multiple folders, last one wins
+                shaders[shaderName] = info
                 if let analysis = loadedAnalysis {
-                    analyses[prefixedName] = analysis
+                    analyses[shaderName] = analysis
                 }
             }
         }

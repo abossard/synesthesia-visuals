@@ -386,14 +386,24 @@ final class RenderEngine: ObservableObject {
     
     /// Load a shader directly into headless renderer and render a frame for analysis/screenshots.
     /// This bypasses the normal render loop to guarantee the shader is rendered.
-    func loadAndRenderForAnalysis(shaderName: String) async {
+    /// - Parameter shaderName: Bare shader name (e.g., "Electriclava") matching metallib function names
+    /// - Returns: True if shader was loaded and rendered successfully
+    @discardableResult
+    func loadAndRenderForAnalysis(shaderName: String) async -> Bool {
         guard let renderer = headlessRenderer else {
-            print("[RenderEngine] No headless renderer for analysis")
-            return
+            print("[RenderEngine] ❌ No headless renderer for analysis")
+            return false
         }
         
+        print("[RenderEngine] loadAndRenderForAnalysis: '\(shaderName)'")
+        
         // Directly load the shader into headless renderer
-        renderer.shaderRenderer.loadShader(name: shaderName)
+        let loadSuccess = renderer.shaderRenderer.loadShader(name: shaderName)
+        
+        if !loadSuccess {
+            print("[RenderEngine] ❌ FAILED to load shader '\(shaderName)' for analysis")
+            return false
+        }
         
         // Create a default audio state for rendering (mid-energy for screenshots)
         let audioState = AudioState(
@@ -421,6 +431,8 @@ final class RenderEngine: ObservableObject {
         await MainActor.run { [syphonManager] in
             renderer.renderFrame(audioState: audioState, syphonManager: syphonManager)
         }
+        
+        return true
     }
 }
 

@@ -94,14 +94,27 @@ final class ShaderRenderer: TileRenderer {
         print("[ShaderRenderer:\(name)] Failed to load metallib")
     }
     
-    func loadShader(name shaderName: String) {
-        guard let library = metallibLibrary else { return }
+    /// Load a shader by name. Returns true if successful, false if shader not found.
+    @discardableResult
+    func loadShader(name shaderName: String) -> Bool {
+        guard let library = metallibLibrary else {
+            print("[ShaderRenderer:\(name)] ❌ FAILED: No metallib loaded")
+            return false
+        }
         
         let fragmentName = "fragment_\(shaderName)"
-        guard let fragmentFunction = library.makeFunction(name: fragmentName),
-              let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else {
-            print("[ShaderRenderer:\(name)] Functions not found: \(fragmentName)")
-            return
+        
+        guard let fragmentFunction = library.makeFunction(name: fragmentName) else {
+            print("[ShaderRenderer:\(name)] ❌ FAILED: Fragment function '\(fragmentName)' not found in metallib")
+            // List available functions for debugging
+            let available = library.functionNames.filter { $0.hasPrefix("fragment_") }.prefix(10)
+            print("[ShaderRenderer:\(name)] Available (first 10): \(available.joined(separator: ", "))")
+            return false
+        }
+        
+        guard let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else {
+            print("[ShaderRenderer:\(name)] ❌ FAILED: Vertex function 'vertex_fullscreen' not found")
+            return false
         }
         
         let descriptor = MTLRenderPipelineDescriptor()
@@ -112,9 +125,11 @@ final class ShaderRenderer: TileRenderer {
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
             currentShaderName = shaderName
-            print("[ShaderRenderer:\(name)] Loaded: \(fragmentName)")
+            print("[ShaderRenderer:\(name)] ✓ Loaded: \(fragmentName)")
+            return true
         } catch {
-            print("[ShaderRenderer:\(name)] Pipeline error: \(error)")
+            print("[ShaderRenderer:\(name)] ❌ Pipeline error: \(error)")
+            return false
         }
     }
     
