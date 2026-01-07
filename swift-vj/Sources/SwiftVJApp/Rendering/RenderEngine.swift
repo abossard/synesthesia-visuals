@@ -421,6 +421,9 @@ final class RenderEngine: ObservableObject {
             return false
         }
         
+        // Update pendingShaderName so render loop doesn't overwrite our shader
+        pendingShaderName.withLock { $0 = shaderName }
+        
         // Create a default audio state for rendering (mid-energy for screenshots)
         let audioState = AudioState(
             bass: 0.4,

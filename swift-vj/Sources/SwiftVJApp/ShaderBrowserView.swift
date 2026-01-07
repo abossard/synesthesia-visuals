@@ -8,10 +8,58 @@ import Metal
 // Use SwiftVJCore.ShaderInfo to avoid conflict with Rendering/RenderingTypes.swift
 typealias CoreShaderInfo = SwiftVJCore.ShaderInfo
 
+// MARK: - Constants
+
+/// Centralized constants for shader analysis and file management
+private enum ShaderConstants {
+    // Folder names
+    static let allFolders = "ALL"
+    static let masksFolder = "masks"
+    static let glslFolder = "glsl"
+    
+    // File extensions
+    static let shaderExtension = "txt"
+    static let screenshotExtension = "png"
+    static let analysisExtension = "analysis.json"
+    static let relatedExtensions = ["txt", "png", "analysis.json"]
+    
+    // GLSL source file names
+    static let mainGlsl = "main.glsl"
+    static let fragmentGlsl = "fragment.glsl"
+    static let renderpassMainGlsl = "renderpasses/main.glsl"
+    
+    // Screenshot file names
+    static let screenshotFilename = "screenshot.png"
+    static let previewFilename = "preview.png"
+    
+    // Analysis status values (written to/read from JSON)
+    enum Status {
+        static let black = "black"
+        static let mask = "mask"           // Legacy
+        static let monochrome = "monochrome"     // Legacy
+        static let monochromatic = "monochromatic"
+        
+        /// All values that indicate monochromatic status
+        static let monochromaticAliases = [mask, monochrome, monochromatic]
+    }
+    
+    // Metadata keys
+    static let statusKey = "status"
+    static let reasonKey = "reason"
+    
+    // Analysis reasons
+    static let blackReason = "Renders black after 6 second wait"
+    static let monochromaticReason = "Monochrome output detected (low saturation)"
+    
+    // Badge display
+    static let blackBadge = "BLACK"
+    static let monoBadge = "MONO"
+}
+
 struct ShaderBrowserView: View {
     @EnvironmentObject var appState: AppState
     @State private var searchText = ""
-    @State private var selectedFolder: String = "ALL"
+    @State private var selectedFolder: String = ShaderConstants.allFolders
     @State private var shaders: [CoreShaderInfo] = []
     @State private var availableFolders: [String] = []
     @State private var selectedShaders: Set<String> = []
@@ -36,7 +84,7 @@ struct ShaderBrowserView: View {
     enum BadgeFilter: String, CaseIterable {
         case all = "All"
         case black = "Black"
-        case mask = "Mask"
+        case monochromatic = "Monochromatic"
         case analyzed = "Analyzed"
         case notAnalyzed = "Not Analyzed"
     }
@@ -46,7 +94,7 @@ struct ShaderBrowserView: View {
             let matchesSearch = searchText.isEmpty || 
                 shader.name.localizedCaseInsensitiveContains(searchText) ||
                 shader.mood.localizedCaseInsensitiveContains(searchText)
-            let matchesFolder = selectedFolder == "ALL" || shader.folder == selectedFolder
+            let matchesFolder = selectedFolder == ShaderConstants.allFolders || shader.folder == selectedFolder
             let matchesBadge = matchesBadgeFilter(shader)
             return matchesSearch && matchesFolder && matchesBadge
         }
@@ -60,8 +108,8 @@ struct ShaderBrowserView: View {
             return true
         case .black:
             return getShaderStatus(shader) == .black
-        case .mask:
-            return getShaderStatus(shader) == .mask
+        case .monochromatic:
+            return getShaderStatus(shader) == .monochromatic
         case .analyzed:
             return hasAnalysisFile(shader) && getShaderStatus(shader) == .normal
         case .notAnalyzed:
@@ -71,10 +119,10 @@ struct ShaderBrowserView: View {
     
     /// Shader status based on analysis
     enum ShaderStatus {
-        case black      // Renders pure black
-        case mask       // Monochrome (black/white/grey only)
-        case normal     // Has colors
-        case unknown    // Not analyzed
+        case black          // Renders pure black
+        case monochromatic  // Black/white/grey only (good for masks)
+        case normal         // Has colors
+        case unknown        // Not analyzed
     }
     
     /// Check if shader has analysis file
@@ -82,7 +130,7 @@ struct ShaderBrowserView: View {
         let shaderPath = URL(fileURLWithPath: shader.path)
         let shaderDir = shaderPath.deletingLastPathComponent()
         let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).analysis.json")
+        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
         return FileManager.default.fileExists(atPath: analysisPath.path)
     }
     
@@ -91,7 +139,7 @@ struct ShaderBrowserView: View {
         let shaderPath = URL(fileURLWithPath: shader.path)
         let shaderDir = shaderPath.deletingLastPathComponent()
         let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).analysis.json")
+        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
         
         guard FileManager.default.fileExists(atPath: analysisPath.path),
               let data = try? Data(contentsOf: analysisPath),
@@ -100,13 +148,13 @@ struct ShaderBrowserView: View {
         }
         
         // Check visualMetadata for status
-        if let status = analysis.visualMetadata["status"] {
-            if status == "black" { return .black }
-            if status == "mask" || status == "monochrome" { return .mask }
+        if let status = analysis.visualMetadata[ShaderConstants.statusKey] {
+            if status == ShaderConstants.Status.black { return .black }
+            if ShaderConstants.Status.monochromaticAliases.contains(status) { return .monochromatic }
         }
         
         // Also check mood for legacy "black" marking
-        if analysis.mood == "black" { return .black }
+        if analysis.mood == ShaderConstants.Status.black { return .black }
         
         return .normal
     }
@@ -148,13 +196,13 @@ struct ShaderBrowserView: View {
                 Button(action: { moveSelectedToMasks() }) {
                     Label("→ Masks", systemImage: "theatermask.and.paintbrush")
                 }
-                .disabled(selectedShaders.isEmpty || selectedFolder == "masks" || isAnalyzing)
+                .disabled(selectedShaders.isEmpty || selectedFolder == ShaderConstants.masksFolder || isAnalyzing)
                 .help("Move selected shaders to masks folder")
                 
                 Button(action: { moveSelectedFromMasks() }) {
                     Label("← Shaders", systemImage: "arrow.uturn.backward")
                 }
-                .disabled(selectedShaders.isEmpty || selectedFolder != "masks" || isAnalyzing)
+                .disabled(selectedShaders.isEmpty || selectedFolder != ShaderConstants.masksFolder || isAnalyzing)
                 .help("Move selected shaders back to Shaders folder")
                 
                 Divider().frame(height: 20)
@@ -239,9 +287,9 @@ struct ShaderBrowserView: View {
                 
                 // Folder filter (dynamically populated from available folders + masks)
                 Picker("Folder", selection: $selectedFolder) {
-                    Text("ALL").tag("ALL")
-                    Text("masks").tag("masks")
-                    ForEach(availableFolders.filter { $0 != "masks" }, id: \.self) { folder in
+                    Text(ShaderConstants.allFolders).tag(ShaderConstants.allFolders)
+                    Text(ShaderConstants.masksFolder).tag(ShaderConstants.masksFolder)
+                    ForEach(availableFolders.filter { $0 != ShaderConstants.masksFolder }, id: \.self) { folder in
                         Text(folder).tag(folder)
                     }
                 }
@@ -256,8 +304,8 @@ struct ShaderBrowserView: View {
                         HStack {
                             if filter == .black {
                                 Circle().fill(.red).frame(width: 8, height: 8)
-                            } else if filter == .mask {
-                                Circle().fill(.blue).frame(width: 8, height: 8)
+                            } else if filter == .monochromatic {
+                                Circle().fill(.gray).frame(width: 8, height: 8)
                             }
                             Text(filter.rawValue)
                         }.tag(filter)
@@ -436,7 +484,7 @@ struct ShaderBrowserView: View {
             let shaderPath = URL(fileURLWithPath: shader.path)
             let shaderDir = shaderPath.deletingLastPathComponent()
             let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-            let analysisPath = shaderDir.appendingPathComponent("\(shaderName).analysis.json")
+            let analysisPath = shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.analysisExtension)")
             
             if !FileManager.default.fileExists(atPath: analysisPath.path) {
                 selectedShaders.insert(shader.name)
@@ -508,7 +556,7 @@ struct ShaderBrowserView: View {
         }
         
         // Shaders are in swift-vj/Shaders/glsl/, masks go to swift-vj/Shaders/masks/
-        let masksDir = shadersDir.appendingPathComponent("masks")
+        let masksDir = shadersDir.appendingPathComponent(ShaderConstants.masksFolder)
         
         // Create masks folder if it doesn't exist
         try? FileManager.default.createDirectory(at: masksDir, withIntermediateDirectories: true)
@@ -528,11 +576,10 @@ struct ShaderBrowserView: View {
             let sourceDir = shaderFile.deletingLastPathComponent()
             let baseName = shaderFile.deletingPathExtension().lastPathComponent
             
-            // Move all related files: .txt, .png, .analysis.json
-            let extensions = ["txt", "png", "analysis.json"]
+            // Move all related files
             var allMoved = true
             
-            for ext in extensions {
+            for ext in ShaderConstants.relatedExtensions {
                 let sourceFile = sourceDir.appendingPathComponent("\(baseName).\(ext)")
                 let destFile = masksDir.appendingPathComponent("\(baseName).\(ext)")
                 
@@ -570,7 +617,7 @@ struct ShaderBrowserView: View {
         }
         
         // Move from swift-vj/Shaders/masks/ to swift-vj/Shaders/glsl/
-        let glslDir = shadersDir.appendingPathComponent("glsl")
+        let glslDir = shadersDir.appendingPathComponent(ShaderConstants.glslFolder)
         
         var movedCount = 0
         for shaderName in selectedShaders {
@@ -580,11 +627,10 @@ struct ShaderBrowserView: View {
             let sourceDir = shaderFile.deletingLastPathComponent()
             let baseName = shaderFile.deletingPathExtension().lastPathComponent
             
-            // Move all related files: .txt, .png, .analysis.json
-            let extensions = ["txt", "png", "analysis.json"]
+            // Move all related files
             var allMoved = true
             
-            for ext in extensions {
+            for ext in ShaderConstants.relatedExtensions {
                 let sourceFile = sourceDir.appendingPathComponent("\(baseName).\(ext)")
                 let destFile = glslDir.appendingPathComponent("\(baseName).\(ext)")
                 
@@ -626,11 +672,10 @@ struct ShaderBrowserView: View {
         // Check if this is the currently rendering shader
         let wasCurrentShader = appState.selectedShader == shader.name
         
-        // Delete all related files: .txt, .png, .analysis.json
-        let extensions = ["txt", "png", "analysis.json"]
+        // Delete all related files
         var deletedAny = false
         
-        for ext in extensions {
+        for ext in ShaderConstants.relatedExtensions {
             let file = shaderDir.appendingPathComponent("\(baseName).\(ext)")
             if FileManager.default.fileExists(atPath: file.path) {
                 do {
@@ -747,8 +792,8 @@ struct ShaderBrowserView: View {
                 let shaderPath = URL(fileURLWithPath: shader.path)
                 let shaderDir = shaderPath.deletingLastPathComponent()
                 let baseName = shaderPath.deletingPathExtension().lastPathComponent
-                let screenshotPath = shaderDir.appendingPathComponent("\(baseName).png")
-                let analysisPath = shaderDir.appendingPathComponent("\(baseName).analysis.json")
+                let screenshotPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.screenshotExtension)")
+                let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
                 
                 // Clean up existing files before re-analysis
                 if FileManager.default.fileExists(atPath: screenshotPath.path) {
@@ -844,15 +889,15 @@ struct ShaderBrowserView: View {
                     continue
                 }
                 
-                // STEP 3b: Handle monochrome (mask) screenshot - mark it but continue to AI analysis
+                // STEP 3b: Handle monochrome screenshot - mark it but continue to AI analysis
                 if isMonochrome && !aiAvailable {
-                    appState.log("  🏷️ Marking shader as MASK (monochrome)", level: .info)
-                    await saveMaskAnalysis(to: analysisPath, shaderName: shaderName)
+                    appState.log("  🏷️ Marking shader as MONOCHROMATIC", level: .info)
+                    await saveMonochromaticAnalysis(to: analysisPath, shaderName: shaderName)
                     successCount += 1
                     analysisSuccessCount = successCount
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
-                    appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as mask)", level: .info)
+                    appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as monochromatic)", level: .info)
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
@@ -975,32 +1020,38 @@ struct ShaderBrowserView: View {
         let analysis = ShaderAnalysisResult(
             title: shaderName,
             description: "Shader renders black or empty output",
-            mood: "black",
+            mood: ShaderConstants.Status.black,
             energy: 0.0,
-            colors: ["black"],
+            colors: [ShaderConstants.Status.black],
             effects: [],
             geometry: [],
             objects: [],
             complexity: "unknown",
-            visualMetadata: ["status": "black", "reason": "Renders black after 6 second wait"]
+            visualMetadata: [
+                ShaderConstants.statusKey: ShaderConstants.Status.black,
+                ShaderConstants.reasonKey: ShaderConstants.blackReason
+            ]
         )
         
         _ = await saveAnalysisJSON(analysis, to: path, shaderName: shaderName)
     }
     
-    /// Save analysis JSON marking shader as monochrome mask
-    private func saveMaskAnalysis(to path: URL, shaderName: String) async {
+    /// Save analysis JSON marking shader as monochromatic
+    private func saveMonochromaticAnalysis(to path: URL, shaderName: String) async {
         let analysis = ShaderAnalysisResult(
             title: shaderName,
             description: "Shader renders monochrome (black/white/grey) output - suitable as mask",
-            mood: "mask",
+            mood: ShaderConstants.Status.monochromatic,
             energy: 0.5,
-            colors: ["white", "grey", "black"],
+            colors: ["white", "grey", ShaderConstants.Status.black],
             effects: ["monochrome"],
             geometry: [],
             objects: [],
             complexity: "unknown",
-            visualMetadata: ["status": "mask", "reason": "Monochrome output detected (low saturation)"]
+            visualMetadata: [
+                ShaderConstants.statusKey: ShaderConstants.Status.monochromatic,
+                ShaderConstants.reasonKey: ShaderConstants.monochromaticReason
+            ]
         )
         
         _ = await saveAnalysisJSON(analysis, to: path, shaderName: shaderName)
@@ -1015,10 +1066,10 @@ struct ShaderBrowserView: View {
     /// Find shader source file in directory
     private func findShaderSourceFile(in directory: URL, shaderName: String) -> URL? {
         let possibleFiles = [
-            directory.appendingPathComponent("main.glsl"),
+            directory.appendingPathComponent(ShaderConstants.mainGlsl),
             directory.appendingPathComponent("\(shaderName).glsl"),
-            directory.appendingPathComponent("fragment.glsl"),
-            directory.appendingPathComponent("renderpasses/main.glsl")
+            directory.appendingPathComponent(ShaderConstants.fragmentGlsl),
+            directory.appendingPathComponent(ShaderConstants.renderpassMainGlsl)
         ]
         
         for file in possibleFiles {
@@ -1038,9 +1089,9 @@ struct ShaderBrowserView: View {
         
         // Check for existing screenshot
         let possibleFiles = [
-            shaderDir.appendingPathComponent("\(shaderName).png"),
-            shaderDir.appendingPathComponent("screenshot.png"),
-            shaderDir.appendingPathComponent("preview.png")
+            shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.screenshotExtension)"),
+            shaderDir.appendingPathComponent(ShaderConstants.screenshotFilename),
+            shaderDir.appendingPathComponent(ShaderConstants.previewFilename)
         ]
         
         for file in possibleFiles {
@@ -1095,7 +1146,7 @@ struct ShaderBrowserView: View {
         let shaderPath = URL(fileURLWithPath: shader.path)
         let shaderDir = shaderPath.deletingLastPathComponent()
         let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).analysis.json")
+        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
         
         // Try to load from file
         if FileManager.default.fileExists(atPath: analysisPath.path),
@@ -1181,9 +1232,9 @@ struct ShaderCardEnhanced: View {
         let shaderName = shaderPath.deletingPathExtension().lastPathComponent
         
         let possibleFiles = [
-            shaderDir.appendingPathComponent("\(shaderName).png"),
-            shaderDir.appendingPathComponent("screenshot.png"),
-            shaderDir.appendingPathComponent("preview.png")
+            shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.screenshotExtension)"),
+            shaderDir.appendingPathComponent(ShaderConstants.screenshotFilename),
+            shaderDir.appendingPathComponent(ShaderConstants.previewFilename)
         ]
         
         return possibleFiles.first { FileManager.default.fileExists(atPath: $0.path) }
@@ -1195,7 +1246,7 @@ struct ShaderCardEnhanced: View {
         let shaderDir = shaderPath.deletingLastPathComponent()
         let shaderName = shaderPath.deletingPathExtension().lastPathComponent
         
-        let path = shaderDir.appendingPathComponent("\(shaderName).analysis.json")
+        let path = shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.analysisExtension)")
         return FileManager.default.fileExists(atPath: path.path) ? path : nil
     }
     
@@ -1286,7 +1337,7 @@ struct ShaderCardEnhanced: View {
                 // Status badge based on analysis
                 switch shaderStatus {
                 case .black:
-                    Text("BLACK")
+                    Text(ShaderConstants.blackBadge)
                         .font(.caption2)
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)
@@ -1294,13 +1345,13 @@ struct ShaderCardEnhanced: View {
                         .background(Color.red)
                         .foregroundColor(.white)
                         .cornerRadius(4)
-                case .mask:
-                    Text("MASK")
+                case .monochromatic:
+                    Text(ShaderConstants.monoBadge)
                         .font(.caption2)
                         .fontWeight(.bold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.blue)
+                        .background(Color.gray)
                         .foregroundColor(.white)
                         .cornerRadius(4)
                 case .normal:
