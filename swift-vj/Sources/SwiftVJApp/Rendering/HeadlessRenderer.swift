@@ -548,6 +548,10 @@ final class ImageRenderer: TileRenderer {
     private var lastBeatCount: Int = 0
     private var beatCounter: Int = 0
     
+    // Crossfade animation
+    private var currentCrossfade: Float = 0.0
+    private let crossfadeDuration: Float = 0.5  // seconds
+    
     // Logger closure for UI logging
     var logger: ((String) -> Void)?
     
@@ -750,6 +754,9 @@ final class ImageRenderer: TileRenderer {
         let nextIndex = (folderIndex + 1) % imageState.folderImages.count
         let next = imageState.folderImages[nextIndex]
         
+        // Reset crossfade animation for new transition
+        currentCrossfade = 0.0
+        
         imageState = ImageDisplayState(
             currentImageURL: current,
             nextImageURL: next,
@@ -764,8 +771,21 @@ final class ImageRenderer: TileRenderer {
     
     func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
         guard let texture = texture,
-              let pipelineState = blendPipelineState,
-              let current = currentImageTexture else {
+              let pipelineState = blendPipelineState else {
+            return
+        }
+        
+        // If no image texture, clear to transparent black
+        guard let current = currentImageTexture else {
+            let passDescriptor = MTLRenderPassDescriptor()
+            passDescriptor.colorAttachments[0].texture = texture
+            passDescriptor.colorAttachments[0].loadAction = .clear
+            passDescriptor.colorAttachments[0].storeAction = .store
+            passDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            
+            if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) {
+                encoder.endEncoding()
+            }
             return
         }
         
@@ -775,8 +795,17 @@ final class ImageRenderer: TileRenderer {
             logger?("[ImageRenderer] 🎬 Rendering to Syphon server 'Image'")
         }
         
+        // Animate crossfade (ramp from 0 to 1 when isFading)
+        if imageState.isFading && currentCrossfade < 1.0 {
+            // Approximate deltaTime from uniforms (speed is audio-reactive, ~1.0 baseline)
+            let deltaTime: Float = 1.0 / 60.0  // ~16ms per frame
+            currentCrossfade = min(1.0, currentCrossfade + deltaTime / crossfadeDuration)
+        } else if !imageState.isFading {
+            currentCrossfade = 0.0
+        }
+        
         // Update crossfade uniform
-        var crossfade = imageState.crossfadeProgress
+        var crossfade = currentCrossfade
         if let uniformBuffer = uniformBuffer {
             memcpy(uniformBuffer.contents(), &crossfade, MemoryLayout<Float>.stride)
         }

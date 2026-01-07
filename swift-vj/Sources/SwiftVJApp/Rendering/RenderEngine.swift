@@ -302,6 +302,7 @@ final class RenderEngine: ObservableObject {
         renderer.lyricsRenderer.lyricsState = context.lyricsState
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
+        renderer.imageRenderer.imageState = context.imageState
         
         // Handle shader changes
         if let shaderName = pendingShaderName.withLock({ val -> String? in
