@@ -67,7 +67,6 @@
 	"PASSES" : 
 	[
 		{
-			"DOUBLE_BUFFER" : false,
 			"FILTER" : "linear",
 			"FLOAT" : true,
 			"HEIGHT" : 540,
@@ -76,7 +75,6 @@
 			"WRAP" : "clamp"
 		},
 		{
-			"DOUBLE_BUFFER" : false,
 			"FILTER" : "linear",
 			"FLOAT" : true,
 			"HEIGHT" : 540,
@@ -85,7 +83,6 @@
 			"WRAP" : "clamp"
 		},
 		{
-			"DOUBLE_BUFFER" : false,
 			"FILTER" : "linear",
 			"FLOAT" : true,
 			"HEIGHT" : 540,
@@ -94,7 +91,6 @@
 			"WRAP" : "clamp"
 		},
 		{
-			"DOUBLE_BUFFER" : false,
 			"FILTER" : "linear",
 			"FLOAT" : true,
 			"HEIGHT" : 540,

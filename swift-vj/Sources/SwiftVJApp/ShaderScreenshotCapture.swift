@@ -22,7 +22,7 @@ actor ShaderScreenshotCapture {
     ///   - shaderName: Name of shader for logging
     /// - Returns: True if screenshot was captured successfully
     func captureTexture(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> Bool {
-        let (success, _) = await captureTextureWithBlackCheck(texture, outputPath: outputPath, shaderName: shaderName)
+        let (success, _, _) = await captureTextureWithBlackCheck(texture, outputPath: outputPath, shaderName: shaderName)
         return success
     }
     
@@ -31,18 +31,18 @@ actor ShaderScreenshotCapture {
     ///   - texture: The MTLTexture to capture
     ///   - outputPath: Path where to save the PNG file
     ///   - shaderName: Name of shader for logging
-    /// - Returns: Tuple of (success, isBlack)
-    func captureTextureWithBlackCheck(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> (success: Bool, isBlack: Bool) {
+    /// - Returns: Tuple of (success, isBlack, isMonochrome)
+    func captureTextureWithBlackCheck(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> (success: Bool, isBlack: Bool, isMonochrome: Bool) {
         logger("    📸 Capturing texture: \(texture.width)x\(texture.height)", .debug)
         
         // Convert texture to CGImage
         guard let cgImage = textureToCGImage(texture) else {
             logger("    ✗ Failed to convert texture to CGImage", .error)
-            return (false, true)
+            return (false, true, false)
         }
         
-        // Check if image is completely black
-        let isBlack = isImageBlack(cgImage)
+        // Check if image is completely black and if it's monochrome
+        let (isBlack, isMonochrome) = analyzeImage(cgImage)
         
         // Convert to NSImage
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: texture.width, height: texture.height))
@@ -50,6 +50,12 @@ actor ShaderScreenshotCapture {
         // Save as PNG
         let success = await savePNG(image: nsImage, to: outputPath, shaderName: shaderName)
         
+        return (success, isBlack, isMonochrome)
+    }
+    
+    /// Wrapper that returns legacy tuple format
+    func captureTextureWithBlackCheckLegacy(_ texture: MTLTexture, outputPath: URL, shaderName: String) async -> (success: Bool, isBlack: Bool) {
+        let (success, isBlack, _) = await captureTextureWithBlackCheck(texture, outputPath: outputPath, shaderName: shaderName)
         return (success, isBlack)
     }
     
@@ -150,6 +156,14 @@ actor ShaderScreenshotCapture {
     /// - Parameter image: The CGImage to check
     /// - Returns: True if image is black
     private func isImageBlack(_ image: CGImage) -> Bool {
+        let (isBlack, _) = analyzeImage(image)
+        return isBlack
+    }
+    
+    /// Analyze image for black and monochrome status
+    /// - Parameter image: The CGImage to analyze
+    /// - Returns: Tuple of (isBlack, isMonochrome) - monochrome means only black/white/grey, no color
+    private func analyzeImage(_ image: CGImage) -> (isBlack: Bool, isMonochrome: Bool) {
         let width = image.width
         let height = image.height
         
@@ -159,6 +173,7 @@ actor ShaderScreenshotCapture {
         let stepY = max(1, height / sampleSize)
         
         var totalBrightness: CGFloat = 0
+        var totalSaturation: CGFloat = 0
         var sampleCount = 0
         
         // Create bitmap context for pixel sampling
@@ -174,14 +189,14 @@ actor ShaderScreenshotCapture {
             space: colorSpace,
             bitmapInfo: bitmapInfo
         ) else {
-            logger("  ⚠️ Could not create context for black detection", .warning)
-            return false
+            logger("  ⚠️ Could not create context for image analysis", .warning)
+            return (false, false)
         }
         
         // Draw image to context
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         
-        guard let data = context.data else { return false }
+        guard let data = context.data else { return (false, false) }
         let pixelBuffer = data.assumingMemoryBound(to: UInt8.self)
         
         // Sample pixels across the image
@@ -196,18 +211,30 @@ actor ShaderScreenshotCapture {
                 // Calculate brightness (perceived luminance)
                 let brightness = 0.299 * r + 0.587 * g + 0.114 * b
                 totalBrightness += brightness
+                
+                // Calculate saturation (how colorful vs grey)
+                let maxC = max(r, max(g, b))
+                let minC = min(r, min(g, b))
+                let saturation = maxC > 0 ? (maxC - minC) / maxC : 0
+                totalSaturation += saturation
+                
                 sampleCount += 1
             }
         }
         
         let averageBrightness = totalBrightness / CGFloat(sampleCount)
+        let averageSaturation = totalSaturation / CGFloat(sampleCount)
         
         // Consider black if average brightness is very low (< 5%)
         let isBlack = averageBrightness < 0.05
         
-        logger("  🔍 Average brightness: \(String(format: "%.2f%%", averageBrightness * 100)) (threshold: 5%)", .debug)
+        // Consider monochrome if average saturation is very low (< 5%) but not black
+        // Monochrome means black/white/grey only - no color hue
+        let isMonochrome = !isBlack && averageSaturation < 0.05
         
-        return isBlack
+        logger("  🔍 Brightness: \(String(format: "%.1f%%", averageBrightness * 100)), Saturation: \(String(format: "%.1f%%", averageSaturation * 100))", .debug)
+        
+        return (isBlack, isMonochrome)
     }
     
     /// Save NSImage as PNG

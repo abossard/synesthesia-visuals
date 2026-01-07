@@ -836,7 +836,8 @@ struct ShaderListView: View {
                     panel.allowsMultipleSelection = false
 
                     if panel.runModal() == .OK, let url = panel.url {
-                        shaderManager.loadShaderDirectory(url)
+                        shaderManager.setShadersDirectory(url)
+                        shaderManager.reload()
                     }
                 }
                 .font(.caption)

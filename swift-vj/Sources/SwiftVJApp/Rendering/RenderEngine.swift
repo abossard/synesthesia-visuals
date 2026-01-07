@@ -381,6 +381,47 @@ final class RenderEngine: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Analysis Support
+    
+    /// Load a shader directly into headless renderer and render a frame for analysis/screenshots.
+    /// This bypasses the normal render loop to guarantee the shader is rendered.
+    func loadAndRenderForAnalysis(shaderName: String) async {
+        guard let renderer = headlessRenderer else {
+            print("[RenderEngine] No headless renderer for analysis")
+            return
+        }
+        
+        // Directly load the shader into headless renderer
+        renderer.shaderRenderer.loadShader(name: shaderName)
+        
+        // Create a default audio state for rendering (mid-energy for screenshots)
+        let audioState = AudioState(
+            bass: 0.4,
+            lowMid: 0.3,
+            mid: 0.4,
+            highs: 0.3,
+            level: 0.4,
+            energyFast: 0.4,
+            energySlow: 0.35,
+            kickEnv: 0.0,
+            kickPulse: false,
+            beatPhase: 0.0,
+            beat4: 0,
+            bpmTwitcher: 0.5,
+            bpmSin4: 0.0,
+            bpmConfidence: 0.8,
+            bassPresence: 0.4,
+            midPresence: 0.3,
+            highPresence: 0.2,
+            timestamp: Date()
+        )
+        
+        // Render the frame
+        await MainActor.run { [syphonManager] in
+            renderer.renderFrame(audioState: audioState, syphonManager: syphonManager)
+        }
+    }
 }
 
 // MARK: - Errors

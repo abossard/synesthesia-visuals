@@ -1,0 +1,756 @@
+{
+	"CONTROLS" : 
+	[
+		{
+			"DEFAULT" : 9,
+			"DESCRIPTION" : "The base complexity of the shape. The final shape will oscillate between this and a more complex shape determined by the Morph Amount.",
+			"MAX" : 20,
+			"MIN" : 4,
+			"NAME" : "Shape_Complexity",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 8,
+			"DESCRIPTION" : "The change in shape complexity over time",
+			"MAX" : 15,
+			"MIN" : 0,
+			"NAME" : "Complexity_Growth_Factor",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "The radius of the sphere",
+			"MAX" : 1.5,
+			"MIN" : 0.5,
+			"NAME" : "Sphere_Size",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Rotates the spheres",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Rotate_Spheres",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "The thickness of the sphere",
+			"MAX" : 0.5,
+			"MIN" : 0.15,
+			"NAME" : "Sphere_Thickness",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Inverts the shape",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Invert_Shapes",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically adjusts the sphere size based on the audio",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Reactive_Sphere",
+			"PARAMS" : 0.02501,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Automatically morphs the sphere based on the Sphere morph amount control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Sphere_Morph",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "The amount to warp the sphere when Auto Sphere Morph is enabled",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Sphere_Morph_Amount",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Adds a smaller, gloopier morph to the spheres based on the base of the song",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Bass_Noise",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "The gap between the Glow Worms",
+			"MAX" : 1,
+			"MIN" : 0.01,
+			"NAME" : "Glow_Worm_Distance",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0.75,
+			"DESCRIPTION" : "The distance between the Glow Worm repetitions",
+			"MAX" : 1,
+			"MIN" : 0.5,
+			"NAME" : "Glow_Worm_Repetition_Spacing",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Use to increase performance by limiting the shapes in the Auto Shape controls",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "FPS_Boost",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically shifts the shapes around",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Shape_Shift",
+			"PARAMS" : 0.02501,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Shape_Shift"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0
+			],
+			"DESCRIPTION" : "Moves the shapes in the X and Y Directions",
+			"MAX" : 
+			[
+				2,
+				2
+			],
+			"MIN" : 
+			[
+				-2,
+				-2
+			],
+			"NAME" : "Shape_Shift",
+			"PARAMS" : 0.01,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "Shape_Shift"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically mixes through the shapes from the Shape Type control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Shape",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape_Selector"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically mixes through the shapes from the Sphere Type control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Sphere_Shape",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Shape_Selector"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Mixes to one of the shapes from the Shape Type control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Random_Shape",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Shape_Selector"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Mixes to one of the shapes from the Sphere Type control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Random_Sphere_Type",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Shape_Selector"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Pick from various shapes",
+			"LABELS" : 
+			[
+				"Schwarz",
+				"Gyroid",
+				"Diamond",
+				"Split P",
+				"Neovius",
+				"Lidinoid",
+				"Complementary Y",
+				"Complementary D",
+				"Complementary S",
+				"Complementary (I2–Y∗∗)",
+				"D′",
+				"IWP",
+				"OCTO",
+				"PCP",
+				"Q*",
+				"FIsher-Koch S",
+				"FIsher-Koch Y"
+			],
+			"MAX" : 16,
+			"MIN" : 0,
+			"NAME" : "Shape_Type",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "Shape_Selector",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8,
+				9,
+				10,
+				11,
+				12,
+				13,
+				14,
+				15,
+				16
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Pick from various shapes",
+			"LABELS" : 
+			[
+				"Sphere",
+				"Icosahedron",
+				"Octahedron",
+				"Tetrahedron"
+			],
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "Sphere_Type",
+			"PARAMS" : 0.12501,
+			"TYPE" : "dropdown smooth",
+			"UI_GROUP" : "Shape_Selector",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3
+			]
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adjusts the intensity of the wiggling",
+			"MAX" : 1,
+			"MIN" : -1,
+			"NAME" : "Wiggle_Intensity",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Space"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically adjusts the wiggling based on the intensity of the audio",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Wiggle_Intensity",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Space"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Rotates the ray along the z axis",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Twist_Space",
+			"PARAMS" : 0.05101,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Space"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Wiggles the ray",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Wiggle_Space",
+			"PARAMS" : 0.05101,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Space"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Rotates the entire space",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Rotate_Space",
+			"PARAMS" : 0.01001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Space"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adjust the direction and speed of travel. Negative numbers will move backwards",
+			"MAX" : 2,
+			"MIN" : -2,
+			"NAME" : "Travel_Speed",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically warps the space based on the audio",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Warp",
+			"PARAMS" : 0.01501,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Rotates the camera around the center point",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Rotate_Camera",
+			"PARAMS" : 0.01001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Warps the space",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Warp",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Changes the warp to an Equirectangular distortion",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Equirectangular_Warp",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Camera"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Mixes in colorful edge detection",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Edge_Detect",
+			"PARAMS" : 0.05101,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Automatically adjusts the brightness based on the sound",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Reactive_Brightness",
+			"PARAMS" : 0.01,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "Mix in Raw media at a certain brightness interval",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Media_Highlight_Threshold",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "The intensity of the Base shape color",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Base_Color_Intensity",
+			"TYPE" : "knob",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adds glow around the edges where the camera collides with the shapes",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Camera_Contact_Glow",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Color"
+		},
+		{
+			"DEFAULT" : 0.05,
+			"DESCRIPTION" : "The intensity of ambient light in the lighting system",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Light_Ambient",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Lighting"
+		},
+		{
+			"DEFAULT" : 0.75,
+			"DESCRIPTION" : "The intensity of specular highlights in the lighting system",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Light_Specular",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Lighting"
+		},
+		{
+			"DEFAULT" : 32,
+			"DESCRIPTION" : "The shininess of specular highlights in the lighting system",
+			"MAX" : 50,
+			"MIN" : 0.01,
+			"NAME" : "Light_Shininess",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Lighting"
+		},
+		{
+			"DEFAULT" : 0.15,
+			"DESCRIPTION" : "The intensity of the diffuse light in the lighting system",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Light_Intensity",
+			"PARAMS" : 0.05001,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Lighting"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "The intensity of the glow in the lighting system",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Light_Glow_Intensity",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Lighting"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0.20784,
+				0.20784,
+				0.20784
+			],
+			"DESCRIPTION" : "Set a color for the fog. Only works when Palette Fog is disabled",
+			"MAX" : 
+			[
+				1,
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0,
+				0
+			],
+			"NAME" : "Fog_Color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Fog"
+		},
+		{
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Sets the density of the fog",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Fog_Density",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Fog"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Sets Fog Settings to black",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Black_Fog",
+			"PARAMS" : 0.05001,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "Fog"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Pulls colors from the palettes and applies it to the fog",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Palette_Fog",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Fog"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Continues the coloration of the spheres beyond their render distance, creating a hypnotic effect",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Hypno_Fog",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Fog"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Automatically sets the feedback flow to the music",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Feedback_Flow",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Auto_Feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Increases the amount of feedback based on the music",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Feedback_Threshold",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Auto_Feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Jumps the feedback direction around with the beat",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Feedback_Pan",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Auto_Feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Automatically fades the feedback with the music",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Feedback_Fade",
+			"PARAMS" : 0.05001,
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "Auto_Feedback"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "The color threshold at which the feedback is applied. Lower means more feedback",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Feedback_Threshold",
+			"PARAMS" : 0.05001,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "How much the feedback zooms in or out",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Feedback_Zoom",
+			"PARAMS" : 0.01,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 
+			[
+				0,
+				0
+			],
+			"DESCRIPTION" : "The direction of the feedback",
+			"MAX" : 
+			[
+				0.01,
+				0.01
+			],
+			"MIN" : 
+			[
+				-0.01,
+				-0.01
+			],
+			"NAME" : "Feedback_Pan",
+			"PARAMS" : 0.05001,
+			"TYPE" : "xy smooth",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "How quickly the feedback dissipates",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Feedback_Fade",
+			"PARAMS" : 0.01,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 0.69,
+			"DESCRIPTION" : "The amount and direction of the general flow of the feedback",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Feedback_Flow",
+			"PARAMS" : 0.02501,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Flips the feedback threshold between bright and dark feedback",
+			"MAX" : 0,
+			"MIN" : 1,
+			"NAME" : "Flip_Feedback",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Feedback"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Adjust the color frequencies within the palettes",
+			"MAX" : 2,
+			"MIN" : 1,
+			"NAME" : "Color_Frequency",
+			"PARAMS" : 0.25,
+			"TYPE" : "knob smooth",
+			"UI_GROUP" : "Palette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "An assortment of color palettes to choose from",
+			"LABELS" : 
+			[
+				"Neon Spectrum Fusion",
+				"Midnight Aurora",
+				"Electric Symphony",
+				"Psychedelic Bass Pulse",
+				"Melodic Prism Shift",
+				"Vibrant Pulse",
+				"Vivid Spectrum Surge",
+				"Zoe-Zoe",
+				"Black & White"
+			],
+			"MAX" : 8,
+			"MIN" : 0,
+			"NAME" : "Color_Palette",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "Palette",
+			"VALUES" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				6,
+				7,
+				8
+			]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Randomly picks a palette from the Color Palette control",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Random_Color_Palette",
+			"TYPE" : "bang",
+			"UI_GROUP" : "Palette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Automatically randomly picks colors",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "Auto_Color",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Palette"
+		}
+	],
+	"CREDIT" : "Toasty",
+	"DESCRIPTION" : "Fly through an infinite field of colorful morphing spheres. This scene includes a variety of color, shape and camera controls, all with a touch of audio reactivity. Some degree of care has been taken to tune the autopilot so it can give you a reactive and dynamic look with the option to pick and choose how you want things to play out.",
+	"GPU" : 5,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "dyspun_sphere_dup.png",
+	"MEDIA" : 
+	[
+		{
+			"FILTER" : "linear",
+			"WRAP" : "repeat"
+		}
+	],
+	"PASSES" : 
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1,
+			"TARGET" : "State",
+			"WIDTH" : 1,
+			"WRAP" : "repeat"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "BuffA",
+			"WIDTH" : 1920,
+			"WRAP" : "mirror"
+		},
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "BuffB",
+			"WIDTH" : 1920,
+			"WRAP" : "mirror"
+		}
+	],
+	"TAGS" : 
+	[
+		"raymarching",
+		"3d",
+		"psychedelic",
+		"geometric",
+		"feedback"
+	],
+	"TITLE" : "Dyspun Sphere_dup",
+	"WIDTH" : 1920
+}

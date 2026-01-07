@@ -72,15 +72,35 @@ final class TextStateManager: ObservableObject {
 // MARK: - Shader State Manager
 
 /// Manages shader selection and state
+/// Uses metallib as source of truth for renderable shaders
 @MainActor
 final class ShaderStateManager: ObservableObject {
     @Published var state: ShaderDisplayState = .empty
     @Published private(set) var availableShaders: [ShaderInfo] = []
+    @Published private(set) var shadersDirectory: URL?
     
     private(set) var currentIndex: Int = 0
+    private var metallibPath: String?
     
     init() {
         loadAvailableShaders()
+    }
+    
+    /// Reload shaders from metallib and file system
+    /// Call this from UI when shaders may have changed
+    func reload() {
+        loadAvailableShaders()
+        // Re-enrich with file metadata if directory is set
+        if let dir = shadersDirectory {
+            enrichFromFileSystem(directory: dir)
+        }
+        print("[ShaderStateManager] Reloaded: \(availableShaders.count) shaders")
+    }
+    
+    /// Set the shaders directory for file-based metadata enrichment
+    func setShadersDirectory(_ url: URL) {
+        shadersDirectory = url
+        enrichFromFileSystem(directory: url)
     }
     
     private func loadAvailableShaders() {
@@ -104,6 +124,7 @@ final class ShaderStateManager: ObservableObject {
             if FileManager.default.fileExists(atPath: path) {
                 library = try? device.makeLibrary(URL: URL(fileURLWithPath: path))
                 if library != nil {
+                    metallibPath = path
                     print("[ShaderStateManager] Loaded metallib: \(path)")
                     break
                 }
@@ -125,7 +146,64 @@ final class ShaderStateManager: ObservableObject {
             ShaderInfo(name: $0, path: URL(fileURLWithPath: "/metallib/\($0)"))
         }
         
-        print("[ShaderStateManager] Found \(availableShaders.count) shaders")
+        print("[ShaderStateManager] Found \(availableShaders.count) shaders in metallib")
+    }
+    
+    /// Enrich shaders with metadata from file system (.analysis.json, folder info)
+    private func enrichFromFileSystem(directory: URL) {
+        let fileManager = FileManager.default
+        var enrichedShaders: [ShaderInfo] = []
+        
+        // Build lookup of shader name -> file info
+        var fileInfo: [String: (path: URL, folder: String)] = [:]
+        
+        // Scan subdirectories (glsl/, masks/, etc.)
+        guard let subDirs = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        
+        for subDirURL in subDirs {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: subDirURL.path, isDirectory: &isDir),
+                  isDir.boolValue else { continue }
+            
+            let folderName = subDirURL.lastPathComponent
+            
+            // Find all .txt shader files
+            guard let contents = try? fileManager.contentsOfDirectory(
+                at: subDirURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            
+            for fileURL in contents where fileURL.pathExtension == "txt" {
+                let shaderName = fileURL.deletingPathExtension().lastPathComponent
+                fileInfo[shaderName] = (path: fileURL, folder: folderName)
+            }
+        }
+        
+        // Enrich each metallib shader with file info
+        for shader in availableShaders {
+            if let info = fileInfo[shader.name] {
+                // Found matching file - keep shader with updated path
+                var updatedShader = ShaderInfo(
+                    name: shader.name,
+                    path: info.path,
+                    rating: shader.rating,
+                    metalFunctionName: "fragment_\(shader.name)"
+                )
+                // Store folder as part of path for now (could add folder property to ShaderInfo)
+                enrichedShaders.append(updatedShader)
+            } else {
+                // No file found - keep metallib-only shader
+                enrichedShaders.append(shader)
+            }
+        }
+        
+        availableShaders = enrichedShaders
+        print("[ShaderStateManager] Enriched \(enrichedShaders.count) shaders with file info")
     }
     
     func selectShader(name: String) {
@@ -147,21 +225,14 @@ final class ShaderStateManager: ObservableObject {
         state = ShaderDisplayState(current: availableShaders[currentIndex], isLoaded: true, error: nil, audioTime: state.audioTime, syntheticMouse: state.syntheticMouse)
     }
     
-    func loadShaderDirectory(_ url: URL) {
-        // Load shader files from directory
-        guard let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else {
-            return
-        }
-        
-        let shaderFiles = contents.filter { $0.pathExtension == "metal" || $0.pathExtension == "glsl" }
-        availableShaders = shaderFiles.map { 
-            ShaderInfo(name: $0.deletingPathExtension().lastPathComponent, path: $0)
-        }
-        
-        if !availableShaders.isEmpty {
-            currentIndex = 0
-            state = ShaderDisplayState(current: availableShaders[0], isLoaded: true, error: nil, audioTime: 0, syntheticMouse: SIMD2(0.5, 0.5))
-        }
+    /// Get shader names (for UI integration)
+    var shaderNames: [String] {
+        availableShaders.map { $0.name }
+    }
+    
+    /// Check if a shader name exists in metallib
+    func isRenderable(_ name: String) -> Bool {
+        availableShaders.contains { $0.name == name }
     }
 }
 

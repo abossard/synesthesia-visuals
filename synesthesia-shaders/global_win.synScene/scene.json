@@ -1,11 +1,13 @@
 {
-	"CONTROLS" : [
+	"CONTROLS" : 
+	[
 		{
 			"DEFAULT" : 0,
 			"DESCRIPTION" : "Switch between paper (0) and dark neon (1) mode",
 			"MAX" : 1,
 			"MIN" : 0,
 			"NAME" : "dark_mode",
+			"PARAMS" : 0.01,
 			"TYPE" : "slider smooth",
 			"UI_GROUP" : "Style"
 		},
@@ -28,15 +30,6 @@
 			"UI_GROUP" : "Style"
 		},
 		{
-			"DEFAULT" : 0.5,
-			"DESCRIPTION" : "Bass-reactive glow intensity",
-			"MAX" : 2,
-			"MIN" : 0,
-			"NAME" : "bass_glow",
-			"TYPE" : "slider",
-			"UI_GROUP" : "Audio"
-		},
-		{
 			"DEFAULT" : 1,
 			"DESCRIPTION" : "Wind particle opacity",
 			"MAX" : 1,
@@ -55,13 +48,13 @@
 			"UI_GROUP" : "Style"
 		},
 		{
-			"DEFAULT" : 1,
-			"DESCRIPTION" : "Simulation speed multiplier",
-			"MAX" : 3,
-			"MIN" : 0.1,
-			"NAME" : "speed",
+			"DEFAULT" : 0.5,
+			"DESCRIPTION" : "Bass-reactive glow intensity",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "bass_glow",
 			"TYPE" : "slider",
-			"UI_GROUP" : "Simulation"
+			"UI_GROUP" : "Audio"
 		},
 		{
 			"DEFAULT" : 0.5,
@@ -73,15 +66,6 @@
 			"UI_GROUP" : "Audio"
 		},
 		{
-			"DEFAULT" : 0.3,
-			"DESCRIPTION" : "Amount of dynamic vortex turbulence",
-			"MAX" : 1,
-			"MIN" : 0,
-			"NAME" : "turbulence",
-			"TYPE" : "slider",
-			"UI_GROUP" : "Simulation"
-		},
-		{
 			"DEFAULT" : 0.5,
 			"DESCRIPTION" : "How much bass affects turbulence intensity",
 			"MAX" : 1,
@@ -89,6 +73,24 @@
 			"NAME" : "turbulence_bass",
 			"TYPE" : "slider",
 			"UI_GROUP" : "Audio"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Simulation speed multiplier",
+			"MAX" : 3,
+			"MIN" : 0.1,
+			"NAME" : "speed",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Simulation"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Amount of dynamic vortex turbulence",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "turbulence",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Simulation"
 		},
 		{
 			"DEFAULT" : 0,
@@ -109,10 +111,22 @@
 			"UI_GROUP" : "Media"
 		},
 		{
-			"DEFAULT" : [0.5, 0.5],
+			"DEFAULT" : 
+			[
+				0.5,
+				0.5
+			],
 			"DESCRIPTION" : "Move media position on screen",
-			"MAX" : [1, 1],
-			"MIN" : [0, 0],
+			"MAX" : 
+			[
+				1,
+				1
+			],
+			"MIN" : 
+			[
+				0,
+				0
+			],
 			"NAME" : "media_pos",
 			"TYPE" : "xy",
 			"UI_GROUP" : "Media"
@@ -130,26 +144,31 @@
 			"WRAP" : "clamp"
 		}
 	],
-	"PASSES" : [
+	"PASSES" : 
+	[
 		{
+			"FILTER" : "linear",
+			"FLOAT" : false,
+			"HEIGHT" : 72,
 			"TARGET" : "bufferA",
 			"WIDTH" : 160,
-			"HEIGHT" : 72,
-			"FLOAT" : false,
-			"WRAP" : "clamp",
-			"FILTER" : "linear"
+			"WRAP" : "clamp"
 		},
 		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 0,
 			"TARGET" : "bufferB",
-			"FLOAT" : true,
-			"WRAP" : "clamp",
-			"FILTER" : "linear"
+			"WIDTH" : 0,
+			"WRAP" : "clamp"
 		},
 		{
-			"TARGET" : "bufferC",
+			"FILTER" : "linear",
 			"FLOAT" : true,
-			"WRAP" : "repeat",
-			"FILTER" : "linear"
+			"HEIGHT" : 0,
+			"TARGET" : "bufferC",
+			"WIDTH" : 0,
+			"WRAP" : "repeat"
 		}
 	],
 	"TITLE" : "Global Wind",

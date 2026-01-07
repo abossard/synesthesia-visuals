@@ -57,3 +57,4 @@ temp_*.frag
 *.analysis.json
 screenshots/
 .temp/
+swift-vj/Shaders/*/*.png
