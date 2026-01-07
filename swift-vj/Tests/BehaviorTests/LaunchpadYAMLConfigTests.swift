@@ -101,25 +101,24 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         XCTAssertNotNil(playPad?.oscOn)
         XCTAssertNotNil(playPad?.oscOff)
         
-        let nextPad = row6Pads.first { $0.x == 4 }
+        let nextPad = row6Pads.first { $0.x == 3 }
         XCTAssertEqual(nextPad?.mode, "oneShot")
         XCTAssertEqual(nextPad?.label, "Next")
-        XCTAssertNotNil(nextPad?.osc)
+        XCTAssertEqual(nextPad?.osc?.address, "/playlist/next")
+        let pos1Pad = row6Pads.first { $0.x == 4 }
+        XCTAssertEqual(pos1Pad?.mode, "oneShot")
+        XCTAssertEqual(pos1Pad?.label, "Pos 1")
+        XCTAssertEqual(pos1Pad?.osc?.address, "/playlist/position")
     }
     
     func test_bank0_programmableRows() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        // Rows 0-5 should be programmable
-        XCTAssertEqual(config.bank0.programmableRows, [0, 1, 2, 3, 4, 5])
-        
-        for row in 0..<6 {
-            XCTAssertTrue(config.bank0.isRowProgrammable(row), "Row \(row) should be programmable")
+        // Bank0 now fully fixed
+        XCTAssertEqual(config.bank0.programmableRows, [])
+        for row in 0..<8 {
+          XCTAssertFalse(config.bank0.isRowProgrammable(row), "Row \(row) should be fixed")
         }
-        
-        // Rows 6-7 are fixed
-        XCTAssertFalse(config.bank0.isRowProgrammable(6))
-        XCTAssertFalse(config.bank0.isRowProgrammable(7))
     }
     
     // MARK: - Banks 1-7 Tests (with example pads)
@@ -174,7 +173,7 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         let config = try LaunchpadConfigLoader.loadBundled()
         
         // Get Next oneShot
-        let oneShotPad = config.bank0.pads.first { $0.x == 4 && $0.y == 6 }!
+        let oneShotPad = config.bank0.pads.first { $0.x == 3 && $0.y == 6 }!
         let behavior = config.toBehavior(pad: oneShotPad)
         
         XCTAssertEqual(behavior.mode, .oneShot)
@@ -188,7 +187,7 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         let behaviors = config.bankBehaviors(0)
         
         // Should have all fixed pads
-        XCTAssertEqual(behaviors.count, 13)  // 8 playlist + 5 playback controls
+        XCTAssertEqual(behaviors.count, 63)  // full 8x8 minus one pad in row0
         
         // Check specific pads exist
         XCTAssertNotNil(behaviors[ButtonId(x: 0, y: 7)])  // First playlist
@@ -205,9 +204,9 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         XCTAssertTrue(config.isFixed(bank: 0, x: 0, y: 7))  // Playlist
         XCTAssertTrue(config.isFixed(bank: 0, x: 0, y: 6))  // Play
         
-        // Programmable pads
-        XCTAssertFalse(config.isFixed(bank: 0, x: 0, y: 0))  // Bottom row
-        XCTAssertFalse(config.isFixed(bank: 0, x: 1, y: 6))  // Spacer (not defined)
+        // All pads are fixed in bank0
+        XCTAssertTrue(config.isFixed(bank: 0, x: 0, y: 0))
+        XCTAssertTrue(config.isFixed(bank: 0, x: 1, y: 6))
     }
     
     func test_isFixed_programmableBanks() throws {
@@ -251,15 +250,16 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
     func test_globalSceneButtons() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        XCTAssertEqual(config.global.sceneButtons.count, 2)
-        
+        XCTAssertEqual(config.global.sceneButtons.count, 7)
         let record = config.global.sceneButtons.first { $0.function == "record" }
-        XCTAssertNotNil(record)
-        XCTAssertEqual(record?.note, 19)
-        
+        XCTAssertEqual(record?.note, 89)
         let shift = config.global.sceneButtons.first { $0.function == "shift" }
-        XCTAssertNotNil(shift)
-        XCTAssertEqual(shift?.note, 29)
+        XCTAssertEqual(shift?.note, 69)
+        let page = config.global.sceneButtons.first { $0.function == "page" }
+        XCTAssertEqual(page?.note, 79)
+        let configurable = config.global.sceneButtons.filter { $0.function == "configurable" }
+        XCTAssertEqual(configurable.count, 4)
+        XCTAssertEqual(Set(configurable.map { $0.note }), Set([29,39,49,59]))
     }
     
     // MARK: - Error Handling Tests
@@ -526,25 +526,29 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
     func test_globalLayout_isFixedSceneNote() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        XCTAssertTrue(config.isFixedSceneNote(19))   // record button
-        XCTAssertTrue(config.isFixedSceneNote(29))   // shift button
-        XCTAssertFalse(config.isFixedSceneNote(39))  // not defined
+        XCTAssertTrue(config.isFixedSceneNote(89))   // record button
+        XCTAssertTrue(config.isFixedSceneNote(69))   // shift button
+        XCTAssertTrue(config.isFixedSceneNote(39))   // configurable
     }
     
     func test_globalLayout_sceneButtonFunction() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        XCTAssertEqual(config.sceneButtonFunction(19), "record")
-        XCTAssertEqual(config.sceneButtonFunction(29), "shift")
-        XCTAssertNil(config.sceneButtonFunction(39))
+        XCTAssertEqual(config.sceneButtonFunction(89), "record")
+        XCTAssertEqual(config.sceneButtonFunction(69), "shift")
+        XCTAssertEqual(config.sceneButtonFunction(79), "page")
+        XCTAssertEqual(config.sceneButtonFunction(29), "configurable")
+        XCTAssertEqual(config.sceneButtonFunction(39), "configurable")
+        XCTAssertEqual(config.sceneButtonFunction(49), "configurable")
+        XCTAssertEqual(config.sceneButtonFunction(59), "configurable")
     }
     
     func test_bankName_andPurpose() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        XCTAssertEqual(config.bankName(0), "Playlist")
+        XCTAssertEqual(config.bankName(0), "Synesthesia")
         XCTAssertEqual(config.bankName(1), "Synesthesia")
-        XCTAssertEqual(config.bankPurpose(0), "Playlist selection and playback")
+        XCTAssertEqual(config.bankPurpose(0), "Master Synesthesia controls: meta, playlist, media")
     }
     
     // MARK: - DynamicGroupStore Tests

@@ -7,6 +7,7 @@ import Metal
 import MetalKit
 import Combine
 import SwiftUI
+import CoreVideo
 import SwiftVJCore
 
 // MARK: - Render Frame Context
@@ -53,9 +54,6 @@ final class RenderEngine: ObservableObject {
     private var device: MTLDevice?
     private(set) var headlessRenderer: HeadlessRenderer?
     private var displayLink: CVDisplayLink?
-    private var renderTimer: Timer?
-    private var dispatchTimer: DispatchSourceTimer?
-    private var renderThread: Thread?
 
     // Syphon output
     var syphonManager: SyphonOutputManager?
@@ -164,50 +162,44 @@ final class RenderEngine: ObservableObject {
         }
     }
 
-    // MARK: - Render Loop
+    // MARK: - Render Loop (CVDisplayLink)
 
     private func startRenderLoop() {
         lastFrameTime = Date()
         
-        // Use a dedicated thread with its own run loop for reliable timing
-        let thread = Thread { [weak self] in
-            guard let self = self else { return }
-            
-            let interval = 1.0 / self.targetFPS
-            var lastTime = CFAbsoluteTimeGetCurrent()
-            
-            while !Thread.current.isCancelled {
-                autoreleasepool {
-                    let currentTime = CFAbsoluteTimeGetCurrent()
-                    let elapsed = currentTime - lastTime
-                    
-                    if elapsed >= interval {
-                        lastTime = currentTime
-                        // Run render loop directly on this thread (off main)
-                        Task { await self.renderFrame() }
-                    }
-                }
-                // Sleep briefly to avoid spinning CPU
-                Thread.sleep(forTimeInterval: 0.001)
-            }
+        // Create CVDisplayLink for vsync-accurate frame timing
+        var link: CVDisplayLink?
+        CVDisplayLinkCreateWithActiveCGDisplays(&link)
+        
+        guard let link = link else {
+            print("[RenderEngine] ❌ Failed to create CVDisplayLink")
+            return
         }
-        thread.name = "RenderLoop"
-        thread.qualityOfService = .userInteractive
-        renderThread = thread
-        thread.start()
         
-        print("[RenderEngine] Render loop started on dedicated thread at \(targetFPS) FPS")
+        self.displayLink = link
+        
+        // Set the callback - CVDisplayLink calls this on a high-priority thread
+        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
+            guard let userInfo = userInfo else { return kCVReturnSuccess }
+            let engine = Unmanaged<RenderEngine>.fromOpaque(userInfo).takeUnretainedValue()
+            
+            // Dispatch render work - CVDisplayLink callback must return quickly
+            Task { await engine.renderFrame() }
+            
+            return kCVReturnSuccess
+        }
+        
+        // Pass self as userInfo (prevent deallocation while running)
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        CVDisplayLinkSetOutputCallback(link, callback, userInfo)
+        
+        // Start the display link
+        CVDisplayLinkStart(link)
+        
+        print("[RenderEngine] Render loop started with CVDisplayLink (vsync)")
     }
-
+    
     private func stopRenderLoop() {
-        renderThread?.cancel()
-        renderThread = nil
-        
-        renderTimer?.invalidate()
-        renderTimer = nil
-        dispatchTimer?.cancel()
-        dispatchTimer = nil
-        
         if let link = displayLink {
             CVDisplayLinkStop(link)
             self.displayLink = nil
