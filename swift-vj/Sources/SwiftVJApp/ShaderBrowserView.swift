@@ -16,10 +16,16 @@ struct ShaderBrowserView: View {
     @State private var availableFolders: [String] = []
     @State private var selectedShaders: Set<String> = []
     @State private var isAnalyzing: Bool = false
+    @State private var analysisCancelled: Bool = false
     @State private var showDeleteConfirm: Bool = false
     @State private var shaderToDelete: CoreShaderInfo? = nil
     @State private var analysisProgress: Double = 0
     @State private var currentAnalysisShader: String = ""
+    @State private var analysisTotal: Int = 0
+    @State private var analysisCurrent: Int = 0
+    @State private var analysisSuccessCount: Int = 0
+    @State private var analysisBlackCount: Int = 0
+    @State private var analysisErrorCount: Int = 0
     @State private var showingAnalysisModal: Bool = false
     @State private var selectedAnalysis: ShaderAnalysis? = nil
     @State private var refreshId = UUID() // Forces grid refresh after analysis
@@ -113,6 +119,7 @@ struct ShaderBrowserView: View {
                     Label("Reload", systemImage: "arrow.clockwise")
                 }
                 .help("Reload shaders from disk and metallib")
+                .disabled(isAnalyzing)
                 
                 Divider().frame(height: 20)
                 
@@ -121,16 +128,19 @@ struct ShaderBrowserView: View {
                     Label("Select All", systemImage: "checkmark.square.fill")
                 }
                 .keyboardShortcut("a", modifiers: .command)
+                .disabled(isAnalyzing)
                 
                 Button(action: deselectAll) {
                     Label("Deselect", systemImage: "square")
                 }
                 .keyboardShortcut("d", modifiers: .command)
+                .disabled(isAnalyzing)
                 
                 Button(action: selectUnanalyzed) {
                     Label("Unanalyzed", systemImage: "exclamationmark.triangle")
                 }
                 .help("Select all shaders without analysis.json")
+                .disabled(isAnalyzing)
                 
                 Divider().frame(height: 20)
                 
@@ -138,13 +148,13 @@ struct ShaderBrowserView: View {
                 Button(action: { moveSelectedToMasks() }) {
                     Label("→ Masks", systemImage: "theatermask.and.paintbrush")
                 }
-                .disabled(selectedShaders.isEmpty || selectedFolder == "masks")
+                .disabled(selectedShaders.isEmpty || selectedFolder == "masks" || isAnalyzing)
                 .help("Move selected shaders to masks folder")
                 
                 Button(action: { moveSelectedFromMasks() }) {
                     Label("← Shaders", systemImage: "arrow.uturn.backward")
                 }
-                .disabled(selectedShaders.isEmpty || selectedFolder != "masks")
+                .disabled(selectedShaders.isEmpty || selectedFolder != "masks" || isAnalyzing)
                 .help("Move selected shaders back to Shaders folder")
                 
                 Divider().frame(height: 20)
@@ -153,15 +163,22 @@ struct ShaderBrowserView: View {
                 Button(role: .destructive, action: { confirmDeleteSelected() }) {
                     Label("Delete", systemImage: "trash")
                 }
-                .disabled(selectedShaders.isEmpty)
+                .disabled(selectedShaders.isEmpty || isAnalyzing)
                 .help("Delete selected shaders")
                 
                 Spacer()
                 
-                Button(action: { startAnalyze() }) {
-                    Label("Analyze", systemImage: "sparkle.magnifyingglass")
+                if isAnalyzing {
+                    Button(role: .destructive, action: { cancelAnalysis() }) {
+                        Label("Cancel", systemImage: "xmark.circle.fill")
+                    }
+                    .foregroundColor(.red)
+                } else {
+                    Button(action: { startAnalyze() }) {
+                        Label("Analyze", systemImage: "sparkle.magnifyingglass")
+                    }
+                    .disabled(selectedShaders.isEmpty)
                 }
-                .disabled(selectedShaders.isEmpty || isAnalyzing)
             }
             .padding()
             .background(.bar)
@@ -170,14 +187,39 @@ struct ShaderBrowserView: View {
             
             // Progress indicator
             if isAnalyzing {
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     HStack {
-                        Text("Analyzing...")
+                        Image(systemName: "sparkle.magnifyingglass")
+                            .foregroundColor(.blue)
+                        Text("Analyzing: \(analysisCurrent)/\(analysisTotal)")
+                            .fontWeight(.medium)
                         Spacer()
                         Text(currentAnalysisShader)
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
+                    
                     ProgressView(value: analysisProgress)
+                        .tint(.blue)
+                    
+                    HStack(spacing: 16) {
+                        Label("\(analysisSuccessCount)", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Label("\(analysisBlackCount)", systemImage: "circle.fill")
+                            .foregroundColor(.red)
+                        Label("\(analysisErrorCount)", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Spacer()
+                        if analysisCancelled {
+                            Text("Cancelling...")
+                                .foregroundColor(.red)
+                                .italic()
+                        } else {
+                            Text("\(Int(analysisProgress * 100))%")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .font(.caption)
                 }
                 .padding()
                 .background(.quaternary)
@@ -617,6 +659,12 @@ struct ShaderBrowserView: View {
     
     // MARK: - Unified Analyze Function
     
+    /// Cancel ongoing analysis
+    private func cancelAnalysis() {
+        analysisCancelled = true
+        appState.log("⚠️ Analysis cancellation requested...", level: .warning)
+    }
+    
     /// Start analysis: screenshot capture + AI analysis
     /// 1. Loads shader, waits 1s, captures screenshot
     /// 2. If black, waits 5s more and retries
@@ -626,10 +674,16 @@ struct ShaderBrowserView: View {
         Task {
             let startTime = Date()
             isAnalyzing = true
+            analysisCancelled = false
             analysisProgress = 0
+            analysisSuccessCount = 0
+            analysisBlackCount = 0
+            analysisErrorCount = 0
             
             let shadersToAnalyze = Array(selectedShaders)
             let total = shadersToAnalyze.count
+            analysisTotal = total
+            analysisCurrent = 0
             
             appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             appState.log("🔬 STARTING ANALYSIS for \(total) shader(s)", level: .info)
@@ -667,8 +721,15 @@ struct ShaderBrowserView: View {
             var errorCount = 0
             
             for (index, shaderName) in shadersToAnalyze.enumerated() {
+                // Check for cancellation
+                if analysisCancelled {
+                    appState.log("⚠️ Analysis cancelled by user", level: .warning)
+                    break
+                }
+                
                 let shaderStartTime = Date()
                 currentAnalysisShader = shaderName
+                analysisCurrent = index + 1
                 
                 appState.log("───────────────────────────────────────────────────────────────", level: .info)
                 appState.log("📍 [\(index+1)/\(total)] \(shaderName)", level: .info)
@@ -677,6 +738,7 @@ struct ShaderBrowserView: View {
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
                     appState.log("  ✗ Shader not found in list", level: .error)
                     errorCount += 1
+                    analysisErrorCount = errorCount
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
@@ -703,6 +765,7 @@ struct ShaderBrowserView: View {
                 guard let renderEngine = appState.renderEngine else {
                     appState.log("  ✗ No render engine available", level: .error)
                     errorCount += 1
+                    analysisErrorCount = errorCount
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
@@ -711,6 +774,7 @@ struct ShaderBrowserView: View {
                 if !loadSuccess {
                     appState.log("  ✗ FAILED to load shader '\(shaderName)' - not found in metallib", level: .error)
                     errorCount += 1
+                    analysisErrorCount = errorCount
                     analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
@@ -772,6 +836,7 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as BLACK", level: .warning)
                     await saveBlackAnalysis(to: analysisPath, shaderName: shaderName)
                     blackCount += 1
+                    analysisBlackCount = blackCount
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as black)", level: .info)
@@ -784,6 +849,7 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as MASK (monochrome)", level: .info)
                     await saveMaskAnalysis(to: analysisPath, shaderName: shaderName)
                     successCount += 1
+                    analysisSuccessCount = successCount
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as mask)", level: .info)
@@ -799,6 +865,7 @@ struct ShaderBrowserView: View {
                     guard let sourceContent = loadShaderSource(from: shaderPath) else {
                         appState.log("  ⚠️ Could not load shader source, skipping AI analysis", level: .warning)
                         successCount += 1  // Screenshot was successful at least
+                        analysisSuccessCount = successCount
                         
                         let elapsed = Date().timeIntervalSince(shaderStartTime)
                         appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (screenshot only)", level: .info)
@@ -822,18 +889,22 @@ struct ShaderBrowserView: View {
                         if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
                             appState.log("  💾 Saved: \(analysisPath.lastPathComponent)", level: .info)
                             successCount += 1
+                            analysisSuccessCount = successCount
                         } else {
                             appState.log("  ✗ Failed to save analysis JSON", level: .error)
                             errorCount += 1
+                            analysisErrorCount = errorCount
                         }
                     } else {
                         appState.log("  ✗ AI analysis failed", level: .error)
                         errorCount += 1
+                        analysisErrorCount = errorCount
                     }
                 } else if captureSuccess {
                     // No AI available but screenshot worked
                     appState.log("  ℹ️ Screenshot saved (no AI analysis)", level: .info)
                     successCount += 1
+                    analysisSuccessCount = successCount
                 }
                 
                 let elapsed = Date().timeIntervalSince(shaderStartTime)
