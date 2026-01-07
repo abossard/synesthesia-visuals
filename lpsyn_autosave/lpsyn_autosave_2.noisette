@@ -206,6 +206,10 @@
       {
         "parameters": [
           {
+            "value": false,
+            "controlAddress": "/enabled"
+          },
+          {
             "value": true,
             "controlAddress": "/logIncoming"
           },
@@ -416,9 +420,16 @@
         }
       },
       {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/enabled"
+          }
+        ],
         "niceName": "OSC",
         "type": "OSC",
         "scripts": {
+          "editorIsCollapsed": true,
           "viewOffset": [
             0,
             0
@@ -426,16 +437,48 @@
           "viewZoom": 1.0
         },
         "params": {
+          "parameters": [
+            {
+              "value": true,
+              "controlAddress": "/splitArguments"
+            },
+            {
+              "value": true,
+              "controlAddress": "/useHierarchy"
+            },
+            {
+              "value": true,
+              "controlAddress": "/autoFeedback"
+            }
+          ],
           "containers": {
             "oscInput": {
+              "parameters": [
+                {
+                  "value": 9999,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ],
+              "editorIsCollapsed": true
             },
             "oscOutputs": {
+              "editorIsCollapsed": true,
               "items": [
                 {
                   "parameters": [
                     {
+                      "value": true,
+                      "controlAddress": "/local"
+                    },
+                    {
                       "value": "127.0.0.1",
                       "controlAddress": "/remoteHost"
+                    },
+                    {
+                      "value": 7777,
+                      "hexMode": false,
+                      "controlAddress": "/remotePort"
                     }
                   ],
                   "niceName": "OSC Output",
@@ -449,6 +492,7 @@
               "viewZoom": 1.0
             },
             "pass_through": {
+              "editorIsCollapsed": true
             }
           }
         },
@@ -460,6 +504,1517 @@
           "viewZoom": 1.0
         },
         "values": {
+          "containers": {
+            "audio": {
+              "editorIsCollapsed": true,
+              "removable": true,
+              "includeTriggers": true,
+              "containers": {
+                "beat": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/beattime",
+                      "type": "Float",
+                      "niceName": "beattime",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "beattime"
+                    },
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/onbeat",
+                      "type": "Float",
+                      "niceName": "onbeat",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "onbeat"
+                    },
+                    {
+                      "controlAddress": "/randomonbeat",
+                      "type": "Float",
+                      "niceName": "randomonbeat",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "randomonbeat"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "beat"
+                },
+                "presence": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/all",
+                      "type": "Float",
+                      "niceName": "all",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "all"
+                    },
+                    {
+                      "controlAddress": "/bass",
+                      "type": "Float",
+                      "niceName": "bass",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bass"
+                    },
+                    {
+                      "controlAddress": "/high",
+                      "type": "Float",
+                      "niceName": "high",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "high"
+                    },
+                    {
+                      "controlAddress": "/mid",
+                      "type": "Float",
+                      "niceName": "mid",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mid"
+                    },
+                    {
+                      "controlAddress": "/midhigh",
+                      "type": "Float",
+                      "niceName": "midhigh",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "midhigh"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "presence"
+                },
+                "time": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/all",
+                      "type": "Float",
+                      "niceName": "all",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "all"
+                    },
+                    {
+                      "controlAddress": "/bass",
+                      "type": "Float",
+                      "niceName": "bass",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bass"
+                    },
+                    {
+                      "controlAddress": "/curved",
+                      "type": "Float",
+                      "niceName": "curved",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "curved"
+                    },
+                    {
+                      "controlAddress": "/high",
+                      "type": "Float",
+                      "niceName": "high",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "high"
+                    },
+                    {
+                      "controlAddress": "/mid",
+                      "type": "Float",
+                      "niceName": "mid",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mid"
+                    },
+                    {
+                      "controlAddress": "/midhigh",
+                      "type": "Float",
+                      "niceName": "midhigh",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "midhigh"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "time"
+                },
+                "level": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/all",
+                      "type": "Float",
+                      "niceName": "all",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "all"
+                    },
+                    {
+                      "controlAddress": "/bass",
+                      "type": "Float",
+                      "niceName": "bass",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bass"
+                    },
+                    {
+                      "controlAddress": "/high",
+                      "type": "Float",
+                      "niceName": "high",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "high"
+                    },
+                    {
+                      "controlAddress": "/mid",
+                      "type": "Float",
+                      "niceName": "mid",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mid"
+                    },
+                    {
+                      "controlAddress": "/midhigh",
+                      "type": "Float",
+                      "niceName": "midhigh",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "midhigh"
+                    },
+                    {
+                      "controlAddress": "/raw",
+                      "type": "Float",
+                      "niceName": "raw",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "raw"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "level"
+                },
+                "hits": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/all",
+                      "type": "Float",
+                      "niceName": "all",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "all"
+                    },
+                    {
+                      "controlAddress": "/bass",
+                      "type": "Float",
+                      "niceName": "bass",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bass"
+                    },
+                    {
+                      "controlAddress": "/high",
+                      "type": "Float",
+                      "niceName": "high",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "high"
+                    },
+                    {
+                      "controlAddress": "/mid",
+                      "type": "Float",
+                      "niceName": "mid",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mid"
+                    },
+                    {
+                      "controlAddress": "/midhigh",
+                      "type": "Float",
+                      "niceName": "midhigh",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "midhigh"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "hits"
+                },
+                "energy": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/intensity",
+                      "type": "Float",
+                      "niceName": "intensity",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "intensity"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "energy"
+                },
+                "bpm": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/bpm",
+                      "type": "Float",
+                      "niceName": "bpm",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpm"
+                    },
+                    {
+                      "controlAddress": "/bpmconfidence",
+                      "type": "Float",
+                      "niceName": "bpmconfidence",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmconfidence"
+                    },
+                    {
+                      "value": 0.9173946976661682,
+                      "controlAddress": "/bpmsin",
+                      "type": "Float",
+                      "niceName": "bpmsin",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmsin"
+                    },
+                    {
+                      "value": 0.02109587006270885,
+                      "controlAddress": "/bpmsin2",
+                      "type": "Float",
+                      "niceName": "bpmsin2",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmsin2"
+                    },
+                    {
+                      "value": 0.5726207494735718,
+                      "controlAddress": "/bpmsin4",
+                      "type": "Float",
+                      "niceName": "bpmsin4",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmsin4"
+                    },
+                    {
+                      "value": 0.8783573508262634,
+                      "controlAddress": "/bpmsin8",
+                      "type": "Float",
+                      "niceName": "bpmsin8",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmsin8"
+                    },
+                    {
+                      "value": 0.09279488772153854,
+                      "controlAddress": "/bpmtri",
+                      "type": "Float",
+                      "niceName": "bpmtri",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmtri"
+                    },
+                    {
+                      "value": 0.5463973879814148,
+                      "controlAddress": "/bpmtri2",
+                      "type": "Float",
+                      "niceName": "bpmtri2",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmtri2"
+                    },
+                    {
+                      "value": 0.7731987237930298,
+                      "controlAddress": "/bpmtri4",
+                      "type": "Float",
+                      "niceName": "bpmtri4",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmtri4"
+                    },
+                    {
+                      "value": 0.8865993022918701,
+                      "controlAddress": "/bpmtri8",
+                      "type": "Float",
+                      "niceName": "bpmtri8",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmtri8"
+                    },
+                    {
+                      "value": 1287.566162109375,
+                      "controlAddress": "/bpmtwitcher",
+                      "type": "Float",
+                      "niceName": "bpmtwitcher",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmtwitcher"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "bpm"
+                }
+              },
+              "owned": true,
+              "niceName": "audio"
+            },
+            "scenes": {
+              "parameters": [
+                {
+                  "controlAddress": "/canvas",
+                  "type": "Trigger",
+                  "niceName": "canvas",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "canvas"
+                }
+              ],
+              "removable": true,
+              "includeTriggers": true,
+              "owned": true,
+              "niceName": "scenes"
+            },
+            "controls": {
+              "editorIsCollapsed": true,
+              "removable": true,
+              "includeTriggers": true,
+              "containers": {
+                "meta": {
+                  "parameters": [
+                    {
+                      "controlAddress": "/alphachannel",
+                      "type": "Float",
+                      "niceName": "alphachannel",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "alphachannel"
+                    },
+                    {
+                      "controlAddress": "/audiospeed",
+                      "type": "Float",
+                      "niceName": "audiospeed",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "audiospeed"
+                    },
+                    {
+                      "controlAddress": "/brightness",
+                      "type": "Float",
+                      "niceName": "brightness",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "brightness"
+                    },
+                    {
+                      "controlAddress": "/contrast",
+                      "type": "Float",
+                      "niceName": "contrast",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "contrast"
+                    },
+                    {
+                      "controlAddress": "/fitorfill",
+                      "type": "Float",
+                      "niceName": "fitorfill",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "fitorfill"
+                    },
+                    {
+                      "controlAddress": "/gamma",
+                      "type": "Float",
+                      "niceName": "gamma",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "gamma"
+                    },
+                    {
+                      "controlAddress": "/horflip",
+                      "type": "Float",
+                      "niceName": "horflip",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "horflip"
+                    },
+                    {
+                      "controlAddress": "/hormirror",
+                      "type": "Float",
+                      "niceName": "hormirror",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "hormirror"
+                    },
+                    {
+                      "controlAddress": "/hue",
+                      "type": "Float",
+                      "niceName": "hue",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "hue"
+                    },
+                    {
+                      "controlAddress": "/invert",
+                      "type": "Float",
+                      "niceName": "invert",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "invert"
+                    },
+                    {
+                      "controlAddress": "/invertmedia",
+                      "type": "Float",
+                      "niceName": "invertmedia",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "invertmedia"
+                    },
+                    {
+                      "controlAddress": "/limitcolors",
+                      "type": "Float",
+                      "niceName": "limitcolors",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "limitcolors"
+                    },
+                    {
+                      "controlAddress": "/master",
+                      "type": "Float",
+                      "niceName": "master",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "master"
+                    },
+                    {
+                      "controlAddress": "/mediacontrast",
+                      "type": "Float",
+                      "niceName": "mediacontrast",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediacontrast"
+                    },
+                    {
+                      "controlAddress": "/mediagamma",
+                      "type": "Float",
+                      "niceName": "mediagamma",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediagamma"
+                    },
+                    {
+                      "controlAddress": "/mediahue",
+                      "type": "Float",
+                      "niceName": "mediahue",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediahue"
+                    },
+                    {
+                      "controlAddress": "/mediasaturation",
+                      "type": "Float",
+                      "niceName": "mediasaturation",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediasaturation"
+                    },
+                    {
+                      "controlAddress": "/mediascale",
+                      "type": "Float",
+                      "niceName": "mediascale",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediascale"
+                    },
+                    {
+                      "controlAddress": "/paused",
+                      "type": "Float",
+                      "niceName": "paused",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "paused"
+                    },
+                    {
+                      "controlAddress": "/playbackmode",
+                      "type": "Float",
+                      "niceName": "playbackmode",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "playbackmode"
+                    },
+                    {
+                      "controlAddress": "/playbackspeed",
+                      "type": "Float",
+                      "niceName": "playbackspeed",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "playbackspeed"
+                    },
+                    {
+                      "controlAddress": "/reactivity",
+                      "type": "Float",
+                      "niceName": "reactivity",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "reactivity"
+                    },
+                    {
+                      "controlAddress": "/saturation",
+                      "type": "Float",
+                      "niceName": "saturation",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "saturation"
+                    },
+                    {
+                      "controlAddress": "/transition",
+                      "type": "Float",
+                      "niceName": "transition",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "transition"
+                    },
+                    {
+                      "controlAddress": "/vertflip",
+                      "type": "Float",
+                      "niceName": "vertflip",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "vertflip"
+                    },
+                    {
+                      "controlAddress": "/vertmirror",
+                      "type": "Float",
+                      "niceName": "vertmirror",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "vertmirror"
+                    }
+                  ],
+                  "editorIsCollapsed": true,
+                  "removable": true,
+                  "includeTriggers": true,
+                  "containers": {
+                    "lowcolor": {
+                      "parameters": [
+                        {
+                          "controlAddress": "/b",
+                          "type": "Float",
+                          "niceName": "b",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "b"
+                        },
+                        {
+                          "controlAddress": "/g",
+                          "type": "Float",
+                          "niceName": "g",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "g"
+                        },
+                        {
+                          "controlAddress": "/r",
+                          "type": "Float",
+                          "niceName": "r",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "r"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "lowcolor"
+                    },
+                    "highcolor": {
+                      "parameters": [
+                        {
+                          "controlAddress": "/b",
+                          "type": "Float",
+                          "niceName": "b",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "b"
+                        },
+                        {
+                          "controlAddress": "/g",
+                          "type": "Float",
+                          "niceName": "g",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "g"
+                        },
+                        {
+                          "controlAddress": "/r",
+                          "type": "Float",
+                          "niceName": "r",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "r"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "highcolor"
+                    },
+                    "playbackmode": {
+                      "parameters": [
+                        {
+                          "value": "shuffle",
+                          "controlAddress": "/label",
+                          "type": "String",
+                          "niceName": "label",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "label"
+                        },
+                        {
+                          "hexMode": false,
+                          "controlAddress": "/numoptions",
+                          "type": "Integer",
+                          "niceName": "numoptions",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "numoptions"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "playbackmode 1"
+                    }
+                  },
+                  "owned": true,
+                  "niceName": "meta"
+                },
+                "canvas": {
+                  "parameters": [
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/autopainter",
+                      "type": "Float",
+                      "niceName": "autopainter",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "autopainter"
+                    },
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/beatflasheron",
+                      "type": "Float",
+                      "niceName": "beatflasheron",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "beatflasheron"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/bpmflasheron",
+                      "type": "Float",
+                      "niceName": "bpmflasheron",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmflasheron"
+                    },
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/bpmpulse",
+                      "type": "Float",
+                      "niceName": "bpmpulse",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "bpmpulse"
+                    },
+                    {
+                      "value": 0.3333333432674408,
+                      "controlAddress": "/brightness",
+                      "type": "Float",
+                      "niceName": "brightness",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "brightness"
+                    },
+                    {
+                      "value": 0.4399999976158142,
+                      "controlAddress": "/brushsize",
+                      "type": "Float",
+                      "niceName": "brushsize",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "brushsize"
+                    },
+                    {
+                      "value": 0.4040403962135315,
+                      "controlAddress": "/feedback",
+                      "type": "Float",
+                      "niceName": "feedback",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "feedback"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/invert",
+                      "type": "Float",
+                      "niceName": "invert",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "invert"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/manualpulse",
+                      "type": "Float",
+                      "niceName": "manualpulse",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "manualpulse"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/noiseon",
+                      "type": "Float",
+                      "niceName": "noiseon",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "noiseon"
+                    },
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/painteron",
+                      "type": "Float",
+                      "niceName": "painteron",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "painteron"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/paintpulse",
+                      "type": "Float",
+                      "niceName": "paintpulse",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "paintpulse"
+                    },
+                    {
+                      "value": 1.0,
+                      "controlAddress": "/pulseron",
+                      "type": "Float",
+                      "niceName": "pulseron",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "pulseron"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "containers": {
+                    "manualpainter": {
+                      "parameters": [
+                        {
+                          "value": 0.6899999380111694,
+                          "controlAddress": "/x",
+                          "type": "Float",
+                          "niceName": "x",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "x"
+                        },
+                        {
+                          "value": 0.5200004577636719,
+                          "controlAddress": "/y",
+                          "type": "Float",
+                          "niceName": "y",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "y"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "containers": {
+                        "x": {
+                          "parameters": [
+                            {
+                              "value": -0.020000159740448,
+                              "controlAddress": "/raw",
+                              "type": "Float",
+                              "niceName": "raw",
+                              "customizable": true,
+                              "removable": true,
+                              "description": "",
+                              "hideInEditor": false,
+                              "feedbackOnly": false,
+                              "shortName": "raw"
+                            }
+                          ],
+                          "removable": true,
+                          "includeTriggers": true,
+                          "owned": true,
+                          "niceName": "x 1"
+                        },
+                        "y": {
+                          "parameters": [
+                            {
+                              "value": 0.03999996185302734,
+                              "controlAddress": "/raw",
+                              "type": "Float",
+                              "niceName": "raw",
+                              "customizable": true,
+                              "removable": true,
+                              "description": "",
+                              "hideInEditor": false,
+                              "feedbackOnly": false,
+                              "shortName": "raw"
+                            }
+                          ],
+                          "removable": true,
+                          "includeTriggers": true,
+                          "owned": true,
+                          "niceName": "y 1"
+                        }
+                      },
+                      "owned": true,
+                      "niceName": "manualpainter"
+                    },
+                    "pulseron": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "pulseron 1"
+                    },
+                    "bpmpulse": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "bpmpulse 1"
+                    },
+                    "manualpulse": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "manualpulse 1"
+                    },
+                    "beatflasheron": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "beatflasheron 1"
+                    },
+                    "bpmflasheron": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "bpmflasheron 1"
+                    },
+                    "painteron": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "painteron 1"
+                    },
+                    "autopainter": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "autopainter 1"
+                    },
+                    "paintpulse": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "paintpulse 1"
+                    },
+                    "brushsize": {
+                      "parameters": [
+                        {
+                          "value": 0.4399999976158142,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "brushsize 1"
+                    },
+                    "feedback": {
+                      "parameters": [
+                        {
+                          "value": 0.4000000059604645,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "feedback 1"
+                    },
+                    "noiseon": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "noiseon 1"
+                    },
+                    "invert": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "invert 1"
+                    },
+                    "brightness": {
+                      "parameters": [
+                        {
+                          "value": 1.0,
+                          "controlAddress": "/raw",
+                          "type": "Float",
+                          "niceName": "raw",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "raw"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "brightness 1"
+                    }
+                  },
+                  "owned": true,
+                  "niceName": "canvas"
+                }
+              },
+              "owned": true,
+              "niceName": "controls"
+            }
+          }
+        }
+      },
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/logIncoming"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logOutgoing"
+          }
+        ],
+        "niceName": "Sound Card",
+        "type": "Sound Card",
+        "scripts": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "params": {
+          "parameters": [
+            {
+              "value": "MPM",
+              "controlAddress": "/pitchDetectionMethod"
+            }
+          ],
+          "containers": {
+            "inputVolumes": {
+            },
+            "outputVolumes": {
+              "editorIsCollapsed": true
+            },
+            "monitor": {
+              "parameters": [
+                {
+                  "value": false,
+                  "controlAddress": "/enabled"
+                }
+              ]
+            },
+            "fftAnalysis": {
+              "parameters": [
+                {
+                  "value": false,
+                  "controlAddress": "/enabled"
+                }
+              ],
+              "editorIsCollapsed": true,
+              "viewOffset": [
+                0,
+                0
+              ],
+              "viewZoom": 1.0
+            },
+            "ltc": {
+              "parameters": [
+                {
+                  "value": false,
+                  "controlAddress": "/enabled"
+                }
+              ]
+            }
+          }
+        },
+        "templates": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "audioSettings": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n\r\n<DEVICESETUP deviceType=\"CoreAudio\" audioOutputDeviceName=\"MacBook Pro Speakers\"\r\n             audioInputDeviceName=\"MacBook Pro Microphone\" audioDeviceRate=\"48000.0\"/>\r\n",
+        "analyzer": {
+          "parameters": [
+            {
+              "value": false,
+              "controlAddress": "/enabled"
+            }
+          ],
+          "editorIsCollapsed": true,
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
         }
       }
     ],
@@ -470,6 +2025,43 @@
     "viewZoom": 1.0
   },
   "customVariables": {
+    "items": [
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/enabled"
+          },
+          {
+            "value": [
+              0.1153846383094788,
+              0.1153846383094788,
+              0.1153846383094788,
+              1.0
+            ],
+            "controlAddress": "/color"
+          }
+        ],
+        "niceName": "BANKS",
+        "type": "CVGroup",
+        "params": {
+        },
+        "variables": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "presets": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        }
+      }
+    ],
     "viewOffset": [
       0,
       0
@@ -593,8 +2185,8 @@
       }
     ],
     "viewOffset": [
-      0,
-      0
+      -19,
+      -129
     ],
     "viewZoom": 1.0,
     "transitions": {
@@ -608,8 +2200,8 @@
     "comments": {
       "hideInEditor": true,
       "viewOffset": [
-        0,
-        0
+        -19,
+        -129
       ],
       "viewZoom": 1.0
     }
@@ -628,6 +2220,722 @@
         "type": "BaseItem",
         "sourceModule": "osc",
         "sourceValues": {
+          "items": [
+            {
+              "niceName": "beattime",
+              "type": "BaseItem",
+              "customName": "beattime",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "onbeat",
+              "type": "BaseItem",
+              "customName": "onbeat",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "randomonbeat",
+              "type": "BaseItem",
+              "customName": "randomonbeat",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "all",
+              "type": "BaseItem",
+              "customName": "all 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bass",
+              "type": "BaseItem",
+              "customName": "bass 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "high",
+              "type": "BaseItem",
+              "customName": "high 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mid",
+              "type": "BaseItem",
+              "customName": "mid 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "midhigh",
+              "type": "BaseItem",
+              "customName": "midhigh 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "all",
+              "type": "BaseItem",
+              "customName": "all 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bass",
+              "type": "BaseItem",
+              "customName": "bass 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "curved",
+              "type": "BaseItem",
+              "customName": "curved",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "high",
+              "type": "BaseItem",
+              "customName": "high 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mid",
+              "type": "BaseItem",
+              "customName": "mid 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "midhigh",
+              "type": "BaseItem",
+              "customName": "midhigh 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "all",
+              "type": "BaseItem",
+              "customName": "all 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bass",
+              "type": "BaseItem",
+              "customName": "bass 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "high",
+              "type": "BaseItem",
+              "customName": "high 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mid",
+              "type": "BaseItem",
+              "customName": "mid 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "midhigh",
+              "type": "BaseItem",
+              "customName": "midhigh 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 16",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "all",
+              "type": "BaseItem",
+              "customName": "all 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bass",
+              "type": "BaseItem",
+              "customName": "bass 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "high",
+              "type": "BaseItem",
+              "customName": "high 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mid",
+              "type": "BaseItem",
+              "customName": "mid 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "midhigh",
+              "type": "BaseItem",
+              "customName": "midhigh 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "intensity",
+              "type": "BaseItem",
+              "customName": "intensity",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpm",
+              "type": "BaseItem",
+              "customName": "bpm",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmconfidence",
+              "type": "BaseItem",
+              "customName": "bpmconfidence",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmsin",
+              "type": "BaseItem",
+              "customName": "bpmsin",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmsin2",
+              "type": "BaseItem",
+              "customName": "bpmsin2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmsin4",
+              "type": "BaseItem",
+              "customName": "bpmsin4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmsin8",
+              "type": "BaseItem",
+              "customName": "bpmsin8",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmtri",
+              "type": "BaseItem",
+              "customName": "bpmtri",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmtri2",
+              "type": "BaseItem",
+              "customName": "bpmtri2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmtri4",
+              "type": "BaseItem",
+              "customName": "bpmtri4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmtri8",
+              "type": "BaseItem",
+              "customName": "bpmtri8",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmtwitcher",
+              "type": "BaseItem",
+              "customName": "bpmtwitcher",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "canvas",
+              "type": "BaseItem",
+              "customName": "canvas",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "alphachannel",
+              "type": "BaseItem",
+              "customName": "alphachannel",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "audiospeed",
+              "type": "BaseItem",
+              "customName": "audiospeed",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "brightness",
+              "type": "BaseItem",
+              "customName": "brightness 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "contrast",
+              "type": "BaseItem",
+              "customName": "contrast",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "fitorfill",
+              "type": "BaseItem",
+              "customName": "fitorfill",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "gamma",
+              "type": "BaseItem",
+              "customName": "gamma",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "horflip",
+              "type": "BaseItem",
+              "customName": "horflip",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "hormirror",
+              "type": "BaseItem",
+              "customName": "hormirror",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "hue",
+              "type": "BaseItem",
+              "customName": "hue",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "invert",
+              "type": "BaseItem",
+              "customName": "invert 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "invertmedia",
+              "type": "BaseItem",
+              "customName": "invertmedia",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "limitcolors",
+              "type": "BaseItem",
+              "customName": "limitcolors",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "master",
+              "type": "BaseItem",
+              "customName": "master",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediacontrast",
+              "type": "BaseItem",
+              "customName": "mediacontrast",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediagamma",
+              "type": "BaseItem",
+              "customName": "mediagamma",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediahue",
+              "type": "BaseItem",
+              "customName": "mediahue",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediasaturation",
+              "type": "BaseItem",
+              "customName": "mediasaturation",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediascale",
+              "type": "BaseItem",
+              "customName": "mediascale",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "paused",
+              "type": "BaseItem",
+              "customName": "paused",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "playbackmode",
+              "type": "BaseItem",
+              "customName": "playbackmode",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "playbackspeed",
+              "type": "BaseItem",
+              "customName": "playbackspeed",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "reactivity",
+              "type": "BaseItem",
+              "customName": "reactivity",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "saturation",
+              "type": "BaseItem",
+              "customName": "saturation",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "transition",
+              "type": "BaseItem",
+              "customName": "transition",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "vertflip",
+              "type": "BaseItem",
+              "customName": "vertflip",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "vertmirror",
+              "type": "BaseItem",
+              "customName": "vertmirror",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "b",
+              "type": "BaseItem",
+              "customName": "b 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "g",
+              "type": "BaseItem",
+              "customName": "g 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "r",
+              "type": "BaseItem",
+              "customName": "r 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "b",
+              "type": "BaseItem",
+              "customName": "b 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "g",
+              "type": "BaseItem",
+              "customName": "g 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "r",
+              "type": "BaseItem",
+              "customName": "r 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "label",
+              "type": "BaseItem",
+              "customName": "label",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "numoptions",
+              "type": "BaseItem",
+              "customName": "numoptions",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "autopainter",
+              "type": "BaseItem",
+              "customName": "autopainter",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "beatflasheron",
+              "type": "BaseItem",
+              "customName": "beatflasheron",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmflasheron",
+              "type": "BaseItem",
+              "customName": "bpmflasheron",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "bpmpulse",
+              "type": "BaseItem",
+              "customName": "bpmpulse",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "brightness",
+              "type": "BaseItem",
+              "customName": "brightness 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "brushsize",
+              "type": "BaseItem",
+              "customName": "brushsize",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "feedback",
+              "type": "BaseItem",
+              "customName": "feedback",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "invert",
+              "type": "BaseItem",
+              "customName": "invert 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "manualpulse",
+              "type": "BaseItem",
+              "customName": "manualpulse",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "noiseon",
+              "type": "BaseItem",
+              "customName": "noiseon",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "painteron",
+              "type": "BaseItem",
+              "customName": "painteron",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "paintpulse",
+              "type": "BaseItem",
+              "customName": "paintpulse",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "pulseron",
+              "type": "BaseItem",
+              "customName": "pulseron",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "x",
+              "type": "BaseItem",
+              "customName": "x",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "y",
+              "type": "BaseItem",
+              "customName": "y",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 5",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 6",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 7",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 8",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 9",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 10",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 11",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 12",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 13",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 14",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "raw",
+              "type": "BaseItem",
+              "customName": "raw 15",
+              "routeParams": {
+              }
+            }
+          ],
           "viewOffset": [
             0,
             0

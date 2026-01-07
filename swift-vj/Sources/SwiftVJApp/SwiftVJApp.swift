@@ -183,10 +183,28 @@ final class AppState: ObservableObject {
                 guard let self = self else { return }
                 // FAST PATH: nonisolated accumulator, no await
                 self.synesthesiaAudio.handleOSCFast(address, values)
-                
+
                 // NOTE: RenderEngine now pulls audio levels directly from synesthesiaAudio
                 // in its render loop (60fps). We NO LONGER dispatch to MainActor here
                 // to avoid flooding the main thread with 1000+ tasks/sec.
+            }
+
+            // Wire image folder OSC from pipeline to ImageRenderer
+            oscHub.subscribe(pattern: "/image/folder") { [weak self] _, values in
+                guard let self = self,
+                      let folderPath = values.first as? String else { return }
+                Task { @MainActor in
+                    self.loadImagesFromFolder(URL(fileURLWithPath: folderPath))
+                }
+            }
+
+            // Wire image fit mode OSC from pipeline
+            oscHub.subscribe(pattern: "/image/fit") { [weak self] _, values in
+                guard let self = self,
+                      let mode = values.first as? String else { return }
+                Task { @MainActor in
+                    self.setImageFitMode(mode == "cover")
+                }
             }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
@@ -562,7 +580,67 @@ final class AppState: ObservableObject {
             log("Failed to send shader: \(error)", level: .error)
         }
     }
-    
+
+    // MARK: - Image Loading (from pipeline OSC)
+
+    /// Load images from a folder path (called via /image/folder OSC)
+    func loadImagesFromFolder(_ url: URL) {
+        log("[Images] Loading from: \(url.lastPathComponent)", level: .info)
+
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil
+        ) else {
+            log("[Images] Failed to read directory: \(url.path)", level: .error)
+            return
+        }
+
+        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+        let imageFiles = files.filter { file in
+            imageExtensions.contains(file.pathExtension.lowercased())
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        guard !imageFiles.isEmpty else {
+            log("[Images] No images found in folder", level: .warning)
+            return
+        }
+
+        log("[Images] Found \(imageFiles.count) images", level: .info)
+
+        // Update the ImageRenderer via HeadlessRenderer
+        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
+            renderer.imageState = ImageDisplayState(
+                currentImageURL: imageFiles.first,
+                nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
+                crossfadeProgress: 0.0,
+                isFading: false,
+                coverMode: renderer.imageState.coverMode,
+                folderImages: imageFiles,
+                folderIndex: 0,
+                beatsPerChange: 8  // Default to 8-beat auto-cycle
+            )
+            log("[Images] Loaded with 8-beat auto-cycle", level: .info)
+        } else {
+            log("[Images] Renderer not available", level: .error)
+        }
+    }
+
+    /// Set image fit mode (called via /image/fit OSC)
+    func setImageFitMode(_ cover: Bool) {
+        guard let renderer = renderEngine?.headlessRenderer?.imageRenderer else { return }
+        let state = renderer.imageState
+        renderer.imageState = ImageDisplayState(
+            currentImageURL: state.currentImageURL,
+            nextImageURL: state.nextImageURL,
+            crossfadeProgress: state.crossfadeProgress,
+            isFading: state.isFading,
+            coverMode: cover,
+            folderImages: state.folderImages,
+            folderIndex: state.folderIndex,
+            beatsPerChange: state.beatsPerChange
+        )
+    }
+
     // MARK: - Private
     
     private func updatePipelineStep(_ step: String, status: String, details: [String]?) {

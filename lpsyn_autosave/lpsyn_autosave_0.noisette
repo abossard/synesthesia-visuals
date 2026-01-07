@@ -428,6 +428,13 @@
         "params": {
           "containers": {
             "oscInput": {
+              "parameters": [
+                {
+                  "value": 9999,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ]
             },
             "oscOutputs": {
               "items": [
@@ -460,6 +467,426 @@
           "viewZoom": 1.0
         },
         "values": {
+          "parameters": [
+            {
+              "controlAddress": "/_audio_beat_beattime",
+              "type": "Float",
+              "niceName": "/audio/beat/beattime",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_beat_beattime"
+            },
+            {
+              "value": 0.0,
+              "controlAddress": "/_audio_beat_onbeat",
+              "type": "Float",
+              "niceName": "/audio/beat/onbeat",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_beat_onbeat"
+            },
+            {
+              "controlAddress": "/_audio_beat_randomonbeat",
+              "type": "Float",
+              "niceName": "/audio/beat/randomonbeat",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_beat_randomonbeat"
+            },
+            {
+              "controlAddress": "/_audio_bpm_bpm",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpm",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpm"
+            },
+            {
+              "value": 0.9999998807907104,
+              "controlAddress": "/_audio_bpm_bpmconfidence",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmconfidence",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmconfidence"
+            },
+            {
+              "value": 0.56735759973526,
+              "controlAddress": "/_audio_bpm_bpmsin",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmsin",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmsin"
+            },
+            {
+              "value": 0.1233833953738213,
+              "controlAddress": "/_audio_bpm_bpmsin2",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmsin2",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmsin2"
+            },
+            {
+              "value": 0.324370414018631,
+              "controlAddress": "/_audio_bpm_bpmsin4",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmsin4",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmsin4"
+            },
+            {
+              "value": 0.7847678065299988,
+              "controlAddress": "/_audio_bpm_bpmsin8",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmsin8",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmsin8"
+            },
+            {
+              "value": 0.2284943759441376,
+              "controlAddress": "/_audio_bpm_bpmtri",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmtri",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmtri"
+            },
+            {
+              "value": 0.6142472624778748,
+              "controlAddress": "/_audio_bpm_bpmtri2",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmtri2",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmtri2"
+            },
+            {
+              "value": 0.3071236312389374,
+              "controlAddress": "/_audio_bpm_bpmtri4",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmtri4",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmtri4"
+            },
+            {
+              "value": 0.1535618156194687,
+              "controlAddress": "/_audio_bpm_bpmtri8",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmtri8",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmtri8"
+            },
+            {
+              "value": 89.87209320068359,
+              "controlAddress": "/_audio_bpm_bpmtwitcher",
+              "type": "Float",
+              "niceName": "/audio/bpm/bpmtwitcher",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_bpm_bpmtwitcher"
+            },
+            {
+              "controlAddress": "/_audio_energy_intensity",
+              "type": "Float",
+              "niceName": "/audio/energy/intensity",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_energy_intensity"
+            },
+            {
+              "controlAddress": "/_audio_hits_all",
+              "type": "Float",
+              "niceName": "/audio/hits/all",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_hits_all"
+            },
+            {
+              "controlAddress": "/_audio_hits_bass",
+              "type": "Float",
+              "niceName": "/audio/hits/bass",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_hits_bass"
+            },
+            {
+              "controlAddress": "/_audio_hits_high",
+              "type": "Float",
+              "niceName": "/audio/hits/high",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_hits_high"
+            },
+            {
+              "controlAddress": "/_audio_hits_mid",
+              "type": "Float",
+              "niceName": "/audio/hits/mid",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_hits_mid"
+            },
+            {
+              "controlAddress": "/_audio_hits_midhigh",
+              "type": "Float",
+              "niceName": "/audio/hits/midhigh",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_hits_midhigh"
+            },
+            {
+              "controlAddress": "/_audio_level_all",
+              "type": "Float",
+              "niceName": "/audio/level/all",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_all"
+            },
+            {
+              "controlAddress": "/_audio_level_bass",
+              "type": "Float",
+              "niceName": "/audio/level/bass",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_bass"
+            },
+            {
+              "controlAddress": "/_audio_level_high",
+              "type": "Float",
+              "niceName": "/audio/level/high",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_high"
+            },
+            {
+              "controlAddress": "/_audio_level_mid",
+              "type": "Float",
+              "niceName": "/audio/level/mid",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_mid"
+            },
+            {
+              "controlAddress": "/_audio_level_midhigh",
+              "type": "Float",
+              "niceName": "/audio/level/midhigh",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_midhigh"
+            },
+            {
+              "controlAddress": "/_audio_level_raw",
+              "type": "Float",
+              "niceName": "/audio/level/raw",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_level_raw"
+            },
+            {
+              "controlAddress": "/_audio_presence_all",
+              "type": "Float",
+              "niceName": "/audio/presence/all",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_presence_all"
+            },
+            {
+              "controlAddress": "/_audio_presence_bass",
+              "type": "Float",
+              "niceName": "/audio/presence/bass",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_presence_bass"
+            },
+            {
+              "controlAddress": "/_audio_presence_high",
+              "type": "Float",
+              "niceName": "/audio/presence/high",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_presence_high"
+            },
+            {
+              "controlAddress": "/_audio_presence_mid",
+              "type": "Float",
+              "niceName": "/audio/presence/mid",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_presence_mid"
+            },
+            {
+              "controlAddress": "/_audio_presence_midhigh",
+              "type": "Float",
+              "niceName": "/audio/presence/midhigh",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_presence_midhigh"
+            },
+            {
+              "controlAddress": "/_audio_time_all",
+              "type": "Float",
+              "niceName": "/audio/time/all",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_all"
+            },
+            {
+              "controlAddress": "/_audio_time_bass",
+              "type": "Float",
+              "niceName": "/audio/time/bass",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_bass"
+            },
+            {
+              "controlAddress": "/_audio_time_curved",
+              "type": "Float",
+              "niceName": "/audio/time/curved",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_curved"
+            },
+            {
+              "controlAddress": "/_audio_time_high",
+              "type": "Float",
+              "niceName": "/audio/time/high",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_high"
+            },
+            {
+              "controlAddress": "/_audio_time_mid",
+              "type": "Float",
+              "niceName": "/audio/time/mid",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_mid"
+            },
+            {
+              "controlAddress": "/_audio_time_midhigh",
+              "type": "Float",
+              "niceName": "/audio/time/midhigh",
+              "customizable": true,
+              "removable": true,
+              "description": "",
+              "hideInEditor": false,
+              "feedbackOnly": false,
+              "shortName": "_audio_time_midhigh"
+            }
+          ]
         }
       }
     ],
@@ -628,6 +1055,267 @@
         "type": "BaseItem",
         "sourceModule": "osc",
         "sourceValues": {
+          "items": [
+            {
+              "niceName": "/audio/beat/beattime",
+              "type": "BaseItem",
+              "customName": "/audio/beat/beattime",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/beat/onbeat",
+              "type": "BaseItem",
+              "customName": "/audio/beat/onbeat",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/beat/randomonbeat",
+              "type": "BaseItem",
+              "customName": "/audio/beat/randomonbeat",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpm",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpm",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmconfidence",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmconfidence",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmsin",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmsin",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmsin2",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmsin2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmsin4",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmsin4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmsin8",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmsin8",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmtri",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmtri",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmtri2",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmtri2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmtri4",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmtri4",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmtri8",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmtri8",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/bpm/bpmtwitcher",
+              "type": "BaseItem",
+              "customName": "/audio/bpm/bpmtwitcher",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/energy/intensity",
+              "type": "BaseItem",
+              "customName": "/audio/energy/intensity",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/hits/all",
+              "type": "BaseItem",
+              "customName": "/audio/hits/all",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/hits/bass",
+              "type": "BaseItem",
+              "customName": "/audio/hits/bass",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/hits/high",
+              "type": "BaseItem",
+              "customName": "/audio/hits/high",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/hits/mid",
+              "type": "BaseItem",
+              "customName": "/audio/hits/mid",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/hits/midhigh",
+              "type": "BaseItem",
+              "customName": "/audio/hits/midhigh",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/all",
+              "type": "BaseItem",
+              "customName": "/audio/level/all",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/bass",
+              "type": "BaseItem",
+              "customName": "/audio/level/bass",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/high",
+              "type": "BaseItem",
+              "customName": "/audio/level/high",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/mid",
+              "type": "BaseItem",
+              "customName": "/audio/level/mid",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/midhigh",
+              "type": "BaseItem",
+              "customName": "/audio/level/midhigh",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/level/raw",
+              "type": "BaseItem",
+              "customName": "/audio/level/raw",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/presence/all",
+              "type": "BaseItem",
+              "customName": "/audio/presence/all",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/presence/bass",
+              "type": "BaseItem",
+              "customName": "/audio/presence/bass",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/presence/high",
+              "type": "BaseItem",
+              "customName": "/audio/presence/high",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/presence/mid",
+              "type": "BaseItem",
+              "customName": "/audio/presence/mid",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/presence/midhigh",
+              "type": "BaseItem",
+              "customName": "/audio/presence/midhigh",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/all",
+              "type": "BaseItem",
+              "customName": "/audio/time/all",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/bass",
+              "type": "BaseItem",
+              "customName": "/audio/time/bass",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/curved",
+              "type": "BaseItem",
+              "customName": "/audio/time/curved",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/high",
+              "type": "BaseItem",
+              "customName": "/audio/time/high",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/mid",
+              "type": "BaseItem",
+              "customName": "/audio/time/mid",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "/audio/time/midhigh",
+              "type": "BaseItem",
+              "customName": "/audio/time/midhigh",
+              "routeParams": {
+              }
+            }
+          ],
           "viewOffset": [
             0,
             0

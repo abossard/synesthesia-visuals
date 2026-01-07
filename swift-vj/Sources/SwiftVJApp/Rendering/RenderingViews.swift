@@ -487,12 +487,12 @@ struct RenderingView: View {
                 imageControlsView
             }
             
-            // Tile selector grid with Syphon client previews
+            // Tile selector grid with Syphon client previews (60fps MTKView)
             GroupBox("Tiles → Syphon") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo", "Image"], id: \.self) { tile in
                         VStack(spacing: 4) {
-                            SyphonThumbnailView(serverName: tile)
+                            SyphonMTKView(serverName: tile)
                                 .aspectRatio(16/9, contentMode: .fit)
                                 .frame(height: 60)
                                 .cornerRadius(4)
@@ -501,7 +501,7 @@ struct RenderingView: View {
                                         .stroke(selectedTile == tile.lowercased() ? Color.blue : Color.clear, lineWidth: 2)
                                 )
                                 .onTapGesture { selectedTile = tile.lowercased() }
-                            
+
                             Text(tile).font(.caption2)
                         }
                     }
@@ -512,13 +512,13 @@ struct RenderingView: View {
     }
     
     // MARK: - Selected Tile View (Syphon client - headless rendering only)
-    
+
     @ViewBuilder
     private var selectedTileView: some View {
         // All rendering is done headlessly by HeadlessRenderer
-        // UI only displays Syphon client previews
+        // UI displays via MTKView for 60fps GPU-direct rendering (no CPU readback)
         // Server names are simple: "Shader", "Mask", "Lyrics", etc.
-        SyphonThumbnailView(serverName: selectedTile.capitalized)
+        SyphonMTKView(serverName: selectedTile.capitalized)
             .id(selectedTile)  // Force view recreation when tile changes
     }
     
