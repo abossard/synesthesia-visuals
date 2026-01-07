@@ -93,6 +93,8 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         await runStep(10, "Toggle Mode") { self.testToggleMode() }
         await runStep(11, "Push Mode") { self.testPushMode() }
         await runStep(12, "Config Persistence") { self.testConfigPersistence() }
+        await runStep(13, "Dynamic Banks") { await self.testDynamicBanks() }
+        await runStep(13, "Dynamic Banks") { await self.testDynamicBanks() }
         
         printSummary()
     }
@@ -188,7 +190,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private func runStep(_ step: Int, _ name: String, _ test: () async -> (Bool, String)) async {
         io.print("")
         io.print("─────────────────────────────────────────────────")
-        io.print("Step \(step)/12: \(name)")
+        io.print("Step \(step)/13: \(name)")
         io.print("─────────────────────────────────────────────────")
         
         let (passed, message) = await test()
@@ -618,6 +620,17 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // unless we explicitly called save. This tests the reload mechanism.
         
         return (true, "Module restart successful - persistence mechanism tested")
+    }
+
+    // Step 13: Dynamic Banks
+    private func testDynamicBanks() async -> (Bool, String) {
+        io.print("  Switch to Bank 1 (Scenes) and select a Synesthesia scene.")
+        io.print("  Verify the pad lights for the scene; if >8 scenes, check Bank 2 (Scenes2).")
+        io.print("  Then switch to Bank 3 (Params) after selecting a scene; press Page to cycle if needed.")
+        let scenesOk = await io.askYesNo("  Did scene pads light correctly on Bank1/2? (y/n): ")
+        let paramsOk = await io.askYesNo("  Did params appear on Bank3 with Page cycling? (y/n): ")
+        let passed = scenesOk && paramsOk
+        return (passed, passed ? "Dynamic banks verified" : "Dynamic banks not verified")
     }
 }
 

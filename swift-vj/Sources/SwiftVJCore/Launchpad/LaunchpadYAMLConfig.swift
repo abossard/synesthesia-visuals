@@ -102,6 +102,7 @@ public struct SceneButtonYAMLConfig: Codable, Sendable {
 // MARK: - Bank Config
 
 public struct BankYAMLConfig: Codable, Sendable {
+    public let role: String?
     public let name: String
     public let purpose: String
     public let pads: [PadYAMLConfig]
@@ -284,6 +285,9 @@ public enum LaunchpadConfigLoader {
                     if pad.oscOn == nil || pad.oscOff == nil {
                         errors.append("Bank \(bankIndex) pad (\(pad.x),\(pad.y)): toggle mode requires 'oscOn' and 'oscOff'")
                     }
+                case "increment", "decrement":
+                    // osc optional; no validation
+                    break
                 case "oneShot", "push":
                     // osc is optional for these modes (may just be visual indicator)
                     break
@@ -391,6 +395,12 @@ public extension LaunchpadYAMLConfig {
     func bankPurpose(_ index: Int) -> String {
         bank(index)?.purpose ?? ""
     }
+
+    /// Get bank role by index (defaults to .basic)
+    func bankRole(_ index: Int) -> BankRole {
+        guard let role = bank(index)?.role else { return .basic }
+        return BankRole(rawValue: role) ?? .basic
+    }
 }
 
 // MARK: - Dynamic Group Resolution
@@ -431,6 +441,28 @@ public actor DynamicGroupStore {
     public func clear() {
         cache.removeAll()
     }
+}
+
+// MARK: - Dynamic Controls Store
+
+/// Runtime store for dynamic control parameters (address → latest args)
+public actor DynamicControlStore {
+    public static let shared = DynamicControlStore()
+    private var controls: [String: [OscArg]] = [:]
+    public init() {}
+    @discardableResult
+    public func update(address: String, args: [OscArg]) -> Bool {
+        let isNew = controls[address] == nil
+        controls[address] = args
+        return isNew
+    }
+    public func items() -> [String] {
+        Array(controls.keys).sorted()
+    }
+    public func value(address: String) -> [OscArg]? {
+        controls[address]
+    }
+    public func clear() { controls.removeAll() }
 }
 
 // MARK: - Config to Runtime Conversion

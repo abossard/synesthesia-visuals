@@ -107,7 +107,8 @@ struct TilePreviewView: View {
         .onAppear {
             startPreviewUpdates()
         }
-        .onReceive(Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()) { _ in
+        // Reduced to 1Hz - preview is just for debug, reduces main thread load
+        .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
             updatePreview()
         }
     }

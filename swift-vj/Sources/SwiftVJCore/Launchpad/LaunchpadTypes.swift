@@ -182,6 +182,18 @@ public enum ButtonGroupType: String, Codable, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Bank Roles
+
+/// High-level bank roles for auto-layout
+public enum BankRole: String, Codable, CaseIterable, Sendable {
+    case basic        // Hand-authored controls
+    case scenes       // Scene selection (dynamic)
+    case scenes2      // Additional scene page (dynamic)
+    case params       // Dynamic control parameters (auto populated)
+    case global       // Global parameters
+    case custom       // User/learn
+}
+
 // MARK: - OSC Command
 
 /// OSC command to send
@@ -252,6 +264,10 @@ public struct PadBehavior: Codable, Sendable {
     public let step: Float
     public let minValue: Float
     public let maxValue: Float
+
+    enum CodingKeys: String, CodingKey {
+        case padId, mode, group, idleColor, activeColor, label, oscOn, oscOff, oscAction, additionalOsc, step, minValue, maxValue
+    }
     
     public init(
         padId: ButtonId,
@@ -281,6 +297,40 @@ public struct PadBehavior: Codable, Sendable {
         self.step = step
         self.minValue = minValue
         self.maxValue = maxValue
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        padId = try container.decode(ButtonId.self, forKey: .padId)
+        mode = try container.decode(PadMode.self, forKey: .mode)
+        group = try container.decodeIfPresent(ButtonGroupType.self, forKey: .group)
+        idleColor = try container.decodeIfPresent(Int.self, forKey: .idleColor) ?? LP.off
+        activeColor = try container.decodeIfPresent(Int.self, forKey: .activeColor) ?? LP.green
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        oscOn = try container.decodeIfPresent(OscCommand.self, forKey: .oscOn)
+        oscOff = try container.decodeIfPresent(OscCommand.self, forKey: .oscOff)
+        oscAction = try container.decodeIfPresent(OscCommand.self, forKey: .oscAction)
+        additionalOsc = try container.decodeIfPresent([OscCommand].self, forKey: .additionalOsc) ?? []
+        step = try container.decodeIfPresent(Float.self, forKey: .step) ?? 0.1
+        minValue = try container.decodeIfPresent(Float.self, forKey: .minValue) ?? 0.0
+        maxValue = try container.decodeIfPresent(Float.self, forKey: .maxValue) ?? 1.0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(padId, forKey: .padId)
+        try container.encode(mode, forKey: .mode)
+        try container.encodeIfPresent(group, forKey: .group)
+        try container.encode(idleColor, forKey: .idleColor)
+        try container.encode(activeColor, forKey: .activeColor)
+        try container.encode(label, forKey: .label)
+        try container.encodeIfPresent(oscOn, forKey: .oscOn)
+        try container.encodeIfPresent(oscOff, forKey: .oscOff)
+        try container.encodeIfPresent(oscAction, forKey: .oscAction)
+        if !additionalOsc.isEmpty { try container.encode(additionalOsc, forKey: .additionalOsc) }
+        try container.encode(step, forKey: .step)
+        try container.encode(minValue, forKey: .minValue)
+        try container.encode(maxValue, forKey: .maxValue)
     }
 }
 
@@ -500,8 +550,18 @@ public struct ControllerState: Sendable {
     // Modifier keys
     /// Shift button held (scene button y=5)
     public var isShiftHeld: Bool
-    /// Current page for paged content (0 or 1)
-    public var currentPage: Int
+
+    /// Page counts per bank and current page per bank
+    public var bankPageCount: [Int: Int]
+    public var bankCurrentPage: [Int: Int]
+
+    /// Current page for active bank
+    public var currentPage: Int {
+        get { bankCurrentPage[activeBank] ?? 0 }
+        set { bankCurrentPage[activeBank] = newValue }
+    }
+    /// Page count for active bank
+    public var currentPageCount: Int { bankPageCount[activeBank] ?? 1 }
     
     public init() {
         self.activeBank = 0
@@ -524,7 +584,12 @@ public struct ControllerState: Sendable {
         self.learnState = LearnState()
         self.blinkOn = false
         self.isShiftHeld = false
-        self.currentPage = 0
+        self.bankPageCount = [:]
+        self.bankCurrentPage = [:]
+        for i in 0..<BankConfig.count {
+            self.bankPageCount[i] = 1
+            self.bankCurrentPage[i] = 0
+        }
     }
 }
 

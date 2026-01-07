@@ -114,6 +114,7 @@ global:
 bank0:
   name: "Synesthesia"
   purpose: "Master Synesthesia controls: meta, playlist, media"
+  role: basic
 
   pads:
     # -------------------------------------------------------------------------
@@ -694,6 +695,7 @@ bank0:
 bank1:
   name: "Synesthesia"
   purpose: "Scene and preset control"
+  role: scenes
   
   pads:
     # Row 7: Scene selection (dynamic group populated at runtime)
@@ -776,99 +778,20 @@ bank1:
 # Example: Layer opacity controls, effect toggles, crossfader
 
 bank2:
-  name: "Magic"
-  purpose: "Magic Music Visuals"
-  
+  name: "Scenes 2"
+  purpose: "Scene selection page 2"
+  role: scenes2
   pads:
-    # Row 7: Layer visibility toggles
-    - x: 0
-      y: 7
-      mode: toggle
-      label: "Layer 1"
-      idleColor: greenDim
-      activeColor: green
-      oscOn:  { address: "/magic/layer/1/visible", args: [1] }
-      oscOff: { address: "/magic/layer/1/visible", args: [0] }
-
-    - x: 1
-      y: 7
-      mode: toggle
-      label: "Layer 2"
-      idleColor: greenDim
-      activeColor: green
-      oscOn:  { address: "/magic/layer/2/visible", args: [1] }
-      oscOff: { address: "/magic/layer/2/visible", args: [0] }
-
-    - x: 2
-      y: 7
-      mode: toggle
-      label: "Layer 3"
-      idleColor: greenDim
-      activeColor: green
-      oscOn:  { address: "/magic/layer/3/visible", args: [1] }
-      oscOff: { address: "/magic/layer/3/visible", args: [0] }
-
-    - x: 3
-      y: 7
-      mode: toggle
-      label: "Layer 4"
-      idleColor: greenDim
-      activeColor: green
-      oscOn:  { address: "/magic/layer/4/visible", args: [1] }
-      oscOff: { address: "/magic/layer/4/visible", args: [0] }
-
-    - x: 5
-      y: 7
-      mode: toggle
-      label: "FX Bypass"
-      idleColor: redDim
-      activeColor: red
-      oscOn:  { address: "/magic/fx/bypass", args: [1] }
-      oscOff: { address: "/magic/fx/bypass", args: [0] }
-
-    - x: 7
-      y: 7
-      mode: toggle
-      label: "Output"
-      idleColor: white
-      activeColor: green
-      oscOn:  { address: "/magic/output/enable", args: [1] }
-      oscOff: { address: "/magic/output/enable", args: [0] }
-
-    # Row 6: Blend mode selection
-    - x: 0
-      y: 6
-      mode: oneShot
-      label: "Normal"
-      idleColor: blueDim
-      activeColor: blue
-      osc: { address: "/magic/blend", args: ["normal"] }
-
-    - x: 1
-      y: 6
-      mode: oneShot
-      label: "Add"
-      idleColor: blueDim
-      activeColor: blue
-      osc: { address: "/magic/blend", args: ["add"] }
-
-    - x: 2
-      y: 6
-      mode: oneShot
-      label: "Screen"
-      idleColor: blueDim
-      activeColor: blue
-      osc: { address: "/magic/blend", args: ["screen"] }
-
-    - x: 3
-      y: 6
-      mode: oneShot
-      label: "Multiply"
-      idleColor: blueDim
-      activeColor: blue
-      osc: { address: "/magic/blend", args: ["multiply"] }
-
-  programmableRows: [0, 1, 2, 3, 4, 5]
+    # Row 7: Scene selection (dynamic group populated at runtime)
+    - { x: 0, y: 7, mode: selector, group: scenes, index: 8, idleColor: purpleDim, activeColor: purple }
+    - { x: 1, y: 7, mode: selector, group: scenes, index: 9, idleColor: purpleDim, activeColor: purple }
+    - { x: 2, y: 7, mode: selector, group: scenes, index: 10, idleColor: purpleDim, activeColor: purple }
+    - { x: 3, y: 7, mode: selector, group: scenes, index: 11, idleColor: purpleDim, activeColor: purple }
+    - { x: 4, y: 7, mode: selector, group: scenes, index: 12, idleColor: purpleDim, activeColor: purple }
+    - { x: 5, y: 7, mode: selector, group: scenes, index: 13, idleColor: purpleDim, activeColor: purple }
+    - { x: 6, y: 7, mode: selector, group: scenes, index: 14, idleColor: purpleDim, activeColor: purple }
+    - { x: 7, y: 7, mode: selector, group: scenes, index: 15, idleColor: purpleDim, activeColor: purple }
+  programmableRows: [0, 1, 2, 3, 4, 5, 6]
 
 # ============================================================================
 # BANK 3: PROCESSING
@@ -876,81 +799,11 @@ bank2:
 # Example: VJUniverse tile controls, game launchers
 
 bank3:
-  name: "Processing"
-  purpose: "Processing VJ apps"
-  
-  pads:
-    # Row 7: Tile visibility
-    - x: 0
-      y: 7
-      mode: toggle
-      label: "Shader"
-      idleColor: greenDim
-      activeColor: green
-      oscOn:  { address: "/vjuniverse/tile/shader/visible", args: [1] }
-      oscOff: { address: "/vjuniverse/tile/shader/visible", args: [0] }
-
-    - x: 1
-      y: 7
-      mode: toggle
-      label: "Lyrics"
-      idleColor: cyanDim
-      activeColor: cyan
-      oscOn:  { address: "/vjuniverse/tile/lyrics/visible", args: [1] }
-      oscOff: { address: "/vjuniverse/tile/lyrics/visible", args: [0] }
-
-    - x: 2
-      y: 7
-      mode: toggle
-      label: "Refrain"
-      idleColor: purpleDim
-      activeColor: purple
-      oscOn:  { address: "/vjuniverse/tile/refrain/visible", args: [1] }
-      oscOff: { address: "/vjuniverse/tile/refrain/visible", args: [0] }
-
-    - x: 3
-      y: 7
-      mode: toggle
-      label: "Image"
-      idleColor: orangeDim
-      activeColor: orange
-      oscOn:  { address: "/vjuniverse/tile/image/visible", args: [1] }
-      oscOff: { address: "/vjuniverse/tile/image/visible", args: [0] }
-
-    # Row 6: Game launchers (oneShot to launch)
-    - x: 0
-      y: 6
-      mode: oneShot
-      label: "WhackMole"
-      idleColor: yellow
-      activeColor: yellowBright
-      osc: { address: "/processing/launch", args: ["WhackAMole"] }
-
-    - x: 1
-      y: 6
-      mode: oneShot
-      label: "CrowdBattle"
-      idleColor: yellow
-      activeColor: yellowBright
-      osc: { address: "/processing/launch", args: ["CrowdBattle"] }
-
-    - x: 2
-      y: 6
-      mode: oneShot
-      label: "BuildupRelease"
-      idleColor: yellow
-      activeColor: yellowBright
-      osc: { address: "/processing/launch", args: ["BuildupRelease"] }
-
-    - x: 7
-      y: 6
-      mode: oneShot
-      label: "Stop All"
-      idleColor: redDim
-      activeColor: red
-      osc: { address: "/processing/stop" }
-
-  programmableRows: [0, 1, 2, 3, 4, 5]
+  name: "Params"
+  purpose: "Dynamic Synesthesia controls"
+  role: params
+  pads: []
+  programmableRows: [0, 1, 2, 3, 4, 5, 6, 7]
 
 # ============================================================================
 # BANK 4: EFFECTS
@@ -958,8 +811,9 @@ bank3:
 # Example: Post-processing effects with toggle controls
 
 bank4:
-  name: "Effects"
-  purpose: "Post-processing effects"
+  name: "Global"
+  purpose: "Global parameters"
+  role: global
   
   pads:
     # Row 7: Primary effects

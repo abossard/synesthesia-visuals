@@ -828,14 +828,14 @@ final class HeadlessRenderer {
     private var mouseVelocity: SIMD2<Float> = SIMD2(0, 0)  // For momentum
     
     // Speed constants (from VJUniverse.pde)
-    private let baseSpeedFloor: Float = 0.02
+    private let baseSpeedFloor: Float = 0.15       // Raised from 0.02 - visible animation without audio
     private let audioSpeedMax: Float = 1.20
     private let speedRampUp: Float = 0.008
     private let speedRampDown: Float = 0.025
     private let bassBoostWeight: Float = 0.35
     private let beatBoostAmount: Float = 0.15
     private let beatBoostDecay: Float = 0.92
-    private let audioSpeedSmoothing: Float = 0.65
+    private let audioSpeedSmoothing: Float = 0.85  // Raised from 0.65 - smoother transitions
     
     // Triple buffering
     private let inflightSemaphore = DispatchSemaphore(value: 3)

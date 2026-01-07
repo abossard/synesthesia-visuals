@@ -281,6 +281,16 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
             return exitLearnMode(state)
         }
     }
+
+    // Record button toggles learn mode for banks >=4
+    if padId == LaunchpadButton.record, state.activeBank >= 4 {
+        switch phase {
+        case .idle:
+            return enterLearnMode(state)
+        case .waitPad, .config:
+            return exitLearnMode(state)
+        }
+    }
     
     // Shift button - set shift held (momentary)
     if padId == LaunchpadButton.shift {
@@ -292,16 +302,17 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
         )
     }
     
-    // Page button - toggle page (latch)
+    // Page button - advance page within bank pageCount
     if padId == LaunchpadButton.page {
         var newState = state
-        newState.currentPage = (state.currentPage + 1) % 2
+        let pageCount = max(1, newState.currentPageCount)
+        newState.currentPage = (state.currentPage + 1) % pageCount
         let color = newState.currentPage == 0 ? LP.purpleDim : LP.purple
         return FSMResult(
             state: newState,
             effects: [
                 .setLed(padId: padId, color: color, blink: false),
-                .log(message: "Page \(newState.currentPage + 1)", level: .info)
+                .log(message: "Page \(newState.currentPage + 1)/\(pageCount)", level: .info)
             ]
         )
     }

@@ -290,10 +290,7 @@ final class RenderEngine: ObservableObject {
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
         
-        // Sync imageManager state with renderer (imageRenderer is source of truth)
-        await MainActor.run { [weak self] in
-            self?.imageManager.state = renderer.imageRenderer.imageState
-        }
+        // Note: imageManager sync moved inside MainActor.run below to reduce thread hops
         
         // Handle shader changes
         if let shaderName = context.shaderState.current?.name,
@@ -306,8 +303,13 @@ final class RenderEngine: ObservableObject {
         }
 
         // Render all tiles in single command buffer → publish → commit
+        // Single MainActor hop per frame (required for SyphonOutputManager)
         await MainActor.run { [weak self] in
             guard let self = self else { return }
+            
+            // Sync imageManager state (was separate hop before)
+            self.imageManager.state = renderer.imageRenderer.imageState
+            
             renderer.renderFrame(
                 audioState: context.audioState,
                 syphonManager: self.syphonManager

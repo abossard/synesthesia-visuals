@@ -26,6 +26,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     private let midi: MIDIManager
     private let executor: EffectExecutor
     private var state: ControllerState
+    private var rolesByBank: [Int: BankRole] = [:]
     
     // MARK: - State
     
@@ -72,6 +73,19 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         // Load saved config (ready for when device connects)
         executor.loadConfig()
+
+        // Roles from YAML config
+        if let yaml = executor.yamlConfig {
+            for bank in 0..<8 { rolesByBank[bank] = yaml.bankRole(bank) }
+            // Prefill state with YAML fixed pads
+            for bank in 0..<8 {
+                let behaviors = yaml.bankBehaviors(bank)
+                if !behaviors.isEmpty {
+                    state.bankPads[bank] = behaviors
+                    state.bankPadRuntime[bank] = behaviors.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
+                }
+            }
+        }
         
         // Apply saved configs to state
         for (padId, behavior) in executor.allConfigs {
@@ -137,6 +151,9 @@ public final class LaunchpadModule: @unchecked Sendable {
             
             // Refresh LEDs now that we're connected
             refreshLeds()
+
+            // Refresh dynamic banks (scenes/params)
+            refreshDynamicBanks()
             
             // Start beat-sync blink timer
             startBlinkTimer()
@@ -167,6 +184,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         lock.lock()
         
+        let oldBank = state.activeBank
         let result: FSMResult
         if message.isPress {
             result = handlePadPress(state, padId: padId)
@@ -201,6 +219,126 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         // Execute effects outside lock
         executor.executeAll(result.effects)
+
+        // If bank changed and role is dynamic, refresh that bank
+        if oldBank != state.activeBank, let role = rolesByBank[state.activeBank], role == .scenes || role == .scenes2 || role == .params {
+            refreshDynamicBanks(for: [state.activeBank])
+        }
+    }
+
+    // MARK: - Dynamic Banks
+
+    private func refreshDynamicBanks(for banks: [Int]? = nil) {
+        let banksToRefresh = banks ?? Array(rolesByBank.keys)
+        Task {
+            // Fetch dynamic sources
+            let scenes = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
+            let controls = await DynamicControlStore.shared.items()
+
+            // Build behaviors per bank
+            var updates: [Int: [ButtonId: PadBehavior]] = [:]
+            var pageCounts: [Int: Int] = [:]
+
+            for bank in banksToRefresh {
+                guard let role = rolesByBank[bank] else { continue }
+                switch role {
+                case .scenes:
+                    updates[bank] = generateSceneBehaviors(scenes: scenes, offset: 0)
+                case .scenes2:
+                    updates[bank] = generateSceneBehaviors(scenes: scenes, offset: 8)
+                case .params:
+                    let pageSize = 64
+                    let totalPages = max(1, Int(ceil(Double(controls.count) / Double(pageSize))))
+                    pageCounts[bank] = totalPages
+                    let currentPage: Int = {
+                        lock.lock(); defer { lock.unlock() }
+                        return min(state.bankCurrentPage[bank] ?? 0, totalPages - 1)
+                    }()
+                    let start = currentPage * pageSize
+                    let end = min(start + pageSize, controls.count)
+                    let pageControls = Array(controls[start..<end])
+                    updates[bank] = generateParamBehaviors(addresses: pageControls)
+                default:
+                    break
+                }
+            }
+
+            lock.lock()
+            for (bank, pads) in updates {
+                state.bankPads[bank] = pads
+                state.bankPadRuntime[bank] = pads.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
+            }
+            for (bank, pages) in pageCounts {
+                state.bankPageCount[bank] = pages
+                if (state.bankCurrentPage[bank] ?? 0) >= pages { state.bankCurrentPage[bank] = 0 }
+            }
+            lock.unlock()
+
+            refreshLeds()
+            let refreshed = updates.keys.sorted()
+            if !refreshed.isEmpty {
+                print("[Dynamic] Refreshed banks \(refreshed) scenes=\(scenes.count) controls=\(controls.count)")
+            }
+        }
+    }
+
+    private func generateSceneBehaviors(scenes: [String], offset: Int) -> [ButtonId: PadBehavior] {
+        var result: [ButtonId: PadBehavior] = [:]
+        let palette = LaunchpadColor.allCases.map { $0.rawValue }
+        for i in 0..<8 {
+            let idx = offset + i
+            guard idx < scenes.count else { continue }
+            let padId = ButtonId(x: i, y: 7)
+            let sceneName = scenes[idx]
+            let color = palette[idx % palette.count]
+            result[padId] = PadBehavior(
+                padId: padId,
+                mode: .selector,
+                group: .scenes,
+                idleColor: color,
+                activeColor: color,
+                label: sceneName,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: "/scenes/select", args: [.string(sceneName)])
+            )
+        }
+        return result
+    }
+
+    private func generateParamBehaviors(addresses: [String]) -> [ButtonId: PadBehavior] {
+        var result: [ButtonId: PadBehavior] = [:]
+        for (idx, address) in addresses.enumerated() {
+            let x = idx % 8
+            let y = idx / 8
+            let padId = ButtonId(x: x, y: y)
+            let label = address.split(separator: "/").last.map(String.init) ?? address
+            let args = (awaitDynamicControlValue(address: address)) ?? []
+            let behavior = PadBehavior(
+                padId: padId,
+                mode: .push,
+                group: .custom,
+                idleColor: LP.blueDim,
+                activeColor: LP.blue,
+                label: label,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: address, args: args)
+            )
+            result[padId] = behavior
+        }
+        return result
+    }
+
+    private func awaitDynamicControlValue(address: String) -> [OscArg]? {
+        var value: [OscArg]? = nil
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            value = await DynamicControlStore.shared.value(address: address)
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return value
     }
     
     // MARK: - Learn Mode
@@ -260,6 +398,28 @@ public final class LaunchpadModule: @unchecked Sendable {
             }
         }
         
+        // Capture dynamic scenes/controls
+        if event.address.hasPrefix("/controls/") {
+            Task {
+                let isNew = await DynamicControlStore.shared.update(address: event.address, args: event.args)
+                if isNew { print("[OSC] +control \(event.address)") }
+            }
+            let paramsBanks = rolesByBank.filter { $0.value == .params }.map { $0.key }
+            if !paramsBanks.isEmpty { refreshDynamicBanks(for: paramsBanks) }
+        }
+        if event.address.hasPrefix("/scenes/") {
+            let name = event.address.components(separatedBy: "/").last ?? ""
+            if !name.isEmpty {
+                Task {
+                    var items = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
+                    if !items.contains(name) { items.append(name) }
+                    await DynamicGroupStore.shared.update(source: "$synesthesia/scenes", items: items)
+                    let sceneBanks = rolesByBank.filter { $0.value == .scenes || $0.value == .scenes2 }.map { $0.key }
+                    if !sceneBanks.isEmpty { refreshDynamicBanks(for: sceneBanks) }
+                }
+            }
+        }
+
         lock.lock()
         let result = handleOscEvent(state, event: event)
         state = result.state
@@ -273,6 +433,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.unlock()
         executor.executeAll(result.effects)
     }
+
     
     // MARK: - Manual Pad Config
     

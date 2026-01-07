@@ -45,6 +45,10 @@ private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
     for y in 1..<8 {
         effects.append(.setLed(padId: ButtonId(x: 8, y: y), color: LP.off, blink: false))
     }
+
+    // Page indicator
+    let pageColor = state.currentPage == 0 ? LP.purpleDim : LP.purple
+    effects.append(.setLed(padId: LaunchpadButton.page, color: pageColor, blink: false))
     
     // Then render configured pads with their current color
     for (padId, behavior) in state.pads {
