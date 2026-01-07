@@ -32,17 +32,6 @@ private enum ShaderConstants {
     static let screenshotFilename = "screenshot.png"
     static let previewFilename = "preview.png"
     
-    // Analysis status values (written to/read from JSON)
-    enum Status {
-        static let black = "black"
-        static let mask = "mask"           // Legacy
-        static let monochrome = "monochrome"     // Legacy
-        static let monochromatic = "monochromatic"
-        
-        /// All values that indicate monochromatic status
-        static let monochromaticAliases = [mask, monochrome, monochromatic]
-    }
-    
     // Metadata keys
     static let statusKey = "status"
     static let reasonKey = "reason"
@@ -54,6 +43,17 @@ private enum ShaderConstants {
     // Badge display
     static let blackBadge = "BLACK"
     static let monoBadge = "MONO"
+    
+    /// Check if a string indicates "black" status
+    static func isBlack(_ value: String) -> Bool {
+        value.lowercased() == "black"
+    }
+    
+    /// Check if a string indicates "monochromatic" status
+    static func isMonochromatic(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return lower == "monochromatic" || lower == "monochrome" || lower == "mask"
+    }
 }
 
 struct ShaderBrowserView: View {
@@ -147,14 +147,21 @@ struct ShaderBrowserView: View {
             return .unknown
         }
         
-        // Check visualMetadata for status
-        if let status = analysis.visualMetadata[ShaderConstants.statusKey] {
-            if status == ShaderConstants.Status.black { return .black }
-            if ShaderConstants.Status.monochromaticAliases.contains(status) { return .monochromatic }
+        // Collect all status hints from various sources
+        let statusHints: [String] = [
+            analysis.visualMetadata[ShaderConstants.statusKey],  // Primary: visual_metadata.status
+            analysis.mood                                        // Legacy: mood field
+        ].compactMap { $0 } + analysis.colors                    // Legacy: colors array
+        
+        // Check for black status (any hint matches)
+        if statusHints.contains(where: ShaderConstants.isBlack) {
+            return .black
         }
         
-        // Also check mood for legacy "black" marking
-        if analysis.mood == ShaderConstants.Status.black { return .black }
+        // Check for monochromatic status (any hint matches)
+        if statusHints.contains(where: ShaderConstants.isMonochromatic) {
+            return .monochromatic
+        }
         
         return .normal
     }
@@ -805,29 +812,17 @@ struct ShaderBrowserView: View {
                     appState.log("  🗑️ Deleted existing analysis", level: .debug)
                 }
                 
-                // STEP 1: Load shader directly into headless renderer and render
-                appState.log("  ▶ Loading shader into headless renderer...", level: .info)
-                guard let renderEngine = appState.renderEngine else {
-                    appState.log("  ✗ No render engine available", level: .error)
-                    errorCount += 1
-                    analysisErrorCount = errorCount
-                    analysisProgress = Double(index + 1) / Double(total)
-                    continue
+                // STEP 1: Select shader via the render engine's shader manager (this actually changes what renders)
+                appState.log("  ▶ Selecting shader '\(shaderName)'...", level: .info)
+                await MainActor.run {
+                    appState.renderEngine?.shaderManager.selectShader(name: shaderName)
                 }
+                // Also update appState for UI consistency
+                await appState.selectShader(shaderName)
                 
-                let loadSuccess = renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
-                if !loadSuccess {
-                    appState.log("  ✗ FAILED to load shader '\(shaderName)' - not found in metallib", level: .error)
-                    errorCount += 1
-                    analysisErrorCount = errorCount
-                    analysisProgress = Double(index + 1) / Double(total)
-                    continue
-                }
-                
-                // STEP 2: Wait 1 second for shader to stabilize, then render again
-                appState.log("  ⏳ Waiting 1s for shader to initialize...", level: .info)
-                try? await Task.sleep(for: .seconds(1))
-                _ = renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
+                // STEP 2: Wait for shader to stabilize and render
+                appState.log("  ⏳ Waiting 3s for shader to initialize...", level: .info)
+                try? await Task.sleep(for: .seconds(3))
                 
                 var isBlack = true
                 var isMonochrome = false
@@ -1020,15 +1015,15 @@ struct ShaderBrowserView: View {
         let analysis = ShaderAnalysisResult(
             title: shaderName,
             description: "Shader renders black or empty output",
-            mood: ShaderConstants.Status.black,
+            mood: "black",
             energy: 0.0,
-            colors: [ShaderConstants.Status.black],
+            colors: ["black"],
             effects: [],
             geometry: [],
             objects: [],
             complexity: "unknown",
             visualMetadata: [
-                ShaderConstants.statusKey: ShaderConstants.Status.black,
+                ShaderConstants.statusKey: "black",
                 ShaderConstants.reasonKey: ShaderConstants.blackReason
             ]
         )
@@ -1041,15 +1036,15 @@ struct ShaderBrowserView: View {
         let analysis = ShaderAnalysisResult(
             title: shaderName,
             description: "Shader renders monochrome (black/white/grey) output - suitable as mask",
-            mood: ShaderConstants.Status.monochromatic,
+            mood: "monochromatic",
             energy: 0.5,
-            colors: ["white", "grey", ShaderConstants.Status.black],
+            colors: ["white", "grey", "black"],
             effects: ["monochrome"],
             geometry: [],
             objects: [],
             complexity: "unknown",
             visualMetadata: [
-                ShaderConstants.statusKey: ShaderConstants.Status.monochromatic,
+                ShaderConstants.statusKey: "monochromatic",
                 ShaderConstants.reasonKey: ShaderConstants.monochromaticReason
             ]
         )
