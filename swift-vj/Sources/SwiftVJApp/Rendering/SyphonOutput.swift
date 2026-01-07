@@ -1,37 +1,38 @@
-// SyphonOutput.swift - Syphon server management for VJ tile outputs
-// Port of Syphon output from VJUniverse
-//
-// Now using real Syphon.xcframework via SyphonKit wrapper
+// SyphonOutput.swift - Thread-safe Syphon server management
+// Syphon's SyphonMetalServer is thread-safe per its header documentation.
+// This wrapper adds lock protection for the senders dictionary only.
 
 import Foundation
 import Metal
+import os.lock
 import SyphonKit
-import Combine
 
 // MARK: - Syphon Output Manager
 
-/// Manages Syphon servers for all tile outputs
+/// Thread-safe Syphon server manager for VJ tile outputs
 /// Each tile gets its own Syphon server for OBS/Resolume compositing
-/// Now an ObservableObject for SwiftUI @EnvironmentObject injection
-@MainActor
-final class SyphonOutputManager: ObservableObject {
+/// NOT @MainActor - can be called from any thread (CVDisplayLink render thread)
+final class SyphonOutputManager: @unchecked Sendable {
     // MARK: - Properties
 
     private var senders: [String: SyphonSender] = [:]
+    private let sendersLock = OSAllocatedUnfairLock()
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
 
-    /// Whether Syphon output is enabled
-    @Published var isEnabled: Bool = true
-
     /// Number of active servers
-    var serverCount: Int { senders.count }
+    var serverCount: Int {
+        sendersLock.lock()
+        defer { sendersLock.unlock() }
+        return senders.count
+    }
 
     /// Active server names
-    var serverNames: [String] { Array(senders.keys).sorted() }
-
-    /// Whether using stub (vs real Syphon) - now always false with real framework
-    var isUsingStub: Bool { false }
+    var serverNames: [String] {
+        sendersLock.lock()
+        defer { sendersLock.unlock() }
+        return Array(senders.keys).sorted()
+    }
     
     /// Shared instance for global access
     static let shared: SyphonOutputManager = {
@@ -49,14 +50,16 @@ final class SyphonOutputManager: ObservableObject {
     }
 
     deinit {
-        // Note: Can't call stopAll() in deinit due to MainActor isolation
-        // Servers will be stopped when the object is deallocated
+        stopAll()
     }
 
     // MARK: - Server Management
 
-    /// Create a Syphon server for a tile
+    /// Create a Syphon server for a tile (thread-safe)
     func createServer(name: String) {
+        sendersLock.lock()
+        defer { sendersLock.unlock() }
+        
         guard senders[name] == nil else { return }
 
         let sender = SyphonSender(name: name, device: device)
@@ -84,14 +87,17 @@ final class SyphonOutputManager: ObservableObject {
         }
     }
 
-    /// Publish a texture to a Syphon server
+    /// Publish a texture to a Syphon server (thread-safe, called from render thread)
     func publish(
         name: String,
         texture: MTLTexture,
         commandBuffer: MTLCommandBuffer
     ) {
-        guard isEnabled,
-              let sender = senders[name] else { return }
+        sendersLock.lock()
+        let sender = senders[name]
+        sendersLock.unlock()
+        
+        guard let sender = sender else { return }
 
         sender.publish(
             texture: texture,
@@ -100,10 +106,13 @@ final class SyphonOutputManager: ObservableObject {
         )
     }
 
-    /// Publish texture with automatic command buffer
+    /// Publish texture with automatic command buffer (thread-safe)
     func publish(name: String, texture: MTLTexture) {
-        guard isEnabled,
-              let sender = senders[name],
+        sendersLock.lock()
+        let sender = senders[name]
+        sendersLock.unlock()
+        
+        guard let sender = sender,
               let commandBuffer = commandQueue.makeCommandBuffer() else { return }
 
         sender.publish(
@@ -115,27 +124,36 @@ final class SyphonOutputManager: ObservableObject {
         commandBuffer.commit()
     }
 
-    /// Stop a specific server
+    /// Stop a specific server (thread-safe)
     func stopServer(name: String) {
-        if let sender = senders[name] {
+        sendersLock.lock()
+        let sender = senders.removeValue(forKey: name)
+        sendersLock.unlock()
+        
+        if let sender = sender {
             sender.stop()
-            senders.removeValue(forKey: name)
             print("[Syphon] Stopped server: \(name)")
         }
     }
 
-    /// Stop all servers
+    /// Stop all servers (thread-safe)
     func stopAll() {
-        for (name, sender) in senders {
+        sendersLock.lock()
+        let allSenders = senders
+        senders.removeAll()
+        sendersLock.unlock()
+        
+        for (name, sender) in allSenders {
             sender.stop()
             print("[Syphon] Stopped server: \(name)")
         }
-        senders.removeAll()
     }
 
-    /// Check if a server exists
+    /// Check if a server exists (thread-safe)
     func hasServer(name: String) -> Bool {
-        senders[name] != nil
+        sendersLock.lock()
+        defer { sendersLock.unlock() }
+        return senders[name] != nil
     }
 }
 

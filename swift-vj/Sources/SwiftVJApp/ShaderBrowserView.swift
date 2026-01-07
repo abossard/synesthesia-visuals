@@ -770,7 +770,7 @@ struct ShaderBrowserView: View {
                     continue
                 }
                 
-                let loadSuccess = await renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
+                let loadSuccess = renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
                 if !loadSuccess {
                     appState.log("  ✗ FAILED to load shader '\(shaderName)' - not found in metallib", level: .error)
                     errorCount += 1
@@ -782,7 +782,7 @@ struct ShaderBrowserView: View {
                 // STEP 2: Wait 1 second for shader to stabilize, then render again
                 appState.log("  ⏳ Waiting 1s for shader to initialize...", level: .info)
                 try? await Task.sleep(for: .seconds(1))
-                _ = await renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
+                _ = renderEngine.loadAndRenderForAnalysis(shaderName: shaderName)
                 
                 var isBlack = true
                 var isMonochrome = false

@@ -1,6 +1,6 @@
 // RenderEngine.swift - Main rendering orchestrator for VJ system
-// Headless rendering with single command buffer per frame
-// All UI previews consume via Syphon clients only
+// Pure CVDisplayLink-based rendering on a dedicated high-priority thread
+// GPU work runs synchronously in the display link callback
 
 import Foundation
 import Metal
@@ -8,12 +8,13 @@ import MetalKit
 import Combine
 import SwiftUI
 import CoreVideo
+import os.lock
 import SwiftVJCore
 
 // MARK: - Render Frame Context
 
 /// Snapshot of all state needed for one render frame
-/// Gathered in a single MainActor hop to minimize thread switching
+/// Gathered from MainActor state managers
 struct RenderFrameContext: Sendable {
     let audioState: AudioState
     let lyricsState: LyricsDisplayState
@@ -27,44 +28,46 @@ struct RenderFrameContext: Sendable {
 // MARK: - Render Engine
 
 /// Main rendering engine that orchestrates headless tile rendering and Syphon output
-/// Observable for SwiftUI integration
-/// NOTE: All rendering is headless - UI previews consume via Syphon clients only
+/// CVDisplayLink callback runs GPU work synchronously on a real-time thread
 final class RenderEngine: ObservableObject {
-    // MARK: - Published State
+    // MARK: - Published State (MainActor for SwiftUI)
 
     @Published private(set) var isRunning: Bool = false
     @Published private(set) var fps: Double = 0
     @Published private(set) var frameCount: Int = 0
 
-    // State managers
+    // State managers (MainActor isolated for SwiftUI binding)
     @Published var audioManager: AudioStateManager
     @Published var textManager: TextStateManager
     @Published var shaderManager: ShaderStateManager
     @Published var maskManager: MaskStateManager
     @Published var imageManager: ImageStateManager
 
-    // Audio Processor (injected)
+    // Audio Processor (actor isolated, not MainActor)
     private var synesthesiaAudio: SynesthesiaAudioProcessor?
     
     // Logger closure for UI logging
     var logger: ((String) -> Void)?
 
-    // MARK: - Private
-
+    // MARK: - Render Thread State (accessed from CVDisplayLink thread)
+    
     private var device: MTLDevice?
     private(set) var headlessRenderer: HeadlessRenderer?
     private var displayLink: CVDisplayLink?
-
-    // Syphon output
+    
+    // Thread-safe Syphon manager (NOT MainActor)
     var syphonManager: SyphonOutputManager?
-    @Published private(set) var syphonEnabled: Bool = true
-
-    private var lastFrameTime: Date = Date()
+    
+    // Cached state for render thread (updated via atomic swap)
+    private let cachedContext = OSAllocatedUnfairLock<RenderFrameContext?>(initialState: nil)
+    private let pendingShaderName = OSAllocatedUnfairLock<String?>(initialState: nil)
+    private let pendingMaskName = OSAllocatedUnfairLock<String?>(initialState: nil)
+    
+    // FPS tracking (render thread only)
+    private var lastFrameTime: CFAbsoluteTime = 0
     private var frameTimeAccum: Double = 0
     private var fpsUpdateCounter: Int = 0
-
-    // Target framerate
-    private let targetFPS: Double = 60
+    private var localFrameCount: Int = 0
 
     // MARK: - Init
 
@@ -112,20 +115,22 @@ final class RenderEngine: ObservableObject {
         }
         self.device = device
 
-        // Create headless renderer (replaces TileManager)
+        // Create headless renderer
         let renderer = HeadlessRenderer(device: device, logger: logger)
         self.headlessRenderer = renderer
         logger?("[RenderEngine] Initialized headless renderer")
         
-        // Load default shaders (verified to exist in metallib)
+        // Load default shaders
         renderer.shaderRenderer.loadShader(name: "3isacrowd")
         renderer.maskRenderer.loadShader(name: "BWrevolvingswirl")
 
-        // Create Syphon output manager (singleton to avoid duplicate servers)
+        // Create thread-safe Syphon manager and start servers
+        self.syphonManager = SyphonOutputManager.shared
+        syphonManager?.createStandardServers()
+        
+        // Start MainActor managers
         await MainActor.run { [weak self] in
             guard let self = self else { return }
-            self.syphonManager = SyphonOutputManager.shared
-            self.syphonManager?.createStandardServers()
             self.audioManager.start()
             self.textManager.start()
         }
@@ -133,41 +138,33 @@ final class RenderEngine: ObservableObject {
         // Start render loop
         startRenderLoop()
 
-        DispatchQueue.main.async { [weak self] in self?.isRunning = true }
-        print("[RenderEngine] Started with headless rendering + Syphon output")
+        await MainActor.run { [weak self] in self?.isRunning = true }
+        print("[RenderEngine] Started with CVDisplayLink rendering")
     }
 
     func stop() async {
         guard isRunning else { return }
 
         stopRenderLoop()
+        syphonManager?.stopAll()
+        syphonManager = nil
+        
         await MainActor.run { [weak self] in
             guard let self = self else { return }
             self.audioManager.stop()
             self.textManager.stop()
-            self.syphonManager?.stopAll()
-            self.syphonManager = nil
+            self.isRunning = false
         }
 
-        DispatchQueue.main.async { [weak self] in self?.isRunning = false }
         print("[RenderEngine] Stopped")
     }
 
-    /// Toggle Syphon output
-    func setSyphonEnabled(_ enabled: Bool) {
-        Task { @MainActor [weak self] in
-            guard let self = self else { return }
-            self.syphonEnabled = enabled
-            self.syphonManager?.isEnabled = enabled
-        }
-    }
-
-    // MARK: - Render Loop (CVDisplayLink)
+    // MARK: - CVDisplayLink Render Loop
 
     private func startRenderLoop() {
-        lastFrameTime = Date()
+        lastFrameTime = CFAbsoluteTimeGetCurrent()
         
-        // Create CVDisplayLink for vsync-accurate frame timing
+        // Create CVDisplayLink
         var link: CVDisplayLink?
         CVDisplayLinkCreateWithActiveCGDisplays(&link)
         
@@ -178,25 +175,22 @@ final class RenderEngine: ObservableObject {
         
         self.displayLink = link
         
-        // Set the callback - CVDisplayLink calls this on a high-priority thread
+        // CVDisplayLink callback - runs on high-priority real-time thread
         let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
             guard let userInfo = userInfo else { return kCVReturnSuccess }
             let engine = Unmanaged<RenderEngine>.fromOpaque(userInfo).takeUnretainedValue()
-            
-            // Dispatch render work - CVDisplayLink callback must return quickly
-            Task { await engine.renderFrame() }
-            
+            engine.renderFrameSync()
             return kCVReturnSuccess
         }
         
-        // Pass self as userInfo (prevent deallocation while running)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
         CVDisplayLinkSetOutputCallback(link, callback, userInfo)
-        
-        // Start the display link
         CVDisplayLinkStart(link)
         
-        print("[RenderEngine] Render loop started with CVDisplayLink (vsync)")
+        // Start state update task (runs async, pushes to cached state)
+        startStateUpdateTask()
+        
+        print("[RenderEngine] CVDisplayLink started (vsync)")
     }
     
     private func stopRenderLoop() {
@@ -205,23 +199,21 @@ final class RenderEngine: ObservableObject {
             self.displayLink = nil
         }
     }
-
-    private func renderFrame() async {
-        let now = Date()
-        let deltaTime = Float(now.timeIntervalSince(lastFrameTime))
-        lastFrameTime = now
-
-        // Update FPS counter (only publish every 30 frames to reduce main thread hops)
-        frameTimeAccum += Double(deltaTime)
-        fpsUpdateCounter += 1
-        let shouldPublishFPS = fpsUpdateCounter >= 30
-        if shouldPublishFPS {
-            fpsUpdateCounter = 0
+    
+    /// Async task that gathers state from MainActor and pushes to cache
+    private func startStateUpdateTask() {
+        Task { [weak self] in
+            while let self = self, self.displayLink != nil {
+                await self.updateCachedState()
+                // Update at ~60Hz (slightly faster than display to stay ahead)
+                try? await Task.sleep(for: .milliseconds(14))
+            }
         }
-        let newFrame = frameCount + 1
-        frameCount = newFrame
-
-        // Get audio levels from processor (off main thread)
+    }
+    
+    /// Gather state from MainActor managers and cache for render thread
+    private func updateCachedState() async {
+        // Get audio from processor (actor, not MainActor)
         var audioLevels: OSCAudioLevels?
         var audioStats: (messageCount: Int, lastMessage: Date, isActive: Bool, messageRate: Int)?
         if let processor = synesthesiaAudio {
@@ -229,26 +221,24 @@ final class RenderEngine: ObservableObject {
             audioStats = await processor.stats
         }
 
-        // Process audio OFF MainActor (AudioProcessor is an actor, not @MainActor)
+        // Process audio off MainActor
         var processedAudioState: AudioState?
         if let levels = audioLevels {
             processedAudioState = await audioManager.processAudioOffMain(oscLevels: levels)
         }
-
-        // Capture for closure
+        
         let capturedStats = audioStats
         let capturedAudioState = processedAudioState
+        let shouldPublishFPS = fpsUpdateCounter >= 30
 
-        // SINGLE MainActor hop to set state and gather ALL state
+        // Single MainActor hop
         let context = await MainActor.run { [weak self] () -> RenderFrameContext? in
             guard let self = self else { return nil }
 
-            // Set processed audio state directly (no async needed)
             if let audioState = capturedAudioState {
                 self.audioManager.setStateDirectly(audioState)
             }
 
-            // Update stats (lightweight, no async needed)
             if let stats = capturedStats {
                 self.audioManager.updateStats(
                     messageRate: stats.messageRate,
@@ -257,13 +247,12 @@ final class RenderEngine: ObservableObject {
                 )
             }
 
-            // Publish FPS only when batched
             if shouldPublishFPS {
                 self.fps = Double(30) / self.frameTimeAccum
                 self.frameTimeAccum = 0
+                self.frameCount = self.localFrameCount
             }
 
-            // Gather all state in one hop
             return RenderFrameContext(
                 audioState: self.audioManager.state,
                 lyricsState: self.textManager.lyricsState,
@@ -274,39 +263,72 @@ final class RenderEngine: ObservableObject {
                 imageState: self.imageManager.state
             )
         }
-
-        guard let context = context, let renderer = headlessRenderer else { return }
         
-        // Update renderer state from context
+        guard let context = context else { return }
+        
+        // Atomically update cached state for render thread
+        cachedContext.withLock { $0 = context }
+        
+        // Check for shader changes
+        if let shaderName = context.shaderState.current?.name {
+            pendingShaderName.withLock { $0 = shaderName }
+        }
+        if let maskName = context.maskState.current?.name {
+            pendingMaskName.withLock { $0 = maskName }
+        }
+        
+        if shouldPublishFPS {
+            fpsUpdateCounter = 0
+        }
+    }
+
+    /// Synchronous render called from CVDisplayLink thread
+    /// This is the hot path - no async, no MainActor
+    private func renderFrameSync() {
+        guard let renderer = headlessRenderer else { return }
+        
+        // Get cached context
+        guard let context = cachedContext.withLock({ $0 }) else { return }
+        
+        // Track frame timing
+        let now = CFAbsoluteTimeGetCurrent()
+        let deltaTime = now - lastFrameTime
+        lastFrameTime = now
+        frameTimeAccum += deltaTime
+        fpsUpdateCounter += 1
+        localFrameCount += 1
+        
+        // Update renderer state
         renderer.lyricsRenderer.lyricsState = context.lyricsState
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
         
-        // Note: imageManager sync moved inside MainActor.run below to reduce thread hops
-        
         // Handle shader changes
-        if let shaderName = context.shaderState.current?.name,
-           shaderName != renderer.shaderRenderer.currentShaderName {
+        if let shaderName = pendingShaderName.withLock({ val -> String? in
+            let current = val
+            if current != renderer.shaderRenderer.currentShaderName {
+                return current
+            }
+            return nil
+        }) {
             renderer.shaderRenderer.loadShader(name: shaderName)
         }
-        if let maskName = context.maskState.current?.name,
-           maskName != renderer.maskRenderer.currentShaderName {
+        
+        if let maskName = pendingMaskName.withLock({ val -> String? in
+            let current = val
+            if current != renderer.maskRenderer.currentShaderName {
+                return current
+            }
+            return nil
+        }) {
             renderer.maskRenderer.loadShader(name: maskName)
         }
-
-        // Render all tiles in single command buffer → publish → commit
-        // Single MainActor hop per frame (required for SyphonOutputManager)
-        await MainActor.run { [weak self] in
-            guard let self = self else { return }
-            
-            // Sync imageManager state (was separate hop before)
-            self.imageManager.state = renderer.imageRenderer.imageState
-            
-            renderer.renderFrame(
-                audioState: context.audioState,
-                syphonManager: self.syphonManager
-            )
-        }
+        
+        // Render all tiles + publish to Syphon (synchronous GPU work)
+        renderer.renderFrame(
+            audioState: context.audioState,
+            syphonManager: syphonManager
+        )
     }
 
     // MARK: - Convenience Methods
@@ -383,7 +405,7 @@ final class RenderEngine: ObservableObject {
     /// - Parameter shaderName: Bare shader name (e.g., "Electriclava") matching metallib function names
     /// - Returns: True if shader was loaded and rendered successfully
     @discardableResult
-    func loadAndRenderForAnalysis(shaderName: String) async -> Bool {
+    func loadAndRenderForAnalysis(shaderName: String) -> Bool {
         guard let renderer = headlessRenderer else {
             print("[RenderEngine] ❌ No headless renderer for analysis")
             return false
@@ -421,10 +443,8 @@ final class RenderEngine: ObservableObject {
             timestamp: Date()
         )
         
-        // Render the frame
-        await MainActor.run { [syphonManager] in
-            renderer.renderFrame(audioState: audioState, syphonManager: syphonManager)
-        }
+        // Render the frame (no MainActor needed - renderFrame is thread-safe)
+        renderer.renderFrame(audioState: audioState, syphonManager: syphonManager)
         
         return true
     }

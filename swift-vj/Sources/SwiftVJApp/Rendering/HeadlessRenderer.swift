@@ -865,8 +865,7 @@ final class HeadlessRenderer {
     // MARK: - Render Frame
     
     /// Render all tiles and publish to Syphon on the same command buffer
-    /// Must be called from MainActor since SyphonOutputManager is @MainActor isolated
-    @MainActor
+    /// Thread-safe - can be called from CVDisplayLink render thread
     func renderFrame(
         audioState: AudioState,
         syphonManager: SyphonOutputManager?
