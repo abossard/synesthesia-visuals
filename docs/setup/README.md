@@ -2,6 +2,22 @@
 
 Complete guides for installing and configuring the VJ toolkit.
 
+---
+
+## NEW: Chataigne-Based Workflow (Recommended for 400+ Shaders)
+
+**[🚀 Chataigne Quick Start](CHATAIGNE_QUICK_START.md)** - Get a 400-shader Launchpad-controlled rig running in 30 minutes
+
+**[📚 Chataigne + SwiftVJApp Replacement Guide](chataigne-swiftvjapp-replacement-guide.md)** - Complete guide for replacing SwiftVJApp with Chataigne + Magic Music Visuals
+
+**Why Chataigne?**
+- Visual programming (no code for MIDI mappings)
+- 400+ shaders organized in 8 Launchpad banks
+- Magic Music Visuals as main VJ tool (better performance, shader masks)
+- Industry-standard tool used by VJs and lighting designers worldwide
+
+---
+
 ## Quick Start
 
 - **[Quick Start: OSC Pipeline](QUICK_START_OSC_PIPELINE.md)** - Get the Python → OSC → Processing visualization pipeline running in 5 minutes
