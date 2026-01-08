@@ -661,30 +661,23 @@ struct RenderingView: View {
             // Navigation
             HStack {
                 Text("Image:")
-                
+
                 Button {
-                    renderEngine?.headlessRenderer?.imageRenderer.prevImage()
+                    appState.prevImage()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                
-                if let state = renderEngine?.headlessRenderer?.imageRenderer.imageState {
-                    Text("\(state.folderIndex + 1)/\(state.folderImages.count)")
-                        .font(.caption.monospaced())
-                        .frame(minWidth: 80)
-                        .padding(.horizontal, 8)
-                        .background(Color.secondary.opacity(0.2))
-                        .cornerRadius(4)
-                } else {
-                    Text("No images")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(minWidth: 80)
-                }
-                
+
+                Text("\(appState.imageIndex + 1)/\(appState.imageCount)")
+                    .font(.caption.monospaced())
+                    .frame(minWidth: 80)
+                    .padding(.horizontal, 8)
+                    .background(Color.secondary.opacity(0.2))
+                    .cornerRadius(4)
+
                 Button {
-                    renderEngine?.headlessRenderer?.imageRenderer.nextImage()
+                    appState.nextImage()
                 } label: {
                     Image(systemName: "chevron.right")
                 }
@@ -694,12 +687,12 @@ struct RenderingView: View {
             // Beat cycling
             HStack {
                 Text("Auto-switch:")
-                
+
                 ForEach([("Manual", 0), ("4 beats", 4), ("8 beats", 8), ("16 beats", 16)], id: \.0) { label, beats in
                     Button {
-                        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
-                            var state = renderer.imageState
-                            renderer.imageState = ImageDisplayState(
+                        if let imageManager = renderEngine?.imageManager {
+                            let state = imageManager.state
+                            imageManager.state = ImageDisplayState(
                                 currentImageURL: state.currentImageURL,
                                 nextImageURL: state.nextImageURL,
                                 crossfadeProgress: state.crossfadeProgress,
@@ -710,9 +703,9 @@ struct RenderingView: View {
                                 beatsPerChange: beats
                             )
                             if beats == 0 {
-                                appState.log("[Images] 🎛️ Auto-cycle: Manual", level: .info)
+                                appState.log("[Images] Auto-cycle: Manual", level: .info)
                             } else {
-                                appState.log("[Images] 🎛️ Auto-cycle: \(beats) beats", level: .info)
+                                appState.log("[Images] Auto-cycle: \(beats) beats", level: .info)
                             }
                         }
                     } label: {
@@ -720,7 +713,7 @@ struct RenderingView: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .tint((renderEngine?.headlessRenderer?.imageRenderer.imageState.beatsPerChange ?? 0) == beats ? .blue : .gray)
+                    .tint((renderEngine?.imageManager.state.beatsPerChange ?? 0) == beats ? .blue : .gray)
                 }
             }
             
@@ -740,7 +733,7 @@ struct RenderingView: View {
                 }
                 .buttonStyle(.bordered)
                 
-                if let state = renderEngine?.headlessRenderer?.imageRenderer.imageState,
+                if let state = renderEngine?.imageManager.state,
                    !state.folderImages.isEmpty {
                     Text("\(state.folderImages.count) images loaded")
                         .font(.caption)
@@ -750,49 +743,50 @@ struct RenderingView: View {
         }
         .padding()
     }
-    
+
     private func loadImagesFromFolder(_ url: URL) {
         appState.log("[Images] Loading from folder: \(url.lastPathComponent)", level: .info)
         appState.log("[Images]   Path: \(url.path)", level: .debug)
-        
+
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: nil
         ) else {
-            appState.log("[Images] ❌ Failed to read directory", level: .error)
+            appState.log("[Images] Failed to read directory", level: .error)
             return
         }
-        
+
         let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]
         let imageFiles = files.filter { file in
             imageExtensions.contains(file.pathExtension.lowercased())
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        
+
         appState.log("[Images] Found \(imageFiles.count) image files", level: .info)
-        
+
         guard !imageFiles.isEmpty else {
-            appState.log("[Images] ⚠️ No images found in folder", level: .warning)
+            appState.log("[Images] No images found in folder", level: .warning)
             return
         }
-        
+
         // Log first few filenames
         let preview = imageFiles.prefix(5).map { $0.lastPathComponent }.joined(separator: ", ")
         appState.log("[Images]   Files: \(preview)\(imageFiles.count > 5 ? "..." : "")", level: .debug)
-        
-        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
-            renderer.imageState = ImageDisplayState(
+
+        if let imageManager = renderEngine?.imageManager {
+            let currentCoverMode = imageManager.state.coverMode
+            imageManager.state = ImageDisplayState(
                 currentImageURL: imageFiles.first,
                 nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
                 crossfadeProgress: 0.0,
                 isFading: false,
-                coverMode: false,
+                coverMode: currentCoverMode,
                 folderImages: imageFiles,
                 folderIndex: 0,
                 beatsPerChange: 8
             )
-            appState.log("[Images] ✓ Loaded with 8-beat auto-cycle", level: .info)
+            appState.log("[Images] Loaded with 8-beat auto-cycle", level: .info)
         } else {
-            appState.log("[Images] ❌ Renderer not available", level: .error)
+            appState.log("[Images] ImageManager not available", level: .error)
         }
     }
 }

@@ -58,3 +58,5 @@ temp_*.frag
 screenshots/
 .temp/
 swift-vj/Shaders/*/*.png
+data/song_images/**/*.jpg
+data/song_images/**/*.json

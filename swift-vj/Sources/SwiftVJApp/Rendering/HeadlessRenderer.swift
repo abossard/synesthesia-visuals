@@ -593,9 +593,9 @@ final class ImageRenderer: TileRenderer {
             options: .storageModeShared
         )
         
-        // Uniform buffer for crossfade
+        // Uniform buffer for ImageUniforms (crossfade + aspect ratios)
         uniformBuffer = device.makeBuffer(
-            length: MemoryLayout<Float>.stride,
+            length: MemoryLayout<Float>.stride * 4,
             options: .storageModeShared
         )
         
@@ -609,16 +609,23 @@ final class ImageRenderer: TileRenderer {
     }
     
     private func setupBlendPipeline() {
-        // Create simple blend shader
+        // Create blend shader with cover mode scaling
         let source = """
         #include <metal_stdlib>
         using namespace metal;
-        
+
         struct VertexOut {
             float4 position [[position]];
             float2 texCoord;
         };
-        
+
+        struct ImageUniforms {
+            float crossfade;
+            float outputAspect;  // width/height of output (16/9 = 1.777)
+            float currentAspect; // width/height of current texture
+            float nextAspect;    // width/height of next texture
+        };
+
         vertex VertexOut vertex_image(uint vid [[vertex_id]],
                                        constant float4* vertices [[buffer(0)]]) {
             VertexOut out;
@@ -627,15 +634,35 @@ final class ImageRenderer: TileRenderer {
             out.texCoord = v.zw;
             return out;
         }
-        
+
+        // Cover mode: scale and crop to fill output, centered
+        float2 coverUV(float2 uv, float texAspect, float outAspect) {
+            float2 scale = float2(1.0);
+            if (texAspect > outAspect) {
+                // Texture is wider - crop sides
+                scale.x = outAspect / texAspect;
+            } else {
+                // Texture is taller - crop top/bottom
+                scale.y = texAspect / outAspect;
+            }
+            return (uv - 0.5) * scale + 0.5;
+        }
+
         fragment float4 fragment_image_blend(VertexOut in [[stage_in]],
                                              texture2d<float> currentTex [[texture(0)]],
                                              texture2d<float> nextTex [[texture(1)]],
                                              sampler texSampler [[sampler(0)]],
-                                             constant float& crossfade [[buffer(0)]]) {
-            float4 current = currentTex.sample(texSampler, in.texCoord);
-            float4 next = nextTex.sample(texSampler, in.texCoord);
-            return mix(current, next, crossfade);
+                                             constant ImageUniforms& uniforms [[buffer(0)]]) {
+            // Flip V coordinate (Metal textures are top-down, images expect bottom-up)
+            float2 flippedUV = float2(in.texCoord.x, 1.0 - in.texCoord.y);
+
+            // Apply cover mode UV transform
+            float2 currentUV = coverUV(flippedUV, uniforms.currentAspect, uniforms.outputAspect);
+            float2 nextUV = coverUV(flippedUV, uniforms.nextAspect, uniforms.outputAspect);
+
+            float4 current = currentTex.sample(texSampler, currentUV);
+            float4 next = nextTex.sample(texSampler, nextUV);
+            return mix(current, next, uniforms.crossfade);
         }
         """
         
@@ -803,11 +830,17 @@ final class ImageRenderer: TileRenderer {
         } else if !imageState.isFading {
             currentCrossfade = 0.0
         }
-        
-        // Update crossfade uniform
-        var crossfade = currentCrossfade
+
+        // Calculate aspect ratios for cover mode scaling
+        let outputAspect = Float(width) / Float(height)  // 16:9 = 1.777
+        let currentAspect = Float(current.width) / Float(current.height)
+        let next = nextImageTexture ?? current
+        let nextAspect = Float(next.width) / Float(next.height)
+
+        // Update uniforms with aspect ratios
+        var imageUniforms = (currentCrossfade, outputAspect, currentAspect, nextAspect)
         if let uniformBuffer = uniformBuffer {
-            memcpy(uniformBuffer.contents(), &crossfade, MemoryLayout<Float>.stride)
+            memcpy(uniformBuffer.contents(), &imageUniforms, MemoryLayout<(Float, Float, Float, Float)>.stride)
         }
         
         let passDescriptor = MTLRenderPassDescriptor()

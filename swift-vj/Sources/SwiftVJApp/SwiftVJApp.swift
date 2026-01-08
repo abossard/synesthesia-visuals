@@ -98,6 +98,10 @@ final class AppState: ObservableObject {
     @Published var pipelineSteps: [PipelineStep] = []
     @Published var pipelineResult: PipelineResult?
 
+    // Image State (for UI binding)
+    @Published var imageIndex: Int = 0
+    @Published var imageCount: Int = 0
+
     // OSC State
     @Published var oscMessages: [String: OSCLogEntry] = [:]  // Grouped by address
     @Published var oscMessageCount: Int = 0
@@ -351,6 +355,10 @@ final class AppState: ObservableObject {
                     self.pipelineResult = result
                     self.updatePipelineSteps(from: result)
                     self.logPipelineResult(result)
+                    // Load images directly from pipeline result
+                    if result.imagesFound, !result.imagesFolder.isEmpty {
+                        self.loadImagesFromFolder(URL(fileURLWithPath: result.imagesFolder))
+                    }
                 }
             }
         }
@@ -438,6 +446,10 @@ final class AppState: ObservableObject {
                     self.updatePipelineSteps(from: result)
                     self.pipelineResult = result
                     self.logPipelineResult(result)
+                    // Load images directly from pipeline result
+                    if result.imagesFound, !result.imagesFolder.isEmpty {
+                        self.loadImagesFromFolder(URL(fileURLWithPath: result.imagesFolder))
+                    }
                 }
             }
         }
@@ -611,29 +623,94 @@ final class AppState: ObservableObject {
 
         log("[Images] Found \(imageFiles.count) images", level: .info)
 
-        // Update the ImageRenderer via HeadlessRenderer
-        if let renderer = renderEngine?.headlessRenderer?.imageRenderer {
-            renderer.imageState = ImageDisplayState(
+        // Update published state for UI binding
+        imageIndex = 0
+        imageCount = imageFiles.count
+
+        // Update the imageManager state (which RenderEngine syncs to renderer each frame)
+        if let imageManager = renderEngine?.imageManager {
+            let currentCoverMode = imageManager.state.coverMode
+            imageManager.state = ImageDisplayState(
                 currentImageURL: imageFiles.first,
                 nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
                 crossfadeProgress: 0.0,
                 isFading: false,
-                coverMode: renderer.imageState.coverMode,
+                coverMode: currentCoverMode,
                 folderImages: imageFiles,
                 folderIndex: 0,
                 beatsPerChange: 8  // Default to 8-beat auto-cycle
             )
             log("[Images] Loaded with 8-beat auto-cycle", level: .info)
         } else {
-            log("[Images] Renderer not available", level: .error)
+            log("[Images] ImageManager not available", level: .error)
         }
+    }
+
+    /// Navigate to next image
+    func nextImage() {
+        guard let imageManager = renderEngine?.imageManager else {
+            log("[Images] nextImage: imageManager not available", level: .error)
+            return
+        }
+        let state = imageManager.state
+        guard !state.folderImages.isEmpty else {
+            log("[Images] nextImage: no images loaded", level: .warning)
+            return
+        }
+
+        let nextIndex = (state.folderIndex + 1) % state.folderImages.count
+        let current = state.folderImages[nextIndex]
+        let next = state.folderImages[(nextIndex + 1) % state.folderImages.count]
+
+        imageManager.state = ImageDisplayState(
+            currentImageURL: current,
+            nextImageURL: next,
+            crossfadeProgress: 0.0,
+            isFading: true,
+            coverMode: state.coverMode,
+            folderImages: state.folderImages,
+            folderIndex: nextIndex,
+            beatsPerChange: state.beatsPerChange
+        )
+        imageIndex = nextIndex
+        log("[Images] → Next image: \(nextIndex + 1)/\(state.folderImages.count)", level: .debug)
+    }
+
+    /// Navigate to previous image
+    func prevImage() {
+        guard let imageManager = renderEngine?.imageManager else {
+            log("[Images] prevImage: imageManager not available", level: .error)
+            return
+        }
+        let state = imageManager.state
+        guard !state.folderImages.isEmpty else {
+            log("[Images] prevImage: no images loaded", level: .warning)
+            return
+        }
+
+        let prevIndex = (state.folderIndex - 1 + state.folderImages.count) % state.folderImages.count
+        let current = state.folderImages[prevIndex]
+        let next = state.folderImages[(prevIndex + 1) % state.folderImages.count]
+
+        imageManager.state = ImageDisplayState(
+            currentImageURL: current,
+            nextImageURL: next,
+            crossfadeProgress: 0.0,
+            isFading: true,
+            coverMode: state.coverMode,
+            folderImages: state.folderImages,
+            folderIndex: prevIndex,
+            beatsPerChange: state.beatsPerChange
+        )
+        imageIndex = prevIndex
+        log("[Images] ← Prev image: \(prevIndex + 1)/\(state.folderImages.count)", level: .debug)
     }
 
     /// Set image fit mode (called via /image/fit OSC)
     func setImageFitMode(_ cover: Bool) {
-        guard let renderer = renderEngine?.headlessRenderer?.imageRenderer else { return }
-        let state = renderer.imageState
-        renderer.imageState = ImageDisplayState(
+        guard let imageManager = renderEngine?.imageManager else { return }
+        let state = imageManager.state
+        imageManager.state = ImageDisplayState(
             currentImageURL: state.currentImageURL,
             nextImageURL: state.nextImageURL,
             crossfadeProgress: state.crossfadeProgress,
