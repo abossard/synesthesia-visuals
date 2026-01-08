@@ -5,7 +5,7 @@ A toolkit for VJ performances combining Synesthesia shaders, Swift-VJ control ap
 ## Repository Structure
 
 ```
-├── synesthesia-shaders/    # Synesthesia scene files and GLSL shaders (400+)
+├── synesthesia-shaders/    # Synesthesia scene files and GLSL shaders
 ├── swift-vj/               # Swift VJ control application (macOS native)
 │   ├── Sources/
 │   │   ├── SwiftVJApp/     # SwiftUI application

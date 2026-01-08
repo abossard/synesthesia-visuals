@@ -28,9 +28,8 @@
 ### 2. Load Sample Configuration
 
 ```bash
-# Clone this repo if not already done
-git clone https://github.com/abossard/synesthesia-visuals.git
-cd synesthesia-visuals
+# Navigate to your synesthesia-visuals directory
+cd /path/to/synesthesia-visuals
 
 # Open Chataigne
 # File → Open → Select lpsyn.noisette

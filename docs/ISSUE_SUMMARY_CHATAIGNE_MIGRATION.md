@@ -243,13 +243,13 @@ Edit `~/Library/Application Support/SwiftVJ/config.json`:
 
 ### Primary Guides
 
-1. **[Chataigne Quick Start](../docs/setup/CHATAIGNE_QUICK_START.md)** (10KB)
+1. **[Chataigne Quick Start](setup/CHATAIGNE_QUICK_START.md)** (10KB)
    - 5-minute setup
    - 10-minute customization
    - 15-minute Magic integration
    - **Time to VJ**: 30 minutes
 
-2. **[Chataigne + SwiftVJApp Replacement Guide](../docs/setup/chataigne-swiftvjapp-replacement-guide.md)** (28KB)
+2. **[Chataigne + SwiftVJApp Replacement Guide](setup/chataigne-swiftvjapp-replacement-guide.md)** (28KB)
    - Complete architecture comparison
    - Detailed Chataigne setup
    - 400 shader library organization
@@ -265,18 +265,18 @@ Edit `~/Library/Application Support/SwiftVJ/config.json`:
    - Updated repository structure
    - Quick links to new guides
 
-4. **[docs/setup/README.md](../docs/setup/README.md)**
+4. **[docs/setup/README.md](setup/README.md)**
    - Featured Chataigne workflow
    - Explained benefits vs SwiftVJApp
 
 ### Reference Guides (Already Existed)
 
-5. **[MMV Master Pipeline Guide](../docs/operation/mmv-master-pipeline-guide.md)**
+5. **[MMV Master Pipeline Guide](operation/mmv-master-pipeline-guide.md)**
    - Magic Music Visuals setup
    - Audio routing, MIDI mapping
    - Generator banks, masks, FX
 
-6. **[Live VJ Setup Guide](../docs/setup/live-vj-setup-guide.md)**
+6. **[Live VJ Setup Guide](setup/live-vj-setup-guide.md)**
    - Hardware setup (Syphon, BlackHole, MIDI)
    - Software configuration
    - Complete workflow
@@ -314,7 +314,7 @@ Edit `~/Library/Application Support/SwiftVJ/config.json`:
 ### User Action Required
 
 1. **Download Chataigne** (free)
-2. **Follow Quick Start** ([CHATAIGNE_QUICK_START.md](../docs/setup/CHATAIGNE_QUICK_START.md))
+2. **Follow Quick Start** ([CHATAIGNE_QUICK_START.md](setup/CHATAIGNE_QUICK_START.md))
 3. **Organize Synesthesia library** into 8 categories
 4. **Map scenes to Launchpad** in Chataigne
 5. **Configure Magic pipeline** (optional, use existing setup)
@@ -369,4 +369,4 @@ All requirements from the issue have been addressed:
 
 **Sample Configuration**: `lpsyn.noisette` file included.
 
-**Ready to Deploy**: Follow [CHATAIGNE_QUICK_START.md](../docs/setup/CHATAIGNE_QUICK_START.md) to get running in 30 minutes.
+**Ready to Deploy**: Follow [CHATAIGNE_QUICK_START.md](setup/CHATAIGNE_QUICK_START.md) to get running in 30 minutes.
