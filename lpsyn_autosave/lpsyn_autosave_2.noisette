@@ -60,6 +60,20 @@
     "viewZoom": 1.0
   },
   "parrots": {
+    "items": [
+      {
+        "niceName": "Parrot",
+        "type": "Parrot",
+        "targets": null,
+        "records": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        }
+      }
+    ],
     "viewOffset": [
       0,
       0
@@ -167,7 +181,7 @@
                 },
                 {
                   "type": 0,
-                  "width": 1064,
+                  "width": 740,
                   "height": 223,
                   "currentContent": "Sequence Editor",
                   "tabs": [
@@ -178,7 +192,7 @@
                 },
                 {
                   "type": 0,
-                  "width": 474,
+                  "width": 798,
                   "height": 223,
                   "currentContent": "Logger",
                   "tabs": [
@@ -426,7 +440,7 @@
             "controlAddress": "/enabled"
           }
         ],
-        "niceName": "OSC",
+        "niceName": "SYN-OSC",
         "type": "OSC",
         "scripts": {
           "editorIsCollapsed": true,
@@ -447,7 +461,7 @@
               "controlAddress": "/useHierarchy"
             },
             {
-              "value": true,
+              "value": false,
               "controlAddress": "/autoFeedback"
             }
           ],
@@ -463,7 +477,6 @@
               "editorIsCollapsed": true
             },
             "oscOutputs": {
-              "editorIsCollapsed": true,
               "items": [
                 {
                   "parameters": [
@@ -513,6 +526,7 @@
                 "beat": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/beattime",
                       "type": "Float",
                       "niceName": "beattime",
@@ -524,7 +538,7 @@
                       "shortName": "beattime"
                     },
                     {
-                      "value": 1.0,
+                      "value": 0.0,
                       "controlAddress": "/onbeat",
                       "type": "Float",
                       "niceName": "onbeat",
@@ -536,6 +550,7 @@
                       "shortName": "onbeat"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/randomonbeat",
                       "type": "Float",
                       "niceName": "randomonbeat",
@@ -555,6 +570,7 @@
                 "presence": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -566,6 +582,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -577,6 +594,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -588,6 +606,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -599,6 +618,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -618,6 +638,7 @@
                 "time": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -629,6 +650,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -640,6 +662,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/curved",
                       "type": "Float",
                       "niceName": "curved",
@@ -651,6 +674,7 @@
                       "shortName": "curved"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -662,6 +686,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -673,6 +698,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -692,6 +718,7 @@
                 "level": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -703,6 +730,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -714,6 +742,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -725,6 +754,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -736,6 +766,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -747,6 +778,7 @@
                       "shortName": "midhigh"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/raw",
                       "type": "Float",
                       "niceName": "raw",
@@ -766,6 +798,7 @@
                 "hits": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -777,6 +810,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -788,6 +822,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -799,6 +834,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -810,6 +846,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -829,6 +866,7 @@
                 "energy": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/intensity",
                       "type": "Float",
                       "niceName": "intensity",
@@ -848,6 +886,7 @@
                 "bpm": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/bpm",
                       "type": "Float",
                       "niceName": "bpm",
@@ -859,6 +898,7 @@
                       "shortName": "bpm"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bpmconfidence",
                       "type": "Float",
                       "niceName": "bpmconfidence",
@@ -870,7 +910,7 @@
                       "shortName": "bpmconfidence"
                     },
                     {
-                      "value": 0.9173946976661682,
+                      "value": 0.6395164132118225,
                       "controlAddress": "/bpmsin",
                       "type": "Float",
                       "niceName": "bpmsin",
@@ -882,7 +922,7 @@
                       "shortName": "bpmsin"
                     },
                     {
-                      "value": 0.02109587006270885,
+                      "value": 0.8998413681983948,
                       "controlAddress": "/bpmsin2",
                       "type": "Float",
                       "niceName": "bpmsin2",
@@ -894,7 +934,7 @@
                       "shortName": "bpmsin2"
                     },
                     {
-                      "value": 0.5726207494735718,
+                      "value": 0.9742997288703918,
                       "controlAddress": "/bpmsin4",
                       "type": "Float",
                       "niceName": "bpmsin4",
@@ -906,7 +946,7 @@
                       "shortName": "bpmsin4"
                     },
                     {
-                      "value": 0.8783573508262634,
+                      "value": 0.9935325980186462,
                       "controlAddress": "/bpmsin8",
                       "type": "Float",
                       "niceName": "bpmsin8",
@@ -918,7 +958,7 @@
                       "shortName": "bpmsin8"
                     },
                     {
-                      "value": 0.09279488772153854,
+                      "value": 0.7950077056884766,
                       "controlAddress": "/bpmtri",
                       "type": "Float",
                       "niceName": "bpmtri",
@@ -930,7 +970,7 @@
                       "shortName": "bpmtri"
                     },
                     {
-                      "value": 0.5463973879814148,
+                      "value": 0.8975003957748413,
                       "controlAddress": "/bpmtri2",
                       "type": "Float",
                       "niceName": "bpmtri2",
@@ -942,7 +982,7 @@
                       "shortName": "bpmtri2"
                     },
                     {
-                      "value": 0.7731987237930298,
+                      "value": 0.9487506151199341,
                       "controlAddress": "/bpmtri4",
                       "type": "Float",
                       "niceName": "bpmtri4",
@@ -954,7 +994,7 @@
                       "shortName": "bpmtri4"
                     },
                     {
-                      "value": 0.8865993022918701,
+                      "value": 0.9743748903274536,
                       "controlAddress": "/bpmtri8",
                       "type": "Float",
                       "niceName": "bpmtri8",
@@ -966,7 +1006,7 @@
                       "shortName": "bpmtri8"
                     },
                     {
-                      "value": 1287.566162109375,
+                      "value": 4783.9990234375,
                       "controlAddress": "/bpmtwitcher",
                       "type": "Float",
                       "niceName": "bpmtwitcher",
@@ -990,6 +1030,28 @@
             "scenes": {
               "parameters": [
                 {
+                  "controlAddress": "/aliencavern",
+                  "type": "Trigger",
+                  "niceName": "aliencavern",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "aliencavern"
+                },
+                {
+                  "controlAddress": "/biopsyv2",
+                  "type": "Trigger",
+                  "niceName": "biopsyv2",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "biopsyv2"
+                },
+                {
                   "controlAddress": "/canvas",
                   "type": "Trigger",
                   "niceName": "canvas",
@@ -999,6 +1061,28 @@
                   "hideInEditor": false,
                   "feedbackOnly": false,
                   "shortName": "canvas"
+                },
+                {
+                  "controlAddress": "/cloudten",
+                  "type": "Trigger",
+                  "niceName": "cloudten",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "cloudten"
+                },
+                {
+                  "controlAddress": "/datagrama.biopsy",
+                  "type": "Trigger",
+                  "niceName": "datagrama.biopsy",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "datagrama.biopsy"
                 }
               ],
               "removable": true,
@@ -1014,6 +1098,7 @@
                 "meta": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/alphachannel",
                       "type": "Float",
                       "niceName": "alphachannel",
@@ -1025,6 +1110,7 @@
                       "shortName": "alphachannel"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/audiospeed",
                       "type": "Float",
                       "niceName": "audiospeed",
@@ -1036,6 +1122,7 @@
                       "shortName": "audiospeed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/brightness",
                       "type": "Float",
                       "niceName": "brightness",
@@ -1047,6 +1134,7 @@
                       "shortName": "brightness"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/contrast",
                       "type": "Float",
                       "niceName": "contrast",
@@ -1058,6 +1146,7 @@
                       "shortName": "contrast"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/fitorfill",
                       "type": "Float",
                       "niceName": "fitorfill",
@@ -1069,6 +1158,7 @@
                       "shortName": "fitorfill"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/gamma",
                       "type": "Float",
                       "niceName": "gamma",
@@ -1080,6 +1170,7 @@
                       "shortName": "gamma"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/horflip",
                       "type": "Float",
                       "niceName": "horflip",
@@ -1091,6 +1182,7 @@
                       "shortName": "horflip"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/hormirror",
                       "type": "Float",
                       "niceName": "hormirror",
@@ -1102,6 +1194,7 @@
                       "shortName": "hormirror"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/hue",
                       "type": "Float",
                       "niceName": "hue",
@@ -1113,6 +1206,7 @@
                       "shortName": "hue"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/invert",
                       "type": "Float",
                       "niceName": "invert",
@@ -1124,6 +1218,7 @@
                       "shortName": "invert"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/invertmedia",
                       "type": "Float",
                       "niceName": "invertmedia",
@@ -1135,6 +1230,7 @@
                       "shortName": "invertmedia"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/limitcolors",
                       "type": "Float",
                       "niceName": "limitcolors",
@@ -1146,6 +1242,7 @@
                       "shortName": "limitcolors"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/master",
                       "type": "Float",
                       "niceName": "master",
@@ -1157,6 +1254,7 @@
                       "shortName": "master"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediacontrast",
                       "type": "Float",
                       "niceName": "mediacontrast",
@@ -1168,6 +1266,7 @@
                       "shortName": "mediacontrast"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediagamma",
                       "type": "Float",
                       "niceName": "mediagamma",
@@ -1179,6 +1278,7 @@
                       "shortName": "mediagamma"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediahue",
                       "type": "Float",
                       "niceName": "mediahue",
@@ -1190,6 +1290,7 @@
                       "shortName": "mediahue"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediasaturation",
                       "type": "Float",
                       "niceName": "mediasaturation",
@@ -1201,6 +1302,7 @@
                       "shortName": "mediasaturation"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediascale",
                       "type": "Float",
                       "niceName": "mediascale",
@@ -1212,6 +1314,7 @@
                       "shortName": "mediascale"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/paused",
                       "type": "Float",
                       "niceName": "paused",
@@ -1223,6 +1326,7 @@
                       "shortName": "paused"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/playbackmode",
                       "type": "Float",
                       "niceName": "playbackmode",
@@ -1234,6 +1338,7 @@
                       "shortName": "playbackmode"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/playbackspeed",
                       "type": "Float",
                       "niceName": "playbackspeed",
@@ -1245,6 +1350,7 @@
                       "shortName": "playbackspeed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/reactivity",
                       "type": "Float",
                       "niceName": "reactivity",
@@ -1256,6 +1362,7 @@
                       "shortName": "reactivity"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/saturation",
                       "type": "Float",
                       "niceName": "saturation",
@@ -1267,6 +1374,7 @@
                       "shortName": "saturation"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/transition",
                       "type": "Float",
                       "niceName": "transition",
@@ -1278,6 +1386,7 @@
                       "shortName": "transition"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/vertflip",
                       "type": "Float",
                       "niceName": "vertflip",
@@ -1289,6 +1398,7 @@
                       "shortName": "vertflip"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/vertmirror",
                       "type": "Float",
                       "niceName": "vertmirror",
@@ -1307,6 +1417,7 @@
                     "lowcolor": {
                       "parameters": [
                         {
+                          "value": 0.0,
                           "controlAddress": "/b",
                           "type": "Float",
                           "niceName": "b",
@@ -1318,6 +1429,7 @@
                           "shortName": "b"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/g",
                           "type": "Float",
                           "niceName": "g",
@@ -1329,6 +1441,7 @@
                           "shortName": "g"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/r",
                           "type": "Float",
                           "niceName": "r",
@@ -1348,6 +1461,7 @@
                     "highcolor": {
                       "parameters": [
                         {
+                          "value": 0.0,
                           "controlAddress": "/b",
                           "type": "Float",
                           "niceName": "b",
@@ -1359,6 +1473,7 @@
                           "shortName": "b"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/g",
                           "type": "Float",
                           "niceName": "g",
@@ -1370,6 +1485,7 @@
                           "shortName": "g"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/r",
                           "type": "Float",
                           "niceName": "r",
@@ -1386,7 +1502,7 @@
                       "owned": true,
                       "niceName": "highcolor"
                     },
-                    "playbackmode": {
+                    "playbackmode1": {
                       "parameters": [
                         {
                           "value": "shuffle",
@@ -1401,6 +1517,7 @@
                           "shortName": "label"
                         },
                         {
+                          "value": 0,
                           "hexMode": false,
                           "controlAddress": "/numoptions",
                           "type": "Integer",
@@ -1587,7 +1704,7 @@
                     "manualpainter": {
                       "parameters": [
                         {
-                          "value": 0.6899999380111694,
+                          "value": 0.5,
                           "controlAddress": "/x",
                           "type": "Float",
                           "niceName": "x",
@@ -1599,7 +1716,7 @@
                           "shortName": "x"
                         },
                         {
-                          "value": 0.5200004577636719,
+                          "value": 0.5,
                           "controlAddress": "/y",
                           "type": "Float",
                           "niceName": "y",
@@ -1614,7 +1731,7 @@
                       "removable": true,
                       "includeTriggers": true,
                       "containers": {
-                        "x": {
+                        "x1": {
                           "parameters": [
                             {
                               "value": -0.020000159740448,
@@ -1634,7 +1751,7 @@
                           "owned": true,
                           "niceName": "x 1"
                         },
-                        "y": {
+                        "y1": {
                           "parameters": [
                             {
                               "value": 0.03999996185302734,
@@ -1658,7 +1775,7 @@
                       "owned": true,
                       "niceName": "manualpainter"
                     },
-                    "pulseron": {
+                    "pulseron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1678,7 +1795,7 @@
                       "owned": true,
                       "niceName": "pulseron 1"
                     },
-                    "bpmpulse": {
+                    "bpmpulse1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1698,7 +1815,7 @@
                       "owned": true,
                       "niceName": "bpmpulse 1"
                     },
-                    "manualpulse": {
+                    "manualpulse1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1718,7 +1835,7 @@
                       "owned": true,
                       "niceName": "manualpulse 1"
                     },
-                    "beatflasheron": {
+                    "beatflasheron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1738,7 +1855,7 @@
                       "owned": true,
                       "niceName": "beatflasheron 1"
                     },
-                    "bpmflasheron": {
+                    "bpmflasheron1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1758,7 +1875,7 @@
                       "owned": true,
                       "niceName": "bpmflasheron 1"
                     },
-                    "painteron": {
+                    "painteron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1778,7 +1895,7 @@
                       "owned": true,
                       "niceName": "painteron 1"
                     },
-                    "autopainter": {
+                    "autopainter1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1798,7 +1915,7 @@
                       "owned": true,
                       "niceName": "autopainter 1"
                     },
-                    "paintpulse": {
+                    "paintpulse1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1818,7 +1935,7 @@
                       "owned": true,
                       "niceName": "paintpulse 1"
                     },
-                    "brushsize": {
+                    "brushsize1": {
                       "parameters": [
                         {
                           "value": 0.4399999976158142,
@@ -1838,7 +1955,7 @@
                       "owned": true,
                       "niceName": "brushsize 1"
                     },
-                    "feedback": {
+                    "feedback1": {
                       "parameters": [
                         {
                           "value": 0.4000000059604645,
@@ -1858,7 +1975,7 @@
                       "owned": true,
                       "niceName": "feedback 1"
                     },
-                    "noiseon": {
+                    "noiseon1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1878,7 +1995,7 @@
                       "owned": true,
                       "niceName": "noiseon 1"
                     },
-                    "invert": {
+                    "invert1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1898,7 +2015,7 @@
                       "owned": true,
                       "niceName": "invert 1"
                     },
-                    "brightness": {
+                    "brightness1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1921,6 +2038,767 @@
                   },
                   "owned": true,
                   "niceName": "canvas"
+                },
+                "aliencavern": {
+                  "parameters": [
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/astralplane",
+                      "type": "Float",
+                      "niceName": "astralplane",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "astralplane"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/beattwitching",
+                      "type": "Float",
+                      "niceName": "beattwitching",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "beattwitching"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/colormod",
+                      "type": "Float",
+                      "niceName": "colormod",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "colormod"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/cylinders",
+                      "type": "Float",
+                      "niceName": "cylinders",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "cylinders"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/droppers",
+                      "type": "Float",
+                      "niceName": "droppers",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "droppers"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/flashing",
+                      "type": "Float",
+                      "niceName": "flashing",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "flashing"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/gazeintotheabyss",
+                      "type": "Float",
+                      "niceName": "gazeintotheabyss",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "gazeintotheabyss"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/manualcamera",
+                      "type": "Float",
+                      "niceName": "manualcamera",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "manualcamera"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/paletteselect",
+                      "type": "Float",
+                      "niceName": "paletteselect",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "paletteselect"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/voxelate",
+                      "type": "Float",
+                      "niceName": "voxelate",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "voxelate"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/voxelsize",
+                      "type": "Float",
+                      "niceName": "voxelsize",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "voxelsize"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "containers": {
+                    "cameralook": {
+                      "parameters": [
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/x",
+                          "type": "Float",
+                          "niceName": "x",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "x"
+                        },
+                        {
+                          "value": 0.0,
+                          "controlAddress": "/y",
+                          "type": "Float",
+                          "niceName": "y",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "y"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "cameralook"
+                    }
+                  },
+                  "owned": true,
+                  "niceName": "aliencavern"
+                },
+                "biopsyv2": {
+                  "parameters": [
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/circleon",
+                      "type": "Float",
+                      "niceName": "circleon",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "circleon"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/circlesize",
+                      "type": "Float",
+                      "niceName": "circlesize",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "circlesize"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/colorpalette",
+                      "type": "Float",
+                      "niceName": "colorpalette",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "colorpalette"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/distort",
+                      "type": "Float",
+                      "niceName": "distort",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "distort"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/downsweep",
+                      "type": "Float",
+                      "niceName": "downsweep",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "downsweep"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/drips",
+                      "type": "Float",
+                      "niceName": "drips",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "drips"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/flashing",
+                      "type": "Float",
+                      "niceName": "flashing",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "flashing"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/inorout",
+                      "type": "Float",
+                      "niceName": "inorout",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "inorout"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/leftsweep",
+                      "type": "Float",
+                      "niceName": "leftsweep",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "leftsweep"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/noshading",
+                      "type": "Float",
+                      "niceName": "noshading",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "noshading"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/rightsweep",
+                      "type": "Float",
+                      "niceName": "rightsweep",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "rightsweep"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/slicing",
+                      "type": "Float",
+                      "niceName": "slicing",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "slicing"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/stretching",
+                      "type": "Float",
+                      "niceName": "stretching",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "stretching"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/upsweep",
+                      "type": "Float",
+                      "niceName": "upsweep",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "upsweep"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "biopsyv2"
+                },
+                "datagramabiopsy": {
+                  "parameters": [
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/autoslice",
+                      "type": "Float",
+                      "niceName": "autoslice",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "autoslice"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/basszoom",
+                      "type": "Float",
+                      "niceName": "basszoom",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "basszoom"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/centervig",
+                      "type": "Float",
+                      "niceName": "centervig",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "centervig"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/colorpalette",
+                      "type": "Float",
+                      "niceName": "colorpalette",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "colorpalette"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/colorpresence",
+                      "type": "Float",
+                      "niceName": "colorpresence",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "colorpresence"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/drips",
+                      "type": "Float",
+                      "niceName": "drips",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "drips"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/extraliquid",
+                      "type": "Float",
+                      "niceName": "extraliquid",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "extraliquid"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/fastergrowth",
+                      "type": "Float",
+                      "niceName": "fastergrowth",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "fastergrowth"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/flashing",
+                      "type": "Float",
+                      "niceName": "flashing",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "flashing"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/fritzer",
+                      "type": "Float",
+                      "niceName": "fritzer",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "fritzer"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/isolatelayers",
+                      "type": "Float",
+                      "niceName": "isolatelayers",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "isolatelayers"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/mediaadd",
+                      "type": "Float",
+                      "niceName": "mediaadd",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediaadd"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/mediacolor",
+                      "type": "Float",
+                      "niceName": "mediacolor",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediacolor"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/mediadazzle",
+                      "type": "Float",
+                      "niceName": "mediadazzle",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediadazzle"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/mediafeed",
+                      "type": "Float",
+                      "niceName": "mediafeed",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediafeed"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/mediamult",
+                      "type": "Float",
+                      "niceName": "mediamult",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "mediamult"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/portal",
+                      "type": "Float",
+                      "niceName": "portal",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "portal"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/resetsim",
+                      "type": "Float",
+                      "niceName": "resetsim",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "resetsim"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/rising",
+                      "type": "Float",
+                      "niceName": "rising",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "rising"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/smoke",
+                      "type": "Float",
+                      "niceName": "smoke",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "smoke"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/vignette",
+                      "type": "Float",
+                      "niceName": "vignette",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "vignette"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/warper",
+                      "type": "Float",
+                      "niceName": "warper",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "warper"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/zoominout",
+                      "type": "Float",
+                      "niceName": "zoominout",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "zoominout"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "containers": {
+                    "colorpalette1": {
+                      "parameters": [
+                        {
+                          "value": "black + white",
+                          "controlAddress": "/label",
+                          "type": "String",
+                          "niceName": "label",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "label"
+                        },
+                        {
+                          "value": 0,
+                          "hexMode": false,
+                          "controlAddress": "/numoptions",
+                          "type": "Integer",
+                          "niceName": "numoptions",
+                          "customizable": true,
+                          "removable": true,
+                          "description": "",
+                          "hideInEditor": false,
+                          "feedbackOnly": false,
+                          "shortName": "numoptions"
+                        }
+                      ],
+                      "removable": true,
+                      "includeTriggers": true,
+                      "owned": true,
+                      "niceName": "colorpalette 1"
+                    }
+                  },
+                  "owned": true,
+                  "niceName": "datagrama.biopsy"
+                },
+                "cloudten": {
+                  "parameters": [
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/autoheight",
+                      "type": "Float",
+                      "niceName": "autoheight",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "autoheight"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/cityfps",
+                      "type": "Float",
+                      "niceName": "cityfps",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "cityfps"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/flipside",
+                      "type": "Float",
+                      "niceName": "flipside",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "flipside"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/horizontalmotion",
+                      "type": "Float",
+                      "niceName": "horizontalmotion",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "horizontalmotion"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/manualheight",
+                      "type": "Float",
+                      "niceName": "manualheight",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "manualheight"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/speed",
+                      "type": "Float",
+                      "niceName": "speed",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "speed"
+                    },
+                    {
+                      "value": 0.0,
+                      "controlAddress": "/sunposition",
+                      "type": "Float",
+                      "niceName": "sunposition",
+                      "customizable": true,
+                      "removable": true,
+                      "description": "",
+                      "hideInEditor": false,
+                      "feedbackOnly": false,
+                      "shortName": "sunposition"
+                    }
+                  ],
+                  "removable": true,
+                  "includeTriggers": true,
+                  "owned": true,
+                  "niceName": "cloudten"
                 }
               },
               "owned": true,
@@ -1952,12 +2830,22 @@
         "params": {
           "parameters": [
             {
+              "value": 4.235294342041016,
+              "controlAddress": "/inputGain"
+            },
+            {
               "value": "MPM",
               "controlAddress": "/pitchDetectionMethod"
             }
           ],
           "containers": {
             "inputVolumes": {
+              "parameters": [
+                {
+                  "value": 1.815789461135864,
+                  "controlAddress": "/input1Gain"
+                }
+              ]
             },
             "outputVolumes": {
               "editorIsCollapsed": true
@@ -2001,7 +2889,7 @@
           ],
           "viewZoom": 1.0
         },
-        "audioSettings": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n\r\n<DEVICESETUP deviceType=\"CoreAudio\" audioOutputDeviceName=\"MacBook Pro Speakers\"\r\n             audioInputDeviceName=\"MacBook Pro Microphone\" audioDeviceRate=\"48000.0\"/>\r\n",
+        "audioSettings": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n\r\n<DEVICESETUP deviceType=\"CoreAudio\" audioOutputDeviceName=\"MacBook Pro Speakers\"\r\n             audioInputDeviceName=\"MacBook Pro Microphone\" audioDeviceRate=\"48000.0\"\r\n             audioDeviceInChans=\"1\"/>\r\n",
         "analyzer": {
           "parameters": [
             {
@@ -2015,6 +2903,259 @@
             0
           ],
           "viewZoom": 1.0
+        }
+      },
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/logIncoming"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logOutgoing"
+          }
+        ],
+        "niceName": "VDJ-OSC",
+        "type": "OSC",
+        "scripts": {
+          "editorIsCollapsed": true,
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "params": {
+          "parameters": [
+            {
+              "value": true,
+              "controlAddress": "/splitArguments"
+            },
+            {
+              "value": true,
+              "controlAddress": "/useHierarchy"
+            },
+            {
+              "value": false,
+              "controlAddress": "/autoFeedback"
+            }
+          ],
+          "containers": {
+            "oscInput": {
+              "parameters": [
+                {
+                  "value": 9011,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ]
+            },
+            "oscOutputs": {
+              "items": [
+                {
+                  "parameters": [
+                    {
+                      "value": true,
+                      "controlAddress": "/local"
+                    },
+                    {
+                      "value": "127.0.0.1",
+                      "controlAddress": "/remoteHost"
+                    },
+                    {
+                      "value": 9009,
+                      "hexMode": false,
+                      "controlAddress": "/remotePort"
+                    },
+                    {
+                      "value": true,
+                      "controlAddress": "/listenToFeedback"
+                    }
+                  ],
+                  "niceName": "OSC Output",
+                  "type": "BaseItem"
+                }
+              ],
+              "viewOffset": [
+                0,
+                0
+              ],
+              "viewZoom": 1.0
+            },
+            "pass_through": {
+              "editorIsCollapsed": true
+            }
+          }
+        },
+        "templates": {
+          "editorIsCollapsed": true,
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "values": {
+          "containers": {
+            "vdj": {
+              "parameters": [
+                {
+                  "value": 1,
+                  "hexMode": false,
+                  "controlAddress": "/get_activedeck",
+                  "type": "Integer",
+                  "niceName": "get_activedeck",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "get_activedeck"
+                }
+              ],
+              "removable": true,
+              "includeTriggers": true,
+              "owned": true,
+              "niceName": "vdj"
+            }
+          }
+        }
+      },
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/enabled"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logIncoming"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logOutgoing"
+          }
+        ],
+        "niceName": "VDJ-UDP",
+        "type": "UDP",
+        "scripts": {
+          "items": [
+            {
+              "parameters": [
+                {
+                  "value": "chataigne/vdj_query_fcuker.js",
+                  "controlAddress": "/filePath"
+                },
+                {
+                  "value": true,
+                  "controlAddress": "/enableLog"
+                }
+              ],
+              "niceName": "vdj_query_fcuker",
+              "type": "BaseItem",
+              "scriptParams": {
+                "parameters": [
+                  {
+                    "value": 9011,
+                    "minValue": 1,
+                    "maxValue": 65535,
+                    "default": 9001,
+                    "hexMode": false,
+                    "controlAddress": "/vdj_oscLoopbackPort"
+                  }
+                ]
+              }
+            }
+          ],
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "params": {
+          "parameters": [
+            {
+              "value": "Direct",
+              "controlAddress": "/protocol"
+            },
+            {
+              "value": "No separation (will create only one parameter)",
+              "controlAddress": "/messageStructure"
+            },
+            {
+              "value": "|",
+              "controlAddress": "/customSeparator"
+            },
+            {
+              "value": true,
+              "controlAddress": "/firstValueIsTheName"
+            },
+            {
+              "value": "Auto",
+              "controlAddress": "/networkInterface"
+            },
+            {
+              "value": false,
+              "controlAddress": "/multicastMode"
+            }
+          ],
+          "containers": {
+            "input": {
+              "parameters": [
+                {
+                  "value": 9010,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ]
+            },
+            "output": {
+              "parameters": [
+                {
+                  "value": true,
+                  "controlAddress": "/enabled"
+                },
+                {
+                  "value": true,
+                  "controlAddress": "/local"
+                },
+                {
+                  "value": "127.0.0.1",
+                  "controlAddress": "/remoteHost"
+                },
+                {
+                  "value": 9009,
+                  "hexMode": false,
+                  "controlAddress": "/remotePort"
+                }
+              ]
+            },
+            "pass_through": {
+            }
+          }
+        },
+        "templates": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "values": {
+          "parameters": [
+            {
+              "controlAddress": "/value",
+              "type": "String",
+              "niceName": "Value",
+              "customizable": true,
+              "removable": true,
+              "description": "Value",
+              "hideInEditor": false,
+              "feedbackOnly": false
+            }
+          ]
         }
       }
     ],
@@ -2060,6 +3201,157 @@
           ],
           "viewZoom": 1.0
         }
+      },
+      {
+        "niceName": "VDJ",
+        "type": "CVGroup",
+        "params": {
+        },
+        "variables": {
+          "items": [
+            {
+              "parameters": [
+                {
+                  "value": 2,
+                  "hexMode": false,
+                  "controlAddress": "/activedeck",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "activedeck",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "activedeck",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/1title",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "1.title",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.title",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/1artist",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "1.artist",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.artist",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/2title",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "2.title",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.title",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/2artist",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "2.artist",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.artist",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": 0,
+                  "hexMode": false,
+                  "controlAddress": "/1time",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "1.time",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.time",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": 0,
+                  "hexMode": false,
+                  "controlAddress": "/2time",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "2.time",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.time",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            }
+          ],
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "presets": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        }
       }
     ],
     "viewOffset": [
@@ -2073,13 +3365,9 @@
       {
         "parameters": [
           {
-            "value": false,
-            "controlAddress": "/miniMode"
-          },
-          {
             "value": [
-              -235.0,
-              -62.0
+              -302.0,
+              -605.0
             ],
             "controlAddress": "/viewUIPosition"
           },
@@ -2088,29 +3376,34 @@
             "controlAddress": "/active"
           }
         ],
-        "niceName": "Scene",
+        "niceName": "VDJ-INIT",
         "type": "State",
         "processors": {
           "items": [
             {
-              "niceName": "Action",
-              "editorIsCollapsed": true,
+              "niceName": "SUBS",
               "type": "Action",
               "conditions": {
+                "parameters": [
+                  {
+                    "value": 0.0,
+                    "controlAddress": "/invalidationTime"
+                  }
+                ],
                 "items": [
                   {
                     "parameters": [
                       {
-                        "value": "/modules/launchpadMiniMk3/values/topButtons/topButton1",
+                        "value": "/states/vdj_init/onLoadBehavior",
                         "controlAddress": "/inputValue"
                       }
                     ],
-                    "niceName": "From Input Value 1",
+                    "niceName": "From Input Value",
                     "type": "From Input Value",
                     "comparator": {
                       "parameters": [
                         {
-                          "value": false,
+                          "value": "Restore last state",
                           "controlAddress": "/reference"
                         }
                       ],
@@ -2133,30 +3426,268 @@
                 ],
                 "items": [
                   {
+                    "niceName": "Consequence 2",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/get_activedeck",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
                     "parameters": [
                       {
                         "value": true,
                         "controlAddress": "/enabled"
                       }
                     ],
-                    "niceName": "Consequence 1",
+                    "niceName": "Deck 1 Artist",
                     "type": "Consequence",
-                    "commandModule": "launchpadMiniMk3",
+                    "commandModule": "vdj_osc",
                     "commandPath": "",
-                    "commandType": "Set Color",
+                    "commandType": "Custom Message",
                     "command": {
                       "parameters": [
                         {
-                          "value": [
-                            0.6038470864295959,
-                            0.02322352863848209,
-                            0.02322352863848209,
-                            1.0
-                          ],
-                          "controlAddress": "/color"
+                          "value": "/vdj/subscribe/deck/1/get_artist",
+                          "controlAddress": "/address"
                         }
                       ],
                       "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": false,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Artist 1",
+                    "editorIsCollapsed": true,
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/1/get_position",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": false,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Artist 2",
+                    "editorIsCollapsed": true,
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/2/get_position",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Title",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/1/get_title",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Volume",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/1/get_volume",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Volume 1",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/2/get_volume",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 5",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/2/get_artist",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 4",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/2/get_title",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
                       }
                     }
                   }
@@ -2185,8 +3716,8 @@
       }
     ],
     "viewOffset": [
-      -19,
-      -129
+      302,
+      405
     ],
     "viewZoom": 1.0,
     "transitions": {
@@ -2200,8 +3731,8 @@
     "comments": {
       "hideInEditor": true,
       "viewOffset": [
-        -19,
-        -129
+        302,
+        405
       ],
       "viewZoom": 1.0
     }
@@ -2218,7 +3749,7 @@
       {
         "niceName": "Router",
         "type": "BaseItem",
-        "sourceModule": "osc",
+        "sourceModule": "syn_osc",
         "sourceValues": {
           "items": [
             {
@@ -2481,9 +4012,37 @@
               }
             },
             {
+              "niceName": "aliencavern",
+              "type": "BaseItem",
+              "customName": "aliencavern",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "biopsyv2",
+              "type": "BaseItem",
+              "customName": "biopsyv2",
+              "routeParams": {
+              }
+            },
+            {
               "niceName": "canvas",
               "type": "BaseItem",
               "customName": "canvas",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "cloudten",
+              "type": "BaseItem",
+              "customName": "cloudten",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "datagrama.biopsy",
+              "type": "BaseItem",
+              "customName": "datagrama.biopsy",
               "routeParams": {
               }
             },
@@ -2714,14 +4273,14 @@
             {
               "niceName": "label",
               "type": "BaseItem",
-              "customName": "label",
+              "customName": "label 2",
               "routeParams": {
               }
             },
             {
               "niceName": "numoptions",
               "type": "BaseItem",
-              "customName": "numoptions",
+              "customName": "numoptions 2",
               "routeParams": {
               }
             },
@@ -2819,14 +4378,14 @@
             {
               "niceName": "x",
               "type": "BaseItem",
-              "customName": "x",
+              "customName": "x 2",
               "routeParams": {
               }
             },
             {
               "niceName": "y",
               "type": "BaseItem",
-              "customName": "y",
+              "customName": "y 2",
               "routeParams": {
               }
             },
@@ -2934,6 +4493,419 @@
               "customName": "raw 15",
               "routeParams": {
               }
+            },
+            {
+              "niceName": "astralplane",
+              "type": "BaseItem",
+              "customName": "astralplane",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "beattwitching",
+              "type": "BaseItem",
+              "customName": "beattwitching",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "colormod",
+              "type": "BaseItem",
+              "customName": "colormod",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "cylinders",
+              "type": "BaseItem",
+              "customName": "cylinders",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "droppers",
+              "type": "BaseItem",
+              "customName": "droppers",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "flashing",
+              "type": "BaseItem",
+              "customName": "flashing 3",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "gazeintotheabyss",
+              "type": "BaseItem",
+              "customName": "gazeintotheabyss",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "manualcamera",
+              "type": "BaseItem",
+              "customName": "manualcamera",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "paletteselect",
+              "type": "BaseItem",
+              "customName": "paletteselect",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "voxelate",
+              "type": "BaseItem",
+              "customName": "voxelate",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "voxelsize",
+              "type": "BaseItem",
+              "customName": "voxelsize",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "x",
+              "type": "BaseItem",
+              "customName": "x 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "y",
+              "type": "BaseItem",
+              "customName": "y 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "circleon",
+              "type": "BaseItem",
+              "customName": "circleon",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "circlesize",
+              "type": "BaseItem",
+              "customName": "circlesize",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "colorpalette",
+              "type": "BaseItem",
+              "customName": "colorpalette 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "distort",
+              "type": "BaseItem",
+              "customName": "distort",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "downsweep",
+              "type": "BaseItem",
+              "customName": "downsweep",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "drips",
+              "type": "BaseItem",
+              "customName": "drips 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "flashing",
+              "type": "BaseItem",
+              "customName": "flashing 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "inorout",
+              "type": "BaseItem",
+              "customName": "inorout",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "leftsweep",
+              "type": "BaseItem",
+              "customName": "leftsweep",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "noshading",
+              "type": "BaseItem",
+              "customName": "noshading",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "rightsweep",
+              "type": "BaseItem",
+              "customName": "rightsweep",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "slicing",
+              "type": "BaseItem",
+              "customName": "slicing",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "stretching",
+              "type": "BaseItem",
+              "customName": "stretching",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "upsweep",
+              "type": "BaseItem",
+              "customName": "upsweep",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "autoslice",
+              "type": "BaseItem",
+              "customName": "autoslice",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "basszoom",
+              "type": "BaseItem",
+              "customName": "basszoom",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "centervig",
+              "type": "BaseItem",
+              "customName": "centervig",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "colorpalette",
+              "type": "BaseItem",
+              "customName": "colorpalette 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "colorpresence",
+              "type": "BaseItem",
+              "customName": "colorpresence",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "drips",
+              "type": "BaseItem",
+              "customName": "drips 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "extraliquid",
+              "type": "BaseItem",
+              "customName": "extraliquid",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "fastergrowth",
+              "type": "BaseItem",
+              "customName": "fastergrowth",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "flashing",
+              "type": "BaseItem",
+              "customName": "flashing 2",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "fritzer",
+              "type": "BaseItem",
+              "customName": "fritzer",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "isolatelayers",
+              "type": "BaseItem",
+              "customName": "isolatelayers",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediaadd",
+              "type": "BaseItem",
+              "customName": "mediaadd",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediacolor",
+              "type": "BaseItem",
+              "customName": "mediacolor",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediadazzle",
+              "type": "BaseItem",
+              "customName": "mediadazzle",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediafeed",
+              "type": "BaseItem",
+              "customName": "mediafeed",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "mediamult",
+              "type": "BaseItem",
+              "customName": "mediamult",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "portal",
+              "type": "BaseItem",
+              "customName": "portal",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "resetsim",
+              "type": "BaseItem",
+              "customName": "resetsim",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "rising",
+              "type": "BaseItem",
+              "customName": "rising",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "smoke",
+              "type": "BaseItem",
+              "customName": "smoke",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "vignette",
+              "type": "BaseItem",
+              "customName": "vignette",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "warper",
+              "type": "BaseItem",
+              "customName": "warper",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "zoominout",
+              "type": "BaseItem",
+              "customName": "zoominout",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "label",
+              "type": "BaseItem",
+              "customName": "label 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "numoptions",
+              "type": "BaseItem",
+              "customName": "numoptions 1",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "autoheight",
+              "type": "BaseItem",
+              "customName": "autoheight",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "cityfps",
+              "type": "BaseItem",
+              "customName": "cityfps",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "flipside",
+              "type": "BaseItem",
+              "customName": "flipside",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "horizontalmotion",
+              "type": "BaseItem",
+              "customName": "horizontalmotion",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "manualheight",
+              "type": "BaseItem",
+              "customName": "manualheight",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "speed",
+              "type": "BaseItem",
+              "customName": "speed",
+              "routeParams": {
+              }
+            },
+            {
+              "niceName": "sunposition",
+              "type": "BaseItem",
+              "customName": "sunposition",
+              "routeParams": {
+              }
             }
           ],
           "viewOffset": [
@@ -2942,7 +4914,7 @@
           ],
           "viewZoom": 1.0
         },
-        "destModule": "osc"
+        "destModule": "syn_osc"
       }
     ],
     "viewOffset": [

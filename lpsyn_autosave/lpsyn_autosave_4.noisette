@@ -60,6 +60,20 @@
     "viewZoom": 1.0
   },
   "parrots": {
+    "items": [
+      {
+        "niceName": "Parrot",
+        "type": "Parrot",
+        "targets": null,
+        "records": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        }
+      }
+    ],
     "viewOffset": [
       0,
       0
@@ -167,7 +181,7 @@
                 },
                 {
                   "type": 0,
-                  "width": 1064,
+                  "width": 740,
                   "height": 223,
                   "currentContent": "Sequence Editor",
                   "tabs": [
@@ -178,7 +192,7 @@
                 },
                 {
                   "type": 0,
-                  "width": 474,
+                  "width": 798,
                   "height": 223,
                   "currentContent": "Logger",
                   "tabs": [
@@ -426,7 +440,7 @@
             "controlAddress": "/enabled"
           }
         ],
-        "niceName": "OSC",
+        "niceName": "SYN-OSC",
         "type": "OSC",
         "scripts": {
           "editorIsCollapsed": true,
@@ -512,6 +526,7 @@
                 "beat": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/beattime",
                       "type": "Float",
                       "niceName": "beattime",
@@ -523,7 +538,7 @@
                       "shortName": "beattime"
                     },
                     {
-                      "value": -0.0,
+                      "value": 0.0,
                       "controlAddress": "/onbeat",
                       "type": "Float",
                       "niceName": "onbeat",
@@ -535,6 +550,7 @@
                       "shortName": "onbeat"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/randomonbeat",
                       "type": "Float",
                       "niceName": "randomonbeat",
@@ -554,6 +570,7 @@
                 "presence": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -565,6 +582,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -576,6 +594,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -587,6 +606,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -598,6 +618,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -617,6 +638,7 @@
                 "time": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -628,6 +650,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -639,6 +662,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/curved",
                       "type": "Float",
                       "niceName": "curved",
@@ -650,6 +674,7 @@
                       "shortName": "curved"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -661,6 +686,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -672,6 +698,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -691,6 +718,7 @@
                 "level": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -702,6 +730,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -713,6 +742,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -724,6 +754,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -735,6 +766,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -746,6 +778,7 @@
                       "shortName": "midhigh"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/raw",
                       "type": "Float",
                       "niceName": "raw",
@@ -765,6 +798,7 @@
                 "hits": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/all",
                       "type": "Float",
                       "niceName": "all",
@@ -776,6 +810,7 @@
                       "shortName": "all"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bass",
                       "type": "Float",
                       "niceName": "bass",
@@ -787,6 +822,7 @@
                       "shortName": "bass"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/high",
                       "type": "Float",
                       "niceName": "high",
@@ -798,6 +834,7 @@
                       "shortName": "high"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mid",
                       "type": "Float",
                       "niceName": "mid",
@@ -809,6 +846,7 @@
                       "shortName": "mid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/midhigh",
                       "type": "Float",
                       "niceName": "midhigh",
@@ -828,6 +866,7 @@
                 "energy": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/intensity",
                       "type": "Float",
                       "niceName": "intensity",
@@ -847,6 +886,7 @@
                 "bpm": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/bpm",
                       "type": "Float",
                       "niceName": "bpm",
@@ -858,6 +898,7 @@
                       "shortName": "bpm"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/bpmconfidence",
                       "type": "Float",
                       "niceName": "bpmconfidence",
@@ -869,7 +910,7 @@
                       "shortName": "bpmconfidence"
                     },
                     {
-                      "value": 0.6321368813514709,
+                      "value": 0.6395164132118225,
                       "controlAddress": "/bpmsin",
                       "type": "Float",
                       "niceName": "bpmsin",
@@ -881,7 +922,7 @@
                       "shortName": "bpmsin"
                     },
                     {
-                      "value": 0.1024652197957039,
+                      "value": 0.8998413681983948,
                       "controlAddress": "/bpmsin2",
                       "type": "Float",
                       "niceName": "bpmsin2",
@@ -893,7 +934,7 @@
                       "shortName": "bpmsin2"
                     },
                     {
-                      "value": 0.3399477899074554,
+                      "value": 0.9742997288703918,
                       "controlAddress": "/bpmsin4",
                       "type": "Float",
                       "niceName": "bpmsin4",
@@ -905,7 +946,7 @@
                       "shortName": "bpmsin4"
                     },
                     {
-                      "value": 0.7915237545967102,
+                      "value": 0.9935325980186462,
                       "controlAddress": "/bpmsin8",
                       "type": "Float",
                       "niceName": "bpmsin8",
@@ -917,7 +958,7 @@
                       "shortName": "bpmsin8"
                     },
                     {
-                      "value": 0.7925668954849243,
+                      "value": 0.7950077056884766,
                       "controlAddress": "/bpmtri",
                       "type": "Float",
                       "niceName": "bpmtri",
@@ -929,7 +970,7 @@
                       "shortName": "bpmtri"
                     },
                     {
-                      "value": 0.3962833285331726,
+                      "value": 0.8975003957748413,
                       "controlAddress": "/bpmtri2",
                       "type": "Float",
                       "niceName": "bpmtri2",
@@ -941,7 +982,7 @@
                       "shortName": "bpmtri2"
                     },
                     {
-                      "value": 0.6981417536735535,
+                      "value": 0.9487506151199341,
                       "controlAddress": "/bpmtri4",
                       "type": "Float",
                       "niceName": "bpmtri4",
@@ -953,7 +994,7 @@
                       "shortName": "bpmtri4"
                     },
                     {
-                      "value": 0.8490707874298096,
+                      "value": 0.9743748903274536,
                       "controlAddress": "/bpmtri8",
                       "type": "Float",
                       "niceName": "bpmtri8",
@@ -965,7 +1006,7 @@
                       "shortName": "bpmtri8"
                     },
                     {
-                      "value": 2486.999267578125,
+                      "value": 4783.9990234375,
                       "controlAddress": "/bpmtwitcher",
                       "type": "Float",
                       "niceName": "bpmtwitcher",
@@ -1057,6 +1098,7 @@
                 "meta": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/alphachannel",
                       "type": "Float",
                       "niceName": "alphachannel",
@@ -1068,6 +1110,7 @@
                       "shortName": "alphachannel"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/audiospeed",
                       "type": "Float",
                       "niceName": "audiospeed",
@@ -1079,6 +1122,7 @@
                       "shortName": "audiospeed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/brightness",
                       "type": "Float",
                       "niceName": "brightness",
@@ -1090,6 +1134,7 @@
                       "shortName": "brightness"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/contrast",
                       "type": "Float",
                       "niceName": "contrast",
@@ -1101,6 +1146,7 @@
                       "shortName": "contrast"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/fitorfill",
                       "type": "Float",
                       "niceName": "fitorfill",
@@ -1112,6 +1158,7 @@
                       "shortName": "fitorfill"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/gamma",
                       "type": "Float",
                       "niceName": "gamma",
@@ -1123,6 +1170,7 @@
                       "shortName": "gamma"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/horflip",
                       "type": "Float",
                       "niceName": "horflip",
@@ -1134,6 +1182,7 @@
                       "shortName": "horflip"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/hormirror",
                       "type": "Float",
                       "niceName": "hormirror",
@@ -1145,6 +1194,7 @@
                       "shortName": "hormirror"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/hue",
                       "type": "Float",
                       "niceName": "hue",
@@ -1156,6 +1206,7 @@
                       "shortName": "hue"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/invert",
                       "type": "Float",
                       "niceName": "invert",
@@ -1167,6 +1218,7 @@
                       "shortName": "invert"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/invertmedia",
                       "type": "Float",
                       "niceName": "invertmedia",
@@ -1178,6 +1230,7 @@
                       "shortName": "invertmedia"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/limitcolors",
                       "type": "Float",
                       "niceName": "limitcolors",
@@ -1189,6 +1242,7 @@
                       "shortName": "limitcolors"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/master",
                       "type": "Float",
                       "niceName": "master",
@@ -1200,6 +1254,7 @@
                       "shortName": "master"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediacontrast",
                       "type": "Float",
                       "niceName": "mediacontrast",
@@ -1211,6 +1266,7 @@
                       "shortName": "mediacontrast"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediagamma",
                       "type": "Float",
                       "niceName": "mediagamma",
@@ -1222,6 +1278,7 @@
                       "shortName": "mediagamma"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediahue",
                       "type": "Float",
                       "niceName": "mediahue",
@@ -1233,6 +1290,7 @@
                       "shortName": "mediahue"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediasaturation",
                       "type": "Float",
                       "niceName": "mediasaturation",
@@ -1244,6 +1302,7 @@
                       "shortName": "mediasaturation"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediascale",
                       "type": "Float",
                       "niceName": "mediascale",
@@ -1255,6 +1314,7 @@
                       "shortName": "mediascale"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/paused",
                       "type": "Float",
                       "niceName": "paused",
@@ -1266,6 +1326,7 @@
                       "shortName": "paused"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/playbackmode",
                       "type": "Float",
                       "niceName": "playbackmode",
@@ -1277,6 +1338,7 @@
                       "shortName": "playbackmode"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/playbackspeed",
                       "type": "Float",
                       "niceName": "playbackspeed",
@@ -1288,6 +1350,7 @@
                       "shortName": "playbackspeed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/reactivity",
                       "type": "Float",
                       "niceName": "reactivity",
@@ -1299,6 +1362,7 @@
                       "shortName": "reactivity"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/saturation",
                       "type": "Float",
                       "niceName": "saturation",
@@ -1310,6 +1374,7 @@
                       "shortName": "saturation"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/transition",
                       "type": "Float",
                       "niceName": "transition",
@@ -1321,6 +1386,7 @@
                       "shortName": "transition"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/vertflip",
                       "type": "Float",
                       "niceName": "vertflip",
@@ -1332,6 +1398,7 @@
                       "shortName": "vertflip"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/vertmirror",
                       "type": "Float",
                       "niceName": "vertmirror",
@@ -1350,6 +1417,7 @@
                     "lowcolor": {
                       "parameters": [
                         {
+                          "value": 0.0,
                           "controlAddress": "/b",
                           "type": "Float",
                           "niceName": "b",
@@ -1361,6 +1429,7 @@
                           "shortName": "b"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/g",
                           "type": "Float",
                           "niceName": "g",
@@ -1372,6 +1441,7 @@
                           "shortName": "g"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/r",
                           "type": "Float",
                           "niceName": "r",
@@ -1391,6 +1461,7 @@
                     "highcolor": {
                       "parameters": [
                         {
+                          "value": 0.0,
                           "controlAddress": "/b",
                           "type": "Float",
                           "niceName": "b",
@@ -1402,6 +1473,7 @@
                           "shortName": "b"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/g",
                           "type": "Float",
                           "niceName": "g",
@@ -1413,6 +1485,7 @@
                           "shortName": "g"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/r",
                           "type": "Float",
                           "niceName": "r",
@@ -1429,7 +1502,7 @@
                       "owned": true,
                       "niceName": "highcolor"
                     },
-                    "playbackmode": {
+                    "playbackmode1": {
                       "parameters": [
                         {
                           "value": "shuffle",
@@ -1444,6 +1517,7 @@
                           "shortName": "label"
                         },
                         {
+                          "value": 0,
                           "hexMode": false,
                           "controlAddress": "/numoptions",
                           "type": "Integer",
@@ -1657,7 +1731,7 @@
                       "removable": true,
                       "includeTriggers": true,
                       "containers": {
-                        "x": {
+                        "x1": {
                           "parameters": [
                             {
                               "value": -0.020000159740448,
@@ -1677,7 +1751,7 @@
                           "owned": true,
                           "niceName": "x 1"
                         },
-                        "y": {
+                        "y1": {
                           "parameters": [
                             {
                               "value": 0.03999996185302734,
@@ -1701,7 +1775,7 @@
                       "owned": true,
                       "niceName": "manualpainter"
                     },
-                    "pulseron": {
+                    "pulseron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1721,7 +1795,7 @@
                       "owned": true,
                       "niceName": "pulseron 1"
                     },
-                    "bpmpulse": {
+                    "bpmpulse1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1741,7 +1815,7 @@
                       "owned": true,
                       "niceName": "bpmpulse 1"
                     },
-                    "manualpulse": {
+                    "manualpulse1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1761,7 +1835,7 @@
                       "owned": true,
                       "niceName": "manualpulse 1"
                     },
-                    "beatflasheron": {
+                    "beatflasheron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1781,7 +1855,7 @@
                       "owned": true,
                       "niceName": "beatflasheron 1"
                     },
-                    "bpmflasheron": {
+                    "bpmflasheron1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1801,7 +1875,7 @@
                       "owned": true,
                       "niceName": "bpmflasheron 1"
                     },
-                    "painteron": {
+                    "painteron1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1821,7 +1895,7 @@
                       "owned": true,
                       "niceName": "painteron 1"
                     },
-                    "autopainter": {
+                    "autopainter1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1841,7 +1915,7 @@
                       "owned": true,
                       "niceName": "autopainter 1"
                     },
-                    "paintpulse": {
+                    "paintpulse1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1861,7 +1935,7 @@
                       "owned": true,
                       "niceName": "paintpulse 1"
                     },
-                    "brushsize": {
+                    "brushsize1": {
                       "parameters": [
                         {
                           "value": 0.4399999976158142,
@@ -1881,7 +1955,7 @@
                       "owned": true,
                       "niceName": "brushsize 1"
                     },
-                    "feedback": {
+                    "feedback1": {
                       "parameters": [
                         {
                           "value": 0.4000000059604645,
@@ -1901,7 +1975,7 @@
                       "owned": true,
                       "niceName": "feedback 1"
                     },
-                    "noiseon": {
+                    "noiseon1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1921,7 +1995,7 @@
                       "owned": true,
                       "niceName": "noiseon 1"
                     },
-                    "invert": {
+                    "invert1": {
                       "parameters": [
                         {
                           "value": 0.0,
@@ -1941,7 +2015,7 @@
                       "owned": true,
                       "niceName": "invert 1"
                     },
-                    "brightness": {
+                    "brightness1": {
                       "parameters": [
                         {
                           "value": 1.0,
@@ -1968,6 +2042,7 @@
                 "aliencavern": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/astralplane",
                       "type": "Float",
                       "niceName": "astralplane",
@@ -1979,6 +2054,7 @@
                       "shortName": "astralplane"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/beattwitching",
                       "type": "Float",
                       "niceName": "beattwitching",
@@ -1990,6 +2066,7 @@
                       "shortName": "beattwitching"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/colormod",
                       "type": "Float",
                       "niceName": "colormod",
@@ -2001,6 +2078,7 @@
                       "shortName": "colormod"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/cylinders",
                       "type": "Float",
                       "niceName": "cylinders",
@@ -2012,6 +2090,7 @@
                       "shortName": "cylinders"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/droppers",
                       "type": "Float",
                       "niceName": "droppers",
@@ -2023,6 +2102,7 @@
                       "shortName": "droppers"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/flashing",
                       "type": "Float",
                       "niceName": "flashing",
@@ -2034,6 +2114,7 @@
                       "shortName": "flashing"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/gazeintotheabyss",
                       "type": "Float",
                       "niceName": "gazeintotheabyss",
@@ -2045,6 +2126,7 @@
                       "shortName": "gazeintotheabyss"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/manualcamera",
                       "type": "Float",
                       "niceName": "manualcamera",
@@ -2056,6 +2138,7 @@
                       "shortName": "manualcamera"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/paletteselect",
                       "type": "Float",
                       "niceName": "paletteselect",
@@ -2067,6 +2150,7 @@
                       "shortName": "paletteselect"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/voxelate",
                       "type": "Float",
                       "niceName": "voxelate",
@@ -2078,6 +2162,7 @@
                       "shortName": "voxelate"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/voxelsize",
                       "type": "Float",
                       "niceName": "voxelsize",
@@ -2095,6 +2180,7 @@
                     "cameralook": {
                       "parameters": [
                         {
+                          "value": 0.0,
                           "controlAddress": "/x",
                           "type": "Float",
                           "niceName": "x",
@@ -2106,6 +2192,7 @@
                           "shortName": "x"
                         },
                         {
+                          "value": 0.0,
                           "controlAddress": "/y",
                           "type": "Float",
                           "niceName": "y",
@@ -2129,6 +2216,7 @@
                 "biopsyv2": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/circleon",
                       "type": "Float",
                       "niceName": "circleon",
@@ -2140,6 +2228,7 @@
                       "shortName": "circleon"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/circlesize",
                       "type": "Float",
                       "niceName": "circlesize",
@@ -2151,6 +2240,7 @@
                       "shortName": "circlesize"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/colorpalette",
                       "type": "Float",
                       "niceName": "colorpalette",
@@ -2162,6 +2252,7 @@
                       "shortName": "colorpalette"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/distort",
                       "type": "Float",
                       "niceName": "distort",
@@ -2173,6 +2264,7 @@
                       "shortName": "distort"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/downsweep",
                       "type": "Float",
                       "niceName": "downsweep",
@@ -2184,6 +2276,7 @@
                       "shortName": "downsweep"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/drips",
                       "type": "Float",
                       "niceName": "drips",
@@ -2195,6 +2288,7 @@
                       "shortName": "drips"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/flashing",
                       "type": "Float",
                       "niceName": "flashing",
@@ -2206,6 +2300,7 @@
                       "shortName": "flashing"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/inorout",
                       "type": "Float",
                       "niceName": "inorout",
@@ -2217,6 +2312,7 @@
                       "shortName": "inorout"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/leftsweep",
                       "type": "Float",
                       "niceName": "leftsweep",
@@ -2228,6 +2324,7 @@
                       "shortName": "leftsweep"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/noshading",
                       "type": "Float",
                       "niceName": "noshading",
@@ -2239,6 +2336,7 @@
                       "shortName": "noshading"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/rightsweep",
                       "type": "Float",
                       "niceName": "rightsweep",
@@ -2250,6 +2348,7 @@
                       "shortName": "rightsweep"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/slicing",
                       "type": "Float",
                       "niceName": "slicing",
@@ -2261,6 +2360,7 @@
                       "shortName": "slicing"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/stretching",
                       "type": "Float",
                       "niceName": "stretching",
@@ -2272,6 +2372,7 @@
                       "shortName": "stretching"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/upsweep",
                       "type": "Float",
                       "niceName": "upsweep",
@@ -2288,9 +2389,10 @@
                   "owned": true,
                   "niceName": "biopsyv2"
                 },
-                "datagrama.biopsy": {
+                "datagramabiopsy": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/autoslice",
                       "type": "Float",
                       "niceName": "autoslice",
@@ -2302,6 +2404,7 @@
                       "shortName": "autoslice"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/basszoom",
                       "type": "Float",
                       "niceName": "basszoom",
@@ -2313,6 +2416,7 @@
                       "shortName": "basszoom"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/centervig",
                       "type": "Float",
                       "niceName": "centervig",
@@ -2324,6 +2428,7 @@
                       "shortName": "centervig"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/colorpalette",
                       "type": "Float",
                       "niceName": "colorpalette",
@@ -2335,6 +2440,7 @@
                       "shortName": "colorpalette"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/colorpresence",
                       "type": "Float",
                       "niceName": "colorpresence",
@@ -2346,6 +2452,7 @@
                       "shortName": "colorpresence"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/drips",
                       "type": "Float",
                       "niceName": "drips",
@@ -2357,6 +2464,7 @@
                       "shortName": "drips"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/extraliquid",
                       "type": "Float",
                       "niceName": "extraliquid",
@@ -2368,6 +2476,7 @@
                       "shortName": "extraliquid"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/fastergrowth",
                       "type": "Float",
                       "niceName": "fastergrowth",
@@ -2379,6 +2488,7 @@
                       "shortName": "fastergrowth"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/flashing",
                       "type": "Float",
                       "niceName": "flashing",
@@ -2390,6 +2500,7 @@
                       "shortName": "flashing"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/fritzer",
                       "type": "Float",
                       "niceName": "fritzer",
@@ -2401,6 +2512,7 @@
                       "shortName": "fritzer"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/isolatelayers",
                       "type": "Float",
                       "niceName": "isolatelayers",
@@ -2412,6 +2524,7 @@
                       "shortName": "isolatelayers"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediaadd",
                       "type": "Float",
                       "niceName": "mediaadd",
@@ -2423,6 +2536,7 @@
                       "shortName": "mediaadd"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediacolor",
                       "type": "Float",
                       "niceName": "mediacolor",
@@ -2434,6 +2548,7 @@
                       "shortName": "mediacolor"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediadazzle",
                       "type": "Float",
                       "niceName": "mediadazzle",
@@ -2445,6 +2560,7 @@
                       "shortName": "mediadazzle"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediafeed",
                       "type": "Float",
                       "niceName": "mediafeed",
@@ -2456,6 +2572,7 @@
                       "shortName": "mediafeed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/mediamult",
                       "type": "Float",
                       "niceName": "mediamult",
@@ -2467,6 +2584,7 @@
                       "shortName": "mediamult"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/portal",
                       "type": "Float",
                       "niceName": "portal",
@@ -2478,6 +2596,7 @@
                       "shortName": "portal"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/resetsim",
                       "type": "Float",
                       "niceName": "resetsim",
@@ -2489,6 +2608,7 @@
                       "shortName": "resetsim"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/rising",
                       "type": "Float",
                       "niceName": "rising",
@@ -2500,6 +2620,7 @@
                       "shortName": "rising"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/smoke",
                       "type": "Float",
                       "niceName": "smoke",
@@ -2511,6 +2632,7 @@
                       "shortName": "smoke"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/vignette",
                       "type": "Float",
                       "niceName": "vignette",
@@ -2522,6 +2644,7 @@
                       "shortName": "vignette"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/warper",
                       "type": "Float",
                       "niceName": "warper",
@@ -2533,6 +2656,7 @@
                       "shortName": "warper"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/zoominout",
                       "type": "Float",
                       "niceName": "zoominout",
@@ -2547,7 +2671,7 @@
                   "removable": true,
                   "includeTriggers": true,
                   "containers": {
-                    "colorpalette": {
+                    "colorpalette1": {
                       "parameters": [
                         {
                           "value": "black + white",
@@ -2562,6 +2686,7 @@
                           "shortName": "label"
                         },
                         {
+                          "value": 0,
                           "hexMode": false,
                           "controlAddress": "/numoptions",
                           "type": "Integer",
@@ -2586,6 +2711,7 @@
                 "cloudten": {
                   "parameters": [
                     {
+                      "value": 0.0,
                       "controlAddress": "/autoheight",
                       "type": "Float",
                       "niceName": "autoheight",
@@ -2597,6 +2723,7 @@
                       "shortName": "autoheight"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/cityfps",
                       "type": "Float",
                       "niceName": "cityfps",
@@ -2608,6 +2735,7 @@
                       "shortName": "cityfps"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/flipside",
                       "type": "Float",
                       "niceName": "flipside",
@@ -2619,6 +2747,7 @@
                       "shortName": "flipside"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/horizontalmotion",
                       "type": "Float",
                       "niceName": "horizontalmotion",
@@ -2630,6 +2759,7 @@
                       "shortName": "horizontalmotion"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/manualheight",
                       "type": "Float",
                       "niceName": "manualheight",
@@ -2641,6 +2771,7 @@
                       "shortName": "manualheight"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/speed",
                       "type": "Float",
                       "niceName": "speed",
@@ -2652,6 +2783,7 @@
                       "shortName": "speed"
                     },
                     {
+                      "value": 0.0,
                       "controlAddress": "/sunposition",
                       "type": "Float",
                       "niceName": "sunposition",
@@ -2772,6 +2904,217 @@
           ],
           "viewZoom": 1.0
         }
+      },
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/logIncoming"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logOutgoing"
+          }
+        ],
+        "niceName": "VDJ-OSC",
+        "type": "OSC",
+        "scripts": {
+          "editorIsCollapsed": true,
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "params": {
+          "parameters": [
+            {
+              "value": true,
+              "controlAddress": "/splitArguments"
+            },
+            {
+              "value": true,
+              "controlAddress": "/useHierarchy"
+            },
+            {
+              "value": false,
+              "controlAddress": "/autoFeedback"
+            }
+          ],
+          "containers": {
+            "oscInput": {
+              "parameters": [
+                {
+                  "value": 9011,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ]
+            },
+            "oscOutputs": {
+              "items": [
+                {
+                  "parameters": [
+                    {
+                      "value": true,
+                      "controlAddress": "/local"
+                    },
+                    {
+                      "value": "127.0.0.1",
+                      "controlAddress": "/remoteHost"
+                    },
+                    {
+                      "value": 9009,
+                      "hexMode": false,
+                      "controlAddress": "/remotePort"
+                    },
+                    {
+                      "value": true,
+                      "controlAddress": "/listenToFeedback"
+                    }
+                  ],
+                  "niceName": "OSC Output",
+                  "type": "BaseItem"
+                }
+              ],
+              "viewOffset": [
+                0,
+                0
+              ],
+              "viewZoom": 1.0
+            },
+            "pass_through": {
+              "editorIsCollapsed": true
+            }
+          }
+        },
+        "templates": {
+          "editorIsCollapsed": true,
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "values": {
+          "containers": {
+            "vdj": {
+              "parameters": [
+                {
+                  "value": 1,
+                  "hexMode": false,
+                  "controlAddress": "/get_activedeck",
+                  "type": "Integer",
+                  "niceName": "get_activedeck",
+                  "customizable": true,
+                  "removable": true,
+                  "description": "",
+                  "hideInEditor": false,
+                  "feedbackOnly": false,
+                  "shortName": "get_activedeck"
+                }
+              ],
+              "removable": true,
+              "includeTriggers": true,
+              "owned": true,
+              "niceName": "vdj"
+            }
+          }
+        }
+      },
+      {
+        "parameters": [
+          {
+            "value": true,
+            "controlAddress": "/logIncoming"
+          },
+          {
+            "value": true,
+            "controlAddress": "/logOutgoing"
+          }
+        ],
+        "niceName": "VDJ-UDP",
+        "type": "UDP",
+        "scripts": {
+          "items": [
+            {
+              "parameters": [
+                {
+                  "value": "chataigne/vdj_query_fcuker.js",
+                  "controlAddress": "/filePath"
+                },
+                {
+                  "value": true,
+                  "controlAddress": "/enableLog"
+                }
+              ],
+              "niceName": "vdj_query_fcuker",
+              "type": "BaseItem",
+              "scriptParams": {
+                "parameters": [
+                  {
+                    "value": 9011,
+                    "minValue": 1,
+                    "maxValue": 65535,
+                    "default": 9001,
+                    "hexMode": false,
+                    "controlAddress": "/vdj_oscLoopbackPort"
+                  }
+                ]
+              }
+            }
+          ],
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "params": {
+          "containers": {
+            "input": {
+              "parameters": [
+                {
+                  "value": 9010,
+                  "hexMode": false,
+                  "controlAddress": "/localPort"
+                }
+              ]
+            },
+            "output": {
+              "parameters": [
+                {
+                  "value": true,
+                  "controlAddress": "/enabled"
+                },
+                {
+                  "value": true,
+                  "controlAddress": "/local"
+                },
+                {
+                  "value": "127.0.0.1",
+                  "controlAddress": "/remoteHost"
+                },
+                {
+                  "value": 9009,
+                  "hexMode": false,
+                  "controlAddress": "/remotePort"
+                }
+              ]
+            },
+            "pass_through": {
+            }
+          }
+        },
+        "templates": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "values": {
+        }
       }
     ],
     "viewOffset": [
@@ -2816,6 +3159,157 @@
           ],
           "viewZoom": 1.0
         }
+      },
+      {
+        "niceName": "VDJ",
+        "type": "CVGroup",
+        "params": {
+        },
+        "variables": {
+          "items": [
+            {
+              "parameters": [
+                {
+                  "value": 2,
+                  "hexMode": false,
+                  "controlAddress": "/activedeck",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "activedeck",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "activedeck",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/1title",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "1.title",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.title",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/1artist",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "1.artist",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.artist",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/2title",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "2.title",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.title",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": "",
+                  "controlAddress": "/2artist",
+                  "feedbackOnly": false,
+                  "type": "String",
+                  "niceName": "2.artist",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type String",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.artist",
+              "editorIsCollapsed": true,
+              "type": "String Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": 0,
+                  "hexMode": false,
+                  "controlAddress": "/1time",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "1.time",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "1.time",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            },
+            {
+              "parameters": [
+                {
+                  "value": 0,
+                  "hexMode": false,
+                  "controlAddress": "/2time",
+                  "feedbackOnly": false,
+                  "type": "Integer",
+                  "niceName": "2.time",
+                  "customizable": true,
+                  "removable": false,
+                  "description": "Custom control of type Integer",
+                  "hideInEditor": false
+                }
+              ],
+              "niceName": "2.time",
+              "editorIsCollapsed": true,
+              "type": "Int Parameter"
+            }
+          ],
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        },
+        "presets": {
+          "viewOffset": [
+            0,
+            0
+          ],
+          "viewZoom": 1.0
+        }
       }
     ],
     "viewOffset": [
@@ -2829,13 +3323,9 @@
       {
         "parameters": [
           {
-            "value": false,
-            "controlAddress": "/miniMode"
-          },
-          {
             "value": [
-              -232.0,
-              45.0
+              -306.0,
+              -514.0
             ],
             "controlAddress": "/viewUIPosition"
           },
@@ -2844,38 +3334,19 @@
             "controlAddress": "/active"
           }
         ],
-        "niceName": "State",
+        "niceName": "VDJ-INIT",
         "type": "State",
         "processors": {
           "items": [
             {
-              "niceName": "Action",
+              "niceName": "SUBS",
               "editorIsCollapsed": true,
               "type": "Action",
               "conditions": {
-                "items": [
+                "parameters": [
                   {
-                    "parameters": [
-                      {
-                        "value": "/modules/soundCard/values/volume",
-                        "controlAddress": "/inputValue"
-                      }
-                    ],
-                    "niceName": "From Input Value",
-                    "type": "From Input Value",
-                    "comparator": {
-                      "parameters": [
-                        {
-                          "value": ">",
-                          "controlAddress": "/comparisonFunction"
-                        },
-                        {
-                          "value": 0.00138193357270211,
-                          "controlAddress": "/reference"
-                        }
-                      ],
-                      "hideInEditor": true
-                    }
+                    "value": 1.0,
+                    "controlAddress": "/invalidationTime"
                   }
                 ],
                 "viewOffset": [
@@ -2893,15 +3364,279 @@
                 ],
                 "items": [
                   {
-                    "niceName": "Consequence",
+                    "niceName": "Consequence 1",
                     "type": "Consequence",
-                    "commandModule": "osc",
+                    "commandModule": "vdj_osc",
                     "commandPath": "",
                     "commandType": "Custom Message",
                     "command": {
                       "parameters": [
                         {
-                          "value": "/scenes/aliencavern",
+                          "value": "/vdj/query/get_activedeck",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "niceName": "Consequence 2",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/get_activedeck",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Artist",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/1/get_artist",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Title",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/1/get_title",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Title 1",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/subscribe/deck/1/get_title",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Deck 1 Volume",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/1/get_volume",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 7",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/2/get_position",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 5",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/2/get_artist",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 10",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/2/get_volume",
+                          "controlAddress": "/address"
+                        }
+                      ],
+                      "paramLinks": {
+                      },
+                      "argManager": {
+                        "viewOffset": [
+                          0,
+                          0
+                        ],
+                        "viewZoom": 1.0
+                      }
+                    }
+                  },
+                  {
+                    "parameters": [
+                      {
+                        "value": true,
+                        "controlAddress": "/enabled"
+                      }
+                    ],
+                    "niceName": "Consequence 4",
+                    "type": "Consequence",
+                    "commandModule": "vdj_osc",
+                    "commandPath": "",
+                    "commandType": "Custom Message",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/query/deck/2/get_title",
                           "controlAddress": "/address"
                         }
                       ],
@@ -2930,6 +3665,93 @@
                 ],
                 "viewZoom": 1.0
               }
+            },
+            {
+              "parameters": [
+                {
+                  "value": true,
+                  "controlAddress": "/enabled"
+                }
+              ],
+              "niceName": "Mapping",
+              "editorIsCollapsed": true,
+              "type": "Mapping",
+              "im": {
+                "items": [
+                  {
+                    "parameters": [
+                      {
+                        "value": "",
+                        "ghostValue": "/modules/vdj_osc/values/_vdj_get_activedeck",
+                        "controlAddress": "/inputValue"
+                      }
+                    ],
+                    "niceName": "Input Value",
+                    "type": "Input Value"
+                  }
+                ],
+                "viewOffset": [
+                  0,
+                  0
+                ],
+                "viewZoom": 1.0
+              },
+              "params": {
+                "parameters": [
+                  {
+                    "value": 50,
+                    "hexMode": false,
+                    "controlAddress": "/updateRate"
+                  }
+                ],
+                "editorIsCollapsed": true
+              },
+              "filters": {
+                "editorIsCollapsed": true,
+                "viewOffset": [
+                  0,
+                  0
+                ],
+                "viewZoom": 1.0
+              },
+              "outputs": {
+                "items": [
+                  {
+                    "niceName": "MappingOutput",
+                    "type": "BaseItem",
+                    "commandModule": "customVariables",
+                    "commandPath": "",
+                    "commandType": "Set Value",
+                    "command": {
+                      "parameters": [
+                        {
+                          "value": "/vdj/activedeck",
+                          "controlAddress": "/target"
+                        },
+                        {
+                          "value": "All",
+                          "controlAddress": "/component"
+                        },
+                        {
+                          "value": "Equals",
+                          "controlAddress": "/operator"
+                        }
+                      ],
+                      "paramLinks": {
+                        "value": {
+                          "linkType": 1,
+                          "mappingValueIndex": 0
+                        }
+                      }
+                    }
+                  }
+                ],
+                "viewOffset": [
+                  0,
+                  0
+                ],
+                "viewZoom": 1.0
+              }
             }
           ],
           "viewOffset": [
@@ -2941,8 +3763,8 @@
       }
     ],
     "viewOffset": [
-      -7,
-      -129
+      174,
+      438
     ],
     "viewZoom": 1.0,
     "transitions": {
@@ -2956,8 +3778,8 @@
     "comments": {
       "hideInEditor": true,
       "viewOffset": [
-        -7,
-        -129
+        174,
+        438
       ],
       "viewZoom": 1.0
     }
@@ -2974,7 +3796,7 @@
       {
         "niceName": "Router",
         "type": "BaseItem",
-        "sourceModule": "osc",
+        "sourceModule": "syn_osc",
         "sourceValues": {
           "items": [
             {
@@ -4139,7 +4961,7 @@
           ],
           "viewZoom": 1.0
         },
-        "destModule": "osc"
+        "destModule": "syn_osc"
       }
     ],
     "viewOffset": [

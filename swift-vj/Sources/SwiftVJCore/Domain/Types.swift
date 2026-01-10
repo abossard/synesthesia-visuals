@@ -397,7 +397,8 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
     public let colors: [String]
     public let effects: [String]
     public let rating: ShaderRating
-    
+    public let phases: Set<Phase>?  // DJ set phases this shader fits (optional)
+
     // Pre-compiled Metal support
     public let metalFunctionName: String?  // Function name in .metallib (nil = runtime compile)
 
@@ -413,6 +414,7 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
         colors: [String] = [],
         effects: [String] = [],
         rating: ShaderRating = .normal,
+        phases: Set<Phase>? = nil,
         metalFunctionName: String? = nil
     ) {
         self.name = name
@@ -426,6 +428,7 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
         self.colors = colors
         self.effects = effects
         self.rating = rating
+        self.phases = phases
         self.metalFunctionName = metalFunctionName
     }
 }

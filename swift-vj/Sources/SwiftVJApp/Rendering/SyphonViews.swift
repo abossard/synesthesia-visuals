@@ -161,15 +161,27 @@ final class SyphonMTKViewImpl: MTKView, MTKViewDelegate {
     }
 
     private func attemptConnection(retryCount: Int = 0) {
-        guard let receiver = receiver else { return }
+        guard let receiver = receiver else {
+            print("[SyphonMTKView] No receiver for \(currentServerName)")
+            return
+        }
+
+        // Log available servers on first attempt
+        if retryCount == 0 {
+            let servers = SyphonReceiver.availableServers()
+            print("[SyphonMTKView] Available servers: \(servers.map { $0.displayName })")
+        }
 
         if receiver.connect(appName: nil, serverName: currentServerName) {
             print("[SyphonMTKView] Connected to \(currentServerName)")
         } else if retryCount < 10 {
+            print("[SyphonMTKView] Connection attempt \(retryCount + 1)/10 failed for \(currentServerName)")
             // Retry after delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.attemptConnection(retryCount: retryCount + 1)
             }
+        } else {
+            print("[SyphonMTKView] Failed to connect to \(currentServerName) after 10 attempts")
         }
     }
 
@@ -185,6 +197,13 @@ final class SyphonMTKViewImpl: MTKView, MTKViewDelegate {
               let renderPassDescriptor = currentRenderPassDescriptor,
               let commandQueue = commandQueue,
               let commandBuffer = commandQueue.makeCommandBuffer() else {
+            // Debug: log why we're not drawing
+            if currentDrawable == nil {
+                // Only log occasionally to avoid spam
+                if Int.random(in: 0..<60) == 0 {
+                    print("[SyphonMTKView] No drawable for \(currentServerName) - size: \(drawableSize)")
+                }
+            }
             return
         }
 
@@ -202,6 +221,9 @@ final class SyphonMTKViewImpl: MTKView, MTKViewDelegate {
             encoder.setFragmentTexture(texture, index: 0)
             encoder.setFragmentSamplerState(samplerState, index: 0)
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        } else if texture == nil && Int.random(in: 0..<60) == 0 {
+            // Debug: log when no texture
+            print("[SyphonMTKView] No texture for \(currentServerName) - connected: \(receiver?.isConnected ?? false)")
         }
 
         encoder.endEncoding()

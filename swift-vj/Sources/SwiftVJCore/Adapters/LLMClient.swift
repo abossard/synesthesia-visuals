@@ -30,8 +30,9 @@ public struct SongAnalysis: Sendable, Equatable {
     public let energy: Double  // 0.0-1.0
     public let valence: Double  // -1.0 to 1.0
     public let categories: [String: Double]
+    public let djPhase: Phase?  // Suggested DJ set phase
     public let cached: Bool
-    
+
     public init(
         keywords: [String] = [],
         themes: [String] = [],
@@ -42,6 +43,7 @@ public struct SongAnalysis: Sendable, Equatable {
         energy: Double = 0.5,
         valence: Double = 0.0,
         categories: [String: Double] = [:],
+        djPhase: Phase? = nil,
         cached: Bool = false
     ) {
         self.keywords = keywords
@@ -53,9 +55,10 @@ public struct SongAnalysis: Sendable, Equatable {
         self.energy = energy
         self.valence = valence
         self.categories = categories
+        self.djPhase = djPhase
         self.cached = cached
     }
-    
+
     /// Primary mood from highest category score
     public var primaryMood: String {
         categories.max(by: { $0.value < $1.value })?.key ?? mood
@@ -523,10 +526,10 @@ public actor LLMClient {
         
         let prompt = """
         Analyze the song "\(title)" by \(artist)\(albumContext).
-        
+
         Lyrics:
         \(String(lyrics.prefix(2500)))
-        
+
         Provide a complete analysis as JSON with:
         1. keywords: 5-10 important words from the lyrics
         2. themes: 2-4 main themes (love, loss, rebellion, etc.)
@@ -537,7 +540,13 @@ public actor LLMClient {
         7. energy: 0.0-1.0 (calm=0, intense=1)
         8. valence: -1.0 to 1.0 (dark/negative=-1, bright/positive=+1)
         9. categories: scores 0.0-1.0 for each: \(categories)
-        
+        10. dj_phase: suggested DJ set phase (one of: disco, buildup, peak, release, feature)
+            - disco: Starter songs, jungle beats, 90-125 BPM, easy listening
+            - buildup: Bridge songs, 115-140 BPM, building energy
+            - peak: High energy, dark, loud, 135-160 BPM
+            - release: Breathing room, atmospheric, after peaks
+            - feature: Special/erratic, remixes, doesn't fit elsewhere
+
         Return ONLY valid JSON:
         {
           "keywords": ["word1", "word2"],
@@ -548,7 +557,8 @@ public actor LLMClient {
           "mood": "energetic",
           "energy": 0.7,
           "valence": 0.3,
-          "categories": {"dark": 0.2, "happy": 0.6}
+          "categories": {"dark": 0.2, "happy": 0.6},
+          "dj_phase": "buildup"
         }
         """
         
@@ -688,6 +698,14 @@ public actor LLMClient {
             throw LLMClientError.invalidResponse("Invalid JSON")
         }
         
+        // Parse dj_phase
+        let djPhase: Phase?
+        if let phaseStr = json["dj_phase"] as? String {
+            djPhase = Phase.from(phaseStr)
+        } else {
+            djPhase = nil
+        }
+
         return SongAnalysis(
             keywords: (json["keywords"] as? [String]) ?? [],
             themes: (json["themes"] as? [String]) ?? [],
@@ -698,6 +716,7 @@ public actor LLMClient {
             energy: (json["energy"] as? Double) ?? 0.5,
             valence: (json["valence"] as? Double) ?? 0.0,
             categories: (json["categories"] as? [String: Double]) ?? [:],
+            djPhase: djPhase,
             cached: false
         )
     }

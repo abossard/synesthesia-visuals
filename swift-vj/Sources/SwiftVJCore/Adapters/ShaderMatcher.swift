@@ -410,7 +410,81 @@ public actor ShaderMatcher {
     public func randomShader() -> ShaderInfo? {
         shaders.values.randomElement()
     }
-    
+
+    // MARK: - Phase-Based Matching
+
+    /// Match shaders with phase as a soft factor
+    ///
+    /// Phase matching adds a bonus to shaders that match the target phase,
+    /// but does not filter out non-matching shaders. This allows for variety
+    /// while still preferring phase-appropriate visuals.
+    ///
+    /// - Parameters:
+    ///   - energy: Energy level 0.0-1.0
+    ///   - valence: Mood valence -1.0 to 1.0
+    ///   - phase: Optional DJ set phase for soft bonus
+    ///   - phaseWeight: How much to weight phase match (default 0.2)
+    ///   - topK: Number of matches to return
+    /// - Returns: Array of ShaderMatchResult sorted by score (lower is better)
+    public func matchWithPhase(
+        energy: Double,
+        valence: Double,
+        phase: Phase?,
+        phaseWeight: Double = 0.2,
+        topK: Int = 5
+    ) -> [ShaderMatchResult] {
+        guard !shaders.isEmpty else { return [] }
+
+        let target = buildShaderTargetVector(energy: energy, valence: valence)
+
+        var scored: [(ShaderInfo, Double)] = []
+
+        for info in shaders.values {
+            let vector = [
+                info.energyScore,
+                info.moodValence,
+                info.colorWarmth,
+                info.motionSpeed,
+                0.5,  // geometric (not stored in ShaderInfo)
+                0.5   // density (not stored in ShaderInfo)
+            ]
+
+            var distance = weightedDistance(target, vector)
+
+            // Apply phase bonus (reduce distance for matching phases)
+            if let targetPhase = phase,
+               let shaderPhases = info.phases,
+               shaderPhases.contains(targetPhase) {
+                distance *= (1.0 - phaseWeight)  // e.g., 0.8 multiplier for 0.2 weight
+            }
+
+            scored.append((info, distance))
+        }
+
+        scored.sort { $0.1 < $1.1 }
+
+        return scored.prefix(topK).map { info, score in
+            ShaderMatchResult(
+                name: info.name,
+                path: info.path,
+                score: score,
+                energyScore: info.energyScore,
+                moodValence: info.moodValence,
+                mood: info.mood
+            )
+        }
+    }
+
+    /// Get all shaders that match a specific phase
+    ///
+    /// - Parameter phase: The phase to filter by
+    /// - Returns: Array of ShaderInfo for shaders in the given phase
+    public func shadersForPhase(_ phase: Phase) -> [ShaderInfo] {
+        shaders.values.filter { shader in
+            shader.phases?.contains(phase) ?? false
+        }
+    }
+
     // MARK: - Private
     
     private func matchToVector(_ target: [Double], topK: Int) -> [ShaderMatchResult] {

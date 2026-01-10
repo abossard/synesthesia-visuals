@@ -369,9 +369,19 @@ struct RenderingView: View {
     @State private var useDirectMTKView: Bool = true
     @State private var frameCount: Int = 0
     @State private var audioTime: Float = 0
-    @AppStorage("lastSelectedShader") private var selectedShader: String = "3isacrowd"
+    // Shader selection now goes through AppState (single source of truth)
     @AppStorage("lastSelectedMaskShader") private var selectedMaskShader: String = "BWcarbonlattice"
     @State private var selectedTile: String = "shader"
+
+    /// Binding to appState.selectedShader for UI controls
+    private var selectedShaderBinding: Binding<String> {
+        Binding(
+            get: { appState.selectedShader ?? "3isacrowd" },
+            set: { newValue in
+                Task { await appState.selectShader(newValue) }
+            }
+        )
+    }
     
     // Demo text state for preview (shown until real data arrives)
     @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
@@ -419,17 +429,12 @@ struct RenderingView: View {
         }
         .onAppear {
             Task { try? await renderEngine?.start() }
-            // Load last selected shaders from UserDefaults
-            renderEngine?.shaderManager.selectShader(name: selectedShader)
+            // Mask still uses local state for now
             renderEngine?.maskManager.selectMask(name: selectedMaskShader)
+            // Shader is handled by AppState (single source of truth)
         }
         // NOTE: Removed onDisappear stop() - render engine should keep running
         // when switching tabs. It only stops when app quits.
-        
-        // Sync shader selection to state managers for HeadlessRenderer
-        .onChange(of: selectedShader) { _, newValue in
-            renderEngine?.shaderManager.selectShader(name: newValue)
-        }
         .onChange(of: selectedMaskShader) { _, newValue in
             renderEngine?.maskManager.selectMask(name: newValue)
         }
@@ -476,7 +481,7 @@ struct RenderingView: View {
             
             // Shader selector (when shader or mask tile selected)
             if selectedTile == "shader" {
-                shaderControlsView(title: "Shader", binding: $selectedShader)
+                shaderControlsView(title: "Shader", binding: selectedShaderBinding)
             }
             if selectedTile == "mask" {
                 shaderControlsView(title: "Mask", binding: $selectedMaskShader)
@@ -794,22 +799,29 @@ struct RenderingView: View {
 // MARK: - Shader List View
 
 struct ShaderListView: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var shaderManager: ShaderStateManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                // Navigation buttons
+                // Navigation buttons - go through AppState for shader selection
                 Button {
-                    shaderManager.prevShader()
+                    let shaders = shaderManager.availableShaders
+                    guard !shaders.isEmpty else { return }
+                    let prevIndex = (shaderManager.currentIndex - 1 + shaders.count) % shaders.count
+                    Task { await appState.selectShader(shaders[prevIndex].name) }
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
                 .disabled(shaderManager.availableShaders.isEmpty)
-                
+
                 Button {
-                    shaderManager.nextShader()
+                    let shaders = shaderManager.availableShaders
+                    guard !shaders.isEmpty else { return }
+                    let nextIndex = (shaderManager.currentIndex + 1) % shaders.count
+                    Task { await appState.selectShader(shaders[nextIndex].name) }
                 } label: {
                     Image(systemName: "chevron.right")
                 }
@@ -844,9 +856,10 @@ struct ShaderListView: View {
                         ForEach(shaderManager.availableShaders) { shader in
                             ShaderChip(
                                 name: shader.name,
-                                isSelected: shaderManager.state.current?.name == shader.name
+                                isSelected: appState.selectedShader == shader.name
                             ) {
-                                shaderManager.selectShader(name: shader.name)
+                                // All shader selection goes through AppState
+                                Task { await appState.selectShader(shader.name) }
                             }
                         }
                     }

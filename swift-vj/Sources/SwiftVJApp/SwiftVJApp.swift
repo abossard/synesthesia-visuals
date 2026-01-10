@@ -114,7 +114,39 @@ final class AppState: ObservableObject {
 
     // Shader State
     @Published var shaderCount: Int = 0
-    @Published var selectedShader: String?
+    /// Single source of truth for current shader - all UI should use this
+    /// Persisted to UserDefaults and syncs to render engine automatically
+    @Published var selectedShader: String? {
+        didSet {
+            // Persist to UserDefaults
+            if let shader = selectedShader {
+                UserDefaults.standard.set(shader, forKey: "selectedShader")
+            }
+            // Sync to render engine
+            renderEngine?.shaderManager.selectShader(name: selectedShader ?? "")
+        }
+    }
+
+    // Phase State
+    /// Current set phase - controlled by UI slider
+    /// nil = auto (use detected song phase)
+    @Published var currentPhase: Phase? = nil {
+        didSet {
+            if let phase = currentPhase {
+                UserDefaults.standard.set(phase.rawValue, forKey: "currentPhase")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "currentPhase")
+            }
+        }
+    }
+
+    /// Detected phase from current song analysis (suggested by LLM)
+    @Published var detectedSongPhase: Phase? = nil
+
+    /// Effective phase = slider override or detected
+    var effectivePhase: Phase? {
+        currentPhase ?? detectedSongPhase
+    }
 
     // Log State
     @Published var logEntries: [LogEntry] = []
@@ -125,6 +157,16 @@ final class AppState: ObservableObject {
         setupRenderEngine()
         startOSCHub()
         startBPMSync()
+
+        // Load persisted shader selection (after render engine is ready)
+        if let savedShader = UserDefaults.standard.string(forKey: "selectedShader") {
+            selectedShader = savedShader
+        }
+
+        // Load persisted phase selection
+        if let savedPhase = UserDefaults.standard.string(forKey: "currentPhase") {
+            currentPhase = Phase.from(savedPhase)
+        }
     }
     
     private func startBPMSync() {

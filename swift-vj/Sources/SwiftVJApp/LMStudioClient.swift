@@ -3,6 +3,8 @@
 
 import Foundation
 
+import SwiftVJCore
+
 /// Result of shader analysis from LLM
 struct ShaderAnalysisResult: Codable {
     let title: String
@@ -15,10 +17,17 @@ struct ShaderAnalysisResult: Codable {
     let objects: [String]
     let complexity: String
     let visualMetadata: [String: String]
-    
+    let djPhases: [String]?  // DJ set phases this shader fits
+
     enum CodingKeys: String, CodingKey {
         case title, description, mood, energy, colors, effects, geometry, objects, complexity
         case visualMetadata = "visual_metadata"
+        case djPhases = "dj_phases"
+    }
+
+    /// Convert dj_phases strings to Phase enum set
+    var phases: Set<Phase> {
+        Phase.fromStrings(djPhases ?? [])
     }
 }
 
@@ -222,7 +231,7 @@ actor LMStudioClient {
         }
         
         prompt += """
-        
+
         Provide a JSON analysis with:
         {
           "title": "A catchy VJ-friendly title (3-5 words)",
@@ -239,9 +248,17 @@ actor LMStudioClient {
             "saturation": "muted|normal|vibrant",
             "motion": "static|slow|medium|fast",
             "symmetry": "none|radial|bilateral|kaleidoscopic"
-          }
+          },
+          "dj_phases": ["phase1", "phase2"] (which DJ set phases this shader fits - can select multiple)
         }
-        
+
+        DJ Phases (select 1-3 that fit best):
+        - disco: Warm, inviting, flowing visuals for starter songs
+        - buildup: Increasing intensity, building tension
+        - peak: Intense, fast, dark, aggressive visuals
+        - release: Calming, atmospheric, breathing room
+        - feature: Unique, erratic, attention-grabbing
+
         Return ONLY the JSON object, no other text.
         """
         
