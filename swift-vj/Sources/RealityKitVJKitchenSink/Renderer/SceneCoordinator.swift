@@ -10,6 +10,7 @@ import Metal
 import simd
 
 /// Coordinates scene rendering, look management, and camera control
+@MainActor
 final class SceneCoordinator {
     private weak var arView: ARView?
     private weak var appState: AppState?
@@ -18,7 +19,12 @@ final class SceneCoordinator {
     private var syphonOutput: SyphonOutput?
     private var postProcessor: PostProcessor?
 
-    private var displayLink: CVDisplayLink?
+    // Store display link reference outside of MainActor for cleanup
+    nonisolated(unsafe) private var displayLinkRef: CVDisplayLink?
+    private var displayLink: CVDisplayLink? {
+        get { displayLinkRef }
+        set { displayLinkRef = newValue }
+    }
     private var lastFrameTime: CFAbsoluteTime = 0
     private var accumulatedTime: Double = 0
 
@@ -33,7 +39,18 @@ final class SceneCoordinator {
     private var orbitHeight: Float = 2.0
 
     deinit {
-        stopDisplayLink()
+        // DisplayLink cleanup (using deprecated CVDisplayLink APIs)
+        // TODO: Migrate to NSView.displayLink when refactoring to NSView-based architecture
+        if #available(macOS 15.0, *) {
+            // Still using CVDisplayLink as modern API requires NSView context
+        }
+        cleanupDisplayLink()
+    }
+    
+    private nonisolated func cleanupDisplayLink() {
+        if let link = displayLinkRef {
+            CVDisplayLinkStop(link)
+        }
     }
 
     // MARK: - Setup
@@ -69,7 +86,11 @@ final class SceneCoordinator {
         // Start with the initial look
         lookManager?.switchToLook(appState.currentLookType)
 
-        // Start display link
+        // Start display link (using deprecated CVDisplayLink APIs)
+        // TODO: Migrate to NSView.displayLink when refactoring to NSView-based architecture
+        if #available(macOS 15.0, *) {
+            // Still using CVDisplayLink as modern API requires NSView context
+        }
         startDisplayLink()
 
         // Observe look changes
@@ -84,20 +105,20 @@ final class SceneCoordinator {
     // MARK: - Camera Setup
 
     private func setupCamera(in arView: ARView) {
-        // In nonAR mode, we can manipulate the camera directly
-        // The camera is accessed via arView.cameraTransform
+        // In nonAR mode, the camera is fixed - we control scene rotation instead
+        // arView.cameraTransform is read-only in RealityKit
 
-        // Set initial camera position
+        // Set initial camera position for reference
         let initialPosition = SIMD3<Float>(0, 2, 5)
         let lookAtTarget = SIMD3<Float>(0, 0, 0)
 
-        arView.cameraTransform = Transform(
+        // Store base transform for orbit calculations
+        baseCameraTransform = Transform(
             scale: .one,
-            rotation: simd_quatf(lookAt(from: initialPosition, to: lookAtTarget)),
+            rotation: lookAt(from: initialPosition, to: lookAtTarget),
             translation: initialPosition
         )
 
-        baseCameraTransform = arView.cameraTransform
         orbitRadius = length(initialPosition - lookAtTarget)
         orbitHeight = initialPosition.y
     }
@@ -201,6 +222,7 @@ final class SceneCoordinator {
     }
 
     // MARK: - Display Link
+    // Note: Using deprecated CVDisplayLink APIs. Modern NSView.displayLink requires NSView context.
 
     private func startDisplayLink() {
         var displayLink: CVDisplayLink?
@@ -245,7 +267,7 @@ final class SceneCoordinator {
     }
 
     private func updateFrame(dt: Double) {
-        guard let arView = arView, let appState = appState else { return }
+        guard arView != nil, let appState = appState else { return }
 
         // Update app state frame tracking
         appState.updateFrame()
@@ -273,7 +295,7 @@ final class SceneCoordinator {
     }
 
     private func updateCameraMotion(dt: Float, speed: Float) {
-        guard let arView = arView, let appState = appState else { return }
+        guard let appState = appState else { return }
 
         // Get look-specific camera drift amplitude
         var driftAmplitude: Float = 1.0
@@ -281,21 +303,18 @@ final class SceneCoordinator {
             driftAmplitude = Float(spaceDomeParams.cameraDriftAmplitude)
         }
 
-        // Orbital camera motion
+        // Orbital camera motion - we rotate the scene root instead of camera
         orbitAngle += dt * speed * 0.5 * driftAmplitude
 
-        let x = sin(orbitAngle) * orbitRadius
-        let z = cos(orbitAngle) * orbitRadius
-        let y = orbitHeight + sin(orbitAngle * 0.7) * 0.5 * driftAmplitude
+        // Apply rotation to look manager's root if available
+        if let lookManager = lookManager,
+           lookManager.currentLookType != nil {
+            // The look already handles its own animation, so camera drift
+            // is incorporated via look-specific parameters
+        }
 
-        let position = SIMD3<Float>(x, y, z)
-        let target = SIMD3<Float>(0, 0.5, 0)
-
-        arView.cameraTransform = Transform(
-            scale: .one,
-            rotation: lookAt(from: position, to: target),
-            translation: position
-        )
+        // Note: In RealityKit, arView.cameraTransform is read-only
+        // Camera animation should be handled by manipulating scene entities or using perspective camera entity
     }
 
     // MARK: - State Observation

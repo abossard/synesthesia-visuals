@@ -8,8 +8,10 @@
 import RealityKit
 import Metal
 import simd
+import CoreGraphics
 
 /// Procedural ribbon/worm mesh with noise-driven animation
+@MainActor
 final class ProceduralMeshLook: Look {
     typealias Params = ProceduralMeshParams
 
@@ -109,13 +111,13 @@ final class ProceduralMeshLook: Look {
             var descriptor = LowLevelMesh.Descriptor()
 
             descriptor.vertexAttributes = [
-                .init(semantic: .position, format: .float3, layoutIndex: 0),
-                .init(semantic: .normal, format: .float3, layoutIndex: 0),
+                .init(semantic: .position, format: .float3, layoutIndex: 0, offset: 0),
+                .init(semantic: .normal, format: .float3, layoutIndex: 0, offset: MemoryLayout<SIMD3<Float>>.stride),
                 // Using vertex color as a custom attribute
             ]
 
             descriptor.vertexLayouts = [
-                .init(bufferStride: MemoryLayout<Vertex>.stride)
+                .init(bufferIndex: 0, bufferStride: MemoryLayout<Vertex>.stride)
             ]
 
             descriptor.indexType = .uint32
@@ -300,22 +302,24 @@ final class ProceduralMeshLook: Look {
 
         // Update mesh parts
         let partCount = (segmentCount - 1) * radialSegments * 2
-        mesh.parts.replaceAll([
-            LowLevelMesh.Part(
-                indexCount: partCount * 3,
-                topology: .triangle,
-                materialIndex: 0
-            )
-        ])
-
-        // Update bounds
+        
+        // Calculate bounds first
         var minBounds = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
         var maxBounds = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
         for pos in positions {
             minBounds = min(minBounds, pos)
             maxBounds = max(maxBounds, pos)
         }
-        mesh.bounds = BoundingBox(min: minBounds, max: maxBounds)
+        let bounds = BoundingBox(min: minBounds, max: maxBounds)
+        
+        mesh.parts.replaceAll([
+            LowLevelMesh.Part(
+                indexCount: partCount * 3,
+                topology: .triangle,
+                materialIndex: 0,
+                bounds: bounds
+            )
+        ])
     }
 
     // MARK: - Look Protocol

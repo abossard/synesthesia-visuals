@@ -9,6 +9,7 @@ import Metal
 import simd
 
 /// Context provided to looks for initialization
+@MainActor
 struct LookContext {
     let arView: ARView
     let device: MTLDevice
@@ -22,6 +23,7 @@ struct LookContext {
 }
 
 /// Protocol defining a visual look/scene
+@MainActor
 protocol Look: AnyObject {
     /// The type of parameters this look uses
     associatedtype Params: LookParams
@@ -66,6 +68,7 @@ extension Look {
 }
 
 /// Type-erased look wrapper for uniform management
+@MainActor
 final class AnyLook {
     private let _rootEntity: () -> Entity
     private let _activate: () -> Void

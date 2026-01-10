@@ -109,8 +109,11 @@ struct Noise {
         let i = SIMD2<Float>(floor(p.x), floor(p.y))
         let f = p - i
 
-        // Smooth interpolation
-        let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0)
+        // Smooth interpolation (quintic curve)
+        let f2 = f * f
+        let f3 = f2 * f
+        let inner = f * 6.0 - SIMD2<Float>(repeating: 15.0)
+        let u = f3 * (f2 * inner + SIMD2<Float>(repeating: 10.0))
 
         let n00 = dot(gradient2(i + SIMD2<Float>(0, 0)), f - SIMD2<Float>(0, 0))
         let n10 = dot(gradient2(i + SIMD2<Float>(1, 0)), f - SIMD2<Float>(1, 0))
@@ -130,13 +133,12 @@ struct Noise {
     static func fbm(_ p: SIMD2<Float>, octaves: Int = 4, lacunarity: Float = 2.0, gain: Float = 0.5) -> Float {
         var value: Float = 0
         var amplitude: Float = 0.5
-        var frequency: Float = 1.0
         var maxValue: Float = 0
 
         var currentP = p
 
         for _ in 0..<octaves {
-            value += amplitude * value(currentP)
+            value += amplitude * Self.value(currentP)
             maxValue += amplitude
 
             amplitude *= gain

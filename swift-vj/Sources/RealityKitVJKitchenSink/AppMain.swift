@@ -11,7 +11,7 @@ import RealityKit
 struct RealityKitVJKitchenSinkApp: App {
     @StateObject private var appState = AppState()
 
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)

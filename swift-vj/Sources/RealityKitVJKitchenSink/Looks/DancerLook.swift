@@ -9,6 +9,7 @@ import Foundation
 import simd
 
 /// Character look with USDZ model, 3-point lighting, and animation
+@MainActor
 final class DancerLook: Look {
     typealias Params = DancerParams
 
@@ -162,7 +163,7 @@ final class DancerLook: Look {
     private func loadFromURL(_ url: URL) {
         Task { @MainActor in
             do {
-                let entity = try await Entity.load(contentsOf: url)
+                let entity = try await Entity(contentsOf: url)
 
                 // Remove placeholder if present
                 if let existing = characterEntity {
@@ -298,7 +299,7 @@ final class DancerLook: Look {
     }
 
     func update(time: Double, deltaTime: Double, params: DancerParams) {
-        let t = Float(time)
+        let _ = Float(time)
         let dt = Float(deltaTime)
 
         // Update rotation
@@ -351,8 +352,8 @@ final class DancerLook: Look {
 
         var material = PhysicallyBasedMaterial()
         material.baseColor = .init(tint: .init(red: 0.1, green: 0.1, blue: 0.12, alpha: 1.0))
-        material.metallic = .init(floatLiteral: Double(0.3 + reflectivity * 0.6))
-        material.roughness = .init(floatLiteral: Double(0.6 - reflectivity * 0.4))
+        material.metallic = .init(floatLiteral: 0.3 + reflectivity * 0.6)
+        material.roughness = .init(floatLiteral: 0.6 - reflectivity * 0.4)
 
         floor.model?.materials = [material]
     }

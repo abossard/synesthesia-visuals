@@ -88,7 +88,7 @@ extension simd_quatf {
         } else if d <= -0.999999 {
             // Vectors are anti-parallel
             var axis = cross(SIMD3<Float>(1, 0, 0), fromNorm)
-            if length(axis) < 0.001 {
+            if simd.length(axis) < 0.001 {
                 axis = cross(SIMD3<Float>(0, 1, 0), fromNorm)
             }
             axis = normalize(axis)

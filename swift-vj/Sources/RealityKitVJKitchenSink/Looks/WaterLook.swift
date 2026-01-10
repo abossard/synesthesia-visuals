@@ -7,8 +7,10 @@
 import RealityKit
 import Metal
 import simd
+import CoreGraphics
 
 /// Water surface with animated waves using CustomMaterial
+@MainActor
 final class WaterLook: Look {
     typealias Params = WaterParams
 
@@ -133,7 +135,7 @@ final class WaterLook: Look {
 
             let position = SIMD3<Float>(
                 cos(angle) * distance,
-                Float.random(in: -4...-1),
+                Float.random(in: -4 ... -1),
                 sin(angle) * distance
             )
 

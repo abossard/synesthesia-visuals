@@ -6,8 +6,10 @@
 
 import RealityKit
 import simd
+import CoreGraphics
 
 /// Space dome with starfield particles and animated nebula
+@MainActor
 final class SpaceDomeLook: Look {
     typealias Params = SpaceDomeParams
 
@@ -70,7 +72,6 @@ final class SpaceDomeLook: Look {
         // Emission settings
         emitter.emitterShape = .sphere
         emitter.emitterShapeSize = SIMD3<Float>(repeating: 40)
-        emitter.birthRate = 500
         emitter.burstCount = 2000
         emitter.burstCountVariation = 500
 
@@ -86,8 +87,6 @@ final class SpaceDomeLook: Look {
 
         // Particle behavior
         emitter.mainEmitter.acceleration = SIMD3<Float>(0, 0, 0)
-        emitter.mainEmitter.speed = 0.01
-        emitter.mainEmitter.speedVariation = 0.005
 
         // Add some twinkling
         emitter.mainEmitter.opacityCurve = .linearFadeOut
@@ -250,7 +249,7 @@ final class SpaceDomeLook: Look {
             // Update opacity based on intensity
             if let currentMaterial = model.model?.materials.first as? UnlitMaterial {
                 var material = currentMaterial
-                material.blending = .transparent(opacity: .init(floatLiteral: Double(0.1 * intensity)))
+                material.blending = .transparent(opacity: .init(floatLiteral: 0.1 * intensity))
                 model.model?.materials = [material]
             }
         }

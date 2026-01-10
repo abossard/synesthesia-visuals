@@ -7,6 +7,7 @@ import RealityKit
 import Metal
 
 /// Manages visual looks and handles transitions between them
+@MainActor
 final class LookManager {
     private weak var arView: ARView?
     private let device: MTLDevice

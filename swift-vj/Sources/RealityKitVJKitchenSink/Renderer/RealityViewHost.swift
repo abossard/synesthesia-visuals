@@ -13,18 +13,8 @@ struct RealityViewHost: NSViewRepresentable {
     @EnvironmentObject var appState: AppState
 
     func makeNSView(context: Context) -> ARView {
-        // Create ARView in non-AR mode (no ARKit, pure 3D rendering)
-        let arView = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
-
-        // Configure rendering options for VJ quality
-        arView.renderOptions = [
-            .disablePersonOcclusion,
-            .disableGroundingShadows,
-            .disableMotionBlur,
-            .disableDepthOfField,
-            .disableFaceMesh,
-            .disableHDR
-        ]
+        // Create ARView for 3D rendering
+        let arView = ARView(frame: .zero)
 
         // Enable high quality rendering
         arView.environment.background = .color(.black)

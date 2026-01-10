@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -88,9 +88,10 @@ let package = Package(
             dependencies: [
                 "SyphonKit",
             ],
-            resources: [
-                .process("Resources/Textures"),
-                .process("Resources/Shaders"),
+            exclude: [
+                "README.md",
+                "Resources/Textures/.gitkeep",
+                "Resources/Shaders/.gitkeep",
             ],
             linkerSettings: [
                 .linkedFramework("Metal"),

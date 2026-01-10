@@ -6,8 +6,10 @@
 
 import RealityKit
 import simd
+import CoreGraphics
 
 /// Laser rig with animated beam array
+@MainActor
 final class LaserRigLook: Look {
     typealias Params = LaserRigParams
 
@@ -120,14 +122,12 @@ final class LaserRigLook: Look {
 
         emitter.emitterShape = .box
         emitter.emitterShapeSize = SIMD3<Float>(20, 10, 20)
-        emitter.birthRate = 50
 
         emitter.mainEmitter.birthRate = 20
         emitter.mainEmitter.lifeSpan = 8.0
         emitter.mainEmitter.size = 0.5
         emitter.mainEmitter.sizeVariation = 0.3
         emitter.mainEmitter.color = .constant(.single(.init(white: 0.2, alpha: 0.3)))
-        emitter.mainEmitter.speed = 0.1
         emitter.mainEmitter.acceleration = SIMD3<Float>(0, 0.05, 0)
         emitter.mainEmitter.opacityCurve = .linearFadeIn
 
@@ -215,9 +215,9 @@ final class LaserRigLook: Look {
 
         var material = UnlitMaterial()
         material.color = .init(tint: .init(
-            red: CGFloat(min(glowColor.x, 1.0)),
-            green: CGFloat(min(glowColor.y, 1.0)),
-            blue: CGFloat(min(glowColor.z, 1.0)),
+            red: CGFloat(Swift.min(glowColor.x, Float(1.0))),
+            green: CGFloat(Swift.min(glowColor.y, Float(1.0))),
+            blue: CGFloat(Swift.min(glowColor.z, Float(1.0))),
             alpha: 1.0
         ))
 
