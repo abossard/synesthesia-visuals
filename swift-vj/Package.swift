@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "SwiftVJ",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v15),
         .iOS(.v17)  // Required by OSCKit dependency, though we only target macOS
     ],
     products: [
@@ -18,6 +18,10 @@ let package = Package(
         .executable(
             name: "SwiftVJApp",
             targets: ["SwiftVJApp"]),
+        // RealityKit VJ Kitchen Sink app
+        .executable(
+            name: "RealityKitVJKitchenSink",
+            targets: ["RealityKitVJKitchenSink"]),
         // Shader compilation CLI
         .executable(
             name: "shader-compile",
@@ -77,6 +81,25 @@ let package = Package(
                 .process("Resources/SharedVertex.metal"),
                 .process("Resources/Assets.xcassets"),
             ]),
+
+        // RealityKit VJ Kitchen Sink - demonstrates RealityKit rendering with Syphon output
+        .executableTarget(
+            name: "RealityKitVJKitchenSink",
+            dependencies: [
+                "SyphonKit",
+            ],
+            resources: [
+                .process("Resources/Textures"),
+                .process("Resources/Shaders"),
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("RealityKit"),
+                .linkedFramework("ModelIO"),
+                .linkedFramework("Accelerate"),
+            ]
+        ),
 
         // Core library containing all business logic
         .target(
