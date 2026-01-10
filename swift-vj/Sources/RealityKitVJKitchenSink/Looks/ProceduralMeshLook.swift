@@ -4,6 +4,7 @@
 import Foundation
 import RealityKit
 import simd
+import AppKit
 
 final class ProceduralMeshLook: Look {
     private let context: LookContext

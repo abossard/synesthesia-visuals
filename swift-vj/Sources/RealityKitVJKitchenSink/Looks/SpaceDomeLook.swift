@@ -4,6 +4,7 @@
 import Foundation
 import RealityKit
 import simd
+import AppKit
 
 final class SpaceDomeLook: Look {
     private let context: LookContext
@@ -49,7 +50,7 @@ final class SpaceDomeLook: Look {
         
         // Time-based hue shift for dome color
         let hue = Float(fmod(time * params.domeHueSpeed * 0.1, 1.0))
-        let skyColor = UIColor(hue: CGFloat(hue), saturation: 0.3, brightness: 0.15, alpha: 1.0)
+        let skyColor = NSColor(hue: CGFloat(hue), saturation: 0.3, brightness: 0.15, alpha: 1.0)
         
         if var material = domeEntity.model?.materials.first as? UnlitMaterial {
             material.color = .init(tint: skyColor)

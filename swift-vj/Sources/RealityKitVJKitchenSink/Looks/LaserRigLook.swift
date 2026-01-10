@@ -4,6 +4,7 @@
 import Foundation
 import RealityKit
 import simd
+import AppKit
 
 final class LaserRigLook: Look {
     private let context: LookContext
@@ -57,7 +58,7 @@ final class LaserRigLook: Look {
             
             // Color cycling
             let hue = Float(fmod(time * params.colorCycleSpeed * 0.2 + Double(offset), 1.0))
-            let color = UIColor(hue: CGFloat(hue), saturation: 1.0, brightness: 1.0, alpha: 1.0)
+            let color = NSColor(hue: CGFloat(hue), saturation: 1.0, brightness: 1.0, alpha: 1.0)
             
             if var material = beam.model?.materials.first as? UnlitMaterial {
                 material.color = .init(tint: color)

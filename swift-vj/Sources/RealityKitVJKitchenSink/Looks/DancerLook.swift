@@ -5,6 +5,8 @@
 import Foundation
 import RealityKit
 import simd
+import AppKit
+import Combine
 
 final class DancerLook: Look {
     private let context: LookContext
@@ -15,6 +17,7 @@ final class DancerLook: Look {
     private var params: DancerParams?
     private var elapsedTime: Float = 0
     private var baseScale: Float = 1.0
+    private var cancellables = Set<AnyCancellable>()
     
     required init(context: LookContext) {
         self.context = context
@@ -189,5 +192,3 @@ final class DancerLook: Look {
         self.params = params
     }
 }
-
-import Combine

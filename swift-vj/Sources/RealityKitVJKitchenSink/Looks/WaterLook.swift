@@ -6,6 +6,7 @@ import Foundation
 import RealityKit
 import Metal
 import simd
+import AppKit
 
 final class WaterLook: Look {
     private let context: LookContext

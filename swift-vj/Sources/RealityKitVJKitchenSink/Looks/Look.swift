@@ -3,6 +3,7 @@
 
 import Foundation
 import RealityKit
+import Metal
 
 // MARK: - Look Protocol
 
