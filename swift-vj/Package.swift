@@ -18,6 +18,10 @@ let package = Package(
         .executable(
             name: "SwiftVJApp",
             targets: ["SwiftVJApp"]),
+        // RealityKit VJ Kitchen Sink app
+        .executable(
+            name: "RealityKitVJKitchenSink",
+            targets: ["RealityKitVJKitchenSink"]),
         // Shader compilation CLI
         .executable(
             name: "shader-compile",
@@ -106,6 +110,24 @@ let package = Package(
             dependencies: [
                 "ShadertoyRuntime",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]),
+
+        // RealityKit VJ Kitchen Sink
+        .executableTarget(
+            name: "RealityKitVJKitchenSink",
+            dependencies: [
+                "SyphonKit",
+            ],
+            resources: [
+                .copy("Resources/Models"),
+                .copy("Resources/Textures"),
+            ],
+            linkerSettings: [
+                .linkedFramework("RealityKit"),
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("AppKit"),
             ]),
 
         // Behavior tests - pure functions, no external dependencies
