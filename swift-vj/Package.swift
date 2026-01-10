@@ -18,6 +18,10 @@ let package = Package(
         .executable(
             name: "SwiftVJApp",
             targets: ["SwiftVJApp"]),
+        // RealityKit VJ Kitchen Sink app
+        .executable(
+            name: "RealityKitVJKitchenSink",
+            targets: ["RealityKitVJKitchenSink"]),
         // Shader compilation CLI
         .executable(
             name: "shader-compile",
@@ -76,6 +80,18 @@ let package = Package(
                 .copy("Resources/Shaders.metallib"),
                 .process("Resources/SharedVertex.metal"),
                 .process("Resources/Assets.xcassets"),
+            ]),
+
+        // RealityKit VJ Kitchen Sink app
+        .executableTarget(
+            name: "RealityKitVJKitchenSink",
+            dependencies: [
+                "SyphonKit",
+            ],
+            resources: [
+                .process("Resources/Textures"),
+                .process("Resources/Models"),
+                .process("Resources/Materials"),
             ]),
 
         // Core library containing all business logic
