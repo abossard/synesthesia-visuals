@@ -78,10 +78,13 @@ final class ShaderStateManager: ObservableObject {
     @Published var state: ShaderDisplayState = .empty
     @Published private(set) var availableShaders: [ShaderInfo] = []
     @Published private(set) var shadersDirectory: URL?
-    
+
     private(set) var currentIndex: Int = 0
     private var metallibPath: String?
-    
+
+    /// Logger callback for UI integration
+    var logger: ((String, LogLevel) -> Void)?
+
     init() {
         loadAvailableShaders()
     }
@@ -210,6 +213,25 @@ final class ShaderStateManager: ObservableObject {
         if let index = availableShaders.firstIndex(where: { $0.name == name }) {
             currentIndex = index
             state = ShaderDisplayState(current: availableShaders[index], isLoaded: true, error: nil, audioTime: state.audioTime, syntheticMouse: state.syntheticMouse)
+            logger?("[Shader] ✓ Selected: \(name)", .debug)
+        } else {
+            // Log error to UI and console
+            let errorMsg = "[Shader] ❌ '\(name)' not found in metallib (\(availableShaders.count) available)"
+            logger?(errorMsg, .error)
+            print(errorMsg)
+
+            // Suggest similar shaders if any
+            if !availableShaders.isEmpty {
+                let similar = availableShaders.filter {
+                    $0.name.lowercased().contains(name.lowercased()) ||
+                    name.lowercased().contains($0.name.lowercased())
+                }
+                if !similar.isEmpty {
+                    let hint = "[Shader] Similar: \(similar.prefix(5).map { $0.name }.joined(separator: ", "))"
+                    logger?(hint, .warning)
+                    print(hint)
+                }
+            }
         }
     }
     

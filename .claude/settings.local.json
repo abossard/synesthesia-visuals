@@ -44,7 +44,8 @@
       "Bash(for f in app.synesthesia.live_response_body*)",
       "Bash(do echo \"=== Extracting $f ===\")",
       "Bash(for f in app.synesthesia.live_response_body{2,3,4,5,6,7,8,9,10,11,12})",
-      "Bash(while read f)"
+      "Bash(while read f)",
+      "Bash(swift build:*)"
     ],
     "deny": [],
     "ask": []

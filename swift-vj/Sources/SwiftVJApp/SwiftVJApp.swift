@@ -265,7 +265,13 @@ final class AppState: ObservableObject {
             guard let self = self else { return }
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run { [weak self] in
-                self?.renderEngine = engine
+                guard let self = self else { return }
+                self.renderEngine = engine
+
+                // Wire up shader state manager logger for UI visibility
+                engine.shaderManager.logger = { [weak self] message, level in
+                    self?.log(message, level: level)
+                }
             }
             // Auto-start the render engine
             do {
