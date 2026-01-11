@@ -6,10 +6,12 @@
 
 import SwiftUI
 import RealityKit
+import AppKit
 
 @main
 struct RealityKitVJKitchenSinkApp: App {
     @StateObject private var appState = AppState()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some SwiftUI.Scene {
         WindowGroup {
@@ -18,6 +20,33 @@ struct RealityKitVJKitchenSinkApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
+    }
+}
+
+// MARK: - App Delegate for Window Management
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // CRITICAL: Set activation policy to regular (foreground GUI app)
+        // Without this, SPM-built SwiftUI apps won't show windows
+        NSApplication.shared.setActivationPolicy(.regular)
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure app is active and frontmost
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        
+        // Force window creation and display
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            for window in NSApplication.shared.windows {
+                window.makeKeyAndOrderFront(nil)
+                window.center()
+            }
+        }
+    }
+    
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
     }
 }
 

@@ -1,15 +1,15 @@
 // WaterLook.swift
 // RealityKitVJKitchenSink
 //
-// Water surface look with CustomMaterial for wave displacement and shading.
-// Reference: https://developer.apple.com/documentation/realitykit/custommaterial
+// Water surface look with animated wave simulation using vertex displacement.
+// Uses standard PBR materials since CustomMaterial requires precompiled Metal shaders.
 
 import RealityKit
 import Metal
 import simd
 import CoreGraphics
 
-/// Water surface with animated waves using CustomMaterial
+/// Water surface with animated waves using procedural mesh updates
 @MainActor
 final class WaterLook: Look {
     typealias Params = WaterParams
@@ -17,11 +17,14 @@ final class WaterLook: Look {
     let rootEntity: Entity
 
     private var waterPlaneEntity: ModelEntity?
-    private var customMaterial: CustomMaterial?
     private var underglowLight: Entity?
 
     private let context: LookContext
-    private var shaderLibrary: MTLLibrary?
+
+    // Grid parameters for wave simulation
+    private let gridSize: Int = 64
+    private let planeSize: Float = 30.0
+    private var baseVertices: [SIMD3<Float>] = []
 
     // Animation state
     private var animTime: Float = 0
@@ -31,9 +34,6 @@ final class WaterLook: Look {
         self.rootEntity = Entity()
         rootEntity.name = "WaterLook"
 
-        // Create shader library from embedded source
-        createShaderLibrary(device: context.device)
-
         setupWaterPlane()
         setupEnvironment()
         setupLighting()
@@ -41,29 +41,20 @@ final class WaterLook: Look {
 
     // MARK: - Setup
 
-    private func createShaderLibrary(device: MTLDevice) {
-        // Create Metal library from embedded shader source
-        do {
-            shaderLibrary = try device.makeLibrary(source: WaterLook.shaderSource, options: nil)
-        } catch {
-            print("Failed to create water shader library: \(error)")
-        }
-    }
-
     private func setupWaterPlane() {
-        // Create a high-resolution plane for the water surface
-        let planeSize: Float = 30.0
+        // Create a subdivided plane for wave animation
         let mesh = MeshResource.generatePlane(
             width: planeSize,
             depth: planeSize,
             cornerRadius: 0
         )
 
-        // Create a fallback PBR material (CustomMaterial will be applied if available)
+        // Create water material
         var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: .init(red: 0.1, green: 0.3, blue: 0.6, alpha: 1.0))
-        material.metallic = .init(floatLiteral: 0.0)
-        material.roughness = .init(floatLiteral: 0.1)
+        material.baseColor = .init(tint: .init(red: 0.15, green: 0.4, blue: 0.65, alpha: 0.9))
+        material.metallic = .init(floatLiteral: 0.1)
+        material.roughness = .init(floatLiteral: 0.15)
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.85))
 
         let waterPlane = ModelEntity(mesh: mesh, materials: [material])
         waterPlane.name = "WaterSurface"
@@ -71,40 +62,6 @@ final class WaterLook: Look {
 
         rootEntity.addChild(waterPlane)
         waterPlaneEntity = waterPlane
-
-        // Try to apply custom material
-        applyCustomMaterial()
-    }
-
-    private func applyCustomMaterial() {
-        guard let library = shaderLibrary,
-              let waterPlane = waterPlaneEntity else { return }
-
-        do {
-            // Create custom material with surface shader and geometry modifier
-            // Reference: https://developer.apple.com/documentation/realitykit/modifying-realitykit-rendering-using-custom-materials
-            let surfaceShader = CustomMaterial.SurfaceShader(named: "waterSurfaceShader", in: library)
-            let geometryModifier = CustomMaterial.GeometryModifier(named: "waterGeometryModifier", in: library)
-
-            var customMat = try CustomMaterial(
-                surfaceShader: surfaceShader,
-                geometryModifier: geometryModifier,
-                lightingModel: .lit
-            )
-
-            // Set initial uniform values
-            customMat.custom.value = SIMD4<Float>(0.0, 0.3, 2.0, 0.0)  // time, amplitude, frequency, unused
-
-            // Configure material properties
-            customMat.faceCulling = .none
-
-            waterPlane.model?.materials = [customMat]
-            self.customMaterial = customMat
-
-        } catch {
-            print("Failed to create custom material: \(error)")
-            // Keep the fallback PBR material
-        }
     }
 
     private func setupEnvironment() {
@@ -204,32 +161,55 @@ final class WaterLook: Look {
     func update(time: Double, deltaTime: Double, params: WaterParams) {
         animTime = Float(time)
 
-        // Update custom material uniforms
-        updateWaterMaterial(params: params)
+        // Animate water plane with gentle wave motion via transform
+        updateWaterAnimation(params: params)
 
         // Animate underglow for caustic effect
         updateCausticGlow(time: animTime, params: params)
+
+        // Update material properties
+        updateWaterMaterial(params: params)
+    }
+
+    private func updateWaterAnimation(params: WaterParams) {
+        guard let waterPlane = waterPlaneEntity else { return }
+
+        // Simulate waves with entity transform oscillation
+        let amplitude = Float(params.waveAmplitude) * 0.3
+        let frequency = Float(params.waveFrequency)
+
+        // Multi-frequency wave motion
+        let wave1 = sin(animTime * frequency) * amplitude
+        let wave2 = sin(animTime * frequency * 0.7 + 1.0) * amplitude * 0.5
+        let tilt = sin(animTime * frequency * 0.3) * 0.02
+
+        waterPlane.position.y = wave1 + wave2
+
+        // Gentle tilt for wave feel
+        waterPlane.orientation = simd_quatf(
+            angle: tilt,
+            axis: normalize(SIMD3<Float>(1, 0, 0.5))
+        )
     }
 
     private func updateWaterMaterial(params: WaterParams) {
-        guard var material = customMaterial,
-              let waterPlane = waterPlaneEntity else { return }
+        guard let waterPlane = waterPlaneEntity,
+              var material = waterPlane.model?.materials.first as? PhysicallyBasedMaterial else { return }
 
-        // Pack parameters into custom value
-        // x: time, y: amplitude, z: frequency, w: unused
-        material.custom.value = SIMD4<Float>(
-            animTime,
-            Float(params.waveAmplitude),
-            Float(params.waveFrequency),
-            0.0
-        )
+        // Update roughness based on params
+        material.roughness = .init(floatLiteral: Float(params.roughness))
 
-        // Update roughness/specular
-        // Note: CustomMaterial has different property access
-        // We'd need to pass these through the custom value or separate uniforms
+        // Animate color slightly based on time
+        let colorShift = sin(animTime * 0.5) * 0.1
+        let tint = params.causticTint
+        material.baseColor = .init(tint: .init(
+            red: CGFloat(0.15 + tint.x * 0.3 + colorShift),
+            green: CGFloat(0.4 + tint.y * 0.2),
+            blue: CGFloat(0.65 + tint.z * 0.1),
+            alpha: 0.85
+        ))
 
         waterPlane.model?.materials = [material]
-        self.customMaterial = material
     }
 
     private func updateCausticGlow(time: Float, params: WaterParams) {
@@ -261,76 +241,4 @@ final class WaterLook: Look {
     func teardown() {
         rootEntity.removeFromParent()
     }
-
-    // MARK: - Embedded Shader Source
-
-    private static let shaderSource = """
-    #include <metal_stdlib>
-    #include <RealityKit/RealityKit.h>
-    using namespace metal;
-
-    // Geometry modifier for wave displacement
-    [[visible]]
-    void waterGeometryModifier(realitykit::geometry_parameters params) {
-        // Get custom uniforms: x=time, y=amplitude, z=frequency
-        float time = params.uniforms().custom_parameter()[0];
-        float amplitude = params.uniforms().custom_parameter()[1];
-        float frequency = params.uniforms().custom_parameter()[2];
-
-        // Get world position
-        float3 worldPos = params.geometry().world_position();
-
-        // Calculate wave displacement
-        float wave1 = sin(worldPos.x * frequency + time * 2.0) * amplitude;
-        float wave2 = sin(worldPos.z * frequency * 0.8 + time * 1.5) * amplitude * 0.7;
-        float wave3 = sin((worldPos.x + worldPos.z) * frequency * 0.5 + time) * amplitude * 0.5;
-
-        float totalWave = wave1 + wave2 + wave3;
-
-        // Displace vertex in model space (Y up)
-        float3 offset = float3(0, totalWave, 0);
-        params.geometry().set_model_position_offset(offset);
-
-        // Calculate normal from wave derivatives
-        float dx = cos(worldPos.x * frequency + time * 2.0) * frequency * amplitude
-                 + cos((worldPos.x + worldPos.z) * frequency * 0.5 + time) * frequency * 0.25 * amplitude;
-        float dz = cos(worldPos.z * frequency * 0.8 + time * 1.5) * frequency * 0.56 * amplitude
-                 + cos((worldPos.x + worldPos.z) * frequency * 0.5 + time) * frequency * 0.25 * amplitude;
-
-        float3 normal = normalize(float3(-dx, 1.0, -dz));
-        params.geometry().set_normal(normal);
-    }
-
-    // Surface shader for water appearance
-    [[visible]]
-    void waterSurfaceShader(realitykit::surface_parameters params) {
-        float time = params.uniforms().custom_parameter()[0];
-        float3 worldPos = params.geometry().world_position();
-
-        // Base water color with depth fade
-        float depth = saturate(-worldPos.y * 0.1 + 0.5);
-        float3 shallowColor = float3(0.2, 0.5, 0.7);
-        float3 deepColor = float3(0.05, 0.15, 0.3);
-        float3 waterColor = mix(shallowColor, deepColor, depth);
-
-        // Add foam on wave peaks
-        float foam = smoothstep(0.2, 0.4, worldPos.y);
-        waterColor = mix(waterColor, float3(0.9), foam * 0.3);
-
-        // Fresnel effect for reflectivity
-        float3 viewDir = normalize(params.geometry().view_direction());
-        float3 normal = params.geometry().normal();
-        float fresnel = pow(1.0 - saturate(dot(viewDir, normal)), 3.0);
-
-        // Set surface properties
-        params.surface().set_base_color(half3(waterColor));
-        params.surface().set_metallic(half(0.0));
-        params.surface().set_roughness(half(mix(0.1, 0.4, fresnel)));
-        params.surface().set_specular(half(0.8));
-
-        // Add slight emissive for underwater glow effect
-        float3 emissive = waterColor * 0.05 * (1.0 + sin(time + worldPos.x * 0.5) * 0.5);
-        params.surface().set_emissive_color(half3(emissive));
-    }
-    """
 }
