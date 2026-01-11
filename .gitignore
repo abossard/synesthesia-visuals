@@ -22,6 +22,7 @@ node_modules/
 # Build artifacts
 *.log
 .build/
+Build/
 
 # Python
 __pycache__/

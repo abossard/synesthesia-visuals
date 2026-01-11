@@ -2,19 +2,41 @@
 
 macOS VJ Control Application - Swift rewrite of python-vj.
 
-## Status: Planning & Foundation
+## Projects
 
-This is a TDD-first rewrite of the Python-based VJ control system. See [REWRITE_PLAN.md](./REWRITE_PLAN.md) for the complete plan.
+This repository contains multiple Swift applications for VJ work:
+
+### SwiftVJApp (Main Control)
+macOS SwiftUI app for VJ control, lyrics, shader management, and OSC routing.
+- **Requirements**: macOS 14+
+- **Run**: `swift run SwiftVJApp`
+- **Bundle**: `./bundle-app.sh`
+
+### RealityKit VJ Kitchen Sink
+Production-grade RealityKit example for live VJ performance with Syphon output.
+- **Requirements**: macOS 15+ (RealityKit advanced features)
+- **Run**: `swift run RealityKitVJKitchenSink`
+- **Bundle**: `./Scripts/make-realitykit-app.sh`
+- **Docs**: See [Sources/RealityKitVJKitchenSink/README.md](Sources/RealityKitVJKitchenSink/README.md)
+
+### CLI Tools
+- `swift-vj`: Command-line interface for lyrics, shaders, images
+- `shader-compile`: Shader compilation utility
+
+## Status: Production
+
+The SwiftVJ system is in active use for live VJ performances. RealityKit Kitchen Sink is a new addition demonstrating advanced 3D rendering.
 
 ## Requirements
 
-- macOS 14+ (Sonoma)
+- macOS 14+ (SwiftVJApp, CLI tools)
+- macOS 15+ (RealityKitVJKitchenSink only)
 - Xcode 15+ / Swift 5.9+
 
 ## Quick Start
 
 ```bash
-# Build the CLI
+# Build all projects
 swift build
 
 # Run tests (behavior tests - no external deps)
@@ -23,7 +45,13 @@ swift test --filter BehaviorTests
 # Run E2E tests (requires external services)
 swift test --filter E2ETests
 
-# Run the CLI
+# Run the main VJ app
+swift run SwiftVJApp
+
+# Run RealityKit example (macOS 15+)
+swift run RealityKitVJKitchenSink
+
+# Run CLI
 swift run swift-vj lyrics --artist "Queen" --title "Bohemian Rhapsody" --local
 ```
 
