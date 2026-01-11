@@ -362,7 +362,7 @@ final class RenderEngine: ObservableObject {
     }
 
     /// Called when lyrics are loaded (from pipeline)
-    func onLyricsLoaded(_ lines: [LyricLine]) {
+    func onLyricsLoaded(_ lines: [DisplayLyricLine]) {
         Task { @MainActor [textManager] in
             textManager.setLyrics(lines)
         }

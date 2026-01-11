@@ -22,10 +22,18 @@ let package = Package(
         .executable(
             name: "shader-compile",
             targets: ["ShaderCompile"]),
+        // Shader Repository compilation CLI
+        .executable(
+            name: "compile-shaders",
+            targets: ["CompileShaders"]),
         // Core library (for embedding)
         .library(
             name: "SwiftVJCore",
             targets: ["SwiftVJCore"]),
+        // Shader Repository - single source of truth for shaders
+        .library(
+            name: "ShaderRepository",
+            targets: ["ShaderRepository"]),
         // Shadertoy Runtime library
         .library(
             name: "ShadertoyRuntime",
@@ -70,6 +78,7 @@ let package = Package(
             name: "SwiftVJApp",
             dependencies: [
                 "SwiftVJCore",
+                "ShaderRepository",
                 "SyphonKit",
             ],
             resources: [
@@ -82,12 +91,18 @@ let package = Package(
         .target(
             name: "SwiftVJCore",
             dependencies: [
+                "ShaderRepository",
                 .product(name: "OSCKit", package: "OSCKit"),
                 .product(name: "Yams", package: "Yams"),
             ],
             resources: [
                 .copy("Resources/launchpad-config.yaml"),
             ]),
+
+        // Shader Repository - pure functions for shader management
+        .target(
+            name: "ShaderRepository",
+            dependencies: []),
 
         // Shadertoy Runtime - GLSL to Metal shader runtime
         .target(
@@ -108,6 +123,14 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]),
 
+        // ShaderRepository compilation CLI tool
+        .executableTarget(
+            name: "CompileShaders",
+            dependencies: [
+                "ShaderRepository",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]),
+
         // Behavior tests - pure functions, no external dependencies
         .testTarget(
             name: "BehaviorTests",
@@ -120,5 +143,10 @@ let package = Package(
         .testTarget(
             name: "E2ETests",
             dependencies: ["SwiftVJCore"]),
+
+        // ShaderRepository tests - use real shader files
+        .testTarget(
+            name: "ShaderRepositoryTests",
+            dependencies: ["ShaderRepository"]),
     ]
 )

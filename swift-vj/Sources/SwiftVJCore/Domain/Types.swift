@@ -371,21 +371,18 @@ public struct PipelineResult: Sendable, Equatable, Codable {
 
 // MARK: - Shader Types
 
-/// Shader quality rating
-public enum ShaderRating: Int, Sendable, Codable, Comparable {
-    case best = 1
-    case good = 2
-    case normal = 3
-    case mask = 4
-    case skip = 5
+// ShaderRepository module types are available via @_exported import in SwiftVJCore.swift
+// Re-export specific types for explicit imports
+@_exported import enum ShaderRepository.ShaderRating
+@_exported import struct ShaderRepository.Shader
+@_exported import struct ShaderRepository.ShaderAnalysis
+@_exported import enum ShaderRepository.Phase
+// Note: ShaderMatchResult is defined locally below with expanded fields for backwards compat
 
-    public static func < (lhs: ShaderRating, rhs: ShaderRating) -> Bool {
-        lhs.rawValue < rhs.rawValue
-    }
-}
-
-/// Information about a shader
-public struct ShaderInfo: Sendable, Equatable, Codable {
+/// Information about a shader - bridge type for UI/module compatibility
+/// Wraps ShaderRepository.Shader with additional UI metadata
+public struct ShaderInfo: Sendable, Equatable, Codable, Identifiable {
+    public var id: String { name }  // Use name as unique ID
     public let name: String
     public let path: String
     public let folder: String  // Folder name (e.g. "glsl", "masks")
@@ -431,9 +428,29 @@ public struct ShaderInfo: Sendable, Equatable, Codable {
         self.phases = phases
         self.metalFunctionName = metalFunctionName
     }
+    
+    /// Create from ShaderRepository.Shader
+    public init(from shader: ShaderRepository.Shader) {
+        self.name = shader.name
+        self.path = shader.sourceURL.path
+        self.folder = shader.folder
+        self.energyScore = shader.analysis?.energy ?? 0.5
+        // Map mood to valence using analysis feature vector
+        self.moodValence = shader.analysis?.featureVector[1] ?? 0.0
+        self.colorWarmth = shader.analysis?.featureVector[2] ?? 0.5
+        self.motionSpeed = shader.analysis?.featureVector[3] ?? 0.5
+        self.mood = shader.analysis?.mood ?? ""
+        self.colors = shader.analysis?.colors ?? []
+        self.effects = shader.analysis?.effects ?? []
+        self.rating = shader.rating
+        self.phases = shader.phases
+        self.metalFunctionName = shader.metalFunctionName
+    }
 }
 
-/// Result from shader matching
+/// Result from shader matching (SwiftVJCore version with expanded fields)
+/// Note: ShaderRepository.ShaderMatchResult has simpler signature (shader, score)
+/// This version provides backwards compatibility with existing code
 public struct ShaderMatchResult: Sendable, Equatable {
     public let name: String
     public let path: String
@@ -456,6 +473,16 @@ public struct ShaderMatchResult: Sendable, Equatable {
         self.energyScore = energyScore
         self.moodValence = moodValence
         self.mood = mood
+    }
+    
+    /// Create from ShaderRepository.ShaderMatchResult
+    public init(from result: ShaderRepository.ShaderMatchResult) {
+        self.name = result.shader.name
+        self.path = result.shader.sourceURL.path
+        self.score = result.score
+        self.energyScore = result.shader.energyScore
+        self.moodValence = result.shader.analysis?.featureVector[1] ?? 0.0
+        self.mood = result.shader.mood
     }
 }
 

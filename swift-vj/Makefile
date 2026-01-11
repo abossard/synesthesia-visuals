@@ -1,17 +1,16 @@
 # swift-vj Makefile
 # Build targets for shader compilation and app
 
-.PHONY: all build run clean compile-shaders compile-flat-shaders help
+.PHONY: all build run clean compile-shaders compile-flat-shaders shaders help
 
 # Directories
 BUILD_DIR := Build
 SHADERS_DIR := Shaders
-METALLIB := $(BUILD_DIR)/Shaders.metallib
+METALLIB := Sources/SwiftVJApp/Resources/Shaders.metallib
 
 # Tools
 SWIFT := swift
 XCRUN := xcrun
-SHADER_COMPILE := $(shell $(SWIFT) build --show-bin-path)/shader-compile
 
 help:
 	@echo "swift-vj Build System"
@@ -19,15 +18,15 @@ help:
 	@echo "Targets:"
 	@echo "  build                - Build the Swift package"
 	@echo "  run                  - Run the app"
-	@echo "  compile-shaders      - Compile Shadertoy-format shaders to Metal library"
-	@echo "  compile-flat-shaders - Compile simple GLSL files (*.txt) to Metal library"
+	@echo "  shaders              - Compile GLSL shaders using ShaderRepository module (recommended)"
+	@echo "  compile-flat-shaders - Legacy: Compile using shell script"
 	@echo "  clean                - Clean build artifacts"
 	@echo ""
 	@echo "Shader compilation:"
 	@echo "  Input:  $(SHADERS_DIR)/glsl/*.txt, $(SHADERS_DIR)/masks/*.txt"
 	@echo "  Output: $(METALLIB)"
 
-all: build compile-flat-shaders
+all: build shaders
 
 build:
 	$(SWIFT) build
@@ -35,31 +34,22 @@ build:
 run: build
 	$(SWIFT) run SwiftVJApp
 
-# Compile shaders using the shader-compile CLI tool
-# This produces individual .metal files + a combined .metallib
-compile-shaders: build $(BUILD_DIR)
-	@echo "Compiling shaders..."
-	@if [ -d "$(SHADERS_DIR)/glsl" ]; then \
-		$(SHADER_COMPILE) compile $(SHADERS_DIR)/glsl --output $(BUILD_DIR) --report; \
-	else \
-		echo "No GLSL shaders found in $(SHADERS_DIR)/glsl"; \
-	fi
+# New: Compile shaders using the ShaderRepository module CLI
+# This is the recommended way to compile shaders
+shaders: build
+	@echo "🔧 Compiling shaders with ShaderRepository..."
+	$(SWIFT) run compile-shaders \
+		--shaders-dir $(SHADERS_DIR) \
+		--build-dir $(BUILD_DIR)/Shaders \
+		--output $(METALLIB)
 	@echo ""
-	@echo "Creating Metal library..."
-	@if ls $(BUILD_DIR)/*.metal 1> /dev/null 2>&1; then \
-		$(XCRUN) -sdk macosx metal -c $(BUILD_DIR)/*.metal -o $(BUILD_DIR)/shaders.air && \
-		$(XCRUN) -sdk macosx metallib $(BUILD_DIR)/shaders.air -o $(METALLIB) && \
-		echo "Created: $(METALLIB)"; \
-	else \
-		echo "No .metal files found to compile"; \
-	fi
+	@echo "✅ Metallib at: $(METALLIB)"
+	@ls -lh $(METALLIB)
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)/air
-
-# Compile all flat GLSL shaders (glsl/ and masks/) + SharedVertex
+# Legacy: Compile shaders using shell script
+# Kept for backwards compatibility
 compile-flat-shaders: $(BUILD_DIR)
+	@echo "⚠️  Using legacy shell-based compilation. Consider 'make shaders' instead."
 	@echo "Converting GLSL shaders to Metal..."
 	@SUCCESS=0; FAIL=0; \
 	for f in $(SHADERS_DIR)/glsl/*.txt $(SHADERS_DIR)/masks/*.txt; do \
@@ -81,8 +71,12 @@ compile-flat-shaders: $(BUILD_DIR)
 	done
 	@echo "Linking metallib..."
 	@$(XCRUN) metallib $(BUILD_DIR)/air/*.air -o $(METALLIB)
-	@cp $(METALLIB) Sources/SwiftVJApp/Resources/
 	@ls -lh $(METALLIB)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/air
+	mkdir -p $(BUILD_DIR)/Shaders
 
 clean:
 	rm -rf $(BUILD_DIR)
