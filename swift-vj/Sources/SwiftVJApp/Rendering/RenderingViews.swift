@@ -386,9 +386,9 @@ struct RenderingView: View {
     // Demo text state for preview (shown until real data arrives)
     @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
         lines: [
-            LyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
-            LyricLine(id: 1, timeSec: 1, text: "Current line is bright and clear"),
-            LyricLine(id: 2, timeSec: 2, text: "Next line waits in shadow ♪")
+            DisplayLyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
+            DisplayLyricLine(id: 1, timeSec: 1, text: "Current line is bright and clear"),
+            DisplayLyricLine(id: 2, timeSec: 2, text: "Next line waits in shadow ♪")
         ],
         activeIndex: 1, textOpacity: 255, fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
     )

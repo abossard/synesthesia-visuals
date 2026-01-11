@@ -3,6 +3,7 @@
 
 import Foundation
 import simd
+import SwiftVJCore
 
 // MARK: - Audio State (Immutable Snapshot)
 
@@ -55,8 +56,8 @@ struct AudioState: Sendable, Equatable {
 
 // MARK: - Lyrics Display State
 
-/// Single lyric line with timestamp
-struct LyricLine: Sendable, Equatable, Identifiable {
+/// Single lyric line for display (simplified from SwiftVJCore.LyricLine)
+struct DisplayLyricLine: Sendable, Equatable, Identifiable {
     let id: Int
     let timeSec: Float
     let text: String
@@ -66,11 +67,18 @@ struct LyricLine: Sendable, Equatable, Identifiable {
         self.timeSec = timeSec
         self.text = text
     }
+    
+    /// Create from SwiftVJCore.LyricLine
+    init(from line: SwiftVJCore.LyricLine, id: Int) {
+        self.id = id
+        self.timeSec = Float(line.timeSec)
+        self.text = line.text
+    }
 }
 
 /// Lyrics display state for 3-line karaoke view
 struct LyricsDisplayState: Sendable, Equatable {
-    let lines: [LyricLine]
+    let lines: [DisplayLyricLine]
     let activeIndex: Int
     let textOpacity: Float  // 0-255
     let fadeDelayMs: Float
@@ -199,46 +207,13 @@ struct ImageDisplayState: Sendable, Equatable {
 
 // MARK: - Shader Display State
 
-/// Shader rating for filtering (from VJUniverse)
-enum ShaderRating: Int, Sendable, Codable {
-    case best = 1
-    case good = 2
-    case ok = 3
-    case skip = 4
-    case broken = 5
-
-    var displayName: String {
-        switch self {
-        case .best: return "Best"
-        case .good: return "Good"
-        case .ok: return "OK"
-        case .skip: return "Skip"
-        case .broken: return "Broken"
-        }
-    }
-}
-
-/// Shader info for loaded shader
-struct ShaderInfo: Sendable, Equatable, Identifiable {
-    let id: String
-    let name: String
-    let path: URL
-    let rating: ShaderRating
-    /// Metal function name in pre-compiled .metallib (nil = runtime compile)
-    let metalFunctionName: String?
-
-    init(name: String, path: URL, rating: ShaderRating = .good, metalFunctionName: String? = nil) {
-        self.id = name
-        self.name = name
-        self.path = path
-        self.rating = rating
-        self.metalFunctionName = metalFunctionName
-    }
-}
+// Use canonical types from ShaderRepository module (via SwiftVJCore re-export)
+// typealias ShaderRating = SwiftVJCore.ShaderRating  // Already available via import
+// typealias ShaderInfo = SwiftVJCore.ShaderInfo      // Already available via import
 
 /// Shader display state
 struct ShaderDisplayState: Sendable, Equatable {
-    let current: ShaderInfo?
+    let current: SwiftVJCore.ShaderInfo?
     let isLoaded: Bool
     let error: String?
     let audioTime: Float  // Audio-reactive accumulated time

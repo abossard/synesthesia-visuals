@@ -4,6 +4,7 @@
 import Foundation
 import SwiftUI
 import Metal
+import SwiftVJCore
 
 // MARK: - Text State Manager
 
@@ -25,7 +26,7 @@ final class TextStateManager: ObservableObject {
         songInfoState = .empty
     }
     
-    func setLyrics(_ lines: [LyricLine]) {
+    func setLyrics(_ lines: [DisplayLyricLine]) {
         lyricsState = LyricsDisplayState(
             lines: lines,
             activeIndex: 0,
@@ -146,7 +147,7 @@ final class ShaderStateManager: ObservableObject {
             .sorted()
         
         availableShaders = shaderNames.map {
-            ShaderInfo(name: $0, path: URL(fileURLWithPath: "/metallib/\($0)"))
+            ShaderInfo(name: $0, path: "/metallib/\($0)", metalFunctionName: "fragment_\($0)")
         }
         
         print("[ShaderStateManager] Found \(availableShaders.count) shaders in metallib")
@@ -191,9 +192,9 @@ final class ShaderStateManager: ObservableObject {
         for shader in availableShaders {
             if let info = fileInfo[shader.name] {
                 // Found matching file - keep shader with updated path
-                var updatedShader = ShaderInfo(
+                let updatedShader = ShaderInfo(
                     name: shader.name,
-                    path: info.path,
+                    path: info.path.path,  // URL to String
                     rating: shader.rating,
                     metalFunctionName: "fragment_\(shader.name)"
                 )
@@ -266,7 +267,7 @@ final class MaskStateManager: ObservableObject {
     @Published var state: ShaderDisplayState = .empty
     
     func selectMask(name: String) {
-        let info = ShaderInfo(name: name, path: URL(fileURLWithPath: "/shaders/\(name).metal"))
+        let info = ShaderInfo(name: name, path: "/shaders/\(name).metal")
         state = ShaderDisplayState(current: info, isLoaded: true, error: nil, audioTime: 0, syntheticMouse: SIMD2(0.5, 0.5))
     }
 }
