@@ -123,12 +123,25 @@ swift test --filter BehaviorTests
 # Run E2E tests (requires external services)
 swift test --filter E2ETests
 
+# Run all tests
+make test
+
 # Run the CLI
 swift run swift-vj lyrics --artist "Queen" --title "Bohemian Rhapsody" --local
 
 # Build and run the app
 swift run SwiftVJApp
+# or
+make run
 \`\`\`
+
+### Code Standards
+- **Build**: Run \`make build\` or \`swift build\` before committing
+- **Test**: Run \`make test\` or \`swift test\` to run test suite
+- **Lint**: Run \`make lint\` (if swiftlint is installed) for code style
+- Follow Swift naming conventions (camelCase for variables/functions, PascalCase for types)
+- Use \`async/await\` for asynchronous operations, not completion handlers
+- Write behavior tests for new functionality (BehaviorTests for pure logic, E2ETests for integration)
 
 ### Shader Development
 \`\`\`bash
