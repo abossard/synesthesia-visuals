@@ -373,6 +373,7 @@ struct ShaderBrowserView: View {
                                 showAnalysis(for: shader)
                             },
                             onPreview: {
+                                appState.log("[Preview] onPreview callback triggered for: \(shader.name)", level: .debug)
                                 previewShader(shader)
                             },
                             onDelete: {
@@ -394,34 +395,17 @@ struct ShaderBrowserView: View {
             }
         }
         .sheet(isPresented: $showingPreviewModal, onDismiss: {
+            appState.log("[Preview] Modal dismissed", level: .debug)
             if let prev = previousSelectedShaderName {
                 Task { await appState.selectShader(prev) }
             }
             previewShaderName = nil
         }) {
-            VStack(spacing: 0) {
-                HStack {
-                    Text(previewShaderName ?? "Preview")
-                        .font(.headline)
-                    Spacer()
-                    Button(action: { showingPreviewModal = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding()
-                .background(.bar)
-
-                Divider()
-
-                SyphonMTKView(serverName: "Shader")
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(minWidth: 640, minHeight: 360)
-                    .background(Color.black)
-            }
-            .frame(width: 800, height: 500)
+            ShaderPreviewModalContent(
+                shaderName: previewShaderName ?? "Preview",
+                onClose: { showingPreviewModal = false }
+            )
+            .environmentObject(appState)
         }
         .alert("Delete Shader?", isPresented: $showDeleteConfirm, presenting: shaderToDelete) { shader in
             Button("Delete", role: .destructive) {
@@ -787,10 +771,27 @@ struct ShaderBrowserView: View {
 
     /// Preview a shader in a Syphon-powered modal
     private func previewShader(_ shader: CoreShaderInfo) {
+        appState.log("[Preview] 👁 Eye clicked for: \(shader.name)", level: .debug)
+        
+        // Check if shader is in metallib (renderable)
+        let isRenderable = appState.renderEngine?.shaderManager.isRenderable(shader.name) ?? false
+        appState.log("[Preview]   • In metallib: \(isRenderable)", level: .debug)
+        appState.log("[Preview]   • Current selectedShader: \(appState.selectedShader ?? "nil")", level: .debug)
+        
+        // Check Syphon server status
+        let syphonServers = SyphonOutputManager.shared.serverNames
+        appState.log("[Preview]   • Syphon servers: \(syphonServers)", level: .debug)
+        
         previousSelectedShaderName = appState.selectedShader
         previewShaderName = shader.name
-        Task { await appState.selectShader(shader.name) }
+        
+        appState.log("[Preview]   • Setting showingPreviewModal = true", level: .debug)
         showingPreviewModal = true
+        
+        Task {
+            await appState.selectShader(shader.name)
+            appState.log("[Preview]   • selectShader completed", level: .debug)
+        }
     }
     
     /// Show confirmation for deleting selected shaders
@@ -1890,6 +1891,63 @@ struct ShaderCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
+    }
+}
+
+// MARK: - Shader Preview Modal Content
+
+/// Extracted modal content to ensure proper lifecycle for SyphonMTKView
+struct ShaderPreviewModalContent: View {
+    let shaderName: String
+    let onClose: () -> Void
+    
+    @EnvironmentObject var appState: AppState
+    @State private var showSyphonView = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(shaderName)
+                    .font(.headline)
+                Spacer()
+                
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+            .background(.bar)
+
+            Divider()
+
+            // Delay Syphon view creation to ensure sheet is fully rendered
+            if showSyphonView {
+                SyphonMTKView(serverName: "Shader")
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .frame(minWidth: 640, minHeight: 360)
+                    .background(Color.black)
+            } else {
+                Color.black
+                    .aspectRatio(16/9, contentMode: .fit)
+                    .frame(minWidth: 640, minHeight: 360)
+                    .overlay(
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                    )
+            }
+        }
+        .frame(width: 800, height: 500)
+        .onAppear {
+            appState.log("[Preview] Modal appeared for: \(shaderName)", level: .debug)
+            // Delay Syphon view creation to let sheet animate in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showSyphonView = true
+                appState.log("[Preview] SyphonMTKView now enabled", level: .debug)
+            }
+        }
     }
 }
 
