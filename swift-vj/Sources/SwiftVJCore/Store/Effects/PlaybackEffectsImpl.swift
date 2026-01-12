@@ -1,5 +1,6 @@
 // PlaybackEffectsImpl.swift - Playback monitoring effects
 // Effects for VDJ/Spotify playback tracking
+// NOTE: PlaybackModule now uses dispatch pattern - no callbacks needed
 
 import Foundation
 
@@ -18,31 +19,20 @@ public struct PlaybackEnvironment: Sendable {
 public enum PlaybackEffectsImpl {
 
     /// Start monitoring playback from current source
+    /// NOTE: PlaybackModule dispatches actions directly via its dispatch closure
+    /// This effect just starts the module - actions flow through the Store automatically
     public static func startMonitoring(
-        environment: PlaybackEnvironment,
-        onTrackChange: @escaping @Sendable (Track) async -> Void,
-        onPositionUpdate: @escaping @Sendable (Double, Bool) async -> Void
+        playbackModule: PlaybackModule
     ) -> Effect<PlaybackAction> {
         .run(cancellationId: EffectCancellationId.playback) { send in
-            // Register callbacks
-            await environment.playbackModule.onTrackChange { track in
-                await onTrackChange(track)
-                await send(.trackChanged(track))
-            }
-
-            await environment.playbackModule.onPositionUpdate { position, isPlaying in
-                await onPositionUpdate(position, isPlaying)
-                await send(.positionUpdated(position: position, isPlaying: isPlaying))
-            }
-
-            // Start the module
+            // Start the module - it will dispatch actions via its dispatch closure
             do {
-                try await environment.playbackModule.start()
+                try await playbackModule.start()
             } catch {
                 // Log error but don't fail
             }
 
-            // Keep effect alive
+            // Keep effect alive (module runs its own polling loop)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60))
             }
@@ -62,13 +52,9 @@ public enum PlaybackEffectsImpl {
     public static func poll(
         playbackModule: PlaybackModule
     ) -> Effect<PlaybackAction> {
-        .run { send in
+        .fireAndForget {
             await playbackModule.poll()
-            if let track = await playbackModule.currentTrack {
-                await send(.trackChanged(track))
-            }
-            let state = await playbackModule.playbackState
-            await send(.positionUpdated(position: state.position, isPlaying: state.isPlaying))
+            // Module will dispatch trackChanged/positionUpdated via its dispatch closure
         }
     }
 
@@ -104,7 +90,7 @@ public enum PlaybackEffectsImpl {
                 // Ignore query errors
             }
 
-            // Poll once
+            // Poll once - module dispatches result
             await playbackModule.poll()
         }
     }
