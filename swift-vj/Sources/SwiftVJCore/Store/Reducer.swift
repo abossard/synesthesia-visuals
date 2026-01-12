@@ -14,6 +14,7 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
     switch action {
     // MARK: Lifecycle
     case .startup:
+        state.isRunning = true
         state.ui.addLog("Starting VJ system...", level: .info)
         return .merge(
             .send(.loadPersistedState),
