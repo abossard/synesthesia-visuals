@@ -114,6 +114,18 @@ final class AppState: ObservableObject {
 
     // Shader State
     @Published var shaderCount: Int = 0
+    
+    // Shader Analysis State (persists across navigation)
+    @Published var isAnalyzingShaders: Bool = false
+    @Published var analysisProgress: Double = 0
+    @Published var analysisCurrent: Int = 0
+    @Published var analysisTotal: Int = 0
+    @Published var currentAnalysisShader: String = ""
+    @Published var analysisSuccessCount: Int = 0
+    @Published var analysisBlackCount: Int = 0
+    @Published var analysisErrorCount: Int = 0
+    @Published var analysisCancelled: Bool = false
+    
     /// Single source of truth for current shader - all UI should use this
     /// Persisted to UserDefaults and syncs to render engine automatically
     @Published var selectedShader: String? {

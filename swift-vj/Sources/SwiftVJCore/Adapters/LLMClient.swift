@@ -199,7 +199,7 @@ public actor LLMClient {
     // MARK: - Shader Analysis
     
     /// Result of shader analysis
-    public struct ShaderAnalysisResult: Sendable, Equatable {
+    public struct LLMShaderAnalysis: Sendable, Equatable {
         public let shaderName: String
         public let mood: String
         public let colors: [String]
@@ -270,16 +270,16 @@ public actor LLMClient {
     ///   - shaderName: Name of the shader
     ///   - shaderSource: GLSL source code
     ///   - timeout: Request timeout in seconds
-    /// - Returns: ShaderAnalysisResult with extracted features or error
+    /// - Returns: LLMShaderAnalysis with extracted features or error
     public func analyzeShader(
         shaderName: String,
         shaderSource: String,
         timeout: TimeInterval = 120
-    ) async -> ShaderAnalysisResult {
+    ) async -> LLMShaderAnalysis {
         await ensureBackend()
         
         guard backend != .none else {
-            return ShaderAnalysisResult(shaderName: shaderName, error: "LLM not available")
+            return LLMShaderAnalysis(shaderName: shaderName, error: "LLM not available")
         }
         
         // Check cache
@@ -303,7 +303,7 @@ public actor LLMClient {
             
             return result
         } catch {
-            return ShaderAnalysisResult(shaderName: shaderName, error: error.localizedDescription)
+            return LLMShaderAnalysis(shaderName: shaderName, error: error.localizedDescription)
         }
     }
     
@@ -355,16 +355,16 @@ public actor LLMClient {
         """
     }
     
-    private func parseShaderAnalysisResponse(_ content: String, shaderName: String) -> ShaderAnalysisResult {
+    private func parseShaderAnalysisResponse(_ content: String, shaderName: String) -> LLMShaderAnalysis {
         guard let start = content.firstIndex(of: "{"),
               let end = content.lastIndex(of: "}") else {
-            return ShaderAnalysisResult(shaderName: shaderName, error: "No JSON found in response")
+            return LLMShaderAnalysis(shaderName: shaderName, error: "No JSON found in response")
         }
         
         let jsonStr = String(content[start...end])
         guard let data = jsonStr.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return ShaderAnalysisResult(shaderName: shaderName, error: "Invalid JSON")
+            return LLMShaderAnalysis(shaderName: shaderName, error: "Invalid JSON")
         }
         
         // Parse features
@@ -380,7 +380,7 @@ public actor LLMClient {
             )
         }
         
-        return ShaderAnalysisResult(
+        return LLMShaderAnalysis(
             shaderName: shaderName,
             mood: json["mood"] as? String ?? "unknown",
             colors: json["colors"] as? [String] ?? [],
@@ -392,7 +392,7 @@ public actor LLMClient {
         )
     }
     
-    private func loadShaderCache(from file: URL) -> ShaderAnalysisResult? {
+    private func loadShaderCache(from file: URL) -> LLMShaderAnalysis? {
         guard let data = try? Data(contentsOf: file),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let shaderName = json["shader_name"] as? String else {
@@ -411,7 +411,7 @@ public actor LLMClient {
             )
         }
         
-        return ShaderAnalysisResult(
+        return LLMShaderAnalysis(
             shaderName: shaderName,
             mood: json["mood"] as? String ?? "unknown",
             colors: json["colors"] as? [String] ?? [],
@@ -423,7 +423,7 @@ public actor LLMClient {
         )
     }
     
-    private func saveShaderCache(_ result: ShaderAnalysisResult, to file: URL) {
+    private func saveShaderCache(_ result: LLMShaderAnalysis, to file: URL) {
         let featuresDict: [String: Double] = [
             "energy_score": result.features.energyScore,
             "mood_valence": result.features.moodValence,

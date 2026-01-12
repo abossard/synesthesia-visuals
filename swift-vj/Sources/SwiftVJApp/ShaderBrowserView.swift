@@ -64,17 +64,9 @@ struct ShaderBrowserView: View {
     @State private var shaders: [CoreShaderInfo] = []
     @State private var availableFolders: [String] = []
     @State private var selectedShaders: Set<String> = []
-    @State private var isAnalyzing: Bool = false
-    @State private var analysisCancelled: Bool = false
+    // Analysis state now lives in AppState for persistence across navigation
     @State private var showDeleteConfirm: Bool = false
     @State private var shaderToDelete: CoreShaderInfo? = nil
-    @State private var analysisProgress: Double = 0
-    @State private var currentAnalysisShader: String = ""
-    @State private var analysisTotal: Int = 0
-    @State private var analysisCurrent: Int = 0
-    @State private var analysisSuccessCount: Int = 0
-    @State private var analysisBlackCount: Int = 0
-    @State private var analysisErrorCount: Int = 0
     @State private var showingAnalysisModal: Bool = false
     @State private var showingPreviewModal: Bool = false
     @State private var previewShaderName: String? = nil
@@ -83,8 +75,20 @@ struct ShaderBrowserView: View {
     @State private var refreshId = UUID() // Forces grid refresh after analysis
     @State private var lastClickedShader: String? = nil // For shift-click range selection
     @State private var badgeFilter: BadgeFilter = .all // Filter by badge type
+    @State private var phaseFilter: Phase? = nil // Filter by assigned phase
     @State private var searchResults: [CoreShaderInfo] = []
     @State private var isSearching: Bool = false
+    
+    // Convenience accessors for AppState analysis state
+    private var isAnalyzing: Bool { appState.isAnalyzingShaders }
+    private var analysisCancelled: Bool { appState.analysisCancelled }
+    private var analysisProgress: Double { appState.analysisProgress }
+    private var currentAnalysisShader: String { appState.currentAnalysisShader }
+    private var analysisTotal: Int { appState.analysisTotal }
+    private var analysisCurrent: Int { appState.analysisCurrent }
+    private var analysisSuccessCount: Int { appState.analysisSuccessCount }
+    private var analysisBlackCount: Int { appState.analysisBlackCount }
+    private var analysisErrorCount: Int { appState.analysisErrorCount }
     
     /// Badge filter options
     enum BadgeFilter: String, CaseIterable {
@@ -105,9 +109,32 @@ struct ShaderBrowserView: View {
                 shader.effects.joined(separator: " ").localizedCaseInsensitiveContains(searchText)
             let matchesFolder = selectedFolder == ShaderConstants.allFolders || shader.folder == selectedFolder
             let matchesBadge = matchesBadgeFilter(shader)
-            return matchesSearch && matchesFolder && matchesBadge
+            let matchesPhase = matchesPhaseFilter(shader)
+            return matchesSearch && matchesFolder && matchesBadge && matchesPhase
         }
         .sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+    
+    /// Check if shader matches current phase filter
+    private func matchesPhaseFilter(_ shader: CoreShaderInfo) -> Bool {
+        guard let targetPhase = phaseFilter else { return true }
+        let phases = getShaderPhases(shader)
+        return phases.contains(targetPhase)
+    }
+    
+    /// Get phases assigned to a shader from its analysis file
+    private func getShaderPhases(_ shader: CoreShaderInfo) -> Set<Phase> {
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let baseName = shaderPath.deletingPathExtension().lastPathComponent
+        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
+        
+        guard FileManager.default.fileExists(atPath: analysisPath.path),
+              let data = try? Data(contentsOf: analysisPath),
+              let analysis = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) else {
+            return []
+        }
+        return analysis.phases
     }
     
     /// Check if shader matches current badge filter
@@ -336,6 +363,18 @@ struct ShaderBrowserView: View {
                 .pickerStyle(.menu)
                 .frame(minWidth: 120)
                 
+                // Phase filter
+                Picker("Phase", selection: $phaseFilter) {
+                    Text("All Phases").tag(Phase?.none)
+                    Divider()
+                    ForEach(Phase.allCases, id: \.self) { phase in
+                        Label(phase.displayName, systemImage: phase.iconName)
+                            .tag(Phase?.some(phase))
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(minWidth: 120)
+                
                 Spacer()
                 
                 Text("\(filteredShaders.count) shaders | \(selectedShaders.count) selected")
@@ -361,6 +400,7 @@ struct ShaderBrowserView: View {
                             isChecked: selectedShaders.contains(shader.name),
                             shaderStatus: getShaderStatus(shader),
                             refreshId: refreshId,
+                            isAnalyzing: isAnalyzing,
                             onTap: {
                                 Task {
                                     await appState.selectShader(shader.name)
@@ -379,6 +419,9 @@ struct ShaderBrowserView: View {
                             onDelete: {
                                 shaderToDelete = shader
                                 showDeleteConfirm = true
+                            },
+                            onPhaseChange: { phases in
+                                saveShaderPhases(shader: shader, phases: phases)
                             }
                         )
                     }
@@ -848,7 +891,7 @@ struct ShaderBrowserView: View {
     
     /// Cancel ongoing analysis
     private func cancelAnalysis() {
-        analysisCancelled = true
+        appState.analysisCancelled = true
         appState.log("⚠️ Analysis cancellation requested...", level: .warning)
     }
     
@@ -860,17 +903,17 @@ struct ShaderBrowserView: View {
     private func startAnalyze() {
         Task {
             let startTime = Date()
-            isAnalyzing = true
-            analysisCancelled = false
-            analysisProgress = 0
-            analysisSuccessCount = 0
-            analysisBlackCount = 0
-            analysisErrorCount = 0
+            appState.isAnalyzingShaders = true
+            appState.analysisCancelled = false
+            appState.analysisProgress = 0
+            appState.analysisSuccessCount = 0
+            appState.analysisBlackCount = 0
+            appState.analysisErrorCount = 0
             
             let shadersToAnalyze = Array(selectedShaders)
             let total = shadersToAnalyze.count
-            analysisTotal = total
-            analysisCurrent = 0
+            appState.analysisTotal = total
+            appState.analysisCurrent = 0
             
             appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             appState.log("🔬 STARTING ANALYSIS for \(total) shader(s)", level: .info)
@@ -879,7 +922,7 @@ struct ShaderBrowserView: View {
             // Verify render engine is available (auto-started on app launch)
             guard let renderEngine = appState.renderEngine, renderEngine.isRunning else {
                 appState.log("✗ Render engine not running - please wait for initialization", level: .error)
-                isAnalyzing = false
+                appState.isAnalyzingShaders = false
                 return
             }
             
@@ -915,8 +958,8 @@ struct ShaderBrowserView: View {
                 }
                 
                 let shaderStartTime = Date()
-                currentAnalysisShader = shaderName
-                analysisCurrent = index + 1
+                appState.currentAnalysisShader = shaderName
+                appState.analysisCurrent = index + 1
                 
                 appState.log("───────────────────────────────────────────────────────────────", level: .info)
                 appState.log("📍 [\(index+1)/\(total)] \(shaderName)", level: .info)
@@ -925,8 +968,8 @@ struct ShaderBrowserView: View {
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
                     appState.log("  ✗ Shader not found in list", level: .error)
                     errorCount += 1
-                    analysisErrorCount = errorCount
-                    analysisProgress = Double(index + 1) / Double(total)
+                    appState.analysisErrorCount = errorCount
+                    appState.analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
@@ -1007,11 +1050,11 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as BLACK", level: .warning)
                     await saveBlackAnalysis(to: analysisPath, shaderName: shaderName)
                     blackCount += 1
-                    analysisBlackCount = blackCount
+                    appState.analysisBlackCount = blackCount
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as black)", level: .info)
-                    analysisProgress = Double(index + 1) / Double(total)
+                    appState.analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
@@ -1020,11 +1063,11 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as MONOCHROMATIC", level: .info)
                     await saveMonochromaticAnalysis(to: analysisPath, shaderName: shaderName)
                     successCount += 1
-                    analysisSuccessCount = successCount
+                    appState.analysisSuccessCount = successCount
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as monochromatic)", level: .info)
-                    analysisProgress = Double(index + 1) / Double(total)
+                    appState.analysisProgress = Double(index + 1) / Double(total)
                     continue
                 }
                 
@@ -1036,11 +1079,11 @@ struct ShaderBrowserView: View {
                     guard let sourceContent = loadShaderSource(from: shaderPath) else {
                         appState.log("  ⚠️ Could not load shader source, skipping AI analysis", level: .warning)
                         successCount += 1  // Screenshot was successful at least
-                        analysisSuccessCount = successCount
+                        appState.analysisSuccessCount = successCount
                         
                         let elapsed = Date().timeIntervalSince(shaderStartTime)
                         appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (screenshot only)", level: .info)
-                        analysisProgress = Double(index + 1) / Double(total)
+                        appState.analysisProgress = Double(index + 1) / Double(total)
                         continue
                     }
                     
@@ -1060,27 +1103,27 @@ struct ShaderBrowserView: View {
                         if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
                             appState.log("  💾 Saved: \(analysisPath.lastPathComponent)", level: .info)
                             successCount += 1
-                            analysisSuccessCount = successCount
+                            appState.analysisSuccessCount = successCount
                         } else {
                             appState.log("  ✗ Failed to save analysis JSON", level: .error)
                             errorCount += 1
-                            analysisErrorCount = errorCount
+                            appState.analysisErrorCount = errorCount
                         }
                     } else {
                         appState.log("  ✗ AI analysis failed", level: .error)
                         errorCount += 1
-                        analysisErrorCount = errorCount
+                        appState.analysisErrorCount = errorCount
                     }
                 } else if captureSuccess {
                     // No AI available but screenshot worked
                     appState.log("  ℹ️ Screenshot saved (no AI analysis)", level: .info)
                     successCount += 1
-                    analysisSuccessCount = successCount
+                    appState.analysisSuccessCount = successCount
                 }
                 
                 let elapsed = Date().timeIntervalSince(shaderStartTime)
                 appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s", level: .info)
-                analysisProgress = Double(index + 1) / Double(total)
+                appState.analysisProgress = Double(index + 1) / Double(total)
                 
                 // Refresh grid to show new screenshot
                 refreshId = UUID()
@@ -1088,8 +1131,8 @@ struct ShaderBrowserView: View {
             
             let totalElapsed = Date().timeIntervalSince(startTime)
             
-            isAnalyzing = false
-            currentAnalysisShader = ""
+            appState.isAnalyzingShaders = false
+            appState.currentAnalysisShader = ""
             
             // Final refresh to ensure all screenshots are shown
             refreshId = UUID()
@@ -1269,6 +1312,48 @@ struct ShaderBrowserView: View {
         }
     }
     
+    /// Save phase assignments to shader's analysis.json
+    private func saveShaderPhases(shader: CoreShaderInfo, phases: Set<Phase>) {
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let baseName = shaderPath.deletingPathExtension().lastPathComponent
+        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
+        
+        // Load existing analysis or create minimal one
+        var analysisDict: [String: Any] = [:]
+        if FileManager.default.fileExists(atPath: analysisPath.path),
+           let data = try? Data(contentsOf: analysisPath),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            analysisDict = json
+        } else {
+            // Create minimal analysis with just phases
+            analysisDict = [
+                "title": shader.name,
+                "description": "",
+                "mood": "",
+                "energy": 0.5,
+                "colors": [],
+                "effects": [],
+                "geometry": [],
+                "objects": [],
+                "complexity": "unknown",
+                "visual_metadata": [:]
+            ]
+        }
+        
+        // Update dj_phases
+        analysisDict["dj_phases"] = phases.map { $0.rawValue }
+        
+        // Save back
+        do {
+            let data = try JSONSerialization.data(withJSONObject: analysisDict, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: analysisPath)
+            appState.log("💾 Saved phases for \(shader.name): \(phases.map { $0.displayName }.joined(separator: ", "))", level: .info)
+        } catch {
+            appState.log("✗ Failed to save phases for \(shader.name): \(error.localizedDescription)", level: .error)
+        }
+    }
+    
     private func showAnalysis(for shader: CoreShaderInfo) {
         // Load analysis from JSON file
         let shaderPath = URL(fileURLWithPath: shader.path)
@@ -1344,15 +1429,18 @@ struct ShaderCardEnhanced: View {
     let isChecked: Bool
     let shaderStatus: ShaderBrowserView.ShaderStatus
     let refreshId: UUID // Forces screenshot reload when changed
+    let isAnalyzing: Bool  // Disables interactions during analysis
     let onTap: () -> Void
     let onCheck: (EventModifiers) -> Void
     let onShowAnalysis: () -> Void
     let onPreview: () -> Void
     let onDelete: () -> Void
+    let onPhaseChange: (Set<Phase>) -> Void  // Callback when phases are changed
     
     @State private var screenshotImage: NSImage?
     @State private var analysisData: ShaderAnalysisResult?
     @State private var hasAnalysis: Bool = false
+    @State private var assignedPhases: Set<Phase> = []
     
     /// Find screenshot path for this shader
     private var screenshotPath: URL? {
@@ -1386,7 +1474,9 @@ struct ShaderCardEnhanced: View {
                 // Checkbox with modifier support for shift/cmd click
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .foregroundColor(isChecked ? .blue : .secondary)
+                    .opacity(isAnalyzing ? 0.5 : 1.0)
                     .onTapGesture {
+                        guard !isAnalyzing else { return }
                         // Capture current modifier keys from NSEvent
                         let modifiers = NSEvent.modifierFlags
                         var eventModifiers: EventModifiers = []
@@ -1403,6 +1493,8 @@ struct ShaderCardEnhanced: View {
                         .foregroundColor(.primary.opacity(0.7))
                 }
                 .buttonStyle(.plain)
+                .disabled(isAnalyzing)
+                .opacity(isAnalyzing ? 0.3 : 1.0)
                 .help("Preview this shader")
 
                 // Delete button
@@ -1411,6 +1503,8 @@ struct ShaderCardEnhanced: View {
                         .foregroundColor(.red.opacity(0.7))
                 }
                 .buttonStyle(.plain)
+                .disabled(isAnalyzing)
+                .opacity(isAnalyzing ? 0.3 : 1.0)
                 .help("Delete this shader")
             }
             
@@ -1450,7 +1544,11 @@ struct ShaderCardEnhanced: View {
                         }
                 }
             }
-            .onTapGesture(perform: onTap)
+            .opacity(isAnalyzing ? 0.7 : 1.0)
+            .onTapGesture {
+                guard !isAnalyzing else { return }
+                onTap()
+            }
             .onAppear { loadScreenshot(); loadAnalysis() }
             .onChange(of: refreshId) { _, _ in loadScreenshot(); loadAnalysis() }
             
@@ -1467,6 +1565,8 @@ struct ShaderCardEnhanced: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .disabled(isAnalyzing)
+                .opacity(isAnalyzing ? 0.3 : 1.0)
             }
 
             // Mood & energy
@@ -1553,6 +1653,37 @@ struct ShaderCardEnhanced: View {
                         .cornerRadius(2)
                 }
             }
+            
+            // Phase assignment badges - clickable to toggle
+            HStack(spacing: 4) {
+                ForEach(Phase.allCases, id: \.self) { phase in
+                    Button(action: {
+                        guard !isAnalyzing else { return }
+                        var newPhases = assignedPhases
+                        if newPhases.contains(phase) {
+                            newPhases.remove(phase)
+                        } else {
+                            newPhases.insert(phase)
+                        }
+                        assignedPhases = newPhases
+                        onPhaseChange(newPhases)
+                    }) {
+                        Image(systemName: phase.iconName)
+                            .font(.caption2)
+                            .foregroundColor(assignedPhases.contains(phase) ? .white : .secondary)
+                            .frame(width: 20, height: 20)
+                            .background(assignedPhases.contains(phase) ? phaseColor(phase) : Color.clear)
+                            .cornerRadius(4)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(phaseColor(phase).opacity(0.5), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isAnalyzing)
+                    .help("\(phase.displayName): \(phase.description)")
+                }
+            }
         }
         .padding(12)
         .background(isSelected ? Color.blue.opacity(0.15) : Color(.controlBackgroundColor))
@@ -1561,6 +1692,28 @@ struct ShaderCardEnhanced: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
+        .onAppear {
+            // Load phases from analysis data when card appears
+            if let phases = analysisData?.djPhases {
+                assignedPhases = Phase.fromStrings(phases)
+            }
+        }
+        .onChange(of: analysisData) { _, newValue in
+            if let phases = newValue?.djPhases {
+                assignedPhases = Phase.fromStrings(phases)
+            }
+        }
+    }
+    
+    /// Get color for a phase
+    private func phaseColor(_ phase: Phase) -> Color {
+        switch phase {
+        case .disco: return .purple
+        case .buildup: return .orange
+        case .peak: return .red
+        case .release: return .cyan
+        case .feature: return .yellow
+        }
     }
     
     /// Load screenshot from disk

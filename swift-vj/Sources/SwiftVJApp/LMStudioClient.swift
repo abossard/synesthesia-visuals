@@ -6,7 +6,7 @@ import Foundation
 import SwiftVJCore
 
 /// Result of shader analysis from LLM
-struct ShaderAnalysisResult: Codable {
+struct ShaderAnalysisResult: Codable, Equatable {
     let title: String
     let description: String
     let mood: String
