@@ -1,13 +1,12 @@
-// StoreLogView.swift - UI for viewing Store action log and state diffs
-// Debug view for observing unidirectional data flow
+// StoreLogView.swift - UI for viewing Store action log
+// Efficient debug view for unidirectional data flow insights
 
 import SwiftUI
 import SwiftVJCore
 
-/// View displaying Store actions and their state changes
+/// View displaying Store actions and state changes
 public struct StoreLogView: View {
     @ObservedObject var logger: StoreLogger<SwiftVJCore.AppState, AppAction>
-    @State private var selectedEntry: ActionLogEntry?
     @State private var autoScroll = true
 
     public init(logger: StoreLogger<SwiftVJCore.AppState, AppAction>) {
@@ -16,12 +15,8 @@ public struct StoreLogView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Toolbar
             toolbar
-
             Divider()
-
-            // Log entries
             logList
         }
     }
@@ -46,9 +41,9 @@ public struct StoreLogView: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
 
-            Image(systemName: logger.isEnabled ? "circle.fill" : "circle")
-                .foregroundColor(logger.isEnabled ? .green : .gray)
-                .font(.caption)
+            Circle()
+                .fill(logger.isEnabled ? Color.green : Color.gray)
+                .frame(width: 8, height: 8)
 
             // Auto-scroll toggle
             Toggle("Auto-scroll", isOn: $autoScroll)
@@ -61,7 +56,7 @@ public struct StoreLogView: View {
             .buttonStyle(.borderless)
 
             // Entry count
-            Text("\(logger.filteredEntries.count)")
+            Text("\(logger.entryCount)")
                 .font(.caption.monospacedDigit())
                 .foregroundColor(.secondary)
         }
@@ -72,17 +67,14 @@ public struct StoreLogView: View {
     private var logList: some View {
         ScrollViewReader { proxy in
             List(logger.filteredEntries) { entry in
-                LogEntryRow(entry: entry, isSelected: selectedEntry?.id == entry.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedEntry = selectedEntry?.id == entry.id ? nil : entry
-                    }
+                LogEntryRow(entry: entry)
                     .id(entry.id)
             }
             .listStyle(.plain)
-            .onChange(of: logger.entries.count) { _ in
+            .font(.system(.caption, design: .monospaced))
+            .onChange(of: logger.entryCount) { _ in
                 if autoScroll, let last = logger.entries.last {
-                    withAnimation {
+                    withAnimation(.easeOut(duration: 0.1)) {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
@@ -95,82 +87,37 @@ public struct StoreLogView: View {
 
 struct LogEntryRow: View {
     let entry: ActionLogEntry
-    let isSelected: Bool
-
-    private static let timeFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "HH:mm:ss.SSS"
-        return df
-    }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Action header
-            HStack(alignment: .top) {
-                Text(Self.timeFormatter.string(from: entry.timestamp))
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
+        HStack(alignment: .top, spacing: 8) {
+            // Timestamp
+            Text(formatTime(entry.timestamp))
+                .foregroundColor(.secondary)
 
-                Text(actionName)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
-                    .foregroundColor(actionColor)
+            // State change indicator
+            Text(entry.stateChanged ? "Δ" : "○")
+                .foregroundColor(entry.stateChanged ? .orange : .gray)
 
-                Spacer()
+            // Action
+            Text(entry.actionType)
+                .fontWeight(.medium)
+                .foregroundColor(actionColor)
 
-                if let duration = entry.duration {
-                    Text(String(format: "%.1fms", duration * 1000))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                }
+            Text(entry.actionDetail)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
 
-                if !entry.diffs.isEmpty {
-                    Text("Δ\(entry.diffs.count)")
-                        .font(.caption)
-                        .padding(.horizontal, 4)
-                        .background(Color.orange.opacity(0.2))
-                        .cornerRadius(3)
-                }
-            }
+            Spacer()
 
-            // State diffs (expanded when selected)
-            if isSelected && !entry.diffs.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(entry.diffs, id: \.path) { diff in
-                        HStack(alignment: .top, spacing: 4) {
-                            Text("├─")
-                                .foregroundColor(.secondary)
-                            Text(diff.path)
-                                .fontWeight(.medium)
-                            Text(diff.oldValue)
-                                .foregroundColor(.red.opacity(0.8))
-                            Text("→")
-                                .foregroundColor(.secondary)
-                            Text(diff.newValue)
-                                .foregroundColor(.green.opacity(0.8))
-                        }
-                        .font(.system(.caption, design: .monospaced))
-                    }
-                }
-                .padding(.leading, 20)
-                .padding(.top, 4)
-            }
+            // Duration
+            Text(String(format: "%.2fms", entry.durationMs))
+                .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
-    }
-
-    private var actionName: String {
-        // Extract action name from description
-        let desc = entry.action
-        if let range = desc.range(of: "(") {
-            return String(desc[..<range.lowerBound])
-        }
-        return desc
+        .padding(.vertical, 2)
     }
 
     private var actionColor: Color {
-        let name = actionName.lowercased()
+        let name = entry.actionType.lowercased()
         if name.contains("playback") { return .blue }
         if name.contains("pipeline") { return .purple }
         if name.contains("render") { return .orange }
@@ -178,6 +125,17 @@ struct LogEntryRow: View {
         if name.contains("audio") { return .cyan }
         if name.contains("ui") { return .gray }
         return .primary
+    }
+
+    private func formatTime(_ timestamp: Double) -> String {
+        let date = Date(timeIntervalSinceReferenceDate: timestamp)
+        let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let ms = (components.nanosecond ?? 0) / 1_000_000
+        return String(format: "%02d:%02d:%02d.%03d",
+                      components.hour ?? 0,
+                      components.minute ?? 0,
+                      components.second ?? 0,
+                      ms)
     }
 }
 

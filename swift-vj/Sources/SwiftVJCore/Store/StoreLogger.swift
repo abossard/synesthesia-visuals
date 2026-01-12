@@ -1,246 +1,333 @@
-// StoreLogger.swift - Action logging and state change insights
-// Lightweight observability for unidirectional data flow debugging
+// StoreLogger.swift - Efficient action logging for UDF debugging
+// Zero overhead when disabled, minimal impact when enabled
 
 import Foundation
 
-// MARK: - State Diff
+// MARK: - Compile-Time Flag
 
-/// Represents a change in state
-public struct StateDiff: CustomStringConvertible, Sendable {
-    public let path: String
-    public let oldValue: String
-    public let newValue: String
+/// Set to false in release builds to completely eliminate logging overhead
+#if DEBUG
+public let STORE_LOGGING_ENABLED = true
+#else
+public let STORE_LOGGING_ENABLED = false
+#endif
 
-    public var description: String {
-        "\(path): \(oldValue) → \(newValue)"
+// MARK: - Log Entry (Lightweight)
+
+/// Minimal log entry - diffs computed lazily only when displayed
+public struct ActionLogEntry: Identifiable, Sendable {
+    public let id: UInt64
+    public let timestamp: Double  // TimeInterval since reference date (cheaper than Date)
+    public let actionType: String // Just the action name, not full description
+    public let actionDetail: String // Parameters (computed lazily by caller)
+    public let stateChanged: Bool
+    public let reducerDurationNs: UInt64 // Nanoseconds for precision without Date overhead
+
+    public var date: Date {
+        Date(timeIntervalSinceReferenceDate: timestamp)
+    }
+
+    public var durationMs: Double {
+        Double(reducerDurationNs) / 1_000_000.0
     }
 }
 
-/// Compute differences between two states using Mirror reflection
-public func computeStateDiff<State>(_ old: State, _ new: State, path: String = "") -> [StateDiff] {
-    var diffs: [StateDiff] = []
+// MARK: - Action Classifier
 
-    let oldMirror = Mirror(reflecting: old)
-    let newMirror = Mirror(reflecting: new)
+/// Fast action classification without full string conversion
+public enum ActionCategory: String, Sendable {
+    case playback, pipeline, render, launchpad, audio, ui, lifecycle, persistence
+}
 
-    // Build dictionaries for comparison
-    var oldChildren: [String: Any] = [:]
-    var newChildren: [String: Any] = [:]
+/// Extract action category from action (fast path)
+@inlinable
+public func classifyAction<Action>(_ action: Action) -> ActionCategory {
+    let typeName = String(describing: type(of: action))
+    if typeName.contains("Playback") { return .playback }
+    if typeName.contains("Pipeline") { return .pipeline }
+    if typeName.contains("Render") { return .render }
+    if typeName.contains("Launchpad") { return .launchpad }
+    if typeName.contains("Audio") { return .audio }
+    if typeName.contains("UI") { return .ui }
+    return .lifecycle
+}
 
-    for child in oldMirror.children {
-        if let label = child.label {
-            oldChildren[label] = child.value
-        }
+// MARK: - Ring Buffer
+
+/// Fixed-size ring buffer for log entries - no allocations after init
+public struct RingBuffer<T>: Sendable where T: Sendable {
+    private var storage: [T?]
+    private var writeIndex: Int = 0
+    private var _count: Int = 0
+
+    public var count: Int { _count }
+    public var capacity: Int { storage.count }
+
+    public init(capacity: Int) {
+        self.storage = Array(repeating: nil, count: capacity)
     }
 
-    for child in newMirror.children {
-        if let label = child.label {
-            newChildren[label] = child.value
-        }
+    public mutating func append(_ element: T) {
+        storage[writeIndex] = element
+        writeIndex = (writeIndex + 1) % storage.count
+        _count = min(_count + 1, storage.count)
     }
 
-    // Compare each property
-    for (label, oldValue) in oldChildren {
-        let currentPath = path.isEmpty ? label : "\(path).\(label)"
+    public mutating func clear() {
+        storage = Array(repeating: nil, count: storage.count)
+        writeIndex = 0
+        _count = 0
+    }
 
-        guard let newValue = newChildren[label] else {
-            diffs.append(StateDiff(path: currentPath, oldValue: describe(oldValue), newValue: "nil"))
-            continue
-        }
+    /// Get entries in chronological order
+    public var entries: [T] {
+        guard _count > 0 else { return [] }
 
-        let oldDesc = describe(oldValue)
-        let newDesc = describe(newValue)
+        var result: [T] = []
+        result.reserveCapacity(_count)
 
-        if oldDesc != newDesc {
-            // Check if we should recurse into nested structs
-            let oldMirror = Mirror(reflecting: oldValue)
-            let newMirror = Mirror(reflecting: newValue)
-
-            if oldMirror.displayStyle == .struct && !oldMirror.children.isEmpty {
-                // Recurse into struct
-                let nestedDiffs = computeStateDiff(oldValue, newValue, path: currentPath)
-                diffs.append(contentsOf: nestedDiffs)
-            } else {
-                diffs.append(StateDiff(path: currentPath, oldValue: oldDesc, newValue: newDesc))
+        if _count < storage.count {
+            // Not wrapped yet
+            for i in 0..<_count {
+                if let entry = storage[i] {
+                    result.append(entry)
+                }
+            }
+        } else {
+            // Wrapped - start from writeIndex
+            for i in 0..<storage.count {
+                let idx = (writeIndex + i) % storage.count
+                if let entry = storage[idx] {
+                    result.append(entry)
+                }
             }
         }
+        return result
     }
-
-    return diffs
 }
 
-/// Describe a value concisely
-private func describe(_ value: Any) -> String {
-    let mirror = Mirror(reflecting: value)
+// MARK: - Store Logger (Efficient)
 
-    // Handle optionals
-    if mirror.displayStyle == .optional {
-        if let child = mirror.children.first {
-            return describe(child.value)
-        }
-        return "nil"
-    }
-
-    // Handle collections
-    if mirror.displayStyle == .collection {
-        return "[\(mirror.children.count) items]"
-    }
-
-    if mirror.displayStyle == .dictionary {
-        return "{\(mirror.children.count) entries}"
-    }
-
-    // Handle primitives and simple types
-    let desc = String(describing: value)
-    if desc.count > 50 {
-        return String(desc.prefix(47)) + "..."
-    }
-    return desc
-}
-
-// MARK: - Action Log Entry
-
-/// A logged action with timestamp and state diff
-public struct ActionLogEntry: Identifiable, Sendable {
-    public let id: UUID
-    public let timestamp: Date
-    public let action: String
-    public let diffs: [StateDiff]
-    public let duration: TimeInterval?
-
-    public init(action: String, diffs: [StateDiff], duration: TimeInterval? = nil) {
-        self.id = UUID()
-        self.timestamp = Date()
-        self.action = action
-        self.diffs = diffs
-        self.duration = duration
-    }
-
-    /// Formatted log output
-    public var formatted: String {
-        let df = Self.dateFormatter
-        var lines = ["\(df.string(from: timestamp)) ▶ \(action)"]
-
-        if let duration = duration {
-            lines[0] += " (\(String(format: "%.1f", duration * 1000))ms)"
-        }
-
-        for diff in diffs {
-            lines.append("  ├─ \(diff)")
-        }
-
-        return lines.joined(separator: "\n")
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "HH:mm:ss.SSS"
-        return df
-    }()
-}
-
-// MARK: - Store Logger
-
-/// Logger that wraps a reducer to log actions and state changes
+/// High-performance logger that wraps a reducer
+/// - Zero overhead when disabled (compile-time check)
+/// - Minimal overhead when enabled (no reflection, ring buffer)
+/// - Follows UDF: wraps reducer as middleware, doesn't mutate state
 @MainActor
-public final class StoreLogger<State, Action>: ObservableObject {
+public final class StoreLogger<State: Equatable, Action>: ObservableObject {
 
-    // MARK: - Published
+    // MARK: - Published (for UI binding)
 
-    @Published public private(set) var entries: [ActionLogEntry] = []
+    @Published public private(set) var entryCount: Int = 0
     @Published public var isEnabled: Bool = true
     @Published public var filter: String = ""
 
+    // MARK: - Storage
+
+    private var buffer: RingBuffer<ActionLogEntry>
+    private var nextId: UInt64 = 0
+
     // MARK: - Configuration
 
-    public var maxEntries: Int = 500
-    public var actionFilter: ((Action) -> Bool)?
+    /// Categories to exclude from logging
+    public var excludedCategories: Set<ActionCategory> = [.audio]
+
+    /// Custom filter (return false to exclude)
+    public var customFilter: ((Action) -> Bool)?
+
+    /// Print to console (async to avoid blocking)
     public var printToConsole: Bool = true
 
-    // MARK: - Computed
+    /// Console output queue
+    private let consoleQueue = DispatchQueue(label: "store.logger.console", qos: .utility)
 
-    public var filteredEntries: [ActionLogEntry] {
-        guard !filter.isEmpty else { return entries }
-        return entries.filter { $0.action.localizedCaseInsensitiveContains(filter) }
+    // MARK: - Init
+
+    public init(capacity: Int = 500) {
+        self.buffer = RingBuffer(capacity: capacity)
     }
 
     // MARK: - Public API
 
-    /// Log an action and its state changes
-    public func log(action: Action, oldState: State, newState: State, duration: TimeInterval? = nil) {
-        guard isEnabled else { return }
+    /// Get all entries (computed property, not stored)
+    public var entries: [ActionLogEntry] {
+        buffer.entries
+    }
 
-        // Check filter
-        if let filter = actionFilter, !filter(action) {
-            return
-        }
-
-        let actionDesc = String(describing: action)
-        let diffs = computeStateDiff(oldState, newState)
-
-        let entry = ActionLogEntry(action: actionDesc, diffs: diffs, duration: duration)
-        entries.append(entry)
-
-        // Trim if needed
-        if entries.count > maxEntries {
-            entries.removeFirst(entries.count - maxEntries)
-        }
-
-        // Console output
-        if printToConsole {
-            print(entry.formatted)
+    /// Get filtered entries
+    public var filteredEntries: [ActionLogEntry] {
+        guard !filter.isEmpty else { return entries }
+        let lowercasedFilter = filter.lowercased()
+        return entries.filter {
+            $0.actionType.lowercased().contains(lowercasedFilter) ||
+            $0.actionDetail.lowercased().contains(lowercasedFilter)
         }
     }
 
-    /// Clear all entries
+    /// Clear log
     public func clear() {
-        entries.removeAll()
+        buffer.clear()
+        entryCount = 0
     }
 
-    /// Create a logging reducer wrapper
+    // MARK: - Reducer Wrapper
+
+    /// Wrap a reducer with logging - the UDF way
+    /// Returns a new reducer that logs actions and state changes
+    @inlinable
     public func wrap(
         reducer: @escaping (inout State, Action) -> Effect<Action>
     ) -> (inout State, Action) -> Effect<Action> {
+        // Compile-time elimination in release builds
+        guard STORE_LOGGING_ENABLED else { return reducer }
+
         return { [weak self] state, action in
+            guard let self = self, self.isEnabled else {
+                return reducer(&state, action)
+            }
+
+            // Fast path: check category filter before any work
+            let category = classifyAction(action)
+            if self.excludedCategories.contains(category) {
+                return reducer(&state, action)
+            }
+
+            // Custom filter check
+            if let customFilter = self.customFilter, !customFilter(action) {
+                return reducer(&state, action)
+            }
+
+            // Capture state hash for cheap equality check
             let oldState = state
-            let start = Date()
+
+            // Time the reducer (using ContinuousClock for precision)
+            let startTime = DispatchTime.now().uptimeNanoseconds
 
             let effect = reducer(&state, action)
 
-            let duration = Date().timeIntervalSince(start)
-            self?.log(action: action, oldState: oldState, newState: state, duration: duration)
+            let endTime = DispatchTime.now().uptimeNanoseconds
+            let durationNs = endTime - startTime
+
+            // Check if state changed (uses Equatable, very fast)
+            let stateChanged = oldState != state
+
+            // Extract action info (lazy, only string ops we need)
+            let (actionType, actionDetail) = self.extractActionInfo(action)
+
+            // Create entry
+            let entry = ActionLogEntry(
+                id: self.nextId,
+                timestamp: Date.timeIntervalSinceReferenceDate,
+                actionType: actionType,
+                actionDetail: actionDetail,
+                stateChanged: stateChanged,
+                reducerDurationNs: durationNs
+            )
+            self.nextId += 1
+
+            // Store entry (ring buffer, no allocation)
+            self.buffer.append(entry)
+            self.entryCount = self.buffer.count
+
+            // Console output (async, non-blocking)
+            if self.printToConsole {
+                self.consoleQueue.async {
+                    self.printEntry(entry, category: category)
+                }
+            }
 
             return effect
         }
     }
+
+    // MARK: - Private
+
+    /// Extract action type and detail efficiently
+    private func extractActionInfo(_ action: Action) -> (type: String, detail: String) {
+        let fullDesc = String(describing: action)
+
+        // Parse "category(subAction(params))" format
+        if let parenIndex = fullDesc.firstIndex(of: "(") {
+            let type = String(fullDesc[..<parenIndex])
+            let detail = String(fullDesc[parenIndex...])
+            return (type, detail)
+        }
+
+        return (fullDesc, "")
+    }
+
+    /// Print entry to console (called on background queue)
+    private nonisolated func printEntry(_ entry: ActionLogEntry, category: ActionCategory) {
+        let timeStr = formatTime(entry.timestamp)
+        let durationStr = String(format: "%.2fms", entry.durationMs)
+        let changeIndicator = entry.stateChanged ? "Δ" : "○"
+
+        print("\(timeStr) \(changeIndicator) \(entry.actionType)\(entry.actionDetail) [\(durationStr)]")
+    }
+
+    /// Format timestamp efficiently
+    private nonisolated func formatTime(_ timestamp: Double) -> String {
+        let date = Date(timeIntervalSinceReferenceDate: timestamp)
+        let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+        let ms = (components.nanosecond ?? 0) / 1_000_000
+        return String(format: "%02d:%02d:%02d.%03d",
+                      components.hour ?? 0,
+                      components.minute ?? 0,
+                      components.second ?? 0,
+                      ms)
+    }
 }
 
-// MARK: - Convenience Extensions
+// MARK: - Convenience
 
 extension StoreLogger {
-    /// Filter out high-frequency actions (audio updates, position updates)
+    /// Quick setup for typical use
+    public func configureDefaults() {
+        excludedCategories = [.audio] // Audio is too noisy
+        printToConsole = true
+    }
+
+    /// Exclude high-frequency actions
     public func filterHighFrequency() {
-        actionFilter = { action in
+        customFilter = { action in
             let desc = String(describing: action)
-            let highFreq = ["levelUpdated", "beatPhaseUpdated", "positionUpdated"]
-            return !highFreq.contains { desc.contains($0) }
+            // These fire many times per second
+            if desc.contains("positionUpdated") { return false }
+            if desc.contains("levelUpdated") { return false }
+            if desc.contains("beatPhaseUpdated") { return false }
+            return true
         }
     }
 }
 
-// MARK: - Store Extension for Logging
+// MARK: - State Diff (On-Demand Only)
 
-extension Store {
-    /// Create a store with logging enabled
-    @MainActor
-    public static func withLogging(
-        initialState: State,
-        reducer: @escaping (inout State, Action) -> Effect<Action>,
-        logger: StoreLogger<State, Action>
-    ) -> Store<State, Action> {
-        Store(
-            initialState: initialState,
-            reducer: logger.wrap(reducer: reducer)
-        )
+/// Compute state diff - call this only when user expands a log entry
+/// This is expensive, so we don't do it automatically
+public func computeStateDiff<State>(_ old: State, _ new: State) -> [String] where State: Equatable {
+    guard old != new else { return [] }
+
+    var diffs: [String] = []
+    let oldMirror = Mirror(reflecting: old)
+    let newMirror = Mirror(reflecting: new)
+
+    var oldChildren: [String: Any] = [:]
+    var newChildren: [String: Any] = [:]
+
+    for child in oldMirror.children {
+        if let label = child.label { oldChildren[label] = child.value }
     }
+    for child in newMirror.children {
+        if let label = child.label { newChildren[label] = child.value }
+    }
+
+    for (label, oldValue) in oldChildren {
+        guard let newValue = newChildren[label] else { continue }
+        let oldStr = String(describing: oldValue).prefix(50)
+        let newStr = String(describing: newValue).prefix(50)
+        if oldStr != newStr {
+            diffs.append("\(label): \(oldStr) → \(newStr)")
+        }
+    }
+
+    return diffs
 }

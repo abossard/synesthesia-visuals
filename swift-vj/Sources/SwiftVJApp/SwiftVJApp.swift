@@ -129,9 +129,9 @@ public final class AppState: ObservableObject {
             reducer: storeLogger.wrap(reducer: appReducer)
         )
 
-        // Filter out high-frequency actions by default
+        // Configure logger: exclude noisy actions, async console output
+        storeLogger.excludedCategories = [.audio]
         storeLogger.filterHighFrequency()
-        storeLogger.printToConsole = true  // Enable console output
 
         setupModules()
         setupRenderEngine()
