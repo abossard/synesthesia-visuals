@@ -115,13 +115,24 @@ public final class AppState: ObservableObject {
     private let maxLogEntries = 500
     private var vdjQueryTask: Task<Void, Never>?
 
+    // MARK: - Store Logger (Debug)
+
+    /// Action logger for debugging state changes - access via appState.storeLogger
+    public let storeLogger = StoreLogger<SwiftVJCore.AppState, AppAction>()
+
     // MARK: - Init
 
     public init() {
+        // Create store with logging wrapper for state change insights
         self.store = Store(
             initialState: SwiftVJCore.AppState(),
-            reducer: appReducer
+            reducer: storeLogger.wrap(reducer: appReducer)
         )
+
+        // Filter out high-frequency actions by default
+        storeLogger.filterHighFrequency()
+        storeLogger.printToConsole = true  // Enable console output
+
         setupModules()
         setupRenderEngine()
         startOSCHub()
