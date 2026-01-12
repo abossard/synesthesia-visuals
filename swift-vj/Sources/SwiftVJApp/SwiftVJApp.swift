@@ -111,6 +111,17 @@ public final class AppState: ObservableObject {
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
 
     public var effectivePhase: Phase? { currentPhase ?? detectedSongPhase }
+    
+    // Shader Analysis State (persists across navigation)
+    @Published var isAnalyzingShaders: Bool = false
+    @Published var analysisProgress: Double = 0
+    @Published var analysisCurrent: Int = 0
+    @Published var analysisTotal: Int = 0
+    @Published var currentAnalysisShader: String = ""
+    @Published var analysisSuccessCount: Int = 0
+    @Published var analysisBlackCount: Int = 0
+    @Published var analysisErrorCount: Int = 0
+    @Published var analysisCancelled: Bool = false
 
     private let maxLogEntries = 500
     private var vdjQueryTask: Task<Void, Never>?
