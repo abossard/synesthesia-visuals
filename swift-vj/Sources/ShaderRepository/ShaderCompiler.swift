@@ -92,6 +92,10 @@ public enum ShaderCompiler {
             float bpmSin4;
             float bpmConfidence;
             float audioTime;
+            float bin0;
+            float bin1;
+            float bin2;
+            float zoom;
         } _uniforms_;
 
         layout(binding = 1) uniform sampler2D backbuffer;
@@ -103,10 +107,32 @@ public enum ShaderCompiler {
             return vec4(gl_FragCoord.x, _uniforms_.resolution.y - gl_FragCoord.y, gl_FragCoord.zw);
         }
 
-        // GLSL compatibility macros
+        // GLSL compatibility macros - remap uniforms to block members
         #define time _uniforms_.time
         #define resolution _uniforms_.resolution
         #define mouse _uniforms_.mouse
+        #define speed _uniforms_.speed
+        #define bass _uniforms_.bass
+        #define lowMid _uniforms_.lowMid
+        #define mid _uniforms_.mid
+        #define highs _uniforms_.highs
+        #define level _uniforms_.level
+        #define kickEnv _uniforms_.kickEnv
+        #define kickPulse _uniforms_.kickPulse
+        #define beat _uniforms_.beat
+        #define energyFast _uniforms_.energyFast
+        #define energySlow _uniforms_.energySlow
+        #define bassPresence _uniforms_.bassPresence
+        #define midPresence _uniforms_.midPresence
+        #define highPresence _uniforms_.highPresence
+        #define bpmTwitcher _uniforms_.bpmTwitcher
+        #define bpmSin4 _uniforms_.bpmSin4
+        #define bpmConfidence _uniforms_.bpmConfidence
+        #define audioTime _uniforms_.audioTime
+        #define bin0 _uniforms_.bin0
+        #define bin1 _uniforms_.bin1
+        #define bin2 _uniforms_.bin2
+        #define zoom _uniforms_.zoom
         #define texture2D texture
         #define lowp
         #define mediump
@@ -358,9 +384,23 @@ public enum ShaderCompiler {
         var result = source
         
         // Patterns: "vec2 mouse =" -> "vec2 _mouse ="
+        // Also handle function parameters: "float time," -> "float _t,"
         let shadowPatterns = [
             ("vec2 mouse(\\s*=)", "vec2 _mouse$1"),
-            ("float time(\\s*=)", "float _time$1"),
+            ("float time(\\s*=)", "float _localTime$1"),
+            ("float time(\\s*,)", "float _t$1"),
+            ("float time(\\s*\\))", "float _t$1"),
+            ("float speed(\\s*=)", "float _localSpeed$1"),
+            ("float speed(\\s*,)", "float _spd$1"),
+            ("float speed(\\s*\\))", "float _spd$1"),
+            // Reserved word: filter
+            ("float filter(\\s*=)", "float _filter$1"),
+            ("([^_a-zA-Z0-9])filter(\\s*[=,);+*/-])", "$1_filter$2"),
+            // Rename 'bb' sampler to 'backbuffer'
+            ("sampler2D bb([^a-zA-Z0-9])", "sampler2D backbuffer$1"),
+            ("texture2D\\(bb,", "texture(backbuffer,"),
+            ("texture\\(bb,", "texture(backbuffer,"),
+            ("([^_a-zA-Z0-9])bb([^_a-zA-Z0-9])", "$1backbuffer$2"),
         ]
         
         for (pattern, replacement) in shadowPatterns {
