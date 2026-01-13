@@ -334,6 +334,9 @@ public enum ShaderCompiler {
         // Remove varying/attribute
         cleaned = removeLines(matching: "^\\s*(varying|attribute)\\s+", from: cleaned)
         
+        // Remove conflicting #define statements for uniform names we inject
+        cleaned = removeConflictingDefines(from: cleaned)
+        
         // Replace gl_FragColor -> fragColor
         cleaned = cleaned.replacingOccurrences(of: "gl_FragColor", with: "fragColor")
         
@@ -347,6 +350,24 @@ public enum ShaderCompiler {
         cleaned = renameConflictingFunctions(in: cleaned)
         
         return glslWrapperPrefix + cleaned
+    }
+    
+    /// Remove #define statements that conflict with our uniform macros
+    private static func removeConflictingDefines(from source: String) -> String {
+        // Names we define as macros in the wrapper - if shader has its own #define for these, remove them
+        let uniformNames = [
+            "time", "resolution", "mouse", "speed", "bass", "lowMid", "mid", "highs",
+            "level", "kickEnv", "kickPulse", "beat", "energyFast", "energySlow",
+            "bassPresence", "midPresence", "highPresence", "bpmTwitcher", "bpmSin4",
+            "bpmConfidence", "audioTime", "bin0", "bin1", "bin2", "zoom"
+        ]
+        
+        var result = source
+        for name in uniformNames {
+            // Remove lines like "#define speed 0.25"
+            result = removeLines(matching: "^\\s*#define\\s+\(name)\\s+", from: result)
+        }
+        return result
     }
     
     /// Remove #ifdef GL_ES ... #endif blocks
@@ -383,27 +404,37 @@ public enum ShaderCompiler {
     private static func renameShadowedVariables(in source: String) -> String {
         var result = source
         
-        // Patterns: "vec2 mouse =" -> "vec2 _mouse ="
-        // Also handle function parameters: "float time," -> "float _t,"
-        let shadowPatterns = [
-            ("vec2 mouse(\\s*=)", "vec2 _mouse$1"),
-            ("float time(\\s*=)", "float _localTime$1"),
-            ("float time(\\s*,)", "float _t$1"),
-            ("float time(\\s*\\))", "float _t$1"),
-            ("float speed(\\s*=)", "float _localSpeed$1"),
-            ("float speed(\\s*,)", "float _spd$1"),
-            ("float speed(\\s*\\))", "float _spd$1"),
-            // Reserved word: filter
-            ("float filter(\\s*=)", "float _filter$1"),
-            ("([^_a-zA-Z0-9])filter(\\s*[=,);+*/-])", "$1_filter$2"),
-            // Rename 'bb' sampler to 'backbuffer'
-            ("sampler2D bb([^a-zA-Z0-9])", "sampler2D backbuffer$1"),
-            ("texture2D\\(bb,", "texture(backbuffer,"),
-            ("texture\\(bb,", "texture(backbuffer,"),
-            ("([^_a-zA-Z0-9])bb([^_a-zA-Z0-9])", "$1backbuffer$2"),
+        // First, strip comments to avoid false matches
+        let sourceWithoutComments = stripComments(from: result)
+        
+        // Handle specific patterns where local variables shadow uniforms
+        // Pattern: "float time = time;" or "vec2 mouse = ... mouse ..."
+        // We need to rename the LOCAL variable, not uses of the uniform
+        
+        // For "float time = time;" pattern - rename LHS declaration only, keep RHS as uniform
+        // After: "float _localTime = time;" where time becomes _uniforms_.time via macro
+        result = handleSelfAssignment(in: result, sourceWithoutComments: sourceWithoutComments, 
+                                       varName: "time", typeName: "float", localName: "_localTime")
+        result = handleSelfAssignment(in: result, sourceWithoutComments: sourceWithoutComments,
+                                       varName: "mouse", typeName: "vec2", localName: "_localMouse")
+        result = handleSelfAssignment(in: result, sourceWithoutComments: sourceWithoutComments,
+                                       varName: "zoom", typeName: "float", localName: "_localZoom")
+        result = handleSelfAssignment(in: result, sourceWithoutComments: sourceWithoutComments,
+                                       varName: "speed", typeName: "float", localName: "_localSpeed")
+        
+        // Handle function parameters: "void foo(float time)" -> "void foo(float _t)"
+        let paramPatterns = [
+            ("\\(float time(\\s*[,)])", "(float _t$1"),
+            (",\\s*float time(\\s*[,)])", ", float _t$1"),
+            ("\\(float speed(\\s*[,)])", "(float _spd$1"),
+            (",\\s*float speed(\\s*[,)])", ", float _spd$1"),
+            ("\\(float zoom(\\s*[,)])", "(float _zm$1"),
+            (",\\s*float zoom(\\s*[,)])", ", float _zm$1"),
+            ("\\(vec2 mouse(\\s*[,)])", "(vec2 _m$1"),
+            (",\\s*vec2 mouse(\\s*[,)])", ", vec2 _m$1"),
         ]
         
-        for (pattern, replacement) in shadowPatterns {
+        for (pattern, replacement) in paramPatterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
                 result = regex.stringByReplacingMatches(
                     in: result,
@@ -412,6 +443,110 @@ public enum ShaderCompiler {
                     withTemplate: replacement
                 )
             }
+        }
+        
+        // Other specific patterns
+        let otherPatterns = [
+            // Reserved word: filter - used as variable name
+            ("float filter(\\s*=)", "float _filter$1"),
+            ("([^_a-zA-Z0-9])filter([^_a-zA-Z0-9(])", "$1_filter$2"),
+            // Rename 'bb' sampler to 'backbuffer'  
+            ("sampler2D bb([^a-zA-Z0-9])", "sampler2D backbuffer$1"),
+            ("texture2D\\(bb,", "texture(backbuffer,"),
+            ("texture\\(bb,", "texture(backbuffer,"),
+            ("([^_a-zA-Z0-9])bb([^_a-zA-Z0-9])", "$1backbuffer$2"),
+        ]
+        
+        for (pattern, replacement) in otherPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                result = regex.stringByReplacingMatches(
+                    in: result,
+                    options: [],
+                    range: NSRange(result.startIndex..<result.endIndex, in: result),
+                    withTemplate: replacement
+                )
+            }
+        }
+        
+        return result
+    }
+    
+    /// Handle pattern like "float time = time;" -> "float _localTime = time;" 
+    /// and rename subsequent uses in the same scope
+    private static func handleSelfAssignment(in source: String, sourceWithoutComments: String,
+                                              varName: String, typeName: String, localName: String) -> String {
+        // Check if shader has "type varName = ..." as a local variable (not in comments)
+        // Must NOT be a function declaration like "vec2 zoom(vec2 p, float f)"
+        let localDeclPattern = "\(typeName)\\s+\(varName)\\s*="
+        guard let declRegex = try? NSRegularExpression(pattern: localDeclPattern, options: []),
+              declRegex.firstMatch(in: sourceWithoutComments, options: [], 
+                                   range: NSRange(sourceWithoutComments.startIndex..<sourceWithoutComments.endIndex, 
+                                                  in: sourceWithoutComments)) != nil else {
+            return source  // No local declaration found
+        }
+        
+        var result = source
+        
+        // Step 1: Rename the declaration. Handle "type name = name;" specially to preserve RHS
+        // Pattern: "float time = time" -> "float _localTime = time"
+        let selfAssignPattern = "(\(typeName)\\s+)\(varName)(\\s*=\\s*)\(varName)([^_a-zA-Z0-9])"
+        if let selfRegex = try? NSRegularExpression(pattern: selfAssignPattern, options: []) {
+            result = selfRegex.stringByReplacingMatches(
+                in: result,
+                options: [],
+                range: NSRange(result.startIndex..<result.endIndex, in: result),
+                withTemplate: "$1\(localName)$2\(varName)$3"
+            )
+        }
+        
+        // Step 2: Rename other declarations: "type name = expr" -> "type _local = expr"
+        let otherDeclPattern = "(\(typeName)\\s+)\(varName)(\\s*=)"
+        if let otherRegex = try? NSRegularExpression(pattern: otherDeclPattern, options: []) {
+            result = otherRegex.stringByReplacingMatches(
+                in: result,
+                options: [],
+                range: NSRange(result.startIndex..<result.endIndex, in: result),
+                withTemplate: "$1\(localName)$2"
+            )
+        }
+        
+        // Step 3: Rename assignment targets: "name = ..." -> "_local = ..." (modification of local)
+        // Only match at start of statement (after ; or { or newline)
+        let assignPattern = "([;{}\\n]\\s*)\(varName)(\\s*[+\\-*/]?=)"
+        if let assignRegex = try? NSRegularExpression(pattern: assignPattern, options: []) {
+            result = assignRegex.stringByReplacingMatches(
+                in: result,
+                options: [],
+                range: NSRange(result.startIndex..<result.endIndex, in: result),
+                withTemplate: "$1\(localName)$2"
+            )
+        }
+        
+        return result
+    }
+    
+    /// Strip C-style comments from source for pattern matching
+    private static func stripComments(from source: String) -> String {
+        var result = source
+        
+        // Remove single-line comments
+        if let regex = try? NSRegularExpression(pattern: "//.*$", options: .anchorsMatchLines) {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                options: [],
+                range: NSRange(result.startIndex..<result.endIndex, in: result),
+                withTemplate: ""
+            )
+        }
+        
+        // Remove multi-line comments
+        if let regex = try? NSRegularExpression(pattern: "/\\*.*?\\*/", options: .dotMatchesLineSeparators) {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                options: [],
+                range: NSRange(result.startIndex..<result.endIndex, in: result),
+                withTemplate: ""
+            )
         }
         
         return result

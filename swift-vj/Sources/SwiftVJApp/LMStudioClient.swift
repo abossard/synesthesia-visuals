@@ -161,7 +161,7 @@ actor LMStudioClient {
             "messages": [
                 ["role": "user", "content": messageContent]
             ],
-            "max_tokens": 1200,
+            "max_tokens": 4000,  // Increased for reasoning models that need more tokens
             "temperature": 0.7
         ]
         
@@ -191,13 +191,31 @@ actor LMStudioClient {
                 return nil
             }
             
-            // Parse response
+            // Parse response - handle both regular models and reasoning models
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let firstChoice = choices.first,
-                  let message = firstChoice["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
-                logger("  ✗ Failed to parse LM Studio response", .error)
+                  let message = firstChoice["message"] as? [String: Any] else {
+                logger("  ✗ Failed to parse LM Studio response structure", .error)
+                if let rawBody = String(data: data, encoding: .utf8) {
+                    logger("  📄 Raw response: \(rawBody.prefix(500))", .debug)
+                }
+                return nil
+            }
+            
+            // Try content first, then reasoning_content (for reasoning models like ministral)
+            var content = message["content"] as? String ?? ""
+            if content.isEmpty, let reasoningContent = message["reasoning_content"] as? String {
+                logger("  ℹ️ Using reasoning_content (reasoning model detected)", .debug)
+                content = reasoningContent
+            }
+            
+            // Check for empty content (model may have failed silently)
+            if content.isEmpty {
+                logger("  ⚠️ LM Studio returned empty content - model may not be loaded or request too large", .warning)
+                if let rawBody = String(data: data, encoding: .utf8) {
+                    logger("  📄 Full response: \(rawBody.prefix(1000))", .debug)
+                }
                 return nil
             }
             
