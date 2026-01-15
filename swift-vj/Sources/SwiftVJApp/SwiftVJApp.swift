@@ -146,6 +146,7 @@ public final class AppState: ObservableObject {
 
         setupModules()
         setupRenderEngine()
+        setupEffectEnvironment()
         startOSCHub()
         startBPMSync()
         loadPersistedState()
@@ -239,17 +240,8 @@ public final class AppState: ObservableObject {
     }
 
     public func selectShader(_ name: String) {
-        // Dispatch action through store for state update + persistence
+        // Dispatch action through store - effects handle render engine + OSC via EffectEnvironment
         store.send(.render(.selectShader(name)))
-
-        // TODO: Move these side effects into RenderEffects.loadShader when effects are implemented
-        // Currently kept here as transitional pattern until full effect system is wired
-        renderEngine?.shaderManager.selectShader(name: name)
-        do {
-            try oscHub.sendToMagic("/shader/load", values: [name, Float(0.5), Float(0.0)])
-        } catch {
-            log("Failed to send shader to Magic: \(error)", level: .error)
-        }
     }
 
     public func setPhase(_ phase: Phase?) {
@@ -427,6 +419,26 @@ public final class AppState: ObservableObject {
         }
     }
 
+    private func setupEffectEnvironment() {
+        // Wire effect environment callbacks for UDF-compliant side effects
+        EffectEnvironment.shared.loadShader = { [weak self] name in
+            guard let self = self else { return }
+            await MainActor.run {
+                self.renderEngine?.shaderManager.selectShader(name: name)
+                do {
+                    try self.oscHub.sendToMagic("/shader/load", values: [name, Float(0.5), Float(0.0)])
+                } catch {
+                    self.log("Failed to send shader to Magic: \(error)", level: .error)
+                }
+            }
+        }
+
+        EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
+            guard let self = self else { return }
+            await self.processTrackChange(track)
+        }
+    }
+
     private func startOSCHub() {
         do {
             try oscHub.start()
@@ -488,25 +500,16 @@ public final class AppState: ObservableObject {
             .sink { [weak self] newState in
                 guard let self = self else { return }
 
-                // TODO: Track change detection is a transitional pattern.
-                // When pipeline effects are fully implemented, this should be handled by:
-                // 1. Reducer dispatches .pipeline(.startProcessing(track)) on track change
-                // 2. PipelineEffects.processTrack executes async processing
-                // 3. Results dispatched via .pipeline(.completed(result)) actions
-                // Remove this Combine-based detection once the effect system is wired.
+                // Track change logging - actual processing handled by Reducer effects
                 let newTrackKey = newState.playback.currentTrack?.key
                 if let track = newState.playback.currentTrack,
                    newTrackKey != self.lastTrackKey {
                     self.lastTrackKey = newTrackKey
                     self.log("♪ \(track.artist) - \(track.title)", level: .info)
-                    Task {
-                        await self.processTrackChange(track)
-                    }
+                    // Processing dispatched via EffectEnvironment in Reducer.trackChanged
                 }
 
-                // TODO: Property syncing from store to @Published is a transitional pattern.
-                // Consider having SwiftUI views observe `store.state` directly via @ObservedObject
-                // or using a derived state protocol. This duplication is error-prone.
+                // Sync @Published properties from store state for SwiftUI binding compatibility
                 self.isRunning = newState.isRunning
                 self.currentTrack = newState.playback.currentTrack
                 self.playbackPosition = newState.playback.position

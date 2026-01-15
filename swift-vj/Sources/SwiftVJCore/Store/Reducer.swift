@@ -104,10 +104,13 @@ public func playbackReducer(
 
         // Trigger pipeline processing if track actually changed
         if previousTrack?.key != track.key {
-            // TODO: When pipeline integration is complete, dispatch:
-            // return .send(.pipeline(.startProcessing(track)))
-            // Currently handled by SwiftVJApp.setupStoreObservation() as transitional pattern
-            return .none
+            // Dispatch pipeline processing via effect
+            // The effect will be caught by the app layer and processed
+            return Effect<PlaybackAction>.run { _ in
+                // Fire-and-forget: notify that pipeline should start
+                // The actual processing happens in SwiftVJApp via EffectEnvironment
+                await EffectEnvironment.shared.processPipelineTrack?(track)
+            }
         }
         return .none
 
@@ -442,7 +445,12 @@ public enum PipelineEffects {
 }
 
 public enum RenderEffects {
-    public static func loadShader(_ name: String) -> Effect<AppAction> { .none }
+    public static func loadShader(_ name: String) -> Effect<AppAction> {
+        .run { _ in
+            // Execute shader loading via environment
+            await EffectEnvironment.shared.loadShader?(name)
+        }
+    }
     public static func setImageIndex(_ index: Int) -> Effect<AppAction> { .none }
     public static func loadImagesFromFolder(_ path: String) -> Effect<AppAction> { .none }
     public static func startEngine() -> Effect<AppAction> { .none }
