@@ -168,9 +168,8 @@ public actor PipelineModule: Module {
             let refrainCount = lines.filter { $0.isRefrain }.count
             let kwCount = lines.filter { !$0.keywords.isEmpty }.count
             await fireStepComplete(.lyrics, .lyrics(lineCount: lines.count, refrainCount: refrainCount, keywordCount: kwCount))
-        } else {
-            await fireStepComplete(.lyrics, .skipped(reason: "pending LLM"))
         }
+        // If no LRC lyrics, leave step in "pending" state - AI step will update it
         
         // === STEP 2: AI Analysis (always runs) ===
         await fireStepStart(.ai)
@@ -178,7 +177,7 @@ public actor PipelineModule: Module {
         
         let analysis = await aiModule.analyze(track: track, lyrics: plainLyrics)
         
-        // If LRC didn't have lyrics but LLM found some, update data
+        // If LRC didn't have lyrics but LLM found some, update data and step status
         if !lrcLyricsFound {
             if !analysis.keywords.isEmpty {
                 keywords = analysis.keywords.flatMap { $0.split(separator: " ").map(String.init) }
@@ -188,8 +187,15 @@ public actor PipelineModule: Module {
             }
             if !analysis.keywords.isEmpty || !analysis.themes.isEmpty {
                 stepsCompleted.append("lyrics")
+                // Update lyrics step to show LLM provided the data
+                await fireStepComplete(.lyrics, .lyrics(
+                    lineCount: 0,
+                    refrainCount: analysis.refrainLines.count,
+                    keywordCount: analysis.keywords.count
+                ))
             } else {
                 stepsSkipped.append("lyrics")
+                await fireStepComplete(.lyrics, .skipped(reason: "No lyrics found"))
             }
         }
         
