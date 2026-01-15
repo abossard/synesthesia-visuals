@@ -650,12 +650,14 @@ struct ShaderBrowserView: View {
         // Also reload in the render engine's shader state manager
         if let shadersDir = findShadersDirectory(),
            let renderEngine = appState.renderEngine {
-            // Set shaders directory in state manager (triggers enrichment)
+            // Set shaders directory in state managers (triggers enrichment and folder filtering)
             await MainActor.run {
                 renderEngine.shaderManager.setShadersDirectory(shadersDir)
                 renderEngine.shaderManager.reload()
+                renderEngine.maskManager.setShadersDirectory(shadersDir)
+                renderEngine.maskManager.reload()
             }
-            appState.log("Reloaded shaders in ShaderStateManager", level: .debug)
+            appState.log("Reloaded shaders in ShaderStateManager and MaskStateManager", level: .debug)
         }
         
         // Also reload in the shaders module

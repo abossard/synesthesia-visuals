@@ -414,9 +414,10 @@ struct RenderingView: View {
                 mtkViewTiles
 
                 // Shader browser
-                if let shaderManager = renderEngine?.shaderManager {
+                if let shaderManager = renderEngine?.shaderManager,
+                   let maskManager = renderEngine?.maskManager {
                     GroupBox("Shader Library") {
-                        ShaderListView(shaderManager: shaderManager)
+                        ShaderListView(shaderManager: shaderManager, maskManager: maskManager)
                     }
                 }
 
@@ -801,6 +802,7 @@ struct RenderingView: View {
 struct ShaderListView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var shaderManager: ShaderStateManager
+    @ObservedObject var maskManager: MaskStateManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -845,6 +847,9 @@ struct ShaderListView: View {
                     if panel.runModal() == .OK, let url = panel.url {
                         shaderManager.setShadersDirectory(url)
                         shaderManager.reload()
+                        // Also update mask manager with same directory
+                        maskManager.setShadersDirectory(url)
+                        maskManager.reload()
                     }
                 }
                 .font(.caption)
