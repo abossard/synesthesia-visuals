@@ -104,9 +104,10 @@ public func playbackReducer(
 
         // Trigger pipeline processing if track actually changed
         if previousTrack?.key != track.key {
-            return Effect<PlaybackAction>.run { _ in
-                // This will be handled by an effect that dispatches pipeline action
-            }.map { _ in .poll } // Placeholder - real effect dispatches to pipeline
+            // TODO: When pipeline integration is complete, dispatch:
+            // return .send(.pipeline(.startProcessing(track)))
+            // Currently handled by SwiftVJApp.setupStoreObservation() as transitional pattern
+            return .none
         }
         return .none
 
@@ -118,10 +119,12 @@ public func playbackReducer(
     case .sourceChanged(let source):
         state.source = source
         appState.ui.addLog("Playback source: \(source)", level: .info)
-        return .merge(
-            PersistenceEffects.savePlaybackSource(source).map { _ in .poll },
-            PlaybackEffects.setupSource(source).map { _ in .poll }
-        )
+        // Fire-and-forget: save preference and setup source (both are side effects with no result)
+        return .run { _ in
+            UserDefaults.standard.set(source, forKey: "playbackSource")
+            // setupSource is currently a placeholder - when implemented,
+            // it will configure the playback monitor for the new source
+        }
 
     case .playingStateChanged(let isPlaying):
         state.isPlaying = isPlaying

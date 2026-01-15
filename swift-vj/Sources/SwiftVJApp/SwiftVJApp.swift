@@ -239,14 +239,16 @@ public final class AppState: ObservableObject {
     }
 
     public func selectShader(_ name: String) {
-        selectedShader = name
-        UserDefaults.standard.set(name, forKey: "selectedShader")
+        // Dispatch action through store for state update + persistence
+        store.send(.render(.selectShader(name)))
+
+        // TODO: Move these side effects into RenderEffects.loadShader when effects are implemented
+        // Currently kept here as transitional pattern until full effect system is wired
         renderEngine?.shaderManager.selectShader(name: name)
         do {
             try oscHub.sendToMagic("/shader/load", values: [name, Float(0.5), Float(0.0)])
-            log("Selected shader: \(name)", level: .info)
         } catch {
-            log("Failed to send shader: \(error)", level: .error)
+            log("Failed to send shader to Magic: \(error)", level: .error)
         }
     }
 
@@ -486,7 +488,12 @@ public final class AppState: ObservableObject {
             .sink { [weak self] newState in
                 guard let self = self else { return }
 
-                // Detect track change and trigger pipeline
+                // TODO: Track change detection is a transitional pattern.
+                // When pipeline effects are fully implemented, this should be handled by:
+                // 1. Reducer dispatches .pipeline(.startProcessing(track)) on track change
+                // 2. PipelineEffects.processTrack executes async processing
+                // 3. Results dispatched via .pipeline(.completed(result)) actions
+                // Remove this Combine-based detection once the effect system is wired.
                 let newTrackKey = newState.playback.currentTrack?.key
                 if let track = newState.playback.currentTrack,
                    newTrackKey != self.lastTrackKey {
@@ -497,7 +504,9 @@ public final class AppState: ObservableObject {
                     }
                 }
 
-                // Sync store state to @Published properties for views
+                // TODO: Property syncing from store to @Published is a transitional pattern.
+                // Consider having SwiftUI views observe `store.state` directly via @ObservedObject
+                // or using a derived state protocol. This duplication is error-prone.
                 self.isRunning = newState.isRunning
                 self.currentTrack = newState.playback.currentTrack
                 self.playbackPosition = newState.playback.position

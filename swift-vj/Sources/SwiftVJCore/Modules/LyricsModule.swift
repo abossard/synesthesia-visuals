@@ -126,10 +126,9 @@ public actor LyricsModule: Module {
 
         if newIndex != currentActiveIndex {
             currentActiveIndex = newIndex
-            let line = newIndex >= 0 && newIndex < currentLines.count ? currentLines[newIndex] : nil
             // Dispatch could be added here for lyrics line changes if needed
             // For now, lyrics module is queried by pipeline, not actively pushing
-            _ = line  // Suppress unused warning
+            // Line data is available via getLine(at:) when needed
         }
     }
 

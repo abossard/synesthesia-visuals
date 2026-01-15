@@ -425,8 +425,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Capture dynamic scenes/controls
         if event.address.hasPrefix("/controls/") {
             Task {
-                let isNew = await DynamicControlStore.shared.update(address: event.address, args: event.args)
-                if isNew { print("[OSC] +control \(event.address)") }
+                await DynamicControlStore.shared.update(address: event.address, args: event.args)
             }
             let paramsBanks = rolesByBank.filter { $0.value == .params }.map { $0.key }
             if !paramsBanks.isEmpty { refreshDynamicBanks(for: paramsBanks) }

@@ -123,12 +123,7 @@ public final class EffectExecutor {
     // MARK: - Effect Handlers
     
     private func executeOsc(_ command: OscCommand) {
-        if let sender = oscSender {
-            sender(command)
-            print("[OSC] → \(command.address) \(command.args)")
-        } else {
-            print("[OSC] (no sender) \(command.address) \(command.args)")
-        }
+        oscSender?(command)
     }
     
     private func executeLed(padId: ButtonId, color: Int, blink: Bool) {

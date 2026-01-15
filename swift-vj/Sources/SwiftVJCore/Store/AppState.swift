@@ -31,7 +31,22 @@ public struct AppState: Equatable, Sendable {
     /// Whether the system is running
     public var isRunning: Bool
 
-    /// Module references (not part of equatable state)
+    /// Module references for effect execution.
+    ///
+    /// - Note: **TRANSITIONAL PATTERN** - This violates strict UDF immutability principles
+    ///   by storing mutable module references in state. The planned migration:
+    ///
+    ///   1. **Phase 1 (Current)**: Modules stored here for effect access during transition
+    ///   2. **Phase 2**: Create `Environment` struct with module dependencies
+    ///   3. **Phase 3**: Inject `Environment` into effect factories, not state
+    ///   4. **Phase 4**: Remove `ModuleReferences` from `AppState` entirely
+    ///
+    ///   This follows TCA's (The Composable Architecture) pattern where dependencies
+    ///   are injected via environment, not stored in state. See `RenderEffects`,
+    ///   `PipelineEffects` etc. for where these modules will be consumed.
+    ///
+    /// - Important: `ModuleReferences` is excluded from `Equatable` conformance
+    ///   to prevent spurious state change notifications.
     public var modules: ModuleReferences
 
     public init(

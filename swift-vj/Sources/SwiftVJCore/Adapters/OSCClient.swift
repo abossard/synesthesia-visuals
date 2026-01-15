@@ -38,7 +38,7 @@ public struct OSCLatencyStats: Sendable {
 /// Central OSC hub managing send and receive
 ///
 /// Architecture:
-/// - Single receive port: 9999 (all incoming OSC)
+/// - Receive ports: 9999 (Synesthesia), 9010 (VDJ responses)
 /// - Forwards received messages to: Magic (11111)
 /// - Send channels: VDJ (9009), Synesthesia (7777), Magic (11111)
 /// - Uses PrefixTrie for O(n) pattern matching
@@ -50,8 +50,9 @@ public final class OSCHub: @unchecked Sendable {
     // MARK: - Configuration
 
     /// Default ports from Config
-    public static let receivePort: UInt16 = 9999
-    public static let vdjPort: UInt16 = 9009
+    public static let receivePort: UInt16 = 9999        // Synesthesia audio
+    public static let vdjReceivePort: UInt16 = 9010    // VDJ responses
+    public static let vdjPort: UInt16 = 9009           // Send to VDJ
     public static let synesthesiaPort: UInt16 = 7777
     public static let magicPort: UInt16 = 11111
 
@@ -65,7 +66,8 @@ public final class OSCHub: @unchecked Sendable {
     // Client bound to port 9999 so VDJ responses come back to us
     // (VDJ responds to the source port of subscribe requests)
     private var client: OSCClient?
-    private var server: OSCServer?
+    private var server: OSCServer?         // Port 9999 for Synesthesia
+    private var vdjServer: OSCServer?      // Port 9010 for VDJ responses
     private var isStarted = false
 
     // Subscriptions using PrefixTrie for O(n) pattern matching
@@ -95,8 +97,7 @@ public final class OSCHub: @unchecked Sendable {
     public func start() throws {
         guard !isStarted else { return }
 
-        // Start server FIRST on receive port with port reuse enabled
-        // OSCKit 0.6.x API: OSCServer with setHandler (no host/port in callback)
+        // Start server on port 9999 for Synesthesia audio
         let oscServer = OSCServer(port: Self.receivePort) { [weak self] message, timeTag in
             await self?.handleMessage(message, timeTag: timeTag)
         }
@@ -109,15 +110,28 @@ public final class OSCHub: @unchecked Sendable {
             throw OSCHubError.serverFailed("Server start failed on port \(Self.receivePort): \(error.localizedDescription)")
         }
 
-        // Start client bound to SAME port 9999 with port reuse
-        // This ensures VDJ responds to port 9999 (not ephemeral port)
-        let oscClient = OSCClient(localPort: Self.receivePort)
-        oscClient.isPortReuseEnabled = true
+        // Start VDJ server on port 9010 for VDJ responses
+        let vdjOscServer = OSCServer(port: Self.vdjReceivePort) { [weak self] message, timeTag in
+            await self?.handleMessage(message, timeTag: timeTag)
+        }
+        vdjOscServer.isPortReuseEnabled = true
+
+        do {
+            try vdjOscServer.start()
+            self.vdjServer = vdjOscServer
+        } catch {
+            oscServer.stop()
+            throw OSCHubError.serverFailed("VDJ Server start failed on port \(Self.vdjReceivePort): \(error.localizedDescription)")
+        }
+
+        // Start client for sending (no port binding needed)
+        let oscClient = OSCClient()
         do {
             try oscClient.start()
             self.client = oscClient
         } catch {
             oscServer.stop()
+            vdjOscServer.stop()
             throw OSCHubError.sendFailed("Client start failed: \(error.localizedDescription)")
         }
 
@@ -132,6 +146,8 @@ public final class OSCHub: @unchecked Sendable {
         client = nil
         server?.stop()
         server = nil
+        vdjServer?.stop()
+        vdjServer = nil
         isStarted = false
     }
 
@@ -395,6 +411,7 @@ public final class OSCHub: @unchecked Sendable {
             var result: [String: Any] = [
                 "running": isStarted,
                 "receivePort": Self.receivePort,
+                "vdjReceivePort": Self.vdjReceivePort,
                 "messagesSent": messagesSent,
                 "messagesReceived": messagesReceived,
                 "messagesForwarded": messagesForwarded,
