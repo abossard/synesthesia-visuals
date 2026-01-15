@@ -653,12 +653,12 @@ final class ImageRenderer: TileRenderer {
                                              texture2d<float> nextTex [[texture(1)]],
                                              sampler texSampler [[sampler(0)]],
                                              constant ImageUniforms& uniforms [[buffer(0)]]) {
-            // Flip V coordinate (Metal textures are top-down, images expect bottom-up)
-            float2 flippedUV = float2(in.texCoord.x, 1.0 - in.texCoord.y);
+            // UV coordinates already correct since texture loaded with bottomLeft origin
+            float2 uv = in.texCoord;
 
             // Apply cover mode UV transform
-            float2 currentUV = coverUV(flippedUV, uniforms.currentAspect, uniforms.outputAspect);
-            float2 nextUV = coverUV(flippedUV, uniforms.nextAspect, uniforms.outputAspect);
+            float2 currentUV = coverUV(uv, uniforms.currentAspect, uniforms.outputAspect);
+            float2 nextUV = coverUV(uv, uniforms.nextAspect, uniforms.outputAspect);
 
             float4 current = currentTex.sample(texSampler, currentUV);
             float4 next = nextTex.sample(texSampler, nextUV);
@@ -720,9 +720,12 @@ final class ImageRenderer: TileRenderer {
         
         let textureLoader = MTKTextureLoader(device: device)
         do {
+            // Use .origin: .bottomLeft to load image with correct orientation for Metal
+            // This ensures the texture matches expected UV coordinate system
             let texture = try textureLoader.newTexture(cgImage: cgImage, options: [
                 .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
-                .SRGB: false
+                .SRGB: false,
+                .origin: MTKTextureLoader.Origin.bottomLeft
             ])
             return texture
         } catch {
