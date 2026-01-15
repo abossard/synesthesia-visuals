@@ -1,5 +1,6 @@
 // LyricsModule - Fetch, parse, and sync lyrics with playback position
 // Following A Philosophy of Software Design: deep module hiding complexity
+// Unidirectional Data Flow: dispatches actions instead of callbacks
 
 import Foundation
 
@@ -9,31 +10,33 @@ import Foundation
 /// - `start()` / `stop()` - lifecycle
 /// - `loadLyrics(for:)` - fetch and parse lyrics for track
 /// - `getActiveLine(at:)` - find current line at position
-/// - `onActiveLineChange` - callback when active line changes
+/// - `dispatch` - action dispatcher for unidirectional data flow
 ///
 /// Hides: LRCLIB API, caching, LRC parsing, refrain detection
 public actor LyricsModule: Module {
-    
+
     // MARK: - State
-    
+
     public private(set) var isStarted: Bool = false
     private var currentTrack: Track?
     private var currentLines: [LyricLine] = []
     private var currentActiveIndex: Int = -1
     private var hasLyrics: Bool = false
-    
+
     // Adapters
     private let fetcher: LyricsFetcher
-    
+
     // Settings
     private let _timingOffsetMs: Int
     private var timingOffsetSec: Double { Double(_timingOffsetMs) / 1000.0 }
-    
-    // Callbacks
-    private var activeLineCallbacks: [(Int, LyricLine?) -> Void] = []
-    
+
+    // MARK: - Action Dispatcher (Unidirectional Data Flow)
+
+    /// Action dispatcher - set this to integrate with Store
+    public var dispatch: (@Sendable (AppAction) async -> Void)?
+
     // MARK: - Init
-    
+
     public init(fetcher: LyricsFetcher, timingOffsetMs: Int = 0) {
         self.fetcher = fetcher
         self._timingOffsetMs = timingOffsetMs
@@ -117,23 +120,21 @@ public actor LyricsModule: Module {
         return currentLines[index]
     }
     
-    /// Update position and fire callbacks if active line changed
+    /// Update position and dispatch action if active line changed
     public func updatePosition(_ position: Double) async {
         let newIndex = getActiveLineIndex(at: position)
-        
+
         if newIndex != currentActiveIndex {
             currentActiveIndex = newIndex
-            let line = newIndex >= 0 && newIndex < currentLines.count ? currentLines[newIndex] : nil
-            
-            for callback in activeLineCallbacks {
-                callback(newIndex, line)
-            }
+            // Dispatch could be added here for lyrics line changes if needed
+            // For now, lyrics module is queried by pipeline, not actively pushing
+            // Line data is available via getLine(at:) when needed
         }
     }
-    
-    /// Register callback for active line changes
-    public func onActiveLineChange(_ callback: @escaping (Int, LyricLine?) -> Void) {
-        activeLineCallbacks.append(callback)
+
+    /// Set action dispatcher for Store integration
+    public func setDispatch(_ dispatch: @escaping @Sendable (AppAction) async -> Void) {
+        self.dispatch = dispatch
     }
     
     /// Get current active index

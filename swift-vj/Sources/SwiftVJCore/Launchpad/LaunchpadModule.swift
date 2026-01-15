@@ -1,5 +1,6 @@
 // LaunchpadModule.swift - Top-level Launchpad controller
 // Phase 5: MIDI Controller
+// Unidirectional Data Flow: dispatches actions instead of callbacks
 //
 // Wires: MIDIManager → FSM → EffectExecutor
 // Auto-connects to real hardware - disabled when no device connected
@@ -15,6 +16,22 @@ public struct LaunchpadStatus: Sendable {
     public let isLearnMode: Bool
     public let configuredPadCount: Int
     public let currentBpm: Float
+    
+    public init(
+        isEnabled: Bool,
+        isConnected: Bool,
+        deviceName: String?,
+        isLearnMode: Bool,
+        configuredPadCount: Int,
+        currentBpm: Float
+    ) {
+        self.isEnabled = isEnabled
+        self.isConnected = isConnected
+        self.deviceName = deviceName
+        self.isLearnMode = isLearnMode
+        self.configuredPadCount = configuredPadCount
+        self.currentBpm = currentBpm
+    }
 }
 
 /// Launchpad controller module - requires real hardware
@@ -29,16 +46,15 @@ public final class LaunchpadModule: @unchecked Sendable {
     private var rolesByBank: [Int: BankRole] = [:]
     
     // MARK: - State
-    
+
     /// Module is enabled only when real device is connected
     private(set) var isEnabled = false
     private let lock = NSLock()
-    
-    /// Connection state change callback
-    public var onConnectionChange: ((Bool, String?) -> Void)?
-    
-    /// State change callback for UI observability
-    public var onStateChange: ((ControllerState) -> Void)?
+
+    // MARK: - Action Dispatcher (Unidirectional Data Flow)
+
+    /// Action dispatcher - set this to integrate with Store
+    public var dispatch: ((AppAction) -> Void)?
     
     // Beat-sync blinking
     private var blinkTimer: Timer?
@@ -125,7 +141,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     public func getStatus() -> LaunchpadStatus {
         lock.lock()
         defer { lock.unlock() }
-        
+
         return LaunchpadStatus(
             isEnabled: isEnabled,
             isConnected: midi.isConnected,
@@ -135,44 +151,52 @@ public final class LaunchpadModule: @unchecked Sendable {
             currentBpm: currentBpm
         )
     }
+
+    /// Get full controller state (for views that need detailed pad info)
+    public func getFullState() -> ControllerState {
+        lock.lock()
+        defer { lock.unlock() }
+        return state
+    }
     
     // MARK: - Connection Handling
     
     private func handleConnectionChange(connected: Bool, deviceName: String?) {
         lock.lock()
-        
+
         if connected {
             isEnabled = true
             print("[Launchpad] ✓ Enabled - connected to \(deviceName ?? "device")")
             lock.unlock()
-            
+
             // Force Programmer Mode immediately
             forceProgrammerMode()
-            
+
             // Refresh LEDs now that we're connected
             refreshLeds()
 
             // Refresh dynamic banks (scenes/params)
             refreshDynamicBanks()
-            
+
             // Start beat-sync blink timer
             startBlinkTimer()
-            
-            // Notify UI of initial state
+
+            // Dispatch connection and initial state
             let currentState = state
             DispatchQueue.main.async { [weak self] in
-                self?.onStateChange?(currentState)
+                self?.dispatch?(.launchpad(.connected(deviceName ?? "Launchpad")))
+                self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
             }
         } else {
             isEnabled = false
             stopBlinkTimer()
             print("[Launchpad] ○ Disabled - device disconnected")
             lock.unlock()
-        }
-        
-        // Notify callback on main thread
-        DispatchQueue.main.async { [weak self] in
-            self?.onConnectionChange?(connected, deviceName)
+
+            // Dispatch disconnection
+            DispatchQueue.main.async { [weak self] in
+                self?.dispatch?(.launchpad(.disconnected))
+            }
         }
     }
     
@@ -197,11 +221,11 @@ public final class LaunchpadModule: @unchecked Sendable {
         
         // Update state
         state = result.state
-        
-        // Notify UI
+
+        // Dispatch state update
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         // Update executor configs if save happened
@@ -357,7 +381,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         lock.unlock()
@@ -373,7 +397,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         lock.unlock()
@@ -401,8 +425,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Capture dynamic scenes/controls
         if event.address.hasPrefix("/controls/") {
             Task {
-                let isNew = await DynamicControlStore.shared.update(address: event.address, args: event.args)
-                if isNew { print("[OSC] +control \(event.address)") }
+                await DynamicControlStore.shared.update(address: event.address, args: event.args)
             }
             let paramsBanks = rolesByBank.filter { $0.value == .params }.map { $0.key }
             if !paramsBanks.isEmpty { refreshDynamicBanks(for: paramsBanks) }
@@ -427,7 +450,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         lock.unlock()
@@ -447,7 +470,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         lock.unlock()
@@ -464,7 +487,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         lock.unlock()
@@ -580,7 +603,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Notify UI (for blink visualization)
         let currentState = state
         DispatchQueue.main.async { [weak self] in
-            self?.onStateChange?(currentState)
+            self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
         }
         
         // Update LEDs for pads that should blink (active selectors)

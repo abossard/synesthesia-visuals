@@ -1,5 +1,6 @@
 // PlaybackModule - Track detection with source switching
 // Following A Philosophy of Software Design: deep module hiding complexity
+// Unidirectional Data Flow: dispatches actions instead of callbacks
 
 import Foundation
 import OSCKit
@@ -17,35 +18,36 @@ public enum PlaybackSourceType: String, Sendable, CaseIterable {
 /// - `start()` / `stop()` - lifecycle
 /// - `setSource(_:)` - switch between VDJ/Spotify
 /// - `currentTrack` - what's playing now
-/// - `onTrackChange` - callback when track changes
+/// - `dispatch` - action dispatcher for unidirectional data flow
 ///
 /// Hides: polling, source-specific protocols, state diffing
 public actor PlaybackModule: Module {
-    
+
     // MARK: - Configuration
-    
+
     private static let pollInterval: TimeInterval = 1.0
-    
+
     // MARK: - State
-    
+
     public private(set) var isStarted: Bool = false
     private var currentState: PlaybackState = PlaybackState()
     private var sourceType: PlaybackSourceType = .none
-    
+
     // Adapters
     private var spotifyMonitor: SpotifyMonitor?
     private var vdjMonitor: VDJMonitor?
     private var oscHub: OSCHub?
-    
+
     // Polling
     private var pollTask: Task<Void, Never>?
-    
-    // Callbacks
-    private var trackChangeCallbacks: [TrackChangeCallback] = []
-    private var positionUpdateCallbacks: [PositionUpdateCallback] = []
-    
+
+    // MARK: - Action Dispatcher (Unidirectional Data Flow)
+
+    /// Action dispatcher - set this to integrate with Store
+    public var dispatch: (@Sendable (AppAction) async -> Void)?
+
     // MARK: - Init
-    
+
     public init(oscHub: OSCHub? = nil) {
         self.oscHub = oscHub
     }
@@ -123,14 +125,9 @@ public actor PlaybackModule: Module {
         currentState = PlaybackState()
     }
     
-    /// Register callback for track changes
-    public func onTrackChange(_ callback: @escaping TrackChangeCallback) {
-        trackChangeCallbacks.append(callback)
-    }
-    
-    /// Register callback for position updates
-    public func onPositionUpdate(_ callback: @escaping PositionUpdateCallback) {
-        positionUpdateCallbacks.append(callback)
+    /// Set action dispatcher for Store integration
+    public func setDispatch(_ dispatch: @escaping @Sendable (AppAction) async -> Void) {
+        self.dispatch = dispatch
     }
     
     /// Force poll (for testing)
@@ -247,14 +244,10 @@ public actor PlaybackModule: Module {
     }
     
     private func fireTrackChange(_ track: Track) async {
-        for callback in trackChangeCallbacks {
-            await callback(track)
-        }
+        await dispatch?(.playback(.trackChanged(track)))
     }
-    
+
     private func firePositionUpdate(_ position: Double, _ isPlaying: Bool) async {
-        for callback in positionUpdateCallbacks {
-            await callback(position, isPlaying)
-        }
+        await dispatch?(.playback(.positionUpdated(position: position, isPlaying: isPlaying)))
     }
 }

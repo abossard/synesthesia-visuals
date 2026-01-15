@@ -1,5 +1,6 @@
 // PipelineModule - Orchestrates full track processing
 // Following A Philosophy of Software Design: deep module hiding complexity
+// Unidirectional Data Flow: dispatches actions instead of callbacks
 
 import Foundation
 
@@ -17,8 +18,7 @@ public enum PipelineStep: String, CaseIterable, Sendable {
 /// Deep module interface:
 /// - `start()` / `stop()` - lifecycle
 /// - `process(track:)` - run full pipeline
-/// - `onStepStart/Complete` - progress callbacks
-/// - `onComplete` - result callback
+/// - `dispatch` - action dispatcher for unidirectional data flow
 ///
 /// Hides: step ordering, parallel execution, caching, error recovery
 public actor PipelineModule: Module {
@@ -42,11 +42,11 @@ public actor PipelineModule: Module {
     private let cacheTTL: TimeInterval = 3600 * 24 * 7  // 7 days
     private let cacheDir: URL
     private let cacheFile: URL
-    
-    // Callbacks
-    private var stepStartCallbacks: [PipelineStepStartCallback] = []
-    private var stepCompleteCallbacks: [PipelineStepCompleteCallback] = []
-    private var completeCallbacks: [PipelineCompleteCallback] = []
+
+    // MARK: - Action Dispatcher (Unidirectional Data Flow)
+
+    /// Action dispatcher - set this to integrate with Store
+    public var dispatch: (@Sendable (AppAction) async -> Void)?
     
     // MARK: - Init
     
@@ -336,19 +336,9 @@ public actor PipelineModule: Module {
         isProcessing
     }
     
-    /// Register step start callback
-    public func onStepStart(_ callback: @escaping PipelineStepStartCallback) {
-        stepStartCallbacks.append(callback)
-    }
-    
-    /// Register step complete callback
-    public func onStepComplete(_ callback: @escaping PipelineStepCompleteCallback) {
-        stepCompleteCallbacks.append(callback)
-    }
-    
-    /// Register complete callback
-    public func onComplete(_ callback: @escaping PipelineCompleteCallback) {
-        completeCallbacks.append(callback)
+    /// Set action dispatcher for Store integration
+    public func setDispatch(_ dispatch: @escaping @Sendable (AppAction) async -> Void) {
+        self.dispatch = dispatch
     }
     
     /// Clear cache
@@ -519,20 +509,14 @@ public actor PipelineModule: Module {
     }
     
     private func fireStepStart(_ step: PipelineStep) async {
-        for callback in stepStartCallbacks {
-            await callback(step.rawValue)
-        }
+        await dispatch?(.pipeline(.stepStarted(step.rawValue)))
     }
-    
+
     private func fireStepComplete(_ step: PipelineStep, _ status: PipelineStepStatus) async {
-        for callback in stepCompleteCallbacks {
-            await callback(step.rawValue, status)
-        }
+        await dispatch?(.pipeline(.stepCompleted(step.rawValue, status)))
     }
-    
+
     private func fireComplete(_ result: PipelineResult) async {
-        for callback in completeCallbacks {
-            await callback(result)
-        }
+        await dispatch?(.pipeline(.processingCompleted(result)))
     }
 }
