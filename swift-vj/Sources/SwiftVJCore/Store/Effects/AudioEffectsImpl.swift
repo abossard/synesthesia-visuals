@@ -27,18 +27,18 @@ public enum AudioEffectsImpl {
             while !Task.isCancelled {
                 try? await Task.sleep(for: batchInterval)
 
-                // Get current audio state
-                let levels = synesthesiaAudio.getLevelsFast()
-                let (bpm, beatPhase, _) = await synesthesiaAudio.getBPM()
+                // Get current audio state (actor-isolated methods)
+                let levels = await synesthesiaAudio.getLevels()
+                let (bpm, _, _) = await synesthesiaAudio.getBPM()
 
                 let state = AudioSubState(
                     level: levels.level,
-                    beatPhase: beatPhase,
+                    beatPhase: levels.beatTime,
                     bpm: bpm,
                     energy: levels.level, // Use level as proxy for energy
                     bass: levels.bass,
                     mid: levels.mid,
-                    high: levels.high
+                    high: levels.highs
                 )
 
                 await send(.stateUpdated(state))
@@ -73,17 +73,17 @@ public enum AudioEffectsImpl {
         synesthesiaAudio: SynesthesiaAudioProcessor
     ) -> Effect<AudioAction> {
         .run { send in
-            let levels = synesthesiaAudio.getLevelsFast()
-            let (bpm, beatPhase, _) = await synesthesiaAudio.getBPM()
+            let levels = await synesthesiaAudio.getLevels()
+            let (bpm, _, _) = await synesthesiaAudio.getBPM()
 
             let state = AudioSubState(
                 level: levels.level,
-                beatPhase: beatPhase,
+                beatPhase: levels.beatTime,
                 bpm: bpm,
                 energy: levels.level,
                 bass: levels.bass,
                 mid: levels.mid,
-                high: levels.high
+                high: levels.highs
             )
 
             await send(.stateUpdated(state))

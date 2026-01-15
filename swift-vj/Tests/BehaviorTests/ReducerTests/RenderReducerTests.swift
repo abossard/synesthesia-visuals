@@ -6,13 +6,20 @@ import XCTest
 
 final class RenderReducerTests: XCTestCase {
 
+    // Helper to avoid overlapping access issues when calling reducers
+    private func applyRenderReducer(_ action: RenderAction, to appState: inout AppState) {
+        var renderState = appState.render
+        _ = renderReducer(state: &renderState, action: action, appState: &appState)
+        appState.render = renderState
+    }
+
     // MARK: - Select Shader
 
     func testSelectShaderUpdatesState() {
         var appState = AppState()
 
         let action = RenderAction.selectShader("rainbow")
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.selectedShader, "rainbow")
     }
@@ -21,7 +28,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.selectShader("plasma")
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("plasma") })
     }
@@ -32,7 +39,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.shaderSelected("waves")
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.selectedShader, "waves")
     }
@@ -43,7 +50,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.selectPhase(.peak)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.currentPhase, .peak)
     }
@@ -53,7 +60,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.currentPhase = .buildup
 
         let action = RenderAction.selectPhase(nil)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertNil(appState.render.currentPhase)
     }
@@ -62,7 +69,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.selectPhase(.disco)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("Disco") })
     }
@@ -73,7 +80,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.phaseDetected(.release)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.detectedSongPhase, .release)
     }
@@ -85,7 +92,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.imageCount = 10
 
         let action = RenderAction.setImageIndex(5)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageIndex, 5)
     }
@@ -96,7 +103,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.imageCount = 10
 
         let action = RenderAction.nextImage
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageIndex, 0)
     }
@@ -107,7 +114,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.imageCount = 10
 
         let action = RenderAction.nextImage
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageIndex, 4)
     }
@@ -118,7 +125,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.imageCount = 10
 
         let action = RenderAction.prevImage
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageIndex, 9)
     }
@@ -129,7 +136,7 @@ final class RenderReducerTests: XCTestCase {
         appState.render.imageCount = 10
 
         let action = RenderAction.prevImage
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageIndex, 4)
     }
@@ -140,7 +147,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.imagesLoaded(count: 25, folderPath: "/path/to/images")
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.imageCount, 25)
         XCTAssertEqual(appState.render.imageIndex, 0)
@@ -150,7 +157,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.imagesLoaded(count: 15, folderPath: "/some/folder/images")
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("15") })
     }
@@ -161,7 +168,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.shaderCountUpdated(42)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.shaderCount, 42)
     }
@@ -170,7 +177,7 @@ final class RenderReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = RenderAction.shaderCountUpdated(100)
-        _ = renderReducer(state: &appState.render, action: action, appState: &appState)
+        applyRenderReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("100") })
     }

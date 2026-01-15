@@ -6,16 +6,23 @@ import XCTest
 
 final class PlaybackReducerTests: XCTestCase {
 
+    // Helper to avoid overlapping access issues when calling reducers
+    private func applyPlaybackReducer(_ action: PlaybackAction, to appState: inout AppState) {
+        var playbackState = appState.playback
+        _ = playbackReducer(state: &playbackState, action: action, appState: &appState)
+        appState.playback = playbackState
+    }
+
     // MARK: - Track Changed
 
     func testTrackChangedUpdatesState() {
-        var state = PlaybackSubState()
+        let state = PlaybackSubState()
         var appState = AppState(playback: state)
 
         let track = Track(artist: "Test Artist", title: "Test Song")
         let action = PlaybackAction.trackChanged(track)
 
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertEqual(appState.playback.currentTrack?.artist, "Test Artist")
         XCTAssertEqual(appState.playback.currentTrack?.title, "Test Song")
@@ -26,7 +33,7 @@ final class PlaybackReducerTests: XCTestCase {
         let track = Track(artist: "Daft Punk", title: "Around The World")
         let action = PlaybackAction.trackChanged(track)
 
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("Daft Punk") })
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("Around The World") })
@@ -38,7 +45,7 @@ final class PlaybackReducerTests: XCTestCase {
         var appState = AppState()
         let action = PlaybackAction.positionUpdated(position: 45.5, isPlaying: true)
 
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertEqual(appState.playback.position, 45.5)
         XCTAssertTrue(appState.playback.isPlaying)
@@ -49,7 +56,7 @@ final class PlaybackReducerTests: XCTestCase {
         appState.playback.isPlaying = true
 
         let action = PlaybackAction.positionUpdated(position: 30.0, isPlaying: false)
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertEqual(appState.playback.position, 30.0)
         XCTAssertFalse(appState.playback.isPlaying)
@@ -62,7 +69,7 @@ final class PlaybackReducerTests: XCTestCase {
         appState.playback.source = "vdj"
 
         let action = PlaybackAction.sourceChanged("spotify")
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertEqual(appState.playback.source, "spotify")
     }
@@ -71,7 +78,7 @@ final class PlaybackReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = PlaybackAction.sourceChanged("vdj")
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("vdj") })
     }
@@ -83,7 +90,7 @@ final class PlaybackReducerTests: XCTestCase {
         appState.playback.timingOffsetMs = 0
 
         let action = PlaybackAction.timingOffsetChanged(100)
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertEqual(appState.playback.timingOffsetMs, 100)
     }
@@ -92,7 +99,7 @@ final class PlaybackReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = PlaybackAction.timingOffsetChanged(-50)
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("-50ms") })
     }
@@ -104,7 +111,7 @@ final class PlaybackReducerTests: XCTestCase {
         appState.playback.isPlaying = false
 
         let action = PlaybackAction.playingStateChanged(true)
-        _ = playbackReducer(state: &appState.playback, action: action, appState: &appState)
+        applyPlaybackReducer(action, to: &appState)
 
         XCTAssertTrue(appState.playback.isPlaying)
     }

@@ -23,6 +23,22 @@ public struct ActionLogEntry: Identifiable, Sendable {
     public let stateChanged: Bool
     public let reducerDurationNs: UInt64 // Nanoseconds for precision without Date overhead
 
+    public init(
+        id: UInt64,
+        timestamp: Double,
+        actionType: String,
+        actionDetail: String,
+        stateChanged: Bool,
+        reducerDurationNs: UInt64
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.actionType = actionType
+        self.actionDetail = actionDetail
+        self.stateChanged = stateChanged
+        self.reducerDurationNs = reducerDurationNs
+    }
+
     public var date: Date {
         Date(timeIntervalSinceReferenceDate: timestamp)
     }
@@ -173,7 +189,6 @@ public final class StoreLogger<State: Equatable, Action>: ObservableObject {
 
     /// Wrap a reducer with logging - the UDF way
     /// Returns a new reducer that logs actions and state changes
-    @inlinable
     public func wrap(
         reducer: @escaping (inout State, Action) -> Effect<Action>
     ) -> (inout State, Action) -> Effect<Action> {

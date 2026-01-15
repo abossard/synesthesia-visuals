@@ -81,7 +81,7 @@ public final class AppState: ObservableObject {
 
     // MARK: - Render Engine
 
-    @Published public var renderEngine: RenderEngine?
+    @Published var renderEngine: RenderEngine?
 
     // MARK: - State (derived from Store)
 

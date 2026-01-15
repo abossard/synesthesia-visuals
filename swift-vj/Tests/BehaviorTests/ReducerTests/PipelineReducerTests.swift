@@ -6,6 +6,14 @@ import XCTest
 
 final class PipelineReducerTests: XCTestCase {
 
+    // Helper to avoid overlapping access issues when calling reducers
+    private func applyPipelineReducer(_ action: PipelineAction, to appState: inout AppState) -> Effect<AppAction> {
+        var pipelineState = appState.pipeline
+        let effect = pipelineReducer(state: &pipelineState, action: action, appState: &appState)
+        appState.pipeline = pipelineState
+        return effect
+    }
+
     // MARK: - Start Processing
 
     func testStartProcessingSetsProcessingState() {
@@ -13,7 +21,7 @@ final class PipelineReducerTests: XCTestCase {
         let track = Track(artist: "Test", title: "Song")
 
         let action = PipelineAction.startProcessing(track)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertTrue(appState.pipeline.isProcessing)
         XCTAssertEqual(appState.pipeline.processingTrackKey, track.key)
@@ -29,7 +37,7 @@ final class PipelineReducerTests: XCTestCase {
 
         let track = Track(artist: "Test", title: "Song")
         let action = PipelineAction.startProcessing(track)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertEqual(appState.pipeline.steps.count, 5)
         XCTAssertTrue(appState.pipeline.steps.allSatisfy { $0.status == "pending" })
@@ -45,7 +53,7 @@ final class PipelineReducerTests: XCTestCase {
 
         // Try to process same track again
         let action = PipelineAction.startProcessing(track)
-        let effect = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        let effect = applyPipelineReducer(action, to: &appState)
 
         // Should return .none (no effect)
         if case .none = effect.operation {
@@ -62,7 +70,7 @@ final class PipelineReducerTests: XCTestCase {
         appState.pipeline.steps = PipelineStepState.defaultSteps
 
         let action = PipelineAction.stepStarted("lyrics")
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         let lyricsStep = appState.pipeline.steps.first { $0.name == "lyrics" }
         XCTAssertEqual(lyricsStep?.status, "running")
@@ -76,7 +84,7 @@ final class PipelineReducerTests: XCTestCase {
 
         let status = PipelineStepStatus.lyrics(lineCount: 42, refrainCount: 4, keywordCount: 10)
         let action = PipelineAction.stepCompleted("lyrics", status)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         let lyricsStep = appState.pipeline.steps.first { $0.name == "lyrics" }
         XCTAssertTrue(lyricsStep?.status.contains("42 lines") ?? false)
@@ -94,7 +102,7 @@ final class PipelineReducerTests: XCTestCase {
             themes: ["celebration", "freedom"]
         )
         let action = PipelineAction.stepCompleted("ai", status)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("dance") })
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("celebration") })
@@ -123,7 +131,7 @@ final class PipelineReducerTests: XCTestCase {
         )
 
         let action = PipelineAction.processingCompleted(result)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertFalse(appState.pipeline.isProcessing)
         XCTAssertEqual(appState.pipeline.result?.artist, "Test")
@@ -141,7 +149,7 @@ final class PipelineReducerTests: XCTestCase {
         )
 
         let action = PipelineAction.processingCompleted(result)
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("2000ms") })
     }
@@ -153,7 +161,7 @@ final class PipelineReducerTests: XCTestCase {
         appState.pipeline.isProcessing = true
 
         let action = PipelineAction.processingFailed("Network error")
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertFalse(appState.pipeline.isProcessing)
         XCTAssertEqual(appState.pipeline.error, "Network error")
@@ -163,7 +171,7 @@ final class PipelineReducerTests: XCTestCase {
         var appState = AppState()
 
         let action = PipelineAction.processingFailed("Timeout")
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         let errorLog = appState.ui.logEntries.first { $0.level == .error }
         XCTAssertTrue(errorLog?.message.contains("Timeout") ?? false)
@@ -178,7 +186,7 @@ final class PipelineReducerTests: XCTestCase {
         appState.pipeline.error = "previous error"
 
         let action = PipelineAction.reset
-        _ = pipelineReducer(state: &appState.pipeline, action: action, appState: &appState)
+        _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertFalse(appState.pipeline.isProcessing)
         XCTAssertNil(appState.pipeline.processingTrackKey)

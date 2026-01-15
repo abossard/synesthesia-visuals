@@ -179,9 +179,12 @@ final class AppIntegrationTests: XCTestCase {
         var receivedTrack: Track?
         let expectation = expectation(description: "track change")
         
-        await module.onTrackChange { track in
-            receivedTrack = track
-            expectation.fulfill()
+        // Use setDispatch to receive track changes
+        await module.setDispatch { action in
+            if case .playback(.trackChanged(let track)) = action {
+                receivedTrack = track
+                expectation.fulfill()
+            }
         }
         
         // Simulate track load

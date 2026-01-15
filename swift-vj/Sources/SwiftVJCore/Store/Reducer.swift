@@ -40,18 +40,28 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
 
     // MARK: Child Reducers
     case .playback(let playbackAction):
-        return playbackReducer(state: &state.playback, action: playbackAction, appState: &state)
-            .map { AppAction.playback($0) }
+        var playbackState = state.playback
+        let effect = playbackReducer(state: &playbackState, action: playbackAction, appState: &state)
+        state.playback = playbackState
+        return effect.map { AppAction.playback($0) }
 
     case .pipeline(let pipelineAction):
-        return pipelineReducer(state: &state.pipeline, action: pipelineAction, appState: &state)
+        var pipelineState = state.pipeline
+        let effect = pipelineReducer(state: &pipelineState, action: pipelineAction, appState: &state)
+        state.pipeline = pipelineState
+        return effect
 
     case .render(let renderAction):
-        return renderReducer(state: &state.render, action: renderAction, appState: &state)
+        var renderState = state.render
+        let effect = renderReducer(state: &renderState, action: renderAction, appState: &state)
+        state.render = renderState
+        return effect
 
     case .launchpad(let launchpadAction):
-        return launchpadReducer(state: &state.launchpad, action: launchpadAction, appState: &state)
-            .map { AppAction.launchpad($0) }
+        var launchpadState = state.launchpad
+        let effect = launchpadReducer(state: &launchpadState, action: launchpadAction, appState: &state)
+        state.launchpad = launchpadState
+        return effect.map { AppAction.launchpad($0) }
 
     case .audio(let audioAction):
         return audioReducer(state: &state.audio, action: audioAction)

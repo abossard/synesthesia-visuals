@@ -314,8 +314,8 @@ public struct LaunchpadStatusSnapshot: Equatable, Sendable {
     public init(from status: LaunchpadStatus) {
         self.isConnected = status.isConnected
         self.deviceName = status.deviceName
-        self.activeBank = status.activeBank
-        self.padCount = status.padCount
+        self.activeBank = 0  // LaunchpadStatus doesn't track activeBank
+        self.padCount = status.configuredPadCount
     }
 }
 

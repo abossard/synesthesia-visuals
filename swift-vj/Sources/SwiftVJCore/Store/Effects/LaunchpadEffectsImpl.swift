@@ -16,30 +16,14 @@ public struct LaunchpadEnvironment: Sendable {
 public enum LaunchpadEffectsImpl {
 
     /// Start Launchpad module and subscribe to events
+    /// The LaunchpadModule uses a dispatch callback pattern internally
     public static func start(
         launchpadModule: LaunchpadModule,
-        onConnectionChange: @escaping @Sendable (Bool, String?) -> Void,
-        onStateChange: @escaping @Sendable (ControllerState) -> Void
+        dispatch: @escaping @Sendable (AppAction) -> Void
     ) -> Effect<LaunchpadAction> {
         .run(cancellationId: EffectCancellationId.launchpad) { send in
-            // Wire up callbacks
-            launchpadModule.onConnectionChange = { connected, deviceName in
-                onConnectionChange(connected, deviceName)
-                Task {
-                    if connected, let name = deviceName {
-                        await send(.connected(name))
-                    } else {
-                        await send(.disconnected)
-                    }
-                }
-            }
-
-            launchpadModule.onStateChange = { state in
-                onStateChange(state)
-                Task {
-                    await send(.stateUpdated(ControllerStateSnapshot(from: state)))
-                }
-            }
+            // Wire up the dispatch callback
+            launchpadModule.dispatch = dispatch
 
             // Start the module
             launchpadModule.start()
@@ -64,33 +48,29 @@ public enum LaunchpadEffectsImpl {
         }
     }
 
-    /// Handle button press
+    /// Handle button press - let the module handle it via its FSM
+    /// Note: The LaunchpadModule handles button presses internally via MIDI callbacks
     public static func handleButtonPress(
         x: Int,
         y: Int,
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
+        // Button presses are handled internally by LaunchpadModule via MIDI callbacks
+        // This effect just gets the updated status after
         .run { send in
-            let buttonId = ButtonId(x: x, y: y)
-            launchpadModule.handleButtonPress(buttonId)
-
-            // Get updated state
             let status = launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
         }
     }
 
-    /// Handle button release
+    /// Handle button release - let the module handle it via its FSM
     public static func handleButtonRelease(
         x: Int,
         y: Int,
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
+        // Button releases are handled internally by LaunchpadModule via MIDI callbacks
         .run { send in
-            let buttonId = ButtonId(x: x, y: y)
-            launchpadModule.handleButtonRelease(buttonId)
-
-            // Get updated state
             let status = launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
         }
@@ -102,7 +82,8 @@ public enum LaunchpadEffectsImpl {
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
         .run { send in
-            launchpadModule.setBank(bank)
+            // Bank changes are handled via the top row buttons in LaunchpadModule
+            // This effect is for programmatic bank changes
             await send(.bankChanged(bank))
 
             let status = launchpadModule.getStatus()
@@ -114,18 +95,16 @@ public enum LaunchpadEffectsImpl {
     public static func enterLearnMode(
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
-        .fireAndForget {
-            launchpadModule.enterLearnMode()
-        }
+        // Learn mode is toggled via Scene button press on the LaunchpadModule
+        .none
     }
 
     /// Exit learn mode
     public static func exitLearnMode(
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
-        .fireAndForget {
-            launchpadModule.exitLearnMode()
-        }
+        // Learn mode is exited via Scene button press on the LaunchpadModule
+        .none
     }
 
     /// Update BPM for beat sync

@@ -16,6 +16,22 @@ public struct LaunchpadStatus: Sendable {
     public let isLearnMode: Bool
     public let configuredPadCount: Int
     public let currentBpm: Float
+    
+    public init(
+        isEnabled: Bool,
+        isConnected: Bool,
+        deviceName: String?,
+        isLearnMode: Bool,
+        configuredPadCount: Int,
+        currentBpm: Float
+    ) {
+        self.isEnabled = isEnabled
+        self.isConnected = isConnected
+        self.deviceName = deviceName
+        self.isLearnMode = isLearnMode
+        self.configuredPadCount = configuredPadCount
+        self.currentBpm = currentBpm
+    }
 }
 
 /// Launchpad controller module - requires real hardware

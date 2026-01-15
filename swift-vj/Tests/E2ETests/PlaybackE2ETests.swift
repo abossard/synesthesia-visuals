@@ -204,6 +204,7 @@ final class PlaybackE2ETests: XCTestCase {
         let monitor = VDJMonitor()
         
         let expectation = expectation(description: "Track change callback")
+        expectation.assertForOverFulfill = false  // Allow multiple fulfills (track may fire on each OSC message)
         nonisolated(unsafe) var changedDeck: VDJDeck?
         
         await monitor.onTrackChange { deck in
