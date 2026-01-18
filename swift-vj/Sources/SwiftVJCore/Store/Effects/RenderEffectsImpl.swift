@@ -154,6 +154,59 @@ public enum RenderEffectsImpl {
             await send(.render(.shaderCountUpdated(count)))
         }
     }
+    
+    /// Auto-select shader based on track, phase, and preferences
+    public static func autoSelectShader(
+        trackKey: String,
+        energy: Double,
+        valence: Double,
+        phase: Phase?,
+        rememberPreferences: Bool,
+        shadersModule: ShadersModule?,
+        preferenceStore: ShaderPreferenceStore?
+    ) -> Effect<AppAction> {
+        .run { send in
+            guard let shaders = shadersModule else {
+                await send(.ui(.log("[AutoDrive] ShadersModule not available", .error)))
+                return
+            }
+            
+            // Check for saved preference first
+            if rememberPreferences, let store = preferenceStore {
+                if let preferred = await store.getPreference(for: trackKey) {
+                    await send(.ui(.log("[AutoDrive] Using saved preference: \(preferred)", .info)))
+                    await send(.render(.selectShader(preferred)))
+                    return
+                }
+            }
+            
+            // Auto-select based on energy, valence, and phase
+            if let selected = await shaders.selectForSong(
+                energy: energy,
+                valence: valence,
+                excludeLast: true,
+                phase: phase
+            ) {
+                let phaseStr = phase?.displayName ?? "Any"
+                await send(.ui(.log("[AutoDrive] Auto-selected: \(selected.name) (E:\(String(format: "%.1f", energy)) V:\(String(format: "%.1f", valence)) Phase:\(phaseStr))", .info)))
+                await send(.render(.selectShader(selected.name)))
+            } else {
+                await send(.ui(.log("[AutoDrive] No matching shader found", .warning)))
+            }
+        }
+    }
+    
+    /// Record shader preference for a track
+    public static func recordShaderPreference(
+        trackKey: String,
+        shaderName: String,
+        preferenceStore: ShaderPreferenceStore?
+    ) -> Effect<AppAction> {
+        .fireAndForget {
+            guard let store = preferenceStore else { return }
+            await store.setPreference(trackKey: trackKey, shaderName: shaderName)
+        }
+    }
 }
 
 // MARK: - Protocol Abstractions

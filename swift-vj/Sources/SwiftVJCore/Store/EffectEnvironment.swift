@@ -35,6 +35,12 @@ public final class EffectEnvironment {
     /// Load a shader by name (updates render engine + sends OSC)
     public var loadShader: (@Sendable (String) async -> Void)?
     
+    /// Auto-select shader based on track, phase, and preferences
+    public var autoSelectShader: (@Sendable (String, Double, Double, Phase?, Bool) async -> Void)?
+    
+    /// Record shader preference for a track
+    public var recordShaderPreference: (@Sendable (String, String) async -> Void)?
+    
     /// Set the current image index
     public var setImageIndex: (@Sendable (Int) async -> Void)?
     
@@ -56,6 +62,8 @@ public final class EffectEnvironment {
     /// Reset all callbacks to nil (useful for testing)
     public func reset() {
         loadShader = nil
+        autoSelectShader = nil
+        recordShaderPreference = nil
         setImageIndex = nil
         loadImagesFromFolder = nil
         processPipelineTrack = nil
