@@ -14,6 +14,10 @@ public struct Config {
     public static let oscMagicPort: UInt16 = 11111
     public static let oscVDJPort: UInt16 = 9009
     public static let oscSynesthesiaPort: UInt16 = 7777
+    
+    // WLED defaults
+    public static let wledDefaultPort: UInt16 = 21324
+    public static let wledUpdateRateHz: Int = 50
 
     // Timing
     public static let timingStepMs: Int = 200
@@ -39,6 +43,11 @@ public struct Config {
     /// Settings file path
     public static var settingsFile: URL {
         dataDirectory.appendingPathComponent("settings.json")
+    }
+    
+    /// WLED configuration file path
+    public static var wledConfigFile: URL {
+        dataDirectory.appendingPathComponent("wled-config.json")
     }
 }
 
@@ -110,6 +119,26 @@ public actor Settings {
 
     public var startLMStudio: Bool {
         get { data["start_lmstudio"] as? Bool ?? false }
+    }
+    
+    // MARK: - WLED Configuration
+    
+    /// Load WLED configuration from file
+    public func loadWLEDConfig() -> WLEDConfig {
+        let path = Config.wledConfigFile
+        guard let data = try? Data(contentsOf: path),
+              let config = try? JSONDecoder().decode(WLEDConfig.self, from: data)
+        else {
+            return .default
+        }
+        return config
+    }
+    
+    /// Save WLED configuration to file
+    public func saveWLEDConfig(_ config: WLEDConfig) {
+        let path = Config.wledConfigFile
+        guard let data = try? JSONEncoder().encode(config) else { return }
+        try? data.write(to: path)
     }
 
     // MARK: - Private
