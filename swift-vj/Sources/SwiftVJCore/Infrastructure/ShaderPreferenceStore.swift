@@ -20,31 +20,50 @@ public struct ShaderPreference: Codable, Sendable, Equatable {
 ///
 /// When a user manually selects a shader in auto-drive mode, it's remembered
 /// so the same shader is used when that song plays again.
+///
+/// Following Grokking Simplicity:
+/// - Data: preferences dictionary (immutable entries)
+/// - Calculations: getPreference, getAllPreferences (pure reads)
+/// - Actions: setPreference, load, save (side effects)
 public actor ShaderPreferenceStore {
     
-    // MARK: - State
+    // MARK: - State (Data)
     
     private var preferences: [String: ShaderPreference] = [:]
     private let filePath: URL
+    private var isLoaded: Bool = false
     
     // MARK: - Init
     
     public init(filePath: URL? = nil) {
         self.filePath = filePath ?? Config.dataDirectory.appendingPathComponent("shader_preferences.json")
-        Task {
-            await self.load()
-        }
+        // Note: Don't load in init - keep init pure. Call loadIfNeeded() on first access.
     }
     
-    // MARK: - Public API
+    // MARK: - Public API (Calculations - pure reads)
     
     /// Get preferred shader for a track
     ///
     /// - Parameter trackKey: Track key (artist::title)
     /// - Returns: Shader name if preference exists, nil otherwise
     public func getPreference(for trackKey: String) -> String? {
-        preferences[trackKey]?.shaderName
+        loadIfNeeded()
+        return preferences[trackKey]?.shaderName
     }
+    
+    /// Get all preferences
+    public func getAllPreferences() -> [ShaderPreference] {
+        loadIfNeeded()
+        return Array(preferences.values).sorted { $0.timestamp > $1.timestamp }
+    }
+    
+    /// Get preference count
+    public var count: Int {
+        loadIfNeeded()
+        return preferences.count
+    }
+    
+    // MARK: - Public API (Actions - side effects)
     
     /// Set shader preference for a track
     ///
@@ -52,6 +71,7 @@ public actor ShaderPreferenceStore {
     ///   - trackKey: Track key (artist::title)
     ///   - shaderName: Name of preferred shader
     public func setPreference(trackKey: String, shaderName: String) {
+        loadIfNeeded()
         preferences[trackKey] = ShaderPreference(trackKey: trackKey, shaderName: shaderName)
         save()
     }
@@ -60,6 +80,7 @@ public actor ShaderPreferenceStore {
     ///
     /// - Parameter trackKey: Track key to remove
     public func removePreference(for trackKey: String) {
+        loadIfNeeded()
         preferences.removeValue(forKey: trackKey)
         save()
     }
@@ -70,25 +91,17 @@ public actor ShaderPreferenceStore {
         save()
     }
     
-    /// Get all preferences
-    public func getAllPreferences() -> [ShaderPreference] {
-        Array(preferences.values).sorted { $0.timestamp > $1.timestamp }
-    }
+    // MARK: - Persistence (Actions - side effects)
     
-    /// Get preference count
-    public var count: Int {
-        preferences.count
-    }
-    
-    // MARK: - Persistence
-    
-    private func load() {
-        guard FileManager.default.fileExists(atPath: filePath.path),
-              let data = try? Data(contentsOf: filePath),
-              let decoded = try? JSONDecoder().decode([String: ShaderPreference].self, from: data)
-        else {
-            return
-        }
+    /// Load preferences from disk if not already loaded
+    private func loadIfNeeded() {
+        guard !isLoaded else { return }
+        isLoaded = true
+        
+        guard FileManager.default.fileExists(atPath: filePath.path) else { return }
+        guard let data = try? Data(contentsOf: filePath) else { return }
+        guard let decoded = try? JSONDecoder().decode([String: ShaderPreference].self, from: data) else { return }
+        
         preferences = decoded
     }
     

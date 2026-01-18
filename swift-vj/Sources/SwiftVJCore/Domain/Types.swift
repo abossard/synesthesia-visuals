@@ -295,6 +295,7 @@ public struct PipelineResult: Sendable, Equatable, Codable {
     public let energy: Double
     public let valence: Double
     public let categories: [String: Double]
+    public let djPhase: Phase?  // Detected DJ set phase from AI analysis
 
     // Shader
     public let shaderMatched: Bool
@@ -330,6 +331,7 @@ public struct PipelineResult: Sendable, Equatable, Codable {
         energy: Double = 0.5,
         valence: Double = 0,
         categories: [String: Double] = [:],
+        djPhase: Phase? = nil,
         shaderMatched: Bool = false,
         shaderName: String = "",
         shaderScore: Double = 0,
@@ -358,6 +360,7 @@ public struct PipelineResult: Sendable, Equatable, Codable {
         self.energy = energy
         self.valence = valence
         self.categories = categories
+        self.djPhase = djPhase
         self.shaderMatched = shaderMatched
         self.shaderName = shaderName
         self.shaderScore = shaderScore

@@ -208,9 +208,8 @@ public func pipelineReducer(
         var effects: [Effect<AppAction>] = []
         
         // Update detected phase if AI analysis succeeded
-        if result.aiAvailable, let djPhase = result.categories["dj_phase"] as? String,
-           let phase = Phase.from(djPhase) {
-            effects.append(.send(.render(.phaseDetected(phase))))
+        if result.aiAvailable, let djPhase = result.djPhase {
+            effects.append(.send(.render(.phaseDetected(djPhase))))
         }
         
         // Handle shader selection based on auto-drive mode

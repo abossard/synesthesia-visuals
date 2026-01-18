@@ -314,6 +314,7 @@ public actor PipelineModule: Module {
             energy: analysis.energy,
             valence: analysis.valence,
             categories: analysis.categories,
+            djPhase: analysis.djPhase,
             shaderMatched: shaderMatch != nil,
             shaderName: shaderMatch?.name ?? "",
             shaderScore: shaderMatch?.score ?? 0.0,
