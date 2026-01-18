@@ -111,6 +111,50 @@ public actor Settings {
     public var startLMStudio: Bool {
         get { data["start_lmstudio"] as? Bool ?? false }
     }
+    
+    // MARK: - LLM Backend Preferences
+    
+    public var llmBackend: String {
+        get { data["llm_backend"] as? String ?? "auto" }
+    }
+    
+    public func setLLMBackend(_ value: String) async {
+        data["llm_backend"] = value
+        save()
+    }
+    
+    public var openAIKey: String? {
+        get { data["openai_api_key"] as? String }
+    }
+    
+    public func setOpenAIKey(_ value: String?) async {
+        if let value = value, !value.isEmpty {
+            data["openai_api_key"] = value
+        } else {
+            data.removeValue(forKey: "openai_api_key")
+        }
+        save()
+    }
+    
+    // MARK: - Auto-Drive Settings
+    
+    public var autoDriveMode: String {
+        get { data["auto_drive_mode"] as? String ?? "manual" }
+    }
+    
+    public func setAutoDriveMode(_ value: String) async {
+        data["auto_drive_mode"] = value
+        save()
+    }
+    
+    public var rememberShaderPreferences: Bool {
+        get { data["remember_shader_preferences"] as? Bool ?? true }
+    }
+    
+    public func setRememberShaderPreferences(_ value: Bool) async {
+        data["remember_shader_preferences"] = value
+        save()
+    }
 
     // MARK: - Private
 

@@ -125,6 +125,15 @@ public enum RenderAction: Sendable {
 
     /// Stop render engine
     case stopEngine
+    
+    /// Set auto-drive mode
+    case setAutoDriveMode(AutoDriveMode)
+    
+    /// Toggle shader preference memory
+    case setRememberShaderPreferences(Bool)
+    
+    /// Auto-select shader for current track (used by auto-drive)
+    case autoSelectShader
 }
 
 // MARK: - Launchpad Actions
