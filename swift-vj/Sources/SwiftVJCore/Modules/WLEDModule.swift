@@ -14,6 +14,9 @@ public actor WLEDModule: Module {
     private let oscHub: OSCHub?
     private var config: WLEDConfig
     
+    /// Logger callback for integration with app logging system
+    public var logger: (@Sendable (String, LogLevelState) -> Void)?
+    
     // MARK: - State
     
     public private(set) var isStarted = false
@@ -26,7 +29,10 @@ public actor WLEDModule: Module {
     
     // Stats
     private var packetsProcessed: Int = 0
+    private var packetsSent: Int = 0
+    private var packetsFailed: Int = 0
     private var controllersActive: Int = 0
+    private var lastUpdateTime: Date?
     
     // MARK: - Initialization
     
@@ -47,12 +53,16 @@ public actor WLEDModule: Module {
             throw ModuleError.alreadyStarted
         }
         
+        log("Starting WLED module...", level: .info)
+        
         // Start adapter
         await adapter.start()
+        log("WLED adapter started", level: .debug)
         
         // Subscribe to audio OSC messages if oscHub available
         if let osc = oscHub {
             subscribeToAudio(osc)
+            log("Subscribed to audio OSC messages", level: .debug)
         }
         
         // Start update loop
@@ -61,11 +71,20 @@ public actor WLEDModule: Module {
         isStarted = true
         controllersActive = config.controllers.filter { $0.enabled }.count
         
-        print("WLEDModule started with \(controllersActive) active controllers")
+        if controllersActive > 0 {
+            log("WLED module started with \(controllersActive) active controller(s)", level: .info)
+            for controller in config.controllers where controller.enabled {
+                log("  → \(controller.name) (\(controller.host):\(controller.port))", level: .debug)
+            }
+        } else {
+            log("WLED module started but no controllers are enabled", level: .warning)
+        }
     }
     
     public func stop() async {
         guard isStarted else { return }
+        
+        log("Stopping WLED module...", level: .info)
         
         // Stop update loop
         updateTask?.cancel()
@@ -75,7 +94,8 @@ public actor WLEDModule: Module {
         await adapter.stop()
         
         isStarted = false
-        print("WLEDModule stopped")
+        
+        log("WLED module stopped. Sent \(packetsSent) packets, \(packetsFailed) failed.", level: .info)
     }
     
     // MARK: - Audio Data Handling
@@ -137,12 +157,20 @@ public actor WLEDModule: Module {
                 // Send to all enabled controllers
                 if config.enabled {
                     let failed = await adapter.send(packet, to: config.controllers)
+                    
+                    packetsSent += (controllersActive - failed.count)
+                    packetsFailed += failed.count
+                    
                     if !failed.isEmpty {
-                        print("Failed to send to controllers: \(failed.joined(separator: ", "))")
+                        let failedNames = failed.compactMap { id in
+                            config.controllers.first { $0.id == id }?.name
+                        }.joined(separator: ", ")
+                        log("Failed to send to controllers: \(failedNames)", level: .warning)
                     }
                 }
                 
                 packetsProcessed += 1
+                lastUpdateTime = Date()
                 
                 // Sleep until next update
                 try? await Task.sleep(for: .milliseconds(Int(intervalMs)))
@@ -233,13 +261,21 @@ public actor WLEDModule: Module {
     
     /// Update module configuration
     public func updateConfig(_ newConfig: WLEDConfig) {
+        let oldActiveCount = controllersActive
         config = newConfig
         controllersActive = config.controllers.filter { $0.enabled }.count
+        
+        log("WLED configuration updated: \(controllersActive) active controller(s)", level: .info)
+        
+        if controllersActive != oldActiveCount {
+            log("Active controllers changed: \(oldActiveCount) → \(controllersActive)", level: .info)
+        }
         
         // Restart update loop with new rate if changed
         if isStarted {
             updateTask?.cancel()
             startUpdateLoop()
+            log("Update loop restarted with new settings", level: .debug)
         }
     }
     
@@ -260,10 +296,14 @@ public actor WLEDModule: Module {
             fftSmoothing: config.fftSmoothing
         )
         controllersActive = config.controllers.filter { $0.enabled }.count
+        
+        log("Added WLED controller: \(controller.name) (\(controller.host):\(controller.port))", level: .info)
     }
     
     /// Remove a WLED controller by ID
     public func removeController(id: String) {
+        guard let controller = config.controllers.first(where: { $0.id == id }) else { return }
+        
         var controllers = config.controllers
         controllers.removeAll { $0.id == id }
         config = WLEDConfig(
@@ -273,6 +313,15 @@ public actor WLEDModule: Module {
             fftSmoothing: config.fftSmoothing
         )
         controllersActive = config.controllers.filter { $0.enabled }.count
+        
+        log("Removed WLED controller: \(controller.name)", level: .info)
+    }
+    
+    // MARK: - Logging
+    
+    /// Log a message using the app's logging system
+    private func log(_ message: String, level: LogLevelState) {
+        logger?("[WLED] \(message)", level)
     }
     
     // MARK: - Status
@@ -284,8 +333,18 @@ public actor WLEDModule: Module {
             "controllers": config.controllers.count,
             "controllersActive": controllersActive,
             "updateRateHz": config.updateRateHz,
-            "packetsProcessed": packetsProcessed
+            "fftSmoothing": config.fftSmoothing,
+            "packetsProcessed": packetsProcessed,
+            "packetsSent": packetsSent,
+            "packetsFailed": packetsFailed,
+            "successRate": packetsSent + packetsFailed > 0 ? 
+                Double(packetsSent) / Double(packetsSent + packetsFailed) : 1.0
         ]
+        
+        if let lastUpdate = lastUpdateTime {
+            status["lastUpdateTime"] = lastUpdate.ISO8601Format()
+            status["secondsSinceLastUpdate"] = Date().timeIntervalSince(lastUpdate)
+        }
         
         // Include adapter stats
         Task {
