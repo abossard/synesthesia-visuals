@@ -341,15 +341,80 @@ struct WLEDSettingsView: View {
         
         appState.log("Scanning network for WLED devices...", level: .info)
         
-        // Simulate network scan (in real implementation, use Bonjour/mDNS)
+        // Real mDNS discovery using Network framework
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            let browser = NWBrowser(for: .bonjour(type: "_wled._tcp", domain: nil), using: .tcp)
             
-            // Mock discovered devices for demonstration
-            // Real implementation would use NWBrowser or Bonjour
+            var foundDevices: [DiscoveredWLED] = []
             
-            isScanning = false
-            appState.log("Network scan complete. Found \(discoveredDevices.count) devices.", level: .info)
+            browser.stateUpdateHandler = { newState in
+                switch newState {
+                case .failed(let error):
+                    Task { @MainActor in
+                        appState.log("Network scan failed: \(error.localizedDescription)", level: .error)
+                        isScanning = false
+                    }
+                case .ready:
+                    Task { @MainActor in
+                        appState.log("Network browser ready", level: .debug)
+                    }
+                default:
+                    break
+                }
+            }
+            
+            browser.browseResultsChangedHandler = { results, changes in
+                for result in results {
+                    if case .service(let name, let type, let domain, let interface) = result.endpoint {
+                        // Extract host from service name
+                        let deviceName = name
+                        
+                        // Resolve the service to get IP address
+                        let connection = NWConnection(to: result.endpoint, using: .tcp)
+                        connection.stateUpdateHandler = { state in
+                            if case .ready = state {
+                                if let innerEndpoint = connection.currentPath?.remoteEndpoint,
+                                   case .hostPort(let host, _) = innerEndpoint {
+                                    let hostString: String
+                                    switch host {
+                                    case .ipv4(let addr):
+                                        hostString = addr.debugDescription
+                                    case .ipv6(let addr):
+                                        hostString = addr.debugDescription
+                                    case .name(let hostname, _):
+                                        hostString = hostname
+                                    @unknown default:
+                                        hostString = "unknown"
+                                    }
+                                    
+                                    let device = DiscoveredWLED(name: deviceName, host: hostString)
+                                    if !foundDevices.contains(where: { $0.host == device.host }) {
+                                        foundDevices.append(device)
+                                        Task { @MainActor in
+                                            discoveredDevices = foundDevices
+                                            appState.log("Found WLED device: \(deviceName) at \(hostString)", level: .info)
+                                        }
+                                    }
+                                }
+                                connection.cancel()
+                            }
+                        }
+                        connection.start(queue: .global())
+                    }
+                }
+            }
+            
+            browser.start(queue: .global())
+            
+            // Scan for 5 seconds
+            try? await Task.sleep(for: .seconds(5))
+            
+            browser.cancel()
+            
+            await MainActor.run {
+                isScanning = false
+                appState.log("Network scan complete. Found \(discoveredDevices.count) device(s).", level: .info)
+            }
         }
     }
     
