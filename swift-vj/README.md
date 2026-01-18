@@ -1,10 +1,27 @@
 # Swift-VJ
 
-macOS VJ Control Application - Swift rewrite of python-vj.
+macOS VJ Control Application - Swift rewrite of python-vj with auto-drive mode.
 
-## Status: Planning & Foundation
+## Status: Production Ready with Auto-Drive Mode
 
-This is a TDD-first rewrite of the Python-based VJ control system. See [REWRITE_PLAN.md](./REWRITE_PLAN.md) for the complete plan.
+This is a TDD-first rewrite of the Python-based VJ control system with a new **auto-drive mode** for hands-free VJ operation while DJing. See [REWRITE_PLAN.md](./REWRITE_PLAN.md) for the complete architecture.
+
+## ✨ New: Auto-Drive Mode
+
+Auto-drive mode enables automatic shader selection based on DJ set phases and song characteristics, perfect for solo DJ/VJ performances.
+
+**Three Modes**:
+- **Manual**: Traditional full control (default)
+- **AutoPhase**: Auto-select shaders within current phase (semi-automatic)
+- **AutoFull**: Fully automatic - detects phase and selects shaders (hands-free)
+
+**Features**:
+- Phase-based shader filtering (Disco → Buildup → Peak → Release → Feature)
+- Remembers manual shader selections per song
+- OpenAI backend support for better GPU efficiency
+- Performance optimization guide included
+
+See [AUTO_DRIVE_SUMMARY.md](./AUTO_DRIVE_SUMMARY.md) and [AUTO_DRIVE_UI_GUIDE.md](./AUTO_DRIVE_UI_GUIDE.md) for details.
 
 ## Requirements
 
