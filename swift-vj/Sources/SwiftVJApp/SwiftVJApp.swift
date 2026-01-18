@@ -78,6 +78,7 @@ public final class AppState: ObservableObject {
     public var pipelineModule: PipelineModule?
     public var launchpadModule: LaunchpadModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
+    public var shaderPreferenceStore: ShaderPreferenceStore?
 
     // MARK: - Render Engine
 
@@ -252,6 +253,14 @@ public final class AppState: ObservableObject {
             UserDefaults.standard.removeObject(forKey: "currentPhase")
         }
     }
+    
+    public func setAutoDriveMode(_ mode: AutoDriveMode) {
+        store.send(.render(.setAutoDriveMode(mode)))
+    }
+    
+    public func setRememberShaderPreferences(_ remember: Bool) {
+        store.send(.render(.setRememberShaderPreferences(remember)))
+    }
 
     // MARK: - Image Management
 
@@ -335,6 +344,8 @@ public final class AppState: ObservableObject {
         let projectImagesDir = URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/data/song_images")
         let imageScraper = ImageScraper(cacheDir: projectImagesDir)
         let llmClient = LLMClient()
+        
+        shaderPreferenceStore = ShaderPreferenceStore()
 
         playbackModule = PlaybackModule(oscHub: oscHub)
         lyricsModule = LyricsModule(fetcher: lyricsFetcher)
@@ -431,6 +442,42 @@ public final class AppState: ObservableObject {
                     self.log("Failed to send shader to Magic: \(error)", level: .error)
                 }
             }
+        }
+        
+        EffectEnvironment.shared.autoSelectShader = { [weak self] trackKey, energy, valence, phase, rememberPrefs in
+            guard let self = self else { return }
+            
+            // Check preference store first if enabled
+            if rememberPrefs, let preferred = await self.shaderPreferenceStore?.getPreference(for: trackKey) {
+                await MainActor.run {
+                    self.log("[AutoDrive] Using saved preference: \(preferred)", level: .info)
+                    self.selectShader(preferred)
+                }
+                return
+            }
+            
+            // Auto-select based on energy/valence/phase
+            if let selected = await self.shadersModule?.selectForSong(
+                energy: energy,
+                valence: valence,
+                excludeLast: true,
+                phase: phase
+            ) {
+                let phaseStr = phase?.displayName ?? "Any"
+                await MainActor.run {
+                    self.log("[AutoDrive] Auto-selected: \(selected.name) (E:\(String(format: "%.1f", energy)) V:\(String(format: "%.1f", valence)) Phase:\(phaseStr))", level: .info)
+                    self.selectShader(selected.name)
+                }
+            } else {
+                await MainActor.run {
+                    self.log("[AutoDrive] No matching shader found", level: .warning)
+                }
+            }
+        }
+        
+        EffectEnvironment.shared.recordShaderPreference = { [weak self] trackKey, shaderName in
+            guard let self = self else { return }
+            await self.shaderPreferenceStore?.setPreference(trackKey: trackKey, shaderName: shaderName)
         }
 
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in

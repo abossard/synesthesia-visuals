@@ -86,9 +86,23 @@ public actor ShadersModule: Module {
     ///   - energy: Energy level 0.0-1.0
     ///   - valence: Mood valence -1.0 to 1.0
     ///   - topK: Number of matches to return
+    ///   - phase: Optional phase filter - only return shaders matching this phase
     /// - Returns: Array of ShaderMatchResult sorted by score
-    public func match(energy: Double, valence: Double, topK: Int = 5) async -> [ShaderMatchResult] {
-        await matcher.match(energy: energy, valence: valence, topK: topK)
+    public func match(energy: Double, valence: Double, topK: Int = 5, phase: Phase? = nil) async -> [ShaderMatchResult] {
+        let allMatches = await matcher.match(energy: energy, valence: valence, topK: topK * 3)
+        
+        // Filter by phase if specified
+        guard let phase = phase else {
+            return Array(allMatches.prefix(topK))
+        }
+        
+        let phaseFiltered = allMatches.filter { match in
+            guard let shader = await matcher.getShader(named: match.name) else { return false }
+            // Include shaders that either have no phase restrictions or match the requested phase
+            return shader.phases == nil || shader.phases?.contains(phase) == true
+        }
+        
+        return Array(phaseFiltered.prefix(topK))
     }
     
     /// Match shaders by mood keyword
@@ -97,9 +111,22 @@ public actor ShadersModule: Module {
     ///   - mood: Mood keyword (energetic, calm, dark, bright, etc.)
     ///   - energy: Energy level 0.0-1.0
     ///   - topK: Number of matches to return
+    ///   - phase: Optional phase filter - only return shaders matching this phase
     /// - Returns: Array of ShaderMatchResult sorted by score
-    public func matchByMood(_ mood: String, energy: Double = 0.5, topK: Int = 5) async -> [ShaderMatchResult] {
-        await matcher.matchByMood(mood, energy: energy, topK: topK)
+    public func matchByMood(_ mood: String, energy: Double = 0.5, topK: Int = 5, phase: Phase? = nil) async -> [ShaderMatchResult] {
+        let allMatches = await matcher.matchByMood(mood, energy: energy, topK: topK * 3)
+        
+        // Filter by phase if specified
+        guard let phase = phase else {
+            return Array(allMatches.prefix(topK))
+        }
+        
+        let phaseFiltered = allMatches.filter { match in
+            guard let shader = await matcher.getShader(named: match.name) else { return false }
+            return shader.phases == nil || shader.phases?.contains(phase) == true
+        }
+        
+        return Array(phaseFiltered.prefix(topK))
     }
     
     /// Text search across shaders
@@ -121,15 +148,17 @@ public actor ShadersModule: Module {
     ///   - energy: Energy level 0.0-1.0
     ///   - valence: Mood valence -1.0 to 1.0
     ///   - excludeLast: Whether to exclude last selected shader
+    ///   - phase: Optional phase filter - only select from shaders matching this phase
     /// - Returns: Best matching shader or nil
     public func selectForSong(
         categories: SongCategories? = nil,
         energy: Double = 0.5,
         valence: Double = 0.0,
-        excludeLast: Bool = true
+        excludeLast: Bool = true,
+        phase: Phase? = nil
     ) async -> ShaderMatchResult? {
-        // Get candidates
-        let candidates = await matcher.match(energy: energy, valence: valence, topK: 10)
+        // Get candidates with phase filtering
+        let candidates = await match(energy: energy, valence: valence, topK: 10, phase: phase)
         
         guard !candidates.isEmpty else { return nil }
         

@@ -192,6 +192,32 @@ public struct PipelineStepState: Equatable, Sendable, Identifiable {
 
 // MARK: - Render Sub-State
 
+/// Auto-drive mode for shader selection
+public enum AutoDriveMode: String, Sendable, Equatable, Codable, CaseIterable {
+    /// Manual shader selection only
+    case manual
+    /// Auto-select shaders based on current phase only (user controls phase)
+    case autoPhase
+    /// Fully automatic - auto-detect phase and select shaders
+    case autoFull
+    
+    public var displayName: String {
+        switch self {
+        case .manual: return "Manual"
+        case .autoPhase: return "Auto (Phase-Based)"
+        case .autoFull: return "Auto (Full)"
+        }
+    }
+    
+    public var description: String {
+        switch self {
+        case .manual: return "Manual shader selection. You control everything."
+        case .autoPhase: return "Automatically select shaders matching your chosen phase."
+        case .autoFull: return "Fully automatic. Detects phase and selects shaders."
+        }
+    }
+}
+
 /// Rendering-related state
 public struct RenderSubState: Equatable, Sendable {
     /// Currently selected shader name
@@ -211,6 +237,12 @@ public struct RenderSubState: Equatable, Sendable {
 
     /// Available shader count
     public var shaderCount: Int
+    
+    /// Auto-drive mode setting
+    public var autoDriveMode: AutoDriveMode
+    
+    /// Whether to remember manual shader selections per song
+    public var rememberShaderPreferences: Bool
 
     /// Effective phase (manual or detected)
     public var effectivePhase: Phase? {
@@ -223,7 +255,9 @@ public struct RenderSubState: Equatable, Sendable {
         detectedSongPhase: Phase? = nil,
         imageIndex: Int = 0,
         imageCount: Int = 0,
-        shaderCount: Int = 0
+        shaderCount: Int = 0,
+        autoDriveMode: AutoDriveMode = .manual,
+        rememberShaderPreferences: Bool = true
     ) {
         self.selectedShader = selectedShader
         self.currentPhase = currentPhase
@@ -231,6 +265,8 @@ public struct RenderSubState: Equatable, Sendable {
         self.imageIndex = imageIndex
         self.imageCount = imageCount
         self.shaderCount = shaderCount
+        self.autoDriveMode = autoDriveMode
+        self.rememberShaderPreferences = rememberShaderPreferences
     }
 }
 
@@ -492,15 +528,21 @@ public struct PersistedState: Codable, Sendable {
     public var selectedShader: String?
     public var currentPhase: String?
     public var playbackSource: String
+    public var autoDriveMode: String
+    public var rememberShaderPreferences: Bool
 
     public init(
         selectedShader: String? = nil,
         currentPhase: String? = nil,
-        playbackSource: String = "vdj"
+        playbackSource: String = "vdj",
+        autoDriveMode: String = "manual",
+        rememberShaderPreferences: Bool = true
     ) {
         self.selectedShader = selectedShader
         self.currentPhase = currentPhase
         self.playbackSource = playbackSource
+        self.autoDriveMode = autoDriveMode
+        self.rememberShaderPreferences = rememberShaderPreferences
     }
 
     /// Create from current app state
@@ -508,6 +550,8 @@ public struct PersistedState: Codable, Sendable {
         self.selectedShader = state.render.selectedShader
         self.currentPhase = state.render.currentPhase?.rawValue
         self.playbackSource = state.playback.source
+        self.autoDriveMode = state.render.autoDriveMode.rawValue
+        self.rememberShaderPreferences = state.render.rememberShaderPreferences
     }
 
     /// Apply to app state
@@ -517,5 +561,9 @@ public struct PersistedState: Codable, Sendable {
             state.render.currentPhase = Phase.from(phaseStr)
         }
         state.playback.source = playbackSource
+        if let mode = AutoDriveMode(rawValue: autoDriveMode) {
+            state.render.autoDriveMode = mode
+        }
+        state.render.rememberShaderPreferences = rememberShaderPreferences
     }
 }

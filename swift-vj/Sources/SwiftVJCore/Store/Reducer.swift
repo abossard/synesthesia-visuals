@@ -206,8 +206,18 @@ public func pipelineReducer(
 
         // Update render state from result
         var effects: [Effect<AppAction>] = []
-
-        if result.shaderMatched {
+        
+        // Update detected phase if AI analysis succeeded
+        if result.aiAvailable, let djPhase = result.djPhase {
+            effects.append(.send(.render(.phaseDetected(djPhase))))
+        }
+        
+        // Handle shader selection based on auto-drive mode
+        if appState.render.autoDriveMode != .manual {
+            // In auto-drive mode, trigger auto-selection
+            effects.append(.send(.render(.autoSelectShader)))
+        } else if result.shaderMatched {
+            // In manual mode, only select shader if pipeline matched one
             effects.append(.send(.render(.selectShader(result.shaderName))))
         }
 
@@ -251,10 +261,20 @@ public func renderReducer(
     case .selectShader(let name):
         state.selectedShader = name
         appState.ui.addLog("Selected shader: \(name)", level: .info)
-        return .merge(
+        
+        // Record preference if in auto-drive mode and preferences are enabled
+        var effects: [Effect<AppAction>] = [
             RenderEffects.loadShader(name),
             .send(.persistState)
-        )
+        ]
+        
+        if state.autoDriveMode != .manual && state.rememberShaderPreferences {
+            if let track = appState.playback.currentTrack {
+                effects.append(RenderEffects.recordShaderPreference(trackKey: track.key, shaderName: name))
+            }
+        }
+        
+        return .merge(effects)
 
     case .shaderSelected(let name):
         state.selectedShader = name
@@ -303,6 +323,52 @@ public func renderReducer(
 
     case .stopEngine:
         return RenderEffects.stopEngine()
+        
+    case .setAutoDriveMode(let mode):
+        state.autoDriveMode = mode
+        appState.ui.addLog("Auto-drive: \(mode.displayName)", level: .info)
+        
+        // If switching to auto mode and we have a track, trigger auto-selection
+        var effects: [Effect<AppAction>] = [.send(.persistState)]
+        if mode != .manual && appState.playback.currentTrack != nil {
+            effects.append(.send(.render(.autoSelectShader)))
+        }
+        return .merge(effects)
+        
+    case .setRememberShaderPreferences(let remember):
+        state.rememberShaderPreferences = remember
+        appState.ui.addLog("Remember shader preferences: \(remember)", level: .info)
+        return .send(.persistState)
+        
+    case .autoSelectShader:
+        // Auto-select shader based on current track and mode
+        guard state.autoDriveMode != .manual else { return .none }
+        guard let track = appState.playback.currentTrack else { return .none }
+        
+        // Use pipeline result if available for better matching
+        let energy = appState.pipeline.result?.energy ?? 0.5
+        let valence = appState.pipeline.result?.valence ?? 0.0
+        
+        // Determine phase based on mode
+        let phase: Phase?
+        switch state.autoDriveMode {
+        case .manual:
+            return .none  // Shouldn't reach here
+        case .autoPhase:
+            // Use manual phase if set, otherwise don't filter
+            phase = state.currentPhase
+        case .autoFull:
+            // Use detected phase or manual override
+            phase = state.effectivePhase
+        }
+        
+        return RenderEffects.autoSelectShader(
+            trackKey: track.key,
+            energy: energy,
+            valence: valence,
+            phase: phase,
+            rememberPreferences: state.rememberShaderPreferences
+        )
     }
 }
 
@@ -451,6 +517,25 @@ public enum RenderEffects {
             await EffectEnvironment.shared.loadShader?(name)
         }
     }
+    
+    public static func autoSelectShader(
+        trackKey: String,
+        energy: Double,
+        valence: Double,
+        phase: Phase?,
+        rememberPreferences: Bool
+    ) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.autoSelectShader?(trackKey, energy, valence, phase, rememberPreferences)
+        }
+    }
+    
+    public static func recordShaderPreference(trackKey: String, shaderName: String) -> Effect<AppAction> {
+        .fireAndForget {
+            await EffectEnvironment.shared.recordShaderPreference?(trackKey, shaderName)
+        }
+    }
+    
     public static func setImageIndex(_ index: Int) -> Effect<AppAction> { .none }
     public static func loadImagesFromFolder(_ path: String) -> Effect<AppAction> { .none }
     public static func startEngine() -> Effect<AppAction> { .none }
@@ -478,11 +563,15 @@ public enum PersistenceEffects {
             let shader = UserDefaults.standard.string(forKey: "selectedShader")
             let phase = UserDefaults.standard.string(forKey: "currentPhase")
             let source = UserDefaults.standard.string(forKey: "playbackSource") ?? "vdj"
+            let autoDrive = UserDefaults.standard.string(forKey: "autoDriveMode") ?? "manual"
+            let rememberPrefs = UserDefaults.standard.bool(forKey: "rememberShaderPreferences")
 
             let persisted = PersistedState(
                 selectedShader: shader,
                 currentPhase: phase,
-                playbackSource: source
+                playbackSource: source,
+                autoDriveMode: autoDrive,
+                rememberShaderPreferences: rememberPrefs
             )
 
             await send(.persistedStateLoaded(persisted))
@@ -500,6 +589,8 @@ public enum PersistenceEffects {
                 UserDefaults.standard.removeObject(forKey: "currentPhase")
             }
             UserDefaults.standard.set(state.playbackSource, forKey: "playbackSource")
+            UserDefaults.standard.set(state.autoDriveMode, forKey: "autoDriveMode")
+            UserDefaults.standard.set(state.rememberShaderPreferences, forKey: "rememberShaderPreferences")
         }
     }
 

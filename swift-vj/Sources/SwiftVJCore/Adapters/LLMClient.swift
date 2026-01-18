@@ -92,6 +92,7 @@ public actor LLMClient {
     private var backend: LLMBackend = .none
     private var lastCheck: Date = .distantPast
     private let health: ServiceHealth
+    private var backendPreference: String = "auto"  // "auto", "lmstudio", "openai", "none"
     
     // Cache directory
     private let cacheDir: URL
@@ -105,6 +106,12 @@ public actor LLMClient {
     }
     
     // MARK: - Public API
+    
+    /// Set backend preference (auto, lmstudio, openai, none)
+    public func setBackendPreference(_ preference: String) async {
+        backendPreference = preference
+        await checkBackend()
+    }
     
     /// Check if LLM is available
     public var isAvailable: Bool {
@@ -464,21 +471,49 @@ public actor LLMClient {
     private func checkBackend() async {
         lastCheck = Date()
         
-        // Try LM Studio first
-        if let model = await checkLMStudio() {
-            backend = .lmStudio(model: model)
-            await health.markAvailable(message: "LM Studio (\(model))")
+        // Check preference and honor it
+        switch backendPreference {
+        case "none":
+            backend = .none
             return
-        }
-        
-        // Try OpenAI
-        if checkOpenAI() {
-            backend = .openAI
-            await health.markAvailable(message: "OpenAI")
+            
+        case "lmstudio":
+            if let model = await checkLMStudio() {
+                backend = .lmStudio(model: model)
+                await health.markAvailable(message: "LM Studio (\(model))")
+            } else {
+                backend = .none
+                await health.markUnavailable(error: "LM Studio not available")
+            }
             return
+            
+        case "openai":
+            if checkOpenAI() {
+                backend = .openAI
+                await health.markAvailable(message: "OpenAI")
+            } else {
+                backend = .none
+                await health.markUnavailable(error: "OpenAI API key not set")
+            }
+            return
+            
+        default:  // "auto"
+            // Try LM Studio first (local, no cost)
+            if let model = await checkLMStudio() {
+                backend = .lmStudio(model: model)
+                await health.markAvailable(message: "LM Studio (\(model))")
+                return
+            }
+            
+            // Try OpenAI next
+            if checkOpenAI() {
+                backend = .openAI
+                await health.markAvailable(message: "OpenAI")
+                return
+            }
+            
+            backend = .none
         }
-        
-        backend = .none
     }
     
     private func checkLMStudio() async -> String? {
@@ -506,11 +541,31 @@ public actor LLMClient {
     }
     
     private func checkOpenAI() -> Bool {
-        // Check for OpenAI API key in environment
+        // Check for OpenAI API key in environment or stored settings
         if let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !key.isEmpty {
             return true
         }
+        // Could also check UserDefaults for stored key (would need Settings reference)
         return false
+    }
+    
+    /// Set OpenAI API key (stored in memory for this session)
+    private var openAIKey: String?
+    
+    public func setOpenAIKey(_ key: String?) {
+        openAIKey = key
+    }
+    
+    private func getOpenAIKey() -> String? {
+        // Check session key first
+        if let key = openAIKey, !key.isEmpty {
+            return key
+        }
+        // Fall back to environment
+        if let key = ProcessInfo.processInfo.environment["OPENAI_API_KEY"], !key.isEmpty {
+            return key
+        }
+        return nil
     }
     
     // MARK: - LLM Calls
@@ -645,7 +700,7 @@ public actor LLMClient {
     }
     
     private func sendOpenAIRequest(prompt: String, maxTokens: Int) async throws -> String {
-        guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"] else {
+        guard let apiKey = getOpenAIKey() else {
             throw LLMClientError.notAvailable
         }
         
