@@ -83,7 +83,7 @@ struct LaunchpadTestView: View {
                     .padding()
                 }
                 .background(Color.black)
-                .onChange(of: viewModel.logs.count) { _ in
+                .onChange(of: viewModel.logs.count) { _, _ in
                     if let lastIndex = viewModel.logs.indices.last {
                         proxy.scrollTo(lastIndex, anchor: .bottom)
                     }

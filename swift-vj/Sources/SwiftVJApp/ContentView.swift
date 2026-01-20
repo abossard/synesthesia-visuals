@@ -13,6 +13,7 @@ struct ContentView: View {
         case rendering = "Rendering"
         case pipeline = "Pipeline"
         case shaders = "Shaders"
+        case songs = "Songs"
         case osc = "OSC"
         case launchpad = "Launchpad"
         case logs = "Logs"
@@ -26,6 +27,7 @@ struct ContentView: View {
             case .rendering: return "tv"
             case .pipeline: return "arrow.triangle.branch"
             case .shaders: return "sparkles"
+            case .songs: return "music.note.list"
             case .osc: return "antenna.radiowaves.left.and.right"
             case .launchpad: return "square.grid.3x3.fill"
             case .logs: return "doc.text"
@@ -71,6 +73,8 @@ struct ContentView: View {
                     PipelineStatusView()
                 case .shaders:
                     ShaderBrowserView()
+                case .songs:
+                    SongBrowserView()
                 case .osc:
                     OSCDebugView()
                 case .launchpad:
@@ -84,9 +88,43 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("SwiftVJ")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                PhaseToolbarControl(
+                    selection: Binding(
+                        get: { appState.currentPhase },
+                        set: { newPhase in appState.setPhase(newPhase) }
+                    )
+                )
+            }
+        }
         .task {
             // Autostart pipeline when app launches
             try? await appState.start()
+        }
+    }
+}
+
+// MARK: - Toolbar Controls
+
+private struct PhaseToolbarControl: View {
+    @Binding var selection: Phase?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label("Phase", systemImage: "waveform.path.ecg")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Picker("Phase", selection: $selection) {
+                Text("None").tag(nil as Phase?)
+                ForEach(Phase.allCases, id: \.self) { phase in
+                    Label(phase.displayName, systemImage: phase.iconName)
+                        .tag(phase as Phase?)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 160)
         }
     }
 }

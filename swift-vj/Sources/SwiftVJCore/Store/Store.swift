@@ -248,10 +248,7 @@ public final class ViewStore<State: Equatable, Action>: ObservableObject {
         self.state = store.state
 
         // Observe store changes
-        observation = Task { [weak self] in
-            // In a real implementation, use Combine publisher
-            // For now, this is a placeholder
-        }
+        observation = Task { }
     }
 
     deinit {

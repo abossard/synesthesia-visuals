@@ -378,7 +378,7 @@ struct RenderingView: View {
         Binding(
             get: { appState.selectedShader ?? "3isacrowd" },
             set: { newValue in
-                Task { await appState.selectShader(newValue) }
+                appState.selectShader(newValue)
             }
         )
     }
@@ -812,7 +812,7 @@ struct ShaderListView: View {
                     let shaders = shaderManager.availableShaders
                     guard !shaders.isEmpty else { return }
                     let prevIndex = (shaderManager.currentIndex - 1 + shaders.count) % shaders.count
-                    Task { await appState.selectShader(shaders[prevIndex].name) }
+                    appState.selectShader(shaders[prevIndex].name)
                 } label: {
                     Image(systemName: "chevron.left")
                 }
@@ -823,7 +823,7 @@ struct ShaderListView: View {
                     let shaders = shaderManager.availableShaders
                     guard !shaders.isEmpty else { return }
                     let nextIndex = (shaderManager.currentIndex + 1) % shaders.count
-                    Task { await appState.selectShader(shaders[nextIndex].name) }
+                    appState.selectShader(shaders[nextIndex].name)
                 } label: {
                     Image(systemName: "chevron.right")
                 }
@@ -864,7 +864,7 @@ struct ShaderListView: View {
                                 isSelected: appState.selectedShader == shader.name
                             ) {
                                 // All shader selection goes through AppState
-                                Task { await appState.selectShader(shader.name) }
+                                appState.selectShader(shader.name)
                             }
                         }
                     }

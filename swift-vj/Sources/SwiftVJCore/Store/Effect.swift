@@ -13,10 +13,10 @@ import Foundation
 /// - `.run { send in ... }` - Async operation
 /// - `.merge([effect1, effect2])` - Run effects concurrently
 /// - `.concatenate([effect1, effect2])` - Run effects sequentially
-public struct Effect<Action>: Sendable where Action: Sendable {
+public struct Effect<Action>: @unchecked Sendable where Action: Sendable {
 
     /// Internal operation type
-    enum Operation: Sendable {
+    enum Operation {
         case none
         case run(
             priority: TaskPriority?,

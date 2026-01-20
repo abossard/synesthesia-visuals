@@ -402,9 +402,7 @@ struct ShaderBrowserView: View {
                             refreshId: refreshId,
                             isAnalyzing: isAnalyzing,
                             onTap: {
-                                Task {
-                                    await appState.selectShader(shader.name)
-                                }
+                                appState.selectShader(shader.name)
                             },
                             onCheck: { modifiers in
                                 handleCheckClick(shader.name, modifiers: modifiers)
@@ -440,7 +438,7 @@ struct ShaderBrowserView: View {
         .sheet(isPresented: $showingPreviewModal, onDismiss: {
             appState.log("[Preview] Modal dismissed", level: .debug)
             if let prev = previousSelectedShaderName {
-                Task { await appState.selectShader(prev) }
+                appState.selectShader(prev)
             }
             previewShaderName = nil
         }) {
@@ -721,9 +719,7 @@ struct ShaderBrowserView: View {
         
         // Clear current shader if it was moved
         if movedCurrentShader {
-            Task {
-                await appState.selectShader("")
-            }
+            appState.selectShader("")
         }
         
         Task { await reloadAllShaders() }
@@ -833,10 +829,8 @@ struct ShaderBrowserView: View {
         appState.log("[Preview]   • Setting showingPreviewModal = true", level: .debug)
         showingPreviewModal = true
         
-        Task {
-            await appState.selectShader(shader.name)
-            appState.log("[Preview]   • selectShader completed", level: .debug)
-        }
+        appState.selectShader(shader.name)
+        appState.log("[Preview]   • selectShader completed", level: .debug)
     }
     
     /// Show confirmation for deleting selected shaders
@@ -874,20 +868,18 @@ struct ShaderBrowserView: View {
             }
         }
         
-        if deletedAny {
-            appState.log("Deleted shader: \(shader.name)", level: .info)
-            selectedShaders.remove(shader.name)
-            
-            // Clear current shader if it was deleted
-            if wasCurrentShader {
-                Task {
-                    await appState.selectShader("")
+            if deletedAny {
+                appState.log("Deleted shader: \(shader.name)", level: .info)
+                selectedShaders.remove(shader.name)
+                
+                // Clear current shader if it was deleted
+                if wasCurrentShader {
+                    appState.selectShader("")
                 }
+                
+                Task { await reloadAllShaders() }
             }
-            
-            Task { await reloadAllShaders() }
         }
-    }
     
     // MARK: - Unified Analyze Function
     
@@ -994,7 +986,7 @@ struct ShaderBrowserView: View {
                 
                 // STEP 1: Select shader via AppState (single source of truth - syncs to render engine)
                 appState.log("  ▶ Selecting shader '\(shaderName)'...", level: .info)
-                await appState.selectShader(shaderName)
+                appState.selectShader(shaderName)
                 
                 // STEP 2: Wait for shader to stabilize and render
                 appState.log("  ⏳ Waiting 3s for shader to initialize...", level: .info)

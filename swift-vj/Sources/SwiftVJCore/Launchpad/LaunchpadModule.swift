@@ -254,7 +254,7 @@ public final class LaunchpadModule: @unchecked Sendable {
 
     private func refreshDynamicBanks(for banks: [Int]? = nil) {
         let banksToRefresh = banks ?? Array(rolesByBank.keys)
-        Task {
+        Task { @MainActor in
             // Fetch dynamic sources
             let scenes = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
             let controls = await DynamicControlStore.shared.items()
@@ -274,10 +274,7 @@ public final class LaunchpadModule: @unchecked Sendable {
                     let pageSize = 64
                     let totalPages = max(1, Int(ceil(Double(controls.count) / Double(pageSize))))
                     pageCounts[bank] = totalPages
-                    let currentPage: Int = {
-                        lock.lock(); defer { lock.unlock() }
-                        return min(state.bankCurrentPage[bank] ?? 0, totalPages - 1)
-                    }()
+                    let currentPage = min(self.state.bankCurrentPage[bank] ?? 0, totalPages - 1)
                     let start = currentPage * pageSize
                     let end = min(start + pageSize, controls.count)
                     let pageControls = Array(controls[start..<end])
@@ -287,16 +284,14 @@ public final class LaunchpadModule: @unchecked Sendable {
                 }
             }
 
-            lock.lock()
             for (bank, pads) in updates {
-                state.bankPads[bank] = pads
-                state.bankPadRuntime[bank] = pads.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
+                self.state.bankPads[bank] = pads
+                self.state.bankPadRuntime[bank] = pads.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
             }
             for (bank, pages) in pageCounts {
-                state.bankPageCount[bank] = pages
-                if (state.bankCurrentPage[bank] ?? 0) >= pages { state.bankCurrentPage[bank] = 0 }
+                self.state.bankPageCount[bank] = pages
+                if (self.state.bankCurrentPage[bank] ?? 0) >= pages { self.state.bankCurrentPage[bank] = 0 }
             }
-            lock.unlock()
 
             refreshLeds()
             let refreshed = updates.keys.sorted()

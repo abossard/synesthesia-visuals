@@ -141,7 +141,7 @@ public enum PipelineEffectsImpl {
 
             // Build final result
             let totalTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)
-            let lyricsFound = lrcLyricsFound || !analysis.keywords.isEmpty || !analysis.themes.isEmpty
+            let lyricsFound = lrcLyricsFound
 
             var stepsCompleted: [String] = ["ai"]
             if lyricsFound { stepsCompleted.insert("lyrics", at: 0) }

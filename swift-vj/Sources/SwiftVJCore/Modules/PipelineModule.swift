@@ -219,11 +219,14 @@ public actor PipelineModule: Module {
                 group.addTask {
                     await self.fireStepStart(.shaders)
                     let shaderStart = Date()
+
+                    let currentPhase = await EffectEnvironment.shared.currentPhaseProvider?()
                     
                     shaderMatch = await shadersModule.selectForSong(
                         categories: nil,
                         energy: analysis.energy,
-                        valence: analysis.valence
+                        valence: analysis.valence,
+                        phase: currentPhase
                     )
                     
                     stepTimings["shaders"] = Int(Date().timeIntervalSince(shaderStart) * 1000)
@@ -272,6 +275,20 @@ public actor PipelineModule: Module {
                 stepsSkipped.append("images")
             }
         }
+
+        // Ensure we always have a shader selection; fallback to random if needed
+        if shaderMatch == nil, let shadersModule = shadersModule, let random = await shadersModule.randomShader() {
+            shaderMatch = ShaderMatchResult(
+                name: random.name,
+                path: random.path,
+                score: 0,
+                energyScore: random.energyScore,
+                moodValence: random.moodValence,
+                mood: random.mood
+            )
+            stepsCompleted.append("shaders")
+            await self.fireStepComplete(.shaders, .shaders(name: random.name, score: 0))
+        }
         
         // === STEP 5: OSC Broadcast ===
         await fireStepStart(.osc)
@@ -291,8 +308,8 @@ public actor PipelineModule: Module {
         // Build result
         let totalTimeMs = Int(Date().timeIntervalSince(startTime) * 1000)
         
-        // Lyrics found = either from LRC or from LLM analysis
-        let lyricsFound = lrcLyricsFound || !analysis.keywords.isEmpty || !analysis.themes.isEmpty
+        // Lyrics found only counts when we have timecoded LRC lyrics
+        let lyricsFound = lrcLyricsFound
         
         let result = PipelineResult(
             artist: track.artist,

@@ -72,7 +72,7 @@ public struct StoreLogView: View {
             }
             .listStyle(.plain)
             .font(.system(.caption, design: .monospaced))
-            .onChange(of: logger.entryCount) { _ in
+            .onChange(of: logger.entryCount) { _, _ in
                 if autoScroll, let last = logger.entries.last {
                     withAnimation(.easeOut(duration: 0.1)) {
                         proxy.scrollTo(last.id, anchor: .bottom)

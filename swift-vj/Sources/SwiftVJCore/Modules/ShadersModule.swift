@@ -126,10 +126,21 @@ public actor ShadersModule: Module {
         categories: SongCategories? = nil,
         energy: Double = 0.5,
         valence: Double = 0.0,
+        phase: Phase? = nil,
         excludeLast: Bool = true
     ) async -> ShaderMatchResult? {
-        // Get candidates
-        let candidates = await matcher.match(energy: energy, valence: valence, topK: 10)
+        // Get candidates, prefer strict phase match when provided
+        var candidates: [ShaderMatchResult] = []
+        if let phase = phase {
+            candidates = await matcher.matchForPhase(energy: energy, valence: valence, phase: phase, topK: 10)
+            if candidates.isEmpty {
+                // Fallback to soft phase bonus if no tagged shaders
+                candidates = await matcher.matchWithPhase(energy: energy, valence: valence, phase: phase, phaseWeight: 0.25, topK: 10)
+            }
+        }
+        if candidates.isEmpty {
+            candidates = await matcher.match(energy: energy, valence: valence, topK: 10)
+        }
         
         guard !candidates.isEmpty else { return nil }
         

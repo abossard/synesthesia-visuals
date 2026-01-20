@@ -2,6 +2,7 @@
 // Single source of truth for all application data
 
 import Foundation
+import SongRepository
 
 // MARK: - Root App State
 
@@ -28,6 +29,9 @@ public struct AppState: Equatable, Sendable {
     /// UI state (logs, OSC debug, settings)
     public var ui: UISubState
 
+    /// Songs management state
+    public var songs: SongsSubState
+
     /// Whether the system is running
     public var isRunning: Bool
 
@@ -48,6 +52,7 @@ public struct AppState: Equatable, Sendable {
         launchpad: LaunchpadSubState = LaunchpadSubState(),
         audio: AudioSubState = AudioSubState(),
         ui: UISubState = UISubState(),
+        songs: SongsSubState = SongsSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
     ) {
@@ -57,6 +62,7 @@ public struct AppState: Equatable, Sendable {
         self.launchpad = launchpad
         self.audio = audio
         self.ui = ui
+        self.songs = songs
         self.isRunning = isRunning
         self.modules = modules
     }
@@ -69,6 +75,7 @@ public struct AppState: Equatable, Sendable {
         lhs.launchpad == rhs.launchpad &&
         lhs.audio == rhs.audio &&
         lhs.ui == rhs.ui &&
+        lhs.songs == rhs.songs &&
         lhs.isRunning == rhs.isRunning
     }
 }
@@ -470,6 +477,60 @@ public struct OSCLogEntryState: Equatable, Sendable, Identifiable {
         self.address = address
         self.args = args
         self.timestamp = timestamp
+    }
+}
+
+// MARK: - Songs Sub-State
+
+/// Songs management state
+public struct SongsSubState: Equatable, Sendable {
+    /// Total song count
+    public var totalCount: Int
+
+    /// Currently selected song ID (in browser)
+    public var selectedSongId: SongID?
+
+    /// Current search query
+    public var searchQuery: String
+
+    /// Current filter
+    public var filter: SongFilter
+
+    /// Current sort order
+    public var sortOrder: SongSortOrder
+
+    /// Filtered/searched results (for UI display)
+    public var displayedSongs: [Song]
+
+    /// Song being re-analyzed
+    public var reanalyzingSongId: SongID?
+
+    /// Statistics snapshot
+    public var statistics: SongStatistics?
+
+    /// Whether songs are loading
+    public var isLoading: Bool
+
+    public init(
+        totalCount: Int = 0,
+        selectedSongId: SongID? = nil,
+        searchQuery: String = "",
+        filter: SongFilter = .all,
+        sortOrder: SongSortOrder = .recentlyPlayed,
+        displayedSongs: [Song] = [],
+        reanalyzingSongId: SongID? = nil,
+        statistics: SongStatistics? = nil,
+        isLoading: Bool = false
+    ) {
+        self.totalCount = totalCount
+        self.selectedSongId = selectedSongId
+        self.searchQuery = searchQuery
+        self.filter = filter
+        self.sortOrder = sortOrder
+        self.displayedSongs = displayedSongs
+        self.reanalyzingSongId = reanalyzingSongId
+        self.statistics = statistics
+        self.isLoading = isLoading
     }
 }
 

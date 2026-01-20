@@ -45,14 +45,22 @@ public final class EffectEnvironment {
     
     /// Process a track through the pipeline
     public var processPipelineTrack: (@Sendable (Track) async -> Void)?
+
+    /// Current DJ phase provider
+    public var currentPhaseProvider: (@Sendable () async -> Phase?)?
     
     // MARK: - OSC Effects
-    
+
     /// Send OSC message to a target
     public var sendOSC: (@Sendable (String, String, [any Sendable]) async throws -> Void)?
-    
+
+    // MARK: - Songs Module
+
+    /// Songs module for song management
+    public var songsModule: SongsModule?
+
     // MARK: - Reset (for testing)
-    
+
     /// Reset all callbacks to nil (useful for testing)
     public func reset() {
         loadShader = nil
@@ -60,5 +68,6 @@ public final class EffectEnvironment {
         loadImagesFromFolder = nil
         processPipelineTrack = nil
         sendOSC = nil
+        songsModule = nil
     }
 }

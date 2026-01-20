@@ -34,6 +34,10 @@ let package = Package(
         .library(
             name: "ShaderRepository",
             targets: ["ShaderRepository"]),
+        // Song Repository - single source of truth for songs
+        .library(
+            name: "SongRepository",
+            targets: ["SongRepository"]),
         // Shadertoy Runtime library
         .library(
             name: "ShadertoyRuntime",
@@ -79,6 +83,7 @@ let package = Package(
             dependencies: [
                 "SwiftVJCore",
                 "ShaderRepository",
+                "SongRepository",
                 "SyphonKit",
             ],
             resources: [
@@ -92,6 +97,7 @@ let package = Package(
             name: "SwiftVJCore",
             dependencies: [
                 "ShaderRepository",
+                "SongRepository",
                 .product(name: "OSCKit", package: "OSCKit"),
                 .product(name: "Yams", package: "Yams"),
             ],
@@ -103,6 +109,11 @@ let package = Package(
         .target(
             name: "ShaderRepository",
             dependencies: []),
+
+        // Song Repository - pure functions for song management
+        .target(
+            name: "SongRepository",
+            dependencies: ["ShaderRepository"]),  // Depends on ShaderRepository for Phase type
 
         // Shadertoy Runtime - GLSL to Metal shader runtime
         .target(

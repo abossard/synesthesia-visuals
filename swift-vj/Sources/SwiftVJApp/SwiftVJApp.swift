@@ -77,6 +77,7 @@ public final class AppState: ObservableObject {
     public var imagesModule: ImagesModule?
     public var pipelineModule: PipelineModule?
     public var launchpadModule: LaunchpadModule?
+    public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
 
     // MARK: - Render Engine
@@ -108,6 +109,7 @@ public final class AppState: ObservableObject {
     @Published public var oscDebugEnabled: Bool = false {
         didSet { _oscDebugEnabledUnsafe = oscDebugEnabled }
     }
+    @Published public private(set) var songsState: SongsSubState = SongsSubState()
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
 
     public var effectivePhase: Phase? { currentPhase ?? detectedSongPhase }
@@ -179,6 +181,7 @@ public final class AppState: ObservableObject {
         }
 
         try await pipelineModule?.start()
+        try await songsModule?.start()
 
         // Update store state
         store.send(.startup)
@@ -217,6 +220,7 @@ public final class AppState: ObservableObject {
         vdjQueryTask = nil
         await playbackModule?.stop()
         await pipelineModule?.stop()
+        await songsModule?.stop()
         launchpadModule?.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)
@@ -387,20 +391,24 @@ public final class AppState: ObservableObject {
             imagesModule: imagesModule,
             oscHub: oscHub
         )
+
+        songsModule = SongsModule()
     }
 
     private func wireModuleDispatchers() async {
         // Wire playback module to dispatch actions to store
         await playbackModule?.setDispatch { [weak self] action in
+            guard let self else { return }
             await MainActor.run {
-                self?.store.send(action)
+                self.store.send(action)
             }
         }
 
         // Wire pipeline module to dispatch actions to store
         await pipelineModule?.setDispatch { [weak self] action in
+            guard let self else { return }
             await MainActor.run {
-                self?.store.send(action)
+                self.store.send(action)
             }
         }
     }
@@ -436,6 +444,12 @@ public final class AppState: ObservableObject {
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
             guard let self = self else { return }
             await self.processTrackChange(track)
+        }
+
+        EffectEnvironment.shared.songsModule = songsModule
+        EffectEnvironment.shared.currentPhaseProvider = { [weak self] in
+            guard let self else { return nil }
+            return await MainActor.run { self.currentPhase }
         }
     }
 
@@ -522,6 +536,7 @@ public final class AppState: ObservableObject {
                 self.imageIndex = newState.render.imageIndex
                 self.imageCount = newState.render.imageCount
                 self.shaderCount = newState.render.shaderCount
+                self.songsState = newState.songs
 
                 // Launchpad state
                 if let snapshot = newState.launchpad.status {

@@ -24,6 +24,7 @@ public enum AppAction: Sendable {
     case launchpad(LaunchpadAction)
     case audio(AudioAction)
     case ui(UIAction)
+    case songs(SongsAction)
 
     // MARK: - Persistence
     case loadPersistedState
@@ -211,6 +212,73 @@ public enum UIAction: Sendable {
     case setOscFilter(String)
 }
 
+// MARK: - Songs Actions
+
+import SongRepository
+
+/// Actions related to songs management
+public enum SongsAction: Sendable {
+    /// Load songs database
+    case load
+
+    /// Songs loaded
+    case loaded(count: Int)
+
+    /// Song recorded from pipeline
+    case songRecorded(artist: String, title: String)
+
+    /// Song selected in browser
+    case songSelected(SongID?)
+
+    /// Request to delete a song
+    case deleteSong(SongID)
+
+    /// Song deleted successfully
+    case songDeleted(SongID)
+
+    /// Request re-analysis
+    case requestReanalysis(SongID)
+
+    /// Re-analysis started
+    case reanalysisStarted(SongID)
+
+    /// Re-analysis completed
+    case reanalysisCompleted(SongID)
+
+    /// Update shader for song
+    case setShader(SongID, String)
+
+    /// Search songs
+    case search(String)
+
+    /// Search results received
+    case searchResultsReceived([Song])
+
+    /// Apply filter
+    case applyFilter(SongFilter)
+
+    /// Filter results received
+    case filterResultsReceived([Song])
+
+    /// Save songs database
+    case save
+
+    /// Clear search/filter
+    case clearFilter
+
+    /// Update statistics
+    case statisticsUpdated(SongStatistics)
+
+    /// Refresh displayed songs
+    case refreshList
+
+    /// Delete a single image from a song
+    case deleteImage(SongID, URL)
+
+    /// Song updated (e.g., image count changed)
+    case songUpdated(Song)
+}
+
 // MARK: - Action Descriptions (for debugging)
 
 extension AppAction: CustomStringConvertible {
@@ -225,6 +293,7 @@ extension AppAction: CustomStringConvertible {
         case .launchpad(let action): return "launchpad.\(action)"
         case .audio(let action): return "audio.\(action)"
         case .ui(let action): return "ui.\(action)"
+        case .songs(let action): return "songs.\(action)"
         case .loadPersistedState: return "loadPersistedState"
         case .persistedStateLoaded: return "persistedStateLoaded"
         case .persistState: return "persistState"
@@ -320,6 +389,33 @@ extension UIAction: CustomStringConvertible {
         case .clearOscMessages: return "clearOscMessages"
         case .setOscDebugEnabled(let enabled): return "setOscDebugEnabled(\(enabled))"
         case .setOscFilter(let filter): return "setOscFilter(\(filter))"
+        }
+    }
+}
+
+extension SongsAction: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .load: return "load"
+        case .loaded(let count): return "loaded(\(count))"
+        case .songRecorded(let artist, let title): return "songRecorded(\(artist) - \(title))"
+        case .songSelected(let id): return "songSelected(\(id?.rawValue ?? "none"))"
+        case .deleteSong(let id): return "deleteSong(\(id))"
+        case .songDeleted(let id): return "songDeleted(\(id))"
+        case .requestReanalysis(let id): return "requestReanalysis(\(id))"
+        case .reanalysisStarted(let id): return "reanalysisStarted(\(id))"
+        case .reanalysisCompleted(let id): return "reanalysisCompleted(\(id))"
+        case .setShader(let id, let shader): return "setShader(\(id), \(shader))"
+        case .search(let query): return "search(\(query))"
+        case .searchResultsReceived(let songs): return "searchResultsReceived(\(songs.count))"
+        case .applyFilter: return "applyFilter"
+        case .filterResultsReceived(let songs): return "filterResultsReceived(\(songs.count))"
+        case .save: return "save"
+        case .clearFilter: return "clearFilter"
+        case .statisticsUpdated: return "statisticsUpdated"
+        case .refreshList: return "refreshList"
+        case .deleteImage: return "deleteImage"
+        case .songUpdated(let song): return "songUpdated(\(song.id.rawValue))"
         }
     }
 }

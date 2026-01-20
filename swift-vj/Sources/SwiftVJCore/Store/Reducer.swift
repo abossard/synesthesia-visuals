@@ -2,6 +2,7 @@
 // Reducers handle actions and return new state + effects
 
 import Foundation
+import SongRepository
 
 // MARK: - Root Reducer
 
@@ -70,6 +71,12 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
     case .ui(let uiAction):
         return uiReducer(state: &state.ui, action: uiAction)
             .map { AppAction.ui($0) }
+
+    case .songs(let songsAction):
+        var songsState = state.songs
+        let effect = songsReducer(state: &songsState, action: songsAction, appState: &state)
+        state.songs = songsState
+        return effect
 
     // MARK: Persistence
     case .loadPersistedState:
@@ -214,6 +221,9 @@ public func pipelineReducer(
         if result.imagesFound && !result.imagesFolder.isEmpty {
             effects.append(.send(.render(.imagesLoaded(count: result.imagesCount, folderPath: result.imagesFolder))))
         }
+
+        // Auto-save song to database
+        effects.append(SongsEffects.recordSong(from: result))
 
         return effects.isEmpty ? .none : .merge(effects)
 
@@ -429,6 +439,116 @@ public func uiReducer(
     }
 }
 
+// MARK: - Songs Reducer
+
+/// Reducer for songs-related actions
+public func songsReducer(
+    state: inout SongsSubState,
+    action: SongsAction,
+    appState: inout AppState
+) -> Effect<AppAction> {
+    switch action {
+    case .load:
+        state.isLoading = true
+        return SongsEffects.load()
+
+    case .loaded(let count):
+        state.totalCount = count
+        state.isLoading = false
+        appState.ui.addLog("Songs: Loaded \(count) songs", level: .info)
+        // Trigger initial list refresh
+        return .send(.songs(.refreshList))
+
+    case .songRecorded(let artist, let title):
+        state.totalCount += 1
+        appState.ui.addLog("Song saved: \(artist) - \(title)", level: .info)
+        return .none
+
+    case .songSelected(let id):
+        state.selectedSongId = id
+        return .none
+
+    case .deleteSong(let id):
+        return SongsEffects.deleteSong(id)
+
+    case .songDeleted(let id):
+        state.totalCount = max(0, state.totalCount - 1)
+        if state.selectedSongId == id {
+            state.selectedSongId = nil
+        }
+        state.displayedSongs.removeAll { $0.id == id }
+        appState.ui.addLog("Song deleted: \(id)", level: .info)
+        return .none
+
+    case .requestReanalysis(let id):
+        state.reanalyzingSongId = id
+        appState.ui.addLog("Re-analyzing: \(id)", level: .info)
+        return SongsEffects.reanalyze(id)
+
+    case .reanalysisStarted(let id):
+        state.reanalyzingSongId = id
+        return .none
+
+    case .reanalysisCompleted(let id):
+        state.reanalyzingSongId = nil
+        appState.ui.addLog("Re-analysis complete: \(id)", level: .info)
+        // Trigger refresh of displayed songs
+        return .send(.songs(.refreshList))
+
+    case .setShader(let id, let shader):
+        return SongsEffects.setShader(shader, for: id)
+
+    case .search(let query):
+        state.searchQuery = query
+        if query.isEmpty {
+            return .send(.songs(.refreshList))
+        }
+        return SongsEffects.search(query)
+
+    case .searchResultsReceived(let songs):
+        state.displayedSongs = songs
+        return .none
+
+    case .applyFilter(let filter):
+        state.filter = filter
+        return SongsEffects.filter(filter, sortBy: state.sortOrder)
+
+    case .filterResultsReceived(let songs):
+        state.displayedSongs = songs
+        return .none
+
+    case .save:
+        return SongsEffects.save()
+
+    case .clearFilter:
+        state.searchQuery = ""
+        state.filter = .all
+        return .send(.songs(.refreshList))
+
+    case .statisticsUpdated(let statistics):
+        state.statistics = statistics
+        state.totalCount = statistics.totalCount
+        return .none
+
+    case .deleteImage(let id, let url):
+        return SongsEffects.deleteImage(id, url: url)
+
+    case .songUpdated(let song):
+        if let index = state.displayedSongs.firstIndex(where: { $0.id == song.id }) {
+            state.displayedSongs[index] = song
+        }
+        return .none
+
+    case .refreshList:
+        // Refresh with current filter and sort
+        if state.searchQuery.isEmpty {
+            return SongsEffects.filter(state.filter, sortBy: state.sortOrder)
+        } else {
+            return SongsEffects.search(state.searchQuery)
+        }
+    }
+}
+
 // MARK: - Effect Placeholders
 
 /// Placeholder effects - to be implemented in Phase 3
@@ -506,6 +626,151 @@ public enum PersistenceEffects {
     public static func savePlaybackSource(_ source: String) -> Effect<AppAction> {
         .fireAndForget {
             UserDefaults.standard.set(source, forKey: "playbackSource")
+        }
+    }
+}
+
+public enum SongsEffects {
+    public static func load() -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else {
+                await send(.songs(.loaded(count: 0)))
+                return
+            }
+            try? await module.start()
+            let count = await module.songCount
+            let stats = await module.statistics
+            await send(.songs(.loaded(count: count)))
+            await send(.songs(.statisticsUpdated(stats)))
+        }
+    }
+
+    public static func recordSong(from result: PipelineResult) -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else {
+                return
+            }
+
+            // Extract DJ phase from categories if available
+            var djPhase: Phase? = nil
+            if !result.mood.isEmpty {
+                // Simple phase detection from mood/energy
+                if result.energy > 0.7 {
+                    djPhase = .peak
+                } else if result.energy > 0.5 {
+                    djPhase = .buildup
+                } else if result.energy > 0.3 {
+                    djPhase = .disco
+                } else {
+                    djPhase = .release
+                }
+            }
+
+        await module.recordSong(
+            artist: result.artist,
+            title: result.title,
+            album: result.album,
+            duration: 0,  // Not available in PipelineResult
+            bpm: 0,       // Not available in PipelineResult
+            musicalKey: "",  // Not available in PipelineResult
+            mood: result.mood,
+            energy: result.energy,
+            valence: result.valence,
+            keywords: result.keywords,
+            themes: result.themes,
+            visualAdjectives: result.visualAdjectives,
+            categories: result.categories,
+            djPhase: djPhase,
+            shaderName: result.shaderMatched ? result.shaderName : nil,
+            imagesFolderPath: result.imagesFound ? result.imagesFolder : nil,
+            imagesCount: result.imagesCount,
+            hasLyrics: result.lyricsFound,
+            lyricsText: result.plainLyrics,
+            lyricsLineCount: result.lyricsLineCount,
+            refrainCount: result.refrainLines.count
+        )
+
+        await send(.songs(.songRecorded(artist: result.artist, title: result.title)))
+        }
+    }
+
+    public static func save() -> Effect<AppAction> {
+        .fireAndForget {
+            await EffectEnvironment.shared.songsModule?.saveNow()
+        }
+    }
+
+    public static func search(_ query: String) -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else {
+                await send(.songs(.searchResultsReceived([])))
+                return
+            }
+            let results = await module.search(query: query)
+            await send(.songs(.searchResultsReceived(results)))
+        }
+    }
+
+    public static func filter(_ filter: SongFilter, sortBy order: SongSortOrder) -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else {
+                await send(.songs(.filterResultsReceived([])))
+                return
+            }
+            let results = await module.query(filter: filter, sortBy: order)
+            await send(.songs(.filterResultsReceived(results)))
+        }
+    }
+
+    public static func deleteSong(_ id: SongID) -> Effect<AppAction> {
+        .run { send in
+            await EffectEnvironment.shared.songsModule?.deleteSong(id: id)
+            await send(.songs(.songDeleted(id)))
+        }
+    }
+
+    public static func setShader(_ shader: String, for id: SongID) -> Effect<AppAction> {
+        .fireAndForget {
+            await EffectEnvironment.shared.songsModule?.setShader(shader, for: id)
+        }
+    }
+
+    public static func deleteImage(_ id: SongID, url: URL) -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else { return }
+            if let updated = try? await module.deleteImage(id: id, imageURL: url) {
+                await send(.songs(.songUpdated(updated)))
+            }
+            await send(.songs(.refreshList))
+        }
+    }
+
+    public static func reanalyze(_ id: SongID) -> Effect<AppAction> {
+        .run { send in
+            guard let songsModule = await EffectEnvironment.shared.songsModule,
+                  let song = await songsModule.getSong(id: id) else {
+                return
+            }
+
+            await send(.songs(.reanalysisStarted(id)))
+
+            // Mark for reanalysis in the module
+            await songsModule.markForReanalysis(id: id)
+
+            // Trigger pipeline processing for this song
+            let track = Track(
+                artist: song.artist,
+                title: song.title,
+                album: song.album,
+                duration: song.duration,
+                bpm: song.bpm,
+                musicalKey: song.musicalKey
+            )
+
+            // Use pipeline to re-analyze
+            await EffectEnvironment.shared.processPipelineTrack?(track)
+
+            // Note: reanalysisCompleted will be sent when pipeline completes
         }
     }
 }

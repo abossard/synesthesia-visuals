@@ -475,6 +475,46 @@ public actor ShaderMatcher {
         }
     }
 
+    /// Strict phase matching: only return shaders tagged with the target phase.
+    public func matchForPhase(
+        energy: Double,
+        valence: Double,
+        phase: Phase,
+        topK: Int = 5
+    ) -> [ShaderMatchResult] {
+        let filtered = shaders.values.filter { $0.phases?.contains(phase) ?? false }
+        guard !filtered.isEmpty else { return [] }
+
+        let target = buildShaderTargetVector(energy: energy, valence: valence)
+        var scored: [(ShaderInfo, Double)] = []
+
+        for info in filtered {
+            let vector = [
+                info.energyScore,
+                info.moodValence,
+                info.colorWarmth,
+                info.motionSpeed,
+                0.5,
+                0.5
+            ]
+            let distance = weightedDistance(target, vector)
+            scored.append((info, distance))
+        }
+
+        scored.sort { $0.1 < $1.1 }
+
+        return scored.prefix(topK).map { info, score in
+            ShaderMatchResult(
+                name: info.name,
+                path: info.path,
+                score: score,
+                energyScore: info.energyScore,
+                moodValence: info.moodValence,
+                mood: info.mood
+            )
+        }
+    }
+
     /// Get all shaders that match a specific phase
     ///
     /// - Parameter phase: The phase to filter by
