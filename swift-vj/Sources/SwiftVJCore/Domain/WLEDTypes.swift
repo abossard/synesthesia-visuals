@@ -81,10 +81,10 @@ public struct WLEDAudioSyncPacket: Sendable, Equatable {
         data.append(contentsOf: headerBytes)
         
         // sampleRaw: Float (4 bytes, little-endian)
-        data.append(sampleRaw.bytes)
+        data.append(contentsOf: sampleRaw.bytes)
         
         // sampleSmth: Float (4 bytes, little-endian)
-        data.append(sampleSmth.bytes)
+        data.append(contentsOf: sampleSmth.bytes)
         
         // samplePeak: UInt8 (1 byte)
         data.append(samplePeak)
@@ -96,10 +96,10 @@ public struct WLEDAudioSyncPacket: Sendable, Equatable {
         data.append(contentsOf: fftResult)
         
         // FFT_Magnitude: Float (4 bytes, little-endian)
-        data.append(fftMagnitude.bytes)
+        data.append(contentsOf: fftMagnitude.bytes)
         
         // FFT_MajorPeak: Float (4 bytes, little-endian)
-        data.append(fftMajorPeak.bytes)
+        data.append(contentsOf: fftMajorPeak.bytes)
         
         return data
     }

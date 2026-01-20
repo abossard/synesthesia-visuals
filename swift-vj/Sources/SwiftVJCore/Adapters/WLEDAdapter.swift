@@ -89,20 +89,28 @@ public actor WLEDAdapter {
         
         // Encode packet to binary data
         let data = packet.encode()
-        
-        // Send UDP packet
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+
+        enum SendOutcome {
+            case success
+            case failure(NWError)
+        }
+
+        let outcome = await withCheckedContinuation { (continuation: CheckedContinuation<SendOutcome, Never>) in
             connection.send(content: data, completion: .contentProcessed { error in
                 if let error = error {
-                    self.sendErrors += 1
-                    continuation.resume(throwing: WLEDAdapterError.sendFailed(error.localizedDescription))
+                    continuation.resume(returning: .failure(error))
                 } else {
-                    Task {
-                        await self.recordSend()
-                    }
-                    continuation.resume()
+                    continuation.resume(returning: .success)
                 }
             })
+        }
+
+        switch outcome {
+        case .success:
+            recordSend()
+        case .failure(let error):
+            incrementSendError()
+            throw WLEDAdapterError.sendFailed(error.localizedDescription)
         }
     }
     
@@ -154,44 +162,7 @@ public actor WLEDAdapter {
         // Start connection
         connection.start(queue: .global())
         
-        // Wait for connection to be ready (or fail)
-        try await waitForReady(connection)
-        
         return connection
-    }
-    
-    /// Wait for connection to reach ready state
-    private func waitForReady(_ connection: NWConnection) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
-            
-            connection.stateUpdateHandler = { state in
-                guard !resumed else { return }
-                
-                switch state {
-                case .ready:
-                    resumed = true
-                    continuation.resume()
-                case .failed(let error):
-                    resumed = true
-                    continuation.resume(throwing: WLEDAdapterError.connectionFailed(error.localizedDescription))
-                case .waiting(let error):
-                    // UDP doesn't really wait, but handle just in case
-                    print("WLED connection waiting: \(error.localizedDescription)")
-                default:
-                    break
-                }
-            }
-            
-            // Timeout after 5 seconds
-            Task {
-                try? await Task.sleep(for: .seconds(5))
-                if !resumed {
-                    resumed = true
-                    continuation.resume(throwing: WLEDAdapterError.connectionFailed("Connection timeout"))
-                }
-            }
-        }
     }
     
     // MARK: - Stats
@@ -199,6 +170,10 @@ public actor WLEDAdapter {
     private func recordSend() {
         packetsSent += 1
         lastSendTime = Date()
+    }
+
+    private func incrementSendError() {
+        sendErrors += 1
     }
     
     /// Get adapter statistics

@@ -38,7 +38,7 @@ swift run swift-vj lyrics --artist "Queen" --title "Bohemian Rhapsody" --local
 
 ## Project Structure
 
-```
+```text
 swift-vj/
 ├── Package.swift              # Swift package manifest
 ├── REWRITE_PLAN.md            # Complete rewrite plan
@@ -61,15 +61,18 @@ swift-vj/
 ## Design Principles
 
 ### Grokking Simplicity
+
 - **Data**: Immutable structs (LyricLine, Track, etc.)
 - **Calculations**: Pure functions (parseLRC, detectRefrains)
 - **Actions**: Isolated side effects (network, file I/O)
 
 ### A Philosophy of Software Design
+
 - **Deep Modules**: Simple interfaces hiding complexity
 - Each module exposes 2-5 public methods max
 
 ### TDD Philosophy
+
 - Test end-to-end behaviors, not implementation details
 - No mocking - tests run against real services
 - Tests skip gracefully when prerequisites unavailable
@@ -83,6 +86,7 @@ swift-vj/
 ## Testing
 
 ### Behavior Tests
+
 Pure function tests that require no external dependencies:
 
 ```bash
@@ -90,6 +94,7 @@ swift test --filter BehaviorTests
 ```
 
 ### E2E Tests
+
 Integration tests that require external services:
 
 ```bash

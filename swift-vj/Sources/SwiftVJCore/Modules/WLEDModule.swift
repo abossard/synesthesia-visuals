@@ -119,7 +119,7 @@ public actor WLEDModule: Module {
             Task {
                 // Example: parse bass level from /syn/level/bass
                 if address == "/syn/level/bass", let bass = values.first as? Float {
-                    var levels = await self.audioLevels
+                    let levels = await self.audioLevels
                     // Update levels (this is simplified - real impl would be more complete)
                     await self.updateAudioLevels(OSCAudioLevels(
                         bass: bass,
@@ -152,7 +152,7 @@ public actor WLEDModule: Module {
         updateTask = Task {
             while !Task.isCancelled {
                 // Convert audio data to WLED packet
-                let packet = await createPacket()
+                let packet = createPacket()
                 
                 // Send to all enabled controllers
                 if config.enabled {
@@ -197,7 +197,7 @@ public actor WLEDModule: Module {
         let fftBands = createFFTBands()
         
         // FFT magnitude: highest band value
-        let fftMagnitude = fftBands.max() ?? 0
+        let fftMagnitude = Float(fftBands.max() ?? 0)
         
         // FFT major peak: index of highest band (0-15)
         let maxIndex = fftBands.enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
@@ -286,7 +286,6 @@ public actor WLEDModule: Module {
     
     /// Add a new WLED controller
     public func addController(_ controller: WLEDController) {
-        var newConfig = config
         var controllers = config.controllers
         controllers.append(controller)
         config = WLEDConfig(

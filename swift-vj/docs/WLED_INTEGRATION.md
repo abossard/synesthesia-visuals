@@ -22,6 +22,7 @@ Swift-VJ sends real-time audio analysis to WLED controllers via UDP Sound Sync v
 ## Protocol
 
 WLED UDP Sound Sync v2 (port 21324):
+
 - 40-byte binary packet
 - Header: "00002\0" (6 bytes)
 - Audio data: sampleRaw, sampleSmth, samplePeak (9 bytes)
@@ -32,10 +33,12 @@ WLED UDP Sound Sync v2 (port 21324):
 ## Configuration
 
 **Global Settings:**
+
 - Update Rate: Packets per second (20-100 Hz, default 50 Hz)
 - FFT Smoothing: EMA smoothing factor (0.0-1.0, default 0.7)
 
 **Controller Management:**
+
 - Add: Manually enter IP or scan network (mDNS discovery)
 - Enable/Disable: Toggle individual controllers
 - Remove: Delete unwanted controllers
@@ -45,6 +48,7 @@ WLED UDP Sound Sync v2 (port 21324):
 ## Audio Mapping
 
 Swift-VJ receives 4 frequency bands from Synesthesia:
+
 - Bass → WLED bands 0-3
 - Low-Mid → WLED bands 4-7
 - Mid → WLED bands 8-11
@@ -53,16 +57,19 @@ Swift-VJ receives 4 frequency bands from Synesthesia:
 ## Troubleshooting
 
 **No audio reaction:**
+
 1. Check Settings → WLED: master toggle enabled, controllers enabled
 2. Check logs: "WLED module started with X controllers"
 3. Verify network: ping WLED IP, check firewall (UDP 21324)
 
 **Intermittent failures:**
+
 1. Check logs for "Failed to send to controllers"
 2. Lower update rate to reduce network load
 3. Increase FFT smoothing to reduce jitter
 
 **WLED shows "No Audio":**
+
 1. Verify WLED "Audio Source" is set to "UDP Sound Sync" (not Microphone)
 2. Confirm "Receive UDP Sound Sync" is enabled
 3. Check port is 21324
@@ -70,6 +77,7 @@ Swift-VJ receives 4 frequency bands from Synesthesia:
 ## Logging
 
 All WLED logs prefixed with `[WLED]`:
+
 - `[INFO] [WLED] WLED module started with 2 active controller(s)`
 - `[DEBUG] [WLED]   → Living Room Strip (192.168.1.100:21324)`
 - `[WARNING] [WLED] Failed to send to controllers: ...`
@@ -79,17 +87,20 @@ Filter in Log Viewer by searching "WLED".
 ## Technical Details
 
 **Performance:**
+
 - Packet size: 40 bytes
 - Bandwidth: 16 Kbps per controller at 50 Hz
 - CPU: < 1%
 - Latency: < 20ms
 
 **Network:**
+
 - Protocol: UDP (stateless)
 - Discovery: mDNS/Bonjour (_wled._tcp)
 - Port: 21324 (configurable)
 
 **Compatibility:**
+
 - WLED v0.14.0+
 - MoonModules WLED SR
 - ESP32/ESP8266 hardware

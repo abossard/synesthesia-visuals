@@ -150,14 +150,9 @@ public actor ShaderMatcher {
             let subDirURL = directory.appendingPathComponent(subDir)
             guard fileManager.fileExists(atPath: subDirURL.path) else { continue }
             
-            // Find all .analysis.json files
-            guard let enumerator = fileManager.enumerator(
-                at: subDirURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            
-            for case let fileURL as URL in enumerator {
+            let analysisFiles = analysisFiles(in: subDirURL)
+
+            for fileURL in analysisFiles {
                 guard fileURL.pathExtension == "json",
                       fileURL.lastPathComponent.hasSuffix(".analysis.json") else {
                     continue
@@ -203,6 +198,22 @@ public actor ShaderMatcher {
         
         print("[ShaderMatcher] Loaded \(shaders.count) shaders with analysis")
         return shaders.count
+    }
+
+    /// Collect analysis files synchronously to avoid async iteration over DirectoryEnumerator
+    private func analysisFiles(in directory: URL) -> [URL] {
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var files: [URL] = []
+        for case let fileURL as URL in enumerator {
+            files.append(fileURL)
+        }
+        return files
     }
     
     /// Load all shader files from directory (analysis.json optional)
