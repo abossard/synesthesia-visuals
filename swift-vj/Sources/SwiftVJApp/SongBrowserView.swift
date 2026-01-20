@@ -17,6 +17,8 @@ struct SongBrowserView: View {
     @State private var showDeleteConfirm = false
     @State private var songToDelete: Song? = nil
     @State private var selectedSong: Song? = nil
+    @State private var selectedSongIds: Set<SongID> = []
+    @State private var isSelectionMode = false
 
     var body: some View {
         HSplitView {
@@ -233,18 +235,71 @@ struct SongBrowserView: View {
     // MARK: - Song List
 
     private var songList: some View {
-        List(displayedSongs, selection: $selectedSong) { song in
-            SongRowView(
-                song: song,
-                isSelected: selectedSong?.id == song.id,
-                isReanalyzing: appState.songsState.reanalyzingSongId == song.id,
-                onSelect: { selectSong(song) },
-                onDelete: { confirmDelete(song) },
-                onReanalyze: { reanalyze(song) }
-            )
-            .tag(song)
+        VStack(spacing: 0) {
+            // Selection toolbar
+            selectionToolbar
+
+            List(displayedSongs, selection: $selectedSong) { song in
+                SongRowView(
+                    song: song,
+                    isSelected: selectedSong?.id == song.id,
+                    isReanalyzing: appState.songsState.reanalyzingSongId == song.id,
+                    isSelectionMode: isSelectionMode,
+                    isChecked: selectedSongIds.contains(song.id),
+                    onSelect: { selectSong(song) },
+                    onDelete: { confirmDelete(song) },
+                    onReanalyze: { reanalyze(song) },
+                    onToggleSelection: { toggleSelection(song) }
+                )
+                .tag(song)
+            }
+            .listStyle(.inset(alternatesRowBackgrounds: true))
         }
-        .listStyle(.inset(alternatesRowBackgrounds: true))
+    }
+
+    private var selectionToolbar: some View {
+        HStack(spacing: 12) {
+            Toggle(isOn: $isSelectionMode) {
+                Label("Select", systemImage: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+            }
+            .toggleStyle(.button)
+            .onChange(of: isSelectionMode) { _, newValue in
+                if !newValue {
+                    selectedSongIds.removeAll()
+                }
+            }
+
+            if isSelectionMode {
+                Button(action: selectAll) {
+                    Label("All", systemImage: "checkmark.circle.fill")
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: { selectedSongIds.removeAll() }) {
+                    Label("None", systemImage: "circle")
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                if !selectedSongIds.isEmpty {
+                    Text("\(selectedSongIds.count) selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Button(action: analyzeSelected) {
+                        Label("Analyze Selected", systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color(.windowBackgroundColor).opacity(0.5))
     }
 
     // MARK: - Song Detail View
@@ -334,6 +389,27 @@ struct SongBrowserView: View {
         appState.send(.songs(.requestReanalysis(song.id)))
     }
 
+    private func toggleSelection(_ song: Song) {
+        if selectedSongIds.contains(song.id) {
+            selectedSongIds.remove(song.id)
+        } else {
+            selectedSongIds.insert(song.id)
+        }
+    }
+
+    private func selectAll() {
+        selectedSongIds = Set(displayedSongs.map(\.id))
+    }
+
+    private func analyzeSelected() {
+        for songId in selectedSongIds {
+            appState.send(.songs(.requestReanalysis(songId)))
+        }
+        // Clear selection after starting analysis
+        selectedSongIds.removeAll()
+        isSelectionMode = false
+    }
+
     private func clearCache(_ song: Song) {
         Task {
             await appState.clearLyricsCache(artist: song.artist, title: song.title)
@@ -419,12 +495,25 @@ struct SongRowView: View {
     let song: Song
     let isSelected: Bool
     let isReanalyzing: Bool
+    var isSelectionMode: Bool = false
+    var isChecked: Bool = false
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onReanalyze: () -> Void
+    var onToggleSelection: (() -> Void)? = nil
 
     var body: some View {
         HStack {
+            // Selection checkbox (only in selection mode)
+            if isSelectionMode {
+                Button(action: { onToggleSelection?() }) {
+                    Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(isChecked ? .accentColor : .secondary)
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+            }
+
             // Song info
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.title)
@@ -783,23 +872,8 @@ struct SongDetailView: View {
             }
 
             // Lyrics section
-            if let lyrics = song.lyricsText, !lyrics.isEmpty {
-                Divider()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Lyrics")
-                        .font(.headline)
-                    ScrollView {
-                        Text(lyrics)
-                            .font(.body)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                    .frame(minHeight: 120, maxHeight: 240)
-                    .padding(8)
-                    .background(Color(.windowBackgroundColor).opacity(0.4))
-                    .cornerRadius(8)
-                }
-            }
+            Divider()
+            LyricsBrowserView(song: song)
         }
     }
 
@@ -860,6 +934,224 @@ struct SongDetailView: View {
         onDeleteImage(url)
         imageURLs.removeAll { $0 == url }
         imageCache.removeValue(forKey: url)
+    }
+}
+
+// MARK: - Lyrics Browser View
+
+struct LyricsBrowserView: View {
+    let song: Song
+    @State private var isExpanded = false
+
+    private var parsedLines: [(time: Double?, text: String, isRefrain: Bool)] {
+        guard let lyrics = song.lyricsText, !lyrics.isEmpty else { return [] }
+        return parseLRCLines(lyrics)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with status
+            HStack {
+                Text("Lyrics")
+                    .font(.headline)
+
+                Spacer()
+
+                // Source indicator
+                if song.hasLyrics {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.badge.checkmark")
+                        Text("Synced (LRCLIB)")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.15))
+                    .cornerRadius(6)
+                } else if song.lyricsText != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "text.alignleft")
+                        Text("Plain Text")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.orange.opacity(0.15))
+                    .cornerRadius(6)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle")
+                        Text("No Lyrics")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+
+                // Stats
+                if song.lyricsLineCount > 0 {
+                    Text("\(song.lyricsLineCount) lines")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                if song.refrainCount > 0 {
+                    Text("• \(song.refrainCount) refrains")
+                        .font(.caption)
+                        .foregroundColor(.purple)
+                }
+
+                Button(action: { isExpanded.toggle() }) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Lyrics content
+            if isExpanded || song.lyricsText != nil {
+                if !parsedLines.isEmpty {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(parsedLines.enumerated()), id: \.offset) { index, line in
+                                LyricLineRow(
+                                    index: index,
+                                    time: line.time,
+                                    text: line.text,
+                                    isRefrain: line.isRefrain,
+                                    isSynced: song.hasLyrics
+                                )
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(minHeight: isExpanded ? 300 : 150, maxHeight: isExpanded ? 500 : 200)
+                    .background(Color(.textBackgroundColor).opacity(0.5))
+                    .cornerRadius(8)
+                } else {
+                    Text("No lyrics available")
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                }
+            }
+        }
+    }
+
+    /// Parse LRC format lines, extracting timestamps if present
+    private func parseLRCLines(_ text: String) -> [(time: Double?, text: String, isRefrain: Bool)] {
+        let lines = text.components(separatedBy: .newlines)
+        var result: [(time: Double?, text: String, isRefrain: Bool)] = []
+        var seenTexts: [String: Int] = [:]
+
+        // First pass: count occurrences
+        for line in lines {
+            let cleanText = extractText(from: line)
+            if !cleanText.isEmpty {
+                seenTexts[cleanText, default: 0] += 1
+            }
+        }
+
+        // Second pass: parse with refrain detection
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+
+            let time = extractTime(from: trimmed)
+            let text = extractText(from: trimmed)
+            guard !text.isEmpty else { continue }
+
+            let isRefrain = (seenTexts[text] ?? 0) >= 3
+            result.append((time: time, text: text, isRefrain: isRefrain))
+        }
+
+        return result
+    }
+
+    private func extractTime(from line: String) -> Double? {
+        // Match [mm:ss.xx] or [mm:ss.xxx] format
+        let pattern = #"\[(\d+):(\d+)\.(\d+)\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+            return nil
+        }
+
+        guard let minRange = Range(match.range(at: 1), in: line),
+              let secRange = Range(match.range(at: 2), in: line),
+              let msRange = Range(match.range(at: 3), in: line) else {
+            return nil
+        }
+
+        let min = Double(line[minRange]) ?? 0
+        let sec = Double(line[secRange]) ?? 0
+        let msStr = String(line[msRange])
+        let ms = Double(msStr) ?? 0
+        let msDivisor = pow(10.0, Double(msStr.count))
+
+        return min * 60 + sec + ms / msDivisor
+    }
+
+    private func extractText(from line: String) -> String {
+        // Remove timestamp patterns [mm:ss.xx]
+        let pattern = #"\[\d+:\d+\.\d+\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return line.trimmingCharacters(in: .whitespaces)
+        }
+        let result = regex.stringByReplacingMatches(
+            in: line,
+            range: NSRange(line.startIndex..., in: line),
+            withTemplate: ""
+        )
+        return result.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+struct LyricLineRow: View {
+    let index: Int
+    let time: Double?
+    let text: String
+    let isRefrain: Bool
+    let isSynced: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            // Line number
+            Text("\(index + 1)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(width: 24, alignment: .trailing)
+
+            // Timestamp (if synced)
+            if isSynced, let time = time {
+                Text(formatTime(time))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.blue)
+                    .frame(width: 50, alignment: .leading)
+            }
+
+            // Lyric text
+            Text(text)
+                .font(.body)
+                .foregroundColor(isRefrain ? .purple : .primary)
+                .fontWeight(isRefrain ? .semibold : .regular)
+
+            if isRefrain {
+                Text("♪")
+                    .font(.caption)
+                    .foregroundColor(.purple)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 2)
+        .background(isRefrain ? Color.purple.opacity(0.08) : Color.clear)
+        .cornerRadius(4)
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        let min = Int(seconds) / 60
+        let sec = Int(seconds) % 60
+        let ms = Int((seconds.truncatingRemainder(dividingBy: 1)) * 100)
+        return String(format: "%d:%02d.%02d", min, sec, ms)
     }
 }
 
