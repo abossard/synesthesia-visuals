@@ -125,6 +125,11 @@ public actor ImagesModule: Module {
         get async { await scraper.getCachedCount() }
     }
     
+    /// Clear cached images for a specific song
+    public func clearImagesForSong(artist: String, title: String) async {
+        await scraper.clearImagesForSong(artist: artist, title: title)
+    }
+    
     /// Get last fetch result
     public var currentResult: ImageResult? {
         lastResult

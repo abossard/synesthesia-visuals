@@ -324,13 +324,12 @@ public final class AppState: ObservableObject {
         log("[Cache] Cleared all lyrics cache", level: .info)
     }
 
-    /// Clear all caches (lyrics, LLM analysis, songs database).
+    /// Clear all caches (lyrics, pipeline, songs database).
     public func clearAllCaches() async {
+        // Lyrics cache
         await lyricsFetcher?.clearAllCache()
-        // LLMClient cache: clear the llm_cache directory
-        let llmCacheDir = Config.cacheDirectory.appendingPathComponent("llm_cache")
-        try? FileManager.default.removeItem(at: llmCacheDir)
-        try? FileManager.default.createDirectory(at: llmCacheDir, withIntermediateDirectories: true)
+        // Pipeline cache
+        await pipelineModule?.clearCache()
         // Songs database
         await songsModule?.clearAll()
         log("[Cache] Cleared all caches including songs database", level: .info)
@@ -570,6 +569,18 @@ public final class AppState: ObservableObject {
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
             guard let self = self else { return }
             await self.processTrackChange(track)
+        }
+
+        EffectEnvironment.shared.clearLyricsCache = { [weak self] artist, title in
+            await self?.lyricsFetcher?.clearCache(artist: artist, title: title)
+        }
+
+        EffectEnvironment.shared.clearPipelineCache = { [weak self] artist, title in
+            await self?.pipelineModule?.clearCacheForSong(artist: artist, title: title)
+        }
+
+        EffectEnvironment.shared.clearImagesCache = { [weak self] artist, title in
+            await self?.imagesModule?.clearImagesForSong(artist: artist, title: title)
         }
 
         EffectEnvironment.shared.songsModule = songsModule

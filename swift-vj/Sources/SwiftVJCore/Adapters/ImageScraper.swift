@@ -292,6 +292,13 @@ public actor ImageScraper {
         return cacheDir.appendingPathComponent(safe)
     }
     
+    /// Clear cached images for a specific song
+    public func clearImagesForSong(artist: String, title: String) {
+        let safe = sanitizeCacheFilename(artist: artist, title: title)
+        let folder = cacheDir.appendingPathComponent(safe)
+        try? FileManager.default.removeItem(at: folder)
+    }
+    
     /// Get count of cached songs
     public func getCachedCount() -> Int {
         guard FileManager.default.fileExists(atPath: cacheDir.path) else { return 0 }

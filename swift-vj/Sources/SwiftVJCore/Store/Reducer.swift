@@ -754,6 +754,11 @@ public enum SongsEffects {
 
             await send(.songs(.reanalysisStarted(id)))
 
+            // Clear caches to force fresh analysis
+            await EffectEnvironment.shared.clearLyricsCache?(song.artist, song.title)
+            await EffectEnvironment.shared.clearPipelineCache?(song.artist, song.title)
+            await EffectEnvironment.shared.clearImagesCache?(song.artist, song.title)
+
             // Mark for reanalysis in the module
             await songsModule.markForReanalysis(id: id)
 
@@ -770,7 +775,8 @@ public enum SongsEffects {
             // Use pipeline to re-analyze
             await EffectEnvironment.shared.processPipelineTrack?(track)
 
-            // Note: reanalysisCompleted will be sent when pipeline completes
+            // Mark reanalysis as completed
+            await send(.songs(.reanalysisCompleted(id)))
         }
     }
 }

@@ -45,6 +45,15 @@ public final class EffectEnvironment {
     
     /// Process a track through the pipeline
     public var processPipelineTrack: (@Sendable (Track) async -> Void)?
+    
+    /// Clear lyrics cache for a song (for reanalysis)
+    public var clearLyricsCache: (@Sendable (String, String) async -> Void)?
+    
+    /// Clear pipeline cache for a song (for reanalysis)
+    public var clearPipelineCache: (@Sendable (String, String) async -> Void)?
+    
+    /// Clear images cache for a song (for reanalysis)
+    public var clearImagesCache: (@Sendable (String, String) async -> Void)?
 
     /// Current DJ phase provider
     public var currentPhaseProvider: (@Sendable () async -> Phase?)?
@@ -67,6 +76,9 @@ public final class EffectEnvironment {
         setImageIndex = nil
         loadImagesFromFolder = nil
         processPipelineTrack = nil
+        clearLyricsCache = nil
+        clearPipelineCache = nil
+        clearImagesCache = nil
         sendOSC = nil
         songsModule = nil
     }

@@ -5,19 +5,9 @@ import XCTest
 final class LLMClientTests: XCTestCase {
     
     var client: LLMClient!
-    var tempCacheDir: URL!
     
     override func setUp() async throws {
-        // Use temp directory for cache
-        tempCacheDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("llm_test_\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempCacheDir, withIntermediateDirectories: true)
-        
-        client = LLMClient(cacheDir: tempCacheDir)
-    }
-    
-    override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: tempCacheDir)
+        client = LLMClient()
     }
     
     // MARK: - Basic Analysis (No LLM)

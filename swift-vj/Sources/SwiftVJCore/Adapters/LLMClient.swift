@@ -93,15 +93,8 @@ public actor LLMClient {
     private var lastCheck: Date = .distantPast
     private let health: ServiceHealth
     
-    // Cache directory
-    private let cacheDir: URL
-    
-    public init(cacheDir: URL? = nil) {
-        self.cacheDir = cacheDir ?? Config.cacheDirectory.appendingPathComponent("llm_cache")
+    public init() {
         self.health = ServiceHealth(name: "LLM")
-        
-        // Create cache directory
-        try? FileManager.default.createDirectory(at: self.cacheDir, withIntermediateDirectories: true)
     }
     
     // MARK: - Public API
@@ -135,28 +128,17 @@ public actor LLMClient {
         title: String,
         album: String? = nil
     ) async throws -> SongAnalysis {
-        // Check cache first
-        let cacheKey = sanitizeCacheFilename(artist: artist, title: title) + "_complete"
-        let cacheFile = cacheDir.appendingPathComponent("\(cacheKey).json")
-        
-        if let cached = loadCache(from: cacheFile) {
-            return cached.withCached(true)
-        }
-        
         // Try LLM
         await ensureBackend()
         
         if backend != .none {
             if let result = try? await analyzeSongWithLLM(lyrics: lyrics, artist: artist, title: title, album: album) {
-                saveCache(result, to: cacheFile)
                 return result
             }
         }
         
         // Fallback to basic analysis
-        let result = basicAnalysis(lyrics: lyrics, artist: artist, title: title)
-        saveCache(result, to: cacheFile)
-        return result
+        return basicAnalysis(lyrics: lyrics, artist: artist, title: title)
     }
     
     /// Categorize song by mood/theme
@@ -165,29 +147,11 @@ public actor LLMClient {
         title: String,
         lyrics: String?
     ) async -> SongCategories {
-        // Check cache
-        let cacheKey = sanitizeCacheFilename(artist: artist, title: title) + "_cat"
-        let cacheFile = cacheDir.appendingPathComponent("\(cacheKey).json")
-        
-        if let data = try? Data(contentsOf: cacheFile),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let scores = json["categories"] as? [String: Double] {
-            return SongCategories(
-                scores: scores,
-                primaryMood: json["primary_mood"] as? String ?? ""
-            )
-        }
-        
         // Try LLM
         await ensureBackend()
         
         if backend != .none, let lyrics = lyrics {
             if let result = try? await categorizeWithLLM(artist: artist, title: title, lyrics: lyrics) {
-                // Cache result
-                let json: [String: Any] = ["categories": result.scores, "primary_mood": result.primaryMood]
-                if let data = try? JSONSerialization.data(withJSONObject: json) {
-                    try? data.write(to: cacheFile)
-                }
                 return result
             }
         }
@@ -282,26 +246,12 @@ public actor LLMClient {
             return LLMShaderAnalysis(shaderName: shaderName, error: "LLM not available")
         }
         
-        // Check cache
-        let cacheKey = "shader_\(shaderName.replacingOccurrences(of: "/", with: "_"))"
-        let cacheFile = cacheDir.appendingPathComponent("\(cacheKey).json")
-        
-        if let cached = loadShaderCache(from: cacheFile) {
-            return cached
-        }
-        
         // Build prompt
         let prompt = buildShaderAnalysisPrompt(shaderName: shaderName, source: shaderSource)
         
         do {
             let content = try await sendChatRequest(prompt: prompt, maxTokens: 1200)
-            let result = parseShaderAnalysisResponse(content, shaderName: shaderName)
-            
-            if result.error == nil {
-                saveShaderCache(result, to: cacheFile)
-            }
-            
-            return result
+            return parseShaderAnalysisResponse(content, shaderName: shaderName)
         } catch {
             return LLMShaderAnalysis(shaderName: shaderName, error: error.localizedDescription)
         }
@@ -390,62 +340,6 @@ public actor LLMClient {
             hasScreenshot: false,
             error: nil
         )
-    }
-    
-    private func loadShaderCache(from file: URL) -> LLMShaderAnalysis? {
-        guard let data = try? Data(contentsOf: file),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let shaderName = json["shader_name"] as? String else {
-            return nil
-        }
-        
-        var features = ShaderFeatureScores()
-        if let featuresDict = json["features"] as? [String: Double] {
-            features = ShaderFeatureScores(
-                energyScore: featuresDict["energy_score"] ?? 0.5,
-                moodValence: featuresDict["mood_valence"] ?? 0.5,
-                colorWarmth: featuresDict["color_warmth"] ?? 0.5,
-                motionSpeed: featuresDict["motion_speed"] ?? 0.5,
-                geometricScore: featuresDict["geometric_score"] ?? 0.5,
-                visualDensity: featuresDict["visual_density"] ?? 0.5
-            )
-        }
-        
-        return LLMShaderAnalysis(
-            shaderName: shaderName,
-            mood: json["mood"] as? String ?? "unknown",
-            colors: json["colors"] as? [String] ?? [],
-            effects: json["effects"] as? [String] ?? [],
-            description: json["description"] as? String ?? "",
-            features: features,
-            hasScreenshot: json["has_screenshot"] as? Bool ?? false,
-            error: nil
-        )
-    }
-    
-    private func saveShaderCache(_ result: LLMShaderAnalysis, to file: URL) {
-        let featuresDict: [String: Double] = [
-            "energy_score": result.features.energyScore,
-            "mood_valence": result.features.moodValence,
-            "color_warmth": result.features.colorWarmth,
-            "motion_speed": result.features.motionSpeed,
-            "geometric_score": result.features.geometricScore,
-            "visual_density": result.features.visualDensity
-        ]
-        
-        let json: [String: Any] = [
-            "shader_name": result.shaderName,
-            "mood": result.mood,
-            "colors": result.colors,
-            "effects": result.effects,
-            "description": result.description,
-            "features": featuresDict,
-            "has_screenshot": result.hasScreenshot
-        ]
-        
-        if let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) {
-            try? data.write(to: file)
-        }
     }
     
     /// Get service status
@@ -811,46 +705,6 @@ public actor LLMClient {
         }
         
         return SongCategories(scores: categories)
-    }
-    
-    // MARK: - Cache
-    
-    private func loadCache(from file: URL) -> SongAnalysis? {
-        guard let data = try? Data(contentsOf: file),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        
-        return SongAnalysis(
-            keywords: json["keywords"] as? [String] ?? [],
-            themes: json["themes"] as? [String] ?? [],
-            visualAdjectives: json["visual_adjectives"] as? [String] ?? [],
-            refrainLines: json["refrain_lines"] as? [String] ?? [],
-            tempo: json["tempo"] as? String ?? "medium",
-            mood: json["mood"] as? String ?? "neutral",
-            energy: json["energy"] as? Double ?? 0.5,
-            valence: json["valence"] as? Double ?? 0.0,
-            categories: json["categories"] as? [String: Double] ?? [:],
-            cached: true
-        )
-    }
-    
-    private func saveCache(_ result: SongAnalysis, to file: URL) {
-        let json: [String: Any] = [
-            "keywords": result.keywords,
-            "themes": result.themes,
-            "visual_adjectives": result.visualAdjectives,
-            "refrain_lines": result.refrainLines,
-            "tempo": result.tempo,
-            "mood": result.mood,
-            "energy": result.energy,
-            "valence": result.valence,
-            "categories": result.categories
-        ]
-        
-        if let data = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) {
-            try? data.write(to: file)
-        }
     }
     
     // MARK: - Helpers

@@ -370,6 +370,13 @@ public actor PipelineModule: Module {
         try? FileManager.default.removeItem(at: cacheFile)
     }
     
+    /// Clear cache for a specific song
+    public func clearCacheForSong(artist: String, title: String) {
+        let key = "\(artist)::\(title)"
+        resultCache.removeValue(forKey: key)
+        saveCacheToDisk()
+    }
+    
     /// Save cache to disk
     public func saveCache() {
         saveCacheToDisk()
