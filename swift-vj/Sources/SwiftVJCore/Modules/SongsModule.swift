@@ -48,6 +48,11 @@ public actor SongsModule: Module {
         print("[SongsModule] Stopped")
     }
 
+    /// Clear all songs from database
+    public func clearAll() async {
+        await store.clearAll()
+    }
+
     public func getStatus() -> [String: Any] {
         [
             "started": isStarted,

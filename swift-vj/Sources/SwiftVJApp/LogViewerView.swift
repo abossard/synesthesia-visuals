@@ -60,7 +60,7 @@ struct LogViewerView: View {
                     .foregroundColor(.secondary)
                 
                 Button {
-                    appState.logEntries.removeAll()
+                    appState.clearLogs()
                 } label: {
                     Label("Clear", systemImage: "trash")
                 }

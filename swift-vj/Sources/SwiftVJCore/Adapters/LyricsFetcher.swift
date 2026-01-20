@@ -25,9 +25,9 @@ public struct LRCLibResponse: Codable, Sendable {
 }
 
 /// Fetches lyrics from LRCLIB API with caching
+/// Cache never expires - user can delete manually via Song Manager UI
 public actor LyricsFetcher {
     public static let baseURL = "https://lrclib.net/api"
-    public static let cacheTTL: TimeInterval = 86400 * 7  // 7 days
 
     private let cacheDirectory: URL
     private let session: URLSession
@@ -76,17 +76,7 @@ public actor LyricsFetcher {
     /// Check if lyrics are cached for a song
     public func isCached(artist: String, title: String) -> Bool {
         let cacheFile = cacheFilePath(artist: artist, title: title)
-        guard FileManager.default.fileExists(atPath: cacheFile.path) else {
-            return false
-        }
-
-        // Check TTL
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: cacheFile.path),
-              let modified = attrs[.modificationDate] as? Date else {
-            return false
-        }
-
-        return Date().timeIntervalSince(modified) < Self.cacheTTL
+        return FileManager.default.fileExists(atPath: cacheFile.path)
     }
 
     /// Clear cache for a specific song
@@ -148,13 +138,6 @@ public actor LyricsFetcher {
         let cacheFile = cacheFilePath(artist: artist, title: title)
 
         guard FileManager.default.fileExists(atPath: cacheFile.path) else {
-            return nil
-        }
-
-        // Check TTL
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: cacheFile.path),
-              let modified = attrs[.modificationDate] as? Date,
-              Date().timeIntervalSince(modified) < Self.cacheTTL else {
             return nil
         }
 

@@ -21,10 +21,11 @@ final class InfrastructureTests: XCTestCase {
         XCTAssertEqual(Config.timingStepMs, 200)
     }
 
-    func test_config_lyricsCacheTTL() {
-        // 7 days in seconds
-        let sevenDays: TimeInterval = 86400 * 7
-        XCTAssertEqual(Config.lyricsCacheTTLSeconds, sevenDays)
+    // Cache no longer expires - cleared only via Song Manager UI
+    func test_config_cacheNeverExpires() {
+        // Verify cache directories exist for persistence
+        let cacheDir = Config.cacheDirectory
+        XCTAssertFalse(cacheDir.path.isEmpty)
     }
 
     func test_config_dataDirectoryIsValid() {

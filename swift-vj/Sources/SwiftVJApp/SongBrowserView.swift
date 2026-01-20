@@ -107,6 +107,7 @@ struct SongBrowserView: View {
                     sortPicker
                     Spacer(minLength: 0)
                     applyButton
+                    clearAllCachesButton
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -117,6 +118,7 @@ struct SongBrowserView: View {
                     HStack(spacing: 12) {
                         sortPicker
                         applyButton
+                        clearAllCachesButton
                     }
                 }
             }
@@ -134,10 +136,7 @@ struct SongBrowserView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Picker("Current Phase", selection: Binding(
-                get: { appState.currentPhase },
-                set: { newPhase in appState.setPhase(newPhase) }
-            )) {
+            Picker("Current Phase", selection: appState.phaseBinding) {
                 Text("None").tag(nil as Phase?)
                 ForEach(Phase.allCases, id: \.self) { phase in
                     Label(phase.displayName, systemImage: phase.iconName)
@@ -204,6 +203,14 @@ struct SongBrowserView: View {
         .buttonStyle(.bordered)
     }
 
+    private var clearAllCachesButton: some View {
+        Button(action: clearAllCaches) {
+            Label("Clear All Caches", systemImage: "trash.circle")
+        }
+        .buttonStyle(.bordered)
+        .tint(.orange)
+    }
+
     // MARK: - Statistics Header
 
     private var statisticsHeader: some View {
@@ -256,7 +263,8 @@ struct SongBrowserView: View {
                 onShaderChange: { shader in updateShader(song, shader) },
                 onReanalyze: { reanalyze(song) },
                 onDelete: { confirmDelete(song) },
-                onDeleteImage: { url in deleteImageFile(for: song, url) }
+                onDeleteImage: { url in deleteImageFile(for: song, url) },
+                onClearCache: { clearCache(song) }
             )
         } else {
             VStack {
@@ -330,6 +338,18 @@ struct SongBrowserView: View {
 
     private func reanalyze(_ song: Song) {
         appState.send(.songs(.requestReanalysis(song.id)))
+    }
+
+    private func clearCache(_ song: Song) {
+        Task {
+            await appState.clearLyricsCache(artist: song.artist, title: song.title)
+        }
+    }
+
+    private func clearAllCaches() {
+        Task {
+            await appState.clearAllCaches()
+        }
     }
 
     private func updateShader(_ song: Song, _ shader: String) {
@@ -518,6 +538,7 @@ struct SongDetailView: View {
     let onReanalyze: () -> Void
     let onDelete: () -> Void
     let onDeleteImage: (URL) -> Void
+    let onClearCache: () -> Void
 
     @State private var imageURLs: [URL] = []
     @State private var imageToDelete: URL? = nil
@@ -785,6 +806,11 @@ struct SongDetailView: View {
         HStack {
             Button(action: onReanalyze) {
                 Label("Re-analyze", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+
+            Button(action: onClearCache) {
+                Label("Clear Cache", systemImage: "xmark.bin")
             }
             .buttonStyle(.bordered)
 

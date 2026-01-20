@@ -83,7 +83,7 @@ struct ShaderBrowserView: View {
     private var isAnalyzing: Bool { appState.isAnalyzingShaders }
     private var analysisCancelled: Bool { appState.analysisCancelled }
     private var analysisProgress: Double { appState.analysisProgress }
-    private var currentAnalysisShader: String { appState.currentAnalysisShader }
+    private var currentAnalysisShader: String { appState.currentAnalysisShader ?? "" }
     private var analysisTotal: Int { appState.analysisTotal }
     private var analysisCurrent: Int { appState.analysisCurrent }
     private var analysisSuccessCount: Int { appState.analysisSuccessCount }
@@ -885,7 +885,7 @@ struct ShaderBrowserView: View {
     
     /// Cancel ongoing analysis
     private func cancelAnalysis() {
-        appState.analysisCancelled = true
+        appState.cancelAnalysis()
         appState.log("⚠️ Analysis cancellation requested...", level: .warning)
     }
     
@@ -897,17 +897,10 @@ struct ShaderBrowserView: View {
     private func startAnalyze() {
         Task {
             let startTime = Date()
-            appState.isAnalyzingShaders = true
-            appState.analysisCancelled = false
-            appState.analysisProgress = 0
-            appState.analysisSuccessCount = 0
-            appState.analysisBlackCount = 0
-            appState.analysisErrorCount = 0
-            
             let shadersToAnalyze = Array(selectedShaders)
             let total = shadersToAnalyze.count
-            appState.analysisTotal = total
-            appState.analysisCurrent = 0
+            
+            appState.startAnalysis(shaderCount: total)
             
             appState.log("═══════════════════════════════════════════════════════════════", level: .info)
             appState.log("🔬 STARTING ANALYSIS for \(total) shader(s)", level: .info)
@@ -916,7 +909,7 @@ struct ShaderBrowserView: View {
             // Verify render engine is available (auto-started on app launch)
             guard let renderEngine = appState.renderEngine, renderEngine.isRunning else {
                 appState.log("✗ Render engine not running - please wait for initialization", level: .error)
-                appState.isAnalyzingShaders = false
+                appState.finishAnalysis()
                 return
             }
             
@@ -952,8 +945,7 @@ struct ShaderBrowserView: View {
                 }
                 
                 let shaderStartTime = Date()
-                appState.currentAnalysisShader = shaderName
-                appState.analysisCurrent = index + 1
+                appState.updateAnalysisProgress(current: index + 1, shaderName: shaderName)
                 
                 appState.log("───────────────────────────────────────────────────────────────", level: .info)
                 appState.log("📍 [\(index+1)/\(total)] \(shaderName)", level: .info)
@@ -962,8 +954,8 @@ struct ShaderBrowserView: View {
                 guard let shader = shaders.first(where: { $0.name == shaderName }) else {
                     appState.log("  ✗ Shader not found in list", level: .error)
                     errorCount += 1
-                    appState.analysisErrorCount = errorCount
-                    appState.analysisProgress = Double(index + 1) / Double(total)
+                    appState.setAnalysisCounts(error: errorCount)
+                    appState.setAnalysisProgress(Double(index + 1) / Double(total))
                     continue
                 }
                 
@@ -1044,11 +1036,11 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as BLACK", level: .warning)
                     await saveBlackAnalysis(to: analysisPath, shaderName: shaderName)
                     blackCount += 1
-                    appState.analysisBlackCount = blackCount
+                    appState.setAnalysisCounts(black: blackCount)
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as black)", level: .info)
-                    appState.analysisProgress = Double(index + 1) / Double(total)
+                    appState.setAnalysisProgress(Double(index + 1) / Double(total))
                     continue
                 }
                 
@@ -1057,11 +1049,11 @@ struct ShaderBrowserView: View {
                     appState.log("  🏷️ Marking shader as MONOCHROMATIC", level: .info)
                     await saveMonochromaticAnalysis(to: analysisPath, shaderName: shaderName)
                     successCount += 1
-                    appState.analysisSuccessCount = successCount
+                    appState.setAnalysisCounts(success: successCount)
                     
                     let elapsed = Date().timeIntervalSince(shaderStartTime)
                     appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (marked as monochromatic)", level: .info)
-                    appState.analysisProgress = Double(index + 1) / Double(total)
+                    appState.setAnalysisProgress(Double(index + 1) / Double(total))
                     continue
                 }
                 
@@ -1073,11 +1065,11 @@ struct ShaderBrowserView: View {
                     guard let sourceContent = loadShaderSource(from: shaderPath) else {
                         appState.log("  ⚠️ Could not load shader source, skipping AI analysis", level: .warning)
                         successCount += 1  // Screenshot was successful at least
-                        appState.analysisSuccessCount = successCount
+                        appState.setAnalysisCounts(success: successCount)
                         
                         let elapsed = Date().timeIntervalSince(shaderStartTime)
                         appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s (screenshot only)", level: .info)
-                        appState.analysisProgress = Double(index + 1) / Double(total)
+                        appState.setAnalysisProgress(Double(index + 1) / Double(total))
                         continue
                     }
                     
@@ -1097,27 +1089,27 @@ struct ShaderBrowserView: View {
                         if await saveAnalysisJSON(analysis, to: analysisPath, shaderName: shaderName) {
                             appState.log("  💾 Saved: \(analysisPath.lastPathComponent)", level: .info)
                             successCount += 1
-                            appState.analysisSuccessCount = successCount
+                            appState.setAnalysisCounts(success: successCount)
                         } else {
                             appState.log("  ✗ Failed to save analysis JSON", level: .error)
                             errorCount += 1
-                            appState.analysisErrorCount = errorCount
+                            appState.setAnalysisCounts(error: errorCount)
                         }
                     } else {
                         appState.log("  ✗ AI analysis failed", level: .error)
                         errorCount += 1
-                        appState.analysisErrorCount = errorCount
+                        appState.setAnalysisCounts(error: errorCount)
                     }
                 } else if captureSuccess {
                     // No AI available but screenshot worked
                     appState.log("  ℹ️ Screenshot saved (no AI analysis)", level: .info)
                     successCount += 1
-                    appState.analysisSuccessCount = successCount
+                    appState.setAnalysisCounts(success: successCount)
                 }
                 
                 let elapsed = Date().timeIntervalSince(shaderStartTime)
                 appState.log("  ⏱️ Completed in \(String(format: "%.1f", elapsed))s", level: .info)
-                appState.analysisProgress = Double(index + 1) / Double(total)
+                appState.setAnalysisProgress(Double(index + 1) / Double(total))
                 
                 // Refresh grid to show new screenshot
                 refreshId = UUID()
@@ -1125,8 +1117,7 @@ struct ShaderBrowserView: View {
             
             let totalElapsed = Date().timeIntervalSince(startTime)
             
-            appState.isAnalyzingShaders = false
-            appState.currentAnalysisShader = ""
+            appState.finishAnalysis()
             
             // Final refresh to ensure all screenshots are shown
             refreshId = UUID()

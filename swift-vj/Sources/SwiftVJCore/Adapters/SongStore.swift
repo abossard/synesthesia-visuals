@@ -81,6 +81,14 @@ public actor SongStore {
         }
     }
 
+    /// Clear all songs from database and disk
+    public func clearAll() {
+        songs.removeAll()
+        isDirty = false
+        try? FileManager.default.removeItem(at: databaseURL)
+        print("[SongStore] Cleared all songs")
+    }
+
     // MARK: - CRUD Operations
 
     /// Get all songs (sorted by display name)

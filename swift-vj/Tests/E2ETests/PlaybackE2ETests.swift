@@ -161,18 +161,16 @@ final class PlaybackE2ETests: XCTestCase {
         XCTAssertFalse(playback.deck1.isMaster)
     }
     
-    func test_vdjMonitor_audibleDeck_prefersMaster() async throws {
-        // Given: VDJ monitor with both decks playing
+    func test_vdjMonitor_audibleDeck_prefersIsAudible() async throws {
+        // Given: VDJ monitor with both decks having tracks
         let monitor = VDJMonitor()
         await monitor.handleOSC(address: "/deck/1/artist", values: ["Artist 1"])
         await monitor.handleOSC(address: "/deck/1/title", values: ["Title 1"])
-        await monitor.handleOSC(address: "/deck/1/play", values: [1.0 as Float32])
         await monitor.handleOSC(address: "/deck/2/artist", values: ["Artist 2"])
         await monitor.handleOSC(address: "/deck/2/title", values: ["Title 2"])
-        await monitor.handleOSC(address: "/deck/2/play", values: [1.0 as Float32])
         
-        // When: Deck 2 is master
-        await monitor.handleOSC(address: "/deck/2/masterdeck", values: [1.0 as Float32])
+        // When: Deck 2 is marked as audible (VDJ sends is_audible = playing AND volume up)
+        await monitor.handleOSC(address: "/deck/2/is_audible", values: [1.0 as Float32])
         
         // Then: Audible deck is deck 2
         let audible = await monitor.getAudibleTrack()
@@ -180,23 +178,20 @@ final class PlaybackE2ETests: XCTestCase {
         XCTAssertEqual(audible?.deckNumber, 2)
     }
     
-    func test_vdjMonitor_audibleDeck_fallsToCrossfader() async throws {
-        // Given: VDJ monitor with both decks playing, no master
+    func test_vdjMonitor_audibleDeck_usesVolume() async throws {
+        // Given: VDJ monitor with both decks having tracks
         let monitor = VDJMonitor()
         await monitor.handleOSC(address: "/deck/1/artist", values: ["Artist 1"])
         await monitor.handleOSC(address: "/deck/1/title", values: ["Title 1"])
-        await monitor.handleOSC(address: "/deck/1/play", values: [1.0 as Float32])
+        await monitor.handleOSC(address: "/deck/1/volume", values: [0.3 as Float32])
         await monitor.handleOSC(address: "/deck/2/artist", values: ["Artist 2"])
         await monitor.handleOSC(address: "/deck/2/title", values: ["Title 2"])
-        await monitor.handleOSC(address: "/deck/2/play", values: [1.0 as Float32])
+        await monitor.handleOSC(address: "/deck/2/volume", values: [0.9 as Float32])
         
-        // When: Crossfader is full left (value 0 = -1 normalized)
-        await monitor.handleOSC(address: "/crossfader", values: [0.0 as Float32])
-        
-        // Then: Audible deck is deck 1
+        // Then: Audible deck is deck 2 (louder by >10%)
         let audible = await monitor.getAudibleTrack()
         XCTAssertNotNil(audible)
-        XCTAssertEqual(audible?.deckNumber, 1)
+        XCTAssertEqual(audible?.deckNumber, 2)
     }
     
     func test_vdjMonitor_trackChangeCallback() async throws {

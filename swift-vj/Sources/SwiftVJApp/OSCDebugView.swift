@@ -71,15 +71,15 @@ struct OSCDebugView: View {
                 HStack {
                     Image(systemName: "line.3.horizontal.decrease.circle")
                         .foregroundColor(.secondary)
-                    TextField("Capture filter...", text: $appState.oscFilter)
+                    TextField("Capture filter...", text: appState.oscFilterBinding)
                         .textFieldStyle(.plain)
                         .onChange(of: appState.oscFilter) { _, _ in
-                            appState.oscMessages.removeAll()
+                            appState.clearOscMessages()
                         }
                     
                     if !appState.oscFilter.isEmpty {
                         Button {
-                            appState.oscFilter = ""
+                            appState.setOscFilter("")
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
@@ -173,7 +173,7 @@ struct OSCDebugView: View {
                         .foregroundColor(.secondary)
                     Spacer()
                     Button {
-                        appState.oscMessages.removeAll()
+                        appState.clearOscMessages()
                     } label: {
                         Label("Clear", systemImage: "trash")
                     }
@@ -245,13 +245,12 @@ struct OSCDebugView: View {
             .frame(minWidth: 280, maxWidth: 320)
         }
         .onAppear {
-            appState.oscDebugEnabled = true
+            appState.setOscDebugEnabled(true)
         }
         .onDisappear {
-            appState.oscDebugEnabled = false
+            appState.setOscDebugEnabled(false)
             // Free memory - clear captured messages when view hidden
-            appState.oscMessages.removeAll()
-            appState.oscMessageCount = 0
+            appState.clearOscMessages()
         }
     }
     

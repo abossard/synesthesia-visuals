@@ -90,12 +90,7 @@ struct ContentView: View {
         .navigationTitle("SwiftVJ")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                PhaseToolbarControl(
-                    selection: Binding(
-                        get: { appState.currentPhase },
-                        set: { newPhase in appState.setPhase(newPhase) }
-                    )
-                )
+                PhaseToolbarControl(selection: appState.phaseBinding)
             }
         }
         .task {
@@ -117,14 +112,19 @@ private struct PhaseToolbarControl: View {
                 .foregroundColor(.secondary)
 
             Picker("Phase", selection: $selection) {
-                Text("None").tag(nil as Phase?)
+                HStack {
+                    Image(systemName: "circle.slash")
+                    Text("None")
+                }.tag(nil as Phase?)
                 ForEach(Phase.allCases, id: \.self) { phase in
-                    Label(phase.displayName, systemImage: phase.iconName)
-                        .tag(phase as Phase?)
+                    HStack {
+                        Image(systemName: phase.iconName)
+                        Text(phase.displayName)
+                    }.tag(phase as Phase?)
                 }
             }
             .pickerStyle(.menu)
-            .frame(width: 160)
+            .frame(minWidth: 160)
         }
     }
 }

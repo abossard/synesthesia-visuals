@@ -21,7 +21,6 @@ public struct Config {
 
     // Timing
     public static let timingStepMs: Int = 200
-    public static let lyricsCacheTTLSeconds: TimeInterval = 86400 * 7 // 7 days
 
     // Playback
     public static let playbackPollIntervalMs: Int = 500

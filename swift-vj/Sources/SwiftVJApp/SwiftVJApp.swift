@@ -80,6 +80,11 @@ public final class AppState: ObservableObject {
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
 
+    // MARK: - Cache Adapters (for clearing)
+    
+    private var lyricsFetcher: LyricsFetcher?
+    private var llmClient: LLMClient?
+
     // MARK: - Render Engine
 
     @Published var renderEngine: RenderEngine?
@@ -102,28 +107,31 @@ public final class AppState: ObservableObject {
     @Published public private(set) var selectedShader: String?
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
-    @Published public var logEntries: [LogEntry] = []
-    @Published public var oscMessages: [String: OSCLogEntry] = [:]
-    @Published public var oscMessageCount: Int = 0
-    @Published public var oscFilter: String = ""
-    @Published public var oscDebugEnabled: Bool = false {
+    @Published public private(set) var songsState: SongsSubState = SongsSubState()
+
+    // MARK: - UI State (private(set) enforces unidirectional flow)
+    
+    @Published public private(set) var logEntries: [LogEntry] = []
+    @Published public private(set) var oscMessages: [String: OSCLogEntry] = [:]
+    @Published public private(set) var oscMessageCount: Int = 0
+    @Published public private(set) var oscFilter: String = ""
+    @Published public private(set) var oscDebugEnabled: Bool = false {
         didSet { _oscDebugEnabledUnsafe = oscDebugEnabled }
     }
-    @Published public private(set) var songsState: SongsSubState = SongsSubState()
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
 
     public var effectivePhase: Phase? { currentPhase ?? detectedSongPhase }
     
-    // Shader Analysis State (persists across navigation)
-    @Published var isAnalyzingShaders: Bool = false
-    @Published var analysisProgress: Double = 0
-    @Published var analysisCurrent: Int = 0
-    @Published var analysisTotal: Int = 0
-    @Published var currentAnalysisShader: String = ""
-    @Published var analysisSuccessCount: Int = 0
-    @Published var analysisBlackCount: Int = 0
-    @Published var analysisErrorCount: Int = 0
-    @Published var analysisCancelled: Bool = false
+    // Shader Analysis State (public read, private write - controlled via analysis methods)
+    @Published public private(set) var isAnalyzingShaders: Bool = false
+    @Published public private(set) var analysisProgress: Double = 0
+    @Published public private(set) var analysisCurrent: Int = 0
+    @Published public private(set) var analysisTotal: Int = 0
+    @Published public private(set) var currentAnalysisShader: String? = nil
+    @Published public private(set) var analysisSuccessCount: Int = 0
+    @Published public private(set) var analysisBlackCount: Int = 0
+    @Published public private(set) var analysisErrorCount: Int = 0
+    @Published public private(set) var analysisCancelled: Bool = false
 
     private let maxLogEntries = 500
     private var vdjQueryTask: Task<Void, Never>?
@@ -248,13 +256,129 @@ public final class AppState: ObservableObject {
         store.send(.render(.selectShader(name)))
     }
 
+    /// Set the current phase via unidirectional data flow.
+    /// Dispatches through Store → Reducer → @Published sync.
+    /// Do NOT write directly to currentPhase to avoid state trickling.
     public func setPhase(_ phase: Phase?) {
-        currentPhase = phase
-        if let phase = phase {
-            UserDefaults.standard.set(phase.rawValue, forKey: "currentPhase")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "currentPhase")
-        }
+        store.send(.render(.selectPhase(phase)))
+    }
+
+    /// Type-safe binding for Phase pickers that enforces unidirectional flow.
+    /// Use this instead of $currentPhase to prevent direct @Published writes.
+    public var phaseBinding: Binding<Phase?> {
+        Binding(
+            get: { self.currentPhase },
+            set: { newPhase in self.setPhase(newPhase) }
+        )
+    }
+
+    // MARK: - OSC Debug State Methods
+
+    /// Set OSC filter through Store → Reducer → @Published sync.
+    public func setOscFilter(_ filter: String) {
+        store.send(.ui(.setOscFilter(filter)))
+    }
+
+    /// Type-safe binding for OSC filter TextField.
+    public var oscFilterBinding: Binding<String> {
+        Binding(
+            get: { self.oscFilter },
+            set: { newFilter in self.setOscFilter(newFilter) }
+        )
+    }
+
+    /// Set OSC debug enabled through Store.
+    public func setOscDebugEnabled(_ enabled: Bool) {
+        store.send(.ui(.setOscDebugEnabled(enabled)))
+    }
+
+    /// Type-safe binding for OSC debug toggle.
+    public var oscDebugEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.oscDebugEnabled },
+            set: { enabled in self.setOscDebugEnabled(enabled) }
+        )
+    }
+
+    /// Clear OSC messages through Store.
+    public func clearOscMessages() {
+        store.send(.ui(.clearOscMessages))
+    }
+
+    /// Clear log entries.
+    public func clearLogs() {
+        store.send(.ui(.clearLogs))
+    }
+
+    // MARK: - Cache Management
+
+    /// Clear lyrics cache for a specific song.
+    public func clearLyricsCache(artist: String, title: String) async {
+        await lyricsFetcher?.clearCache(artist: artist, title: title)
+        log("[Cache] Cleared lyrics cache for \(artist) - \(title)", level: .info)
+    }
+
+    /// Clear all lyrics cache.
+    public func clearAllLyricsCache() async {
+        await lyricsFetcher?.clearAllCache()
+        log("[Cache] Cleared all lyrics cache", level: .info)
+    }
+
+    /// Clear all caches (lyrics, LLM analysis, songs database).
+    public func clearAllCaches() async {
+        await lyricsFetcher?.clearAllCache()
+        // LLMClient cache: clear the llm_cache directory
+        let llmCacheDir = Config.cacheDirectory.appendingPathComponent("llm_cache")
+        try? FileManager.default.removeItem(at: llmCacheDir)
+        try? FileManager.default.createDirectory(at: llmCacheDir, withIntermediateDirectories: true)
+        // Songs database
+        await songsModule?.clearAll()
+        log("[Cache] Cleared all caches including songs database", level: .info)
+    }
+
+    // MARK: - Analysis State Methods
+
+    /// Start shader analysis batch job.
+    /// Analysis state is ephemeral (single async job) so methods mutate @Published directly.
+    public func startAnalysis(shaderCount: Int) {
+        isAnalyzingShaders = true
+        analysisCancelled = false
+        analysisProgress = 0
+        analysisSuccessCount = 0
+        analysisBlackCount = 0
+        analysisErrorCount = 0
+        analysisTotal = shaderCount
+        analysisCurrent = 0
+    }
+
+    /// Cancel ongoing analysis.
+    public func cancelAnalysis() {
+        analysisCancelled = true
+    }
+
+    /// Update analysis progress during batch job.
+    public func updateAnalysisProgress(current: Int, shaderName: String) {
+        analysisCurrent = current
+        currentAnalysisShader = shaderName
+        analysisProgress = analysisTotal > 0 ? Double(current) / Double(analysisTotal) : 0
+    }
+
+    /// Update just the progress bar (0.0 to 1.0).
+    public func setAnalysisProgress(_ progress: Double) {
+        analysisProgress = progress
+    }
+
+    /// Set analysis counts directly (for complex update patterns).
+    public func setAnalysisCounts(success: Int? = nil, black: Int? = nil, error: Int? = nil) {
+        if let s = success { analysisSuccessCount = s }
+        if let b = black { analysisBlackCount = b }
+        if let e = error { analysisErrorCount = e }
+    }
+
+    /// Finish analysis batch job.
+    public func finishAnalysis() {
+        isAnalyzingShaders = false
+        currentAnalysisShader = nil
     }
 
     // MARK: - Image Management
@@ -334,15 +458,17 @@ public final class AppState: ObservableObject {
     // MARK: - Private Setup
 
     private func setupModules() {
-        let lyricsFetcher = LyricsFetcher()
+        let fetcher = LyricsFetcher()
+        self.lyricsFetcher = fetcher
         let shaderMatcher = ShaderMatcher()
         let projectImagesDir = URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/data/song_images")
         let imageScraper = ImageScraper(cacheDir: projectImagesDir)
-        let llmClient = LLMClient()
+        let llm = LLMClient()
+        self.llmClient = llm
 
         playbackModule = PlaybackModule(oscHub: oscHub)
-        lyricsModule = LyricsModule(fetcher: lyricsFetcher)
-        aiModule = AIModule(llmClient: llmClient)
+        lyricsModule = LyricsModule(fetcher: fetcher)
+        aiModule = AIModule(llmClient: llm)
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
 
