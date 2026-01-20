@@ -9,7 +9,7 @@
 import Foundation
 
 /// Status of the Launchpad module
-public struct LaunchpadStatus: Sendable {
+public struct LaunchpadStatus: Sendable, Equatable {
     public let isEnabled: Bool         // True only when real device connected
     public let isConnected: Bool       // Alias for isEnabled
     public let deviceName: String?

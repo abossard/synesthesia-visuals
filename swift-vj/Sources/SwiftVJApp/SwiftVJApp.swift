@@ -650,23 +650,24 @@ public final class AppState: ObservableObject {
                 }
 
                 // Sync @Published properties from store state for SwiftUI binding compatibility
-                self.isRunning = newState.isRunning
-                self.currentTrack = newState.playback.currentTrack
-                self.playbackPosition = newState.playback.position
-                self.isPlaying = newState.playback.isPlaying
-                self.playbackSource = newState.playback.source
-                self.timingOffsetMs = newState.playback.timingOffsetMs
-                self.selectedShader = newState.render.selectedShader
-                self.currentPhase = newState.render.currentPhase
-                self.detectedSongPhase = newState.render.detectedSongPhase
-                self.imageIndex = newState.render.imageIndex
-                self.imageCount = newState.render.imageCount
-                self.shaderCount = newState.render.shaderCount
-                self.songsState = newState.songs
+                // Only update if changed to avoid unnecessary objectWillChange publishes
+                if self.isRunning != newState.isRunning { self.isRunning = newState.isRunning }
+                if self.currentTrack != newState.playback.currentTrack { self.currentTrack = newState.playback.currentTrack }
+                if self.playbackPosition != newState.playback.position { self.playbackPosition = newState.playback.position }
+                if self.isPlaying != newState.playback.isPlaying { self.isPlaying = newState.playback.isPlaying }
+                if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
+                if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
+                if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
+                if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
+                if self.detectedSongPhase != newState.render.detectedSongPhase { self.detectedSongPhase = newState.render.detectedSongPhase }
+                if self.imageIndex != newState.render.imageIndex { self.imageIndex = newState.render.imageIndex }
+                if self.imageCount != newState.render.imageCount { self.imageCount = newState.render.imageCount }
+                if self.shaderCount != newState.render.shaderCount { self.shaderCount = newState.render.shaderCount }
+                if self.songsState != newState.songs { self.songsState = newState.songs }
 
-                // Launchpad state
+                // Launchpad state - only update if changed
                 if let snapshot = newState.launchpad.status {
-                    self.launchpadStatus = LaunchpadStatus(
+                    let newStatus = LaunchpadStatus(
                         isEnabled: snapshot.isConnected,
                         isConnected: snapshot.isConnected,
                         deviceName: snapshot.deviceName,
@@ -674,19 +675,25 @@ public final class AppState: ObservableObject {
                         configuredPadCount: snapshot.padCount,
                         currentBpm: 120
                     )
+                    if self.launchpadStatus != newStatus {
+                        self.launchpadStatus = newStatus
+                    }
                 }
 
-                // Pipeline state
-                self.syncPipelineSteps(from: newState.pipeline)
-                if let result = newState.pipeline.result {
+                // Pipeline state - only update if changed
+                let newSteps = self.mapPipelineSteps(from: newState.pipeline)
+                if self.pipelineSteps != newSteps {
+                    self.pipelineSteps = newSteps
+                }
+                if let result = newState.pipeline.result, self.pipelineResult != result {
                     self.pipelineResult = result
                 }
             }
             .store(in: &cancellables)
     }
 
-    private func syncPipelineSteps(from pipeline: PipelineSubState) {
-        pipelineSteps = pipeline.steps.map { stepState in
+    private func mapPipelineSteps(from pipeline: PipelineSubState) -> [PipelineStep] {
+        pipeline.steps.map { stepState in
             PipelineStep(
                 name: stepState.name,
                 status: stepState.status,
@@ -737,12 +744,16 @@ public final class AppState: ObservableObject {
 
 // MARK: - Supporting Types
 
-public struct PipelineStep: Identifiable {
+public struct PipelineStep: Identifiable, Equatable {
     public let id = UUID()
     public let name: String
     public var status: String
     public var details: [String]?
     public var timestamp: Date
+
+    public static func == (lhs: PipelineStep, rhs: PipelineStep) -> Bool {
+        lhs.name == rhs.name && lhs.status == rhs.status && lhs.details == rhs.details
+    }
 
     public static let defaultSteps: [PipelineStep] = [
         PipelineStep(name: "lyrics", status: "pending", details: nil, timestamp: Date()),

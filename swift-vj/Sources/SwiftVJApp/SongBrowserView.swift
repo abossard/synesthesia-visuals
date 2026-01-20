@@ -50,6 +50,9 @@ struct SongBrowserView: View {
                 selectedSong = updated
             }
         }
+        .onChange(of: selectedMood) { _, _ in applyFilters() }
+        .onChange(of: selectedPhase) { _, _ in applyFilters() }
+        .onChange(of: sortOrder) { _, _ in applyFilters() }
         .alert("Delete Song?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -106,7 +109,6 @@ struct SongBrowserView: View {
                     phasePicker
                     sortPicker
                     Spacer(minLength: 0)
-                    applyButton
                     clearAllCachesButton
                 }
 
@@ -117,7 +119,6 @@ struct SongBrowserView: View {
                     }
                     HStack(spacing: 12) {
                         sortPicker
-                        applyButton
                         clearAllCachesButton
                     }
                 }
@@ -194,13 +195,6 @@ struct SongBrowserView: View {
             }
             .frame(minWidth: 150)
         }
-    }
-
-    private var applyButton: some View {
-        Button(action: applyFilters) {
-            Label("Apply", systemImage: "line.3.horizontal.decrease.circle")
-        }
-        .buttonStyle(.bordered)
     }
 
     private var clearAllCachesButton: some View {
@@ -541,6 +535,7 @@ struct SongDetailView: View {
     let onClearCache: () -> Void
 
     @State private var imageURLs: [URL] = []
+    @State private var imageCache: [URL: NSImage] = [:]
     @State private var imageToDelete: URL? = nil
 
     var body: some View {
@@ -747,7 +742,7 @@ struct SongDetailView: View {
 
                 LazyVGrid(columns: imageGridColumns, spacing: 12) {
                     ForEach(imageURLs, id: \.self) { url in
-                        if let img = NSImage(contentsOf: url) {
+                        if let img = imageCache[url] {
                             ZStack(alignment: .topTrailing) {
                                 Color(.textBackgroundColor)
 
@@ -773,6 +768,12 @@ struct SongDetailView: View {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .stroke(Color(.separatorColor).opacity(0.3))
                             )
+                        } else {
+                            // Placeholder while loading
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color(.textBackgroundColor))
+                                .frame(maxWidth: .infinity, minHeight: 140)
+                                .overlay(ProgressView())
                         }
                     }
                 }
@@ -831,19 +832,34 @@ struct SongDetailView: View {
 
     private func loadImages() {
         imageURLs = []
+        imageCache = [:]
         guard let path = song.imagesFolderPath else { return }
         let url = URL(fileURLWithPath: path)
         guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) else { return }
         let allowed = Set(["png", "jpg", "jpeg", "gif", "heic", "tiff"])
-        imageURLs = enumerator.compactMap { element in
-            guard let fileURL = element as? URL else { return nil }
+        let urls = enumerator.compactMap { element in
+            guard let fileURL = element as? URL else { return nil as URL? }
             return allowed.contains(fileURL.pathExtension.lowercased()) ? fileURL : nil
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        
+        imageURLs = urls
+        
+        // Load images asynchronously
+        for imageURL in urls {
+            DispatchQueue.global(qos: .userInitiated).async {
+                if let img = NSImage(contentsOf: imageURL) {
+                    DispatchQueue.main.async {
+                        imageCache[imageURL] = img
+                    }
+                }
+            }
+        }
     }
 
     private func deleteImage(_ url: URL) {
         onDeleteImage(url)
         imageURLs.removeAll { $0 == url }
+        imageCache.removeValue(forKey: url)
     }
 }
 
