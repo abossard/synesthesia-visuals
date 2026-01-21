@@ -511,6 +511,9 @@ public struct SongsSubState: Equatable, Sendable {
     /// Whether songs are loading
     public var isLoading: Bool
 
+    /// Folder scan progress (nil when not scanning)
+    public var scanProgress: FolderScanProgress?
+
     public init(
         totalCount: Int = 0,
         selectedSongId: SongID? = nil,
@@ -520,7 +523,8 @@ public struct SongsSubState: Equatable, Sendable {
         displayedSongs: [Song] = [],
         reanalyzingSongId: SongID? = nil,
         statistics: SongStatistics? = nil,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        scanProgress: FolderScanProgress? = nil
     ) {
         self.totalCount = totalCount
         self.selectedSongId = selectedSongId
@@ -531,6 +535,46 @@ public struct SongsSubState: Equatable, Sendable {
         self.reanalyzingSongId = reanalyzingSongId
         self.statistics = statistics
         self.isLoading = isLoading
+        self.scanProgress = scanProgress
+    }
+}
+
+// MARK: - Folder Scan Progress
+
+/// Progress state for folder scanning
+public struct FolderScanProgress: Equatable, Sendable {
+    /// Current file being scanned (1-based)
+    public var current: Int
+
+    /// Total files to scan
+    public var total: Int
+
+    /// Number of songs discovered so far
+    public var foundCount: Int
+
+    /// Whether scan is in progress
+    public var isScanning: Bool
+
+    /// Folder being scanned
+    public var folderName: String
+
+    /// Progress percentage (0.0 - 1.0)
+    public var progress: Double {
+        total > 0 ? Double(current) / Double(total) : 0
+    }
+
+    public init(
+        current: Int = 0,
+        total: Int = 0,
+        foundCount: Int = 0,
+        isScanning: Bool = false,
+        folderName: String = ""
+    ) {
+        self.current = current
+        self.total = total
+        self.foundCount = foundCount
+        self.isScanning = isScanning
+        self.folderName = folderName
     }
 }
 

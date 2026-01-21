@@ -87,7 +87,8 @@ public actor SongsModule: Module {
         hasLyrics: Bool,
         lyricsText: String,
         lyricsLineCount: Int,
-        refrainCount: Int
+        refrainCount: Int,
+        incrementPlayCount: Bool = true
     ) async {
         await store.upsertFromPipeline(
             artist: artist,
@@ -110,7 +111,8 @@ public actor SongsModule: Module {
             hasLyrics: hasLyrics,
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
-            refrainCount: refrainCount
+            refrainCount: refrainCount,
+            incrementPlayCount: incrementPlayCount
         )
     }
 

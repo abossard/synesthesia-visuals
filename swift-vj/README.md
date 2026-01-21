@@ -1,6 +1,6 @@
 # Swift-VJ
 
-macOS VJ Control Application - Swift rewrite of python-vj with WLED Sound Reactive support.
+macOS VJ Control Application - Swift rewrite of python-vj with LedFX LED control support.
 
 ## Status: Planning & Foundation
 
@@ -9,7 +9,7 @@ This is a TDD-first rewrite of the Python-based VJ control system. See [REWRITE_
 ## Features
 
 - **Audio-reactive visuals**: Real-time audio analysis from Synesthesia via OSC
-- **WLED Sound Reactive**: Send audio data to WLED LED controllers (UDP Sound Sync v2)
+- **LedFX integration**: Control LedFX LED effects via REST API (planned)
 - **Multi-source playback**: VirtualDJ, Spotify support
 - **Lyrics integration**: Fetch and display synchronized lyrics
 - **Shader matching**: AI-powered shader selection based on song mood
@@ -79,7 +79,6 @@ swift-vj/
 
 ## Documentation
 
-- [WLED Sound Reactive Integration](./docs/WLED_INTEGRATION.md) - Complete guide for LED controller support
 - [REWRITE_PLAN.md](./REWRITE_PLAN.md) - Architecture and implementation plan
 - [CODE_EXAMPLES.md](./CODE_EXAMPLES.md) - Design patterns and examples
 

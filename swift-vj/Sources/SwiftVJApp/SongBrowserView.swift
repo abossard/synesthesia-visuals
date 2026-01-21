@@ -13,17 +13,20 @@ struct SongBrowserView: View {
     @State private var searchText = ""
     @State private var selectedMood: String? = nil
     @State private var selectedPhase: Phase? = nil
+    @State private var selectedStatus: SongStatus? = nil
     @State private var sortOrder: SongSortOrder = .recentlyPlayed
     @State private var showDeleteConfirm = false
     @State private var songToDelete: Song? = nil
     @State private var selectedSong: Song? = nil
-    @State private var selectedSongIds: Set<SongID> = []
-    @State private var isSelectionMode = false
+    @State private var selectedSongIds: Set<Song.ID> = []
 
     var body: some View {
         HSplitView {
             // Left: Song list with filters
             VStack(spacing: 0) {
+                // Scan progress bar (when scanning)
+                scanProgressView
+
                 // Search bar
                 searchBar
 
@@ -39,6 +42,11 @@ struct SongBrowserView: View {
                 songList
             }
             .frame(minWidth: 350, idealWidth: 400)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    folderScanButton
+                }
+            }
 
             // Right: Song detail
             songDetailView
@@ -54,6 +62,7 @@ struct SongBrowserView: View {
         }
         .onChange(of: selectedMood) { _, _ in applyFilters() }
         .onChange(of: selectedPhase) { _, _ in applyFilters() }
+        .onChange(of: selectedStatus) { _, _ in applyFilters() }
         .onChange(of: sortOrder) { _, _ in applyFilters() }
         .alert("Delete Song?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -67,6 +76,86 @@ struct SongBrowserView: View {
                 Text("Delete \"\(song.displayName)\" from the database? This cannot be undone.")
             }
         }
+    }
+
+    // MARK: - Folder Scan Button
+
+    @ViewBuilder
+    private var folderScanButton: some View {
+        if let progress = appState.songsState.scanProgress, progress.isScanning {
+            Button(action: cancelScan) {
+                Label("Cancel Scan", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+        } else {
+            Button(action: selectFolderToScan) {
+                Label("Scan Folder", systemImage: "folder.badge.plus")
+            }
+        }
+    }
+
+    // MARK: - Scan Progress View
+
+    @ViewBuilder
+    private var scanProgressView: some View {
+        if let progress = appState.songsState.scanProgress, progress.isScanning {
+            VStack(spacing: 8) {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.accentColor)
+                    Text("Scanning: \(progress.folderName)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(progress.current)/\(progress.total)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Button(action: cancelScan) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ProgressView(value: progress.progress)
+                    .progressViewStyle(.linear)
+
+                HStack {
+                    Text("\(progress.foundCount) songs found")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                    Spacer()
+                    Text("\(Int(progress.progress * 100))%")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding()
+            .background(Color(.controlBackgroundColor))
+            .cornerRadius(8)
+            .padding(.horizontal)
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Folder Scan Actions
+
+    private func selectFolderToScan() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder containing music files"
+        panel.prompt = "Scan"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            appState.send(.songs(.scanFolderRequested(url)))
+        }
+    }
+
+    private func cancelScan() {
+        appState.send(.songs(.cancelScanRequested))
     }
 
     // MARK: - Search Bar
@@ -109,6 +198,7 @@ struct SongBrowserView: View {
                 HStack(alignment: .center, spacing: 12) {
                     moodPicker
                     phasePicker
+                    statusPicker
                     sortPicker
                     Spacer(minLength: 0)
                     clearAllCachesButton
@@ -118,6 +208,7 @@ struct SongBrowserView: View {
                     HStack(spacing: 12) {
                         moodPicker
                         phasePicker
+                        statusPicker
                     }
                     HStack(spacing: 12) {
                         sortPicker
@@ -183,6 +274,23 @@ struct SongBrowserView: View {
         }
     }
 
+    private var statusPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Status")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Picker("Status", selection: $selectedStatus) {
+                Text("All").tag(nil as SongStatus?)
+                ForEach(SongStatus.allCases, id: \.self) { status in
+                    Label(status.displayName, systemImage: status.iconName)
+                        .tag(status as SongStatus?)
+                }
+            }
+            .frame(minWidth: 140)
+        }
+    }
+
     private var sortPicker: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Sort")
@@ -236,70 +344,52 @@ struct SongBrowserView: View {
 
     private var songList: some View {
         VStack(spacing: 0) {
-            // Selection toolbar
-            selectionToolbar
+            // Selection toolbar (shown when items selected)
+            if !selectedSongIds.isEmpty {
+                selectionToolbar
+            }
 
-            List(displayedSongs, selection: $selectedSong) { song in
+            List(displayedSongs, id: \.id, selection: $selectedSongIds) { song in
                 SongRowView(
                     song: song,
-                    isSelected: selectedSong?.id == song.id,
                     isReanalyzing: appState.songsState.reanalyzingSongId == song.id,
-                    isSelectionMode: isSelectionMode,
-                    isChecked: selectedSongIds.contains(song.id),
-                    onSelect: { selectSong(song) },
                     onDelete: { confirmDelete(song) },
-                    onReanalyze: { reanalyze(song) },
-                    onToggleSelection: { toggleSelection(song) }
+                    onReanalyze: { reanalyze(song) }
                 )
-                .tag(song)
+                .tag(song.id)
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))
+            .onChange(of: selectedSongIds) { _, newSelection in
+                // Update detail view when single item selected
+                if newSelection.count == 1, let id = newSelection.first {
+                    selectedSong = displayedSongs.first { $0.id == id }
+                }
+            }
         }
     }
 
     private var selectionToolbar: some View {
         HStack(spacing: 12) {
-            Toggle(isOn: $isSelectionMode) {
-                Label("Select", systemImage: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
-            }
-            .toggleStyle(.button)
-            .onChange(of: isSelectionMode) { _, newValue in
-                if !newValue {
-                    selectedSongIds.removeAll()
-                }
-            }
-
-            if isSelectionMode {
-                Button(action: selectAll) {
-                    Label("All", systemImage: "checkmark.circle.fill")
-                }
-                .buttonStyle(.bordered)
-
-                Button(action: { selectedSongIds.removeAll() }) {
-                    Label("None", systemImage: "circle")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                if !selectedSongIds.isEmpty {
-                    Text("\(selectedSongIds.count) selected")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Button(action: analyzeSelected) {
-                        Label("Analyze Selected", systemImage: "wand.and.stars")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
-                }
-            }
+            Text("\(selectedSongIds.count) selected")
+                .font(.headline)
+                .foregroundColor(.secondary)
 
             Spacer()
+
+            Button(action: analyzeSelected) {
+                Label("Analyze Selected", systemImage: "wand.and.stars")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.purple)
+
+            Button(action: { selectedSongIds.removeAll() }) {
+                Label("Clear", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.bordered)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(Color(.windowBackgroundColor).opacity(0.5))
+        .background(Color(.windowBackgroundColor).opacity(0.8))
     }
 
     // MARK: - Song Detail View
@@ -357,6 +447,7 @@ struct SongBrowserView: View {
         let filter = SongFilter(
             moodFilter: selectedMood,
             phaseFilter: selectedPhase,
+            statusFilter: selectedStatus,
             searchQuery: searchText.isEmpty ? nil : searchText
         )
         appState.send(.songs(.applyFilter(filter)))
@@ -365,6 +456,7 @@ struct SongBrowserView: View {
     private func clearFilter() {
         selectedMood = nil
         selectedPhase = nil
+        selectedStatus = nil
         appState.send(.songs(.clearFilter))
     }
 
@@ -389,25 +481,12 @@ struct SongBrowserView: View {
         appState.send(.songs(.requestReanalysis(song.id)))
     }
 
-    private func toggleSelection(_ song: Song) {
-        if selectedSongIds.contains(song.id) {
-            selectedSongIds.remove(song.id)
-        } else {
-            selectedSongIds.insert(song.id)
-        }
-    }
-
-    private func selectAll() {
-        selectedSongIds = Set(displayedSongs.map(\.id))
-    }
-
     private func analyzeSelected() {
         for songId in selectedSongIds {
             appState.send(.songs(.requestReanalysis(songId)))
         }
         // Clear selection after starting analysis
         selectedSongIds.removeAll()
-        isSelectionMode = false
     }
 
     private func clearCache(_ song: Song) {
@@ -493,27 +572,12 @@ struct StatBadge: View {
 
 struct SongRowView: View {
     let song: Song
-    let isSelected: Bool
     let isReanalyzing: Bool
-    var isSelectionMode: Bool = false
-    var isChecked: Bool = false
-    let onSelect: () -> Void
     let onDelete: () -> Void
     let onReanalyze: () -> Void
-    var onToggleSelection: (() -> Void)? = nil
 
     var body: some View {
         HStack {
-            // Selection checkbox (only in selection mode)
-            if isSelectionMode {
-                Button(action: { onToggleSelection?() }) {
-                    Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(isChecked ? .accentColor : .secondary)
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-            }
-
             // Song info
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.title)
@@ -568,7 +632,6 @@ struct SongRowView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
     }
 }
 

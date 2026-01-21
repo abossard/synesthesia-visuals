@@ -125,12 +125,6 @@ struct SettingsView: View {
                 Label("OSC", systemImage: "antenna.radiowaves.left.and.right")
             }
             
-            // WLED
-            WLEDSettingsView()
-                .tabItem {
-                    Label("WLED", systemImage: "led.strip.horizontal")
-                }
-            
             // About
             VStack(spacing: 20) {
                 Image(systemName: "sparkles")

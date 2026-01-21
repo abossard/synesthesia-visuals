@@ -148,7 +148,8 @@ public actor SongStore {
         hasLyrics: Bool,
         lyricsText: String,
         lyricsLineCount: Int,
-        refrainCount: Int
+        refrainCount: Int,
+        incrementPlayCount: Bool = true
     ) {
         let songId = SongID(artist: artist, title: title)
         let existing = songs[songId]
@@ -164,9 +165,10 @@ public actor SongStore {
             djPhase: djPhase
         )
 
-        // Determine status
+        // Determine status - complete if AI analysis ran (has mood)
+        // Images and lyrics are optional enrichments
         let status: SongStatus
-        if hasLyrics && imagesFolderPath != nil && !mood.isEmpty {
+        if !mood.isEmpty {
             status = .complete
         } else {
             status = .partial
@@ -190,9 +192,9 @@ public actor SongStore {
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
             createdAt: existing?.createdAt ?? Date(),
-            lastPlayedAt: Date(),
+            lastPlayedAt: incrementPlayCount ? Date() : (existing?.lastPlayedAt ?? Date()),
             lastAnalyzedAt: Date(),
-            playCount: (existing?.playCount ?? 0) + 1
+            playCount: incrementPlayCount ? (existing?.playCount ?? 0) + 1 : (existing?.playCount ?? 0)
         )
 
         upsert(song)

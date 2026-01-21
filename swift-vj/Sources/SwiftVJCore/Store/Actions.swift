@@ -277,6 +277,29 @@ public enum SongsAction: Sendable {
 
     /// Song updated (e.g., image count changed)
     case songUpdated(Song)
+
+    // MARK: - Folder Scanning
+
+    /// Request to scan a folder for music files
+    case scanFolderRequested(URL)
+
+    /// Scan started with total file count
+    case scanStarted(total: Int, folderName: String)
+
+    /// Scan progress update
+    case scanProgress(current: Int, found: Int)
+
+    /// Song discovered during scan (add if not duplicate)
+    case songDiscovered(artist: String, title: String)
+
+    /// Scan completed
+    case scanCompleted
+
+    /// Request to cancel ongoing scan (from UI)
+    case cancelScanRequested
+
+    /// Scan was cancelled
+    case scanCancelled
 }
 
 // MARK: - Action Descriptions (for debugging)
@@ -416,6 +439,13 @@ extension SongsAction: CustomStringConvertible {
         case .refreshList: return "refreshList"
         case .deleteImage: return "deleteImage"
         case .songUpdated(let song): return "songUpdated(\(song.id.rawValue))"
+        case .scanFolderRequested(let url): return "scanFolderRequested(\(url.lastPathComponent))"
+        case .scanStarted(let total, let name): return "scanStarted(\(total) files in \(name))"
+        case .scanProgress(let current, let found): return "scanProgress(\(current), found: \(found))"
+        case .songDiscovered(let artist, let title): return "songDiscovered(\(artist) - \(title))"
+        case .scanCompleted: return "scanCompleted"
+        case .cancelScanRequested: return "cancelScanRequested"
+        case .scanCancelled: return "scanCancelled"
         }
     }
 }

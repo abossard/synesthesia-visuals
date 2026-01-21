@@ -546,6 +546,63 @@ public func songsReducer(
         } else {
             return SongsEffects.search(state.searchQuery)
         }
+
+    // MARK: - Folder Scanning
+
+    case .scanFolderRequested(let url):
+        // Start the scan effect
+        return SongsEffects.scanFolder(url)
+
+    case .scanStarted(let total, let folderName):
+        state.scanProgress = FolderScanProgress(
+            current: 0,
+            total: total,
+            foundCount: 0,
+            isScanning: true,
+            folderName: folderName
+        )
+        appState.ui.addLog("Scanning folder: \(folderName) (\(total) files)", level: .info)
+        return .none
+
+    case .scanProgress(let current, let found):
+        state.scanProgress?.current = current
+        state.scanProgress?.foundCount = found
+        return .none
+
+    case .songDiscovered(let artist, let title):
+        let songId = SongID(artist: artist, title: title)
+
+        // Check for duplicate in existing displayed songs
+        let alreadyExists = state.displayedSongs.contains { $0.id == songId }
+
+        if !alreadyExists {
+            // Create minimal song entry and add to store
+            return SongsEffects.addDiscoveredSong(artist: artist, title: title)
+        }
+        return .none
+
+    case .scanCompleted:
+        let foundCount = state.scanProgress?.foundCount ?? 0
+        state.scanProgress = nil
+        appState.ui.addLog("Scan complete: \(foundCount) songs added", level: .info)
+        // Refresh the list to show new songs
+        return .merge(
+            .send(.songs(.refreshList)),
+            .send(.songs(.save))
+        )
+
+    case .cancelScanRequested:
+        return SongsEffects.cancelScan().map { _ in AppAction.songs(.scanCancelled) }
+
+    case .scanCancelled:
+        let scannedCount = state.scanProgress?.current ?? 0
+        let foundCount = state.scanProgress?.foundCount ?? 0
+        state.scanProgress = nil
+        appState.ui.addLog("Scan cancelled: \(foundCount) songs added (scanned \(scannedCount) files)", level: .info)
+        return .merge(
+            .send(.songs(.refreshList)),
+            .send(.songs(.save))
+        )
     }
 }
 
@@ -777,6 +834,103 @@ public enum SongsEffects {
 
             // Mark reanalysis as completed
             await send(.songs(.reanalysisCompleted(id)))
+        }
+    }
+
+    // MARK: - Folder Scanning Effects
+
+    /// Cancellation ID for folder scanning
+    private static let scanCancellationId = EffectCancellationId.custom("folderScan")
+
+    /// Scan a folder for audio files and extract metadata
+    public static func scanFolder(_ folderURL: URL) -> Effect<AppAction> {
+        .run(cancellationId: scanCancellationId) { send in
+            // Find all audio files
+            let audioFiles = AudioMetadata.findAudioFiles(in: folderURL)
+            let total = audioFiles.count
+            let folderName = folderURL.lastPathComponent
+
+            guard total > 0 else {
+                await send(.songs(.scanCompleted))
+                return
+            }
+
+            await send(.songs(.scanStarted(total: total, folderName: folderName)))
+
+            var foundCount = 0
+            var existingIds: Set<SongID> = []
+
+            // Get existing song IDs to check for duplicates
+            if let module = await EffectEnvironment.shared.songsModule {
+                let allSongs = await module.allSongs
+                existingIds = Set(allSongs.map(\.id))
+            }
+
+            for (index, fileURL) in audioFiles.enumerated() {
+                // Check for cancellation
+                if Task.isCancelled { break }
+
+                // Extract metadata
+                if let metadata = AudioMetadata.extractMetadata(from: fileURL) {
+                    let songId = SongID(artist: metadata.artist, title: metadata.title)
+
+                    // Skip if already exists
+                    if !existingIds.contains(songId) {
+                        existingIds.insert(songId)
+                        foundCount += 1
+                        await send(.songs(.songDiscovered(artist: metadata.artist, title: metadata.title)))
+                    }
+                }
+
+                // Update progress every 10 files or on last file
+                if index % 10 == 0 || index == total - 1 {
+                    await send(.songs(.scanProgress(current: index + 1, found: foundCount)))
+                }
+            }
+
+            if Task.isCancelled {
+                await send(.songs(.scanCancelled))
+            } else {
+                await send(.songs(.scanCompleted))
+            }
+        }
+    }
+
+    /// Cancel ongoing folder scan
+    public static func cancelScan() -> Effect<AppAction> {
+        .cancel(id: scanCancellationId)
+    }
+
+    /// Add a discovered song to the database
+    public static func addDiscoveredSong(artist: String, title: String) -> Effect<AppAction> {
+        .fireAndForget {
+            guard let module = await EffectEnvironment.shared.songsModule else { return }
+
+            // Create minimal song - just artist and title
+            await module.recordSong(
+                artist: artist,
+                title: title,
+                album: "",
+                duration: 0,
+                bpm: 0,
+                musicalKey: "",
+                mood: "",
+                energy: 0.5,
+                valence: 0,
+                keywords: [],
+                themes: [],
+                visualAdjectives: [],
+                categories: [:],
+                djPhase: nil,
+                shaderName: nil,
+                imagesFolderPath: nil,
+                imagesCount: 0,
+                hasLyrics: false,
+                lyricsText: "",
+                lyricsLineCount: 0,
+                refrainCount: 0,
+                incrementPlayCount: false
+            )
         }
     }
 }
