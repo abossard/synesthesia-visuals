@@ -138,6 +138,7 @@ struct SongInfoDisplayState: Sendable, Equatable {
     let displayTime: Float  // Seconds since shown
     let active: Bool
     let lastChangeTime: Date
+    let stayVisible: Bool
 
     // Fade envelope timing (from VJUniverse)
     static let fadeInDuration: Float = 0.5
@@ -151,6 +152,7 @@ struct SongInfoDisplayState: Sendable, Equatable {
     /// Calculate opacity based on display time
     func computeOpacity() -> Float {
         guard active else { return 0 }
+        if stayVisible { return 255 }
 
         if displayTime < Self.fadeInDuration {
             // Fade in
@@ -174,7 +176,8 @@ struct SongInfoDisplayState: Sendable, Equatable {
         opacity: 0,
         displayTime: 0,
         active: false,
-        lastChangeTime: Date.distantPast
+        lastChangeTime: Date.distantPast,
+        stayVisible: false
     )
 }
 
@@ -207,26 +210,8 @@ struct ImageDisplayState: Sendable, Equatable {
 
 // MARK: - Shader Display State
 
-// Use canonical types from ShaderRepository module (via SwiftVJCore re-export)
-// typealias ShaderRating = SwiftVJCore.ShaderRating  // Already available via import
-// typealias ShaderInfo = SwiftVJCore.ShaderInfo      // Already available via import
-
-/// Shader display state
-struct ShaderDisplayState: Sendable, Equatable {
-    let current: SwiftVJCore.ShaderInfo?
-    let isLoaded: Bool
-    let error: String?
-    let audioTime: Float  // Audio-reactive accumulated time
-    let syntheticMouse: SIMD2<Float>
-
-    static let empty = ShaderDisplayState(
-        current: nil,
-        isLoaded: false,
-        error: nil,
-        audioTime: 0,
-        syntheticMouse: SIMD2<Float>(0.5, 0.5)
-    )
-}
+// ShaderDisplayState is now defined in SwiftVJCore/Rendering/DisplayStates.swift
+// Use it via: SwiftVJCore.ShaderDisplayState (or just ShaderDisplayState with proper import)
 
 // MARK: - Shader Uniforms
 

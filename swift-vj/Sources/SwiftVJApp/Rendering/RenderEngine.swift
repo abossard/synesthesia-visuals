@@ -39,9 +39,17 @@ final class RenderEngine: ObservableObject {
     // State managers (MainActor isolated for SwiftUI binding)
     @Published var audioManager: AudioStateManager
     @Published var textManager: TextStateManager
-    @Published var shaderManager: ShaderStateManager
-    @Published var maskManager: MaskStateManager
     @Published var imageManager: ImageStateManager
+    
+    /// Single source of truth for all shader data
+    @Published var shaderRepository: ObservableShaderRepository
+    
+    /// Selection state for main/mask outputs (reads from repository)
+    @Published var shaderSelection: ShaderSelectionManager
+    
+    /// Legacy accessor - use shaderSelection instead
+    var shaderManager: ShaderSelectionManager { shaderSelection }
+    var maskManager: ShaderSelectionManager { shaderSelection }
 
     // Audio Processor (actor isolated, not MainActor)
     private var synesthesiaAudio: SynesthesiaAudioProcessor?
@@ -74,17 +82,20 @@ final class RenderEngine: ObservableObject {
     static func create(synesthesiaAudio: SynesthesiaAudioProcessor? = nil) async -> RenderEngine {
         let audioManager = await MainActor.run { AudioStateManager() }
         let textManager = await MainActor.run { TextStateManager() }
-        let shaderManager = await MainActor.run { ShaderStateManager() }
-        let maskManager = await MainActor.run { MaskStateManager() }
         let imageManager = await MainActor.run { ImageStateManager() }
+        
+        // Create repository and selection manager with proper wiring
+        let shaderRepository = await MainActor.run { ObservableShaderRepository() }
+        let shaderSelection = await MainActor.run { ShaderSelectionManager() }
+        await MainActor.run { shaderSelection.configure(repository: shaderRepository) }
 
         return RenderEngine(
             synesthesiaAudio: synesthesiaAudio,
             audioManager: audioManager,
             textManager: textManager,
-            shaderManager: shaderManager,
-            maskManager: maskManager,
-            imageManager: imageManager
+            imageManager: imageManager,
+            shaderRepository: shaderRepository,
+            shaderSelection: shaderSelection
         )
     }
 
@@ -92,16 +103,16 @@ final class RenderEngine: ObservableObject {
         synesthesiaAudio: SynesthesiaAudioProcessor?,
         audioManager: AudioStateManager,
         textManager: TextStateManager,
-        shaderManager: ShaderStateManager,
-        maskManager: MaskStateManager,
-        imageManager: ImageStateManager
+        imageManager: ImageStateManager,
+        shaderRepository: ObservableShaderRepository,
+        shaderSelection: ShaderSelectionManager
     ) {
         self.synesthesiaAudio = synesthesiaAudio
         self.audioManager = audioManager
         self.textManager = textManager
-        self.shaderManager = shaderManager
-        self.maskManager = maskManager
         self.imageManager = imageManager
+        self.shaderRepository = shaderRepository
+        self.shaderSelection = shaderSelection
     }
 
     // MARK: - Lifecycle
@@ -120,7 +131,18 @@ final class RenderEngine: ObservableObject {
         self.headlessRenderer = renderer
         logger?("[RenderEngine] Initialized headless renderer")
         
-        // Load default shaders
+        // Load shaders from repository
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            Task {
+                await self.shaderRepository.reload()
+                // Select default shaders after reload
+                self.shaderSelection.selectMain(name: "3isacrowd")
+                self.shaderSelection.selectMask(name: "BWrevolvingswirl")
+            }
+        }
+        
+        // Load default shaders in renderer
         renderer.shaderRenderer.loadShader(name: "3isacrowd")
         renderer.maskRenderer.loadShader(name: "BWrevolvingswirl")
 
@@ -258,8 +280,8 @@ final class RenderEngine: ObservableObject {
                 lyricsState: self.textManager.lyricsState,
                 refrainState: self.textManager.refrainState,
                 songInfoState: self.textManager.songInfoState,
-                shaderState: self.shaderManager.state,
-                maskState: self.maskManager.state,
+                shaderState: self.shaderSelection.mainState,
+                maskState: self.shaderSelection.maskState,
                 imageState: self.imageManager.state
             )
         }
@@ -355,9 +377,9 @@ final class RenderEngine: ObservableObject {
     // MARK: - Pipeline Integration
 
     /// Called when track changes (from pipeline)
-    func onTrackChange(artist: String, title: String, album: String) {
+    func onTrackChange(artist: String, title: String, album: String, stayVisible: Bool = false) {
         Task { @MainActor [textManager] in
-            textManager.setSongInfo(artist: artist, title: title, album: album)
+            textManager.setSongInfo(artist: artist, title: title, album: album, stayVisible: stayVisible)
         }
     }
 
@@ -384,8 +406,8 @@ final class RenderEngine: ObservableObject {
 
     /// Called when shader should change (from pipeline)
     func onShaderChange(name: String) {
-        Task { @MainActor [shaderManager] in
-            shaderManager.selectShader(name: name)
+        Task { @MainActor [shaderSelection] in
+            shaderSelection.selectMain(name: name)
         }
     }
 

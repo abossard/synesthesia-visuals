@@ -544,7 +544,14 @@ public final class AppState: ObservableObject {
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run {
                 self.renderEngine = engine
-                engine.shaderManager.logger = { [weak self] message, level in
+                engine.shaderManager.logger = { [weak self] message, coreLevel in
+                    // Convert SwiftVJCore.LogLevel to SwiftVJApp.LogLevel
+                    let level: LogLevel = switch coreLevel {
+                    case .debug: .debug
+                    case .info: .info
+                    case .warning: .warning
+                    case .error: .error
+                    }
                     self?.log(message, level: level)
                 }
             }
@@ -557,7 +564,7 @@ public final class AppState: ObservableObject {
         EffectEnvironment.shared.loadShader = { [weak self] name in
             guard let self = self else { return }
             await MainActor.run {
-                self.renderEngine?.shaderManager.selectShader(name: name)
+                self.renderEngine?.shaderSelection.selectMain(name: name)
                 do {
                     try self.oscHub.sendToMagic("/shader/load", values: [name, Float(0.5), Float(0.0)])
                 } catch {
@@ -665,7 +672,19 @@ public final class AppState: ObservableObject {
                 if self.isRunning != newState.isRunning { self.isRunning = newState.isRunning }
                 if self.currentTrack != newState.playback.currentTrack { self.currentTrack = newState.playback.currentTrack }
                 if self.playbackPosition != newState.playback.position { self.playbackPosition = newState.playback.position }
-                if self.isPlaying != newState.playback.isPlaying { self.isPlaying = newState.playback.isPlaying }
+                if self.isPlaying != newState.playback.isPlaying {
+                    self.isPlaying = newState.playback.isPlaying
+                    if let engine = self.renderEngine, let track = newState.playback.currentTrack {
+                        Task { @MainActor in
+                            engine.textManager.setSongInfo(
+                                artist: track.artist,
+                                title: track.title,
+                                album: track.album,
+                                stayVisible: self.isPlaying
+                            )
+                        }
+                    }
+                }
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
                 if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }

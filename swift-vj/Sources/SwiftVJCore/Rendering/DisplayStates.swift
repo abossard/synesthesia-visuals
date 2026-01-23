@@ -2,6 +2,7 @@
 // Following Grokking Simplicity: pure data types
 
 import Foundation
+import simd
 
 // MARK: - Lyrics Display State
 
@@ -223,10 +224,10 @@ public struct ImageDisplayState: Sendable, Equatable {
     }
 }
 
-// MARK: - Shader Display State
+// MARK: - Shader Tile State (for UI list items)
 
-/// State for shader tile rendering
-public struct ShaderDisplayState: Sendable, Equatable {
+/// State for shader tile rendering in lists/browsers
+public struct ShaderTileState: Sendable, Equatable {
     public let name: String
     public let path: String
     public let rating: ShaderRating
@@ -248,14 +249,41 @@ public struct ShaderDisplayState: Sendable, Equatable {
     }
 
     /// Create state for loaded shader
-    public static func loaded(name: String, path: String, rating: ShaderRating) -> ShaderDisplayState {
-        ShaderDisplayState(name: name, path: path, rating: rating, isLoaded: true)
+    public static func loaded(name: String, path: String, rating: ShaderRating) -> ShaderTileState {
+        ShaderTileState(name: name, path: path, rating: rating, isLoaded: true)
     }
 
     /// Create state for failed shader
-    public static func failed(name: String, error: String) -> ShaderDisplayState {
-        ShaderDisplayState(name: name, isLoaded: false, error: error)
+    public static func failed(name: String, error: String) -> ShaderTileState {
+        ShaderTileState(name: name, isLoaded: false, error: error)
     }
+}
+
+// MARK: - Shader Display State (for rendering)
+
+/// State for active shader rendering
+public struct ShaderDisplayState: Sendable, Equatable {
+    public let current: ShaderInfo?
+    public let isLoaded: Bool
+    public let error: String?
+    public let audioTime: Float  // Audio-reactive accumulated time
+    public let syntheticMouse: SIMD2<Float>
+
+    public init(
+        current: ShaderInfo? = nil,
+        isLoaded: Bool = false,
+        error: String? = nil,
+        audioTime: Float = 0,
+        syntheticMouse: SIMD2<Float> = SIMD2<Float>(0.5, 0.5)
+    ) {
+        self.current = current
+        self.isLoaded = isLoaded
+        self.error = error
+        self.audioTime = audioTime
+        self.syntheticMouse = syntheticMouse
+    }
+
+    public static let empty = ShaderDisplayState()
 }
 
 // MARK: - Pure Functions for Image Rendering

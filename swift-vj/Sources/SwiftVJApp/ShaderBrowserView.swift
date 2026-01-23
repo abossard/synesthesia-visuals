@@ -645,17 +645,16 @@ struct ShaderBrowserView: View {
     private func reloadAllShaders() async {
         await loadShaders()
         
-        // Also reload in the render engine's shader state manager
+        // Also reload in the render engine's repository (single source of truth)
         if let shadersDir = findShadersDirectory(),
            let renderEngine = appState.renderEngine {
-            // Set shaders directory in state managers (triggers enrichment and folder filtering)
             await MainActor.run {
-                renderEngine.shaderManager.setShadersDirectory(shadersDir)
-                renderEngine.shaderManager.reload()
-                renderEngine.maskManager.setShadersDirectory(shadersDir)
-                renderEngine.maskManager.reload()
+                Task {
+                    renderEngine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
+                    await renderEngine.shaderRepository.reload()
+                }
             }
-            appState.log("Reloaded shaders in ShaderStateManager and MaskStateManager", level: .debug)
+            appState.log("Reloaded shaders in ShaderRepository", level: .debug)
         }
         
         // Also reload in the shaders module
@@ -815,7 +814,7 @@ struct ShaderBrowserView: View {
         appState.log("[Preview] 👁 Eye clicked for: \(shader.name)", level: .debug)
         
         // Check if shader is in metallib (renderable)
-        let isRenderable = appState.renderEngine?.shaderManager.isRenderable(shader.name) ?? false
+        let isRenderable = appState.renderEngine?.shaderRepository.isRenderable(shader.name) ?? false
         appState.log("[Preview]   • In metallib: \(isRenderable)", level: .debug)
         appState.log("[Preview]   • Current selectedShader: \(appState.selectedShader ?? "nil")", level: .debug)
         

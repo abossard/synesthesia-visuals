@@ -398,6 +398,9 @@ public struct ShaderInfo: Sendable, Equatable, Codable, Identifiable {
 
     // Pre-compiled Metal support
     public let metalFunctionName: String?  // Function name in .metallib (nil = runtime compile)
+    
+    /// Whether this shader is a mask (derived from folder == "masks")
+    public var isMask: Bool { folder == "masks" }
 
     public init(
         name: String,

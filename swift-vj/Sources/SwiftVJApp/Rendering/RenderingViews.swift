@@ -4,6 +4,7 @@
 import SwiftUI
 import Metal
 import MetalKit
+import SwiftVJCore
 
 // MARK: - Render Preview View
 
@@ -341,17 +342,17 @@ struct RenderControlsView: View {
             if renderEngine.isRunning {
                 HStack(spacing: 8) {
                     Button {
-                        renderEngine.shaderManager.prevShader()
+                        renderEngine.shaderSelection.prevMain()
                     } label: {
                         Image(systemName: "chevron.left")
                     }
 
-                    Text(renderEngine.shaderManager.state.current?.name ?? "No Shader")
+                    Text(renderEngine.shaderSelection.mainState.current?.name ?? "No Shader")
                         .font(.caption)
                         .frame(minWidth: 100)
 
                     Button {
-                        renderEngine.shaderManager.nextShader()
+                        renderEngine.shaderSelection.nextMain()
                     } label: {
                         Image(systemName: "chevron.right")
                     }
@@ -373,6 +374,28 @@ struct RenderingView: View {
     @AppStorage("lastSelectedMaskShader") private var selectedMaskShader: String = "BWcarbonlattice"
     @State private var selectedTile: String = "shader"
 
+    private let tileKeys: [String] = ["shader", "mask", "lyrics", "refrain", "songInfo", "image"]
+
+    private func displayName(for key: String) -> String {
+        switch key {
+        case "songInfo": return "Song Info"
+        case "mask": return "Mask"
+        default: return key.capitalized
+        }
+    }
+
+    private func serverName(for key: String) -> String {
+        switch key {
+        case "songInfo": return "SongInfo"
+        case "mask": return "Mask"
+        case "lyrics": return "Lyrics"
+        case "refrain": return "Refrain"
+        case "image": return "Image"
+        case "shader": return "Shader"
+        default: return key.capitalized
+        }
+    }
+
     /// Binding to appState.selectedShader for UI controls
     private var selectedShaderBinding: Binding<String> {
         Binding(
@@ -384,6 +407,8 @@ struct RenderingView: View {
     }
     
     // Demo text state for preview (shown until real data arrives)
+    @AppStorage("useDemoText") private var useDemoText: Bool = false
+
     @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
         lines: [
             DisplayLyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
@@ -393,7 +418,14 @@ struct RenderingView: View {
         activeIndex: 1, textOpacity: 255, fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
     )
     @State private var demoRefrain = RefrainDisplayState(text: "♪ This is the chorus! ♪", opacity: 255, active: true, lastChangeTime: Date())
-    @State private var demoSongInfo = SongInfoDisplayState(artist: "SwiftVJ", title: "Ready for music...", album: "Waiting for track", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date())
+    @State private var demoSongInfo = SongInfoDisplayState(artist: "SwiftVJ", title: "Ready for music...", album: "Waiting for track", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date(), stayVisible: true)
+
+    // Derived demo text editors
+    @State private var demoLyricsText: String = "♪ Previous line fades away\nCurrent line is bright and clear\nNext line waits in shadow ♪"
+    @State private var demoRefrainText: String = "♪ This is the chorus! ♪"
+    @State private var demoArtist: String = "SwiftVJ"
+    @State private var demoTitle: String = "Ready for music..."
+    @State private var demoAlbum: String = "Waiting for track"
 
     // Use appState.renderEngine (receives OSC updates) instead of local instance
     private var renderEngine: RenderEngine? { appState.renderEngine }
@@ -413,11 +445,11 @@ struct RenderingView: View {
                 // MTKView-based tiles (60fps Direct Metal)
                 mtkViewTiles
 
-                // Shader browser
-                if let shaderManager = renderEngine?.shaderManager,
-                   let maskManager = renderEngine?.maskManager {
+                // Shader browser (using repository for data, selection for state)
+                if let repository = renderEngine?.shaderRepository,
+                   let selection = renderEngine?.shaderSelection {
                     GroupBox("Shader Library") {
-                        ShaderListView(shaderManager: shaderManager, maskManager: maskManager)
+                        ShaderListView(repository: repository, selection: selection)
                     }
                 }
 
@@ -430,14 +462,15 @@ struct RenderingView: View {
         }
         .onAppear {
             Task { try? await renderEngine?.start() }
-            // Mask still uses local state for now
-            renderEngine?.maskManager.selectMask(name: selectedMaskShader)
+            // Mask uses selection manager
+            renderEngine?.shaderSelection.selectMask(name: selectedMaskShader)
             // Shader is handled by AppState (single source of truth)
+            if useDemoText { applyDemoText() }
         }
         // NOTE: Removed onDisappear stop() - render engine should keep running
         // when switching tabs. It only stops when app quits.
         .onChange(of: selectedMaskShader) { _, newValue in
-            renderEngine?.maskManager.selectMask(name: newValue)
+            renderEngine?.shaderSelection.selectMask(name: newValue)
         }
     }
     
@@ -448,11 +481,11 @@ struct RenderingView: View {
         VStack(spacing: 16) {
             // Tile selector tabs
             HStack(spacing: 12) {
-                ForEach(["shader", "mask", "lyrics", "refrain", "songInfo", "image"], id: \.self) { tile in
+                ForEach(tileKeys, id: \.self) { tile in
                     Button {
                         selectedTile = tile
                     } label: {
-                        Text(tile.capitalized)
+                        Text(displayName(for: tile))
                             .font(.caption)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -472,7 +505,7 @@ struct RenderingView: View {
             .padding(.horizontal)
             
             // Main tile preview - only render the selected tile
-            GroupBox(selectedTile.capitalized) {
+            GroupBox(displayName(for: selectedTile)) {
                 selectedTileView
                     .aspectRatio(16/9, contentMode: .fit)
                     .frame(minHeight: 360)
@@ -496,19 +529,20 @@ struct RenderingView: View {
             // Tile selector grid with Syphon client previews (60fps MTKView)
             GroupBox("Tiles → Syphon") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(["Shader", "Mask", "Lyrics", "Refrain", "SongInfo", "Image"], id: \.self) { tile in
+                    ForEach(tileKeys, id: \.self) { tileKey in
+                        let server = serverName(for: tileKey)
                         VStack(spacing: 4) {
-                            SyphonMTKView(serverName: tile)
+                            SyphonMTKView(serverName: server)
                                 .aspectRatio(16/9, contentMode: .fit)
                                 .frame(height: 60)
                                 .cornerRadius(4)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 4)
-                                        .stroke(selectedTile == tile.lowercased() ? Color.blue : Color.clear, lineWidth: 2)
+                                        .stroke(selectedTile == tileKey ? Color.blue : Color.clear, lineWidth: 2)
                                 )
-                                .onTapGesture { selectedTile = tile.lowercased() }
+                                .onTapGesture { selectedTile = tileKey }
 
-                            Text(tile).font(.caption2)
+                            Text(displayName(for: tileKey)).font(.caption2)
                         }
                     }
                 }
@@ -524,7 +558,7 @@ struct RenderingView: View {
         // All rendering is done headlessly by HeadlessRenderer
         // UI displays via MTKView for 60fps GPU-direct rendering (no CPU readback)
         // Server names are simple: "Shader", "Mask", "Lyrics", etc.
-        SyphonMTKView(serverName: selectedTile.capitalized)
+        SyphonMTKView(serverName: serverName(for: selectedTile))
             .id(selectedTile)  // Force view recreation when tile changes
     }
     
@@ -550,7 +584,7 @@ struct RenderingView: View {
                 Text("\(title):")
                 
                 Button {
-                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
+                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
                     if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
                         let prev = (current - 1 + shaders.count) % shaders.count
                         binding.wrappedValue = shaders[prev].name
@@ -568,7 +602,7 @@ struct RenderingView: View {
                     .cornerRadius(4)
                 
                 Button {
-                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
+                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
                     if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
                         let next = (current + 1) % shaders.count
                         binding.wrappedValue = shaders[next].name
@@ -579,7 +613,7 @@ struct RenderingView: View {
                 .buttonStyle(.bordered)
                 
                 Button("Random") {
-                    guard let shaders = renderEngine?.shaderManager.availableShaders else { return }
+                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
                     if !shaders.isEmpty {
                         binding.wrappedValue = shaders.randomElement()?.name ?? binding.wrappedValue
                     }
@@ -594,69 +628,139 @@ struct RenderingView: View {
     
     @ViewBuilder
     private var textControlsView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Lyrics controls
-            HStack {
-                Text("Lyrics line:")
-                Button("Prev") {
-                    let newIndex = max(0, demoLyrics.activeIndex - 1)
-                    demoLyrics = LyricsDisplayState(
-                        lines: demoLyrics.lines,
-                        activeIndex: newIndex,
-                        textOpacity: 255,
-                        fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
-                    )
+        VStack(alignment: .leading, spacing: 16) {
+            Toggle("Use Demo Text", isOn: $useDemoText)
+                .onChange(of: useDemoText) { _, enabled in
+                    if enabled { applyDemoText() }
                 }
-                Button("Next") {
-                    let newIndex = min(demoLyrics.lines.count - 1, demoLyrics.activeIndex + 1)
-                    demoLyrics = LyricsDisplayState(
-                        lines: demoLyrics.lines,
-                        activeIndex: newIndex,
-                        textOpacity: 255,
-                        fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
-                    )
+
+            GroupBox("Lyrics Demo") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Active line: \(demoLyrics.activeIndex + 1)/\(max(1, demoLyrics.lines.count))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Prev") { shiftDemoLyrics(by: -1) }
+                        Button("Next") { shiftDemoLyrics(by: 1) }
+                    }
+                    TextEditor(text: $demoLyricsText)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 80)
+                        .onChange(of: demoLyricsText) { _, _ in updateDemoLyricsFromText() }
                 }
-                Text("(\(demoLyrics.activeIndex + 1)/\(demoLyrics.lines.count))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
-            
-            // Refrain toggle
-            HStack {
-                Text("Refrain:")
-                Toggle("Active", isOn: Binding(
-                    get: { demoRefrain.active },
-                    set: { active in
-                        demoRefrain = RefrainDisplayState(
-                            text: demoRefrain.text,
-                            opacity: active ? 255 : 0,
-                            active: active,
-                            lastChangeTime: Date()
-                        )
-                    }
-                ))
+
+            GroupBox("Refrain Demo") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Active", isOn: Binding(
+                        get: { demoRefrain.active },
+                        set: { active in
+                            demoRefrain = RefrainDisplayState(
+                                text: demoRefrain.text,
+                                opacity: active ? 255 : 0,
+                                active: active,
+                                lastChangeTime: Date()
+                            )
+                            pushDemoIfNeeded()
+                        }
+                    ))
+                    TextField("Refrain", text: $demoRefrainText)
+                        .onChange(of: demoRefrainText) { _, newValue in
+                            demoRefrain = RefrainDisplayState(text: newValue, opacity: demoRefrain.active ? 255 : 0, active: demoRefrain.active, lastChangeTime: Date())
+                            pushDemoIfNeeded()
+                        }
+                }
             }
-            
-            // Song info toggle
-            HStack {
-                Text("Song Info:")
-                Toggle("Active", isOn: Binding(
-                    get: { demoSongInfo.active },
-                    set: { active in
-                        demoSongInfo = SongInfoDisplayState(
-                            artist: demoSongInfo.artist,
-                            title: demoSongInfo.title,
-                            album: demoSongInfo.album,
-                            opacity: active ? 255 : 0,
-                            displayTime: 0,
-                            active: active,
-                            lastChangeTime: Date()
-                        )
-                    }
-                ))
+
+            GroupBox("Song Info Demo") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Sticky Song Info", isOn: Binding(
+                        get: { demoSongInfo.stayVisible },
+                        set: { val in
+                            demoSongInfo = SongInfoDisplayState(
+                                artist: demoSongInfo.artist,
+                                title: demoSongInfo.title,
+                                album: demoSongInfo.album,
+                                opacity: demoSongInfo.opacity,
+                                displayTime: demoSongInfo.displayTime,
+                                active: demoSongInfo.active,
+                                lastChangeTime: Date(),
+                                stayVisible: val
+                            )
+                            pushDemoIfNeeded()
+                        }
+                    ))
+                    TextField("Artist", text: $demoArtist)
+                        .onChange(of: demoArtist) { _, val in updateDemoSongInfo(artist: val, title: demoTitle, album: demoAlbum) }
+                    TextField("Title", text: $demoTitle)
+                        .onChange(of: demoTitle) { _, val in updateDemoSongInfo(artist: demoArtist, title: val, album: demoAlbum) }
+                    TextField("Album", text: $demoAlbum)
+                        .onChange(of: demoAlbum) { _, val in updateDemoSongInfo(artist: demoArtist, title: demoTitle, album: val) }
+                }
             }
+
+            Button("Apply Demo → Tiles") {
+                applyDemoText()
+            }
+            .buttonStyle(.borderedProminent)
         }
         .padding()
+    }
+
+    // MARK: Demo Helpers
+
+    private func shiftDemoLyrics(by delta: Int) {
+        let newIndex = min(max(0, demoLyrics.activeIndex + delta), demoLyrics.lines.count - 1)
+        demoLyrics = LyricsDisplayState(
+            lines: demoLyrics.lines,
+            activeIndex: newIndex,
+            textOpacity: 255,
+            fadeDelayMs: demoLyrics.fadeDelayMs,
+            fadeDurationMs: demoLyrics.fadeDurationMs,
+            lastChangeTime: Date()
+        )
+        pushDemoIfNeeded()
+    }
+
+    private func updateDemoLyricsFromText() {
+        let lines = demoLyricsText.split(separator: "\n").map { String($0) }
+        demoLyrics = LyricsDisplayState(
+            lines: lines.enumerated().map { DisplayLyricLine(id: $0.offset, timeSec: Float($0.offset), text: $0.element) },
+            activeIndex: min(demoLyrics.activeIndex, max(0, lines.count - 1)),
+            textOpacity: 255,
+            fadeDelayMs: 5000,
+            fadeDurationMs: 1000,
+            lastChangeTime: Date()
+        )
+        pushDemoIfNeeded()
+    }
+
+    private func updateDemoSongInfo(artist: String, title: String, album: String) {
+        demoSongInfo = SongInfoDisplayState(
+            artist: artist,
+            title: title,
+            album: album,
+            opacity: 255,
+            displayTime: 0,
+            active: true,
+            lastChangeTime: Date(),
+            stayVisible: demoSongInfo.stayVisible
+        )
+        pushDemoIfNeeded()
+    }
+
+    private func applyDemoText() {
+        guard let engine = renderEngine else { return }
+        Task { @MainActor in
+            engine.textManager.lyricsState = demoLyrics
+            engine.textManager.refrainState = demoRefrain
+            engine.textManager.songInfoState = demoSongInfo
+        }
+    }
+
+    private func pushDemoIfNeeded() {
+        if useDemoText { applyDemoText() }
     }
     
     // MARK: - Image Controls
@@ -801,36 +905,36 @@ struct RenderingView: View {
 
 struct ShaderListView: View {
     @EnvironmentObject var appState: AppState
-    @ObservedObject var shaderManager: ShaderStateManager
-    @ObservedObject var maskManager: MaskStateManager
+    @ObservedObject var repository: ObservableShaderRepository
+    @ObservedObject var selection: ShaderSelectionManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 // Navigation buttons - go through AppState for shader selection
                 Button {
-                    let shaders = shaderManager.availableShaders
-                    guard !shaders.isEmpty else { return }
-                    let prevIndex = (shaderManager.currentIndex - 1 + shaders.count) % shaders.count
-                    appState.selectShader(shaders[prevIndex].name)
+                    selection.prevMain()
+                    if let name = selection.mainShaderName {
+                        appState.selectShader(name)
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
-                .disabled(shaderManager.availableShaders.isEmpty)
+                .disabled(repository.regularShaders.isEmpty)
 
                 Button {
-                    let shaders = shaderManager.availableShaders
-                    guard !shaders.isEmpty else { return }
-                    let nextIndex = (shaderManager.currentIndex + 1) % shaders.count
-                    appState.selectShader(shaders[nextIndex].name)
+                    selection.nextMain()
+                    if let name = selection.mainShaderName {
+                        appState.selectShader(name)
+                    }
                 } label: {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.bordered)
-                .disabled(shaderManager.availableShaders.isEmpty)
+                .disabled(repository.regularShaders.isEmpty)
                 
-                Text("\(shaderManager.currentIndex + 1)/\(shaderManager.availableShaders.count)")
+                Text("\(selection.mainIndex + 1)/\(repository.regularShaders.count)")
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundColor(.secondary)
@@ -845,20 +949,18 @@ struct ShaderListView: View {
                     panel.allowsMultipleSelection = false
 
                     if panel.runModal() == .OK, let url = panel.url {
-                        shaderManager.setShadersDirectory(url)
-                        shaderManager.reload()
-                        // Also update mask manager with same directory
-                        maskManager.setShadersDirectory(url)
-                        maskManager.reload()
+                        Task {
+                            await repository.setShadersDirectory(url)
+                        }
                     }
                 }
                 .font(.caption)
             }
 
-            if !shaderManager.availableShaders.isEmpty {
+            if !repository.regularShaders.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(shaderManager.availableShaders) { shader in
+                        ForEach(repository.regularShaders) { shader in
                             ShaderChip(
                                 name: shader.name,
                                 isSelected: appState.selectedShader == shader.name
