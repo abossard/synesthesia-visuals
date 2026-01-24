@@ -323,6 +323,7 @@ struct AudioBar: View {
 /// Controls for the render engine (always running)
 struct RenderControlsView: View {
     @ObservedObject var renderEngine: RenderEngine
+    @State private var showAnimationSettings: Bool = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -334,6 +335,29 @@ struct RenderControlsView: View {
                 Text(renderEngine.isRunning ? "Rendering" : "Starting...")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+            
+            // Text Animation Mode Picker
+            Picker("Text FX", selection: $renderEngine.textManager.animationMode) {
+                ForEach(TextAnimationMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 140)
+            .help(renderEngine.textManager.animationMode.description)
+            
+            // Animation Settings Button
+            Button {
+                showAnimationSettings.toggle()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .help("Animation Test Controls")
+            .popover(isPresented: $showAnimationSettings, arrowEdge: .bottom) {
+                TextAnimationTestPanel(textManager: renderEngine.textManager)
+                    .frame(width: 320)
+                    .padding()
             }
 
             Spacer()
@@ -356,6 +380,222 @@ struct RenderControlsView: View {
                     } label: {
                         Image(systemName: "chevron.right")
                     }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Text Animation Test Panel
+
+/// Panel for testing and parameterizing glyph animations
+struct TextAnimationTestPanel: View {
+    @ObservedObject var textManager: TextStateManager
+    @State private var testText: String = "Hello World!"
+    @State private var isAnimating: Bool = false
+    @State private var animationTimer: Timer?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            Text("Text Animation Test")
+                .font(.headline)
+            
+            Divider()
+            
+            // Animation Mode
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Animation Mode")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Picker("Mode", selection: $textManager.animationMode) {
+                    ForEach(TextAnimationMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                
+                Text(textManager.animationMode.description)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Divider()
+            
+            // Transition Progress Slider
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Transition Progress")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(String(format: "%.2f", textManager.transitionProgress))
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+                
+                Slider(value: $textManager.transitionProgress, in: 0...1)
+                
+                HStack {
+                    Text("0 = Start")
+                        .font(.caption2)
+                    Spacer()
+                    Text("1 = Complete")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary)
+            }
+            
+            // Beat Intensity Slider
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Beat Intensity")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(String(format: "%.2f", textManager.beatIntensity))
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+                
+                Slider(value: $textManager.beatIntensity, in: 0...1)
+                
+                Text("Used by Glow Pulse and beat-synced effects")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Divider()
+            
+            // Test Text Input
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Test Lyrics")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                TextField("Enter test text...", text: $testText)
+                    .textFieldStyle(.roundedBorder)
+                
+                Button("Apply Test Lyrics") {
+                    applyTestLyrics()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            
+            Divider()
+            
+            // Animation Controls
+            HStack(spacing: 12) {
+                Button {
+                    toggleAnimation()
+                } label: {
+                    Label(isAnimating ? "Stop" : "Animate", 
+                          systemImage: isAnimating ? "stop.fill" : "play.fill")
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Reset") {
+                    textManager.transitionProgress = 0
+                    textManager.beatIntensity = 0
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Beat!") {
+                    simulateBeat()
+                }
+                .buttonStyle(.bordered)
+            }
+            
+            // Quick Presets
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Quick Presets")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                HStack(spacing: 8) {
+                    Button("Karaoke") {
+                        textManager.animationMode = .waveDissolve
+                        applyTestLyrics()
+                        startAnimation()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button("EDM Drop") {
+                        textManager.animationMode = .blurPop
+                        textManager.beatIntensity = 1.0
+                        applyTestLyrics()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button("Typewriter") {
+                        textManager.animationMode = .typewriter
+                        textManager.transitionProgress = 0
+                        applyTestLyrics()
+                        startAnimation()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+        .onDisappear {
+            stopAnimation()
+        }
+    }
+    
+    private func applyTestLyrics() {
+        // Create test lyrics with 3 lines
+        let lines = [
+            DisplayLyricLine(timeSec: 0, text: "Previous line faded"),
+            DisplayLyricLine(timeSec: 1, text: testText),
+            DisplayLyricLine(timeSec: 2, text: "Next line preview")
+        ]
+        textManager.setLyrics(lines)
+        textManager.setActiveLine(1)  // Make middle line active
+    }
+    
+    private func toggleAnimation() {
+        if isAnimating {
+            stopAnimation()
+        } else {
+            startAnimation()
+        }
+    }
+    
+    private func startAnimation() {
+        isAnimating = true
+        textManager.transitionProgress = 0
+        
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { _ in
+            Task { @MainActor in
+                textManager.transitionProgress += 0.01
+                if textManager.transitionProgress >= 1.0 {
+                    textManager.transitionProgress = 0
+                }
+            }
+        }
+    }
+    
+    private func stopAnimation() {
+        isAnimating = false
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+    
+    private func simulateBeat() {
+        textManager.beatIntensity = 1.0
+        
+        // Decay beat intensity over 0.5 seconds
+        Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { timer in
+            Task { @MainActor in
+                textManager.beatIntensity *= 0.92
+                if textManager.beatIntensity < 0.01 {
+                    textManager.beatIntensity = 0
+                    timer.invalidate()
                 }
             }
         }
@@ -636,6 +876,39 @@ struct RenderingView: View {
 
             GroupBox("Lyrics Demo") {
                 VStack(alignment: .leading, spacing: 8) {
+                    // Animation controls
+                    HStack {
+                        Text("Animation:")
+                            .font(.caption)
+                        Picker("", selection: Binding(
+                            get: { renderEngine?.textManager.animationMode ?? .waveDissolve },
+                            set: { renderEngine?.textManager.animationMode = $0 }
+                        )) {
+                            ForEach(TextAnimationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .frame(width: 140)
+                        
+                        Spacer()
+                        
+                        Text("Duration:")
+                            .font(.caption)
+                        Picker("", selection: Binding(
+                            get: { renderEngine?.textManager.transitionDuration ?? 1.0 },
+                            set: { renderEngine?.textManager.transitionDuration = $0 }
+                        )) {
+                            Text("0.5s").tag(0.5)
+                            Text("1.0s").tag(1.0)
+                            Text("1.5s").tag(1.5)
+                            Text("2.0s").tag(2.0)
+                        }
+                        .frame(width: 80)
+                    }
+                    
+                    Divider()
+                    
+                    // Line navigation
                     HStack {
                         Text("Active line: \(demoLyrics.activeIndex + 1)/\(max(1, demoLyrics.lines.count))")
                             .font(.caption)
@@ -721,6 +994,7 @@ struct RenderingView: View {
             lastChangeTime: Date()
         )
         pushDemoIfNeeded()
+        // Animation now auto-triggers via lyricsState didSet
     }
 
     private func updateDemoLyricsFromText() {

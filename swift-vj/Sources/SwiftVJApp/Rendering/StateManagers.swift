@@ -11,17 +11,51 @@ import SwiftVJCore
 /// Manages text display states (lyrics, refrain, song info)
 @MainActor
 final class TextStateManager: ObservableObject {
-    @Published var lyricsState: LyricsDisplayState = .empty
+    @Published var lyricsState: LyricsDisplayState = .empty {
+        didSet {
+            // Auto-trigger animation when lyrics content changes
+            let oldContent = buildLyricsHash(oldValue)
+            let newContent = buildLyricsHash(lyricsState)
+            if oldContent != newContent {
+                triggerTransition()
+            }
+        }
+    }
     @Published var refrainState: RefrainDisplayState = .empty
     @Published var songInfoState: SongInfoDisplayState = .empty
+    
+    /// Animation mode for text transitions (SwiftUI TextRenderer API)
+    @Published var animationMode: TextAnimationMode = .waveDissolve
+    
+    /// Transition progress for animated text (0-1)
+    @Published var transitionProgress: Double = 0
+    
+    /// Beat intensity for beat-synced effects (0-1)
+    @Published var beatIntensity: Double = 0
+    
+    /// Duration of transition animation in seconds
+    var transitionDuration: Double = 1.0
+    
+    /// Timer for auto-animation
+    private var animationTimer: Timer?
+    private var animationStartTime: Date?
+    
+    /// Build hash of lyrics content for change detection
+    private func buildLyricsHash(_ state: LyricsDisplayState) -> String {
+        "\(state.activeIndex)-\(state.currentLine ?? "")"
+    }
     
     func start() {
         // No-op for now, could start animation timers
     }
     
     func stop() {
-        // Reset states
-        lyricsState = .empty
+        stopAnimation()
+        // Bypass didSet by using direct assignment pattern
+        let emptyLyrics = LyricsDisplayState.empty
+        if lyricsState.activeIndex != emptyLyrics.activeIndex {
+            lyricsState = emptyLyrics
+        }
         refrainState = .empty
         songInfoState = .empty
     }
@@ -46,6 +80,63 @@ final class TextStateManager: ObservableObject {
             fadeDurationMs: lyricsState.fadeDurationMs,
             lastChangeTime: Date()
         )
+        // Animation auto-triggers via lyricsState didSet
+    }
+    
+    /// Advance to next lyric line with animation
+    func nextLine() {
+        let nextIndex = min(lyricsState.activeIndex + 1, lyricsState.lines.count - 1)
+        setActiveLine(nextIndex)
+    }
+    
+    /// Go to previous lyric line with animation
+    func prevLine() {
+        let prevIndex = max(lyricsState.activeIndex - 1, 0)
+        setActiveLine(prevIndex)
+    }
+    
+    /// Manually trigger a transition animation (progress 0→1)
+    func triggerTransition() {
+        guard animationMode != .instant else {
+            // No animation for instant mode
+            transitionProgress = 1.0
+            return
+        }
+        
+        stopAnimation()
+        transitionProgress = 0
+        animationStartTime = Date()
+        
+        // ~60fps timer for smooth animation
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateAnimation()
+            }
+        }
+    }
+    
+    private func updateAnimation() {
+        guard let startTime = animationStartTime else {
+            stopAnimation()
+            return
+        }
+        
+        let elapsed = Date().timeIntervalSince(startTime)
+        let t = min(elapsed / transitionDuration, 1.0)
+        
+        // Ease-out cubic for smooth deceleration
+        transitionProgress = 1.0 - pow(1.0 - t, 3)
+        
+        if t >= 1.0 {
+            transitionProgress = 1.0
+            stopAnimation()
+        }
+    }
+    
+    private func stopAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+        animationStartTime = nil
     }
     
     func setRefrain(_ text: String) {

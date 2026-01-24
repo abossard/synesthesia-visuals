@@ -882,6 +882,11 @@ final class HeadlessRenderer {
     let songInfoRenderer: SongInfoRenderer
     let imageRenderer: ImageRenderer
     
+    // SwiftUI-based lyrics renderer (optional, requires MainActor initialization)
+    // Set via `setSwiftUILyricsRenderer` from main thread after init
+    private var swiftUILyricsRenderer: SwiftUITextTileRenderer?
+    var useSwiftUILyrics: Bool = false  // Toggle between CoreGraphics and SwiftUI renderer
+    
     // Audio-reactive state
     private var audioTime: Float = 0
     private var rampedSpeed: Float = 0.02
@@ -925,6 +930,21 @@ final class HeadlessRenderer {
         // Wire up logger to imageRenderer
         imageRenderer.logger = logger
         logger?("[HeadlessRenderer] Initialized with 6 tiles (shader, mask, lyrics, refrain, songInfo, image)")
+    }
+    
+    // MARK: - SwiftUI Lyrics Renderer Setup
+    
+    /// Set the SwiftUI-based lyrics renderer (must be called from MainActor)
+    @MainActor
+    func setSwiftUILyricsRenderer(_ renderer: SwiftUITextTileRenderer) {
+        self.swiftUILyricsRenderer = renderer
+        print("[HeadlessRenderer] SwiftUI lyrics renderer configured")
+    }
+    
+    /// Get the current SwiftUI lyrics renderer for state updates
+    @MainActor
+    func getSwiftUILyricsRenderer() -> SwiftUITextTileRenderer? {
+        return swiftUILyricsRenderer
     }
     
     // MARK: - Render Frame
@@ -993,7 +1013,14 @@ final class HeadlessRenderer {
         // 1. Render all tiles to their textures (SAME command buffer)
         shaderRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         maskRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
-        lyricsRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        
+        // Lyrics: use SwiftUI renderer if available and enabled, otherwise CoreGraphics
+        if useSwiftUILyrics, let swiftUIRenderer = swiftUILyricsRenderer {
+            swiftUIRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        } else {
+            lyricsRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
+        
         refrainRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         songInfoRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         imageRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
@@ -1012,7 +1039,9 @@ final class HeadlessRenderer {
                 manager.publish(name: TileConfig.mask.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }
-            if let tex = lyricsRenderer.texture {
+            // Lyrics: use SwiftUI texture if enabled
+            let lyricsTexture = (useSwiftUILyrics ? swiftUILyricsRenderer?.texture : nil) ?? lyricsRenderer.texture
+            if let tex = lyricsTexture {
                 manager.publish(name: TileConfig.lyrics.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }

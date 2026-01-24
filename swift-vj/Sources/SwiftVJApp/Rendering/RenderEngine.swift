@@ -131,6 +131,16 @@ final class RenderEngine: ObservableObject {
         self.headlessRenderer = renderer
         logger?("[RenderEngine] Initialized headless renderer")
         
+        // Initialize SwiftUI lyrics renderer on main thread
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            let swiftUIRenderer = SwiftUITextTileRenderer(name: "swiftui-lyrics", device: device)
+            renderer.setSwiftUILyricsRenderer(swiftUIRenderer)
+            // Enable by default if animation mode is not instant
+            renderer.useSwiftUILyrics = self.textManager.animationMode != .instant
+            self.logger?("[RenderEngine] SwiftUI lyrics renderer configured (enabled: \(renderer.useSwiftUILyrics))")
+        }
+        
         // Load shaders from repository
         await MainActor.run { [weak self] in
             guard let self = self else { return }
@@ -273,6 +283,26 @@ final class RenderEngine: ObservableObject {
                 self.fps = Double(30) / self.frameTimeAccum
                 self.frameTimeAccum = 0
                 self.frameCount = self.localFrameCount
+            }
+            
+            // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
+            if let renderer = self.headlessRenderer {
+                // Sync useSwiftUILyrics with animation mode
+                // Use SwiftUI renderer for fancy effects, CoreGraphics for instant
+                let shouldUseSwiftUI = self.textManager.animationMode != .instant
+                if renderer.useSwiftUILyrics != shouldUseSwiftUI {
+                    renderer.useSwiftUILyrics = shouldUseSwiftUI
+                }
+                
+                if renderer.useSwiftUILyrics,
+                   let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
+                    swiftUIRenderer.updateContent(
+                        lyricsState: self.textManager.lyricsState,
+                        animationMode: self.textManager.animationMode,
+                        transitionProgress: self.textManager.transitionProgress,
+                        beatIntensity: self.textManager.beatIntensity
+                    )
+                }
             }
 
             return RenderFrameContext(
