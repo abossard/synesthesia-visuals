@@ -40,7 +40,10 @@ final class RenderEngine: ObservableObject {
     @Published var audioManager: AudioStateManager
     @Published var textManager: TextStateManager
     @Published var imageManager: ImageStateManager
-    
+
+    /// Karaoke engine for automatic lyrics transitions based on timecodes
+    @Published var karaokeEngine: KaraokeEngine
+
     /// Single source of truth for all shader data
     @Published var shaderRepository: ObservableShaderRepository
     
@@ -83,7 +86,8 @@ final class RenderEngine: ObservableObject {
         let audioManager = await MainActor.run { AudioStateManager() }
         let textManager = await MainActor.run { TextStateManager() }
         let imageManager = await MainActor.run { ImageStateManager() }
-        
+        let karaokeEngine = await MainActor.run { KaraokeEngine() }
+
         // Create repository and selection manager with proper wiring
         let shaderRepository = await MainActor.run { ObservableShaderRepository() }
         let shaderSelection = await MainActor.run { ShaderSelectionManager() }
@@ -94,6 +98,7 @@ final class RenderEngine: ObservableObject {
             audioManager: audioManager,
             textManager: textManager,
             imageManager: imageManager,
+            karaokeEngine: karaokeEngine,
             shaderRepository: shaderRepository,
             shaderSelection: shaderSelection
         )
@@ -104,6 +109,7 @@ final class RenderEngine: ObservableObject {
         audioManager: AudioStateManager,
         textManager: TextStateManager,
         imageManager: ImageStateManager,
+        karaokeEngine: KaraokeEngine,
         shaderRepository: ObservableShaderRepository,
         shaderSelection: ShaderSelectionManager
     ) {
@@ -111,6 +117,7 @@ final class RenderEngine: ObservableObject {
         self.audioManager = audioManager
         self.textManager = textManager
         self.imageManager = imageManager
+        self.karaokeEngine = karaokeEngine
         self.shaderRepository = shaderRepository
         self.shaderSelection = shaderSelection
     }
@@ -287,21 +294,31 @@ final class RenderEngine: ObservableObject {
             
             // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
             if let renderer = self.headlessRenderer {
-                // Sync useSwiftUILyrics with animation mode
-                // Use SwiftUI renderer for fancy effects, CoreGraphics for instant
-                let shouldUseSwiftUI = self.textManager.animationMode != .instant
+                // Sync useSwiftUILyrics with animation mode (or karaoke mode)
+                // Use SwiftUI renderer for fancy effects or karaoke, CoreGraphics for instant
+                let shouldUseSwiftUI = self.karaokeEngine.isEnabled || self.textManager.animationMode != .instant
                 if renderer.useSwiftUILyrics != shouldUseSwiftUI {
                     renderer.useSwiftUILyrics = shouldUseSwiftUI
                 }
-                
+
                 if renderer.useSwiftUILyrics,
                    let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
-                    swiftUIRenderer.updateContent(
-                        lyricsState: self.textManager.lyricsState,
-                        animationMode: self.textManager.animationMode,
-                        transitionProgress: self.textManager.transitionProgress,
-                        beatIntensity: self.textManager.beatIntensity
-                    )
+                    // Use karaoke engine for lyrics display when enabled
+                    if self.karaokeEngine.isEnabled && self.karaokeEngine.displayState.hasLyrics {
+                        swiftUIRenderer.updateKaraokeContent(
+                            displayState: self.karaokeEngine.displayState,
+                            configuration: self.karaokeEngine.configuration,
+                            beatIntensity: self.textManager.beatIntensity
+                        )
+                    } else {
+                        // Fall back to legacy lyrics display
+                        swiftUIRenderer.updateContent(
+                            lyricsState: self.textManager.lyricsState,
+                            animationMode: self.textManager.animationMode,
+                            transitionProgress: self.textManager.transitionProgress,
+                            beatIntensity: self.textManager.beatIntensity
+                        )
+                    }
                 }
             }
 
@@ -415,15 +432,44 @@ final class RenderEngine: ObservableObject {
 
     /// Called when lyrics are loaded (from pipeline)
     func onLyricsLoaded(_ lines: [DisplayLyricLine]) {
-        Task { @MainActor [textManager] in
+        Task { @MainActor [textManager, karaokeEngine] in
             textManager.setLyrics(lines)
+
+            // Also load into karaoke engine with timestamps
+            let lyricLines = lines.map { line in
+                LyricLine(
+                    timeSec: Double(line.timeSec),
+                    text: line.text
+                )
+            }
+            karaokeEngine.loadLyrics(lyricLines)
         }
     }
 
     /// Called when active lyric line changes (from pipeline)
+    /// Note: When karaoke engine is enabled, line changes are driven by position updates instead
     func onActiveLine(_ index: Int) {
-        Task { @MainActor [textManager] in
-            textManager.setActiveLine(index)
+        Task { @MainActor [textManager, karaokeEngine] in
+            // Only update text manager directly if karaoke engine is disabled
+            if !karaokeEngine.isEnabled {
+                textManager.setActiveLine(index)
+            }
+        }
+    }
+
+    /// Called when playback position updates (call frequently, e.g. from OSC or timer)
+    /// Drives the karaoke engine for automatic line transitions
+    func onPlaybackPositionUpdate(_ position: Double) {
+        Task { @MainActor [karaokeEngine] in
+            karaokeEngine.updatePosition(position)
+        }
+    }
+
+    /// Called when track changes - resets karaoke engine
+    func onTrackReset() {
+        Task { @MainActor [textManager, karaokeEngine] in
+            textManager.stop()
+            karaokeEngine.reset()
         }
     }
 

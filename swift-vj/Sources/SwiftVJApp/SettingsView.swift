@@ -115,7 +115,7 @@ struct SettingsView: View {
                     LabeledContent("Synesthesia", value: "7777")
                     LabeledContent("Magic", value: "11111")
                 }
-                
+
                 Section("Forward Targets") {
                     Toggle("Forward to Magic", isOn: .constant(true))
                 }
@@ -124,7 +124,7 @@ struct SettingsView: View {
             .tabItem {
                 Label("OSC", systemImage: "antenna.radiowaves.left.and.right")
             }
-            
+
             // About
             VStack(spacing: 20) {
                 Image(systemName: "sparkles")

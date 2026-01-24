@@ -478,7 +478,12 @@ final class SwiftUITextTileRenderer: TileRenderer {
     var lyricsState: LyricsDisplayState = .empty
     var transitionProgress: Double = 0
     var beatIntensity: Double = 0
-    
+
+    // Karaoke mode state
+    private var useKaraokeMode: Bool = false
+    private var karaokeDisplayState: KaraokeDisplayState = .empty
+    private var karaokeConfiguration: KaraokeConfiguration = .default
+
     // Caching - prevents redundant SwiftUI captures
     private var lastRenderedContent: String = ""
     
@@ -596,11 +601,12 @@ final class SwiftUITextTileRenderer: TileRenderer {
         transitionProgress: Double = 0,
         beatIntensity: Double = 0
     ) {
+        self.useKaraokeMode = false
         self.lyricsState = lyricsState
         self.animationMode = animationMode
         self.transitionProgress = transitionProgress
         self.beatIntensity = beatIntensity
-        
+
         // Check if content actually changed (include progress for animation)
         let contentHash = buildContentHash()
         if contentHash != lastRenderedContent {
@@ -608,25 +614,55 @@ final class SwiftUITextTileRenderer: TileRenderer {
             lastRenderedContent = contentHash
         }
     }
-    
+
+    /// Update with karaoke engine state for proper karaoke-style display
+    /// Call this from RenderEngine when karaoke engine is enabled
+    func updateKaraokeContent(
+        displayState: KaraokeDisplayState,
+        configuration: KaraokeConfiguration,
+        beatIntensity: Double = 0
+    ) {
+        self.useKaraokeMode = true
+        self.karaokeDisplayState = displayState
+        self.karaokeConfiguration = configuration
+        self.beatIntensity = beatIntensity
+
+        // Check if content actually changed
+        let contentHash = buildKaraokeContentHash()
+        if contentHash != lastRenderedContent {
+            captureSwiftUIView()
+            lastRenderedContent = contentHash
+        }
+    }
+
     /// Force re-capture for animation (call repeatedly during transition)
     func forceCapture() {
         captureSwiftUIView()
     }
-    
+
     private func buildContentHash() -> String {
         // Include progress (rounded to avoid excessive re-renders)
         let progressBucket = Int(transitionProgress * 30)  // ~30 frames of animation
-        return "\(lyricsState.currentLine ?? "")-\(lyricsState.prevLine ?? "")-\(lyricsState.nextLine ?? "")-\(animationMode)-\(progressBucket)"
+        return "legacy-\(lyricsState.currentLine ?? "")-\(lyricsState.prevLine ?? "")-\(lyricsState.nextLine ?? "")-\(animationMode)-\(progressBucket)"
+    }
+
+    private func buildKaraokeContentHash() -> String {
+        // Include transition progress for smooth animation
+        let progressBucket = Int(karaokeDisplayState.transitionProgress * 60)  // ~60 frames
+        return "karaoke-\(karaokeDisplayState.currentLine ?? "")-\(karaokeDisplayState.nextLine ?? "")-\(karaokeDisplayState.activeIndex)-\(progressBucket)"
     }
     
     /// Capture SwiftUI view to staging texture (runs on main thread)
     private func captureSwiftUIView() {
         guard let resources = resources else { return }
-        
+
         let cgImage: CGImage?
-        
-        if #available(macOS 15.0, *) {
+
+        if useKaraokeMode {
+            // Use KaraokeView for proper karaoke-style rendering
+            cgImage = captureKaraokeView()
+        } else if #available(macOS 15.0, *) {
+            // Legacy animated lyrics view
             let view = AnimatedLyricsView(
                 prevLine: lyricsState.prevLine ?? "",
                 currentLine: lyricsState.currentLine ?? "",
@@ -649,10 +685,32 @@ final class SwiftUITextTileRenderer: TileRenderer {
             swiftUIRenderer.scale = 2.0
             cgImage = swiftUIRenderer.cgImage
         }
-        
+
         if let cgImage = cgImage {
             uploadCGImage(cgImage, to: resources.stagingTexture)
             resources.hasValidContent = true
+        }
+    }
+
+    /// Capture KaraokeView to CGImage
+    private func captureKaraokeView() -> CGImage? {
+        if #available(macOS 15.0, *) {
+            let view = KaraokeView(
+                displayState: karaokeDisplayState,
+                configuration: karaokeConfiguration,
+                beatIntensity: beatIntensity
+            )
+            let renderer = SwiftUI.ImageRenderer(content: view)
+            renderer.scale = 2.0
+            return renderer.cgImage
+        } else {
+            let view = KaraokeViewFallback(
+                displayState: karaokeDisplayState,
+                configuration: karaokeConfiguration
+            )
+            let renderer = SwiftUI.ImageRenderer(content: view)
+            renderer.scale = 2.0
+            return renderer.cgImage
         }
     }
     
