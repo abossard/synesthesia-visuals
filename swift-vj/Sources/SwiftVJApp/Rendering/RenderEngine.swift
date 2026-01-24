@@ -294,6 +294,15 @@ final class RenderEngine: ObservableObject {
             
             // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
             if let renderer = self.headlessRenderer {
+                // Sync text typography settings to renderers
+                renderer.refrainRenderer.fontName = self.textManager.refrainFontName
+                renderer.refrainRenderer.fontSizeOverride = self.textManager.refrainFontSize
+                renderer.refrainRenderer.animationMode = self.textManager.refrainAnimationMode
+
+                renderer.songInfoRenderer.fontName = self.textManager.songInfoFontName
+                renderer.songInfoRenderer.fontSizeOverride = self.textManager.songInfoFontSize
+                renderer.songInfoRenderer.animationMode = self.textManager.songInfoAnimationMode
+
                 // Sync useSwiftUILyrics with animation mode (or karaoke mode)
                 // Use SwiftUI renderer for fancy effects or karaoke, CoreGraphics for instant
                 let shouldUseSwiftUI = self.karaokeEngine.isEnabled || self.textManager.animationMode != .instant

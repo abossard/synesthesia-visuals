@@ -4,6 +4,7 @@
 import SwiftUI
 import Metal
 import MetalKit
+import AppKit
 import SwiftVJCore
 
 // MARK: - Render Preview View
@@ -600,14 +601,14 @@ struct TextAnimationTestPanel: View {
 /// Full rendering tab for the sidebar - ALL tiles use MTKView for 60fps
 struct RenderingView: View {
     @EnvironmentObject var appState: AppState
-    @State private var useDirectMTKView: Bool = true
-    @State private var frameCount: Int = 0
-    @State private var audioTime: Float = 0
     // Shader selection now goes through AppState (single source of truth)
     @AppStorage("lastSelectedMaskShader") private var selectedMaskShader: String = "BWcarbonlattice"
+    @State private var shaderSearch: String = ""
+    @State private var maskSearch: String = ""
     @State private var selectedTile: String = "shader"
 
     private let tileKeys: [String] = ["shader", "mask", "lyrics", "refrain", "songInfo", "image"]
+    private let fontNameOptions: [String] = ["Avenir Next", "Helvetica Neue", "Futura", "Menlo", "Georgia"]
 
     private func displayName(for key: String) -> String {
         switch key {
@@ -665,26 +666,11 @@ struct RenderingView: View {
     private var audioState: AudioState { appState.renderEngine?.audioManager.state ?? .silent }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // MTKView-based tiles (60fps Direct Metal)
-                mtkViewTiles
-
-                // Shader browser (using repository for data, selection for state)
-                if let repository = renderEngine?.shaderRepository,
-                   let selection = renderEngine?.shaderSelection {
-                    GroupBox("Shader Library") {
-                        ShaderListView(repository: repository, selection: selection)
-                    }
-                }
-
-                // Text controls
-                GroupBox("Text Controls") {
-                    textControlsView
-                }
-            }
-            .padding()
+        VStack(spacing: 12) {
+            tileGridView
+            registerPaneView
         }
+        .padding()
         .onAppear {
             Task { try? await renderEngine?.start() }
             // Mask uses selection manager
@@ -699,154 +685,446 @@ struct RenderingView: View {
         }
     }
     
-    // MARK: - MTKView Tiles Grid
-    
-    @ViewBuilder
-    private var mtkViewTiles: some View {
-        VStack(spacing: 16) {
-            // Tile selector tabs
-            HStack(spacing: 12) {
-                ForEach(tileKeys, id: \.self) { tile in
-                    Button {
-                        selectedTile = tile
-                    } label: {
-                        Text(displayName(for: tile))
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(selectedTile == tile ? .blue : .gray)
-                }
-                
-                Spacer()
-                
-                // Stats
-                Text("Frame: \(frameCount)")
-                    .font(.caption.monospacedDigit())
-                Text("Time: \(String(format: "%.1f", audioTime))s")
-                    .font(.caption.monospacedDigit())
-            }
-            .padding(.horizontal)
-            
-            // Main tile preview - only render the selected tile
-            GroupBox(displayName(for: selectedTile)) {
-                selectedTileView
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .frame(minHeight: 360)
-                    .background(Color.black)
-                    .cornerRadius(8)
-            }
-            
-            // Shader selector (when shader or mask tile selected)
-            if selectedTile == "shader" {
-                shaderControlsView(title: "Shader", binding: selectedShaderBinding)
-            }
-            if selectedTile == "mask" {
-                shaderControlsView(title: "Mask", binding: $selectedMaskShader)
-            }
-            
-            // Image controls (when image tile selected)
-            if selectedTile == "image" {
-                imageControlsView
-            }
-            
-            // Tile selector grid with Syphon client previews (60fps MTKView)
-            GroupBox("Tiles → Syphon") {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ForEach(tileKeys, id: \.self) { tileKey in
-                        let server = serverName(for: tileKey)
-                        VStack(spacing: 4) {
-                            SyphonMTKView(serverName: server)
-                                .aspectRatio(16/9, contentMode: .fit)
-                                .frame(height: 60)
-                                .cornerRadius(4)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(selectedTile == tileKey ? Color.blue : Color.clear, lineWidth: 2)
-                                )
-                                .onTapGesture { selectedTile = tileKey }
+    // MARK: - Tile Grid
 
-                            Text(displayName(for: tileKey)).font(.caption2)
+    @ViewBuilder
+    private var tileGridView: some View {
+        let spacing: CGFloat = 12
+        let columns = [
+            GridItem(.flexible(), spacing: spacing),
+            GridItem(.flexible(), spacing: spacing),
+            GridItem(.flexible(), spacing: spacing)
+        ]
+        LazyVGrid(columns: columns, spacing: spacing) {
+            ForEach(tileKeys, id: \.self) { key in
+                tilePreviewCard(tileKey: key)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 4)
+    }
+
+    private func tilePreviewCard(tileKey: String) -> some View {
+        let server = serverName(for: tileKey)
+        let label = displayName(for: tileKey)
+
+        return VStack(spacing: 6) {
+            SyphonMTKView(serverName: server)
+                .aspectRatio(16/9, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+                .background(Color.black)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(selectedTile == tileKey ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
+                .onTapGesture {
+                    selectedTile = tileKey
+                }
+            Button {
+                copyToClipboard(server)
+            } label: {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                    Text("•")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(server)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .help("Click to copy Syphon name")
+        }
+        .padding(6)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Register Pane
+
+    @ViewBuilder
+    private var registerPaneView: some View {
+        GroupBox("Register") {
+            VStack(alignment: .leading, spacing: 12) {
+                registerTabs
+                Divider()
+                registerContent
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(height: 420)
+    }
+
+    private var registerTabs: some View {
+        HStack(spacing: 8) {
+            ForEach(tileKeys, id: \.self) { key in
+                Button {
+                    selectedTile = key
+                } label: {
+                    Text(displayName(for: key))
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .tint(selectedTile == key ? .accentColor : .gray)
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var registerContent: some View {
+        switch selectedTile {
+        case "shader":
+            shaderRegisterSection
+        case "mask":
+            maskRegisterSection
+        case "lyrics":
+            lyricsRegisterSection
+        case "refrain":
+            refrainRegisterSection
+        case "songInfo":
+            songInfoRegisterSection
+        case "image":
+            imagesRegisterSection
+        default:
+            shaderRegisterSection
+        }
+    }
+
+    // MARK: - Register Sections
+
+    @ViewBuilder
+    private var shaderRegisterSection: some View {
+        GroupBox("Shader") {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Search shaders", text: $shaderSearch)
+                    .textFieldStyle(.roundedBorder)
+                shaderListView(isMask: false)
+            }
+            .frame(width: 260)
+        }
+    }
+
+    @ViewBuilder
+    private var maskRegisterSection: some View {
+        GroupBox("Mask") {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Search masks", text: $maskSearch)
+                    .textFieldStyle(.roundedBorder)
+                shaderListView(isMask: true)
+            }
+            .frame(width: 260)
+        }
+    }
+
+    @ViewBuilder
+    private var lyricsRegisterSection: some View {
+        GroupBox("Lyrics") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let karaokeEngine = renderEngine?.karaokeEngine {
+                    karaokeControlsSection(karaokeEngine: karaokeEngine)
+                    Divider()
+                    lyricsTimelineView(karaokeEngine: karaokeEngine)
+                    Divider()
+                    karaokeFontSettingsView(karaokeEngine: karaokeEngine)
+                } else {
+                    Text("Karaoke engine not running")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 420)
+        }
+    }
+
+    @ViewBuilder
+    private var refrainRegisterSection: some View {
+        GroupBox("Refrain") {
+            VStack(alignment: .leading, spacing: 8) {
+                refrainControlsSection
+                Divider()
+                fontSettingsView(
+                    title: "Font",
+                    fontName: Binding(
+                        get: { renderEngine?.textManager.refrainFontName ?? fontNameOptions[0] },
+                        set: { renderEngine?.textManager.refrainFontName = $0 }
+                    ),
+                    fontSize: Binding(
+                        get: { renderEngine?.textManager.refrainFontSize ?? 64 },
+                        set: { renderEngine?.textManager.refrainFontSize = $0 }
+                    ),
+                    animationMode: Binding(
+                        get: { renderEngine?.textManager.refrainAnimationMode ?? .fadeInOut },
+                        set: { renderEngine?.textManager.refrainAnimationMode = $0 }
+                    )
+                )
+            }
+            .frame(width: 300)
+        }
+    }
+
+    @ViewBuilder
+    private var songInfoRegisterSection: some View {
+        GroupBox("Song Info") {
+            VStack(alignment: .leading, spacing: 8) {
+                songInfoControlsSection
+                Divider()
+                fontSettingsView(
+                    title: "Font",
+                    fontName: Binding(
+                        get: { renderEngine?.textManager.songInfoFontName ?? fontNameOptions[0] },
+                        set: { renderEngine?.textManager.songInfoFontName = $0 }
+                    ),
+                    fontSize: Binding(
+                        get: { renderEngine?.textManager.songInfoFontSize ?? 54 },
+                        set: { renderEngine?.textManager.songInfoFontSize = $0 }
+                    ),
+                    animationMode: Binding(
+                        get: { renderEngine?.textManager.songInfoAnimationMode ?? .fadeInOut },
+                        set: { renderEngine?.textManager.songInfoAnimationMode = $0 }
+                    )
+                )
+            }
+            .frame(width: 320)
+        }
+    }
+
+    @ViewBuilder
+    private var imagesRegisterSection: some View {
+        GroupBox("Images") {
+            VStack(alignment: .leading, spacing: 8) {
+                imageControlsView
+                Divider()
+                imageStatusView
+            }
+            .frame(width: 320)
+        }
+    }
+
+    // MARK: - Register Helpers
+
+    @ViewBuilder
+    private func shaderListView(isMask: Bool) -> some View {
+        let shaders = filteredShaders(isMask: isMask)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(shaders, id: \.name) { shader in
+                    Button {
+                        if isMask {
+                            selectedMaskShader = shader.name
+                            renderEngine?.shaderSelection.selectMask(name: shader.name)
+                        } else {
+                            appState.selectShader(shader.name)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(shader.name)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if isMask {
+                                if shader.name == selectedMaskShader {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                }
+                            } else {
+                                if shader.name == appState.selectedShader {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.blue)
+                                }
+                            }
                         }
                     }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.08))
+                    .cornerRadius(6)
                 }
-                .padding()
             }
+            .padding(.vertical, 4)
         }
+        .frame(height: 260)
     }
-    
-    // MARK: - Selected Tile View (Syphon client - headless rendering only)
+
+    private func filteredShaders(isMask: Bool) -> [ShaderInfo] {
+        let query = (isMask ? maskSearch : shaderSearch).trimmingCharacters(in: .whitespacesAndNewlines)
+        let repository = renderEngine?.shaderRepository
+        let baseShaders = isMask ? (repository?.masks ?? []) : (repository?.regularShaders ?? [])
+        guard !query.isEmpty, let repository = repository else { return baseShaders }
+        let results = repository.search(query: query)
+        return results.filter { $0.isMask == isMask }
+    }
 
     @ViewBuilder
-    private var selectedTileView: some View {
-        // All rendering is done headlessly by HeadlessRenderer
-        // UI displays via MTKView for 60fps GPU-direct rendering (no CPU readback)
-        // Server names are simple: "Shader", "Mask", "Lyrics", etc.
-        SyphonMTKView(serverName: serverName(for: selectedTile))
-            .id(selectedTile)  // Force view recreation when tile changes
-    }
-    
-    // MARK: - Tile Colors (for thumbnail grid)
-    
-    private func tileColor(for tile: String) -> Color {
-        switch tile {
-        case "shader": return Color.purple.opacity(0.6)
-        case "mask": return Color.orange.opacity(0.6)
-        case "lyrics": return Color.blue.opacity(0.6)
-        case "refrain": return Color.green.opacity(0.6)
-        case "songInfo": return Color.cyan.opacity(0.6)
-        default: return Color.gray.opacity(0.6)
+    private func lyricsTimelineView(karaokeEngine: KaraokeEngine) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Position")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(timeString(appState.playbackPosition))
+                    .font(.caption.monospacedDigit())
+                Text("•")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Line \(max(0, karaokeEngine.activeLineIndex + 1))/\(max(1, karaokeEngine.allLines.count))")
+                    .font(.caption.monospacedDigit())
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(karaokeEngine.allLines.enumerated()), id: \.offset) { index, line in
+                        HStack(spacing: 8) {
+                            Text(timeString(Double(line.timeSec)))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 60, alignment: .trailing)
+                            Text(line.text)
+                                .font(.caption)
+                                .foregroundStyle(index == karaokeEngine.activeLineIndex ? .primary : .secondary)
+                            Spacer()
+                        }
+                        .padding(.vertical, 2)
+                        .background(index == karaokeEngine.activeLineIndex ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .cornerRadius(4)
+                    }
+                }
+            }
+            .frame(height: 160)
         }
     }
-    
-    // MARK: - Shader Controls (reusable for Shader and Mask)
-    
+
     @ViewBuilder
-    private func shaderControlsView(title: String, binding: Binding<String>) -> some View {
+    private func karaokeFontSettingsView(karaokeEngine: KaraokeEngine) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            Text("Typography")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             HStack {
-                Text("\(title):")
-                
-                Button {
-                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
-                    if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
-                        let prev = (current - 1 + shaders.count) % shaders.count
-                        binding.wrappedValue = shaders[prev].name
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
+                Text("Design")
+                    .frame(width: 70, alignment: .leading)
+                Picker("", selection: Binding(
+                    get: { karaokeEngine.configuration.fontDesign },
+                    set: { karaokeEngine.configuration.fontDesign = $0 }
+                )) {
+                    Text("Default").tag(Font.Design.default)
+                    Text("Rounded").tag(Font.Design.rounded)
+                    Text("Serif").tag(Font.Design.serif)
+                    Text("Mono").tag(Font.Design.monospaced)
                 }
-                .buttonStyle(.bordered)
-                
-                Text(binding.wrappedValue)
-                    .font(.caption.monospaced())
-                    .frame(minWidth: 150)
-                    .padding(.horizontal, 8)
-                    .background(Color.secondary.opacity(0.2))
-                    .cornerRadius(4)
-                
-                Button {
-                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
-                    if let current = shaders.firstIndex(where: { $0.name == binding.wrappedValue }) {
-                        let next = (current + 1) % shaders.count
-                        binding.wrappedValue = shaders[next].name
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
+                .labelsHidden()
+            }
+
+            HStack {
+                Text("Weight")
+                    .frame(width: 70, alignment: .leading)
+                Picker("", selection: Binding(
+                    get: { karaokeEngine.configuration.fontWeight },
+                    set: { karaokeEngine.configuration.fontWeight = $0 }
+                )) {
+                    Text("Regular").tag(Font.Weight.regular)
+                    Text("Medium").tag(Font.Weight.medium)
+                    Text("Semibold").tag(Font.Weight.semibold)
+                    Text("Bold").tag(Font.Weight.bold)
+                    Text("Heavy").tag(Font.Weight.heavy)
                 }
-                .buttonStyle(.bordered)
-                
-                Button("Random") {
-                    guard let shaders = renderEngine?.shaderRepository.regularShaders else { return }
-                    if !shaders.isEmpty {
-                        binding.wrappedValue = shaders.randomElement()?.name ?? binding.wrappedValue
-                    }
-                }
-                .buttonStyle(.bordered)
+                .labelsHidden()
             }
         }
-        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func fontSettingsView(
+        title: String,
+        fontName: Binding<String>,
+        fontSize: Binding<CGFloat>,
+        animationMode: Binding<TextAnimationMode>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Text("Font")
+                    .frame(width: 50, alignment: .leading)
+                Picker("", selection: fontName) {
+                    ForEach(fontNameOptions, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                }
+                .labelsHidden()
+            }
+            HStack {
+                Text("Size")
+                    .frame(width: 50, alignment: .leading)
+                Slider(value: fontSize, in: 24...120)
+                Text("\(Int(fontSize.wrappedValue))pt")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 50)
+            }
+            HStack {
+                Text("Anim")
+                    .frame(width: 50, alignment: .leading)
+                Picker("", selection: animationMode) {
+                    ForEach(TextAnimationMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .labelsHidden()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var imageStatusView: some View {
+        let state = renderEngine?.imageManager.state ?? .empty
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Current: \(state.currentImageURL?.lastPathComponent ?? "None")")
+                .font(.caption)
+            Text("Next: \(state.nextImageURL?.lastPathComponent ?? "None")")
+                .font(.caption)
+            HStack {
+                Text("Crossfade")
+                    .font(.caption)
+                Spacer()
+                Text(String(format: "%.0f%%", state.crossfadeProgress * 100))
+                    .font(.caption.monospacedDigit())
+            }
+            HStack {
+                Text("Mode")
+                    .font(.caption)
+                Spacer()
+                Text(state.coverMode ? "Cover" : "Contain")
+                    .font(.caption)
+            }
+        }
+    }
+
+    private func copyToClipboard(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    private func timeString(_ seconds: Double) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        let ms = Int((seconds.truncatingRemainder(dividingBy: 1)) * 100)
+        return String(format: "%02d:%02d.%02d", mins, secs, ms)
     }
     
     // MARK: - Text Controls (Karaoke + Song Info + Refrain)
@@ -1091,7 +1369,7 @@ struct RenderingView: View {
         let newActive = !demoRefrain.active
         demoRefrain = RefrainDisplayState(
             text: demoRefrainText,
-            opacity: newActive ? 255 : 0,
+            opacity: 255,
             active: newActive,
             lastChangeTime: Date()
         )

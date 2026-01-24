@@ -182,6 +182,10 @@ final class TextRenderer: TileRenderer {
     private var copyPipelineState: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
     private var samplerState: MTLSamplerState?
+
+    // Typography
+    var fontName: String? = nil
+    var fontWeight: NSFont.Weight = .medium
     
     // Text state
     var textLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = []
@@ -353,8 +357,8 @@ final class TextRenderer: TileRenderer {
     
     private func drawText(_ text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat, context: CGContext) {
         guard !text.isEmpty, opacity > 0.01 else { return }
-        
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
+
+        let font = makeFont(size: fontSize)
         let color = NSColor.white.withAlphaComponent(opacity / 255.0)
         
         let attributes: [NSAttributedString.Key: Any] = [
@@ -378,7 +382,7 @@ final class TextRenderer: TileRenderer {
     func calcAutoFitFontSize(for text: String, maxWidth: CGFloat, minSize: CGFloat = 24, maxSize: CGFloat = 96) -> CGFloat {
         var size = maxSize
         while size > minSize {
-            let font = NSFont.systemFont(ofSize: size, weight: .medium)
+            let font = makeFont(size: size)
             let textSize = (text as NSString).size(withAttributes: [.font: font])
             if textSize.width <= maxWidth {
                 return size
@@ -386,6 +390,13 @@ final class TextRenderer: TileRenderer {
             size -= 2
         }
         return minSize
+    }
+
+    private func makeFont(size: CGFloat) -> NSFont {
+        if let fontName = fontName, let font = NSFont(name: fontName, size: size) {
+            return font
+        }
+        return NSFont.systemFont(ofSize: size, weight: fontWeight)
     }
 }
 
@@ -449,6 +460,10 @@ final class RefrainRenderer: TileRenderer {
     var texture: MTLTexture? { textRenderer.texture }
     
     private let textRenderer: TextRenderer
+    var fontName: String? = nil
+    var fontSizeOverride: CGFloat? = nil
+    var animationMode: TextAnimationMode = .fadeInOut
+    var fadeDuration: Double = 0.6
     var refrainState: RefrainDisplayState = .empty {
         didSet { updateTextLines() }
     }
@@ -458,15 +473,28 @@ final class RefrainRenderer: TileRenderer {
     }
     
     private func updateTextLines() {
-        guard !refrainState.text.isEmpty, refrainState.opacity > 0.01 else {
+        textRenderer.fontName = fontName
+        guard !refrainState.text.isEmpty else {
             textRenderer.textLines = []
             return
         }
-        
+
         let maxWidth: CGFloat = 1280 * 0.85
-        let fontSize = textRenderer.calcAutoFitFontSize(for: refrainState.text, maxWidth: maxWidth, minSize: 36, maxSize: 120)
-        
-        textRenderer.textLines = [(refrainState.text, fontSize, CGFloat(refrainState.opacity), 0.50)]
+        let autoSize = textRenderer.calcAutoFitFontSize(for: refrainState.text, maxWidth: maxWidth, minSize: 36, maxSize: 120)
+        let fontSize = fontSizeOverride ?? autoSize
+        let baseOpacity = CGFloat(refrainState.opacity)
+        let elapsed = Date().timeIntervalSince(refrainState.lastChangeTime)
+        let duration = animationMode == .instant ? 0 : fadeDuration
+        let t = duration > 0 ? min(elapsed / duration, 1.0) : 1.0
+        let fade = refrainState.active ? t : (1.0 - t)
+        let effectiveOpacity = baseOpacity * CGFloat(fade)
+
+        guard effectiveOpacity > 1 else {
+            textRenderer.textLines = []
+            return
+        }
+
+        textRenderer.textLines = [(refrainState.text, fontSize, effectiveOpacity, 0.50)]
     }
     
     func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
@@ -482,6 +510,9 @@ final class SongInfoRenderer: TileRenderer {
     var texture: MTLTexture? { textRenderer.texture }
     
     private let textRenderer: TextRenderer
+    var fontName: String? = nil
+    var fontSizeOverride: CGFloat? = nil
+    var animationMode: TextAnimationMode = .fadeInOut
     var songInfoState: SongInfoDisplayState = .empty {
         didSet { updateTextLines() }
     }
@@ -491,6 +522,7 @@ final class SongInfoRenderer: TileRenderer {
     }
     
     private func updateTextLines() {
+        textRenderer.fontName = fontName
         let opacity = songInfoState.computeOpacity()
         guard songInfoState.active, opacity > 0.01 else {
             textRenderer.textLines = []
@@ -498,7 +530,7 @@ final class SongInfoRenderer: TileRenderer {
         }
         
         var lines: [(String, CGFloat, CGFloat, CGFloat)] = []
-        let baseFontSize: CGFloat = 72
+        let baseFontSize: CGFloat = fontSizeOverride ?? 72
         let maxWidth: CGFloat = 1280 * 0.8
         
         if !songInfoState.artist.isEmpty {

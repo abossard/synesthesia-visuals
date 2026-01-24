@@ -32,6 +32,16 @@ final class TextStateManager: ObservableObject {
     
     /// Beat intensity for beat-synced effects (0-1)
     @Published var beatIntensity: Double = 0
+
+    /// Refrain typography/animation settings
+    @Published var refrainFontName: String = "Avenir Next"
+    @Published var refrainFontSize: CGFloat = 64
+    @Published var refrainAnimationMode: TextAnimationMode = .fadeInOut
+
+    /// Song info typography/animation settings
+    @Published var songInfoFontName: String = "Avenir Next"
+    @Published var songInfoFontSize: CGFloat = 54
+    @Published var songInfoAnimationMode: TextAnimationMode = .fadeInOut
     
     /// Duration of transition animation in seconds
     var transitionDuration: Double = 1.0
