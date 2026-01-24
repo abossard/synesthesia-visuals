@@ -15,6 +15,7 @@ private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos
 struct SwiftVJApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup {
@@ -25,7 +26,58 @@ struct SwiftVJApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
+
+            // Karaoke menu
+            CommandMenu("Karaoke") {
+                Button("Show Lyrics Panel") {
+                    openWindow(id: "karaoke-lyrics")
+                }
+                .keyboardShortcut("L", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Load Test Lyrics") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.loadTestLyrics()
+                    }
+                }
+
+                Button("Next Line") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.nextLine()
+                    }
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
+
+                Button("Previous Line") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.previousLine()
+                    }
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
+
+                Divider()
+
+                Toggle("Karaoke Mode", isOn: Binding(
+                    get: { appState.renderEngine?.karaokeEngine.isEnabled ?? false },
+                    set: { newValue in
+                        Task { @MainActor in
+                            appState.renderEngine?.karaokeEngine.isEnabled = newValue
+                        }
+                    }
+                ))
+                .keyboardShortcut("K", modifiers: [.command, .shift])
+            }
         }
+
+        // Karaoke Lyrics Panel Window
+        Window("Karaoke Lyrics", id: "karaoke-lyrics") {
+            KaraokeLyricsPanelWindow()
+                .environmentObject(appState)
+        }
+        .windowStyle(.titleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.topTrailing)
 
         Settings {
             SettingsView()
@@ -671,7 +723,15 @@ public final class AppState: ObservableObject {
                 // Only update if changed to avoid unnecessary objectWillChange publishes
                 if self.isRunning != newState.isRunning { self.isRunning = newState.isRunning }
                 if self.currentTrack != newState.playback.currentTrack { self.currentTrack = newState.playback.currentTrack }
-                if self.playbackPosition != newState.playback.position { self.playbackPosition = newState.playback.position }
+                if self.playbackPosition != newState.playback.position {
+                    self.playbackPosition = newState.playback.position
+                    // Feed position to KaraokeEngine for automatic line transitions
+                    if let karaokeEngine = self.renderEngine?.karaokeEngine {
+                        Task { @MainActor in
+                            karaokeEngine.updatePosition(newState.playback.position)
+                        }
+                    }
+                }
                 if self.isPlaying != newState.playback.isPlaying {
                     self.isPlaying = newState.playback.isPlaying
                     if let engine = self.renderEngine, let track = newState.playback.currentTrack {

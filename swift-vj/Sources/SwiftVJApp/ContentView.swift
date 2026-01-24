@@ -90,7 +90,10 @@ struct ContentView: View {
         .navigationTitle("SwiftVJ")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                PhaseToolbarControl(selection: appState.phaseBinding)
+                HStack(spacing: 16) {
+                    // Phase selector
+                    PhaseToolbarControl(selection: appState.phaseBinding)
+                }
             }
         }
         .task {

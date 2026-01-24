@@ -159,5 +159,10 @@ let package = Package(
         .testTarget(
             name: "ShaderRepositoryTests",
             dependencies: ["ShaderRepository"]),
+
+        // SwiftVJApp tests - karaoke engine and UI behavior
+        .testTarget(
+            name: "SwiftVJAppTests",
+            dependencies: ["SwiftVJApp", "SwiftVJCore"]),
     ]
 )

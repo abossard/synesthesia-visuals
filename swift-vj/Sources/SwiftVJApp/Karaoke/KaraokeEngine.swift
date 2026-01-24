@@ -263,6 +263,20 @@ final class KaraokeEngine: ObservableObject {
     }
 }
 
+// MARK: - Public Accessors for UI
+
+extension KaraokeEngine {
+
+    /// All lyrics lines with timestamps (for lyrics panel display)
+    var allLines: [LyricLine] { lines }
+
+    /// Current active line index (0-based, -1 if none)
+    var activeLineIndex: Int { currentIndex }
+
+    /// Last known playback position in seconds
+    var currentPosition: Double { lastPosition }
+}
+
 // MARK: - Debug / Testing Extensions
 
 extension KaraokeEngine {

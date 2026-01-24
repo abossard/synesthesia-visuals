@@ -51,13 +51,6 @@ struct RenderPreviewView: View {
 
             Divider()
 
-            // Audio visualization
-            AudioVisualizerView(audioManager: renderEngine.audioManager)
-                .frame(height: 60)
-                .padding(.horizontal)
-
-            Divider()
-
             // Controls
             RenderControlsView(renderEngine: renderEngine)
                 .padding()
@@ -674,14 +667,6 @@ struct RenderingView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Audio visualization (top for visibility)
-                if let audioManager = renderEngine?.audioManager {
-                    GroupBox("Audio Levels") {
-                        AudioVisualizerView(audioManager: audioManager)
-                            .frame(height: 70)
-                    }
-                }
-                
                 // MTKView-based tiles (60fps Direct Metal)
                 mtkViewTiles
 
@@ -913,54 +898,26 @@ struct RenderingView: View {
             }
 
             if karaokeEngine.isEnabled {
-                // Preview
-                GroupBox("Preview") {
-                    VStack(spacing: 8) {
-                        ZStack {
-                            Color.black
-                            KaraokeViewBuilder(
-                                displayState: karaokeEngine.displayState.hasLyrics
-                                    ? karaokeEngine.displayState
-                                    : KaraokeDisplayState(
-                                        prevLine: nil,
-                                        currentLine: "Current line in full white",
-                                        nextLine: "Next line dimmed below",
-                                        upcomingNextLine: nil,
-                                        activeIndex: 0,
-                                        totalLines: 3,
-                                        transitionProgress: 0,
-                                        isTransitioning: false
-                                    ),
-                                configuration: karaokeEngine.configuration,
-                                beatIntensity: 0.5
-                            )
-                            .scaleEffect(0.45)
-                        }
-                        .frame(height: 160)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        // Test controls
-                        HStack(spacing: 8) {
-                            Button("Load Test") {
-                                karaokeEngine.loadTestLyrics()
-                            }
-                            Button("Prev") {
-                                karaokeEngine.previousLine()
-                            }
-                            Button("Next") {
-                                karaokeEngine.nextLine()
-                            }
-                            Spacer()
-                            if karaokeEngine.displayState.hasLyrics {
-                                Text(karaokeEngine.displayState.progressText)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                // Test controls (preview is in main tile view above - select "Lyrics" tile)
+                HStack(spacing: 8) {
+                    Button("Load Test") {
+                        karaokeEngine.loadTestLyrics()
+                    }
+                    Button("Prev") {
+                        karaokeEngine.previousLine()
+                    }
+                    Button("Next") {
+                        karaokeEngine.nextLine()
+                    }
+                    Spacer()
+                    if karaokeEngine.displayState.hasLyrics {
+                        Text(karaokeEngine.displayState.progressText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 // Configuration
                 GroupBox("Settings") {

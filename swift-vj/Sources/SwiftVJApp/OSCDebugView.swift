@@ -186,6 +186,20 @@ struct OSCDebugView: View {
             
             // Test sender (right)
             VStack(spacing: 16) {
+                GroupBox("Audio Levels") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let audioManager = appState.renderEngine?.audioManager {
+                            AudioVisualizerView(audioManager: audioManager)
+                                .frame(height: 60)
+                        } else {
+                            Text("Audio manager not available")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding()
+                }
+
                 GroupBox("Send Test Message") {
                     VStack(alignment: .leading, spacing: 12) {
                         TextField("Address", text: $testAddress)
