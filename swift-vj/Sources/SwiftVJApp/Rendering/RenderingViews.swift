@@ -666,11 +666,16 @@ struct RenderingView: View {
     private var audioState: AudioState { appState.renderEngine?.audioManager.state ?? .silent }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VSplitView {
             tileGridView
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(1)
+
             registerPaneView
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(0)
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             Task { try? await renderEngine?.start() }
             // Mask uses selection manager
@@ -689,29 +694,31 @@ struct RenderingView: View {
 
     @ViewBuilder
     private var tileGridView: some View {
-        let spacing: CGFloat = 12
-        let columns = [
-            GridItem(.flexible(), spacing: spacing),
-            GridItem(.flexible(), spacing: spacing),
-            GridItem(.flexible(), spacing: spacing)
-        ]
-        LazyVGrid(columns: columns, spacing: spacing) {
-            ForEach(tileKeys, id: \.self) { key in
-                tilePreviewCard(tileKey: key)
+        GeometryReader { geo in
+            let spacing: CGFloat = 12
+            let columnsCount: CGFloat = 3
+            let totalSpacingX = spacing * (columnsCount - 1)
+            let tileWidth = (geo.size.width - totalSpacingX) / columnsCount
+            let tileHeight = tileWidth * 9.0 / 16.0
+            let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: spacing), count: Int(columnsCount))
+
+            LazyVGrid(columns: columns, spacing: spacing) {
+                ForEach(tileKeys, id: \.self) { key in
+                    tilePreviewCard(tileKey: key, tileWidth: tileWidth, tileHeight: tileHeight)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 4)
     }
 
-    private func tilePreviewCard(tileKey: String) -> some View {
+    private func tilePreviewCard(tileKey: String, tileWidth: CGFloat, tileHeight: CGFloat) -> some View {
         let server = serverName(for: tileKey)
         let label = displayName(for: tileKey)
 
-        return VStack(spacing: 6) {
+        return ZStack(alignment: .bottom) {
             SyphonMTKView(serverName: server)
                 .aspectRatio(16/9, contentMode: .fit)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
                 .cornerRadius(8)
                 .overlay(
@@ -721,6 +728,7 @@ struct RenderingView: View {
                 .onTapGesture {
                     selectedTile = tileKey
                 }
+
             Button {
                 copyToClipboard(server)
             } label: {
@@ -736,11 +744,13 @@ struct RenderingView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.6))
             }
             .buttonStyle(.plain)
             .help("Click to copy Syphon name")
         }
-        .padding(6)
+        .frame(width: tileWidth, height: tileHeight)
         .background(Color(nsColor: .windowBackgroundColor))
         .cornerRadius(10)
         .overlay(
@@ -758,10 +768,11 @@ struct RenderingView: View {
                 registerTabs
                 Divider()
                 registerContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .padding(.vertical, 4)
         }
-        .frame(height: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var registerTabs: some View {
@@ -807,53 +818,83 @@ struct RenderingView: View {
     @ViewBuilder
     private var shaderRegisterSection: some View {
         GroupBox("Shader") {
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Search shaders", text: $shaderSearch)
-                    .textFieldStyle(.roundedBorder)
-                shaderListView(isMask: false)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Search shaders", text: $shaderSearch)
+                        .textFieldStyle(.roundedBorder)
+                    shaderListView(isMask: false)
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                Divider()
+                    .frame(maxHeight: .infinity)
+
+                shaderSelectionControls(isMask: false)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: 260)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var maskRegisterSection: some View {
         GroupBox("Mask") {
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Search masks", text: $maskSearch)
-                    .textFieldStyle(.roundedBorder)
-                shaderListView(isMask: true)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Search masks", text: $maskSearch)
+                        .textFieldStyle(.roundedBorder)
+                    shaderListView(isMask: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                Divider()
+                    .frame(maxHeight: .infinity)
+
+                shaderSelectionControls(isMask: true)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: 260)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var lyricsRegisterSection: some View {
         GroupBox("Lyrics") {
-            VStack(alignment: .leading, spacing: 8) {
-                if let karaokeEngine = renderEngine?.karaokeEngine {
-                    karaokeControlsSection(karaokeEngine: karaokeEngine)
+            if let karaokeEngine = renderEngine?.karaokeEngine {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        karaokeControlsSection(karaokeEngine: karaokeEngine)
+                        Divider()
+                        karaokeFontSettingsView(karaokeEngine: karaokeEngine)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
                     Divider()
+                        .frame(maxHeight: .infinity)
+
                     lyricsTimelineView(karaokeEngine: karaokeEngine)
-                    Divider()
-                    karaokeFontSettingsView(karaokeEngine: karaokeEngine)
-                } else {
-                    Text("Karaoke engine not running")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                Text("Karaoke engine not running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(width: 420)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var refrainRegisterSection: some View {
         GroupBox("Refrain") {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 refrainControlsSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
                 Divider()
+                    .frame(maxHeight: .infinity)
+
                 fontSettingsView(
                     title: "Font",
                     fontName: Binding(
@@ -869,17 +910,22 @@ struct RenderingView: View {
                         set: { renderEngine?.textManager.refrainAnimationMode = $0 }
                     )
                 )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: 300)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var songInfoRegisterSection: some View {
         GroupBox("Song Info") {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 songInfoControlsSection
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
                 Divider()
+                    .frame(maxHeight: .infinity)
+
                 fontSettingsView(
                     title: "Font",
                     fontName: Binding(
@@ -895,21 +941,27 @@ struct RenderingView: View {
                         set: { renderEngine?.textManager.songInfoAnimationMode = $0 }
                     )
                 )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: 320)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private var imagesRegisterSection: some View {
         GroupBox("Images") {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 imageControlsView
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
                 Divider()
+                    .frame(maxHeight: .infinity)
+
                 imageStatusView
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(width: 320)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Register Helpers
@@ -955,7 +1007,7 @@ struct RenderingView: View {
             }
             .padding(.vertical, 4)
         }
-        .frame(height: 260)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func filteredShaders(isMask: Bool) -> [ShaderInfo] {
@@ -965,6 +1017,62 @@ struct RenderingView: View {
         guard !query.isEmpty, let repository = repository else { return baseShaders }
         let results = repository.search(query: query)
         return results.filter { $0.isMask == isMask }
+    }
+
+    @ViewBuilder
+    private func shaderSelectionControls(isMask: Bool) -> some View {
+        let repository = renderEngine?.shaderRepository
+        let shaders = isMask ? (repository?.masks ?? []) : (repository?.regularShaders ?? [])
+        let selected = isMask ? selectedMaskShader : (appState.selectedShader ?? "")
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Selected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(selected.isEmpty ? "None" : selected)
+                .font(.caption.monospaced())
+                .lineLimit(2)
+
+            HStack(spacing: 6) {
+                Button {
+                    guard let idx = shaders.firstIndex(where: { $0.name == selected }) else { return }
+                    let prev = (idx - 1 + shaders.count) % shaders.count
+                    selectShader(name: shaders[prev].name, isMask: isMask)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    guard let idx = shaders.firstIndex(where: { $0.name == selected }) else { return }
+                    let next = (idx + 1) % shaders.count
+                    selectShader(name: shaders[next].name, isMask: isMask)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.bordered)
+
+                Button("Random") {
+                    if let random = shaders.randomElement() {
+                        selectShader(name: random.name, isMask: isMask)
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text("Total: \(shaders.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func selectShader(name: String, isMask: Bool) {
+        if isMask {
+            selectedMaskShader = name
+            renderEngine?.shaderSelection.selectMask(name: name)
+        } else {
+            appState.selectShader(name)
+        }
     }
 
     @ViewBuilder
@@ -1003,7 +1111,7 @@ struct RenderingView: View {
                     }
                 }
             }
-            .frame(height: 160)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
