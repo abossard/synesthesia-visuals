@@ -194,28 +194,27 @@ public actor OscRestBridgeService {
             return
         }
         
-        // Record OSC
+        // Update stats (fast, no allocation)
         stats.totalOscReceived += 1
-        let record = OSCMessageRecord(
-            timestamp: timestamp,
-            path: path,
-            value: numericValue,
-            parsed: parsed,
-            unknownReason: nil
-        )
-        oscBuffer.append(record)
-        eventContinuation.yield(.oscReceived(timestamp: timestamp, path: path, value: numericValue, parsed: parsed))
         
-        // Update stats by route type
+        // Update slot message count
+        let slot: String
         switch parsed {
-        case .scene(let slot, _):
-            stats.slotMessages[slot, default: 0] += 1
-        case .oneshot(let slot, _):
-            stats.slotMessages[slot, default: 0] += 1
-        case .blackout(let slot):
-            stats.slotMessages[slot, default: 0] += 1
-        case .param(let slot, _):
-            stats.slotMessages[slot, default: 0] += 1
+        case .scene(let s, _), .oneshot(let s, _), .blackout(let s), .param(let s, _):
+            slot = s
+        }
+        stats.slotMessages[slot, default: 0] += 1
+        
+        // Record OSC (only if buffer has capacity - prevents memory growth)
+        if oscBuffer.items.count < 100 {
+            let record = OSCMessageRecord(
+                timestamp: timestamp,
+                path: path,
+                value: numericValue,
+                parsed: parsed,
+                unknownReason: nil
+            )
+            oscBuffer.append(record)
         }
         
         // Build HTTP requests
@@ -226,24 +225,27 @@ public actor OscRestBridgeService {
             
             for plan in plans {
                 stats.totalRestPlanned += 1
-                eventContinuation.yield(.restRequestPlanned(timestamp: clock.now(), plan: plan))
                 
                 if dryRun {
-                    // Dry run: don't execute
-                    let record = HTTPRequestRecord(
-                        timestamp: clock.now(),
-                        method: plan.method,
-                        url: plan.url,
-                        bodyPreview: plan.bodyPreview,
-                        statusCode: nil,
-                        responsePreview: nil,
-                        error: nil,
-                        planned: true
-                    )
-                    httpBuffer.append(record)
+                    // Dry run: don't execute, just record
+                    if httpBuffer.items.count < 100 {
+                        let record = HTTPRequestRecord(
+                            timestamp: clock.now(),
+                            method: plan.method,
+                            url: plan.url,
+                            bodyPreview: plan.bodyPreview,
+                            statusCode: nil,
+                            responsePreview: nil,
+                            error: nil,
+                            planned: true
+                        )
+                        httpBuffer.append(record)
+                    }
                 } else {
-                    // Execute
-                    await executeRequest(plan, config: config, timestamp: timestamp)
+                    // Execute in background (don't block OSC processing)
+                    Task.detached(priority: .userInitiated) { [weak self, plan, config, timestamp] in
+                        await self?.executeRequest(plan, config: config, timestamp: timestamp)
+                    }
                 }
             }
             
@@ -265,22 +267,26 @@ public actor OscRestBridgeService {
     
     private func recordUnknownOSC(path: String, value: Double, reason: String, timestamp: Date) {
         stats.totalOscUnknown += 1
-        let record = OSCMessageRecord(
-            timestamp: timestamp,
-            path: path,
-            value: value,
-            parsed: nil,
-            unknownReason: reason
-        )
-        oscBuffer.append(record)
-        eventContinuation.yield(.oscUnknownRoute(timestamp: timestamp, path: path, value: value, reason: reason))
+    private func recordUnknownOSC(path: String, value: Double, reason: String, timestamp: Date) {
+        stats.totalOscUnknown += 1
+        
+        // Only record in buffer if space available
+        if oscBuffer.items.count < 100 {
+            let record = OSCMessageRecord(
+                timestamp: timestamp,
+                path: path,
+                value: value,
+                parsed: nil,
+                unknownReason: reason
+            )
+            oscBuffer.append(record)
+        }
     }
     
     // MARK: - HTTP Execution
     
     private func executeRequest(_ plan: HTTPRequestPlan, config: BridgeConfig, timestamp: Date) async {
         stats.totalRestSent += 1
-        eventContinuation.yield(.restRequestSent(timestamp: clock.now(), plan: plan))
         
         do {
             let (statusCode, responseBody) = try await httpClient.execute(
@@ -291,36 +297,38 @@ public actor OscRestBridgeService {
                 timeoutMs: config.server.http.timeout_ms
             )
             
-            let record = HTTPRequestRecord(
-                timestamp: clock.now(),
-                method: plan.method,
-                url: plan.url,
-                bodyPreview: plan.bodyPreview,
-                statusCode: statusCode,
-                responsePreview: String(data: responseBody, encoding: .utf8)?.prefix(500).map(String.init),
-                error: nil,
-                planned: false
-            )
-            httpBuffer.append(record)
-            
-            eventContinuation.yield(.restResponse(timestamp: clock.now(), plan: plan, statusCode: statusCode, body: String(data: responseBody, encoding: .utf8)))
+            // Only record if buffer has space
+            if httpBuffer.items.count < 100 {
+                let record = HTTPRequestRecord(
+                    timestamp: clock.now(),
+                    method: plan.method,
+                    url: plan.url,
+                    bodyPreview: plan.bodyPreview,
+                    statusCode: statusCode,
+                    responsePreview: String(data: responseBody, encoding: .utf8)?.prefix(200).map(String.init),
+                    error: nil,
+                    planned: false
+                )
+                httpBuffer.append(record)
+            }
             
         } catch {
             stats.totalRestFailures += 1
             
-            let record = HTTPRequestRecord(
-                timestamp: clock.now(),
-                method: plan.method,
-                url: plan.url,
-                bodyPreview: plan.bodyPreview,
-                statusCode: nil,
-                responsePreview: nil,
-                error: error.localizedDescription,
-                planned: false
-            )
-            httpBuffer.append(record)
-            
-            eventContinuation.yield(.restFailure(timestamp: clock.now(), plan: plan, error: error.localizedDescription))
+            // Always record failures (important for debugging)
+            if httpBuffer.items.count < 100 {
+                let record = HTTPRequestRecord(
+                    timestamp: clock.now(),
+                    method: plan.method,
+                    url: plan.url,
+                    bodyPreview: plan.bodyPreview,
+                    statusCode: nil,
+                    responsePreview: nil,
+                    error: error.localizedDescription,
+                    planned: false
+                )
+                httpBuffer.append(record)
+            }
         }
     }
     
