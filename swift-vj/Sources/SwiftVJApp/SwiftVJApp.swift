@@ -7,6 +7,7 @@ import Metal
 import AppKit
 import Combine
 import OSCKit
+import OscRestBridge
 
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
@@ -119,6 +120,7 @@ public final class AppState: ObservableObject {
     public var launchpadModule: LaunchpadModule?
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
+    public var oscRestBridge: OscRestBridgeService?
 
     // MARK: - Cache Adapters (for clearing)
     
@@ -558,6 +560,9 @@ public final class AppState: ObservableObject {
         )
 
         songsModule = SongsModule()
+        
+        // Initialize OSC Rest Bridge
+        oscRestBridge = createDefaultBridgeService()
     }
 
     private func wireModuleDispatchers() async {

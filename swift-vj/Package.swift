@@ -89,6 +89,7 @@ let package = Package(
                 "ShaderRepository",
                 "SongRepository",
                 "SyphonKit",
+                "OscRestBridge",
             ],
             resources: [
                 .copy("Resources/Shaders.metallib"),

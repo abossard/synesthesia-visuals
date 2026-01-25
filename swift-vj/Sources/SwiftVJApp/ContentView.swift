@@ -76,7 +76,7 @@ struct ContentView: View {
                 case .songs:
                     SongBrowserView()
                 case .osc:
-                    OSCDebugView()
+                    OSCContainerView()
                 case .launchpad:
                     LaunchpadView()
                 case .logs:
