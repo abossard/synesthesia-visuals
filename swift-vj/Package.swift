@@ -42,6 +42,10 @@ let package = Package(
         .library(
             name: "ShadertoyRuntime",
             targets: ["ShadertoyRuntime"]),
+        // OSC Rest Bridge - generic OSC → REST bridge
+        .library(
+            name: "OscRestBridge",
+            targets: ["OscRestBridge"]),
     ],
     dependencies: [
         // OSC communication
@@ -164,5 +168,21 @@ let package = Package(
         .testTarget(
             name: "SwiftVJAppTests",
             dependencies: ["SwiftVJApp", "SwiftVJCore"]),
+        
+        // OscRestBridge - generic OSC → REST bridge
+        .target(
+            name: "OscRestBridge",
+            dependencies: [
+                .product(name: "OSCKit", package: "OSCKit"),
+                .product(name: "Yams", package: "Yams"),
+            ],
+            resources: [
+                .copy("Resources/config-ledfx.yaml"),
+            ]),
+        
+        // OscRestBridge tests - behavioral tests
+        .testTarget(
+            name: "OscRestBridgeTests",
+            dependencies: ["OscRestBridge"]),
     ]
 )
