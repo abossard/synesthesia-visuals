@@ -4,32 +4,6 @@
 import Foundation
 @testable import OscRestBridge
 
-// MARK: - Test OSC Transport
-
-final class TestOSCTransport: OSCTransport, @unchecked Sendable {
-    private var handler: (@Sendable (String, [Any]) async -> Void)?
-    private(set) var isStarted = false
-    private(set) var startedHost: String?
-    private(set) var startedPort: UInt16?
-    
-    func start(host: String, port: UInt16, handler: @escaping @Sendable (String, [Any]) async -> Void) async throws {
-        self.handler = handler
-        self.isStarted = true
-        self.startedHost = host
-        self.startedPort = port
-    }
-    
-    func stop() async {
-        self.handler = nil
-        self.isStarted = false
-    }
-    
-    // Simulate receiving OSC message
-    func simulateMessage(path: String, values: [Any]) async {
-        await handler?(path, values)
-    }
-}
-
 // MARK: - Test HTTP Client
 
 actor TestHTTPClient: HTTPClient {

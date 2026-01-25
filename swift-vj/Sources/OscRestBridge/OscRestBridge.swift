@@ -19,12 +19,10 @@ import Foundation
 @_exported import enum OscRestBridge.ParsedOSCRoute
 
 // Re-export protocols
-@_exported import protocol OscRestBridge.OSCTransport
 @_exported import protocol OscRestBridge.HTTPClient
 @_exported import protocol OscRestBridge.Clock
 
 // Re-export implementations
-@_exported import class OscRestBridge.OSCKitTransport
 @_exported import class OscRestBridge.URLSessionHTTPClient
 @_exported import struct OscRestBridge.SystemClock
 
@@ -32,9 +30,9 @@ import Foundation
 @_exported import enum OscRestBridge.ConfigLoader
 
 /// Convenience factory for creating a service with default dependencies
+/// Note: OSC messages are handled via subscription to the existing OSCHub
 public func createDefaultBridgeService() -> OscRestBridgeService {
     OscRestBridgeService(
-        oscTransport: OSCKitTransport(),
         httpClient: URLSessionHTTPClient(),
         clock: SystemClock()
     )

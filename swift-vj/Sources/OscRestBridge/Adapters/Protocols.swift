@@ -3,14 +3,6 @@
 
 import Foundation
 
-// MARK: - OSC Transport
-
-/// Protocol for OSC communication
-public protocol OSCTransport: Sendable {
-    func start(host: String, port: UInt16, handler: @escaping @Sendable (String, [Any]) async -> Void) async throws
-    func stop() async
-}
-
 // MARK: - HTTP Client
 
 /// Protocol for HTTP requests

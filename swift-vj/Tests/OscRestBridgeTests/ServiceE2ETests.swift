@@ -6,17 +6,14 @@ import XCTest
 
 final class ServiceE2ETests: XCTestCase {
     
-    var oscTransport: TestOSCTransport!
     var httpClient: TestHTTPClient!
     var clock: TestClock!
     var service: OscRestBridgeService!
     
     override func setUp() async throws {
-        oscTransport = TestOSCTransport()
         httpClient = TestHTTPClient()
         clock = TestClock()
         service = OscRestBridgeService(
-            oscTransport: oscTransport,
             httpClient: httpClient,
             clock: clock
         )
@@ -59,8 +56,8 @@ final class ServiceE2ETests: XCTestCase {
         try await service.loadConfig(from: yaml.data(using: .utf8)!)
         try await service.start()
         
-        // When: OSC scene activate message
-        await oscTransport.simulateMessage(path: "/ledfx/scene/strobe/0", values: [1.0])
+        // When: OSC scene activate message (simulated via direct call)
+        await service.handleOSCMessage(path: "/ledfx/scene/strobe/0", values: [1.0])
         
         // Give async handlers time to run
         try await Task.sleep(for: .milliseconds(100))
@@ -119,7 +116,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: OSC scene deactivate (value = 0)
-        await oscTransport.simulateMessage(path: "/ledfx/scene/strobe/0", values: [0.0])
+        await service.handleOSCMessage(path: "/ledfx/scene/strobe/0", values: [0.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: Deactivate request sent
@@ -171,7 +168,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: OSC scene deactivate (value = 0)
-        await oscTransport.simulateMessage(path: "/ledfx/scene/strobe/0", values: [0.0])
+        await service.handleOSCMessage(path: "/ledfx/scene/strobe/0", values: [0.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: No request sent
@@ -211,14 +208,14 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: Value = 0
-        await oscTransport.simulateMessage(path: "/ledfx/oneshot/flash/0", values: [0.0])
+        await service.handleOSCMessage(path: "/ledfx/oneshot/flash/0", values: [0.0])
         try await Task.sleep(for: .milliseconds(50))
         
         var requests = await httpClient.requests
         XCTAssertEqual(requests.count, 0)
         
         // When: Value > 0
-        await oscTransport.simulateMessage(path: "/ledfx/oneshot/flash/0", values: [1.0])
+        await service.handleOSCMessage(path: "/ledfx/oneshot/flash/0", values: [1.0])
         try await Task.sleep(for: .milliseconds(50))
         
         requests = await httpClient.requests
@@ -271,7 +268,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: Blackout activate
-        await oscTransport.simulateMessage(path: "/ledfx/blackout/0", values: [1.0])
+        await service.handleOSCMessage(path: "/ledfx/blackout/0", values: [1.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: Blackout scene activated
@@ -334,7 +331,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: MIDI value 63.5 (half of 127) → should map to 5.5 (middle of 1..10)
-        await oscTransport.simulateMessage(path: "/ledfx/param/speed/0", values: [63.5])
+        await service.handleOSCMessage(path: "/ledfx/param/speed/0", values: [63.5])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: Request with scaled value
@@ -375,7 +372,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: Unknown scene
-        await oscTransport.simulateMessage(path: "/ledfx/scene/unknown/0", values: [1.0])
+        await service.handleOSCMessage(path: "/ledfx/scene/unknown/0", values: [1.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: No HTTP request, but event recorded
@@ -421,7 +418,7 @@ final class ServiceE2ETests: XCTestCase {
         try await service.start()
         
         // When: Scene activate in dry run mode
-        await oscTransport.simulateMessage(path: "/ledfx/scene/test/0", values: [1.0])
+        await service.handleOSCMessage(path: "/ledfx/scene/test/0", values: [1.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: Request planned but not executed
@@ -469,7 +466,7 @@ final class ServiceE2ETests: XCTestCase {
         await httpClient.setShouldFail(true)
         
         // When: Scene activate
-        await oscTransport.simulateMessage(path: "/ledfx/scene/test/0", values: [1.0])
+        await service.handleOSCMessage(path: "/ledfx/scene/test/0", values: [1.0])
         try await Task.sleep(for: .milliseconds(100))
         
         // Then: Failure recorded

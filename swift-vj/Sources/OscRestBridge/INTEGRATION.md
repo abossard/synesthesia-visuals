@@ -2,69 +2,82 @@
 
 This guide shows how to integrate the OscRestBridge module into SwiftVJ.
 
-## 1. Add the Module to SwiftVJApp
+**Important**: The bridge uses SwiftVJ's existing OSCHub for receiving messages. It does not create its own OSC listener.
 
-Edit `Sources/SwiftVJApp/SwiftVJApp.swift`:
+## 1. Add the Module to AppState
 
-```swift
-import SwiftUI
-import SwiftVJCore
-import OscRestBridge  // Add this
-
-@main
-struct SwiftVJApp: App {
-    @State private var oscRestBridge = createDefaultBridgeService()
-    
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-        
-        // Add OSC Rest Bridge window
-        WindowGroup("OSC Rest Bridge") {
-            OscRestBridgeDebugView(service: oscRestBridge)
-                .frame(minWidth: 800, minHeight: 600)
-        }
-        .defaultSize(width: 900, height: 700)
-    }
-}
-```
-
-## 2. Load Configuration on Startup
-
-You can load the bundled LedFX config or a custom one:
+The bridge is already integrated into AppState. In `Sources/SwiftVJApp/SwiftVJApp.swift`:
 
 ```swift
 import OscRestBridge
 
+public final class AppState: ObservableObject {
+    // ...
+    public var oscRestBridge: OscRestBridgeService?
+    
+    private func setupModules() {
+        // ...
+        
+        // Initialize OSC Rest Bridge
+        oscRestBridge = createDefaultBridgeService()
+    }
+}
+```
+
+## 2. Subscribe to OSCHub
+
+In the `startOSCHub()` method, the bridge subscribes to `/ledfx/*` messages:
+
+```swift
+private func startOSCHub() {
+    do {
+        try oscHub.start()
+        
+        // ... other subscriptions ...
+        
+        // Subscribe OSC Rest Bridge to /ledfx/* messages
+        oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
+            guard let self = self, let bridge = self.oscRestBridge else { return }
+            Task {
+                await bridge.handleOSCMessage(path: address, values: values)
+            }
+        }
+    } catch {
+        log("Failed to start OSC hub: \(error)", level: .error)
+    }
+}
+```
+
+## 3. Load Configuration on Startup
+
+You can load the bundled LedFX config or a custom one:
+
+```swift
 @main
 struct SwiftVJApp: App {
-    @State private var oscRestBridge = createDefaultBridgeService()
+    @StateObject private var appState = AppState()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(appState)
         }
         .task {
             do {
-                // Load bundled config
+                // Load bridge config
                 if let configURL = Bundle.main.url(forResource: "config-ledfx", withExtension: "yaml") {
-                    try await oscRestBridge.loadConfig(from: configURL)
-                    try await oscRestBridge.start()
+                    try await appState.oscRestBridge?.loadConfig(from: configURL)
+                    try await appState.oscRestBridge?.start()
                 }
             } catch {
                 print("Failed to start OSC Rest Bridge: \(error)")
             }
         }
-        
-        WindowGroup("OSC Rest Bridge") {
-            OscRestBridgeDebugView(service: oscRestBridge)
-        }
     }
 }
 ```
 
-## 3. Create Custom Configuration
+## 4. Create Custom Configuration
 
 Create your own YAML config in `Resources/my-bridge-config.yaml`:
 

@@ -9,7 +9,6 @@ public actor OscRestBridgeService {
     
     // MARK: - Dependencies (protocols for testing)
     
-    private let oscTransport: OSCTransport
     private let httpClient: HTTPClient
     private let clock: Clock
     
@@ -37,11 +36,9 @@ public actor OscRestBridgeService {
     // MARK: - Initialization
     
     public init(
-        oscTransport: OSCTransport,
         httpClient: HTTPClient,
         clock: Clock = SystemClock()
     ) {
-        self.oscTransport = oscTransport
         self.httpClient = httpClient
         self.clock = clock
         
@@ -60,17 +57,12 @@ public actor OscRestBridgeService {
     public func start() async throws {
         guard !isRunning else { return }
         
-        guard let config = config else {
+        guard config != nil else {
             throw BridgeError.configNotLoaded
         }
         
-        // Start OSC transport
-        try await oscTransport.start(
-            host: config.server.osc_listen.host,
-            port: config.server.osc_listen.port
-        ) { [weak self] path, values in
-            await self?.handleOSCMessage(path: path, values: values)
-        }
+        // No OSC transport to start - we subscribe to the existing OSCHub
+        // The subscription is handled externally in AppState
         
         isRunning = true
         statsStartTime = clock.now()
@@ -81,11 +73,18 @@ public actor OscRestBridgeService {
     public func stop() async {
         guard isRunning else { return }
         
-        await oscTransport.stop()
+        // No OSC transport to stop - unsubscription handled externally
+        
         isRunning = false
         
         eventContinuation.yield(.stopped(timestamp: clock.now()))
     }
+    
+    // MARK: - OSC Message Handler (called from OSCHub subscription)
+    
+    /// Handle an OSC message from the OSCHub subscription
+    /// This method is called by the OSCHub when a /ledfx/* message is received
+    public func handleOSCMessage(path: String, values: [Any]) async {
     
     // MARK: - Configuration
     

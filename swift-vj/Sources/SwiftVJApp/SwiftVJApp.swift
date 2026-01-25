@@ -670,6 +670,14 @@ public final class AppState: ObservableObject {
                 guard let folderPath = values.first as? String else { return }
                 Task { @MainActor in self?.loadImagesFromFolder(URL(fileURLWithPath: folderPath)) }
             }
+            
+            // Subscribe OSC Rest Bridge to /ledfx/* messages
+            oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
+                guard let self = self, let bridge = self.oscRestBridge else { return }
+                Task {
+                    await bridge.handleOSCMessage(path: address, values: values)
+                }
+            }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
         }

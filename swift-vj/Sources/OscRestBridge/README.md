@@ -2,14 +2,17 @@
 
 A generic OSC → REST bridge for macOS 15+ written in Swift. Translates OSC messages into REST API calls using a config-driven YAML mapping. Ships with ready-to-use LedFX configuration.
 
+**Important**: This module integrates with SwiftVJ's existing OSCHub - it does not create its own OSC listener. All OSC messages are routed through the central OSCHub.
+
 ## Architecture
 
 Following **Grokking Simplicity** and **A Philosophy of Software Design** principles:
 
 - **Domain layer** (pure calculations): `OSCRouteParser`, `ParameterScaling`, `TemplateEngine`, `JSONPatcher`, `RequestBuilder`
-- **Adapters** (side effects): `OSCKitTransport`, `URLSessionHTTPClient`
+- **Adapters** (side effects): `URLSessionHTTPClient`
 - **Service** (orchestration): `OscRestBridgeService` actor
-- **UI** (SwiftUI views): Debug views for monitoring and configuration
+- **UI** (SwiftUI views): Consolidated debug view for monitoring and configuration
+- **Integration**: Uses existing OSCHub for message receiving
 
 ## Public API
 
@@ -23,10 +26,23 @@ let service = createDefaultBridgeService()
 
 // Or with custom dependencies (for testing)
 let service = OscRestBridgeService(
-    oscTransport: OSCKitTransport(),
     httpClient: URLSessionHTTPClient(),
     clock: SystemClock()
 )
+```
+
+### Integrating with OSCHub
+
+```swift
+// In AppState or your app initialization:
+let bridge = createDefaultBridgeService()
+
+// Subscribe to /ledfx/* messages from the existing OSCHub
+oscHub.subscribe(pattern: "/ledfx/*") { address, values in
+    Task {
+        await bridge.handleOSCMessage(path: address, values: values)
+    }
+}
 ```
 
 ### Loading Configuration
