@@ -3,37 +3,6 @@
 
 import Foundation
 
-// MARK: - Bridge State
-
-@Observable
-public final class BridgeState: Sendable {
-    public private(set) var isRunning: Bool
-    public private(set) var configStatus: ConfigStatus
-    public private(set) var stats: BridgeStats
-    public private(set) var slotState: [String: SlotState]
-    public private(set) var recentOsc: [OSCMessageRecord]
-    public private(set) var recentHttp: [HTTPRequestRecord]
-    public private(set) var dryRun: Bool
-    
-    public init() {
-        self.isRunning = false
-        self.configStatus = .notLoaded
-        self.stats = BridgeStats()
-        self.slotState = [:]
-        self.recentOsc = []
-        self.recentHttp = []
-        self.dryRun = false
-    }
-    
-    // Sendable-safe mutation methods (called from actor)
-    nonisolated func update(_ updater: @Sendable (inout BridgeState) -> Void) {
-        MainActor.assumeIsolated {
-            var mutableSelf = self
-            updater(&mutableSelf)
-        }
-    }
-}
-
 // MARK: - Config Status
 
 public enum ConfigStatus: Sendable, Equatable {
