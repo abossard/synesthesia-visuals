@@ -649,7 +649,37 @@ final class SwiftUITextTileRenderer: TileRenderer {
     private func buildKaraokeContentHash() -> String {
         // Include transition progress for smooth animation
         let progressBucket = Int(karaokeDisplayState.transitionProgress * 60)  // ~60 frames
-        return "karaoke-\(karaokeDisplayState.currentLine ?? "")-\(karaokeDisplayState.nextLine ?? "")-\(karaokeDisplayState.activeIndex)-\(progressBucket)"
+        let configSignature = karaokeConfigSignature(karaokeConfiguration)
+        return "karaoke-\(karaokeDisplayState.currentLine ?? "")-\(karaokeDisplayState.nextLine ?? "")-\(karaokeDisplayState.activeIndex)-\(progressBucket)-\(configSignature)"
+    }
+
+    private func karaokeConfigSignature(_ config: KaraokeConfiguration) -> String {
+        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
+        func bucket(_ value: Double) -> Int { Int(value * 100) }
+
+        return [
+            bucket(config.prevLineY),
+            bucket(config.currentLineY),
+            bucket(config.nextLineY),
+            bucket(config.newNextEntryY),
+            bucket(config.currentFontSize),
+            bucket(config.nextFontSize),
+            bucket(config.prevFontSize),
+            bucket(config.currentLineOpacity),
+            bucket(config.nextLineOpacity),
+            bucket(config.prevLineOpacity),
+            bucket(config.transitionDuration),
+            bucket(config.prerollTime),
+            bucket(config.textShadowRadius),
+            bucket(config.textShadowOpacity),
+            bucket(config.maxLineWidthRatio),
+            config.easing.rawValue.hashValue,
+            String(describing: config.fontWeight).hashValue,
+            String(describing: config.fontDesign).hashValue,
+            config.animationMode.hashValue,
+            bucket(config.canvasWidth),
+            bucket(config.canvasHeight)
+        ].map(String.init).joined(separator: "-")
     }
     
     /// Capture SwiftUI view to staging texture (runs on main thread)

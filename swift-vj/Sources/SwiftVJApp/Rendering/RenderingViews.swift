@@ -783,7 +783,7 @@ struct RenderingView: View {
             }
         }
         .padding(.top, 8)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 0)
         .aspectRatio(gridAspect, contentMode: .fit)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
