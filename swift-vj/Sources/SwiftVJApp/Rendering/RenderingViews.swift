@@ -666,14 +666,13 @@ struct RenderingView: View {
     private var audioState: AudioState { appState.renderEngine?.audioManager.state ?? .silent }
 
     var body: some View {
-        VSplitView {
+        VStack(spacing: 0) {
             tileGridView
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .layoutPriority(1)
+
+            Divider()
 
             registerPaneView
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .layoutPriority(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
@@ -689,35 +688,112 @@ struct RenderingView: View {
             renderEngine?.shaderSelection.selectMask(name: newValue)
         }
     }
+
+    // MARK: - Layout Helpers
+
+    private struct AspectGridLayout: Layout {
+        let columns: Int
+        let spacing: CGFloat
+        let aspectRatio: CGFloat
+
+        func sizeThatFits(
+            proposal: ProposedViewSize,
+            subviews: Subviews,
+            cache: inout ()
+        ) -> CGSize {
+            let count = subviews.count
+            guard count > 0, columns > 0 else { return .zero }
+
+            let rows = Int(ceil(Double(count) / Double(columns)))
+            let proposedWidth = proposal.width ?? 0
+            let proposedHeight = proposal.height
+
+            guard proposedWidth > 0 else { return .zero }
+
+            let spacingWidth = spacing * CGFloat(max(columns - 1, 0))
+            let spacingHeight = spacing * CGFloat(max(rows - 1, 0))
+
+            var cellWidth = max(0, (proposedWidth - spacingWidth) / CGFloat(columns))
+            var cellHeight = cellWidth / aspectRatio
+
+            if let height = proposedHeight {
+                let totalHeight = cellHeight * CGFloat(rows) + spacingHeight
+                if totalHeight > height {
+                    let availableHeight = max(0, height - spacingHeight)
+                    cellHeight = availableHeight / CGFloat(rows)
+                    cellWidth = cellHeight * aspectRatio
+                }
+            }
+
+            let totalWidth = cellWidth * CGFloat(columns) + spacingWidth
+            let totalHeight = cellHeight * CGFloat(rows) + spacingHeight
+            return CGSize(width: totalWidth, height: totalHeight)
+        }
+
+        func placeSubviews(
+            in bounds: CGRect,
+            proposal: ProposedViewSize,
+            subviews: Subviews,
+            cache: inout ()
+        ) {
+            let count = subviews.count
+            guard count > 0, columns > 0 else { return }
+
+            let rows = Int(ceil(Double(count) / Double(columns)))
+            let spacingWidth = spacing * CGFloat(max(columns - 1, 0))
+            let spacingHeight = spacing * CGFloat(max(rows - 1, 0))
+
+            var cellWidth = max(0, (bounds.width - spacingWidth) / CGFloat(columns))
+            var cellHeight = cellWidth / aspectRatio
+
+            let totalHeight = cellHeight * CGFloat(rows) + spacingHeight
+            if totalHeight > bounds.height {
+                let availableHeight = max(0, bounds.height - spacingHeight)
+                cellHeight = availableHeight / CGFloat(rows)
+                cellWidth = cellHeight * aspectRatio
+            }
+
+            for index in subviews.indices {
+                let row = index / columns
+                let column = index % columns
+                let x = bounds.minX + CGFloat(column) * (cellWidth + spacing)
+                let y = bounds.minY + CGFloat(row) * (cellHeight + spacing)
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(width: cellWidth, height: cellHeight)
+                )
+            }
+        }
+    }
+
     
     // MARK: - Tile Grid
 
     @ViewBuilder
     private var tileGridView: some View {
-        GeometryReader { geo in
-            let spacing: CGFloat = 12
-            let columnsCount: CGFloat = 3
-            let totalSpacingX = spacing * (columnsCount - 1)
-            let tileWidth = (geo.size.width - totalSpacingX) / columnsCount
-            let tileHeight = tileWidth * 9.0 / 16.0
-            let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: spacing), count: Int(columnsCount))
-
-            LazyVGrid(columns: columns, spacing: spacing) {
-                ForEach(tileKeys, id: \.self) { key in
-                    tilePreviewCard(tileKey: key, tileWidth: tileWidth, tileHeight: tileHeight)
-                }
+        let spacing: CGFloat = 12
+        let columns = 3
+        let rows = Int(ceil(Double(tileKeys.count) / Double(columns)))
+        let tileAspect: CGFloat = 16.0 / 9.0
+        let gridAspect: CGFloat = (CGFloat(columns) * tileAspect) / max(1, CGFloat(rows))
+        AspectGridLayout(columns: 3, spacing: spacing, aspectRatio: 16.0 / 9.0) {
+            ForEach(tileKeys, id: \.self) { key in
+                tilePreviewCard(tileKey: key)
             }
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
+        .padding(.top, 8)
+        .padding(.horizontal, 8)
+        .aspectRatio(gridAspect, contentMode: .fit)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private func tilePreviewCard(tileKey: String, tileWidth: CGFloat, tileHeight: CGFloat) -> some View {
+    private func tilePreviewCard(tileKey: String) -> some View {
         let server = serverName(for: tileKey)
         let label = displayName(for: tileKey)
 
         return ZStack(alignment: .bottom) {
             SyphonMTKView(serverName: server)
-                .aspectRatio(16/9, contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
                 .cornerRadius(8)
@@ -750,7 +826,6 @@ struct RenderingView: View {
             .buttonStyle(.plain)
             .help("Click to copy Syphon name")
         }
-        .frame(width: tileWidth, height: tileHeight)
         .background(Color(nsColor: .windowBackgroundColor))
         .cornerRadius(10)
         .overlay(
