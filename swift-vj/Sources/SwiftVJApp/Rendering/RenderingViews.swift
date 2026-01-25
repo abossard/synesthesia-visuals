@@ -660,6 +660,7 @@ struct RenderingView: View {
     @State private var demoArtist: String = "SwiftVJ"
     @State private var demoTitle: String = "Ready for music..."
     @State private var demoAlbum: String = "Waiting for track"
+    @State private var karaokeAnimationSelection: TextAnimationMode = .waveDissolve
 
     // Use appState.renderEngine (receives OSC updates) instead of local instance
     private var renderEngine: RenderEngine? { appState.renderEngine }
@@ -1387,15 +1388,21 @@ struct RenderingView: View {
                         HStack {
                             Text("Animation")
                                 .frame(width: 80, alignment: .leading)
-                            Picker("", selection: Binding(
-                                get: { karaokeEngine.configuration.animationMode },
-                                set: { karaokeEngine.configuration.animationMode = $0 }
-                            )) {
+                            Picker("", selection: $karaokeAnimationSelection) {
                                 ForEach(TextAnimationMode.allCases) { mode in
                                     Text(mode.rawValue).tag(mode)
                                 }
                             }
                             .labelsHidden()
+                            .onAppear {
+                                karaokeAnimationSelection = karaokeEngine.configuration.animationMode
+                            }
+                            .onChange(of: karaokeAnimationSelection) { _, newValue in
+                                karaokeEngine.configuration = karaokeEngine.configuration.withAnimationMode(newValue)
+                            }
+                            .onChange(of: karaokeEngine.configuration.animationMode) { _, newValue in
+                                karaokeAnimationSelection = newValue
+                            }
                         }
 
                         // Transition duration

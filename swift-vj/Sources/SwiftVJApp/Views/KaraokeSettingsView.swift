@@ -7,6 +7,7 @@ import SwiftUI
 
 struct KaraokeSettingsView: View {
     @ObservedObject var karaokeEngine: KaraokeEngine
+    @State private var animationSelection: TextAnimationMode = .waveDissolve
 
     var body: some View {
         ScrollView {
@@ -210,13 +211,22 @@ struct KaraokeSettingsView: View {
                 HStack {
                     Text("Animation Mode")
                     Spacer()
-                    Picker("Animation", selection: $karaokeEngine.configuration.animationMode) {
+                    Picker("Animation", selection: $animationSelection) {
                         ForEach(TextAnimationMode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
                         }
                     }
                     .pickerStyle(.menu)
                     .frame(width: 150)
+                    .onAppear {
+                        animationSelection = karaokeEngine.configuration.animationMode
+                    }
+                    .onChange(of: animationSelection) { _, newValue in
+                        karaokeEngine.configuration = karaokeEngine.configuration.withAnimationMode(newValue)
+                    }
+                    .onChange(of: karaokeEngine.configuration.animationMode) { _, newValue in
+                        animationSelection = newValue
+                    }
                 }
 
                 Text(karaokeEngine.configuration.animationMode.description)

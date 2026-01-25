@@ -182,6 +182,14 @@ struct KaraokeConfiguration: Sendable, Equatable, Codable {
         animationMode: .instant
     )
 
+    // MARK: - Immutable Updates
+
+    func withAnimationMode(_ mode: TextAnimationMode) -> KaraokeConfiguration {
+        var copy = self
+        copy.animationMode = mode
+        return copy
+    }
+
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
