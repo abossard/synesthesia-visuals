@@ -80,8 +80,8 @@ final class PlaybackE2ETests: XCTestCase {
         let status = await monitor.status()
         
         // Then: Status has expected keys
-        XCTAssertNotNil(status["name"])
-        XCTAssertNotNil(status["available"])
+            XCTAssertFalse(status.name.isEmpty)
+            XCTAssertGreaterThanOrEqual(status.errorCount, 0)
     }
     
     // MARK: - VDJ Monitor Tests
@@ -266,7 +266,7 @@ final class PlaybackE2ETests: XCTestCase {
         print("VDJ is running - monitor ready for OSC subscription")
         
         let status = await monitor.status()
-        XCTAssertNotNil(status["name"])
+        XCTAssertFalse(status.name.isEmpty)
     }
     
     func test_vdjLive_receivesRealOSC() async throws {

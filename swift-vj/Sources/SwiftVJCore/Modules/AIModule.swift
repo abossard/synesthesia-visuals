@@ -45,19 +45,19 @@ public actor AIModule: Module {
         lastCategories = nil
     }
     
-    public func getStatus() -> [String: Any] {
-        var status: [String: Any] = [
-            "started": isStarted,
-            "backend": "llm"  // Will be updated when async property accessed
-        ]
-        
+    public func getStatus() -> ModuleStatus {
+        var status = ModuleStatus([
+            "started": .bool(isStarted),
+            "backend": .string("llm")
+        ])
+
         if let analysis = lastAnalysis {
-            status["last_mood"] = analysis.mood
-            status["last_energy"] = analysis.energy
-            status["last_valence"] = analysis.valence
-            status["keywords_count"] = analysis.keywords.count
+            status["last_mood"] = .string(analysis.mood)
+            status["last_energy"] = .double(analysis.energy)
+            status["last_valence"] = .double(analysis.valence)
+            status["keywords_count"] = .int(analysis.keywords.count)
         }
-        
+
         return status
     }
     

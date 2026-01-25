@@ -78,24 +78,30 @@ public enum PipelineEffectsImpl {
             var shaderMatch: ShaderMatchResult?
             var imageResult: ImageResult?
 
-            await withTaskGroup(of: Void.self) { group in
+            enum ParallelStepResult: Sendable {
+                case shaders(ShaderMatchResult?)
+                case images(ImageResult?)
+            }
+
+            await withTaskGroup(of: ParallelStepResult.self) { group in
                 // Shader matching
                 if let shadersModule = environment.shadersModule {
                     group.addTask {
                         await send(.pipeline(.stepStarted("shaders")))
-                        shaderMatch = await shadersModule.selectForSong(
+                        let match = await shadersModule.selectForSong(
                             categories: nil,
                             energy: analysis.energy,
                             valence: analysis.valence
                         )
-                        if let match = shaderMatch {
+                        if let match = match {
                             await send(.pipeline(.stepCompleted("shaders", .shaders(
                                 name: match.name,
                                 score: match.score
                             ))))
-                        } else {
-                            await send(.pipeline(.stepCompleted("shaders", .skipped(reason: "No match"))))
+                            return .shaders(match)
                         }
+                        await send(.pipeline(.stepCompleted("shaders", .skipped(reason: "No match"))))
+                        return .shaders(nil)
                     }
                 }
 
@@ -103,22 +109,32 @@ public enum PipelineEffectsImpl {
                 if let imagesModule = environment.imagesModule {
                     group.addTask {
                         await send(.pipeline(.stepStarted("images")))
-                        imageResult = await imagesModule.fetchImages(
+                        let result = await imagesModule.fetchImages(
                             for: track,
                             visualAdjectives: analysis.visualAdjectives,
                             themes: analysis.themes,
                             mood: analysis.mood
                         )
-                        if let result = imageResult {
+                        if let result = result {
                             await send(.pipeline(.stepCompleted("images", .images(
                                 count: result.totalImages,
                                 folder: result.folder.path,
                                 source: result.source,
                                 cached: result.cached
                             ))))
-                        } else {
-                            await send(.pipeline(.stepCompleted("images", .skipped(reason: "No images"))))
+                            return .images(result)
                         }
+                        await send(.pipeline(.stepCompleted("images", .skipped(reason: "No images"))))
+                        return .images(nil)
+                    }
+                }
+
+                for await result in group {
+                    switch result {
+                    case .shaders(let match):
+                        shaderMatch = match
+                    case .images(let result):
+                        imageResult = result
                     }
                 }
             }

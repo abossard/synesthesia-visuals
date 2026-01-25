@@ -39,20 +39,20 @@ public actor ImagesModule: Module {
         isStarted = false
     }
     
-    public func getStatus() -> [String: Any] {
-        var status: [String: Any] = [
-            "started": isStarted
-        ]
-        
+    public func getStatus() -> ModuleStatus {
+        var status = ModuleStatus([
+            "started": .bool(isStarted)
+        ])
+
         if let last = lastFetchedTrack {
-            status["last_fetched"] = last
+            status["last_fetched"] = .string(last)
         }
-        
+
         if let result = lastResult {
-            status["last_image_count"] = result.totalImages
-            status["last_source"] = result.source
+            status["last_image_count"] = .int(result.totalImages)
+            status["last_source"] = .string(result.source)
         }
-        
+
         return status
     }
     
@@ -77,7 +77,7 @@ public actor ImagesModule: Module {
     ///   - track: Track to fetch images for
     ///   - metadata: Optional metadata with themes, keywords, mood for thematic search
     /// - Returns: ImageResult or nil if no images found
-    public func fetchImages(for track: Track, metadata: [String: Any]? = nil) async -> ImageResult? {
+    public func fetchImages(for track: Track, metadata: ImageSearchMetadata? = nil) async -> ImageResult? {
         lastFetchedTrack = "\(track.artist) - \(track.title)"
         
         let result = await scraper.fetchImages(for: track, metadata: metadata)
@@ -100,13 +100,12 @@ public actor ImagesModule: Module {
         themes: [String],
         mood: String
     ) async -> ImageResult? {
-        let metadata: [String: Any] = [
-            "visual_adjectives": visualAdjectives,
-            "themes": themes,
-            "mood": mood,
-            "keywords": visualAdjectives + themes
-        ]
-        
+        let metadata = ImageSearchMetadata(
+            themes: themes,
+            mood: mood,
+            keywords: visualAdjectives + themes
+        )
+
         return await fetchImages(for: track, metadata: metadata)
     }
     

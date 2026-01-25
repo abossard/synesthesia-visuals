@@ -115,18 +115,18 @@ public actor PipelineModule: Module {
         isProcessing = false
     }
     
-    public func getStatus() -> [String: Any] {
-        var status: [String: Any] = [
-            "started": isStarted,
-            "processing": isProcessing,
-            "cache_size": resultCache.count
-        ]
-        
+    public func getStatus() -> ModuleStatus {
+        var status = ModuleStatus([
+            "started": .bool(isStarted),
+            "processing": .bool(isProcessing),
+            "cache_size": .int(resultCache.count)
+        ])
+
         if let result = lastResult {
-            status["last_track"] = "\(result.artist) - \(result.title)"
-            status["last_success"] = result.success
+            status["last_track"] = .string("\(result.artist) - \(result.title)")
+            status["last_success"] = .bool(result.success)
         }
-        
+
         return status
     }
     
@@ -212,8 +212,13 @@ public actor PipelineModule: Module {
         // === STEP 3 & 4: Shaders + Images (parallel) ===
         var shaderMatch: ShaderMatchResult?
         var imageResult: ImageResult?
-        
-        await withTaskGroup(of: Void.self) { group in
+
+        enum ParallelStepResult: Sendable {
+            case shaders(match: ShaderMatchResult?, timingMs: Int, completed: Bool)
+            case images(result: ImageResult?, timingMs: Int, completed: Bool)
+        }
+
+        await withTaskGroup(of: ParallelStepResult.self) { group in
             // Shader matching
             if let shadersModule = shadersModule {
                 group.addTask {
@@ -222,22 +227,21 @@ public actor PipelineModule: Module {
 
                     let currentPhase = await EffectEnvironment.shared.currentPhaseProvider?()
                     
-                    shaderMatch = await shadersModule.selectForSong(
+                    let match = await shadersModule.selectForSong(
                         categories: nil,
                         energy: analysis.energy,
                         valence: analysis.valence,
                         phase: currentPhase
                     )
-                    
-                    stepTimings["shaders"] = Int(Date().timeIntervalSince(shaderStart) * 1000)
-                    
-                    if let match = shaderMatch {
-                        stepsCompleted.append("shaders")
+                    let timingMs = Int(Date().timeIntervalSince(shaderStart) * 1000)
+
+                    if let match = match {
                         await self.fireStepComplete(.shaders, .shaders(name: match.name, score: match.score))
-                    } else {
-                        stepsSkipped.append("shaders")
-                        await self.fireStepComplete(.shaders, .skipped(reason: "No match"))
+                        return .shaders(match: match, timingMs: timingMs, completed: true)
                     }
+
+                    await self.fireStepComplete(.shaders, .skipped(reason: "No match"))
+                    return .shaders(match: nil, timingMs: timingMs, completed: false)
                 }
             } else {
                 stepsSkipped.append("shaders")
@@ -248,31 +252,51 @@ public actor PipelineModule: Module {
                 group.addTask {
                     await self.fireStepStart(.images)
                     let imagesStart = Date()
-                    
-                    imageResult = await imagesModule.fetchImages(
+
+                    let result = await imagesModule.fetchImages(
                         for: track,
                         visualAdjectives: analysis.visualAdjectives,
                         themes: analysis.themes,
                         mood: analysis.mood
                     )
-                    
-                    stepTimings["images"] = Int(Date().timeIntervalSince(imagesStart) * 1000)
-                    
-                    if let result = imageResult {
-                        stepsCompleted.append("images")
+                    let timingMs = Int(Date().timeIntervalSince(imagesStart) * 1000)
+
+                    if let result = result {
                         await self.fireStepComplete(.images, .images(
                             count: result.totalImages,
                             folder: result.folder.path,
                             source: result.source,
                             cached: result.cached
                         ))
-                    } else {
-                        stepsSkipped.append("images")
-                        await self.fireStepComplete(.images, .skipped(reason: "No images"))
+                        return .images(result: result, timingMs: timingMs, completed: true)
                     }
+
+                    await self.fireStepComplete(.images, .skipped(reason: "No images"))
+                    return .images(result: nil, timingMs: timingMs, completed: false)
                 }
             } else {
                 stepsSkipped.append("images")
+            }
+
+            for await result in group {
+                switch result {
+                case .shaders(let match, let timingMs, let completed):
+                    shaderMatch = match
+                    stepTimings["shaders"] = timingMs
+                    if completed {
+                        stepsCompleted.append("shaders")
+                    } else {
+                        stepsSkipped.append("shaders")
+                    }
+                case .images(let result, let timingMs, let completed):
+                    imageResult = result
+                    stepTimings["images"] = timingMs
+                    if completed {
+                        stepsCompleted.append("images")
+                    } else {
+                        stepsSkipped.append("images")
+                    }
+                }
             }
         }
 

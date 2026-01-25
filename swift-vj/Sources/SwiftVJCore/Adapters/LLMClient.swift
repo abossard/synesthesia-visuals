@@ -343,7 +343,7 @@ public actor LLMClient {
     }
     
     /// Get service status
-    public func status() async -> [String: Any] {
+    public func status() async -> ServiceHealthStatus {
         await health.status()
     }
     

@@ -29,6 +29,7 @@ struct SyphonMTKView: NSViewRepresentable {
 }
 
 /// MTKView subclass that displays Syphon textures at 60fps
+@MainActor
 final class SyphonMTKViewImpl: MTKView, MTKViewDelegate {
     private var receiver: SyphonReceiver?
     private var commandQueue: MTLCommandQueue?
@@ -231,9 +232,7 @@ final class SyphonMTKViewImpl: MTKView, MTKViewDelegate {
         commandBuffer.commit()
     }
 
-    deinit {
-        receiver?.disconnect()
-    }
+    deinit {}
 }
 
 // MARK: - Syphon Thumbnail View
@@ -367,6 +366,7 @@ struct SyphonThumbnailView: View {
 // MARK: - Syphon Receiver Holder
 
 /// Observable holder for SyphonReceiver to persist across view updates
+@MainActor
 final class SyphonReceiverHolder: ObservableObject {
     private var receiver: SyphonReceiver?
     private let device: MTLDevice?
@@ -396,8 +396,11 @@ final class SyphonReceiverHolder: ObservableObject {
             // Retry after a delay (server might not be ready yet)
             if retryCount < maxRetries {
                 retryCount += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    self?.connect(serverName: serverName)
+                Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    await MainActor.run {
+                        self?.connect(serverName: serverName)
+                    }
                 }
             }
         }

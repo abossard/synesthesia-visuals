@@ -219,32 +219,6 @@ final class KaraokeEngineTests: XCTestCase {
         XCTAssertEqual(engine.configuration.transitionDuration, KaraokeConfiguration.dramatic.transitionDuration)
     }
 
-    // MARK: - Enable/Disable
-
-    func testDisabledEngine_doesNotUpdateOnPosition() {
-        let engine = KaraokeEngine()
-        engine.loadLyrics(makeLyrics())
-        engine.isEnabled = false
-
-        engine.updatePosition(5.0)
-
-        // When disabled, position updates are ignored
-        XCTAssertNil(engine.displayState.currentLine)
-    }
-
-    func testReenabledEngine_updatesOnPosition() async {
-        let engine = KaraokeEngine()
-        engine.loadLyrics(makeLyrics())
-        engine.isEnabled = false
-        engine.updatePosition(5.0)
-
-        engine.isEnabled = true
-        engine.updatePosition(5.0)
-        await waitForTransition()
-
-        XCTAssertEqual(engine.displayState.currentLine, "Third line")
-    }
-
     // MARK: - Reset
 
     func testReset_clearsAllState() async {

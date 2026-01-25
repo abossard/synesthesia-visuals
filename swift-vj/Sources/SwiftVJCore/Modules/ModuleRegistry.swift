@@ -152,17 +152,17 @@ public actor ModuleRegistry {
     }
     
     /// Get status of all modules
-    public func getStatus() async -> [String: [String: Any]] {
-        var allStatus: [String: [String: Any]] = [:]
-        
+    public func getStatus() async -> [String: ModuleStatus] {
+        var allStatus: [String: ModuleStatus] = [:]
+
         for (name, info) in modules {
             var status = await info.module.getStatus()
-            status["registered"] = true
-            status["started"] = started.contains(name)
-            status["dependencies"] = info.dependencies
+            status["registered"] = .bool(true)
+            status["started"] = .bool(started.contains(name))
+            status["dependencies"] = .stringList(info.dependencies)
             allStatus[name] = status
         }
-        
+
         return allStatus
     }
     

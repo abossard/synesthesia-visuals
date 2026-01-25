@@ -21,46 +21,27 @@ public enum AudioMetadata {
     /// Extract artist and title from an audio file
     /// Returns nil if metadata cannot be read or is missing
     public static func extractMetadata(from url: URL) -> (artist: String, title: String)? {
-        let asset = AVAsset(url: url)
+        let asset = AVURLAsset(url: url)
 
         var artist: String?
         var title: String?
 
-        // Extract metadata synchronously using blocking call
-        // This is intentional for batch processing in background
-        let semaphore = DispatchSemaphore(value: 0)
+        let metadata = asset.commonMetadata
+        for item in metadata {
+            guard let key = item.commonKey else { continue }
 
-        Task {
-            do {
-                let metadata = try await asset.load(.commonMetadata)
-
-                for item in metadata {
-                    guard let key = item.commonKey else { continue }
-
-                    switch key {
-                    case .commonKeyArtist:
-                        if let value = try? await item.load(.stringValue) {
-                            artist = value
-                        }
-                    case .commonKeyTitle:
-                        if let value = try? await item.load(.stringValue) {
-                            title = value
-                        }
-                    default:
-                        break
-                    }
-                }
-            } catch {
-                // Metadata extraction failed
+            switch key {
+            case .commonKeyArtist:
+                artist = item.stringValue
+            case .commonKeyTitle:
+                title = item.stringValue
+            default:
+                break
             }
-            semaphore.signal()
         }
 
-        // Wait with timeout
-        _ = semaphore.wait(timeout: .now() + 5.0)
-
         // Only return if we have both artist and title
-        guard let extractedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines),
+          guard let extractedArtist = artist?.trimmingCharacters(in: .whitespacesAndNewlines),
               let extractedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !extractedArtist.isEmpty,
               !extractedTitle.isEmpty else {

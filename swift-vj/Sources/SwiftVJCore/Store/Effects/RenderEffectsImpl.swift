@@ -160,7 +160,7 @@ public enum RenderEffectsImpl {
 
 /// Protocol for ImageStateManager to allow mocking
 @MainActor
-public protocol ImageStateManagerProtocol {
+public protocol ImageStateManagerProtocol: AnyObject, Sendable {
     func loadImages(_ urls: [URL])
     func setIndex(_ index: Int)
     func nextImage()
@@ -170,13 +170,13 @@ public protocol ImageStateManagerProtocol {
 
 /// Protocol for ShaderStateManager to allow mocking
 @MainActor
-public protocol ShaderStateManagerProtocol {
+public protocol ShaderStateManagerProtocol: AnyObject, Sendable {
     var availableShaders: [ShaderInfo] { get }
     func selectShader(name: String)
 }
 
 /// Protocol for RenderEngine to allow mocking
-public protocol RenderEngineProtocol: AnyObject {
+public protocol RenderEngineProtocol: AnyObject, Sendable {
     func start() async throws
     func stop() async
 }

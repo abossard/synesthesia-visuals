@@ -17,22 +17,25 @@ final class ShaderRepositoryTests: XCTestCase {
     static let shadersDir = projectRoot.appendingPathComponent("Shaders")
     static let metallibPath = projectRoot
         .appendingPathComponent("Sources/SwiftVJApp/Resources/Shaders.metallib")
+
+    private func requireShadersDir() throws -> URL {
+        guard FileManager.default.fileExists(atPath: Self.shadersDir.path) else {
+            throw XCTSkip("Shaders directory not found at \(Self.shadersDir.path)")
+        }
+        return Self.shadersDir
+    }
     
     // MARK: - Setup Verification
     
-    func testShadersDirectoryExists() {
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: Self.shadersDir.path),
-            "Shaders directory should exist at \(Self.shadersDir.path)"
-        )
+    func testShadersDirectoryExists() throws {
+        _ = try requireShadersDir()
     }
     
-    func testGlslFolderExists() {
-        let glslDir = Self.shadersDir.appendingPathComponent("glsl")
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: glslDir.path),
-            "glsl folder should exist"
-        )
+    func testGlslFolderExists() throws {
+        let glslDir = try requireShadersDir().appendingPathComponent("glsl")
+        guard FileManager.default.fileExists(atPath: glslDir.path) else {
+            throw XCTSkip("glsl folder not found at \(glslDir.path)")
+        }
     }
     
     // MARK: - MetallibParser Tests
@@ -64,7 +67,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - ShaderRepository Loading Tests
     
     func testLoadAllFindsShaders() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         XCTAssertGreaterThan(shaders.count, 0, "Should find shaders in directory")
     }
@@ -75,7 +78,7 @@ final class ShaderRepositoryTests: XCTestCase {
         }
         
         let shaders = try Shaders.loadAll(
-            shadersDir: Self.shadersDir,
+            shadersDir: requireShadersDir(),
             metallibURL: Self.metallibPath
         )
         
@@ -85,7 +88,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testLoadedShadersHaveValidProperties() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         for shader in shaders.prefix(10) {
             // Basic properties
@@ -99,7 +102,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testLoadedShadersWithAnalysis() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         // Find shaders with analysis
         let withAnalysis = shaders.filter { $0.analysis != nil }
@@ -117,7 +120,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Search Tests
     
     func testSearchByName() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         // Search for a known shader pattern
         let results = Shaders.search(query: "rainbow", in: shaders)
@@ -133,7 +136,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testSearchEmptyQuery() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let results = Shaders.search(query: "", in: shaders)
         
@@ -142,7 +145,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testSearchNoResults() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let results = Shaders.search(query: "xyznonexistent123", in: shaders)
         
@@ -152,7 +155,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Matching Tests
     
     func testMatchByEnergy() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         let withAnalysis = shaders.filter { $0.analysis != nil }
         
         guard withAnalysis.count >= 5 else {
@@ -171,7 +174,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testMatchByMood() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         let withAnalysis = shaders.filter { $0.analysis != nil }
         
         guard withAnalysis.count >= 3 else {
@@ -186,7 +189,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Filtering Tests
     
     func testFilterByFolder() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let glslShaders = Shaders.filter(byFolder: "glsl", in: shaders)
         
@@ -195,7 +198,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testFilterOutBlack() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let blackCount = shaders.filter { $0.isBlack }.count
         let filtered = Shaders.filterOutBlack(in: shaders)
@@ -205,12 +208,13 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testFilterRenderable() throws {
+        _ = try requireShadersDir()
         guard FileManager.default.fileExists(atPath: Self.metallibPath.path) else {
             throw XCTSkip("Metallib not found")
         }
         
         let shaders = try Shaders.loadAll(
-            shadersDir: Self.shadersDir,
+            shadersDir: requireShadersDir(),
             metallibURL: Self.metallibPath
         )
         
@@ -223,7 +227,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Statistics Tests
     
     func testFoldersList() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let folders = Shaders.folders(in: shaders)
         
@@ -231,7 +235,7 @@ final class ShaderRepositoryTests: XCTestCase {
     }
     
     func testCountByFolder() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         let counts = Shaders.countByFolder(in: shaders)
         
@@ -241,7 +245,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Read/Write Tests
     
     func testReadSource() throws {
-        let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
+        let shaders = try Shaders.loadAll(shadersDir: requireShadersDir())
         
         guard let shader = shaders.first else {
             throw XCTSkip("No shaders found")
@@ -350,6 +354,9 @@ final class ShaderAnalyzerTests: XCTestCase {
         // Check if LM Studio is available
         guard await ShaderAnalyzer.isAvailable() else {
             throw XCTSkip("LM Studio is not running")
+        }
+        guard FileManager.default.fileExists(atPath: ShaderRepositoryTests.shadersDir.path) else {
+            throw XCTSkip("Shaders directory not found at \(ShaderRepositoryTests.shadersDir.path)")
         }
         
         // Load a real shader

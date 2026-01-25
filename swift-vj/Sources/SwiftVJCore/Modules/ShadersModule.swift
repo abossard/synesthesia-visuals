@@ -44,13 +44,13 @@ public actor ShadersModule: Module {
         isStarted = false
     }
     
-    public func getStatus() -> [String: Any] {
-        [
-            "started": isStarted,
-            "usage_count": usageCounts.values.reduce(0, +),
-            "unique_used": usageCounts.count,
-            "last_selected": lastSelected ?? "none"
-        ]
+    public func getStatus() -> ModuleStatus {
+        ModuleStatus([
+            "started": .bool(isStarted),
+            "usage_count": .int(usageCounts.values.reduce(0, +)),
+            "unique_used": .int(usageCounts.count),
+            "last_selected": .string(lastSelected ?? "none")
+        ])
     }
     
     // MARK: - Public API

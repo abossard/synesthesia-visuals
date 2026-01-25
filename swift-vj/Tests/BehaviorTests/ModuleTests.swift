@@ -10,17 +10,17 @@ final class PlaybackModuleTests: XCTestCase {
         let module = PlaybackModule()
         
         let beforeStatus = await module.getStatus()
-        XCTAssertEqual(beforeStatus["started"] as? Bool, false)
+        XCTAssertEqual(beforeStatus["started"], .bool(false))
         
         try await module.start()
         
         let afterStatus = await module.getStatus()
-        XCTAssertEqual(afterStatus["started"] as? Bool, true)
+        XCTAssertEqual(afterStatus["started"], .bool(true))
         
         await module.stop()
         
         let stoppedStatus = await module.getStatus()
-        XCTAssertEqual(stoppedStatus["started"] as? Bool, false)
+        XCTAssertEqual(stoppedStatus["started"], .bool(false))
     }
     
     func testDoubleStartThrows() async throws {
@@ -43,7 +43,7 @@ final class PlaybackModuleTests: XCTestCase {
         
         let status = await module.getStatus()
         XCTAssertNotNil(status["started"])
-        XCTAssertEqual(status["started"] as? Bool, true)
+        XCTAssertEqual(status["started"], .bool(true))
         XCTAssertNotNil(status["source"])
         
         await module.stop()
@@ -58,11 +58,11 @@ final class LyricsModuleTests: XCTestCase {
         
         try await module.start()
         let startStatus = await module.getStatus()
-        XCTAssertEqual(startStatus["started"] as? Bool, true)
+        XCTAssertEqual(startStatus["started"], .bool(true))
         
         await module.stop()
         let stopStatus = await module.getStatus()
-        XCTAssertEqual(stopStatus["started"] as? Bool, false)
+        XCTAssertEqual(stopStatus["started"], .bool(false))
     }
     
     func testLoadLyricsReturnsEmptyForUnknownTrack() async throws {
@@ -86,11 +86,11 @@ final class AIModuleTests: XCTestCase {
         
         try await module.start()
         let startStatus = await module.getStatus()
-        XCTAssertEqual(startStatus["started"] as? Bool, true)
+        XCTAssertEqual(startStatus["started"], .bool(true))
         
         await module.stop()
         let stopStatus = await module.getStatus()
-        XCTAssertEqual(stopStatus["started"] as? Bool, false)
+        XCTAssertEqual(stopStatus["started"], .bool(false))
     }
     
     func testAnalyzeReturnsResult() async throws {
@@ -130,11 +130,11 @@ final class PipelineModuleTests: XCTestCase {
         
         try await pipeline.start()
         let startStatus = await pipeline.getStatus()
-        XCTAssertEqual(startStatus["started"] as? Bool, true)
+        XCTAssertEqual(startStatus["started"], .bool(true))
         
         await pipeline.stop()
         let stopStatus = await pipeline.getStatus()
-        XCTAssertEqual(stopStatus["started"] as? Bool, false)
+        XCTAssertEqual(stopStatus["started"], .bool(false))
     }
     
     func testProcessReturnsResult() async throws {
@@ -175,10 +175,14 @@ final class PipelineModuleTests: XCTestCase {
         try await pipeline.start()
         
         let status = await pipeline.getStatus()
-        XCTAssertEqual(status["started"] as? Bool, true)
-        XCTAssertEqual(status["processing"] as? Bool, false)
+        XCTAssertEqual(status["started"], .bool(true))
+        XCTAssertEqual(status["processing"], .bool(false))
         // cache_size may be non-zero if loaded from disk
-        XCTAssertNotNil(status["cache_size"] as? Int)
+        if case .int(let size)? = status["cache_size"] {
+            XCTAssertGreaterThanOrEqual(size, 0)
+        } else {
+            XCTFail("Expected cache_size to be an int")
+        }
         
         await pipeline.stop()
     }
@@ -214,15 +218,15 @@ final class ModuleRegistryTests: XCTestCase {
         
         let playbackStatus = await playback.getStatus()
         let aiStatus = await ai.getStatus()
-        XCTAssertEqual(playbackStatus["started"] as? Bool, true)
-        XCTAssertEqual(aiStatus["started"] as? Bool, true)
+        XCTAssertEqual(playbackStatus["started"], .bool(true))
+        XCTAssertEqual(aiStatus["started"], .bool(true))
         
         await registry.stopAll()
         
         let playbackStopped = await playback.getStatus()
         let aiStopped = await ai.getStatus()
-        XCTAssertEqual(playbackStopped["started"] as? Bool, false)
-        XCTAssertEqual(aiStopped["started"] as? Bool, false)
+        XCTAssertEqual(playbackStopped["started"], .bool(false))
+        XCTAssertEqual(aiStopped["started"], .bool(false))
     }
     
     func testDependenciesStartInOrder() async throws {
@@ -237,8 +241,8 @@ final class ModuleRegistryTests: XCTestCase {
         
         let playbackStatus = await playback.getStatus()
         let aiStatus = await ai.getStatus()
-        XCTAssertEqual(playbackStatus["started"] as? Bool, true)
-        XCTAssertEqual(aiStatus["started"] as? Bool, true)
+        XCTAssertEqual(playbackStatus["started"], .bool(true))
+        XCTAssertEqual(aiStatus["started"], .bool(true))
         
         await registry.stopAll()
     }
@@ -268,7 +272,7 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertEqual(status.count, 2)
         XCTAssertNotNil(status["playback"])
         XCTAssertNotNil(status["ai"])
-        XCTAssertEqual(status["playback"]?["started"] as? Bool, true)
+        XCTAssertEqual(status["playback"]?["started"], .bool(true))
         
         await registry.stopAll()
     }

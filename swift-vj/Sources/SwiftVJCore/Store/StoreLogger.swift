@@ -129,7 +129,7 @@ public struct RingBuffer<T>: Sendable where T: Sendable {
 /// - Minimal overhead when enabled (no reflection, ring buffer)
 /// - Follows UDF: wraps reducer as middleware, doesn't mutate state
 @MainActor
-public final class StoreLogger<State: Equatable, Action>: ObservableObject {
+public final class StoreLogger<State: Equatable, Action: Sendable>: ObservableObject {
 
     // MARK: - Published (for UI binding)
 

@@ -47,7 +47,7 @@ final class ImagesModuleTests: XCTestCase {
         let status = await module.getStatus()
         
         XCTAssertNotNil(status["started"])
-        XCTAssertEqual(status["started"] as? Bool, false)
+        XCTAssertEqual(status["started"], .bool(false))
     }
     
     func testStatusReflectsStarted() async throws {
@@ -55,7 +55,7 @@ final class ImagesModuleTests: XCTestCase {
         try await module.start()
         
         let status = await module.getStatus()
-        XCTAssertEqual(status["started"] as? Bool, true)
+        XCTAssertEqual(status["started"], .bool(true))
     }
     
     // MARK: - Fetch Tests

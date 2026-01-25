@@ -17,6 +17,12 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
     static let shadersDir = projectRoot.appendingPathComponent("Shaders")
     static let glslDir = shadersDir.appendingPathComponent("glsl")
     static let masksDir = shadersDir.appendingPathComponent("masks")
+
+    private func requireShadersDir() throws {
+        guard FileManager.default.fileExists(atPath: Self.glslDir.path) else {
+            throw XCTSkip("Shaders glsl folder not found at \(Self.glslDir.path)")
+        }
+    }
     
     // Temp directory for test isolation
     var tempDir: URL!
@@ -175,6 +181,7 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
     // MARK: - Test: Shader Repository Respects Folder Structure
     
     func testShaderRepositoryDetectsFolderCorrectly() throws {
+        try requireShadersDir()
         // Load shaders from real directory
         let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
         
@@ -197,6 +204,7 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
     }
     
     func testFilterByFolderReturnsOnlyMasks() throws {
+        try requireShadersDir()
         let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
         
         let masks = Shaders.filter(byFolder: "masks", in: shaders)
@@ -207,6 +215,7 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
     }
     
     func testFilterByFolderExcludesMasks() throws {
+        try requireShadersDir()
         let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
         
         let glsl = Shaders.filter(byFolder: "glsl", in: shaders)
@@ -217,6 +226,7 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
     }
     
     func testMaskShadersHaveMaskRating() throws {
+        try requireShadersDir()
         let shaders = try Shaders.loadAll(shadersDir: Self.shadersDir)
         let masks = Shaders.filter(byFolder: "masks", in: shaders)
         

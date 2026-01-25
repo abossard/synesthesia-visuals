@@ -278,7 +278,7 @@ public final class LaunchpadModule: @unchecked Sendable {
                     let start = currentPage * pageSize
                     let end = min(start + pageSize, controls.count)
                     let pageControls = Array(controls[start..<end])
-                    updates[bank] = generateParamBehaviors(addresses: pageControls)
+                    updates[bank] = await generateParamBehaviors(addresses: pageControls)
                 default:
                     break
                 }
@@ -325,14 +325,14 @@ public final class LaunchpadModule: @unchecked Sendable {
         return result
     }
 
-    private func generateParamBehaviors(addresses: [String]) -> [ButtonId: PadBehavior] {
+    private func generateParamBehaviors(addresses: [String]) async -> [ButtonId: PadBehavior] {
         var result: [ButtonId: PadBehavior] = [:]
         for (idx, address) in addresses.enumerated() {
             let x = idx % 8
             let y = idx / 8
             let padId = ButtonId(x: x, y: y)
             let label = address.split(separator: "/").last.map(String.init) ?? address
-            let args = (awaitDynamicControlValue(address: address)) ?? []
+            let args = (await awaitDynamicControlValue(address: address)) ?? []
             let behavior = PadBehavior(
                 padId: padId,
                 mode: .push,
@@ -349,15 +349,8 @@ public final class LaunchpadModule: @unchecked Sendable {
         return result
     }
 
-    private func awaitDynamicControlValue(address: String) -> [OscArg]? {
-        var value: [OscArg]? = nil
-        let semaphore = DispatchSemaphore(value: 0)
-        Task {
-            value = await DynamicControlStore.shared.value(address: address)
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return value
+    private func awaitDynamicControlValue(address: String) async -> [OscArg]? {
+        await DynamicControlStore.shared.value(address: address)
     }
     
     // MARK: - Learn Mode

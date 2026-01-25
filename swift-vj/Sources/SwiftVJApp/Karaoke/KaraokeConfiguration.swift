@@ -190,6 +190,18 @@ struct KaraokeConfiguration: Sendable, Equatable, Codable {
         return copy
     }
 
+    func withFontDesign(_ design: Font.Design) -> KaraokeConfiguration {
+        var copy = self
+        copy.fontDesign = design
+        return copy
+    }
+
+    func withFontWeight(_ weight: Font.Weight) -> KaraokeConfiguration {
+        var copy = self
+        copy.fontWeight = weight
+        return copy
+    }
+
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {

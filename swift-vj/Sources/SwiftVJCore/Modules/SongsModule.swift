@@ -53,11 +53,11 @@ public actor SongsModule: Module {
         await store.clearAll()
     }
 
-    public func getStatus() -> [String: Any] {
-        [
-            "started": isStarted,
-            "reanalysis_queue": reanalysisQueue.count
-        ]
+    public func getStatus() -> ModuleStatus {
+        ModuleStatus([
+            "started": .bool(isStarted),
+            "reanalysis_queue": .int(reanalysisQueue.count)
+        ])
     }
 
     // MARK: - Public API - Recording

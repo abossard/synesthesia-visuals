@@ -585,12 +585,10 @@ struct TextAnimationTestPanel: View {
         
         // Decay beat intensity over 0.5 seconds
         Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { timer in
-            Task { @MainActor in
-                textManager.beatIntensity *= 0.92
-                if textManager.beatIntensity < 0.01 {
-                    textManager.beatIntensity = 0
-                    timer.invalidate()
-                }
+            textManager.beatIntensity *= 0.92
+            if textManager.beatIntensity < 0.01 {
+                textManager.beatIntensity = 0
+                timer.invalidate()
             }
         }
     }
@@ -677,7 +675,9 @@ struct RenderingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            Task { try? await renderEngine?.start() }
+            Task { @MainActor in
+                try? await renderEngine?.start()
+            }
             // Mask uses selection manager
             renderEngine?.shaderSelection.selectMask(name: selectedMaskShader)
             // Shader is handled by AppState (single source of truth)
@@ -1203,7 +1203,7 @@ struct RenderingView: View {
                     .frame(width: 70, alignment: .leading)
                 Picker("", selection: Binding(
                     get: { karaokeEngine.configuration.fontDesign },
-                    set: { karaokeEngine.configuration.fontDesign = $0 }
+                    set: { karaokeEngine.configuration = karaokeEngine.configuration.withFontDesign($0) }
                 )) {
                     Text("Default").tag(Font.Design.default)
                     Text("Rounded").tag(Font.Design.rounded)
@@ -1218,7 +1218,7 @@ struct RenderingView: View {
                     .frame(width: 70, alignment: .leading)
                 Picker("", selection: Binding(
                     get: { karaokeEngine.configuration.fontWeight },
-                    set: { karaokeEngine.configuration.fontWeight = $0 }
+                    set: { karaokeEngine.configuration = karaokeEngine.configuration.withFontWeight($0) }
                 )) {
                     Text("Regular").tag(Font.Weight.regular)
                     Text("Medium").tag(Font.Weight.medium)
@@ -1346,127 +1346,115 @@ struct RenderingView: View {
     @ViewBuilder
     private func karaokeControlsSection(karaokeEngine: KaraokeEngine) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header with enable toggle
-            HStack {
-                Text("Karaoke Engine")
-                    .font(.headline)
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { karaokeEngine.isEnabled },
-                    set: { karaokeEngine.isEnabled = $0 }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
+            Text("Karaoke Engine")
+                .font(.headline)
 
-            if karaokeEngine.isEnabled {
-                // Test controls (preview is in main tile view above - select "Lyrics" tile)
-                HStack(spacing: 8) {
-                    Button("Load Test") {
-                        karaokeEngine.loadTestLyrics()
+            // Test controls (preview is in main tile view above - select "Lyrics" tile)
+            HStack(spacing: 8) {
+                Button("Load Test") {
+                    karaokeEngine.loadTestLyrics()
+                }
+                Button("Prev") {
+                    karaokeEngine.previousLine()
+                }
+                Button("Next") {
+                    karaokeEngine.nextLine()
+                }
+                Spacer()
+                if karaokeEngine.displayState.hasLyrics {
+                    Text(karaokeEngine.displayState.progressText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            // Configuration
+            GroupBox("Settings") {
+                VStack(spacing: 10) {
+                    // Animation mode
+                    HStack {
+                        Text("Animation")
+                            .frame(width: 80, alignment: .leading)
+                        Picker("", selection: $karaokeAnimationSelection) {
+                            ForEach(TextAnimationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .onAppear {
+                            karaokeAnimationSelection = karaokeEngine.configuration.animationMode
+                        }
+                        .onChange(of: karaokeAnimationSelection) { _, newValue in
+                            karaokeEngine.configuration = karaokeEngine.configuration.withAnimationMode(newValue)
+                        }
+                        .onChange(of: karaokeEngine.configuration.animationMode) { _, newValue in
+                            karaokeAnimationSelection = newValue
+                        }
                     }
-                    Button("Prev") {
-                        karaokeEngine.previousLine()
+
+                    // Transition duration
+                    HStack {
+                        Text("Duration")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { karaokeEngine.configuration.transitionDuration },
+                                set: { karaokeEngine.configuration.transitionDuration = $0 }
+                            ),
+                            in: 0.2...1.5
+                        )
+                        Text(String(format: "%.1fs", karaokeEngine.configuration.transitionDuration))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40)
                     }
-                    Button("Next") {
-                        karaokeEngine.nextLine()
+
+                    // Next line opacity
+                    HStack {
+                        Text("Dim Level")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { karaokeEngine.configuration.nextLineOpacity },
+                                set: { karaokeEngine.configuration.nextLineOpacity = $0 }
+                            ),
+                            in: 0.1...0.7
+                        )
+                        Text(String(format: "%.0f%%", karaokeEngine.configuration.nextLineOpacity * 100))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40)
                     }
-                    Spacer()
-                    if karaokeEngine.displayState.hasLyrics {
-                        Text(karaokeEngine.displayState.progressText)
+
+                    // Font sizes
+                    HStack {
+                        Text("Font Size")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { karaokeEngine.configuration.currentFontSize },
+                                set: { karaokeEngine.configuration.currentFontSize = $0 }
+                            ),
+                            in: 48...120
+                        )
+                        Text(String(format: "%.0fpt", karaokeEngine.configuration.currentFontSize))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+
+                    // Presets
+                    HStack(spacing: 6) {
+                        Text("Presets")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Default") { karaokeEngine.configuration = .default }
+                        Button("Compact") { karaokeEngine.configuration = .compact }
+                        Button("Dramatic") { karaokeEngine.configuration = .dramatic }
+                        Button("Subtle") { karaokeEngine.configuration = .subtle }
                     }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                // Configuration
-                GroupBox("Settings") {
-                    VStack(spacing: 10) {
-                        // Animation mode
-                        HStack {
-                            Text("Animation")
-                                .frame(width: 80, alignment: .leading)
-                            Picker("", selection: $karaokeAnimationSelection) {
-                                ForEach(TextAnimationMode.allCases) { mode in
-                                    Text(mode.rawValue).tag(mode)
-                                }
-                            }
-                            .labelsHidden()
-                            .onAppear {
-                                karaokeAnimationSelection = karaokeEngine.configuration.animationMode
-                            }
-                            .onChange(of: karaokeAnimationSelection) { _, newValue in
-                                karaokeEngine.configuration = karaokeEngine.configuration.withAnimationMode(newValue)
-                            }
-                            .onChange(of: karaokeEngine.configuration.animationMode) { _, newValue in
-                                karaokeAnimationSelection = newValue
-                            }
-                        }
-
-                        // Transition duration
-                        HStack {
-                            Text("Duration")
-                                .frame(width: 80, alignment: .leading)
-                            Slider(
-                                value: Binding(
-                                    get: { karaokeEngine.configuration.transitionDuration },
-                                    set: { karaokeEngine.configuration.transitionDuration = $0 }
-                                ),
-                                in: 0.2...1.5
-                            )
-                            Text(String(format: "%.1fs", karaokeEngine.configuration.transitionDuration))
-                                .font(.caption.monospacedDigit())
-                                .frame(width: 40)
-                        }
-
-                        // Next line opacity
-                        HStack {
-                            Text("Dim Level")
-                                .frame(width: 80, alignment: .leading)
-                            Slider(
-                                value: Binding(
-                                    get: { karaokeEngine.configuration.nextLineOpacity },
-                                    set: { karaokeEngine.configuration.nextLineOpacity = $0 }
-                                ),
-                                in: 0.1...0.7
-                            )
-                            Text(String(format: "%.0f%%", karaokeEngine.configuration.nextLineOpacity * 100))
-                                .font(.caption.monospacedDigit())
-                                .frame(width: 40)
-                        }
-
-                        // Font sizes
-                        HStack {
-                            Text("Font Size")
-                                .frame(width: 80, alignment: .leading)
-                            Slider(
-                                value: Binding(
-                                    get: { karaokeEngine.configuration.currentFontSize },
-                                    set: { karaokeEngine.configuration.currentFontSize = $0 }
-                                ),
-                                in: 48...120
-                            )
-                            Text(String(format: "%.0fpt", karaokeEngine.configuration.currentFontSize))
-                                .font(.caption.monospacedDigit())
-                                .frame(width: 45)
-                        }
-
-                        // Presets
-                        HStack(spacing: 6) {
-                            Text("Presets")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Default") { karaokeEngine.configuration = .default }
-                            Button("Compact") { karaokeEngine.configuration = .compact }
-                            Button("Dramatic") { karaokeEngine.configuration = .dramatic }
-                            Button("Subtle") { karaokeEngine.configuration = .subtle }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
             }
         }

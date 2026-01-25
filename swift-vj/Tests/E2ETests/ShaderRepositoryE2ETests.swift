@@ -68,6 +68,9 @@ final class ShaderRepositoryE2ETests: XCTestCase {
     }
     
     private func findTestShader() throws -> String {
+        guard FileManager.default.fileExists(atPath: Self.glslDir.path) else {
+            throw XCTSkip("Shaders glsl folder not found at \(Self.glslDir.path)")
+        }
         let contents = try FileManager.default.contentsOfDirectory(atPath: Self.glslDir.path)
         let txtFiles = contents.filter { $0.hasSuffix(".txt") }
         guard let first = txtFiles.first else {

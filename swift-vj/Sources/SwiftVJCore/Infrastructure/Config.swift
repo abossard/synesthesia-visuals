@@ -132,6 +132,13 @@ public actor Settings {
 // MARK: - Service Health
 
 /// Tracks service availability with reconnection management
+public struct ServiceHealthStatus: Sendable {
+    public let name: String
+    public let available: Bool
+    public let error: String
+    public let errorCount: Int
+}
+
 public actor ServiceHealth {
     public let name: String
     private var isAvailable: Bool = false
@@ -176,13 +183,13 @@ public actor ServiceHealth {
         }
     }
 
-    public func status() -> [String: Any] {
-        [
-            "name": name,
-            "available": isAvailable,
-            "error": lastError,
-            "errorCount": errorCount
-        ]
+    public func status() -> ServiceHealthStatus {
+        ServiceHealthStatus(
+            name: name,
+            available: isAvailable,
+            error: lastError,
+            errorCount: errorCount
+        )
     }
 }
 

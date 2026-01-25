@@ -55,18 +55,6 @@ struct SwiftVJApp: App {
                     }
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command])
-
-                Divider()
-
-                Toggle("Karaoke Mode", isOn: Binding(
-                    get: { appState.renderEngine?.karaokeEngine.isEnabled ?? false },
-                    set: { newValue in
-                        Task { @MainActor in
-                            appState.renderEngine?.karaokeEngine.isEnabled = newValue
-                        }
-                    }
-                ))
-                .keyboardShortcut("K", modifiers: [.command, .shift])
             }
         }
 
@@ -834,7 +822,7 @@ public final class AppState: ObservableObject {
 
 // MARK: - Supporting Types
 
-public struct PipelineStep: Identifiable, Equatable {
+public struct PipelineStep: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public let name: String
     public var status: String
@@ -861,7 +849,7 @@ public struct LogEntry: Identifiable {
     public let timestamp: Date
 }
 
-public enum LogLevel: String, CaseIterable {
+public enum LogLevel: String, CaseIterable, Sendable {
     case debug = "DEBUG"
     case info = "INFO"
     case warning = "WARN"

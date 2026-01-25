@@ -36,14 +36,14 @@ actor LMStudioClient {
     
     private let baseURL: String
     private let timeout: TimeInterval
-    private let logger: (String, LogLevel) -> Void
+    private let logger: @Sendable (String, LogLevel) -> Void
     
     /// Initialize LM Studio client
     /// - Parameters:
     ///   - baseURL: Base URL of LM Studio server (default: http://localhost:1234)
     ///   - timeout: Request timeout in seconds (default: 300s for large requests)
     ///   - logger: Logging function
-    init(baseURL: String = "http://localhost:1234", timeout: TimeInterval = 300, logger: @escaping (String, LogLevel) -> Void) {
+    init(baseURL: String = "http://localhost:1234", timeout: TimeInterval = 300, logger: @escaping @Sendable (String, LogLevel) -> Void) {
         self.baseURL = baseURL
         self.timeout = timeout
         self.logger = logger

@@ -18,7 +18,7 @@ public enum Prerequisite: String, CaseIterable {
 }
 
 /// Checks and caches test prerequisites
-public final class PrerequisiteChecker {
+public final class PrerequisiteChecker: @unchecked Sendable {
     /// Singleton instance
     public static let shared = PrerequisiteChecker()
 

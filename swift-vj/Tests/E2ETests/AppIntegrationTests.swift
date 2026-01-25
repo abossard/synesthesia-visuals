@@ -2,6 +2,7 @@
 // Tests the full app flow without actual UI rendering
 
 import XCTest
+import os.lock
 @testable import SwiftVJCore
 @testable import SongRepository
 
@@ -108,11 +109,11 @@ final class AppIntegrationTests: XCTestCase {
         
         try await module.start()
         let status = await module.getStatus()
-        XCTAssertTrue(status["started"] as? Bool ?? false)
+        XCTAssertEqual(status["started"], .bool(true))
         
         await module.stop()
         let stoppedStatus = await module.getStatus()
-        XCTAssertFalse(stoppedStatus["started"] as? Bool ?? true)
+        XCTAssertEqual(stoppedStatus["started"], .bool(false))
     }
     
     func test_playbackModule_switchesSources() async throws {
@@ -168,13 +169,13 @@ final class AppIntegrationTests: XCTestCase {
         try await module.start()
         await module.setSource(.vdj)
         
-        var receivedTrack: Track?
+        let receivedTrack = OSAllocatedUnfairLock<Track?>(initialState: nil)
         let expectation = expectation(description: "track change")
         
         // Use setDispatch to receive track changes
         await module.setDispatch { action in
             if case .playback(.trackChanged(let track)) = action {
-                receivedTrack = track
+                receivedTrack.withLock { $0 = track }
                 expectation.fulfill()
             }
         }
@@ -187,9 +188,10 @@ final class AppIntegrationTests: XCTestCase {
         
         await fulfillment(of: [expectation], timeout: 2.0)
         
-        XCTAssertNotNil(receivedTrack)
-        XCTAssertEqual(receivedTrack?.artist, "New Artist")
-        XCTAssertEqual(receivedTrack?.title, "New Song")
+        let track = receivedTrack.withLock { $0 }
+        XCTAssertNotNil(track)
+        XCTAssertEqual(track?.artist, "New Artist")
+        XCTAssertEqual(track?.title, "New Song")
         
         await module.stop()
     }
@@ -379,8 +381,8 @@ final class AppIntegrationTests: XCTestCase {
         let client = LLMClient()
         let status = await client.status()
 
-        XCTAssertNotNil(status["name"])
-        XCTAssertNotNil(status["available"])
+        XCTAssertFalse(status.name.isEmpty)
+        XCTAssertGreaterThanOrEqual(status.errorCount, 0)
     }
 
     func test_llmClient_analysisPrompt_generatesValidJSON() async throws {
@@ -416,11 +418,11 @@ final class AppIntegrationTests: XCTestCase {
 
         try await module.start()
         let status = await module.getStatus()
-        XCTAssertTrue(status["started"] as? Bool ?? false)
+        XCTAssertEqual(status["started"], .bool(true))
 
         await module.stop()
         let stoppedStatus = await module.getStatus()
-        XCTAssertFalse(stoppedStatus["started"] as? Bool ?? true)
+        XCTAssertEqual(stoppedStatus["started"], .bool(false))
     }
 
     // MARK: - Images Module Tests
@@ -431,7 +433,7 @@ final class AppIntegrationTests: XCTestCase {
 
         try await module.start()
         let status = await module.getStatus()
-        XCTAssertTrue(status["started"] as? Bool ?? false)
+        XCTAssertEqual(status["started"], .bool(true))
 
         await module.stop()
     }
@@ -444,7 +446,7 @@ final class AppIntegrationTests: XCTestCase {
 
         try await module.start()
         let status = await module.getStatus()
-        XCTAssertTrue(status["started"] as? Bool ?? false)
+        XCTAssertEqual(status["started"], .bool(true))
 
         await module.stop()
     }
@@ -472,7 +474,7 @@ final class AppIntegrationTests: XCTestCase {
 
         try await module.start()
         let status = await module.getStatus()
-        XCTAssertTrue(status["started"] as? Bool ?? false)
+        XCTAssertEqual(status["started"], .bool(true))
 
         await module.stop()
     }

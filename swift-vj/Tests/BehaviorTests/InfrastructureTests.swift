@@ -180,10 +180,10 @@ final class InfrastructureTests: XCTestCase {
 
         let status = await health.status()
 
-        XCTAssertEqual(status["name"] as? String, "MyService")
-        XCTAssertEqual(status["available"] as? Bool, false)
-        XCTAssertEqual(status["error"] as? String, "Test error")
-        XCTAssertEqual(status["errorCount"] as? Int, 1)
+        XCTAssertEqual(status.name, "MyService")
+        XCTAssertEqual(status.available, false)
+        XCTAssertEqual(status.error, "Test error")
+        XCTAssertEqual(status.errorCount, 1)
     }
 
     func test_serviceHealth_shouldRetryAfterInterval() async {
@@ -206,6 +206,6 @@ final class InfrastructureTests: XCTestCase {
         await health.markUnavailable(error: "Error 3")
 
         let status = await health.status()
-        XCTAssertEqual(status["errorCount"] as? Int, 3)
+        XCTAssertEqual(status.errorCount, 3)
     }
 }

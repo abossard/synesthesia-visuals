@@ -23,9 +23,6 @@ final class KaraokeEngine: ObservableObject {
     /// Configurable parameters for karaoke display
     @Published var configuration: KaraokeConfiguration = .default
 
-    /// Whether the engine is enabled (can be disabled to use legacy rendering)
-    @Published var isEnabled: Bool = true
-
     // MARK: - Internal State
 
     /// Loaded lyrics lines with timestamps
@@ -100,7 +97,7 @@ final class KaraokeEngine: ObservableObject {
 
     /// Update with current playback position (call at ~60Hz from render loop)
     func updatePosition(_ position: Double) {
-        guard isEnabled && !lines.isEmpty else { return }
+        guard !lines.isEmpty else { return }
 
         // Apply timing offset and preroll
         let adjustedPosition = position + timingOffsetSec + configuration.prerollTime

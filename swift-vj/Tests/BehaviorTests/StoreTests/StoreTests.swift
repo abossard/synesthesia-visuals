@@ -145,10 +145,7 @@ final class EffectTests: XCTestCase {
     }
 
     func testEffectRun() {
-        var executed = false
-        let effect: Effect<TestAction> = .run { _ in
-            executed = true
-        }
+        let effect: Effect<TestAction> = .run { _ in }
 
         if case .run = effect.operation {
             // Expected
@@ -229,10 +226,7 @@ final class EffectTests: XCTestCase {
     }
 
     func testEffectFireAndForget() {
-        var executed = false
-        let effect: Effect<TestAction> = .fireAndForget {
-            executed = true
-        }
+        let effect: Effect<TestAction> = .fireAndForget {}
 
         if case .run = effect.operation {
             // Expected

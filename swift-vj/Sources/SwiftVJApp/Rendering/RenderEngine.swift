@@ -29,7 +29,7 @@ struct RenderFrameContext: Sendable {
 
 /// Main rendering engine that orchestrates headless tile rendering and Syphon output
 /// CVDisplayLink callback runs GPU work synchronously on a real-time thread
-final class RenderEngine: ObservableObject {
+final class RenderEngine: ObservableObject, @unchecked Sendable {
     // MARK: - Published State (MainActor for SwiftUI)
 
     @Published private(set) var isRunning: Bool = false
@@ -124,6 +124,7 @@ final class RenderEngine: ObservableObject {
 
     // MARK: - Lifecycle
 
+    @MainActor
     func start() async throws {
         guard !isRunning else { return }
 
@@ -143,9 +144,7 @@ final class RenderEngine: ObservableObject {
             guard let self = self else { return }
             let swiftUIRenderer = SwiftUITextTileRenderer(name: "swiftui-lyrics", device: device)
             renderer.setSwiftUILyricsRenderer(swiftUIRenderer)
-            // Enable by default if animation mode is not instant
-            renderer.useSwiftUILyrics = self.textManager.animationMode != .instant
-            self.logger?("[RenderEngine] SwiftUI lyrics renderer configured (enabled: \(renderer.useSwiftUILyrics))")
+            self.logger?("[RenderEngine] SwiftUI lyrics renderer configured")
         }
         
         // Load shaders from repository
@@ -181,6 +180,7 @@ final class RenderEngine: ObservableObject {
         print("[RenderEngine] Started with CVDisplayLink rendering")
     }
 
+    @MainActor
     func stop() async {
         guard isRunning else { return }
 
@@ -303,31 +303,12 @@ final class RenderEngine: ObservableObject {
                 renderer.songInfoRenderer.fontSizeOverride = self.textManager.songInfoFontSize
                 renderer.songInfoRenderer.animationMode = self.textManager.songInfoAnimationMode
 
-                // Sync useSwiftUILyrics with animation mode (or karaoke mode)
-                // Use SwiftUI renderer for fancy effects or karaoke, CoreGraphics for instant
-                let shouldUseSwiftUI = self.karaokeEngine.isEnabled || self.textManager.animationMode != .instant
-                if renderer.useSwiftUILyrics != shouldUseSwiftUI {
-                    renderer.useSwiftUILyrics = shouldUseSwiftUI
-                }
-
-                if renderer.useSwiftUILyrics,
-                   let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
-                    // Use karaoke engine for lyrics display when enabled
-                    if self.karaokeEngine.isEnabled && self.karaokeEngine.displayState.hasLyrics {
-                        swiftUIRenderer.updateKaraokeContent(
-                            displayState: self.karaokeEngine.displayState,
-                            configuration: self.karaokeEngine.configuration,
-                            beatIntensity: self.textManager.beatIntensity
-                        )
-                    } else {
-                        // Fall back to legacy lyrics display
-                        swiftUIRenderer.updateContent(
-                            lyricsState: self.textManager.lyricsState,
-                            animationMode: self.textManager.animationMode,
-                            transitionProgress: self.textManager.transitionProgress,
-                            beatIntensity: self.textManager.beatIntensity
-                        )
-                    }
+                if let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
+                    swiftUIRenderer.updateKaraokeContent(
+                        displayState: self.karaokeEngine.displayState,
+                        configuration: self.karaokeEngine.configuration,
+                        beatIntensity: self.textManager.beatIntensity
+                    )
                 }
             }
 
@@ -377,15 +358,15 @@ final class RenderEngine: ObservableObject {
         localFrameCount += 1
         
         // Update renderer state
-        renderer.lyricsRenderer.lyricsState = context.lyricsState
         renderer.refrainRenderer.refrainState = context.refrainState
         renderer.songInfoRenderer.songInfoState = context.songInfoState
         renderer.imageRenderer.imageState = context.imageState
         
         // Handle shader changes
+        let currentShaderName = renderer.shaderRenderer.currentShaderName
         if let shaderName = pendingShaderName.withLock({ val -> String? in
             let current = val
-            if current != renderer.shaderRenderer.currentShaderName {
+            if current != currentShaderName {
                 return current
             }
             return nil
@@ -393,9 +374,10 @@ final class RenderEngine: ObservableObject {
             renderer.shaderRenderer.loadShader(name: shaderName)
         }
         
+        let currentMaskName = renderer.maskRenderer.currentShaderName
         if let maskName = pendingMaskName.withLock({ val -> String? in
             let current = val
-            if current != renderer.maskRenderer.currentShaderName {
+            if current != currentMaskName {
                 return current
             }
             return nil
@@ -418,7 +400,7 @@ final class RenderEngine: ObservableObject {
         switch tileName {
         case "shader": return renderer.shaderRenderer.texture
         case "mask": return renderer.maskRenderer.texture
-        case "lyrics": return renderer.lyricsRenderer.texture
+        case "lyrics": return renderer.lyricsTexture
         case "refrain": return renderer.refrainRenderer.texture
         case "songInfo": return renderer.songInfoRenderer.texture
         default: return nil
@@ -459,10 +441,9 @@ final class RenderEngine: ObservableObject {
     /// Note: When karaoke engine is enabled, line changes are driven by position updates instead
     func onActiveLine(_ index: Int) {
         Task { @MainActor [textManager, karaokeEngine] in
-            // Only update text manager directly if karaoke engine is disabled
-            if !karaokeEngine.isEnabled {
-                textManager.setActiveLine(index)
-            }
+            // Karaoke engine is always active; ignore legacy direct updates
+            _ = karaokeEngine
+            _ = textManager
         }
     }
 

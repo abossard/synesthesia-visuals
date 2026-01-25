@@ -7,11 +7,12 @@ import AppKit
 import CoreGraphics
 
 /// Utility for capturing screenshots of rendered shaders
-actor ShaderScreenshotCapture {
+@MainActor
+final class ShaderScreenshotCapture {
     
-    private let logger: (String, LogLevel) -> Void
+    private let logger: @Sendable (String, LogLevel) -> Void
     
-    init(logger: @escaping (String, LogLevel) -> Void) {
+    init(logger: @escaping @Sendable (String, LogLevel) -> Void) {
         self.logger = logger
     }
     

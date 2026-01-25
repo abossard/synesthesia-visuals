@@ -13,7 +13,7 @@ import Foundation
 ///
 /// Thread safety: The store is isolated to `@MainActor` for UI integration.
 @MainActor
-public final class Store<State, Action>: ObservableObject {
+public final class Store<State, Action: Sendable>: ObservableObject {
 
     // MARK: - Published State
 
@@ -187,7 +187,7 @@ public final class Store<State, Action>: ObservableObject {
 // MARK: - Send (Action Dispatcher)
 
 /// A send function used by effects to dispatch actions back to the store.
-public struct Send<Action>: Sendable {
+public struct Send<Action: Sendable>: Sendable {
     private let send: @Sendable (Action) async -> Void
 
     public init(send: @escaping @Sendable (Action) async -> Void) {
@@ -213,7 +213,7 @@ extension Store {
     ///   - toChildState: Extract child state from parent state
     ///   - fromChildAction: Embed child action in parent action
     /// - Returns: A new store scoped to child state/action
-    public func scope<ChildState, ChildAction>(
+    public func scope<ChildState, ChildAction: Sendable>(
         state toChildState: @escaping (State) -> ChildState,
         action fromChildAction: @escaping (ChildAction) -> Action
     ) -> Store<ChildState, ChildAction> {
@@ -237,7 +237,7 @@ extension Store {
 
 /// A lightweight store view for SwiftUI that avoids unnecessary re-renders.
 @MainActor
-public final class ViewStore<State: Equatable, Action>: ObservableObject {
+public final class ViewStore<State: Equatable, Action: Sendable>: ObservableObject {
     @Published public private(set) var state: State
 
     private let store: Store<State, Action>

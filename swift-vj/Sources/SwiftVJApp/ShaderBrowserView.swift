@@ -913,17 +913,13 @@ struct ShaderBrowserView: View {
             }
             
             // Create utilities
-            let screenshotCapture = ShaderScreenshotCapture(logger: { message, level in
-                Task { @MainActor in
-                    self.appState.log(message, level: level)
+            let logger: @Sendable (String, LogLevel) -> Void = { [weak appState = self.appState] message, level in
+                DispatchQueue.main.async {
+                    appState?.log(message, level: level)
                 }
-            })
-            
-            let lmStudioClient = LMStudioClient(logger: { message, level in
-                Task { @MainActor in
-                    self.appState.log(message, level: level)
-                }
-            })
+            }
+            let screenshotCapture = ShaderScreenshotCapture(logger: logger)
+            let lmStudioClient = LMStudioClient(logger: logger)
             
             // Check if LM Studio is available (for AI analysis)
             let aiAvailable = await lmStudioClient.isAvailable()
@@ -1134,6 +1130,7 @@ struct ShaderBrowserView: View {
     }
     
     /// Capture screenshot and check if it's black
+    @MainActor
     private func captureAndCheckBlack(
         shader: CoreShaderInfo,
         screenshotPath: URL,

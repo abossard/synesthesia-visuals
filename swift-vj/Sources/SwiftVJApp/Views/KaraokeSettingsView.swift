@@ -12,55 +12,28 @@ struct KaraokeSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Enable/Disable Toggle
-                enableSection
+                // Font Sizes
+                fontSizesSection
 
-                if karaokeEngine.isEnabled {
-                    // Font Sizes
-                    fontSizesSection
+                // Positions
+                positionsSection
 
-                    // Positions
-                    positionsSection
+                // Opacities
+                opacitiesSection
 
-                    // Opacities
-                    opacitiesSection
+                // Transition Settings
+                transitionSection
 
-                    // Transition Settings
-                    transitionSection
+                // Animation Mode
+                animationSection
 
-                    // Animation Mode
-                    animationSection
+                // Presets
+                presetsSection
 
-                    // Presets
-                    presetsSection
-
-                    // Preview
-                    previewSection
-                }
+                // Preview
+                previewSection
             }
             .padding()
-        }
-    }
-
-    // MARK: - Enable Section
-
-    private var enableSection: some View {
-        Section {
-            HStack {
-                Toggle("Enable Karaoke Mode", isOn: $karaokeEngine.isEnabled)
-                    .toggleStyle(.switch)
-
-                Spacer()
-
-                if karaokeEngine.displayState.hasLyrics {
-                    Text("\(karaokeEngine.displayState.totalLines) lines")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-        } header: {
-            Text("Karaoke Engine")
-                .font(.headline)
         }
     }
 

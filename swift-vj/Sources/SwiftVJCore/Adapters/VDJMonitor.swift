@@ -257,7 +257,7 @@ public actor VDJMonitor {
     }
     
     /// Get service health status
-    public func status() async -> [String: Any] {
+    public func status() async -> ServiceHealthStatus {
         await health.status()
     }
     

@@ -76,20 +76,20 @@ public actor PlaybackModule: Module {
         isStarted = false
     }
     
-    public func getStatus() -> [String: Any] {
-        var status: [String: Any] = [
-            "started": isStarted,
-            "source": sourceType.rawValue,
-            "has_track": currentState.hasTrack
-        ]
-        
+    public func getStatus() -> ModuleStatus {
+        var status = ModuleStatus([
+            "started": .bool(isStarted),
+            "source": .string(sourceType.rawValue),
+            "has_track": .bool(currentState.hasTrack)
+        ])
+
         if let track = currentState.track {
-            status["artist"] = track.artist
-            status["title"] = track.title
-            status["position"] = currentState.position
-            status["is_playing"] = currentState.isPlaying
+            status["artist"] = .string(track.artist)
+            status["title"] = .string(track.title)
+            status["position"] = .double(currentState.position)
+            status["is_playing"] = .bool(currentState.isPlaying)
         }
-        
+
         return status
     }
     

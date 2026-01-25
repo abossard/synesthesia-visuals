@@ -56,14 +56,14 @@ public actor LyricsModule: Module {
         currentActiveIndex = -1
     }
     
-    public func getStatus() -> [String: Any] {
-        [
-            "started": isStarted,
-            "has_lyrics": hasLyrics,
-            "line_count": currentLines.count,
-            "active_index": currentActiveIndex,
-            "current_track": currentTrack?.key ?? "none"
-        ]
+    public func getStatus() -> ModuleStatus {
+        ModuleStatus([
+            "started": .bool(isStarted),
+            "has_lyrics": .bool(hasLyrics),
+            "line_count": .int(currentLines.count),
+            "active_index": .int(currentActiveIndex),
+            "current_track": .string(currentTrack?.key ?? "none")
+        ])
     }
     
     // MARK: - Public API

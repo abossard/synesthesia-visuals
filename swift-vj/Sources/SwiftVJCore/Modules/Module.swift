@@ -10,6 +10,27 @@ import Foundation
 /// - `stop()` - Clean shutdown
 ///
 /// Each module can run standalone via CLI for testing/debugging.
+public enum StatusValue: Sendable, Equatable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case stringList([String])
+}
+
+public struct ModuleStatus: Sendable, Equatable {
+    public var values: [String: StatusValue]
+
+    public init(_ values: [String: StatusValue] = [:]) {
+        self.values = values
+    }
+
+    public subscript(_ key: String) -> StatusValue? {
+        get { values[key] }
+        set { values[key] = newValue }
+    }
+}
+
 public protocol Module: Actor {
     /// Whether the module has been started
     var isStarted: Bool { get }
@@ -21,13 +42,13 @@ public protocol Module: Actor {
     func stop() async
 
     /// Get module status for monitoring
-    func getStatus() -> [String: Any]
+    func getStatus() -> ModuleStatus
 }
 
 /// Default implementation for common status fields
 extension Module {
-    public func getStatus() -> [String: Any] {
-        ["started": isStarted]
+    public func getStatus() -> ModuleStatus {
+        ModuleStatus(["started": .bool(isStarted)])
     }
 }
 

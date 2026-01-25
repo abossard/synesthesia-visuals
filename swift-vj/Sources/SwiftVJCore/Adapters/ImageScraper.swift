@@ -34,6 +34,18 @@ public struct ImageResult: Sendable {
     }
 }
 
+public struct ImageSearchMetadata: Sendable {
+    public let themes: [String]
+    public let mood: String?
+    public let keywords: [String]
+
+    public init(themes: [String], mood: String?, keywords: [String]) {
+        self.themes = themes
+        self.mood = mood
+        self.keywords = keywords
+    }
+}
+
 // MARK: - ImageScraper
 
 /// Deep module for fetching and caching song-related images
@@ -153,7 +165,7 @@ public actor ImageScraper {
     ///   - track: Track to fetch images for
     ///   - metadata: Optional metadata with themes, keywords, mood
     /// - Returns: ImageResult or nil if no images found
-    public func fetchImages(for track: Track, metadata: [String: Any]? = nil) async -> ImageResult? {
+    public func fetchImages(for track: Track, metadata: ImageSearchMetadata? = nil) async -> ImageResult? {
         let folder = getFolder(for: track)
         
         // Check cache first
@@ -615,22 +627,20 @@ public actor ImageScraper {
     
     // MARK: - Private - Utilities
     
-    private func buildSearchQuery(from metadata: [String: Any]?) -> String? {
+    private func buildSearchQuery(from metadata: ImageSearchMetadata?) -> String? {
         guard let metadata = metadata else { return nil }
         
         var terms: [String] = []
         
         // Priority: themes > mood > keywords
-        if let themes = metadata["themes"] as? [String] {
-            terms.append(contentsOf: themes.prefix(3))
-        }
-        
-        if let mood = metadata["mood"] as? String {
+        terms.append(contentsOf: metadata.themes.prefix(3))
+
+        if let mood = metadata.mood {
             terms.append(mood)
         }
-        
-        if let keywords = metadata["keywords"] as? [String], terms.count < 3 {
-            for kw in keywords.prefix(5) {
+
+        if terms.count < 3 {
+            for kw in metadata.keywords.prefix(5) {
                 if !terms.map({ $0.lowercased() }).contains(kw.lowercased()) {
                     terms.append(kw)
                     if terms.count >= 4 { break }

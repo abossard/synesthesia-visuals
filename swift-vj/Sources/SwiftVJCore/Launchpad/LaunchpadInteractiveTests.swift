@@ -617,6 +617,8 @@ public final class LaunchpadInteractiveTests {
     }
 }
 
+extension LaunchpadInteractiveTests: @unchecked Sendable {}
+
 // MARK: - Entry Point
 
 /// Run interactive tests from command line

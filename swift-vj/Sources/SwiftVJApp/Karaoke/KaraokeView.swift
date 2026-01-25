@@ -7,7 +7,6 @@ import SwiftUI
 
 /// SwiftUI view for karaoke-style lyrics display
 /// Renders 3 lines: current (full white), next (dimmed), with animated transitions
-@available(macOS 15.0, *)
 struct KaraokeView: View {
     let displayState: KaraokeDisplayState
     let configuration: KaraokeConfiguration
@@ -219,96 +218,25 @@ struct KaraokeView: View {
     }
 }
 
-// MARK: - Fallback View for macOS 14
-
-/// Fallback karaoke view for macOS 14 (no TextRenderer API)
-struct KaraokeViewFallback: View {
-    let displayState: KaraokeDisplayState
-    let configuration: KaraokeConfiguration
-
-    var body: some View {
-        ZStack {
-            Color.black
-
-            // Current line (full white)
-            if let currentLine = displayState.currentLine {
-                Text(currentLine)
-                    .font(.system(
-                        size: configuration.currentFontSize,
-                        weight: configuration.fontWeight,
-                        design: configuration.fontDesign
-                    ))
-                    .foregroundStyle(.white)
-                    .opacity(displayState.isTransitioning
-                        ? displayState.currentLineOpacity(config: configuration)
-                        : configuration.currentLineOpacity)
-                    .shadow(
-                        color: .black.opacity(configuration.textShadowOpacity),
-                        radius: configuration.textShadowRadius
-                    )
-                    .position(
-                        x: configuration.centerX,
-                        y: displayState.isTransitioning
-                            ? displayState.currentLineY(config: configuration)
-                            : configuration.currentLineYAbsolute
-                    )
-            }
-
-            // Next line (dimmed)
-            if let nextLine = displayState.nextLine {
-                Text(nextLine)
-                    .font(.system(
-                        size: configuration.nextFontSize,
-                        weight: configuration.fontWeight,
-                        design: configuration.fontDesign
-                    ))
-                    .foregroundStyle(.white)
-                    .opacity(displayState.isTransitioning
-                        ? displayState.nextLineOpacity(config: configuration)
-                        : configuration.nextLineOpacity)
-                    .shadow(
-                        color: .black.opacity(configuration.textShadowOpacity * 0.5),
-                        radius: configuration.textShadowRadius * 0.5
-                    )
-                    .position(
-                        x: configuration.centerX,
-                        y: displayState.isTransitioning
-                            ? displayState.nextLineY(config: configuration)
-                            : configuration.nextLineYAbsolute
-                    )
-            }
-        }
-        .frame(width: configuration.canvasWidth, height: configuration.canvasHeight)
-    }
-}
-
 // MARK: - View Builder Helper
 
-/// Helper to create the appropriate karaoke view based on OS version
+/// Helper to create the karaoke view
 struct KaraokeViewBuilder: View {
     let displayState: KaraokeDisplayState
     let configuration: KaraokeConfiguration
     let beatIntensity: Double
 
     var body: some View {
-        if #available(macOS 15.0, *) {
-            KaraokeView(
-                displayState: displayState,
-                configuration: configuration,
-                beatIntensity: beatIntensity
-            )
-        } else {
-            KaraokeViewFallback(
-                displayState: displayState,
-                configuration: configuration
-            )
-        }
+        KaraokeView(
+            displayState: displayState,
+            configuration: configuration,
+            beatIntensity: beatIntensity
+        )
     }
 }
 
 // MARK: - Preview
 
-@available(macOS 15.0, *)
 #Preview("Karaoke View - Settled") {
     let state = KaraokeDisplayState(
         prevLine: "This was the previous line",
@@ -328,7 +256,6 @@ struct KaraokeViewBuilder: View {
     )
 }
 
-@available(macOS 15.0, *)
 #Preview("Karaoke View - Mid Transition") {
     let state = KaraokeDisplayState(
         prevLine: "This was the previous line",
@@ -348,7 +275,6 @@ struct KaraokeViewBuilder: View {
     )
 }
 
-@available(macOS 15.0, *)
 #Preview("Karaoke View - Dramatic Preset") {
     let state = KaraokeDisplayState(
         prevLine: nil,
