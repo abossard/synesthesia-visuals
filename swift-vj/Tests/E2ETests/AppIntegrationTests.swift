@@ -224,6 +224,25 @@ final class AppIntegrationTests: XCTestCase {
         
         // Pipeline should complete (even if some steps are skipped due to no external services)
         XCTAssertTrue(result.stepsCompleted.contains("lyrics") || result.stepsCompleted.isEmpty)
+
+        if !result.refrainLines.isEmpty, !result.lyricsLines.isEmpty {
+            func normalize(_ text: String) -> String {
+                text.lowercased()
+                    .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                    .joined(separator: "")
+            }
+
+            let normalizedLyrics = Set(result.lyricsLines
+                .map { normalize($0.text) }
+                .filter { !$0.isEmpty })
+
+            for refrain in result.refrainLines {
+                let normalized = normalize(refrain)
+                if !normalized.isEmpty {
+                    XCTAssertTrue(normalizedLyrics.contains(normalized), "Refrain line should exist in lyrics")
+                }
+            }
+        }
         
         await pipeline.stop()
     }

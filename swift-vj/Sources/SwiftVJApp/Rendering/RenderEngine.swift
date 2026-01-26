@@ -17,9 +17,6 @@ import SwiftVJCore
 /// Gathered from MainActor state managers
 struct RenderFrameContext: Sendable {
     let audioState: AudioState
-    let lyricsState: LyricsDisplayState
-    let refrainState: RefrainDisplayState
-    let songInfoState: SongInfoDisplayState
     let shaderState: ShaderDisplayState
     let maskState: ShaderDisplayState
     let imageState: ImageDisplayState
@@ -38,11 +35,14 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
     // State managers (MainActor isolated for SwiftUI binding)
     @Published var audioManager: AudioStateManager
-    @Published var textManager: TextStateManager
     @Published var imageManager: ImageStateManager
 
     /// Karaoke engine for automatic lyrics transitions based on timecodes
     @Published var karaokeEngine: KaraokeEngine
+    /// Refrain engine (timecoded refrains only)
+    @Published var refrainEngine: KaraokeEngine
+    /// Song info engine (artist/title transitions)
+    @Published var songInfoEngine: SongInfoEngine
 
     /// Single source of truth for all shader data
     @Published var shaderRepository: ObservableShaderRepository
@@ -84,9 +84,10 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
     static func create(synesthesiaAudio: SynesthesiaAudioProcessor? = nil) async -> RenderEngine {
         let audioManager = await MainActor.run { AudioStateManager() }
-        let textManager = await MainActor.run { TextStateManager() }
         let imageManager = await MainActor.run { ImageStateManager() }
         let karaokeEngine = await MainActor.run { KaraokeEngine() }
+        let refrainEngine = await MainActor.run { KaraokeEngine() }
+        let songInfoEngine = await MainActor.run { SongInfoEngine() }
 
         // Create repository and selection manager with proper wiring
         let shaderRepository = await MainActor.run { ObservableShaderRepository() }
@@ -96,9 +97,10 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         return RenderEngine(
             synesthesiaAudio: synesthesiaAudio,
             audioManager: audioManager,
-            textManager: textManager,
             imageManager: imageManager,
             karaokeEngine: karaokeEngine,
+            refrainEngine: refrainEngine,
+            songInfoEngine: songInfoEngine,
             shaderRepository: shaderRepository,
             shaderSelection: shaderSelection
         )
@@ -107,17 +109,19 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private init(
         synesthesiaAudio: SynesthesiaAudioProcessor?,
         audioManager: AudioStateManager,
-        textManager: TextStateManager,
         imageManager: ImageStateManager,
         karaokeEngine: KaraokeEngine,
+        refrainEngine: KaraokeEngine,
+        songInfoEngine: SongInfoEngine,
         shaderRepository: ObservableShaderRepository,
         shaderSelection: ShaderSelectionManager
     ) {
         self.synesthesiaAudio = synesthesiaAudio
         self.audioManager = audioManager
-        self.textManager = textManager
         self.imageManager = imageManager
         self.karaokeEngine = karaokeEngine
+        self.refrainEngine = refrainEngine
+        self.songInfoEngine = songInfoEngine
         self.shaderRepository = shaderRepository
         self.shaderSelection = shaderSelection
     }
@@ -142,9 +146,15 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         // Initialize SwiftUI lyrics renderer on main thread
         await MainActor.run { [weak self] in
             guard let self = self else { return }
-            let swiftUIRenderer = SwiftUITextTileRenderer(name: "swiftui-lyrics", device: device)
-            renderer.setSwiftUILyricsRenderer(swiftUIRenderer)
-            self.logger?("[RenderEngine] SwiftUI lyrics renderer configured")
+            let lyricsRenderer = SwiftUITextTileRenderer(name: "swiftui-lyrics", device: device)
+            let refrainRenderer = SwiftUITextTileRenderer(name: "swiftui-refrain", device: device)
+            let songInfoRenderer = SwiftUITextTileRenderer(name: "swiftui-songinfo", device: device)
+            renderer.setSwiftUITextRenderers(
+                lyrics: lyricsRenderer,
+                refrain: refrainRenderer,
+                songInfo: songInfoRenderer
+            )
+            self.logger?("[RenderEngine] SwiftUI text renderers configured")
         }
         
         // Load shaders from repository
@@ -170,7 +180,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         await MainActor.run { [weak self] in
             guard let self = self else { return }
             self.audioManager.start()
-            self.textManager.start()
         }
 
         // Start render loop
@@ -191,7 +200,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         await MainActor.run { [weak self] in
             guard let self = self else { return }
             self.audioManager.stop()
-            self.textManager.stop()
             self.isRunning = false
         }
 
@@ -294,29 +302,45 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             
             // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
             if let renderer = self.headlessRenderer {
-                // Sync text typography settings to renderers
-                renderer.refrainRenderer.fontName = self.textManager.refrainFontName
-                renderer.refrainRenderer.fontSizeOverride = self.textManager.refrainFontSize
-                renderer.refrainRenderer.animationMode = self.textManager.refrainAnimationMode
-
-                renderer.songInfoRenderer.fontName = self.textManager.songInfoFontName
-                renderer.songInfoRenderer.fontSizeOverride = self.textManager.songInfoFontSize
-                renderer.songInfoRenderer.animationMode = self.textManager.songInfoAnimationMode
-
                 if let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
-                    swiftUIRenderer.updateKaraokeContent(
+                    let hash = Self.buildKaraokeContentHash(
                         displayState: self.karaokeEngine.displayState,
-                        configuration: self.karaokeEngine.configuration,
-                        beatIntensity: self.textManager.beatIntensity
+                        configuration: self.karaokeEngine.configuration
                     )
+                    let view = AnyView(KaraokeView(
+                        displayState: self.karaokeEngine.displayState,
+                        configuration: self.karaokeEngine.configuration
+                    ))
+                    swiftUIRenderer.update(contentHash: hash, view: view)
+                }
+
+                if let refrainRenderer = renderer.getSwiftUIRefrainRenderer() {
+                    let hash = Self.buildKaraokeContentHash(
+                        displayState: self.refrainEngine.displayState,
+                        configuration: self.refrainEngine.configuration
+                    )
+                    let view = AnyView(KaraokeView(
+                        displayState: self.refrainEngine.displayState,
+                        configuration: self.refrainEngine.configuration
+                    ))
+                    refrainRenderer.update(contentHash: hash, view: view)
+                }
+
+                if let songInfoRenderer = renderer.getSwiftUISongInfoRenderer() {
+                    let hash = Self.buildSongInfoContentHash(
+                        displayState: self.songInfoEngine.displayState,
+                        configuration: self.songInfoEngine.configuration
+                    )
+                    let view = AnyView(SongInfoView(
+                        displayState: self.songInfoEngine.displayState,
+                        configuration: self.songInfoEngine.configuration
+                    ))
+                    songInfoRenderer.update(contentHash: hash, view: view)
                 }
             }
 
             return RenderFrameContext(
                 audioState: self.audioManager.state,
-                lyricsState: self.textManager.lyricsState,
-                refrainState: self.textManager.refrainState,
-                songInfoState: self.textManager.songInfoState,
                 shaderState: self.shaderSelection.mainState,
                 maskState: self.shaderSelection.maskState,
                 imageState: self.imageManager.state
@@ -358,8 +382,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         localFrameCount += 1
         
         // Update renderer state
-        renderer.refrainRenderer.refrainState = context.refrainState
-        renderer.songInfoRenderer.songInfoState = context.songInfoState
         renderer.imageRenderer.imageState = context.imageState
         
         // Handle shader changes
@@ -401,72 +423,174 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         case "shader": return renderer.shaderRenderer.texture
         case "mask": return renderer.maskRenderer.texture
         case "lyrics": return renderer.lyricsTexture
-        case "refrain": return renderer.refrainRenderer.texture
-        case "songInfo": return renderer.songInfoRenderer.texture
+        case "refrain": return renderer.refrainTexture
+        case "songInfo": return renderer.songInfoTexture
+        case "image": return renderer.imageRenderer.texture
         default: return nil
         }
     }
 
     /// Get all tile names
     func getTileNames() -> [String] {
-        ["shader", "mask", "lyrics", "refrain", "songInfo"]
+        ["shader", "mask", "lyrics", "refrain", "songInfo", "image"]
+    }
+
+    // MARK: - SwiftUI Text Hashing
+
+    private static func buildKaraokeContentHash(
+        displayState: KaraokeDisplayState,
+        configuration: KaraokeConfiguration
+    ) -> String {
+        let progressBucket = Int(displayState.transitionProgress * 60)
+        let configSignature = karaokeConfigSignature(configuration)
+        return "karaoke-\(displayState.currentLine ?? "")-\(displayState.nextLine ?? "")-\(displayState.activeIndex)-\(progressBucket)-\(configSignature)"
+    }
+
+    private static func karaokeConfigSignature(_ config: KaraokeConfiguration) -> String {
+        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
+        func bucket(_ value: Double) -> Int { Int(value * 100) }
+
+        return [
+            bucket(config.prevLineY),
+            bucket(config.currentLineY),
+            bucket(config.nextLineY),
+            bucket(config.newNextEntryY),
+            bucket(config.currentFontSize),
+            bucket(config.nextFontSize),
+            bucket(config.prevFontSize),
+            bucket(config.currentLineOpacity),
+            bucket(config.nextLineOpacity),
+            bucket(config.prevLineOpacity),
+            bucket(config.transitionDuration),
+            bucket(config.prerollTime),
+            bucket(config.textShadowRadius),
+            bucket(config.textShadowOpacity),
+            bucket(config.maxLineWidthRatio),
+            config.easing.rawValue.hashValue,
+            String(describing: config.fontWeight).hashValue,
+            String(describing: config.fontDesign).hashValue,
+            config.animationMode.rawValue.hashValue,
+            bucket(config.canvasWidth),
+            bucket(config.canvasHeight)
+        ].map(String.init).joined(separator: "-")
+    }
+
+    private static func buildSongInfoContentHash(
+        displayState: SongInfoDisplayState,
+        configuration: SongInfoConfiguration
+    ) -> String {
+        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
+        func bucket(_ value: Double) -> Int { Int(value * 100) }
+
+        let configSignature = [
+            bucket(configuration.artistY),
+            bucket(configuration.titleY),
+            bucket(configuration.artistFontSize),
+            bucket(configuration.titleFontSize),
+            bucket(configuration.transitionDuration),
+            bucket(configuration.textShadowRadius),
+            bucket(configuration.textShadowOpacity),
+            bucket(configuration.maxLineWidthRatio),
+            configuration.animationMode.rawValue.hashValue,
+            String(describing: configuration.fontWeight).hashValue,
+            String(describing: configuration.fontDesign).hashValue,
+            bucket(configuration.canvasWidth),
+            bucket(configuration.canvasHeight)
+        ].map(String.init).joined(separator: "-")
+
+        let progressBucket = Int(displayState.transitionProgress * 60)
+        return "songinfo-\(displayState.artist)-\(displayState.title)-\(displayState.isVisible)-\(progressBucket)-\(configSignature)"
+    }
+
+    private static func resolveRefrainLines(
+        lyrics: [LyricLine],
+        refrainTexts: [String]
+    ) -> [LyricLine] {
+        guard !lyrics.isEmpty else { return [] }
+
+        let normalize: (String) -> String = { text in
+            text.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .joined(separator: "")
+        }
+
+        let normalizedRefrains = refrainTexts
+            .map(normalize)
+            .filter { !$0.isEmpty }
+
+        if !normalizedRefrains.isEmpty {
+            let exactSet = Set(normalizedRefrains)
+            let exactMatches = lyrics.filter { exactSet.contains(normalize($0.text)) }
+            if !exactMatches.isEmpty {
+                return exactMatches
+            }
+
+            let containsMatches = lyrics.filter { line in
+                let normalizedLine = normalize(line.text)
+                guard !normalizedLine.isEmpty else { return false }
+                return normalizedRefrains.contains { refrain in
+                    normalizedLine.contains(refrain) || refrain.contains(normalizedLine)
+                }
+            }
+            if !containsMatches.isEmpty {
+                return containsMatches
+            }
+        }
+
+        return lyrics.filter { $0.isRefrain }
     }
 
     // MARK: - Pipeline Integration
 
-    /// Called when track changes (from pipeline)
-    func onTrackChange(artist: String, title: String, album: String, stayVisible: Bool = false) {
-        Task { @MainActor [textManager] in
-            textManager.setSongInfo(artist: artist, title: title, album: album, stayVisible: stayVisible)
+    /// Called when playback position updates (call frequently, e.g. from OSC or timer)
+    /// Drives the karaoke engine for automatic line transitions
+    func onPlaybackPositionUpdate(_ position: Double) {
+        Task { @MainActor [karaokeEngine, refrainEngine] in
+            karaokeEngine.updatePosition(position)
+            refrainEngine.updatePosition(position)
+        }
+    }
+
+    /// Called when track changes (update song info)
+    func onTrackChange(artist: String, title: String) {
+        Task { @MainActor [songInfoEngine] in
+            songInfoEngine.show(artist: artist, title: title)
         }
     }
 
     /// Called when lyrics are loaded (from pipeline)
-    func onLyricsLoaded(_ lines: [DisplayLyricLine]) {
-        Task { @MainActor [textManager, karaokeEngine] in
-            textManager.setLyrics(lines)
+    func onLyricsLoaded(_ lines: [LyricLine], refrainLines: [String]) {
+        Task { @MainActor [karaokeEngine, refrainEngine] in
+            karaokeEngine.loadLyrics(lines)
 
-            // Also load into karaoke engine with timestamps
-            let lyricLines = lines.map { line in
-                LyricLine(
-                    timeSec: Double(line.timeSec),
-                    text: line.text
-                )
+            let resolvedRefrains = Self.resolveRefrainLines(
+                lyrics: lines,
+                refrainTexts: refrainLines
+            )
+            if resolvedRefrains.isEmpty {
+                refrainEngine.reset()
+            } else {
+                refrainEngine.loadLyrics(resolvedRefrains)
             }
-            karaokeEngine.loadLyrics(lyricLines)
-        }
-    }
-
-    /// Called when active lyric line changes (from pipeline)
-    /// Note: When karaoke engine is enabled, line changes are driven by position updates instead
-    func onActiveLine(_ index: Int) {
-        Task { @MainActor [textManager, karaokeEngine] in
-            // Karaoke engine is always active; ignore legacy direct updates
-            _ = karaokeEngine
-            _ = textManager
-        }
-    }
-
-    /// Called when playback position updates (call frequently, e.g. from OSC or timer)
-    /// Drives the karaoke engine for automatic line transitions
-    func onPlaybackPositionUpdate(_ position: Double) {
-        Task { @MainActor [karaokeEngine] in
-            karaokeEngine.updatePosition(position)
         }
     }
 
     /// Called when track changes - resets karaoke engine
     func onTrackReset() {
-        Task { @MainActor [textManager, karaokeEngine] in
-            textManager.stop()
+        Task { @MainActor [karaokeEngine, refrainEngine, songInfoEngine] in
             karaokeEngine.reset()
+            refrainEngine.reset()
+            songInfoEngine.hide()
         }
     }
 
-    /// Called when refrain is active (from pipeline)
-    func onRefrain(_ text: String) {
-        Task { @MainActor [textManager] in
-            textManager.setRefrain(text)
+    /// Called when playback state changes (show/hide song info)
+    func onPlaybackStateChange(isPlaying: Bool) {
+        Task { @MainActor [songInfoEngine] in
+            if isPlaying {
+                return
+            }
+            songInfoEngine.hide()
         }
     }
 

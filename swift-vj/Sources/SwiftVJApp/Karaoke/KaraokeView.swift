@@ -10,7 +10,6 @@ import SwiftUI
 struct KaraokeView: View {
     let displayState: KaraokeDisplayState
     let configuration: KaraokeConfiguration
-    let beatIntensity: Double
 
     var body: some View {
         ZStack {
@@ -200,8 +199,11 @@ struct KaraokeView: View {
                 }
 
             case .glowPulse:
+                let glowProgress = isExiting
+                    ? (1.0 - displayState.transitionProgress)
+                    : displayState.transitionProgress
                 baseText
-                    .textRenderer(GlowPulseRenderer(intensity: beatIntensity * 0.5))
+                    .textRenderer(GlowPulseRenderer(intensity: glowProgress))
                     .opacity(opacity)
 
             case .rainbowWave:
@@ -224,13 +226,11 @@ struct KaraokeView: View {
 struct KaraokeViewBuilder: View {
     let displayState: KaraokeDisplayState
     let configuration: KaraokeConfiguration
-    let beatIntensity: Double
 
     var body: some View {
         KaraokeView(
             displayState: displayState,
-            configuration: configuration,
-            beatIntensity: beatIntensity
+            configuration: configuration
         )
     }
 }
@@ -251,8 +251,7 @@ struct KaraokeViewBuilder: View {
 
     KaraokeView(
         displayState: state,
-        configuration: .default,
-        beatIntensity: 0.5
+        configuration: .default
     )
 }
 
@@ -270,8 +269,7 @@ struct KaraokeViewBuilder: View {
 
     KaraokeView(
         displayState: state,
-        configuration: .default,
-        beatIntensity: 0.5
+        configuration: .default
     )
 }
 
@@ -289,7 +287,6 @@ struct KaraokeViewBuilder: View {
 
     KaraokeView(
         displayState: state,
-        configuration: .dramatic,
-        beatIntensity: 0.8
+        configuration: .dramatic
     )
 }

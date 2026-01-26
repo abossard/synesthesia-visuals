@@ -280,8 +280,7 @@ struct KaraokeSettingsView: View {
                         displayState: karaokeEngine.displayState.hasLyrics
                             ? karaokeEngine.displayState
                             : previewDisplayState,
-                        configuration: karaokeEngine.configuration,
-                        beatIntensity: 0.5
+                        configuration: karaokeEngine.configuration
                     )
                     .scaleEffect(0.5)
                 }

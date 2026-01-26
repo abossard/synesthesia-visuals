@@ -704,6 +704,9 @@ public final class AppState: ObservableObject {
                    newTrackKey != self.lastTrackKey {
                     self.lastTrackKey = newTrackKey
                     self.log("♪ \(track.artist) - \(track.title)", level: .info)
+                    if let engine = self.renderEngine {
+                        engine.onTrackChange(artist: track.artist, title: track.title)
+                    }
                     // Processing dispatched via EffectEnvironment in Reducer.trackChanged
                 }
 
@@ -714,24 +717,11 @@ public final class AppState: ObservableObject {
                 if self.playbackPosition != newState.playback.position {
                     self.playbackPosition = newState.playback.position
                     // Feed position to KaraokeEngine for automatic line transitions
-                    if let karaokeEngine = self.renderEngine?.karaokeEngine {
-                        Task { @MainActor in
-                            karaokeEngine.updatePosition(newState.playback.position)
-                        }
-                    }
+                    self.renderEngine?.onPlaybackPositionUpdate(newState.playback.position)
                 }
                 if self.isPlaying != newState.playback.isPlaying {
                     self.isPlaying = newState.playback.isPlaying
-                    if let engine = self.renderEngine, let track = newState.playback.currentTrack {
-                        Task { @MainActor in
-                            engine.textManager.setSongInfo(
-                                artist: track.artist,
-                                title: track.title,
-                                album: track.album,
-                                stayVisible: self.isPlaying
-                            )
-                        }
-                    }
+                    self.renderEngine?.onPlaybackStateChange(isPlaying: newState.playback.isPlaying)
                 }
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
                 if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
@@ -765,6 +755,10 @@ public final class AppState: ObservableObject {
                 }
                 if let result = newState.pipeline.result, self.pipelineResult != result {
                     self.pipelineResult = result
+                    self.renderEngine?.onLyricsLoaded(
+                        result.lyricsLines,
+                        refrainLines: result.refrainLines
+                    )
                 }
             }
             .store(in: &cancellables)

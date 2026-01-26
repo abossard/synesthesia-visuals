@@ -42,7 +42,7 @@ enum TextAnimationMode: String, CaseIterable, Identifiable, Sendable {
         case .blurPop: return "Characters blur in with scale"
         case .springBounce: return "Characters bounce in with spring physics"
         case .typewriter: return "Characters appear one by one"
-        case .glowPulse: return "Pulsing glow effect synced to beat"
+        case .glowPulse: return "Pulsing glow effect"
         case .rainbowWave: return "Hue rotation wave across text"
         }
     }
@@ -193,240 +193,6 @@ final class ShaderRenderer: TileRenderer {
         encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
-    }
-}
-
-// MARK: - Text Renderer
-
-/// Headless text renderer using CoreGraphics
-final class TextRenderer: TileRenderer {
-    let name: String
-    private(set) var texture: MTLTexture?
-    
-    private let device: MTLDevice
-    private let width: Int
-    private let height: Int
-    
-    private var cgContext: CGContext?
-    private var cgTexture: MTLTexture?
-    private var copyPipelineState: MTLRenderPipelineState?
-    private var vertexBuffer: MTLBuffer?
-    private var samplerState: MTLSamplerState?
-
-    // Typography
-    var fontName: String? = nil
-    var fontWeight: NSFont.Weight = .medium
-    
-    // Text state
-    var textLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = []
-    private var lastTextLines: [(text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat)] = []
-    
-    init(name: String, device: MTLDevice, width: Int = 1280, height: Int = 720) {
-        self.name = name
-        self.device = device
-        self.width = width
-        self.height = height
-        setupTexture()
-        setupCGContext()
-        setupCopyPipeline()
-    }
-    
-    private func setupTexture() {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm,
-            width: width,
-            height: height,
-            mipmapped: false
-        )
-        descriptor.usage = [.renderTarget, .shaderRead]
-        descriptor.storageMode = .private
-        texture = device.makeTexture(descriptor: descriptor)
-        
-        // Managed texture for CG -> Metal transfer
-        let cgDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm,
-            width: width,
-            height: height,
-            mipmapped: false
-        )
-        cgDescriptor.usage = [.shaderRead]
-        cgDescriptor.storageMode = .managed
-        cgTexture = device.makeTexture(descriptor: cgDescriptor)
-    }
-    
-    private func setupCGContext() {
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-        
-        cgContext = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        )
-    }
-    
-    private func setupCopyPipeline() {
-        let shaderSource = """
-        #include <metal_stdlib>
-        using namespace metal;
-        
-        struct VertexOut {
-            float4 position [[position]];
-            float2 uv;
-        };
-        
-        vertex VertexOut textCopyVertex(uint vid [[vertex_id]],
-                                         constant float4 *vertices [[buffer(0)]]) {
-            float4 v = vertices[vid];
-            VertexOut out;
-            out.position = float4(v.xy, 0, 1);
-            out.uv = v.zw;
-            return out;
-        }
-        
-        fragment float4 textCopyFragment(VertexOut in [[stage_in]],
-                                          texture2d<float> tex [[texture(0)]],
-                                          sampler s [[sampler(0)]]) {
-            return tex.sample(s, in.uv);
-        }
-        """
-        
-        do {
-            let library = try device.makeLibrary(source: shaderSource, options: nil)
-            guard let vertexFunc = library.makeFunction(name: "textCopyVertex"),
-                  let fragmentFunc = library.makeFunction(name: "textCopyFragment") else { return }
-            
-            let pipelineDescriptor = MTLRenderPipelineDescriptor()
-            pipelineDescriptor.vertexFunction = vertexFunc
-            pipelineDescriptor.fragmentFunction = fragmentFunc
-            pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-            pipelineDescriptor.colorAttachments[0].isBlendingEnabled = true
-            pipelineDescriptor.colorAttachments[0].rgbBlendOperation = .add
-            pipelineDescriptor.colorAttachments[0].alphaBlendOperation = .add
-            pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = .one
-            pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
-            pipelineDescriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-            pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            
-            copyPipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
-            
-            let vertices: [Float] = [
-                -1, 1, 0, 0,   // top-left
-                 1, 1, 1, 0,   // top-right
-                -1, -1, 0, 1,  // bottom-left
-                 1, -1, 1, 1,  // bottom-right
-            ]
-            vertexBuffer = device.makeBuffer(
-                bytes: vertices,
-                length: vertices.count * MemoryLayout<Float>.stride,
-                options: .storageModeShared
-            )
-            
-            let samplerDescriptor = MTLSamplerDescriptor()
-            samplerDescriptor.minFilter = .linear
-            samplerDescriptor.magFilter = .linear
-            samplerDescriptor.sAddressMode = .clampToEdge
-            samplerDescriptor.tAddressMode = .clampToEdge
-            samplerState = device.makeSamplerState(descriptor: samplerDescriptor)
-        } catch {
-            print("[TextRenderer:\(name)] Pipeline error: \(error)")
-        }
-    }
-    
-    func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
-        guard let ctx = cgContext,
-              let cgTexture = cgTexture,
-              let texture = texture,
-              let pipelineState = copyPipelineState,
-              let vertexBuffer = vertexBuffer,
-              let samplerState = samplerState else { return }
-        
-        // Only redraw if text changed
-        let needsRedraw = textLines.count != lastTextLines.count ||
-            zip(textLines, lastTextLines).contains { $0.0.text != $0.1.text || $0.0.opacity != $0.1.opacity }
-        
-        if needsRedraw {
-            ctx.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
-            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            
-            for line in textLines {
-                drawText(line.text, fontSize: line.fontSize, opacity: line.opacity, yPosition: line.yPosition, context: ctx)
-            }
-            
-            if let data = ctx.data {
-                let region = MTLRegion(
-                    origin: MTLOrigin(x: 0, y: 0, z: 0),
-                    size: MTLSize(width: width, height: height, depth: 1)
-                )
-                cgTexture.replace(region: region, mipmapLevel: 0, withBytes: data, bytesPerRow: width * 4)
-            }
-            
-            lastTextLines = textLines
-        }
-        
-        // Blit to output texture
-        let passDescriptor = MTLRenderPassDescriptor()
-        passDescriptor.colorAttachments[0].texture = texture
-        passDescriptor.colorAttachments[0].loadAction = .clear
-        passDescriptor.colorAttachments[0].storeAction = .store
-        passDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else { return }
-        
-        encoder.setRenderPipelineState(pipelineState)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setFragmentTexture(cgTexture, index: 0)
-        encoder.setFragmentSamplerState(samplerState, index: 0)
-        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
-        encoder.endEncoding()
-    }
-    
-    private func drawText(_ text: String, fontSize: CGFloat, opacity: CGFloat, yPosition: CGFloat, context: CGContext) {
-        guard !text.isEmpty, opacity > 0.01 else { return }
-
-        let font = makeFont(size: fontSize)
-        let color = NSColor.white.withAlphaComponent(opacity / 255.0)
-        
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: color
-        ]
-        
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-        
-        let x = (CGFloat(width) - bounds.width) / 2
-        let y = CGFloat(height) * (1 - yPosition) - bounds.height / 2
-        
-        context.saveGState()
-        context.textPosition = CGPoint(x: x, y: y)
-        CTLineDraw(line, context)
-        context.restoreGState()
-    }
-    
-    func calcAutoFitFontSize(for text: String, maxWidth: CGFloat, minSize: CGFloat = 24, maxSize: CGFloat = 96) -> CGFloat {
-        var size = maxSize
-        while size > minSize {
-            let font = makeFont(size: size)
-            let textSize = (text as NSString).size(withAttributes: [.font: font])
-            if textSize.width <= maxWidth {
-                return size
-            }
-            size -= 2
-        }
-        return minSize
-    }
-
-    private func makeFont(size: CGFloat) -> NSFont {
-        if let fontName = fontName, let font = NSFont(name: fontName, size: size) {
-            return font
-        }
-        return NSFont.systemFont(ofSize: size, weight: fontWeight)
     }
 }
 
@@ -654,11 +420,7 @@ final class SwiftUITextTileRenderer: TileRenderer {
     private let width: Int
     private let height: Int
 
-    var beatIntensity: Double = 0
-
-    private var karaokeDisplayState: KaraokeDisplayState = .empty
-    private var karaokeConfiguration: KaraokeConfiguration = .default
-
+    private var currentView: AnyView?
     private var lastRenderedContent: String = ""
 
     init(name: String, device: MTLDevice, width: Int = 1280, height: Int = 720) {
@@ -764,16 +526,8 @@ final class SwiftUITextTileRenderer: TileRenderer {
 
     // MARK: - Content Update
 
-    func updateKaraokeContent(
-        displayState: KaraokeDisplayState,
-        configuration: KaraokeConfiguration,
-        beatIntensity: Double = 0
-    ) {
-        self.karaokeDisplayState = displayState
-        self.karaokeConfiguration = configuration
-        self.beatIntensity = beatIntensity
-
-        let contentHash = buildKaraokeContentHash()
+    func update(contentHash: String, view: AnyView) {
+        currentView = view
         if contentHash != lastRenderedContent {
             captureSwiftUIView()
             lastRenderedContent = contentHash
@@ -784,54 +538,15 @@ final class SwiftUITextTileRenderer: TileRenderer {
         captureSwiftUIView()
     }
 
-    private func buildKaraokeContentHash() -> String {
-        let progressBucket = Int(karaokeDisplayState.transitionProgress * 60)
-        let configSignature = karaokeConfigSignature(karaokeConfiguration)
-        return "karaoke-\(karaokeDisplayState.currentLine ?? "")-\(karaokeDisplayState.nextLine ?? "")-\(karaokeDisplayState.activeIndex)-\(progressBucket)-\(configSignature)"
-    }
-
-    private func karaokeConfigSignature(_ config: KaraokeConfiguration) -> String {
-        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
-        func bucket(_ value: Double) -> Int { Int(value * 100) }
-
-        return [
-            bucket(config.prevLineY),
-            bucket(config.currentLineY),
-            bucket(config.nextLineY),
-            bucket(config.newNextEntryY),
-            bucket(config.currentFontSize),
-            bucket(config.nextFontSize),
-            bucket(config.prevFontSize),
-            bucket(config.currentLineOpacity),
-            bucket(config.nextLineOpacity),
-            bucket(config.prevLineOpacity),
-            bucket(config.transitionDuration),
-            bucket(config.prerollTime),
-            bucket(config.textShadowRadius),
-            bucket(config.textShadowOpacity),
-            bucket(config.maxLineWidthRatio),
-            config.easing.rawValue.hashValue,
-            String(describing: config.fontWeight).hashValue,
-            String(describing: config.fontDesign).hashValue,
-            config.animationMode.rawValue.hashValue,
-            bucket(config.canvasWidth),
-            bucket(config.canvasHeight)
-        ].map(String.init).joined(separator: "-")
-    }
-
     private func captureSwiftUIView() {
         guard let resources = resources else { return }
-        guard let cgImage = captureKaraokeView() else { return }
+        guard let cgImage = captureView() else { return }
         uploadCGImage(cgImage, to: resources.stagingTexture)
         resources.hasValidContent = true
     }
 
-    private func captureKaraokeView() -> CGImage? {
-        let view = KaraokeView(
-            displayState: karaokeDisplayState,
-            configuration: karaokeConfiguration,
-            beatIntensity: beatIntensity
-        )
+    private func captureView() -> CGImage? {
+        guard let view = currentView else { return nil }
         let renderer = SwiftUI.ImageRenderer(content: view)
         renderer.scale = 2.0
         return renderer.cgImage
@@ -888,105 +603,6 @@ final class SwiftUITextTileRenderer: TileRenderer {
 extension Text.Layout {
     var flattenedRuns: some RandomAccessCollection<Text.Layout.Run> {
         self.flatMap { line in line }
-    }
-}
-
-// MARK: - Refrain Renderer
-
-/// Specialized text renderer for refrain/chorus display
-final class RefrainRenderer: TileRenderer {
-    let name = "refrain"
-    var texture: MTLTexture? { textRenderer.texture }
-    
-    private let textRenderer: TextRenderer
-    var fontName: String? = nil
-    var fontSizeOverride: CGFloat? = nil
-    var animationMode: TextAnimationMode = .fadeInOut
-    var fadeDuration: Double = 0.6
-    var refrainState: RefrainDisplayState = .empty {
-        didSet { updateTextLines() }
-    }
-    
-    init(device: MTLDevice) {
-        textRenderer = TextRenderer(name: "refrain", device: device)
-    }
-    
-    private func updateTextLines() {
-        textRenderer.fontName = fontName
-        guard !refrainState.text.isEmpty else {
-            textRenderer.textLines = []
-            return
-        }
-
-        let maxWidth: CGFloat = 1280 * 0.85
-        let autoSize = textRenderer.calcAutoFitFontSize(for: refrainState.text, maxWidth: maxWidth, minSize: 36, maxSize: 120)
-        let fontSize = fontSizeOverride ?? autoSize
-        let baseOpacity = CGFloat(refrainState.opacity)
-        let elapsed = Date().timeIntervalSince(refrainState.lastChangeTime)
-        let duration = animationMode == .instant ? 0 : fadeDuration
-        let t = duration > 0 ? min(elapsed / duration, 1.0) : 1.0
-        let fade = refrainState.active ? t : (1.0 - t)
-        let effectiveOpacity = baseOpacity * CGFloat(fade)
-
-        guard effectiveOpacity > 1 else {
-            textRenderer.textLines = []
-            return
-        }
-
-        textRenderer.textLines = [(refrainState.text, fontSize, effectiveOpacity, 0.50)]
-    }
-    
-    func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
-        textRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
-    }
-}
-
-// MARK: - Song Info Renderer
-
-/// Specialized text renderer for artist/title display
-final class SongInfoRenderer: TileRenderer {
-    let name = "songInfo"
-    var texture: MTLTexture? { textRenderer.texture }
-    
-    private let textRenderer: TextRenderer
-    var fontName: String? = nil
-    var fontSizeOverride: CGFloat? = nil
-    var animationMode: TextAnimationMode = .fadeInOut
-    var songInfoState: SongInfoDisplayState = .empty {
-        didSet { updateTextLines() }
-    }
-    
-    init(device: MTLDevice) {
-        textRenderer = TextRenderer(name: "songInfo", device: device)
-    }
-    
-    private func updateTextLines() {
-        textRenderer.fontName = fontName
-        let opacity = songInfoState.computeOpacity()
-        guard songInfoState.active, opacity > 0.01 else {
-            textRenderer.textLines = []
-            return
-        }
-        
-        var lines: [(String, CGFloat, CGFloat, CGFloat)] = []
-        let baseFontSize: CGFloat = fontSizeOverride ?? 72
-        let maxWidth: CGFloat = 1280 * 0.8
-        
-        if !songInfoState.artist.isEmpty {
-            let size = textRenderer.calcAutoFitFontSize(for: songInfoState.artist, maxWidth: maxWidth, minSize: 24, maxSize: baseFontSize * 0.65)
-            lines.append((songInfoState.artist, size, CGFloat(opacity), 0.42))
-        }
-        
-        if !songInfoState.title.isEmpty {
-            let size = textRenderer.calcAutoFitFontSize(for: songInfoState.title, maxWidth: maxWidth, minSize: 28, maxSize: baseFontSize)
-            lines.append((songInfoState.title, size, CGFloat(opacity), 0.55))
-        }
-        
-        textRenderer.textLines = lines
-    }
-    
-    func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
-        textRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
     }
 }
 
@@ -1348,13 +964,13 @@ final class HeadlessRenderer {
     // Tile renderers
     let shaderRenderer: ShaderRenderer
     let maskRenderer: ShaderRenderer
-    let refrainRenderer: RefrainRenderer
-    let songInfoRenderer: SongInfoRenderer
     let imageRenderer: ImageRenderer
     
-    // SwiftUI-based lyrics renderer (single renderer path)
-    // Set via `setSwiftUILyricsRenderer` from main thread after init
+    // SwiftUI-based text renderers
+    // Set via `setSwiftUITextRenderers` from main thread after init
     private var swiftUILyricsRenderer: SwiftUITextTileRenderer?
+    private var swiftUIRefrainRenderer: SwiftUITextTileRenderer?
+    private var swiftUISongInfoRenderer: SwiftUITextTileRenderer?
     
     // Audio-reactive state
     private var audioTime: Float = 0
@@ -1391,8 +1007,6 @@ final class HeadlessRenderer {
         
         shaderRenderer = ShaderRenderer(name: "shader", device: device)
         maskRenderer = ShaderRenderer(name: "mask", device: device)
-        refrainRenderer = RefrainRenderer(device: device)
-        songInfoRenderer = SongInfoRenderer(device: device)
         imageRenderer = ImageRenderer(device: device)
         
         // Wire up logger to imageRenderer
@@ -1402,11 +1016,17 @@ final class HeadlessRenderer {
     
     // MARK: - SwiftUI Lyrics Renderer Setup
     
-    /// Set the SwiftUI-based lyrics renderer (must be called from MainActor)
+    /// Set the SwiftUI-based text renderers (must be called from MainActor)
     @MainActor
-    func setSwiftUILyricsRenderer(_ renderer: SwiftUITextTileRenderer) {
-        self.swiftUILyricsRenderer = renderer
-        print("[HeadlessRenderer] SwiftUI lyrics renderer configured")
+    func setSwiftUITextRenderers(
+        lyrics: SwiftUITextTileRenderer,
+        refrain: SwiftUITextTileRenderer,
+        songInfo: SwiftUITextTileRenderer
+    ) {
+        self.swiftUILyricsRenderer = lyrics
+        self.swiftUIRefrainRenderer = refrain
+        self.swiftUISongInfoRenderer = songInfo
+        print("[HeadlessRenderer] SwiftUI text renderers configured")
     }
     
     /// Get the current SwiftUI lyrics renderer for state updates
@@ -1415,9 +1035,27 @@ final class HeadlessRenderer {
         return swiftUILyricsRenderer
     }
 
+    @MainActor
+    func getSwiftUIRefrainRenderer() -> SwiftUITextTileRenderer? {
+        return swiftUIRefrainRenderer
+    }
+
+    @MainActor
+    func getSwiftUISongInfoRenderer() -> SwiftUITextTileRenderer? {
+        return swiftUISongInfoRenderer
+    }
+
     /// Thread-safe access to lyrics texture
     var lyricsTexture: MTLTexture? {
         swiftUILyricsRenderer?.texture
+    }
+
+    var refrainTexture: MTLTexture? {
+        swiftUIRefrainRenderer?.texture
+    }
+
+    var songInfoTexture: MTLTexture? {
+        swiftUISongInfoRenderer?.texture
     }
     
     // MARK: - Render Frame
@@ -1488,11 +1126,11 @@ final class HeadlessRenderer {
         shaderRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         maskRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         
-        // Lyrics: always use SwiftUI renderer (single renderer path)
+        // Text: SwiftUI renderers
         swiftUILyricsRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        swiftUIRefrainRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        swiftUISongInfoRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
         
-        refrainRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
-        songInfoRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         imageRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
         
         // Handle beat-based image switching
@@ -1514,11 +1152,11 @@ final class HeadlessRenderer {
                 manager.publish(name: TileConfig.lyrics.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }
-            if let tex = refrainRenderer.texture {
+            if let tex = swiftUIRefrainRenderer?.texture {
                 manager.publish(name: TileConfig.refrain.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }
-            if let tex = songInfoRenderer.texture {
+            if let tex = swiftUISongInfoRenderer?.texture {
                 manager.publish(name: TileConfig.songInfo.syphonName, texture: tex, commandBuffer: commandBuffer)
                 publishCount += 1
             }

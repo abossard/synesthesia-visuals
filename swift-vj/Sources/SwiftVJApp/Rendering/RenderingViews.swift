@@ -317,7 +317,6 @@ struct AudioBar: View {
 /// Controls for the render engine (always running)
 struct RenderControlsView: View {
     @ObservedObject var renderEngine: RenderEngine
-    @State private var showAnimationSettings: Bool = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -331,29 +330,6 @@ struct RenderControlsView: View {
                     .foregroundColor(.secondary)
             }
             
-            // Text Animation Mode Picker
-            Picker("Text FX", selection: $renderEngine.textManager.animationMode) {
-                ForEach(TextAnimationMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(width: 140)
-            .help(renderEngine.textManager.animationMode.description)
-            
-            // Animation Settings Button
-            Button {
-                showAnimationSettings.toggle()
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-            }
-            .help("Animation Test Controls")
-            .popover(isPresented: $showAnimationSettings, arrowEdge: .bottom) {
-                TextAnimationTestPanel(textManager: renderEngine.textManager)
-                    .frame(width: 320)
-                    .padding()
-            }
-
             Spacer()
 
             // Shader controls
@@ -375,220 +351,6 @@ struct RenderControlsView: View {
                         Image(systemName: "chevron.right")
                     }
                 }
-            }
-        }
-    }
-}
-
-// MARK: - Text Animation Test Panel
-
-/// Panel for testing and parameterizing glyph animations
-struct TextAnimationTestPanel: View {
-    @ObservedObject var textManager: TextStateManager
-    @State private var testText: String = "Hello World!"
-    @State private var isAnimating: Bool = false
-    @State private var animationTimer: Timer?
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            Text("Text Animation Test")
-                .font(.headline)
-            
-            Divider()
-            
-            // Animation Mode
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Animation Mode")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Picker("Mode", selection: $textManager.animationMode) {
-                    ForEach(TextAnimationMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                
-                Text(textManager.animationMode.description)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Divider()
-            
-            // Transition Progress Slider
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Transition Progress")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(String(format: "%.2f", textManager.transitionProgress))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                }
-                
-                Slider(value: $textManager.transitionProgress, in: 0...1)
-                
-                HStack {
-                    Text("0 = Start")
-                        .font(.caption2)
-                    Spacer()
-                    Text("1 = Complete")
-                        .font(.caption2)
-                }
-                .foregroundColor(.secondary)
-            }
-            
-            // Beat Intensity Slider
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Beat Intensity")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(String(format: "%.2f", textManager.beatIntensity))
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                }
-                
-                Slider(value: $textManager.beatIntensity, in: 0...1)
-                
-                Text("Used by Glow Pulse and beat-synced effects")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            
-            Divider()
-            
-            // Test Text Input
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Test Lyrics")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                TextField("Enter test text...", text: $testText)
-                    .textFieldStyle(.roundedBorder)
-                
-                Button("Apply Test Lyrics") {
-                    applyTestLyrics()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            
-            Divider()
-            
-            // Animation Controls
-            HStack(spacing: 12) {
-                Button {
-                    toggleAnimation()
-                } label: {
-                    Label(isAnimating ? "Stop" : "Animate", 
-                          systemImage: isAnimating ? "stop.fill" : "play.fill")
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Reset") {
-                    textManager.transitionProgress = 0
-                    textManager.beatIntensity = 0
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Beat!") {
-                    simulateBeat()
-                }
-                .buttonStyle(.bordered)
-            }
-            
-            // Quick Presets
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Quick Presets")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                HStack(spacing: 8) {
-                    Button("Karaoke") {
-                        textManager.animationMode = .waveDissolve
-                        applyTestLyrics()
-                        startAnimation()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    
-                    Button("EDM Drop") {
-                        textManager.animationMode = .blurPop
-                        textManager.beatIntensity = 1.0
-                        applyTestLyrics()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    
-                    Button("Typewriter") {
-                        textManager.animationMode = .typewriter
-                        textManager.transitionProgress = 0
-                        applyTestLyrics()
-                        startAnimation()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .onDisappear {
-            stopAnimation()
-        }
-    }
-    
-    private func applyTestLyrics() {
-        // Create test lyrics with 3 lines
-        let lines = [
-            DisplayLyricLine(timeSec: 0, text: "Previous line faded"),
-            DisplayLyricLine(timeSec: 1, text: testText),
-            DisplayLyricLine(timeSec: 2, text: "Next line preview")
-        ]
-        textManager.setLyrics(lines)
-        textManager.setActiveLine(1)  // Make middle line active
-    }
-    
-    private func toggleAnimation() {
-        if isAnimating {
-            stopAnimation()
-        } else {
-            startAnimation()
-        }
-    }
-    
-    private func startAnimation() {
-        isAnimating = true
-        textManager.transitionProgress = 0
-        
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { _ in
-            Task { @MainActor in
-                textManager.transitionProgress += 0.01
-                if textManager.transitionProgress >= 1.0 {
-                    textManager.transitionProgress = 0
-                }
-            }
-        }
-    }
-    
-    private func stopAnimation() {
-        isAnimating = false
-        animationTimer?.invalidate()
-        animationTimer = nil
-    }
-    
-    private func simulateBeat() {
-        textManager.beatIntensity = 1.0
-        
-        // Decay beat intensity over 0.5 seconds
-        Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { timer in
-            textManager.beatIntensity *= 0.92
-            if textManager.beatIntensity < 0.01 {
-                textManager.beatIntensity = 0
-                timer.invalidate()
             }
         }
     }
@@ -638,27 +400,11 @@ struct RenderingView: View {
         )
     }
     
-    // Demo text state for preview (shown until real data arrives)
-    @AppStorage("useDemoText") private var useDemoText: Bool = false
-
-    @State private var demoLyrics: LyricsDisplayState = LyricsDisplayState(
-        lines: [
-            DisplayLyricLine(id: 0, timeSec: 0, text: "♪ Previous line fades away"),
-            DisplayLyricLine(id: 1, timeSec: 1, text: "Current line is bright and clear"),
-            DisplayLyricLine(id: 2, timeSec: 2, text: "Next line waits in shadow ♪")
-        ],
-        activeIndex: 1, textOpacity: 255, fadeDelayMs: 5000, fadeDurationMs: 1000, lastChangeTime: Date()
-    )
-    @State private var demoRefrain = RefrainDisplayState(text: "♪ This is the chorus! ♪", opacity: 255, active: true, lastChangeTime: Date())
-    @State private var demoSongInfo = SongInfoDisplayState(artist: "SwiftVJ", title: "Ready for music...", album: "Waiting for track", opacity: 255, displayTime: 0, active: true, lastChangeTime: Date(), stayVisible: true)
-
-    // Derived demo text editors
-    @State private var demoLyricsText: String = "♪ Previous line fades away\nCurrent line is bright and clear\nNext line waits in shadow ♪"
-    @State private var demoRefrainText: String = "♪ This is the chorus! ♪"
-    @State private var demoArtist: String = "SwiftVJ"
-    @State private var demoTitle: String = "Ready for music..."
-    @State private var demoAlbum: String = "Waiting for track"
     @State private var karaokeAnimationSelection: TextAnimationMode = .waveDissolve
+    @State private var refrainAnimationSelection: TextAnimationMode = .waveDissolve
+    @State private var songInfoAnimationSelection: TextAnimationMode = .fadeInOut
+    @State private var songInfoArtist: String = ""
+    @State private var songInfoTitle: String = ""
 
     // Use appState.renderEngine (receives OSC updates) instead of local instance
     private var renderEngine: RenderEngine? { appState.renderEngine }
@@ -681,7 +427,6 @@ struct RenderingView: View {
             // Mask uses selection manager
             renderEngine?.shaderSelection.selectMask(name: selectedMaskShader)
             // Shader is handled by AppState (single source of truth)
-            if useDemoText { applyDemoText() }
         }
         // NOTE: Removed onDisappear stop() - render engine should keep running
         // when switching tabs. It only stops when app quits.
@@ -964,29 +709,26 @@ struct RenderingView: View {
     @ViewBuilder
     private var refrainRegisterSection: some View {
         GroupBox("Refrain") {
-            HStack(alignment: .top, spacing: 12) {
-                refrainControlsSection
+            if let refrainEngine = renderEngine?.refrainEngine {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        refrainControlsSection(refrainEngine: refrainEngine)
+                        Divider()
+                        karaokeFontSettingsView(karaokeEngine: refrainEngine)
+                    }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
 
-                Divider()
-                    .frame(maxHeight: .infinity)
+                    Divider()
+                        .frame(maxHeight: .infinity)
 
-                fontSettingsView(
-                    title: "Font",
-                    fontName: Binding(
-                        get: { renderEngine?.textManager.refrainFontName ?? fontNameOptions[0] },
-                        set: { renderEngine?.textManager.refrainFontName = $0 }
-                    ),
-                    fontSize: Binding(
-                        get: { renderEngine?.textManager.refrainFontSize ?? 64 },
-                        set: { renderEngine?.textManager.refrainFontSize = $0 }
-                    ),
-                    animationMode: Binding(
-                        get: { renderEngine?.textManager.refrainAnimationMode ?? .fadeInOut },
-                        set: { renderEngine?.textManager.refrainAnimationMode = $0 }
-                    )
-                )
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                    lyricsTimelineView(karaokeEngine: refrainEngine)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                Text("Refrain engine not running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -995,29 +737,17 @@ struct RenderingView: View {
     @ViewBuilder
     private var songInfoRegisterSection: some View {
         GroupBox("Song Info") {
-            HStack(alignment: .top, spacing: 12) {
-                songInfoControlsSection
+            if let songInfoEngine = renderEngine?.songInfoEngine {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        songInfoControlsSection(songInfoEngine: songInfoEngine)
+                    }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                Divider()
-                    .frame(maxHeight: .infinity)
-
-                fontSettingsView(
-                    title: "Font",
-                    fontName: Binding(
-                        get: { renderEngine?.textManager.songInfoFontName ?? fontNameOptions[0] },
-                        set: { renderEngine?.textManager.songInfoFontName = $0 }
-                    ),
-                    fontSize: Binding(
-                        get: { renderEngine?.textManager.songInfoFontSize ?? 54 },
-                        set: { renderEngine?.textManager.songInfoFontSize = $0 }
-                    ),
-                    animationMode: Binding(
-                        get: { renderEngine?.textManager.songInfoAnimationMode ?? .fadeInOut },
-                        set: { renderEngine?.textManager.songInfoAnimationMode = $0 }
-                    )
-                )
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            } else {
+                Text("Song info engine not running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1311,7 +1041,7 @@ struct RenderingView: View {
         return String(format: "%02d:%02d.%02d", mins, secs, ms)
     }
     
-    // MARK: - Text Controls (Karaoke + Song Info + Refrain)
+    // MARK: - Text Controls (Karaoke)
 
     @ViewBuilder
     private var textControlsView: some View {
@@ -1327,15 +1057,6 @@ struct RenderingView: View {
                         .padding()
                 }
 
-                Divider()
-
-                // Song Info Controls (minimal)
-                songInfoControlsSection
-
-                Divider()
-
-                // Refrain Controls (minimal)
-                refrainControlsSection
             }
             .padding()
         }
@@ -1460,156 +1181,253 @@ struct RenderingView: View {
         }
     }
 
-    // MARK: - Song Info Controls Section
-
-    @ViewBuilder
-    private var songInfoControlsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Song Info")
-                    .font(.headline)
-                Spacer()
-                Button("Show") {
-                    showTestSongInfo()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Artist", text: $demoArtist)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                    TextField("Title", text: $demoTitle)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                }
-                Toggle("Sticky", isOn: Binding(
-                    get: { demoSongInfo.stayVisible },
-                    set: { val in
-                        demoSongInfo = SongInfoDisplayState(
-                            artist: demoSongInfo.artist,
-                            title: demoSongInfo.title,
-                            album: demoSongInfo.album,
-                            opacity: demoSongInfo.opacity,
-                            displayTime: demoSongInfo.displayTime,
-                            active: demoSongInfo.active,
-                            lastChangeTime: Date(),
-                            stayVisible: val
-                        )
-                    }
-                ))
-                .toggleStyle(.switch)
-            }
-        }
-    }
-
-    private func showTestSongInfo() {
-        demoSongInfo = SongInfoDisplayState(
-            artist: demoArtist,
-            title: demoTitle,
-            album: demoAlbum,
-            opacity: 255,
-            displayTime: 0,
-            active: true,
-            lastChangeTime: Date(),
-            stayVisible: demoSongInfo.stayVisible
-        )
-        renderEngine?.textManager.songInfoState = demoSongInfo
-    }
-
     // MARK: - Refrain Controls Section
 
     @ViewBuilder
-    private var refrainControlsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Refrain")
-                    .font(.headline)
+    private func refrainControlsSection(refrainEngine: KaraokeEngine) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Refrain Engine")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                Button("Load Test") {
+                    refrainEngine.loadTestLyrics()
+                }
+                Button("Prev") {
+                    refrainEngine.previousLine()
+                }
+                Button("Next") {
+                    refrainEngine.nextLine()
+                }
                 Spacer()
-                Button(demoRefrain.active ? "Hide" : "Show") {
-                    toggleRefrain()
+                if refrainEngine.displayState.hasLyrics {
+                    Text(refrainEngine.displayState.progressText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            GroupBox("Settings") {
+                VStack(spacing: 10) {
+                    HStack {
+                        Text("Animation")
+                            .frame(width: 80, alignment: .leading)
+                        Picker("", selection: $refrainAnimationSelection) {
+                            ForEach(TextAnimationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .onAppear {
+                            refrainAnimationSelection = refrainEngine.configuration.animationMode
+                        }
+                        .onChange(of: refrainAnimationSelection) { _, newValue in
+                            refrainEngine.configuration = refrainEngine.configuration.withAnimationMode(newValue)
+                        }
+                        .onChange(of: refrainEngine.configuration.animationMode) { _, newValue in
+                            refrainAnimationSelection = newValue
+                        }
+                    }
+
+                    HStack {
+                        Text("Duration")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { refrainEngine.configuration.transitionDuration },
+                                set: { refrainEngine.configuration.transitionDuration = $0 }
+                            ),
+                            in: 0.2...1.5
+                        )
+                        Text(String(format: "%.1fs", refrainEngine.configuration.transitionDuration))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40)
+                    }
+
+                    HStack {
+                        Text("Dim Level")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { refrainEngine.configuration.nextLineOpacity },
+                                set: { refrainEngine.configuration.nextLineOpacity = $0 }
+                            ),
+                            in: 0.1...0.7
+                        )
+                        Text(String(format: "%.0f%%", refrainEngine.configuration.nextLineOpacity * 100))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40)
+                    }
+
+                    HStack {
+                        Text("Font Size")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { refrainEngine.configuration.currentFontSize },
+                                set: { refrainEngine.configuration.currentFontSize = $0 }
+                            ),
+                            in: 48...120
+                        )
+                        Text(String(format: "%.0fpt", refrainEngine.configuration.currentFontSize))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("Presets")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Default") { refrainEngine.configuration = .default }
+                        Button("Compact") { refrainEngine.configuration = .compact }
+                        Button("Dramatic") { refrainEngine.configuration = .dramatic }
+                        Button("Subtle") { refrainEngine.configuration = .subtle }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+            }
+        }
+    }
+
+    // MARK: - Song Info Controls Section
+
+    @ViewBuilder
+    private func songInfoControlsSection(songInfoEngine: SongInfoEngine) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Song Info Engine")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Artist", text: $songInfoArtist)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                TextField("Title", text: $songInfoTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+
+                HStack(spacing: 8) {
+                    Button("Show") {
+                        songInfoEngine.show(artist: songInfoArtist, title: songInfoTitle)
+                    }
+                    Button("Hide") {
+                        songInfoEngine.hide()
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
 
-            HStack {
-                TextField("Refrain text", text: $demoRefrainText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption)
+            GroupBox("Settings") {
+                VStack(spacing: 10) {
+                    HStack {
+                        Text("Animation")
+                            .frame(width: 80, alignment: .leading)
+                        Picker("", selection: $songInfoAnimationSelection) {
+                            ForEach(TextAnimationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .onAppear {
+                            songInfoAnimationSelection = songInfoEngine.configuration.animationMode
+                        }
+                        .onChange(of: songInfoAnimationSelection) { _, newValue in
+                            songInfoEngine.configuration.animationMode = newValue
+                        }
+                        .onChange(of: songInfoEngine.configuration.animationMode) { _, newValue in
+                            songInfoAnimationSelection = newValue
+                        }
+                    }
+
+                    HStack {
+                        Text("Duration")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { songInfoEngine.configuration.transitionDuration },
+                                set: { songInfoEngine.configuration.transitionDuration = $0 }
+                            ),
+                            in: 0.2...1.5
+                        )
+                        Text(String(format: "%.1fs", songInfoEngine.configuration.transitionDuration))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 40)
+                    }
+
+                    HStack {
+                        Text("Artist Size")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { songInfoEngine.configuration.artistFontSize },
+                                set: { songInfoEngine.configuration.artistFontSize = $0 }
+                            ),
+                            in: 24...96
+                        )
+                        Text(String(format: "%.0fpt", songInfoEngine.configuration.artistFontSize))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+
+                    HStack {
+                        Text("Title Size")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { songInfoEngine.configuration.titleFontSize },
+                                set: { songInfoEngine.configuration.titleFontSize = $0 }
+                            ),
+                            in: 28...120
+                        )
+                        Text(String(format: "%.0fpt", songInfoEngine.configuration.titleFontSize))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+
+                    HStack {
+                        Text("Artist Y")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { songInfoEngine.configuration.artistY },
+                                set: { songInfoEngine.configuration.artistY = $0 }
+                            ),
+                            in: 0.2...0.8
+                        )
+                        Text(String(format: "%.2f", songInfoEngine.configuration.artistY))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+
+                    HStack {
+                        Text("Title Y")
+                            .frame(width: 80, alignment: .leading)
+                        Slider(
+                            value: Binding(
+                                get: { songInfoEngine.configuration.titleY },
+                                set: { songInfoEngine.configuration.titleY = $0 }
+                            ),
+                            in: 0.2...0.8
+                        )
+                        Text(String(format: "%.2f", songInfoEngine.configuration.titleY))
+                            .font(.caption.monospacedDigit())
+                            .frame(width: 45)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if songInfoArtist.isEmpty, let track = appState.currentTrack {
+                songInfoArtist = track.artist
+                songInfoTitle = track.title
             }
         }
     }
 
-    private func toggleRefrain() {
-        let newActive = !demoRefrain.active
-        demoRefrain = RefrainDisplayState(
-            text: demoRefrainText,
-            opacity: 255,
-            active: newActive,
-            lastChangeTime: Date()
-        )
-        renderEngine?.textManager.refrainState = demoRefrain
-    }
-
-    // MARK: Demo Helpers
-
-    private func shiftDemoLyrics(by delta: Int) {
-        let newIndex = min(max(0, demoLyrics.activeIndex + delta), demoLyrics.lines.count - 1)
-        demoLyrics = LyricsDisplayState(
-            lines: demoLyrics.lines,
-            activeIndex: newIndex,
-            textOpacity: 255,
-            fadeDelayMs: demoLyrics.fadeDelayMs,
-            fadeDurationMs: demoLyrics.fadeDurationMs,
-            lastChangeTime: Date()
-        )
-        pushDemoIfNeeded()
-        // Animation now auto-triggers via lyricsState didSet
-    }
-
-    private func updateDemoLyricsFromText() {
-        let lines = demoLyricsText.split(separator: "\n").map { String($0) }
-        demoLyrics = LyricsDisplayState(
-            lines: lines.enumerated().map { DisplayLyricLine(id: $0.offset, timeSec: Float($0.offset), text: $0.element) },
-            activeIndex: min(demoLyrics.activeIndex, max(0, lines.count - 1)),
-            textOpacity: 255,
-            fadeDelayMs: 5000,
-            fadeDurationMs: 1000,
-            lastChangeTime: Date()
-        )
-        pushDemoIfNeeded()
-    }
-
-    private func updateDemoSongInfo(artist: String, title: String, album: String) {
-        demoSongInfo = SongInfoDisplayState(
-            artist: artist,
-            title: title,
-            album: album,
-            opacity: 255,
-            displayTime: 0,
-            active: true,
-            lastChangeTime: Date(),
-            stayVisible: demoSongInfo.stayVisible
-        )
-        pushDemoIfNeeded()
-    }
-
-    private func applyDemoText() {
-        guard let engine = renderEngine else { return }
-        Task { @MainActor in
-            engine.textManager.lyricsState = demoLyrics
-            engine.textManager.refrainState = demoRefrain
-            engine.textManager.songInfoState = demoSongInfo
-        }
-    }
-
-    private func pushDemoIfNeeded() {
-        if useDemoText { applyDemoText() }
-    }
-    
     // MARK: - Image Controls
     
     @ViewBuilder
@@ -1846,64 +1664,6 @@ struct ShaderChip: View {
                 .cornerRadius(12)
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Text State View
-
-struct TextStateView: View {
-    @ObservedObject var textManager: TextStateManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Song info
-            HStack {
-                Text("Song:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(songInfoText)
-                    .font(.caption)
-            }
-
-            // Lyrics
-            HStack {
-                Text("Lyrics:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(lyricsText)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-
-            // Refrain
-            HStack {
-                Text("Refrain:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(textManager.refrainState.text.isEmpty ? "-" : textManager.refrainState.text)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-    }
-
-    private var songInfoText: String {
-        let state = textManager.songInfoState
-        if state.artist.isEmpty && state.title.isEmpty {
-            return "-"
-        }
-        if !state.artist.isEmpty && !state.title.isEmpty {
-            return "\(state.artist) - \(state.title)"
-        }
-        return state.artist.isEmpty ? state.title : state.artist
-    }
-
-    private var lyricsText: String {
-        let state = textManager.lyricsState
-        guard state.activeIndex >= 0 else { return "-" }
-        return state.currentLine ?? "-"
     }
 }
 
