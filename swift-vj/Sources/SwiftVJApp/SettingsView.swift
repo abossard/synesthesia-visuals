@@ -14,46 +14,51 @@ struct SettingsView: View {
     @AppStorage("playbackPollInterval") private var playbackPollInterval = 1.0
     
     // Folder paths with sensible defaults
-    @AppStorage("shaderDirectory") private var shaderDirectory = SettingsView.defaultShaderDirectory
-    @AppStorage("imagesCacheDir") private var imagesCacheDir = SettingsView.defaultImagesCacheDir
-    @AppStorage("lyricsCacheDir") private var lyricsCacheDir = SettingsView.defaultLyricsCacheDir
-    @AppStorage("pipelineCacheDir") private var pipelineCacheDir = SettingsView.defaultPipelineCacheDir
-    @AppStorage("songImagesDir") private var songImagesDir = SettingsView.defaultSongImagesDir
+    @AppStorage("shaderDirectory") private var shaderDirectory = DefaultPaths.shaderDirectory
+    @AppStorage("imagesCacheDir") private var imagesCacheDir = DefaultPaths.imagesCacheDir
+    @AppStorage("lyricsCacheDir") private var lyricsCacheDir = DefaultPaths.lyricsCacheDir
+    @AppStorage("pipelineCacheDir") private var pipelineCacheDir = DefaultPaths.pipelineCacheDir
+    @AppStorage("songImagesDir") private var songImagesDir = DefaultPaths.songImagesDir
     
-    // Default paths based on repository structure and macOS conventions
-    private static var defaultShaderDirectory: String {
-        // Try to find synesthesia-shaders relative to the repo
-        let fm = FileManager.default
-        let currentDir = fm.currentDirectoryPath
-        let repoShaders = (currentDir as NSString).appendingPathComponent("../synesthesia-shaders")
-        if fm.fileExists(atPath: repoShaders) {
-            return (repoShaders as NSString).standardizingPath
-        }
-        return ""
-    }
-    
-    private static var defaultImagesCacheDir: String {
-        Config.cacheDirectory.appendingPathComponent("images").path
-    }
-    
-    private static var defaultLyricsCacheDir: String {
-        Config.cacheDirectory.appendingPathComponent("lyrics").path
-    }
-    
-    private static var defaultPipelineCacheDir: String {
-        Config.cacheDirectory.appendingPathComponent("pipeline").path
-    }
-    
-    private static var defaultSongImagesDir: String {
-        // Try to find data/song_images relative to repo, fallback to app support
-        let fm = FileManager.default
-        let currentDir = fm.currentDirectoryPath
-        let repoImages = (currentDir as NSString).appendingPathComponent("../data/song_images")
-        if fm.fileExists(atPath: repoImages) {
-            return (repoImages as NSString).standardizingPath
-        }
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("SwiftVJ/song_images").path
+    // Default paths cached to avoid repeated file system checks
+    private struct DefaultPaths {
+        static let shaderDirectory: String = {
+            // Try to find synesthesia-shaders relative to the repo
+            let fm = FileManager.default
+            let currentDir = fm.currentDirectoryPath
+            let repoShaders = (currentDir as NSString).appendingPathComponent("../synesthesia-shaders")
+            if fm.fileExists(atPath: repoShaders) {
+                return (repoShaders as NSString).standardizingPath
+            }
+            return ""
+        }()
+        
+        static let imagesCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("images").path
+        }()
+        
+        static let lyricsCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("lyrics").path
+        }()
+        
+        static let pipelineCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("pipeline").path
+        }()
+        
+        static let songImagesDir: String = {
+            // Try to find data/song_images relative to repo, fallback to app support
+            let fm = FileManager.default
+            let currentDir = fm.currentDirectoryPath
+            let repoImages = (currentDir as NSString).appendingPathComponent("../data/song_images")
+            if fm.fileExists(atPath: repoImages) {
+                return (repoImages as NSString).standardizingPath
+            }
+            // Safe unwrap with fallback
+            guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return ""
+            }
+            return appSupport.appendingPathComponent("SwiftVJ/song_images").path
+        }()
     }
     
     var body: some View {
@@ -103,7 +108,7 @@ struct SettingsView: View {
                 Section("Shader Directories") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            TextField("Shader Directory", text: $shaderDirectory, prompt: Text(Self.defaultShaderDirectory))
+                            TextField("Shader Directory", text: $shaderDirectory, prompt: Text(DefaultPaths.shaderDirectory))
                                 .textFieldStyle(.roundedBorder)
                             Button("Browse...") {
                                 selectFolder { url in
@@ -111,11 +116,11 @@ struct SettingsView: View {
                                 }
                             }
                             Button("Reset") {
-                                shaderDirectory = Self.defaultShaderDirectory
+                                shaderDirectory = DefaultPaths.shaderDirectory
                             }
-                            .disabled(shaderDirectory == Self.defaultShaderDirectory)
+                            .disabled(shaderDirectory == DefaultPaths.shaderDirectory)
                         }
-                        Text("Default: \(Self.defaultShaderDirectory.isEmpty ? "Not found" : Self.defaultShaderDirectory)")
+                        Text("Default: \(DefaultPaths.shaderDirectory.isEmpty ? "Not found" : DefaultPaths.shaderDirectory)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -124,7 +129,7 @@ struct SettingsView: View {
                 Section("Image Directories") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            TextField("Song Images Directory", text: $songImagesDir, prompt: Text(Self.defaultSongImagesDir))
+                            TextField("Song Images Directory", text: $songImagesDir, prompt: Text(DefaultPaths.songImagesDir))
                                 .textFieldStyle(.roundedBorder)
                             Button("Browse...") {
                                 selectFolder { url in
@@ -132,18 +137,18 @@ struct SettingsView: View {
                                 }
                             }
                             Button("Reset") {
-                                songImagesDir = Self.defaultSongImagesDir
+                                songImagesDir = DefaultPaths.songImagesDir
                             }
-                            .disabled(songImagesDir == Self.defaultSongImagesDir)
+                            .disabled(songImagesDir == DefaultPaths.songImagesDir)
                         }
-                        Text("Default: \(Self.defaultSongImagesDir)")
+                        Text("Default: \(DefaultPaths.songImagesDir)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            TextField("Images Cache", text: $imagesCacheDir, prompt: Text(Self.defaultImagesCacheDir))
+                            TextField("Images Cache", text: $imagesCacheDir, prompt: Text(DefaultPaths.imagesCacheDir))
                                 .textFieldStyle(.roundedBorder)
                             Button("Browse...") {
                                 selectFolder { url in
@@ -151,11 +156,11 @@ struct SettingsView: View {
                                 }
                             }
                             Button("Reset") {
-                                imagesCacheDir = Self.defaultImagesCacheDir
+                                imagesCacheDir = DefaultPaths.imagesCacheDir
                             }
-                            .disabled(imagesCacheDir == Self.defaultImagesCacheDir)
+                            .disabled(imagesCacheDir == DefaultPaths.imagesCacheDir)
                         }
-                        Text("Default: \(Self.defaultImagesCacheDir)")
+                        Text("Default: \(DefaultPaths.imagesCacheDir)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -164,7 +169,7 @@ struct SettingsView: View {
                 Section("Cache Directories") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            TextField("Lyrics Cache", text: $lyricsCacheDir, prompt: Text(Self.defaultLyricsCacheDir))
+                            TextField("Lyrics Cache", text: $lyricsCacheDir, prompt: Text(DefaultPaths.lyricsCacheDir))
                                 .textFieldStyle(.roundedBorder)
                             Button("Browse...") {
                                 selectFolder { url in
@@ -172,18 +177,18 @@ struct SettingsView: View {
                                 }
                             }
                             Button("Reset") {
-                                lyricsCacheDir = Self.defaultLyricsCacheDir
+                                lyricsCacheDir = DefaultPaths.lyricsCacheDir
                             }
-                            .disabled(lyricsCacheDir == Self.defaultLyricsCacheDir)
+                            .disabled(lyricsCacheDir == DefaultPaths.lyricsCacheDir)
                         }
-                        Text("Default: \(Self.defaultLyricsCacheDir)")
+                        Text("Default: \(DefaultPaths.lyricsCacheDir)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            TextField("Pipeline Cache", text: $pipelineCacheDir, prompt: Text(Self.defaultPipelineCacheDir))
+                            TextField("Pipeline Cache", text: $pipelineCacheDir, prompt: Text(DefaultPaths.pipelineCacheDir))
                                 .textFieldStyle(.roundedBorder)
                             Button("Browse...") {
                                 selectFolder { url in
@@ -191,11 +196,11 @@ struct SettingsView: View {
                                 }
                             }
                             Button("Reset") {
-                                pipelineCacheDir = Self.defaultPipelineCacheDir
+                                pipelineCacheDir = DefaultPaths.pipelineCacheDir
                             }
-                            .disabled(pipelineCacheDir == Self.defaultPipelineCacheDir)
+                            .disabled(pipelineCacheDir == DefaultPaths.pipelineCacheDir)
                         }
-                        Text("Default: \(Self.defaultPipelineCacheDir)")
+                        Text("Default: \(DefaultPaths.pipelineCacheDir)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -272,9 +277,20 @@ struct SettingsView: View {
             path.isEmpty ? nil : URL(fileURLWithPath: path)
         }
         
+        var errors: [String] = []
         for path in paths {
-            try? fm.removeItem(at: path)
-            try? fm.createDirectory(at: path, withIntermediateDirectories: true)
+            do {
+                if fm.fileExists(atPath: path.path) {
+                    try fm.removeItem(at: path)
+                }
+                try fm.createDirectory(at: path, withIntermediateDirectories: true)
+            } catch {
+                errors.append("\(path.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        
+        if !errors.isEmpty {
+            print("Cache clearing errors: \(errors.joined(separator: ", "))")
         }
     }
     
