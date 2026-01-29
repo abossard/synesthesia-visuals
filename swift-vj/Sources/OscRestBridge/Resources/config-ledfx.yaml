@@ -1,0 +1,172 @@
+version: 1
+
+server:
+  osc_listen:
+    host: "0.0.0.0"
+    port: 9000
+  http:
+    base_url: "http://127.0.0.1:8888"
+    timeout_ms: 1500
+    default_headers:
+      Content-Type: "application/json"
+
+slots:
+  "0":
+    name: "main"
+    targets:
+      virtual_ids: ["virtual-1"]
+    blackout:
+      scene: "blackout"
+      restore_previous_scene: true
+  "1":
+    name: "secondary"
+    targets:
+      virtual_ids: ["virtual-2"]
+    blackout:
+      scene: "blackout"
+      restore_previous_scene: false
+
+scenes:
+  strobe:
+    id: "strobe"
+    on_activate:
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "${scene.id}"
+          action: "activate"
+    on_deactivate:
+      enabled: true
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "${scene.id}"
+          action: "deactivate"
+  
+  wash:
+    id: "wash"
+    on_activate:
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "${scene.id}"
+          action: "activate"
+    on_deactivate:
+      enabled: false
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "${scene.id}"
+          action: "deactivate"
+  
+  blackout:
+    id: "blackout"
+    on_activate:
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "blackout"
+          action: "activate"
+    on_deactivate:
+      enabled: true
+      request:
+        method: "PUT"
+        path: "/api/scenes"
+        body:
+          id: "blackout"
+          action: "deactivate"
+
+oneshots:
+  whiteflash:
+    request:
+      method: "PUT"
+      path: "/api/virtuals_tools/${slot.targets.virtual_ids[0]}"
+      body:
+        tool: "oneshot"
+        color: "#FFFFFF"
+        ramp: 0
+        hold: 40
+        fade: 0
+        brightness: 1.0
+  
+  redhit:
+    request:
+      method: "PUT"
+      path: "/api/virtuals_tools/${slot.targets.virtual_ids[0]}"
+      body:
+        tool: "oneshot"
+        color: "#FF0000"
+        ramp: 0
+        hold: 60
+        fade: 100
+        brightness: 0.8
+
+params:
+  strobe_speed:
+    input:
+      accepted: ["midi_0_127", "normalized_0_1"]
+      default_mode: "midi_0_127"
+    scale:
+      type: "curve"
+      curve: "square"
+      in_min: 0
+      in_max: 127
+      out_min: 0.5
+      out_max: 20.0
+    request:
+      method: "PUT"
+      path: "/api/virtuals/${slot.targets.virtual_ids[0]}/effects"
+      body_template:
+        config:
+          speed_hz: 1.0
+      patch_ops:
+        - op: "set"
+          pointer: "/config/speed_hz"
+          value: "${param.scaled}"
+  
+  brightness:
+    input:
+      accepted: ["midi_0_127", "normalized_0_1"]
+      default_mode: "midi_0_127"
+    scale:
+      type: "linear"
+      in_min: 0
+      in_max: 127
+      out_min: 0.0
+      out_max: 1.0
+    request:
+      method: "PUT"
+      path: "/api/virtuals/${slot.targets.virtual_ids[0]}"
+      body_template:
+        config:
+          brightness: 0.5
+      patch_ops:
+        - op: "set"
+          pointer: "/config/brightness"
+          value: "${param.scaled}"
+  
+  color_hue:
+    input:
+      accepted: ["midi_0_127", "normalized_0_1"]
+      default_mode: "midi_0_127"
+    scale:
+      type: "linear"
+      in_min: 0
+      in_max: 127
+      out_min: 0.0
+      out_max: 360.0
+    request:
+      method: "PUT"
+      path: "/api/virtuals/${slot.targets.virtual_ids[0]}/effects"
+      body_template:
+        config:
+          color_hue: 180.0
+      patch_ops:
+        - op: "set"
+          pointer: "/config/color_hue"
+          value: "${param.scaled}"

@@ -7,6 +7,7 @@ import Metal
 import AppKit
 import Combine
 import OSCKit
+import OscRestBridge
 
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
@@ -119,6 +120,7 @@ public final class AppState: ObservableObject {
     public var launchpadModule: LaunchpadModule?
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
+    public var oscRestBridge: OscRestBridgeService?
 
     // MARK: - Cache Adapters (for clearing)
     
@@ -558,6 +560,9 @@ public final class AppState: ObservableObject {
         )
 
         songsModule = SongsModule()
+        
+        // Initialize OSC Rest Bridge
+        oscRestBridge = createDefaultBridgeService()
     }
 
     private func wireModuleDispatchers() async {
@@ -664,6 +669,14 @@ public final class AppState: ObservableObject {
             oscHub.subscribe(pattern: "/image/folder") { [weak self] _, values in
                 guard let folderPath = values.first as? String else { return }
                 Task { @MainActor in self?.loadImagesFromFolder(URL(fileURLWithPath: folderPath)) }
+            }
+            
+            // Subscribe OSC Rest Bridge to /ledfx/* messages
+            oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
+                guard let self = self, let bridge = self.oscRestBridge else { return }
+                Task {
+                    await bridge.handleOSCMessage(path: address, values: values)
+                }
             }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
