@@ -208,7 +208,7 @@ Potential future additions:
 
 ## Files Changed
 
-**New Files (7):**
+**New Files (11):**
 1. `Sources/SwiftVJCore/Domain/LedFXTypes.swift` - Domain models
 2. `Sources/SwiftVJCore/Domain/SceneGenerator.swift` - Scene generation
 3. `Sources/SwiftVJCore/Adapters/LedFXClient.swift` - HTTP client
@@ -218,6 +218,7 @@ Potential future additions:
 7. `Tests/BehaviorTests/LedFXTypesTests.swift` - Tests
 8. `Tests/E2ETests/LedFXClientTests.swift` - E2E tests
 9. `docs/LEDFX_INTEGRATION.md` - Documentation
+10. `docs/LEDFX_IMPLEMENTATION_SUMMARY.md` - Implementation summary
 
 **Modified Files (2):**
 1. `Sources/SwiftVJApp/SwiftVJApp.swift` - Added ledfxModule
