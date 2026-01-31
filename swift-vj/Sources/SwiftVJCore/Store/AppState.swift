@@ -2,6 +2,7 @@
 // Single source of truth for all application data
 
 import Foundation
+import SongRepository
 
 // MARK: - Root App State
 
@@ -28,6 +29,9 @@ public struct AppState: Equatable, Sendable {
     /// UI state (logs, OSC debug, settings)
     public var ui: UISubState
 
+    /// Songs management state
+    public var songs: SongsSubState
+
     /// Whether the system is running
     public var isRunning: Bool
 
@@ -48,6 +52,7 @@ public struct AppState: Equatable, Sendable {
         launchpad: LaunchpadSubState = LaunchpadSubState(),
         audio: AudioSubState = AudioSubState(),
         ui: UISubState = UISubState(),
+        songs: SongsSubState = SongsSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
     ) {
@@ -57,6 +62,7 @@ public struct AppState: Equatable, Sendable {
         self.launchpad = launchpad
         self.audio = audio
         self.ui = ui
+        self.songs = songs
         self.isRunning = isRunning
         self.modules = modules
     }
@@ -69,6 +75,7 @@ public struct AppState: Equatable, Sendable {
         lhs.launchpad == rhs.launchpad &&
         lhs.audio == rhs.audio &&
         lhs.ui == rhs.ui &&
+        lhs.songs == rhs.songs &&
         lhs.isRunning == rhs.isRunning
     }
 }
@@ -506,6 +513,104 @@ public struct OSCLogEntryState: Equatable, Sendable, Identifiable {
         self.address = address
         self.args = args
         self.timestamp = timestamp
+    }
+}
+
+// MARK: - Songs Sub-State
+
+/// Songs management state
+public struct SongsSubState: Equatable, Sendable {
+    /// Total song count
+    public var totalCount: Int
+
+    /// Currently selected song ID (in browser)
+    public var selectedSongId: SongID?
+
+    /// Current search query
+    public var searchQuery: String
+
+    /// Current filter
+    public var filter: SongFilter
+
+    /// Current sort order
+    public var sortOrder: SongSortOrder
+
+    /// Filtered/searched results (for UI display)
+    public var displayedSongs: [Song]
+
+    /// Song being re-analyzed
+    public var reanalyzingSongId: SongID?
+
+    /// Statistics snapshot
+    public var statistics: SongStatistics?
+
+    /// Whether songs are loading
+    public var isLoading: Bool
+
+    /// Folder scan progress (nil when not scanning)
+    public var scanProgress: FolderScanProgress?
+
+    public init(
+        totalCount: Int = 0,
+        selectedSongId: SongID? = nil,
+        searchQuery: String = "",
+        filter: SongFilter = .all,
+        sortOrder: SongSortOrder = .recentlyPlayed,
+        displayedSongs: [Song] = [],
+        reanalyzingSongId: SongID? = nil,
+        statistics: SongStatistics? = nil,
+        isLoading: Bool = false,
+        scanProgress: FolderScanProgress? = nil
+    ) {
+        self.totalCount = totalCount
+        self.selectedSongId = selectedSongId
+        self.searchQuery = searchQuery
+        self.filter = filter
+        self.sortOrder = sortOrder
+        self.displayedSongs = displayedSongs
+        self.reanalyzingSongId = reanalyzingSongId
+        self.statistics = statistics
+        self.isLoading = isLoading
+        self.scanProgress = scanProgress
+    }
+}
+
+// MARK: - Folder Scan Progress
+
+/// Progress state for folder scanning
+public struct FolderScanProgress: Equatable, Sendable {
+    /// Current file being scanned (1-based)
+    public var current: Int
+
+    /// Total files to scan
+    public var total: Int
+
+    /// Number of songs discovered so far
+    public var foundCount: Int
+
+    /// Whether scan is in progress
+    public var isScanning: Bool
+
+    /// Folder being scanned
+    public var folderName: String
+
+    /// Progress percentage (0.0 - 1.0)
+    public var progress: Double {
+        total > 0 ? Double(current) / Double(total) : 0
+    }
+
+    public init(
+        current: Int = 0,
+        total: Int = 0,
+        foundCount: Int = 0,
+        isScanning: Bool = false,
+        folderName: String = ""
+    ) {
+        self.current = current
+        self.total = total
+        self.foundCount = foundCount
+        self.isScanning = isScanning
+        self.folderName = folderName
     }
 }
 

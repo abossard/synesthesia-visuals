@@ -7,6 +7,7 @@ import Metal
 import AppKit
 import Combine
 import OSCKit
+import OscRestBridge
 
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
@@ -15,6 +16,7 @@ private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos
 struct SwiftVJApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup {
@@ -25,7 +27,46 @@ struct SwiftVJApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
+
+            // Karaoke menu
+            CommandMenu("Karaoke") {
+                Button("Show Lyrics Panel") {
+                    openWindow(id: "karaoke-lyrics")
+                }
+                .keyboardShortcut("L", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Load Test Lyrics") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.loadTestLyrics()
+                    }
+                }
+
+                Button("Next Line") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.nextLine()
+                    }
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command])
+
+                Button("Previous Line") {
+                    Task { @MainActor in
+                        appState.renderEngine?.karaokeEngine.previousLine()
+                    }
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command])
+            }
         }
+
+        // Karaoke Lyrics Panel Window
+        Window("Karaoke Lyrics", id: "karaoke-lyrics") {
+            KaraokeLyricsPanelWindow()
+                .environmentObject(appState)
+        }
+        .windowStyle(.titleBar)
+        .windowResizability(.contentSize)
+        .defaultPosition(.topTrailing)
 
         Settings {
             SettingsView()
@@ -79,6 +120,13 @@ public final class AppState: ObservableObject {
     public var launchpadModule: LaunchpadModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
     public var shaderPreferenceStore: ShaderPreferenceStore?
+    public var songsModule: SongsModule?
+    public var oscRestBridge: OscRestBridgeService?
+
+    // MARK: - Cache Adapters (for clearing)
+    
+    private var lyricsFetcher: LyricsFetcher?
+    private var llmClient: LLMClient?
 
     // MARK: - Render Engine
 
@@ -102,6 +150,7 @@ public final class AppState: ObservableObject {
     @Published public private(set) var selectedShader: String?
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
+    @Published public private(set) var songsState: SongsSubState = SongsSubState()
     @Published public var logEntries: [LogEntry] = []
     @Published public var oscMessages: [String: OSCLogEntry] = [:]
     @Published public var oscMessageCount: Int = 0
@@ -180,6 +229,7 @@ public final class AppState: ObservableObject {
         }
 
         try await pipelineModule?.start()
+        try await songsModule?.start()
 
         // Update store state
         store.send(.startup)
@@ -218,6 +268,7 @@ public final class AppState: ObservableObject {
         vdjQueryTask = nil
         await playbackModule?.stop()
         await pipelineModule?.stop()
+        await songsModule?.stop()
         launchpadModule?.stop()
         isRunning = false
         log("Pipeline stopped", level: .info)
@@ -245,13 +296,20 @@ public final class AppState: ObservableObject {
         store.send(.render(.selectShader(name)))
     }
 
+    /// Set the current phase via unidirectional data flow.
+    /// Dispatches through Store → Reducer → @Published sync.
+    /// Do NOT write directly to currentPhase to avoid state trickling.
     public func setPhase(_ phase: Phase?) {
-        currentPhase = phase
-        if let phase = phase {
-            UserDefaults.standard.set(phase.rawValue, forKey: "currentPhase")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "currentPhase")
-        }
+        store.send(.render(.selectPhase(phase)))
+    }
+
+    /// Type-safe binding for Phase pickers that enforces unidirectional flow.
+    /// Use this instead of $currentPhase to prevent direct @Published writes.
+    public var phaseBinding: Binding<Phase?> {
+        Binding(
+            get: { self.currentPhase },
+            set: { newPhase in self.setPhase(newPhase) }
+        )
     }
     
     public func setAutoDriveMode(_ mode: AutoDriveMode) {
@@ -339,17 +397,19 @@ public final class AppState: ObservableObject {
     // MARK: - Private Setup
 
     private func setupModules() {
-        let lyricsFetcher = LyricsFetcher()
+        let fetcher = LyricsFetcher()
+        self.lyricsFetcher = fetcher
         let shaderMatcher = ShaderMatcher()
         let projectImagesDir = URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/data/song_images")
         let imageScraper = ImageScraper(cacheDir: projectImagesDir)
-        let llmClient = LLMClient()
+        let llm = LLMClient()
+        self.llmClient = llm
         
         shaderPreferenceStore = ShaderPreferenceStore()
 
         playbackModule = PlaybackModule(oscHub: oscHub)
-        lyricsModule = LyricsModule(fetcher: lyricsFetcher)
-        aiModule = AIModule(llmClient: llmClient)
+        lyricsModule = LyricsModule(fetcher: fetcher)
+        aiModule = AIModule(llmClient: llm)
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
 
@@ -398,6 +458,11 @@ public final class AppState: ObservableObject {
             imagesModule: imagesModule,
             oscHub: oscHub
         )
+
+        songsModule = SongsModule()
+        
+        // Initialize OSC Rest Bridge
+        oscRestBridge = createDefaultBridgeService()
     }
 
     private func wireModuleDispatchers() async {
@@ -514,6 +579,14 @@ public final class AppState: ObservableObject {
                 guard let folderPath = values.first as? String else { return }
                 Task { @MainActor in self?.loadImagesFromFolder(URL(fileURLWithPath: folderPath)) }
             }
+            
+            // Subscribe OSC Rest Bridge to /ledfx/* messages
+            oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
+                guard let self = self, let bridge = self.oscRestBridge else { return }
+                Task {
+                    await bridge.handleOSCMessage(path: address, values: values)
+                }
+            }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
         }
@@ -553,26 +626,38 @@ public final class AppState: ObservableObject {
                    newTrackKey != self.lastTrackKey {
                     self.lastTrackKey = newTrackKey
                     self.log("♪ \(track.artist) - \(track.title)", level: .info)
+                    if let engine = self.renderEngine {
+                        engine.onTrackChange(artist: track.artist, title: track.title)
+                    }
                     // Processing dispatched via EffectEnvironment in Reducer.trackChanged
                 }
 
                 // Sync @Published properties from store state for SwiftUI binding compatibility
-                self.isRunning = newState.isRunning
-                self.currentTrack = newState.playback.currentTrack
-                self.playbackPosition = newState.playback.position
-                self.isPlaying = newState.playback.isPlaying
-                self.playbackSource = newState.playback.source
-                self.timingOffsetMs = newState.playback.timingOffsetMs
-                self.selectedShader = newState.render.selectedShader
-                self.currentPhase = newState.render.currentPhase
-                self.detectedSongPhase = newState.render.detectedSongPhase
-                self.imageIndex = newState.render.imageIndex
-                self.imageCount = newState.render.imageCount
-                self.shaderCount = newState.render.shaderCount
+                // Only update if changed to avoid unnecessary objectWillChange publishes
+                if self.isRunning != newState.isRunning { self.isRunning = newState.isRunning }
+                if self.currentTrack != newState.playback.currentTrack { self.currentTrack = newState.playback.currentTrack }
+                if self.playbackPosition != newState.playback.position {
+                    self.playbackPosition = newState.playback.position
+                    // Feed position to KaraokeEngine for automatic line transitions
+                    self.renderEngine?.onPlaybackPositionUpdate(newState.playback.position)
+                }
+                if self.isPlaying != newState.playback.isPlaying {
+                    self.isPlaying = newState.playback.isPlaying
+                    self.renderEngine?.onPlaybackStateChange(isPlaying: newState.playback.isPlaying)
+                }
+                if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
+                if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
+                if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
+                if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
+                if self.detectedSongPhase != newState.render.detectedSongPhase { self.detectedSongPhase = newState.render.detectedSongPhase }
+                if self.imageIndex != newState.render.imageIndex { self.imageIndex = newState.render.imageIndex }
+                if self.imageCount != newState.render.imageCount { self.imageCount = newState.render.imageCount }
+                if self.shaderCount != newState.render.shaderCount { self.shaderCount = newState.render.shaderCount }
+                if self.songsState != newState.songs { self.songsState = newState.songs }
 
-                // Launchpad state
+                // Launchpad state - only update if changed
                 if let snapshot = newState.launchpad.status {
-                    self.launchpadStatus = LaunchpadStatus(
+                    let newStatus = LaunchpadStatus(
                         isEnabled: snapshot.isConnected,
                         isConnected: snapshot.isConnected,
                         deviceName: snapshot.deviceName,
@@ -580,19 +665,29 @@ public final class AppState: ObservableObject {
                         configuredPadCount: snapshot.padCount,
                         currentBpm: 120
                     )
+                    if self.launchpadStatus != newStatus {
+                        self.launchpadStatus = newStatus
+                    }
                 }
 
-                // Pipeline state
-                self.syncPipelineSteps(from: newState.pipeline)
-                if let result = newState.pipeline.result {
+                // Pipeline state - only update if changed
+                let newSteps = self.mapPipelineSteps(from: newState.pipeline)
+                if self.pipelineSteps != newSteps {
+                    self.pipelineSteps = newSteps
+                }
+                if let result = newState.pipeline.result, self.pipelineResult != result {
                     self.pipelineResult = result
+                    self.renderEngine?.onLyricsLoaded(
+                        result.lyricsLines,
+                        refrainLines: result.refrainLines
+                    )
                 }
             }
             .store(in: &cancellables)
     }
 
-    private func syncPipelineSteps(from pipeline: PipelineSubState) {
-        pipelineSteps = pipeline.steps.map { stepState in
+    private func mapPipelineSteps(from pipeline: PipelineSubState) -> [PipelineStep] {
+        pipeline.steps.map { stepState in
             PipelineStep(
                 name: stepState.name,
                 status: stepState.status,
@@ -643,12 +738,16 @@ public final class AppState: ObservableObject {
 
 // MARK: - Supporting Types
 
-public struct PipelineStep: Identifiable {
+public struct PipelineStep: Identifiable, Equatable, Sendable {
     public let id = UUID()
     public let name: String
     public var status: String
     public var details: [String]?
     public var timestamp: Date
+
+    public static func == (lhs: PipelineStep, rhs: PipelineStep) -> Bool {
+        lhs.name == rhs.name && lhs.status == rhs.status && lhs.details == rhs.details
+    }
 
     public static let defaultSteps: [PipelineStep] = [
         PipelineStep(name: "lyrics", status: "pending", details: nil, timestamp: Date()),
@@ -666,7 +765,7 @@ public struct LogEntry: Identifiable {
     public let timestamp: Date
 }
 
-public enum LogLevel: String, CaseIterable {
+public enum LogLevel: String, CaseIterable, Sendable {
     case debug = "DEBUG"
     case info = "INFO"
     case warning = "WARN"
