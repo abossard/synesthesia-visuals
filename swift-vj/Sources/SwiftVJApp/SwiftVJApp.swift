@@ -121,6 +121,7 @@ public final class AppState: ObservableObject {
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
     public var oscRestBridge: OscRestBridgeService?
+    public var ledfxModule: LedFXModule?
 
     // MARK: - Cache Adapters (for clearing)
     
