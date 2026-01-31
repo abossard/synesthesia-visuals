@@ -12,8 +12,54 @@ struct SettingsView: View {
     @AppStorage("timingOffsetMs") private var timingOffsetMs = 0
     @AppStorage("startSynesthesia") private var startSynesthesia = false
     @AppStorage("playbackPollInterval") private var playbackPollInterval = 1.0
-    @AppStorage("shaderDirectory") private var shaderDirectory = ""
-    @AppStorage("imagesCacheDir") private var imagesCacheDir = ""
+    
+    // Folder paths with sensible defaults
+    @AppStorage("shaderDirectory") private var shaderDirectory = DefaultPaths.shaderDirectory
+    @AppStorage("imagesCacheDir") private var imagesCacheDir = DefaultPaths.imagesCacheDir
+    @AppStorage("lyricsCacheDir") private var lyricsCacheDir = DefaultPaths.lyricsCacheDir
+    @AppStorage("pipelineCacheDir") private var pipelineCacheDir = DefaultPaths.pipelineCacheDir
+    @AppStorage("songImagesDir") private var songImagesDir = DefaultPaths.songImagesDir
+    
+    // Default paths cached to avoid repeated file system checks
+    private struct DefaultPaths {
+        static let shaderDirectory: String = {
+            // Try to find synesthesia-shaders relative to the repo
+            let fm = FileManager.default
+            let currentDir = fm.currentDirectoryPath
+            let repoShaders = (currentDir as NSString).appendingPathComponent("../synesthesia-shaders")
+            if fm.fileExists(atPath: repoShaders) {
+                return (repoShaders as NSString).standardizingPath
+            }
+            return ""
+        }()
+        
+        static let imagesCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("images").path
+        }()
+        
+        static let lyricsCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("lyrics").path
+        }()
+        
+        static let pipelineCacheDir: String = {
+            Config.cacheDirectory.appendingPathComponent("pipeline").path
+        }()
+        
+        static let songImagesDir: String = {
+            // Try to find data/song_images relative to repo, fallback to app support
+            let fm = FileManager.default
+            let currentDir = fm.currentDirectoryPath
+            let repoImages = (currentDir as NSString).appendingPathComponent("../data/song_images")
+            if fm.fileExists(atPath: repoImages) {
+                return (repoImages as NSString).standardizingPath
+            }
+            // Safe unwrap with fallback
+            guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return ""
+            }
+            return appSupport.appendingPathComponent("SwiftVJ/song_images").path
+        }()
+    }
     
     var body: some View {
         TabView {
@@ -59,45 +105,108 @@ struct SettingsView: View {
             
             // Paths
             Form {
-                Section("Directories") {
-                    HStack {
-                        TextField("Shader Directory", text: $shaderDirectory)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Browse...") {
-                            selectFolder { url in
-                                shaderDirectory = url.path
+                Section("Shader Directories") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Shader Directory", text: $shaderDirectory, prompt: Text(DefaultPaths.shaderDirectory))
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                selectFolder { url in
+                                    shaderDirectory = url.path
+                                }
                             }
-                        }
-                    }
-                    
-                    HStack {
-                        TextField("Images Cache", text: $imagesCacheDir)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Browse...") {
-                            selectFolder { url in
-                                imagesCacheDir = url.path
+                            Button("Reset") {
+                                shaderDirectory = DefaultPaths.shaderDirectory
                             }
+                            .disabled(shaderDirectory == DefaultPaths.shaderDirectory)
                         }
+                        Text("Default: \(DefaultPaths.shaderDirectory.isEmpty ? "Not found" : DefaultPaths.shaderDirectory)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 
-                Section("Cache") {
-                    HStack {
-                        Text("Lyrics cache")
-                        Spacer()
-                        Text("~/.cache/swift-vj/lyrics")
+                Section("Image Directories") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Song Images Directory", text: $songImagesDir, prompt: Text(DefaultPaths.songImagesDir))
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                selectFolder { url in
+                                    songImagesDir = url.path
+                                }
+                            }
+                            Button("Reset") {
+                                songImagesDir = DefaultPaths.songImagesDir
+                            }
+                            .disabled(songImagesDir == DefaultPaths.songImagesDir)
+                        }
+                        Text("Default: \(DefaultPaths.songImagesDir)")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
-                    HStack {
-                        Text("Pipeline cache")
-                        Spacer()
-                        Text("~/.cache/swift-vj/pipeline")
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Images Cache", text: $imagesCacheDir, prompt: Text(DefaultPaths.imagesCacheDir))
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                selectFolder { url in
+                                    imagesCacheDir = url.path
+                                }
+                            }
+                            Button("Reset") {
+                                imagesCacheDir = DefaultPaths.imagesCacheDir
+                            }
+                            .disabled(imagesCacheDir == DefaultPaths.imagesCacheDir)
+                        }
+                        Text("Default: \(DefaultPaths.imagesCacheDir)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section("Cache Directories") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Lyrics Cache", text: $lyricsCacheDir, prompt: Text(DefaultPaths.lyricsCacheDir))
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                selectFolder { url in
+                                    lyricsCacheDir = url.path
+                                }
+                            }
+                            Button("Reset") {
+                                lyricsCacheDir = DefaultPaths.lyricsCacheDir
+                            }
+                            .disabled(lyricsCacheDir == DefaultPaths.lyricsCacheDir)
+                        }
+                        Text("Default: \(DefaultPaths.lyricsCacheDir)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            TextField("Pipeline Cache", text: $pipelineCacheDir, prompt: Text(DefaultPaths.pipelineCacheDir))
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                selectFolder { url in
+                                    pipelineCacheDir = url.path
+                                }
+                            }
+                            Button("Reset") {
+                                pipelineCacheDir = DefaultPaths.pipelineCacheDir
+                            }
+                            .disabled(pipelineCacheDir == DefaultPaths.pipelineCacheDir)
+                        }
+                        Text("Default: \(DefaultPaths.pipelineCacheDir)")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
                     Button("Clear All Caches") {
-                        // TODO: Implement cache clearing
+                        clearAllCaches()
                     }
                     .foregroundColor(.red)
                 }
@@ -159,7 +268,30 @@ struct SettingsView: View {
                 Label("About", systemImage: "info.circle")
             }
         }
-        .frame(width: 500, height: 400)
+        .frame(minWidth: 700, idealWidth: 800, maxWidth: 900, minHeight: 600, idealHeight: 700, maxHeight: 800)
+    }
+    
+    private func clearAllCaches() {
+        let fm = FileManager.default
+        let paths = [lyricsCacheDir, pipelineCacheDir, imagesCacheDir].compactMap { path -> URL? in
+            path.isEmpty ? nil : URL(fileURLWithPath: path)
+        }
+        
+        var errors: [String] = []
+        for path in paths {
+            do {
+                if fm.fileExists(atPath: path.path) {
+                    try fm.removeItem(at: path)
+                }
+                try fm.createDirectory(at: path, withIntermediateDirectories: true)
+            } catch {
+                errors.append("\(path.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        
+        if !errors.isEmpty {
+            print("Cache clearing errors: \(errors.joined(separator: ", "))")
+        }
     }
     
     private func selectFolder(completion: @escaping (URL) -> Void) {
