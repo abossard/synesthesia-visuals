@@ -92,7 +92,10 @@ public final class LaunchpadModule: @unchecked Sendable {
 
         // Roles from YAML config
         if let yaml = executor.yamlConfig {
-            for bank in 0..<8 { rolesByBank[bank] = yaml.bankRole(bank) }
+            for bank in 0..<8 {
+                rolesByBank[bank] = yaml.bankRole(bank)
+                state.bankLayout[bank] = yaml.bankLayoutPolicy(bank)
+            }
             // Prefill state with YAML fixed pads
             for bank in 0..<8 {
                 let behaviors = yaml.bankBehaviors(bank)
@@ -209,6 +212,7 @@ public final class LaunchpadModule: @unchecked Sendable {
         lock.lock()
         
         let oldBank = state.activeBank
+        let oldPage = state.currentPage
         let result: FSMResult
         if message.isPress {
             result = handlePadPress(state, padId: padId)
@@ -245,7 +249,9 @@ public final class LaunchpadModule: @unchecked Sendable {
         executor.executeAll(result.effects)
 
         // If bank changed and role is dynamic, refresh that bank
-        if oldBank != state.activeBank, let role = rolesByBank[state.activeBank], role == .scenes || role == .scenes2 || role == .params {
+        if oldBank != state.activeBank, let role = rolesByBank[state.activeBank], role == .scenes || role == .scenes2 || role == .presets || role == .params {
+            refreshDynamicBanks(for: [state.activeBank])
+        } else if oldPage != state.currentPage, let role = rolesByBank[state.activeBank], role == .scenes || role == .scenes2 || role == .presets || role == .params {
             refreshDynamicBanks(for: [state.activeBank])
         }
     }
@@ -267,9 +273,24 @@ public final class LaunchpadModule: @unchecked Sendable {
                 guard let role = rolesByBank[bank] else { continue }
                 switch role {
                 case .scenes:
-                    updates[bank] = generateSceneBehaviors(scenes: scenes, offset: 0)
+                    let pageSize = 64
+                    let totalPages = max(1, Int(ceil(Double(scenes.count) / Double(pageSize))))
+                    pageCounts[bank] = totalPages
+                    let currentPage = min(self.state.bankCurrentPage[bank] ?? 0, totalPages - 1)
+                    updates[bank] = generateSceneBehaviors(scenes: scenes, page: currentPage)
                 case .scenes2:
-                    updates[bank] = generateSceneBehaviors(scenes: scenes, offset: 8)
+                    let pageSize = 64
+                    let totalPages = max(1, Int(ceil(Double(scenes.count) / Double(pageSize))))
+                    pageCounts[bank] = totalPages
+                    let currentPage = min((self.state.bankCurrentPage[bank] ?? 0) + 1, totalPages - 1)
+                    updates[bank] = generateSceneBehaviors(scenes: scenes, page: currentPage)
+                case .presets:
+                    let presets = await DynamicGroupStore.shared.items(for: "$synesthesia/presets")
+                    let pageSize = 64
+                    let totalPages = max(1, Int(ceil(Double(presets.count) / Double(pageSize))))
+                    pageCounts[bank] = totalPages
+                    let currentPage = min(self.state.bankCurrentPage[bank] ?? 0, totalPages - 1)
+                    updates[bank] = generatePresetBehaviors(presets: presets, page: currentPage)
                 case .params:
                     let pageSize = 64
                     let totalPages = max(1, Int(ceil(Double(controls.count) / Double(pageSize))))
@@ -301,13 +322,17 @@ public final class LaunchpadModule: @unchecked Sendable {
         }
     }
 
-    private func generateSceneBehaviors(scenes: [String], offset: Int) -> [ButtonId: PadBehavior] {
+    private func generateSceneBehaviors(scenes: [String], page: Int) -> [ButtonId: PadBehavior] {
         var result: [ButtonId: PadBehavior] = [:]
         let palette = LaunchpadColor.allCases.map { $0.rawValue }
-        for i in 0..<8 {
-            let idx = offset + i
-            guard idx < scenes.count else { continue }
-            let padId = ButtonId(x: i, y: 7)
+        let pageSize = 64
+        let start = page * pageSize
+        let end = min(start + pageSize, scenes.count)
+        for idx in start..<end {
+            let local = idx - start
+            let x = local % 8
+            let y = local / 8
+            let padId = ButtonId(x: x, y: y)
             let sceneName = scenes[idx]
             let color = palette[idx % palette.count]
             result[padId] = PadBehavior(
@@ -320,6 +345,32 @@ public final class LaunchpadModule: @unchecked Sendable {
                 oscOn: nil,
                 oscOff: nil,
                 oscAction: OscCommand(address: "/scenes/select", args: [.string(sceneName)])
+            )
+        }
+        return result
+    }
+
+    private func generatePresetBehaviors(presets: [String], page: Int) -> [ButtonId: PadBehavior] {
+        var result: [ButtonId: PadBehavior] = [:]
+        let pageSize = 64
+        let start = page * pageSize
+        let end = min(start + pageSize, presets.count)
+        for idx in start..<end {
+            let local = idx - start
+            let x = local % 8
+            let y = local / 8
+            let padId = ButtonId(x: x, y: y)
+            let name = presets[idx]
+            result[padId] = PadBehavior(
+                padId: padId,
+                mode: .selector,
+                group: .presets,
+                idleColor: LP.cyanDim,
+                activeColor: LP.cyan,
+                label: name,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: "/presets/select", args: [.string(name)])
             )
         }
         return result
@@ -427,6 +478,18 @@ public final class LaunchpadModule: @unchecked Sendable {
                     await DynamicGroupStore.shared.update(source: "$synesthesia/scenes", items: items)
                     let sceneBanks = rolesByBank.filter { $0.value == .scenes || $0.value == .scenes2 }.map { $0.key }
                     if !sceneBanks.isEmpty { refreshDynamicBanks(for: sceneBanks) }
+                }
+            }
+        }
+        if event.address.hasPrefix("/presets/") {
+            let name = event.address.components(separatedBy: "/").last ?? ""
+            if !name.isEmpty {
+                Task {
+                    var items = await DynamicGroupStore.shared.items(for: "$synesthesia/presets")
+                    if !items.contains(name) { items.append(name) }
+                    await DynamicGroupStore.shared.update(source: "$synesthesia/presets", items: items)
+                    let presetBanks = rolesByBank.filter { $0.value == .presets }.map { $0.key }
+                    if !presetBanks.isEmpty { refreshDynamicBanks(for: presetBanks) }
                 }
             }
         }

@@ -27,15 +27,15 @@ public func renderState(_ state: ControllerState) -> [LaunchpadEffect] {
 private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
     var effects: [LaunchpadEffect] = []
     
-    // Top row (y=7) = Bank buttons
+    // Top row (y=-1) = Bank buttons
     for i in 0..<BankConfig.count {
         let isActive = (i == state.activeBank)
         let color = isActive ? BankConfig.color(for: i) : BankConfig.dimColor(for: i)
         effects.append(.setLed(padId: LaunchpadButton.bank(i), color: color, blink: false))
     }
     
-    // Grid pads (rows 0-6) - clear then render configured
-    for y in 0..<7 {  // Skip row 7 (bank buttons)
+    // Grid pads (rows 0-7) - clear then render configured
+    for y in 0..<8 {
         for x in 0..<8 {
             effects.append(.setLed(padId: ButtonId(x: x, y: y), color: LP.off, blink: false))
         }
@@ -45,16 +45,10 @@ private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
     for y in 1..<8 {
         effects.append(.setLed(padId: ButtonId(x: 8, y: y), color: LP.off, blink: false))
     }
-
-    // Page indicator
-    let pageColor = state.currentPage == 0 ? LP.purpleDim : LP.purple
-    effects.append(.setLed(padId: LaunchpadButton.page, color: pageColor, blink: false))
+    effects.append(contentsOf: renderPagingIndicators(state))
     
     // Then render configured pads with their current color
     for (padId, behavior) in state.pads {
-        // Skip bank row for pad rendering
-        if padId.y == 7 && padId.x < 8 { continue }
-        
         let runtime = state.padRuntime[padId] ?? PadRuntimeState()
         let color = runtime.isActive ? behavior.activeColor : behavior.idleColor
         let blink = runtime.isActive && behavior.mode == .selector
@@ -63,6 +57,10 @@ private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
     
     // Learn button GREEN (ready to enter learn mode)
     effects.append(.setLed(padId: LaunchpadButton.learn, color: LP.greenDim, blink: false))
+
+    // Record button (bottom right) ready state
+    let recordColor = state.activeBank >= 4 ? LP.redDim : LP.off
+    effects.append(.setLed(padId: LaunchpadButton.record, color: recordColor, blink: false))
     
     return effects
 }
@@ -77,36 +75,31 @@ private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
 private func renderWaitPad(_ state: ControllerState) -> [LaunchpadEffect] {
     var effects: [LaunchpadEffect] = []
     
-    // Top row (y=7) = Bank buttons (still active during wait)
+    // Top row (y=-1) = Bank buttons (still active during wait)
     for i in 0..<BankConfig.count {
         let isActive = (i == state.activeBank)
         let color = isActive ? BankConfig.color(for: i) : BankConfig.dimColor(for: i)
         effects.append(.setLed(padId: LaunchpadButton.bank(i), color: color, blink: false))
     }
     
-    // Grid pads (rows 0-6)
-    for y in 0..<7 {  // Skip row 7 (bank buttons)
+    // Grid pads (rows 0-7)
+    let layout = state.currentLayout
+    for y in 0..<8 {
         for x in 0..<8 {
             let padId = ButtonId(x: x, y: y)
             if let behavior = state.pads[padId] {
                 // Already configured - show idle color
                 effects.append(.setLed(padId: padId, color: behavior.idleColor, blink: false))
-            } else {
+            } else if layout.isRecordable(padId: padId) {
                 // Available for configuration - blink red
                 effects.append(.setLed(padId: padId, color: LP.red, blink: true))
+            } else {
+                effects.append(.setLed(padId: padId, color: LP.off, blink: false))
             }
         }
     }
-    
-    // Scene buttons (right column, except learn button at y=0)
-    for y in 1..<8 {
-        let padId = ButtonId(x: 8, y: y)
-        if let behavior = state.pads[padId] {
-            effects.append(.setLed(padId: padId, color: behavior.idleColor, blink: false))
-        } else {
-            effects.append(.setLed(padId: padId, color: LP.red, blink: true))
-        }
-    }
+
+    effects.append(contentsOf: renderPagingIndicators(state))
     
     // Learn button ORANGE (in learn mode, press to cancel)
     effects.append(.setLed(padId: LaunchpadButton.learn, color: LP.orange, blink: false))
@@ -133,7 +126,7 @@ private func renderConfig(_ state: ControllerState) -> [LaunchpadEffect] {
         }
     }
     
-    // Top row (y=7) = Bank buttons (active during config too)
+    // Top row (y=-1) = Bank buttons (active during config too)
     for i in 0..<BankConfig.count {
         let isActive = (i == state.activeBank)
         let color = isActive ? BankConfig.color(for: i) : BankConfig.dimColor(for: i)
@@ -181,6 +174,29 @@ private func renderConfig(_ state: ControllerState) -> [LaunchpadEffect] {
     effects.append(.setLed(padId: LaunchpadButton.learn, color: LP.redDim, blink: false))
     
     return effects
+}
+
+// MARK: - Paging Indicators
+
+private func renderPagingIndicators(_ state: ControllerState) -> [LaunchpadEffect] {
+    let layout = state.currentLayout
+    let pageCount = max(1, state.currentPageCount)
+    let activePage = min(state.currentPage, pageCount - 1)
+
+    switch layout.paging {
+    case .none:
+        return []
+    case .nextButton(let row):
+        let color = activePage == 0 ? LP.purpleDim : LP.purple
+        return [.setLed(padId: ButtonId(x: 8, y: row), color: color, blink: false)]
+    case .rowButtons(let rows):
+        var effects: [LaunchpadEffect] = []
+        for (index, row) in rows.enumerated() {
+            let color = index == activePage ? LP.purple : LP.purpleDim
+            effects.append(.setLed(padId: ButtonId(x: 8, y: row), color: color, blink: false))
+        }
+        return effects
+    }
 }
 
 // MARK: - Register Renderers

@@ -82,13 +82,13 @@ groups:
 global:
   # Top row bank buttons (CC 91-98)
   bankButtons:
-    - { cc: 91, bank: 0, name: "Playlist",    idleColor: blue,    activeColor: white }
-    - { cc: 92, bank: 1, name: "Synesthesia", idleColor: purple,  activeColor: white }
-    - { cc: 93, bank: 2, name: "Magic",       idleColor: cyan,    activeColor: white }
-    - { cc: 94, bank: 3, name: "Processing",  idleColor: green,   activeColor: white }
-    - { cc: 95, bank: 4, name: "Effects",     idleColor: orange,  activeColor: white }
-    - { cc: 96, bank: 5, name: "Colors",      idleColor: pink,    activeColor: white }
-    - { cc: 97, bank: 6, name: "Audio",       idleColor: yellow,  activeColor: white }
+    - { cc: 91, bank: 0, name: "Live",        idleColor: blue,    activeColor: white }
+    - { cc: 92, bank: 1, name: "Presets",     idleColor: purple,  activeColor: white }
+    - { cc: 93, bank: 2, name: "Global",      idleColor: cyan,    activeColor: white }
+    - { cc: 94, bank: 3, name: "Favorites",   idleColor: green,   activeColor: white }
+    - { cc: 95, bank: 4, name: "Shaders",     idleColor: orange,  activeColor: white }
+    - { cc: 96, bank: 5, name: "Audio",       idleColor: pink,    activeColor: white }
+    - { cc: 97, bank: 6, name: "Visual",      idleColor: yellow,  activeColor: white }
     - { cc: 98, bank: 7, name: "Custom",      idleColor: grey,    activeColor: white }
 
   # Scene column buttons (right side)
@@ -112,9 +112,9 @@ global:
 # Master control panel for Synesthesia: meta controls, playlist, media
 
 bank0:
-  name: "Synesthesia"
-  purpose: "Master Synesthesia controls: meta, playlist, media"
-  role: basic
+  name: "Live"
+  purpose: "Live performance scenes"
+  role: scenes
 
   pads:
     # -------------------------------------------------------------------------
@@ -684,7 +684,10 @@ bank0:
       activeColor: yellowBright
       osc: { address: "/favslots/4" }
 
-  programmableRows: []  # All rows are fixed in Bank 0
+  programmableRows: []  # Dynamic scenes overwrite pad map
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 1: SYNESTHESIA
@@ -693,9 +696,9 @@ bank0:
 # intensity/speed controls on row 5
 
 bank1:
-  name: "Synesthesia"
-  purpose: "Scene and preset control"
-  role: scenes
+  name: "Presets"
+  purpose: "Scene presets"
+  role: presets
   
   pads:
     # Row 7: Scene selection (dynamic group populated at runtime)
@@ -771,6 +774,9 @@ bank1:
       oscOff: { address: "/synesthesia/autoPreset", args: [0] }
 
   programmableRows: [0, 1, 2, 3, 4]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: 0
 
 # ============================================================================
 # BANK 2: MAGIC
@@ -778,9 +784,9 @@ bank1:
 # Example: Layer opacity controls, effect toggles, crossfader
 
 bank2:
-  name: "Scenes 2"
-  purpose: "Scene selection page 2"
-  role: scenes2
+  name: "Global"
+  purpose: "Global effects"
+  role: global
   pads:
     # Row 7: Scene selection (dynamic group populated at runtime)
     - { x: 0, y: 7, mode: selector, group: scenes, index: 8, idleColor: purpleDim, activeColor: purple }
@@ -792,6 +798,9 @@ bank2:
     - { x: 6, y: 7, mode: selector, group: scenes, index: 14, idleColor: purpleDim, activeColor: purple }
     - { x: 7, y: 7, mode: selector, group: scenes, index: 15, idleColor: purpleDim, activeColor: purple }
   programmableRows: [0, 1, 2, 3, 4, 5, 6]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 3: PROCESSING
@@ -799,11 +808,14 @@ bank2:
 # Example: VJUniverse tile controls, game launchers
 
 bank3:
-  name: "Params"
-  purpose: "Dynamic Synesthesia controls"
-  role: params
+  name: "Favorites"
+  purpose: "Quick access favorites"
+  role: favorites
   pads: []
   programmableRows: [0, 1, 2, 3, 4, 5, 6, 7]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 4: EFFECTS
@@ -811,9 +823,9 @@ bank3:
 # Example: Post-processing effects with toggle controls
 
 bank4:
-  name: "Global"
-  purpose: "Global parameters"
-  role: global
+  name: "Shaders"
+  purpose: "VJUniverse shader selection"
+  role: shaders
   
   pads:
     # Row 7: Primary effects
@@ -926,6 +938,9 @@ bank4:
       oscOff: { address: "/fx/strobe", args: [0] }
 
   programmableRows: [0, 1, 2, 3, 4, 5]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 5: COLORS
@@ -933,8 +948,9 @@ bank4:
 # Example: Color palette selection, hue/saturation controls
 
 bank5:
-  name: "Colors"
-  purpose: "Color palette control"
+  name: "Audio"
+  purpose: "Audio bindings and routing"
+  role: audio
   
   pads:
     # Row 7: Preset palettes
@@ -1021,6 +1037,9 @@ bank5:
       osc: { address: "/colors/random" }
 
   programmableRows: [0, 1, 2, 3, 4, 5]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 6: AUDIO
@@ -1028,8 +1047,9 @@ bank5:
 # Example: Audio routing, input selection, level controls
 
 bank6:
-  name: "Audio"
-  purpose: "Audio routing and levels"
+  name: "Visual"
+  purpose: "Visual controls"
+  role: visual
   
   pads:
     # Row 7: Audio source selection
@@ -1107,6 +1127,9 @@ bank6:
       oscOff: { address: "/audio/mute", args: [0] }
 
   programmableRows: [0, 1, 2, 3, 4, 5]
+  recordableRows: []
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null
 
 # ============================================================================
 # BANK 7: CUSTOM
@@ -1116,6 +1139,7 @@ bank6:
 bank7:
   name: "Custom"
   purpose: "User-defined mappings"
+  role: custom
   
   pads:
     # Just a few example pads, rest fully programmable via learn mode
@@ -1136,3 +1160,6 @@ bank7:
       osc: { address: "/system/save" }
 
   programmableRows: [0, 1, 2, 3, 4, 5, 6, 7]
+  recordableRows: [0, 1, 2, 3, 4, 5, 6, 7]
+  pagingRows: [1, 2, 3, 4, 5, 6]
+  presetsRow: null

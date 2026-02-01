@@ -239,7 +239,7 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         let first = config.global.bankButtons[0]
         XCTAssertEqual(first.cc, 91)
         XCTAssertEqual(first.bank, 0)
-        XCTAssertEqual(first.name, "Playlist")
+        XCTAssertEqual(first.name, "Live")
         
         // Check last bank button
         let last = config.global.bankButtons[7]
@@ -546,9 +546,9 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
     func test_bankName_andPurpose() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        XCTAssertEqual(config.bankName(0), "Synesthesia")
-        XCTAssertEqual(config.bankName(1), "Synesthesia")
-        XCTAssertEqual(config.bankPurpose(0), "Master Synesthesia controls: meta, playlist, media")
+      XCTAssertEqual(config.bankName(0), "Live")
+      XCTAssertEqual(config.bankName(1), "Presets")
+      XCTAssertEqual(config.bankPurpose(0), "Live performance scenes")
     }
     
     // MARK: - DynamicGroupStore Tests

@@ -22,14 +22,14 @@ public enum LaunchpadButton {
     /// Record/Program button - scene button y=7 ("Stop/Solo/Mute" label)
     public static let record = ButtonId(x: 8, y: 7)
     
-    /// Top row = Bank selection (cols 0-7, row 7)
+    /// Top row = Bank selection (cols 0-7, row -1)
     public static func bank(_ index: Int) -> ButtonId {
-        ButtonId(x: index, y: 7)
+        ButtonId(x: index, y: -1)
     }
     
     /// Check if a button is a bank selector
     public static func isBankButton(_ id: ButtonId) -> Bool {
-        id.y == 7 && id.x >= 0 && id.x < 8
+        id.y == -1 && id.x >= 0 && id.x < 8
     }
     
     /// Get bank index from button (nil if not a bank button)
@@ -234,33 +234,7 @@ public func switchBank(_ state: ControllerState, bankIndex: Int) -> FSMResult {
     var effects: [LaunchpadEffect] = [
         .log(message: "Switched to bank \(bankIndex)", level: .info)
     ]
-    
-    // Update bank button LEDs
-    for i in 0..<BankConfig.count {
-        let isActive = (i == bankIndex)
-        let color = isActive ? BankConfig.color(for: i) : BankConfig.dimColor(for: i)
-        effects.append(.setLed(padId: LaunchpadButton.bank(i), color: color, blink: false))
-    }
-    
-    // Refresh all pad LEDs for the new bank
-    for (padId, runtime) in newState.padRuntime {
-        if padId.isGrid && padId.y < 7 {  // Grid pads, not top row (banks)
-            effects.append(.setLed(padId: padId, color: runtime.currentColor, blink: runtime.isActive))
-        }
-    }
-    
-    // Also refresh scene buttons (right column) for current bank
-    for y in 1..<8 {  // Skip y=0 (learn button)
-        let sceneId = ButtonId(x: 8, y: y)
-        if let runtime = newState.padRuntime[sceneId] {
-            effects.append(.setLed(padId: sceneId, color: runtime.currentColor, blink: runtime.isActive))
-        } else if let behavior = newState.pads[sceneId] {
-            effects.append(.setLed(padId: sceneId, color: behavior.idleColor, blink: false))
-        } else {
-            effects.append(.setLed(padId: sceneId, color: LP.off, blink: false))
-        }
-    }
-    
+    effects.append(contentsOf: renderState(newState))
     return FSMResult(state: newState, effects: effects)
 }
 
@@ -303,18 +277,8 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
     }
     
     // Page button - advance page within bank pageCount
-    if padId == LaunchpadButton.page {
-        var newState = state
-        let pageCount = max(1, newState.currentPageCount)
-        newState.currentPage = (state.currentPage + 1) % pageCount
-        let color = newState.currentPage == 0 ? LP.purpleDim : LP.purple
-        return FSMResult(
-            state: newState,
-            effects: [
-                .setLed(padId: padId, color: color, blink: false),
-                .log(message: "Page \(newState.currentPage + 1)/\(pageCount)", level: .info)
-            ]
-        )
+    if let pagingResult = handlePagingPress(state, padId: padId) {
+        return pagingResult
     }
     
     // Bank buttons work in idle and config modes (for switching while configuring)
@@ -329,10 +293,68 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
         return handleNormalPress(state, padId: padId)
     case .waitPad:
         // Allow grid pads and scene buttons (except learn) for selection
-        let canSelect = padId.isGrid || (LaunchpadButton.isSceneButton(padId) && !LaunchpadButton.isSpecialSceneButton(padId))
+        let layout = state.currentLayout
+        let canSelect = padId.isGrid && layout.isRecordable(padId: padId)
         return canSelect ? selectPadForConfig(state, padId: padId) : FSMResult(state: state)
     case .config:
         return handleConfigPadPress(state, padId: padId)
+    }
+}
+
+// MARK: - Paging
+
+private func handlePagingPress(_ state: ControllerState, padId: ButtonId) -> FSMResult? {
+    guard padId.isSceneButton else { return nil }
+    let layout = state.currentLayout
+
+    switch layout.paging {
+    case .none:
+        return nil
+    case .nextButton(let row):
+        guard padId.y == row else { return nil }
+        var newState = state
+        let pageCount = max(1, newState.currentPageCount)
+        newState.currentPage = (state.currentPage + 1) % pageCount
+        let effects = pagingIndicatorEffects(state: newState)
+        return FSMResult(
+            state: newState,
+            effects: effects + [
+                .log(message: "Page \(newState.currentPage + 1)/\(pageCount)", level: .info)
+            ]
+        )
+    case .rowButtons(let rows):
+        guard let pageIndex = rows.firstIndex(of: padId.y) else { return nil }
+        var newState = state
+        let pageCount = max(1, newState.currentPageCount)
+        newState.currentPage = min(pageIndex, pageCount - 1)
+        let effects = pagingIndicatorEffects(state: newState)
+        return FSMResult(
+            state: newState,
+            effects: effects + [
+                .log(message: "Page \(newState.currentPage + 1)/\(pageCount)", level: .info)
+            ]
+        )
+    }
+}
+
+private func pagingIndicatorEffects(state: ControllerState) -> [LaunchpadEffect] {
+    let layout = state.currentLayout
+    let pageCount = max(1, state.currentPageCount)
+    let activePage = min(state.currentPage, pageCount - 1)
+
+    switch layout.paging {
+    case .none:
+        return []
+    case .nextButton(let row):
+        let color = activePage == 0 ? LP.purpleDim : LP.purple
+        return [.setLed(padId: ButtonId(x: 8, y: row), color: color, blink: false)]
+    case .rowButtons(let rows):
+        var effects: [LaunchpadEffect] = []
+        for (index, row) in rows.enumerated() {
+            let color = index == activePage ? LP.purple : LP.purpleDim
+            effects.append(.setLed(padId: ButtonId(x: 8, y: row), color: color, blink: false))
+        }
+        return effects
     }
 }
 
@@ -998,24 +1020,7 @@ public func toggleBlink(_ state: ControllerState) -> ControllerState {
 
 /// Generate effects to refresh all LEDs
 public func refreshAllLeds(_ state: ControllerState) -> [LaunchpadEffect] {
-    var effects: [LaunchpadEffect] = []
-    
-    // Configured pads
-    for (padId, behavior) in state.pads {
-        let runtime = state.padRuntime[padId] ?? PadRuntimeState()
-        let blink = runtime.isActive && behavior.mode == .selector
-        effects.append(.setLed(padId: padId, color: runtime.currentColor, blink: blink))
-    }
-    
-    // Learn button (Scene 0) - RED when idle, blinking RED when in learn mode
-    let isInLearnMode = state.learnState.phase != .idle
-    effects.append(.setLed(
-        padId: LaunchpadButton.learn,
-        color: LP.red,
-        blink: isInLearnMode
-    ))
-    
-    return effects
+    renderState(state)
 }
 
 /// Add a pad behavior

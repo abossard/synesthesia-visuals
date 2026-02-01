@@ -188,10 +188,48 @@ public enum ButtonGroupType: String, Codable, CaseIterable, Sendable {
 public enum BankRole: String, Codable, CaseIterable, Sendable {
     case basic        // Hand-authored controls
     case scenes       // Scene selection (dynamic)
-    case scenes2      // Additional scene page (dynamic)
+    case scenes2      // Additional scene page (dynamic, legacy)
+    case presets      // Preset selection (dynamic)
     case params       // Dynamic control parameters (auto populated)
     case global       // Global parameters
+    case favorites    // Favorites/quick actions
+    case shaders      // VJUniverse shader selection
+    case audio        // Audio bindings/controls
+    case visual       // Visual controls
     case custom       // User/learn
+}
+
+// MARK: - Bank Layout Policy
+
+/// Paging behavior for right-column buttons
+public enum PagingPolicy: Sendable, Equatable {
+    case none
+    /// Map right-column rows to absolute page indices (in order)
+    case rowButtons(rows: [Int])
+    /// Single button cycles pages (row index for the button)
+    case nextButton(row: Int)
+}
+
+/// Per-bank layout rules (recordable rows, paging, presets row)
+public struct BankLayoutPolicy: Sendable, Equatable {
+    public let recordableRows: [Int]
+    public let paging: PagingPolicy
+    public let presetsRow: Int?
+
+    public init(
+        recordableRows: [Int] = Array(0...7),
+        paging: PagingPolicy = .rowButtons(rows: [1, 2, 3, 4, 5, 6]),
+        presetsRow: Int? = nil
+    ) {
+        self.recordableRows = recordableRows
+        self.paging = paging
+        self.presetsRow = presetsRow
+    }
+
+    public func isRecordable(padId: ButtonId) -> Bool {
+        guard padId.isGrid else { return false }
+        return recordableRows.contains(padId.y)
+    }
 }
 
 // MARK: - OSC Command
@@ -555,6 +593,9 @@ public struct ControllerState: Sendable {
     public var bankPageCount: [Int: Int]
     public var bankCurrentPage: [Int: Int]
 
+    /// Layout policy per bank
+    public var bankLayout: [Int: BankLayoutPolicy]
+
     /// Current page for active bank
     public var currentPage: Int {
         get { bankCurrentPage[activeBank] ?? 0 }
@@ -586,10 +627,17 @@ public struct ControllerState: Sendable {
         self.isShiftHeld = false
         self.bankPageCount = [:]
         self.bankCurrentPage = [:]
+        self.bankLayout = [:]
         for i in 0..<BankConfig.count {
             self.bankPageCount[i] = 1
             self.bankCurrentPage[i] = 0
+            self.bankLayout[i] = BankLayoutPolicy()
         }
+    }
+
+    /// Layout policy for active bank
+    public var currentLayout: BankLayoutPolicy {
+        bankLayout[activeBank] ?? BankLayoutPolicy()
     }
 }
 

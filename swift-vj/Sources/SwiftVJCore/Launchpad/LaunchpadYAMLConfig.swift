@@ -107,6 +107,10 @@ public struct BankYAMLConfig: Codable, Sendable {
     public let purpose: String
     public let pads: [PadYAMLConfig]
     public let programmableRows: [Int]
+    public let recordableRows: [Int]?
+    public let pagingRows: [Int]?
+    public let pagingNextRow: Int?
+    public let presetsRow: Int?
     
     /// Check if a row is programmable
     public func isRowProgrammable(_ row: Int) -> Bool {
@@ -400,6 +404,25 @@ public extension LaunchpadYAMLConfig {
     func bankRole(_ index: Int) -> BankRole {
         guard let role = bank(index)?.role else { return .basic }
         return BankRole(rawValue: role) ?? .basic
+    }
+
+    /// Get bank layout policy by index (defaults to full recordable, row paging)
+    func bankLayoutPolicy(_ index: Int) -> BankLayoutPolicy {
+        guard let bank = bank(index) else { return BankLayoutPolicy() }
+        let recordable = bank.recordableRows ?? BankLayoutPolicy().recordableRows
+        let paging: PagingPolicy
+        if let rows = bank.pagingRows {
+            paging = .rowButtons(rows: rows)
+        } else if let row = bank.pagingNextRow {
+            paging = .nextButton(row: row)
+        } else {
+            paging = BankLayoutPolicy().paging
+        }
+        return BankLayoutPolicy(
+            recordableRows: recordable,
+            paging: paging,
+            presetsRow: bank.presetsRow
+        )
     }
 }
 
