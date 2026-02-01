@@ -289,8 +289,7 @@ struct LedFXConfigView: View {
             try await module.start()
             await refreshData()
         } catch {
-            errorMessage = "Failed to start LedFX: \(error.localizedDescription)"
-            ledfxEnabled = false
+            errorMessage = "LedFX is enabled but unreachable: \(error.localizedDescription)"
         }
     }
     
