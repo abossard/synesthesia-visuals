@@ -15,6 +15,7 @@ struct ContentView: View {
         case shaders = "Shaders"
         case songs = "Songs"
         case osc = "OSC"
+        case ledfx = "LedFX"
         case launchpad = "Launchpad"
         case logs = "Logs"
         case settings = "Settings"
@@ -29,6 +30,7 @@ struct ContentView: View {
             case .shaders: return "sparkles"
             case .songs: return "music.note.list"
             case .osc: return "antenna.radiowaves.left.and.right"
+            case .ledfx: return "lightbulb.led"
             case .launchpad: return "square.grid.3x3.fill"
             case .logs: return "doc.text"
             case .settings: return "gearshape"
@@ -77,6 +79,8 @@ struct ContentView: View {
                     SongBrowserView()
                 case .osc:
                     OSCContainerView()
+                case .ledfx:
+                    LedFXConfigView()
                 case .launchpad:
                     LaunchpadView()
                 case .logs:
