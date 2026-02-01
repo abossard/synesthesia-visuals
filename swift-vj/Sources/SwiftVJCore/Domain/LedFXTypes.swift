@@ -86,6 +86,23 @@ public struct VirtualAction: Codable, Sendable, Equatable {
         self.config = config
         self.preset = preset
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let action = try container.decodeIfPresent(ActionType.self, forKey: .action) ?? .activate
+        let type = try container.decodeIfPresent(String.self, forKey: .type)
+        let config = try container.decodeIfPresent(EffectConfig.self, forKey: .config)
+        let preset = try container.decodeIfPresent(String.self, forKey: .preset)
+
+        self.init(action: action, type: type, config: config, preset: preset)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case type
+        case config
+        case preset
+    }
 }
 
 // MARK: - Effect Config
@@ -168,7 +185,7 @@ public enum EffectValue: Codable, Sendable, Equatable {
 public struct LedFXVirtual: Codable, Sendable, Equatable {
     public let id: String
     public let config: VirtualConfig?
-    public let effect: Effect?
+    public let effect: LedFXEffect?
     public let activePresetId: String?
     
     enum CodingKeys: String, CodingKey {
@@ -181,13 +198,23 @@ public struct LedFXVirtual: Codable, Sendable, Equatable {
     public init(
         id: String,
         config: VirtualConfig? = nil,
-        effect: Effect? = nil,
+        effect: LedFXEffect? = nil,
         activePresetId: String? = nil
     ) {
         self.id = id
         self.config = config
         self.effect = effect
         self.activePresetId = activePresetId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(String.self, forKey: .id)
+        let config = try container.decodeIfPresent(VirtualConfig.self, forKey: .config)
+        let effect = try? container.decode(LedFXEffect.self, forKey: .effect)
+        let activePresetId = try container.decodeIfPresent(String.self, forKey: .activePresetId)
+
+        self.init(id: id, config: config, effect: effect, activePresetId: activePresetId)
     }
 }
 
@@ -205,7 +232,7 @@ public struct VirtualConfig: Codable, Sendable, Equatable {
 
 // MARK: - Effect
 
-public struct Effect: Codable, Sendable, Equatable {
+public struct LedFXEffect: Codable, Sendable, Equatable {
     public let type: String
     public let config: EffectConfig
     
@@ -320,5 +347,147 @@ public struct LedFXResponse<T: Codable>: Codable {
     public init(status: String, data: T? = nil) {
         self.status = status
         self.data = data
+    }
+}
+
+public struct LedFXScenesResponse: Codable, Sendable, Equatable {
+    public let status: String
+    public let scenes: [String: LedFXScene]
+
+    public init(status: String, scenes: [String: LedFXScene]) {
+        self.status = status
+        self.scenes = scenes
+    }
+}
+
+public struct LedFXVirtualsResponse: Codable, Sendable, Equatable {
+    public let status: String
+    public let virtuals: [String: LedFXVirtual]
+    public let paused: Bool?
+
+    public init(status: String, virtuals: [String: LedFXVirtual], paused: Bool? = nil) {
+        self.status = status
+        self.virtuals = virtuals
+        self.paused = paused
+    }
+}
+
+// MARK: - Playlists
+
+public struct LedFXPlaylistsResponse: Codable, Sendable, Equatable {
+    public let playlists: [String: LedFXPlaylist]
+    
+    public init(playlists: [String: LedFXPlaylist]) {
+        self.playlists = playlists
+    }
+}
+
+public struct LedFXPlaylist: Codable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+    public let items: [LedFXPlaylistItem]
+    public let defaultDurationMs: Int?
+    public let image: String?
+    public let mode: String?
+    public let tags: [String]?
+    public let timing: LedFXPlaylistTiming?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case items
+        case defaultDurationMs = "default_duration_ms"
+        case image
+        case mode
+        case tags
+        case timing
+    }
+    
+    public init(
+        id: String,
+        name: String,
+        items: [LedFXPlaylistItem],
+        defaultDurationMs: Int? = nil,
+        image: String? = nil,
+        mode: String? = nil,
+        tags: [String]? = nil,
+        timing: LedFXPlaylistTiming? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.items = items
+        self.defaultDurationMs = defaultDurationMs
+        self.image = image
+        self.mode = mode
+        self.tags = tags
+        self.timing = timing
+    }
+}
+
+public struct LedFXPlaylistItem: Codable, Sendable, Equatable {
+    public let sceneId: String
+    public let durationMs: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case sceneId = "scene_id"
+        case durationMs = "duration_ms"
+    }
+    
+    public init(sceneId: String, durationMs: Int? = nil) {
+        self.sceneId = sceneId
+        self.durationMs = durationMs
+    }
+}
+
+public struct LedFXPlaylistTiming: Codable, Sendable, Equatable {
+    public let jitter: LedFXPlaylistJitter?
+    
+    public init(jitter: LedFXPlaylistJitter? = nil) {
+        self.jitter = jitter
+    }
+}
+
+public struct LedFXPlaylistJitter: Codable, Sendable, Equatable {
+    public let enabled: Bool
+    public let factorMin: Double?
+    public let factorMax: Double?
+    
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case factorMin = "factor_min"
+        case factorMax = "factor_max"
+    }
+    
+    public init(enabled: Bool, factorMin: Double? = nil, factorMax: Double? = nil) {
+        self.enabled = enabled
+        self.factorMin = factorMin
+        self.factorMax = factorMax
+    }
+}
+
+// MARK: - Effects Catalog
+
+public struct LedFXEffectsResponse: Codable, Sendable, Equatable {
+    public let status: String
+    public let effects: [String: LedFXEffectEntry]
+    
+    public init(status: String, effects: [String: LedFXEffectEntry]) {
+        self.status = status
+        self.effects = effects
+    }
+}
+
+public struct LedFXEffectEntry: Codable, Sendable, Equatable {
+    public let effectType: String
+    public let effectConfig: EffectConfig
+    
+    enum CodingKeys: String, CodingKey {
+        case effectType = "effect_type"
+        case effectConfig = "effect_config"
+    }
+    
+    public init(effectType: String, effectConfig: EffectConfig) {
+        self.effectType = effectType
+        self.effectConfig = effectConfig
     }
 }

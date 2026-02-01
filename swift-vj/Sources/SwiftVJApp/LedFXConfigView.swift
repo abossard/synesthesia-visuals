@@ -2,7 +2,10 @@
 // Following A Philosophy of Software Design: simple UI for complex functionality
 
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import SwiftVJCore
+import OscRestBridge
 
 struct LedFXConfigView: View {
     @EnvironmentObject var appState: AppState
@@ -19,6 +22,12 @@ struct LedFXConfigView: View {
     @State private var virtuals: [String: LedFXVirtual] = [:]
     @State private var errorMessage: String?
     @State private var showingSceneGenerator = false
+    @State private var isGeneratingConfig = false
+    @State private var generatedConfig: BridgeConfig?
+    @State private var generatedYaml: String?
+    @State private var supportedRouteGroups: [SupportedRouteGroup] = []
+    @State private var playlistCount: Int = 0
+    @State private var effectsCount: Int = 0
     
     private var virtualIds: [String] {
         virtualIdsString
@@ -47,6 +56,14 @@ struct LedFXConfigView: View {
                 if ledfxEnabled && !virtuals.isEmpty {
                     virtualsSection
                 }
+
+                if ledfxEnabled {
+                    configSection
+                }
+
+                if ledfxEnabled && !supportedRouteGroups.isEmpty {
+                    supportedPathsSection
+                }
                 
                 // Error Display
                 if let error = errorMessage {
@@ -58,7 +75,9 @@ struct LedFXConfigView: View {
         .navigationTitle("LedFX Configuration")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: refreshData) {
+                Button {
+                    Task { await refreshData() }
+                } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .disabled(isRefreshing || !ledfxEnabled)
@@ -92,7 +111,7 @@ struct LedFXConfigView: View {
         GroupBox("Connection") {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("Enable LedFX Integration", isOn: $ledfxEnabled)
-                    .onChange(of: ledfxEnabled) { newValue in
+                    .onChange(of: ledfxEnabled) { _, newValue in
                         Task {
                             if newValue {
                                 await startLedFX()
@@ -172,6 +191,59 @@ struct LedFXConfigView: View {
                                 await setVirtualBrightness(id: virtualId, brightness: brightness)
                             }
                         )
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var configSection: some View {
+        GroupBox("OSC REST Bridge") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Button("Generate Config") {
+                        Task { await generateBridgeConfig() }
+                    }
+                    .disabled(isGeneratingConfig)
+
+                    Button("Save As…") {
+                        saveConfigAs()
+                    }
+                    .disabled(generatedYaml == nil)
+
+                    Button("Load This Config") {
+                        Task { await loadGeneratedConfig() }
+                    }
+                    .disabled(generatedYaml == nil)
+                }
+
+                if isGeneratingConfig {
+                    ProgressView("Generating...")
+                }
+
+                if generatedConfig != nil {
+                    Text("Playlists: \(playlistCount) · Effects: \(effectsCount)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var supportedPathsSection: some View {
+        GroupBox("Supported OSC Paths") {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(supportedRouteGroups) { group in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(group.title)
+                            .font(.headline)
+                        ForEach(group.paths, id: \.self) { path in
+                            Text(path)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
@@ -329,6 +401,125 @@ struct LedFXConfigView: View {
             errorMessage = "Failed to generate scenes: \(error.localizedDescription)"
         }
     }
+
+    private func generateBridgeConfig() async {
+        let currentBaseURL = baseURL
+
+        await MainActor.run {
+            isGeneratingConfig = true
+            errorMessage = nil
+        }
+
+        Task.detached(priority: .userInitiated) {
+            do {
+                let client = LedFXClient(baseURL: currentBaseURL)
+                let playlistsResponse = try await client.listPlaylists()
+                let scenesResponse = try await client.listScenes()
+                let virtualsResponse = try await client.listVirtuals()
+                let effectsResponse = try await client.listEffectsCatalog()
+
+                let input = LedFXBridgeConfigGenerator.Input(
+                    baseURL: currentBaseURL,
+                    playlists: playlistsResponse.playlists,
+                    scenes: scenesResponse,
+                    virtuals: virtualsResponse,
+                    effects: effectsResponse.effects
+                )
+
+                let config = try LedFXBridgeConfigGenerator.generate(input: input)
+                let yaml = try ConfigLoader.export(config)
+                let routes = buildSupportedRoutes(config: config)
+
+                await MainActor.run {
+                    playlistCount = playlistsResponse.playlists.count
+                    effectsCount = effectsResponse.effects.count
+                    generatedConfig = config
+                    generatedYaml = yaml
+                    supportedRouteGroups = routes
+                    isGeneratingConfig = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to generate config: \(error.localizedDescription)"
+                    isGeneratingConfig = false
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func saveConfigAs() {
+        guard let yaml = generatedYaml else {
+            errorMessage = "Generate a config before saving"
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "yaml") ?? .plainText]
+        panel.nameFieldStringValue = "ledfx-bridge.yaml"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try yaml.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                errorMessage = "Failed to save config: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func loadGeneratedConfig() async {
+        guard let yaml = generatedYaml else {
+            errorMessage = "Generate a config before loading"
+            return
+        }
+
+        do {
+            let bridge = ensureOscRestBridge()
+            try await bridge.loadConfig(from: Data(yaml.utf8))
+        } catch {
+            errorMessage = "Failed to load config: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func ensureOscRestBridge() -> OscRestBridgeService {
+        if let bridge = appState.oscRestBridge { return bridge }
+        let bridge = OscRestBridgeService(httpClient: URLSessionHTTPClient())
+        appState.oscRestBridge = bridge
+        return bridge
+    }
+
+}
+
+private struct SupportedRouteGroup: Identifiable {
+    let id: String
+    let title: String
+    let paths: [String]
+}
+
+private func buildSupportedRoutes(config: BridgeConfig) -> [SupportedRouteGroup] {
+    let slotIds = config.slots.keys.sorted()
+    let sceneNames = config.scenes.keys.sorted()
+    let oneshotNames = config.oneshots.keys.sorted()
+    let paramNames = config.params.keys.sorted()
+
+    let scenePaths = sceneNames.flatMap { scene in
+        slotIds.map { slot in "/ledfx/scene/\(scene)/\(slot)" }
+    }
+    let oneshotPaths = oneshotNames.flatMap { oneshot in
+        slotIds.map { slot in "/ledfx/oneshot/\(oneshot)/\(slot)" }
+    }
+    let paramPaths = paramNames.flatMap { param in
+        slotIds.map { slot in "/ledfx/param/\(param)/\(slot)" }
+    }
+    let blackoutPaths = slotIds.map { slot in "/ledfx/blackout/\(slot)" }
+
+    return [
+        SupportedRouteGroup(id: "scenes", title: "Scenes", paths: scenePaths),
+        SupportedRouteGroup(id: "oneshots", title: "Oneshots", paths: oneshotPaths),
+        SupportedRouteGroup(id: "params", title: "Params", paths: paramPaths),
+        SupportedRouteGroup(id: "blackout", title: "Blackout", paths: blackoutPaths)
+    ].filter { !$0.paths.isEmpty }
 }
 
 // MARK: - Scene Row
@@ -410,7 +601,7 @@ private struct VirtualRow: View {
                 Text("Brightness")
                     .font(.caption)
                 Slider(value: $brightness, in: 0.0...1.0, step: 0.1)
-                    .onChange(of: brightness) { newValue in
+                    .onChange(of: brightness) { _, newValue in
                         Task {
                             await onSetBrightness(newValue)
                         }

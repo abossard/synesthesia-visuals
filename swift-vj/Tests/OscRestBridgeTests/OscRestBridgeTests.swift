@@ -221,3 +221,4 @@ final class OscRestBridgeTests: XCTestCase {
         XCTAssertNotNil(config?["speed"])
         XCTAssertNil(config?["extra"])
     }
+}

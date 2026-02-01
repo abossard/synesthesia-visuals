@@ -28,14 +28,9 @@ struct ConfigTabView: View {
                     
                     Button("Reload") {
                         Task {
-                            do {
-                                // TODO: Store last URL
-                                successMessage = "Config reloaded"
-                                errorMessage = nil
-                            } catch {
-                                errorMessage = error.localizedDescription
-                                successMessage = nil
-                            }
+                            // TODO: Store last URL
+                            successMessage = "Config reloaded"
+                            errorMessage = nil
                         }
                     }
                     .disabled(!isConfigValid)

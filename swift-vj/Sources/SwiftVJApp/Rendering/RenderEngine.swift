@@ -65,6 +65,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private var device: MTLDevice?
     private(set) var headlessRenderer: HeadlessRenderer?
     private var displayLink: CVDisplayLink?
+    private var renderTimer: DispatchSourceTimer?
     
     // Thread-safe Syphon manager (NOT MainActor)
     var syphonManager: SyphonOutputManager?
@@ -210,29 +211,33 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
     private func startRenderLoop() {
         lastFrameTime = CFAbsoluteTimeGetCurrent()
-        
-        // Create CVDisplayLink
-        var link: CVDisplayLink?
-        CVDisplayLinkCreateWithActiveCGDisplays(&link)
-        
-        guard let link = link else {
-            print("[RenderEngine] ❌ Failed to create CVDisplayLink")
-            return
+
+        if #available(macOS 15.0, *) {
+            startTimerRenderLoop()
+        } else {
+            // Create CVDisplayLink
+            var link: CVDisplayLink?
+            CVDisplayLinkCreateWithActiveCGDisplays(&link)
+
+            guard let link = link else {
+                print("[RenderEngine] ❌ Failed to create CVDisplayLink")
+                return
+            }
+
+            self.displayLink = link
+
+            // CVDisplayLink callback - runs on high-priority real-time thread
+            let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
+                guard let userInfo = userInfo else { return kCVReturnSuccess }
+                let engine = Unmanaged<RenderEngine>.fromOpaque(userInfo).takeUnretainedValue()
+                engine.renderFrameSync()
+                return kCVReturnSuccess
+            }
+
+            let userInfo = Unmanaged.passUnretained(self).toOpaque()
+            CVDisplayLinkSetOutputCallback(link, callback, userInfo)
+            CVDisplayLinkStart(link)
         }
-        
-        self.displayLink = link
-        
-        // CVDisplayLink callback - runs on high-priority real-time thread
-        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
-            guard let userInfo = userInfo else { return kCVReturnSuccess }
-            let engine = Unmanaged<RenderEngine>.fromOpaque(userInfo).takeUnretainedValue()
-            engine.renderFrameSync()
-            return kCVReturnSuccess
-        }
-        
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
-        CVDisplayLinkSetOutputCallback(link, callback, userInfo)
-        CVDisplayLinkStart(link)
         
         // Start state update task (runs async, pushes to cached state)
         startStateUpdateTask()
@@ -245,6 +250,22 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             CVDisplayLinkStop(link)
             self.displayLink = nil
         }
+        if let renderTimer = renderTimer {
+            renderTimer.setEventHandler {}
+            renderTimer.cancel()
+            self.renderTimer = nil
+        }
+    }
+
+    private func startTimerRenderLoop() {
+        let queue = DispatchQueue(label: "RenderEngine.DisplayTimer", qos: .userInteractive)
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+        timer.setEventHandler { [weak self] in
+            self?.renderFrameSync()
+        }
+        timer.resume()
+        renderTimer = timer
     }
     
     /// Async task that gathers state from MainActor and pushes to cache

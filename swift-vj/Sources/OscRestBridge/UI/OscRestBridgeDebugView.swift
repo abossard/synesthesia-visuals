@@ -2,6 +2,7 @@
 // SwiftUI views for monitoring and debugging the bridge
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct OscRestBridgeDebugView: View {
     let service: OscRestBridgeService
@@ -275,7 +276,7 @@ public struct OscRestBridgeDebugView: View {
             List {
                 if let state = state {
                     ForEach(state.recentOsc.reversed().prefix(50)) { record in
-                        OSCMessageRow(record: record)
+                        DebugOSCMessageRow(record: record)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                     }
                 }
@@ -300,7 +301,7 @@ public struct OscRestBridgeDebugView: View {
             List {
                 if let state = state {
                     ForEach(state.recentHttp.reversed().prefix(50)) { record in
-                        HTTPRequestRow(record: record)
+                        DebugHTTPRequestRow(record: record)
                             .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                     }
                 }
@@ -333,7 +334,7 @@ struct StatBadge: View {
     }
 }
 
-struct OSCMessageRow: View {
+struct DebugOSCMessageRow: View {
     let record: OSCMessageRecord
     
     var body: some View {
@@ -388,7 +389,7 @@ struct OSCMessageRow: View {
     }
 }
 
-struct HTTPRequestRow: View {
+struct DebugHTTPRequestRow: View {
     let record: HTTPRequestRecord
     
     var body: some View {
@@ -428,18 +429,14 @@ struct HTTPRequestRow: View {
         .padding(.vertical, 2)
     }
     
-    @ViewBuilder
     private func statusBadge(_ code: Int) -> some View {
-        let color: Color
-        if (200..<300).contains(code) {
-            color = .green
-        } else if (400..<500).contains(code) {
-            color = .orange
-        } else {
-            color = .red
-        }
+        let color: Color = (200..<300).contains(code)
+            ? .green
+            : (400..<500).contains(code)
+                ? .orange
+                : .red
         
-        Text("\(code)")
+        return Text("\(code)")
             .font(.caption2.bold())
             .foregroundColor(color)
     }
@@ -462,10 +459,4 @@ struct OscRestBridgeDebugView_Previews: PreviewProvider {
     }
 }
 #endif
-
-extension UTType {
-    static var yaml: UTType {
-        UTType(filenameExtension: "yaml") ?? UTType(filenameExtension: "yml") ?? .plainText
-    }
-}
 

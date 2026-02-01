@@ -20,6 +20,16 @@ public enum ConfigLoader {
             }
         }
     }
+
+    public enum ExportError: Error, LocalizedError {
+        case yamlEncodeError(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .yamlEncodeError(let msg): return "YAML encode error: \(msg)"
+            }
+        }
+    }
     
     // MARK: - Load from File
     
@@ -56,6 +66,17 @@ public enum ConfigLoader {
             throw error
         } catch {
             throw LoadError.yamlParseError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Export
+
+    public static func export(_ config: BridgeConfig) throws -> String {
+        let encoder = YAMLEncoder()
+        do {
+            return try encoder.encode(config)
+        } catch {
+            throw ExportError.yamlEncodeError(error.localizedDescription)
         }
     }
     

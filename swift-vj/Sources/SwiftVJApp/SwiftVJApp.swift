@@ -674,8 +674,8 @@ public final class AppState: ObservableObject {
             
             // Subscribe OSC Rest Bridge to /ledfx/* messages
             oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
-                guard let self = self, let bridge = self.oscRestBridge else { return }
-                Task {
+                Task { @MainActor [weak self] in
+                    guard let self = self, let bridge = self.oscRestBridge else { return }
                     await bridge.handleOSCMessage(path: address, values: values)
                 }
             }

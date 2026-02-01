@@ -35,7 +35,20 @@ public actor LedFXClient {
     
     /// List all scenes
     public func listScenes() async throws -> [String: LedFXScene] {
-        try await get(path: "/api/scenes")
+        let data = try await getData(path: "/api/scenes")
+
+        if let wrapped = try? JSONDecoder().decode(LedFXScenesResponse.self, from: data) {
+            guard wrapped.status.lowercased() == "success" else {
+                throw LedFXError.apiError(wrapped.status)
+            }
+            return wrapped.scenes
+        }
+
+        do {
+            return try JSONDecoder().decode([String: LedFXScene].self, from: data)
+        } catch {
+            throw LedFXError.decodingError(error)
+        }
     }
     
     /// Get a specific scene by ID
@@ -45,7 +58,17 @@ public actor LedFXClient {
     
     /// Create or update a scene
     public func putScene(id: String, scene: LedFXScene) async throws {
-        try await put(path: "/api/scenes", body: scene)
+        let normalizedVirtuals = Self.normalizeSceneVirtuals(scene.virtuals)
+        let request = SceneSaveRequest(id: id, scene: scene, virtuals: normalizedVirtuals)
+        let data = try await postData(path: "/api/scenes", body: request)
+
+        if let response = try? JSONDecoder().decode(SceneSaveResponse.self, from: data) {
+            guard response.status.lowercased() == "success" else {
+                let reason = response.payload?.reason ?? response.payload?.type
+                let detail = [response.status, reason].compactMap { $0 }.joined(separator: ": ")
+                throw LedFXError.apiError(detail)
+            }
+        }
     }
     
     /// Activate a scene
@@ -69,7 +92,20 @@ public actor LedFXClient {
     
     /// List all virtual devices
     public func listVirtuals() async throws -> [String: LedFXVirtual] {
-        try await get(path: "/api/virtuals")
+        let data = try await getData(path: "/api/virtuals")
+
+        if let wrapped = try? JSONDecoder().decode(LedFXVirtualsResponse.self, from: data) {
+            guard wrapped.status.lowercased() == "success" else {
+                throw LedFXError.apiError(wrapped.status)
+            }
+            return wrapped.virtuals
+        }
+
+        do {
+            return try JSONDecoder().decode([String: LedFXVirtual].self, from: data)
+        } catch {
+            throw LedFXError.decodingError(error)
+        }
     }
     
     /// Get a specific virtual device
@@ -85,13 +121,13 @@ public actor LedFXClient {
     // MARK: - Effects
     
     /// Get current effect on a virtual
-    public func getEffect(virtualId: String) async throws -> Effect? {
+    public func getEffect(virtualId: String) async throws -> LedFXEffect? {
         let virtual: LedFXVirtual = try await getVirtual(id: virtualId)
         return virtual.effect
     }
     
     /// Set effect on a virtual
-    public func setEffect(virtualId: String, effect: Effect) async throws {
+    public func setEffect(virtualId: String, effect: LedFXEffect) async throws {
         try await put(path: "/api/virtuals/\(virtualId)/effects", body: effect)
     }
     
@@ -137,30 +173,49 @@ public actor LedFXClient {
     public func getAllSchemas() async throws -> [String: LedFXSchema] {
         try await get(path: "/api/schema")
     }
+
+    // MARK: - Playlists
+
+    /// List playlists
+    public func listPlaylists() async throws -> LedFXPlaylistsResponse {
+        try await get(path: "/api/playlists")
+    }
+
+    // MARK: - Effects Catalog
+
+    /// List active effects per virtual
+    public func listEffectsCatalog() async throws -> LedFXEffectsResponse {
+        try await get(path: "/api/effects")
+    }
     
     // MARK: - HTTP Helpers
     
     private func get<T: Decodable>(path: String) async throws -> T {
-        let url = URL(string: "\(baseURL)\(path)")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        
-        let (data, response) = try await session.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LedFXError.invalidResponse
-        }
-        
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw LedFXError.httpError(statusCode: httpResponse.statusCode)
-        }
-        
+        let data = try await getData(path: path)
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw LedFXError.decodingError(error)
         }
+    }
+
+    private func getData(path: String) async throws -> Data {
+        let url = URL(string: "\(baseURL)\(path)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LedFXError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw LedFXError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return data
     }
     
     private func put<T: Encodable>(path: String, body: T) async throws {
@@ -188,6 +243,10 @@ public actor LedFXClient {
     }
     
     private func post<T: Encodable>(path: String, body: T) async throws {
+        _ = try await postData(path: path, body: body)
+    }
+
+    private func postData<T: Encodable>(path: String, body: T) async throws -> Data {
         let url = URL(string: "\(baseURL)\(path)")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -200,7 +259,7 @@ public actor LedFXClient {
             throw LedFXError.encodingError(error)
         }
         
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LedFXError.invalidResponse
@@ -209,6 +268,8 @@ public actor LedFXClient {
         guard (200...299).contains(httpResponse.statusCode) else {
             throw LedFXError.httpError(statusCode: httpResponse.statusCode)
         }
+
+        return data
     }
     
     private func delete(path: String) async throws {
@@ -226,6 +287,59 @@ public actor LedFXClient {
             throw LedFXError.httpError(statusCode: httpResponse.statusCode)
         }
     }
+
+    private static func normalizeSceneVirtuals(_ virtuals: [String: VirtualAction]) -> [String: VirtualAction] {
+        virtuals.mapValues { action in
+            switch action.action {
+            case .forceblack:
+                let type = action.type ?? "singleColor"
+                let config = action.config ?? EffectConfig(["color": .string("#000000")])
+                return VirtualAction(action: .forceblack, type: type, config: config, preset: action.preset)
+            case .ignore:
+                let type = action.type ?? ""
+                let config = action.config ?? EffectConfig()
+                return VirtualAction(action: .ignore, type: type, config: config, preset: action.preset)
+            case .activate, .stop:
+                return action
+            }
+        }
+    }
+}
+
+// MARK: - Scene Save Request/Response
+
+private struct SceneSaveRequest: Encodable {
+    let id: String
+    let name: String
+    let sceneImage: String?
+    let sceneTags: String?
+    let virtuals: [String: VirtualAction]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case sceneImage = "scene_image"
+        case sceneTags = "scene_tags"
+        case virtuals
+    }
+
+    init(id: String, scene: LedFXScene, virtuals: [String: VirtualAction]? = nil) {
+        self.id = id
+        self.name = scene.name
+        self.sceneImage = scene.sceneImage
+        self.sceneTags = scene.sceneTags
+        self.virtuals = virtuals ?? scene.virtuals
+    }
+}
+
+private struct SceneSaveResponse: Decodable {
+    let status: String
+    let payload: SceneSavePayload?
+}
+
+private struct SceneSavePayload: Decodable {
+    let type: String?
+    let reason: String?
 }
 
 // MARK: - Errors
@@ -236,6 +350,7 @@ public enum LedFXError: Error, LocalizedError {
     case encodingError(Error)
     case decodingError(Error)
     case connectionFailed
+    case apiError(String)
     
     public var errorDescription: String? {
         switch self {
@@ -249,6 +364,8 @@ public enum LedFXError: Error, LocalizedError {
             return "Decoding error: \(error.localizedDescription)"
         case .connectionFailed:
             return "Failed to connect to LedFX server"
+        case .apiError(let status):
+            return "LedFX API error: \(status)"
         }
     }
 }

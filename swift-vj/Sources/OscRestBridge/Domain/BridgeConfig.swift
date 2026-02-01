@@ -227,7 +227,7 @@ public struct PatchOp: Codable, Sendable, Equatable {
 
 // MARK: - AnyCodable Helper
 
-public struct AnyCodable: Codable, Sendable, Equatable {
+public struct AnyCodable: Codable, Equatable, @unchecked Sendable {
     public let value: Any
     
     public init(_ value: Any) {

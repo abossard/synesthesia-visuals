@@ -29,7 +29,7 @@ final class ShaderSelectionE2ETests: XCTestCase {
     
     // MARK: - Setup / Teardown
     
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         // Create temp directory for test isolation
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShaderSelectionTests-\(UUID().uuidString)")
@@ -42,12 +42,12 @@ final class ShaderSelectionE2ETests: XCTestCase {
         // Create repository and selection manager
         repository = ObservableShaderRepository()
         repository.configure(metallibURL: nil, shadersDirectory: tempDir)
-        
+
         selection = ShaderSelectionManager()
         selection.repository = repository
     }
     
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         selection = nil
         repository = nil
         if let tempDir = tempDir {

@@ -30,7 +30,7 @@ final class ShaderRepositoryE2ETests: XCTestCase {
     
     // MARK: - Setup / Teardown
     
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         // Create temp directory for test isolation
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShaderRepoTests-\(UUID().uuidString)")
@@ -45,7 +45,7 @@ final class ShaderRepositoryE2ETests: XCTestCase {
         repository.configure(metallibURL: nil, shadersDirectory: tempDir)
     }
     
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         repository = nil
         // Clean up temp directory
         if let tempDir = tempDir {

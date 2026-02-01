@@ -34,6 +34,7 @@ public struct HTTPRequestPlan: Sendable, Equatable {
     
     public var bodyPreview: String? {
         guard let body = body else { return nil }
-        return String(data: body, encoding: .utf8)?.prefix(500).map(String.init) ?? "<binary>"
+        guard let text = String(data: body, encoding: .utf8) else { return "<binary>" }
+        return String(text.prefix(500))
     }
 }

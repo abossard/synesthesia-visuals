@@ -326,13 +326,13 @@ final class ShaderFileOperationsE2ETests: XCTestCase {
         let shaderName = try findTestShader()
         try copyShader(named: shaderName, from: Self.glslDir, to: tempGlslDir)
         
-        let originalContent = try String(contentsOf: tempGlslDir.appendingPathComponent("\(shaderName).txt"))
+        let originalContent = try String(contentsOf: tempGlslDir.appendingPathComponent("\(shaderName).txt"), encoding: .utf8)
         
         // Act: Move to masks
         try moveShader(named: shaderName, from: tempGlslDir, to: tempMasksDir)
         
         // Assert: Content is preserved
-        let movedContent = try String(contentsOf: tempMasksDir.appendingPathComponent("\(shaderName).txt"))
+        let movedContent = try String(contentsOf: tempMasksDir.appendingPathComponent("\(shaderName).txt"), encoding: .utf8)
         XCTAssertEqual(originalContent, movedContent, "File content should be preserved after move")
     }
     

@@ -174,8 +174,14 @@ let package = Package(
         .target(
             name: "OscRestBridge",
             dependencies: [
+                "SwiftVJCore",
                 .product(name: "OSCKit", package: "OSCKit"),
                 .product(name: "Yams", package: "Yams"),
+            ],
+            exclude: [
+                "IMPLEMENTATION_SUMMARY.md",
+                "INTEGRATION.md",
+                "README.md",
             ],
             resources: [
                 .copy("Resources/config-ledfx.yaml"),

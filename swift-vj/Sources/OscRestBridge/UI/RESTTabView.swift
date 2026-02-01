@@ -132,18 +132,14 @@ struct HTTPRequestRow: View {
         .padding(.vertical, 4)
     }
     
-    @ViewBuilder
     private func statusBadge(_ code: Int) -> some View {
-        let color: Color
-        if (200..<300).contains(code) {
-            color = .green
-        } else if (400..<500).contains(code) {
-            color = .orange
-        } else {
-            color = .red
-        }
+        let color: Color = (200..<300).contains(code)
+            ? .green
+            : (400..<500).contains(code)
+                ? .orange
+                : .red
         
-        Text("\(code)")
+        return Text("\(code)")
             .font(.caption.bold())
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

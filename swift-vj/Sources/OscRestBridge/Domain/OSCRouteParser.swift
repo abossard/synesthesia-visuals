@@ -12,40 +12,39 @@ public enum OSCRouteParser {
     /// Returns nil if malformed or unknown type
     public static func parse(_ path: String) -> ParsedOSCRoute? {
         let components = path.split(separator: "/").map(String.init)
-        
-        // Expected: ["", "ledfx", <type>, <name>, <slot>] (5 components)
-        // or ["", "ledfx", "blackout", <slot>] (4 components for blackout)
-        
-        guard components.count >= 4,
-              components[0].isEmpty,  // Leading /
-              components[1] == "ledfx" else {
+
+        // Expected: ["ledfx", <type>, <name>, <slot>] (4 components)
+        // or ["ledfx", "blackout", <slot>] (3 components for blackout)
+
+        guard components.count >= 3,
+              components[0] == "ledfx" else {
             return nil
         }
-        
-        let routeType = components[2]
+
+        let routeType = components[1]
         
         switch routeType {
         case "scene":
-            guard components.count == 5 else { return nil }
-            let sceneName = components[3]
-            let slot = components[4]
+            guard components.count == 4 else { return nil }
+            let sceneName = components[2]
+            let slot = components[3]
             return .scene(slot: slot, sceneName: sceneName)
             
         case "oneshot":
-            guard components.count == 5 else { return nil }
-            let oneshotName = components[3]
-            let slot = components[4]
+            guard components.count == 4 else { return nil }
+            let oneshotName = components[2]
+            let slot = components[3]
             return .oneshot(slot: slot, oneshotName: oneshotName)
             
         case "blackout":
-            guard components.count == 4 else { return nil }
-            let slot = components[3]
+            guard components.count == 3 else { return nil }
+            let slot = components[2]
             return .blackout(slot: slot)
             
         case "param":
-            guard components.count == 5 else { return nil }
-            let paramName = components[3]
-            let slot = components[4]
+            guard components.count == 4 else { return nil }
+            let paramName = components[2]
+            let slot = components[3]
             return .param(slot: slot, paramName: paramName)
             
         default:

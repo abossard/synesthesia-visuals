@@ -648,12 +648,8 @@ struct ShaderBrowserView: View {
         // Also reload in the render engine's repository (single source of truth)
         if let shadersDir = findShadersDirectory(),
            let renderEngine = appState.renderEngine {
-            await MainActor.run {
-                Task {
-                    renderEngine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
-                    await renderEngine.shaderRepository.reload()
-                }
-            }
+            await renderEngine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
+            await renderEngine.shaderRepository.reload()
             appState.log("Reloaded shaders in ShaderRepository", level: .debug)
         }
         

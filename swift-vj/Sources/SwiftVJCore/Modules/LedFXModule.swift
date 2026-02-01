@@ -159,7 +159,7 @@ public actor LedFXModule: Module {
     // MARK: - Effects
     
     /// Set effect on a virtual device
-    public func setEffect(virtualId: String, effect: Effect) async throws {
+    public func setEffect(virtualId: String, effect: LedFXEffect) async throws {
         try await client.setEffect(virtualId: virtualId, effect: effect)
     }
     

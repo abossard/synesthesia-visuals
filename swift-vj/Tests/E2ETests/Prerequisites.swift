@@ -37,7 +37,7 @@ public final class PrerequisiteChecker: @unchecked Sendable {
     }
 
     /// Require a prerequisite, throwing XCTSkip if not available
-    public func require(_ prerequisite: Prerequisite, file: StaticString = #file, line: UInt = #line) throws {
+    public func require(_ prerequisite: Prerequisite, file: StaticString = #filePath, line: UInt = #line) throws {
         // Check cache first
         if confirmed.contains(prerequisite) {
             return  // Already confirmed
@@ -157,7 +157,7 @@ public final class PrerequisiteChecker: @unchecked Sendable {
 
 extension XCTestCase {
     /// Require a prerequisite for the current test
-    public func require(_ prerequisite: Prerequisite, file: StaticString = #file, line: UInt = #line) throws {
+    public func require(_ prerequisite: Prerequisite, file: StaticString = #filePath, line: UInt = #line) throws {
         try PrerequisiteChecker.shared.require(prerequisite, file: file, line: line)
     }
 }

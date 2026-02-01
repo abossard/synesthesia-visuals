@@ -342,7 +342,7 @@ final class ServiceE2ETests: XCTestCase {
         let body = try XCTUnwrap(requests[0].body)
         let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
         let config = json?["config"] as? [String: Any]
-        let speed = config?["speed"] as? Double
+        let speed = try XCTUnwrap(config?["speed"] as? Double)
         XCTAssertEqual(speed, 5.5, accuracy: 0.1)
     }
     

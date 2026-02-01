@@ -82,10 +82,6 @@ public actor OscRestBridgeService {
     
     // MARK: - OSC Message Handler (called from OSCHub subscription)
     
-    /// Handle an OSC message from the OSCHub subscription
-    /// This method is called by the OSCHub when a /ledfx/* message is received
-    public func handleOSCMessage(path: String, values: [Any]) async {
-    
     // MARK: - Configuration
     
     public func loadConfig(from url: URL) async throws {
@@ -178,7 +174,7 @@ public actor OscRestBridgeService {
     
     // MARK: - OSC Message Handling
     
-    private func handleOSCMessage(path: String, values: [Any]) async {
+    public func handleOSCMessage(path: String, values: [Any]) async {
         let timestamp = clock.now()
         
         // Extract numeric value
@@ -266,8 +262,6 @@ public actor OscRestBridgeService {
     
     private func recordUnknownOSC(path: String, value: Double, reason: String, timestamp: Date) {
         stats.totalOscUnknown += 1
-    private func recordUnknownOSC(path: String, value: Double, reason: String, timestamp: Date) {
-        stats.totalOscUnknown += 1
         
         // Only record in buffer if space available
         if oscBuffer.items.count < 100 {
@@ -304,7 +298,7 @@ public actor OscRestBridgeService {
                     url: plan.url,
                     bodyPreview: plan.bodyPreview,
                     statusCode: statusCode,
-                    responsePreview: String(data: responseBody, encoding: .utf8)?.prefix(200).map(String.init),
+                    responsePreview: responsePreview(from: responseBody),
                     error: nil,
                     planned: false
                 )
@@ -363,8 +357,8 @@ public actor OscRestBridgeService {
                 // Restore previous scene if configured
                 if let slotConfig = config?.slots[slot],
                    let blackoutConfig = slotConfig.blackout,
-                   blackoutConfig.restore_previous_scene,
-                   let lastScene = slotStates[slot]?.lastActiveSceneName {
+                         blackoutConfig.restore_previous_scene,
+                         slotStates[slot]?.lastActiveSceneName != nil {
                     // Note: Restoration is handled by sending another OSC message externally
                     // or by building a request plan here. For now, just track state.
                 }
@@ -390,6 +384,11 @@ public actor OscRestBridgeService {
         }
         
         return current
+    }
+
+    private func responsePreview(from data: Data) -> String? {
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        return String(text.prefix(200))
     }
 }
 
