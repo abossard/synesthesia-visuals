@@ -29,30 +29,28 @@ public enum LedFXBridgeConfigGenerator {
     }
 
     public enum GeneratorError: Error, LocalizedError {
-        case playlistsUnavailable
         case noVirtuals
 
         public var errorDescription: String? {
             switch self {
-            case .playlistsUnavailable:
-                return "Playlists are required to generate a config"
             case .noVirtuals:
                 return "No virtuals available to build slots"
             }
         }
     }
 
-    public static func generate(input: Input) throws -> BridgeConfig {
-        guard !input.playlists.isEmpty else { throw GeneratorError.playlistsUnavailable }
+    public static func generate(input: Input, oscListenPort: UInt16 = OSCHub.defaultReceivePort) throws -> BridgeConfig {
         guard !input.virtuals.isEmpty else { throw GeneratorError.noVirtuals }
 
         let slots = buildSlots(from: input.virtuals)
         let scenes = buildScenes(playlists: input.playlists, scenes: input.scenes)
+        let playlists = buildPlaylists(playlists: input.playlists)
+        let playlistControls = buildPlaylistControls()
         let oneshots = buildDefaultOneshots()
         let params = buildDefaultParams()
 
         let server = ServerConfig(
-            osc_listen: OSCListenConfig(host: "0.0.0.0", port: 9000),
+            osc_listen: OSCListenConfig(host: "0.0.0.0", port: oscListenPort),
             http: HTTPConfig(
                 base_url: input.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
                 timeout_ms: 1500,
@@ -65,19 +63,82 @@ public enum LedFXBridgeConfigGenerator {
             server: server,
             slots: slots,
             scenes: scenes,
+            playlists: playlists,
+            playlist_controls: playlistControls,
             oneshots: oneshots,
             params: params
         )
     }
 
+    public static func generateFallback(
+        baseURL: String,
+        virtualIds: [String],
+        oscListenPort: UInt16 = OSCHub.defaultReceivePort
+    ) -> BridgeConfig {
+        let normalizedIds = virtualIds.isEmpty ? ["virtual-1"] : virtualIds
+        let slots = buildSlotsFromVirtualIds(normalizedIds)
+
+        let server = ServerConfig(
+            osc_listen: OSCListenConfig(host: "0.0.0.0", port: oscListenPort),
+            http: HTTPConfig(
+                base_url: baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                timeout_ms: 1500,
+                default_headers: ["Content-Type": "application/json"]
+            )
+        )
+
+        return BridgeConfig(
+            version: 1,
+            server: server,
+            slots: slots,
+            scenes: [:],
+            playlists: [:],
+            playlist_controls: buildPlaylistControls(),
+            oneshots: buildDefaultOneshots(),
+            params: buildDefaultParams()
+        )
+    }
+
     private static func buildSlots(from virtuals: [String: LedFXVirtual]) -> [String: SlotConfig] {
         let ordered = virtuals.values.sorted { $0.id < $1.id }
-        return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { index, virtual in
+        var slots = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { index, virtual in
             let name = virtual.config?.name ?? virtual.id
             let targets = SlotTargets(virtual_ids: [virtual.id])
             let blackout = BlackoutConfig(scene: "blackout", restore_previous_scene: true)
             return ("\(index)", SlotConfig(name: name, targets: targets, blackout: blackout))
         })
+
+        let allIds = ordered.map { $0.id }
+        if !allIds.isEmpty {
+            let blackout = BlackoutConfig(scene: "blackout", restore_previous_scene: true)
+            slots["all"] = SlotConfig(
+                name: "All",
+                targets: SlotTargets(virtual_ids: allIds),
+                blackout: blackout
+            )
+        }
+
+        return slots
+    }
+
+    private static func buildSlotsFromVirtualIds(_ virtualIds: [String]) -> [String: SlotConfig] {
+        var slots = Dictionary(uniqueKeysWithValues: virtualIds.enumerated().map { index, virtualId in
+            let name = "Virtual \(index + 1)"
+            let targets = SlotTargets(virtual_ids: [virtualId])
+            let blackout = BlackoutConfig(scene: "blackout", restore_previous_scene: true)
+            return ("\(index)", SlotConfig(name: name, targets: targets, blackout: blackout))
+        })
+
+        if !virtualIds.isEmpty {
+            let blackout = BlackoutConfig(scene: "blackout", restore_previous_scene: true)
+            slots["all"] = SlotConfig(
+                name: "All",
+                targets: SlotTargets(virtual_ids: virtualIds),
+                blackout: blackout
+            )
+        }
+
+        return slots
     }
 
     private static func buildScenes(
@@ -97,15 +158,60 @@ public enum LedFXBridgeConfigGenerator {
             )
         }
 
-        if result["blackout"] == nil {
-            result["blackout"] = SceneConfig(
-                id: "blackout",
-                on_activate: SceneAction(request: activateSceneRequest(idOverride: "blackout")),
-                on_deactivate: SceneDeactivateAction(enabled: true, request: deactivateSceneRequest(idOverride: "blackout"))
-            )
-        }
+        let globalBlackoutActivate = RequestTemplate(
+            method: "PUT",
+            path: "/api/effects",
+            body: AnyCodable([
+                "action": "apply_global",
+                "brightness": 0.0,
+                "background_brightness": 0.0
+            ])
+        )
+
+        let globalBlackoutDeactivate = RequestTemplate(
+            method: "PUT",
+            path: "/api/effects",
+            body: AnyCodable([
+                "action": "apply_global",
+                "brightness": 1.0,
+                "background_brightness": 1.0
+            ])
+        )
+
+        result["blackout"] = SceneConfig(
+            id: "blackout",
+            on_activate: SceneAction(request: globalBlackoutActivate),
+            on_deactivate: SceneDeactivateAction(enabled: true, request: globalBlackoutDeactivate)
+        )
 
         return result
+    }
+
+    private static func buildPlaylists(playlists: [String: LedFXPlaylist]) -> [String: PlaylistConfig] {
+        let ordered = playlists.values.sorted { $0.id < $1.id }
+        return Dictionary(uniqueKeysWithValues: ordered.map { playlist in
+            let request = playlistStartRequest()
+            return (playlist.id, PlaylistConfig(id: playlist.id, on_start: request))
+        })
+    }
+
+    private static func playlistStartRequest() -> RequestTemplate {
+        let body: [String: Any] = [
+            "id": "${playlist.id}",
+            "action": "start"
+        ]
+        return RequestTemplate(method: "PUT", path: "/api/playlists", body: AnyCodable(body))
+    }
+
+    private static func buildPlaylistControls() -> [String: PlaylistControlConfig] {
+        let actions = ["stop", "pause", "resume", "next", "prev"]
+        return Dictionary(uniqueKeysWithValues: actions.map { action in
+            let body: [String: Any] = [
+                "action": action
+            ]
+            let request = RequestTemplate(method: "PUT", path: "/api/playlists", body: AnyCodable(body))
+            return (action, PlaylistControlConfig(action: action, request: request))
+        })
     }
 
     private static func activateSceneRequest(idOverride: String? = nil) -> RequestTemplate {
@@ -179,8 +285,23 @@ public enum LedFXBridgeConfigGenerator {
             ]
         )
 
+        let globalBrightnessRequest = ParamRequest(
+            method: "PUT",
+            path: "/api/effects",
+            body_template: AnyCodable([
+                "action": "apply_global",
+                "brightness": 0.5,
+                "background_brightness": 0.5
+            ]),
+            patch_ops: [
+                PatchOp(op: "set", pointer: "/brightness", value: AnyCodable("${param.scaled}")),
+                PatchOp(op: "set", pointer: "/background_brightness", value: AnyCodable("${param.scaled}"))
+            ]
+        )
+
         return [
-            "brightness": ParamConfig(input: input, scale: brightnessScale, request: brightnessRequest)
+            "brightness": ParamConfig(input: input, scale: brightnessScale, request: brightnessRequest),
+            "global_brightness": ParamConfig(input: input, scale: brightnessScale, request: globalBrightnessRequest)
         ]
     }
 }

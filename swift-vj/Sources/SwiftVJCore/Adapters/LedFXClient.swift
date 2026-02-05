@@ -70,6 +70,36 @@ public actor LedFXClient {
             }
         }
     }
+
+    /// Create a new scene (omit id per LedFX API)
+    public func createScene(scene: LedFXScene) async throws -> String {
+        let normalizedVirtuals = Self.normalizeSceneVirtuals(scene.virtuals)
+        let request = SceneCreateRequest(scene: scene, virtuals: normalizedVirtuals)
+        let data = try await postData(path: "/api/scenes", body: request)
+
+        if let response = try? JSONDecoder().decode(SceneCreateResponse.self, from: data) {
+            guard response.status.lowercased() == "success" else {
+                let reason = response.payload?.reason ?? response.payload?.type
+                let detail = [response.status, reason].compactMap { $0 }.joined(separator: ": ")
+                throw LedFXError.apiError(detail)
+            }
+            if let id = response.payload?.id ?? response.payload?.sceneId {
+                return id
+            }
+        } else if let response = try? JSONDecoder().decode(SceneSaveResponse.self, from: data) {
+            guard response.status.lowercased() == "success" else {
+                let reason = response.payload?.reason ?? response.payload?.type
+                let detail = [response.status, reason].compactMap { $0 }.joined(separator: ": ")
+                throw LedFXError.apiError(detail)
+            }
+        }
+
+        let scenes = try await listScenes()
+        if let match = scenes.first(where: { $0.value.name == scene.name }) {
+            return match.key
+        }
+        throw LedFXError.apiError("Scene creation succeeded but id was not returned")
+    }
     
     /// Activate a scene
     public func activateScene(id: String, activateIn: Int? = nil) async throws {
@@ -179,6 +209,18 @@ public actor LedFXClient {
     /// List playlists
     public func listPlaylists() async throws -> LedFXPlaylistsResponse {
         try await get(path: "/api/playlists")
+    }
+
+    /// Start a playlist by id
+    public func startPlaylist(id: String) async throws {
+        let request = PlaylistActionRequest(id: id, action: "start")
+        try await put(path: "/api/playlists", body: request)
+    }
+
+    /// Stop the current playlist
+    public func stopPlaylist() async throws {
+        let request = PlaylistActionRequest(id: nil, action: "stop")
+        try await put(path: "/api/playlists", body: request)
     }
 
     // MARK: - Effects Catalog
@@ -332,6 +374,27 @@ private struct SceneSaveRequest: Encodable {
     }
 }
 
+private struct SceneCreateRequest: Encodable {
+    let name: String
+    let sceneImage: String?
+    let sceneTags: String?
+    let virtuals: [String: VirtualAction]
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case sceneImage = "scene_image"
+        case sceneTags = "scene_tags"
+        case virtuals
+    }
+
+    init(scene: LedFXScene, virtuals: [String: VirtualAction]? = nil) {
+        self.name = scene.name
+        self.sceneImage = scene.sceneImage
+        self.sceneTags = scene.sceneTags
+        self.virtuals = virtuals ?? scene.virtuals
+    }
+}
+
 private struct SceneSaveResponse: Decodable {
     let status: String
     let payload: SceneSavePayload?
@@ -340,6 +403,30 @@ private struct SceneSaveResponse: Decodable {
 private struct SceneSavePayload: Decodable {
     let type: String?
     let reason: String?
+}
+
+private struct SceneCreateResponse: Decodable {
+    let status: String
+    let payload: SceneCreatePayload?
+}
+
+private struct SceneCreatePayload: Decodable {
+    let id: String?
+    let sceneId: String?
+    let type: String?
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case sceneId = "scene_id"
+        case type
+        case reason
+    }
+}
+
+private struct PlaylistActionRequest: Encodable {
+    let id: String?
+    let action: String
 }
 
 // MARK: - Errors

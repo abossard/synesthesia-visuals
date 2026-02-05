@@ -48,7 +48,7 @@ final class LedFXClientTests: XCTestCase {
         XCTAssertNotNil(scenes)
     }
     
-    func testPutScene_createsScene() async throws {
+    func testCreateScene_createsScene() async throws {
         guard isLedFXAvailable else {
             throw XCTSkip("LedFX server not available")
         }
@@ -56,7 +56,7 @@ final class LedFXClientTests: XCTestCase {
         let virtualId = try await requireVirtualId()
         
         let scene = LedFXScene(
-            name: "Test Scene",
+            name: "Test Scene \(UUID().uuidString)",
             virtuals: [
                 virtualId: VirtualAction(action: .forceblack)
             ],
@@ -64,15 +64,14 @@ final class LedFXClientTests: XCTestCase {
         )
         
         // Create scene
-        try await client.putScene(id: "test_scene", scene: scene)
+        let sceneId = try await client.createScene(scene: scene)
         
         // Verify it was created
         let scenes = try await client.listScenes()
-        let expectedId = "test_scene".replacingOccurrences(of: "_", with: "-")
-        XCTAssertTrue(scenes["test_scene"] != nil || scenes[expectedId] != nil)
+        XCTAssertNotNil(scenes[sceneId])
         
         // Clean up
-        try? await client.deleteScene(id: "test_scene")
+        try? await client.deleteScene(id: sceneId)
     }
     
     func testActivateScene_activatesScene() async throws {
@@ -84,21 +83,21 @@ final class LedFXClientTests: XCTestCase {
         
         // Create a test scene
         let scene = LedFXScene(
-            name: "Test Activation",
+            name: "Test Activation \(UUID().uuidString)",
             virtuals: [
                 virtualId: VirtualAction(action: .forceblack)
             ],
             active: false
         )
         
-        try await client.putScene(id: "test_activate", scene: scene)
+        let sceneId = try await client.createScene(scene: scene)
         
         // Activate it
-        try await client.activateScene(id: "test_activate")
+        try await client.activateScene(id: sceneId)
         
         // Note: Verification would require polling scene status
         // Clean up
-        try? await client.deleteScene(id: "test_activate")
+        try? await client.deleteScene(id: sceneId)
     }
     
     func testDeleteScene_removesScene() async throws {
@@ -110,24 +109,23 @@ final class LedFXClientTests: XCTestCase {
         
         // Create a scene
         let scene = LedFXScene(
-            name: "Test Delete",
+            name: "Test Delete \(UUID().uuidString)",
             virtuals: [virtualId: VirtualAction(action: .forceblack)],
             active: false
         )
         
-        try await client.putScene(id: "test_delete", scene: scene)
+        let sceneId = try await client.createScene(scene: scene)
         
         // Delete it (some LedFX builds do not support delete)
         do {
-            try await client.deleteScene(id: "test_delete")
+            try await client.deleteScene(id: sceneId)
         } catch {
             throw XCTSkip("LedFX delete API not supported")
         }
         
         // Verify it's gone if delete is supported
         let scenes = try await client.listScenes()
-        let expectedId = "test_delete".replacingOccurrences(of: "_", with: "-")
-        XCTAssertTrue(scenes["test_delete"] == nil && scenes[expectedId] == nil)
+        XCTAssertNil(scenes[sceneId])
     }
     
     // MARK: - Virtual Device Tests

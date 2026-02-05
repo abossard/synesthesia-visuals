@@ -189,6 +189,9 @@ public final class LaunchpadModule: @unchecked Sendable {
             DispatchQueue.main.async { [weak self] in
                 self?.dispatch?(.launchpad(.connected(deviceName ?? "Launchpad")))
                 self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
+                if let status = self?.getStatus() {
+                    self?.dispatch?(.launchpad(.statusUpdated(LaunchpadStatusSnapshot(from: status))))
+                }
             }
         } else {
             isEnabled = false
@@ -199,6 +202,9 @@ public final class LaunchpadModule: @unchecked Sendable {
             // Dispatch disconnection
             DispatchQueue.main.async { [weak self] in
                 self?.dispatch?(.launchpad(.disconnected))
+                if let status = self?.getStatus() {
+                    self?.dispatch?(.launchpad(.statusUpdated(LaunchpadStatusSnapshot(from: status))))
+                }
             }
         }
     }
@@ -421,6 +427,9 @@ public final class LaunchpadModule: @unchecked Sendable {
         let currentState = state
         DispatchQueue.main.async { [weak self] in
             self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
+            if let status = self?.getStatus() {
+                self?.dispatch?(.launchpad(.statusUpdated(LaunchpadStatusSnapshot(from: status))))
+            }
         }
         
         lock.unlock()
@@ -437,6 +446,9 @@ public final class LaunchpadModule: @unchecked Sendable {
         let currentState = state
         DispatchQueue.main.async { [weak self] in
             self?.dispatch?(.launchpad(.stateUpdated(ControllerStateSnapshot(from: currentState))))
+            if let status = self?.getStatus() {
+                self?.dispatch?(.launchpad(.statusUpdated(LaunchpadStatusSnapshot(from: status))))
+            }
         }
         
         lock.unlock()
@@ -634,6 +646,14 @@ public final class LaunchpadModule: @unchecked Sendable {
         // Restart timer with new BPM if significantly changed
         if bpmChanged && blinkTimer != nil {
             startBlinkTimer()
+        }
+
+        if bpmChanged {
+            DispatchQueue.main.async { [weak self] in
+                if let status = self?.getStatus() {
+                    self?.dispatch?(.launchpad(.statusUpdated(LaunchpadStatusSnapshot(from: status))))
+                }
+            }
         }
     }
     

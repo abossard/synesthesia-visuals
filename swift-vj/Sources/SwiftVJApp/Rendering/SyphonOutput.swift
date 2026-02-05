@@ -11,7 +11,7 @@ import SyphonKit
 
 /// Thread-safe Syphon server manager for VJ tile outputs
 /// Each tile gets its own Syphon server for OBS/Resolume compositing
-/// NOT @MainActor - can be called from any thread (CVDisplayLink render thread)
+/// NOT @MainActor - can be called from any thread (headless render loop thread)
 final class SyphonOutputManager: @unchecked Sendable {
     // MARK: - Properties
 

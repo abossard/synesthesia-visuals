@@ -7,6 +7,8 @@ public enum RequestBuilder {
     
     public enum BuildError: Error, LocalizedError {
         case unknownScene(String)
+        case unknownPlaylist(String)
+        case unknownPlaylistControl(String)
         case unknownOneshot(String)
         case unknownParam(String)
         case unknownSlot(String)
@@ -16,6 +18,8 @@ public enum RequestBuilder {
         public var errorDescription: String? {
             switch self {
             case .unknownScene(let name): return "Unknown scene: \(name)"
+            case .unknownPlaylist(let name): return "Unknown playlist: \(name)"
+            case .unknownPlaylistControl(let name): return "Unknown playlist control: \(name)"
             case .unknownOneshot(let name): return "Unknown oneshot: \(name)"
             case .unknownParam(let name): return "Unknown param: \(name)"
             case .unknownSlot(let slot): return "Unknown slot: \(slot)"
@@ -36,6 +40,12 @@ public enum RequestBuilder {
         switch route {
         case .scene(let slot, let sceneName):
             return try buildSceneRequests(slot: slot, sceneName: sceneName, value: value, config: config)
+
+        case .playlist(let slot, let playlistId):
+            return try buildPlaylistRequests(slot: slot, playlistId: playlistId, value: value, config: config)
+
+        case .playlistControl(let slot, let action):
+            return try buildPlaylistControlRequests(slot: slot, action: action, value: value, config: config)
             
         case .oneshot(let slot, let oneshotName):
             return try buildOneshotRequests(slot: slot, oneshotName: oneshotName, value: value, config: config)
@@ -103,13 +113,75 @@ public enum RequestBuilder {
         guard let oneshotConfig = config.oneshots[oneshotName] else {
             throw BuildError.unknownOneshot(oneshotName)
         }
-        
+
+        let targetIds = slotConfig.targets.virtual_ids
+        if targetIds.isEmpty {
+            let context = TemplateEngine.TemplateContext(
+                slotName: slotConfig.name,
+                slotVirtualIds: slotConfig.targets.virtual_ids
+            )
+            return try [buildRequest(template: oneshotConfig.request, context: context, config: config)]
+        }
+
+        return try targetIds.map { targetId in
+            let context = TemplateEngine.TemplateContext(
+                slotName: slotConfig.name,
+                slotVirtualIds: [targetId]
+            )
+            return try buildRequest(template: oneshotConfig.request, context: context, config: config)
+        }
+    }
+
+    // MARK: - Playlist Requests
+
+    private static func buildPlaylistRequests(
+        slot: String,
+        playlistId: String,
+        value: Double,
+        config: BridgeConfig
+    ) throws -> [HTTPRequestPlan] {
+        guard value > 0 else { return [] } // Only trigger on > 0
+
+        guard let slotConfig = config.slots[slot] else {
+            throw BuildError.unknownSlot(slot)
+        }
+
+        guard let playlistConfig = config.playlists[playlistId] else {
+            throw BuildError.unknownPlaylist(playlistId)
+        }
+
         let context = TemplateEngine.TemplateContext(
+            playlistId: playlistConfig.id,
             slotName: slotConfig.name,
             slotVirtualIds: slotConfig.targets.virtual_ids
         )
-        
-        return try [buildRequest(template: oneshotConfig.request, context: context, config: config)]
+
+        return try [buildRequest(template: playlistConfig.on_start, context: context, config: config)]
+    }
+
+    private static func buildPlaylistControlRequests(
+        slot: String,
+        action: String,
+        value: Double,
+        config: BridgeConfig
+    ) throws -> [HTTPRequestPlan] {
+        guard value > 0 else { return [] } // Only trigger on > 0
+
+        guard let slotConfig = config.slots[slot] else {
+            throw BuildError.unknownSlot(slot)
+        }
+
+        guard let controlConfig = config.playlist_controls[action] else {
+            throw BuildError.unknownPlaylistControl(action)
+        }
+
+        let context = TemplateEngine.TemplateContext(
+            playlistAction: controlConfig.action,
+            slotName: slotConfig.name,
+            slotVirtualIds: slotConfig.targets.virtual_ids
+        )
+
+        return try [buildRequest(template: controlConfig.request, context: context, config: config)]
     }
     
     // MARK: - Blackout Requests
@@ -168,14 +240,36 @@ public enum RequestBuilder {
         // Scale the value
         let (scaled, mode) = ParameterScaling.scale(value, config: paramConfig.scale, inputConfig: paramConfig.input)
         
-        let context = TemplateEngine.TemplateContext(
-            slotName: slotConfig.name,
-            slotVirtualIds: slotConfig.targets.virtual_ids,
-            paramRaw: value,
-            paramScaled: scaled,
-            paramMode: mode
-        )
-        
+        let targetIds = slotConfig.targets.virtual_ids
+        let usesSlotTargets = paramConfig.request.path.contains("${slot.targets.virtual_ids")
+        if targetIds.isEmpty || !usesSlotTargets {
+            let context = TemplateEngine.TemplateContext(
+                slotName: slotConfig.name,
+                slotVirtualIds: slotConfig.targets.virtual_ids,
+                paramRaw: value,
+                paramScaled: scaled,
+                paramMode: mode
+            )
+            return try [buildParamRequest(paramConfig: paramConfig, context: context, config: config)]
+        }
+
+        return try targetIds.map { targetId in
+            let context = TemplateEngine.TemplateContext(
+                slotName: slotConfig.name,
+                slotVirtualIds: [targetId],
+                paramRaw: value,
+                paramScaled: scaled,
+                paramMode: mode
+            )
+            return try buildParamRequest(paramConfig: paramConfig, context: context, config: config)
+        }
+    }
+
+    private static func buildParamRequest(
+        paramConfig: ParamConfig,
+        context: TemplateEngine.TemplateContext,
+        config: BridgeConfig
+    ) throws -> HTTPRequestPlan {
         // Build base body from template
         let baseBody: [String: Any]
         if let template = paramConfig.request.body_template {
@@ -183,27 +277,27 @@ public enum RequestBuilder {
         } else {
             baseBody = [:]
         }
-        
+
         // Apply patches
         var finalBody = baseBody
         if let patches = paramConfig.request.patch_ops {
             finalBody = try JSONPatcher.applyPatches(patches, to: baseBody, context: context)
         }
-        
+
         // Substitute in final body
         let substituted = TemplateEngine.substituteJSON(finalBody, context: context)
         guard let finalDict = substituted as? [String: Any] else {
             throw BuildError.invalidJSON("Result is not a dictionary")
         }
-        
+
         // Build request template
         let template = RequestTemplate(
             method: paramConfig.request.method,
             path: paramConfig.request.path,
             body: AnyCodable(finalDict)
         )
-        
-        return try [buildRequest(template: template, context: context, config: config)]
+
+        return try buildRequest(template: template, context: context, config: config)
     }
     
     // MARK: - Generic Request Builder

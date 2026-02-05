@@ -35,9 +35,11 @@ struct LaunchpadView: View {
                                     .font(.caption)
                             }
                         }
+                        .accessibilityIdentifier(A11yID.launchpadStatus)
                     } else {
                         Text("Module not initialized")
                             .foregroundColor(.red)
+                            .accessibilityIdentifier(A11yID.launchpadStatus)
                     }
                 }
                 
@@ -57,6 +59,7 @@ struct LaunchpadView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(status.isLearnMode ? .red : .blue)
+                    .accessibilityIdentifier(A11yID.launchpadLearnButton)
                 }
             }
             .padding()
@@ -225,6 +228,7 @@ struct LaunchpadView: View {
                         Button("Run E2E Test Sequence") {
                             showTestSheet = true
                         }
+                        .accessibilityIdentifier(A11yID.launchpadRunTestButton)
                         .sheet(isPresented: $showTestSheet) {
                             LaunchpadTestView()
                         }

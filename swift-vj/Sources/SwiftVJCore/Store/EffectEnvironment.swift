@@ -68,6 +68,11 @@ public final class EffectEnvironment {
     /// Songs module for song management
     public var songsModule: SongsModule?
 
+    // MARK: - LedFX Effects
+
+    /// Handle LedFX actions in the app layer
+    public var ledfxActionHandler: (@Sendable (LedFXAction) async -> Void)?
+
     // MARK: - Reset (for testing)
 
     /// Reset all callbacks to nil (useful for testing)
@@ -81,5 +86,6 @@ public final class EffectEnvironment {
         clearImagesCache = nil
         sendOSC = nil
         songsModule = nil
+        ledfxActionHandler = nil
     }
 }

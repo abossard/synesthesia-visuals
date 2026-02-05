@@ -11,6 +11,8 @@ public struct BridgeConfig: Codable, Sendable, Equatable {
     public let server: ServerConfig
     public let slots: [String: SlotConfig]
     public let scenes: [String: SceneConfig]
+    public let playlists: [String: PlaylistConfig]
+    public let playlist_controls: [String: PlaylistControlConfig]
     public let oneshots: [String: OneshotConfig]
     public let params: [String: ParamConfig]
     
@@ -19,6 +21,8 @@ public struct BridgeConfig: Codable, Sendable, Equatable {
         server: ServerConfig,
         slots: [String: SlotConfig],
         scenes: [String: SceneConfig],
+        playlists: [String: PlaylistConfig],
+        playlist_controls: [String: PlaylistControlConfig],
         oneshots: [String: OneshotConfig],
         params: [String: ParamConfig]
     ) {
@@ -26,8 +30,45 @@ public struct BridgeConfig: Codable, Sendable, Equatable {
         self.server = server
         self.slots = slots
         self.scenes = scenes
+        self.playlists = playlists
+        self.playlist_controls = playlist_controls
         self.oneshots = oneshots
         self.params = params
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case server
+        case slots
+        case scenes
+        case playlists
+        case playlist_controls
+        case oneshots
+        case params
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        server = try container.decode(ServerConfig.self, forKey: .server)
+        slots = try container.decode([String: SlotConfig].self, forKey: .slots)
+        scenes = try container.decode([String: SceneConfig].self, forKey: .scenes)
+        playlists = try container.decodeIfPresent([String: PlaylistConfig].self, forKey: .playlists) ?? [:]
+        playlist_controls = try container.decodeIfPresent([String: PlaylistControlConfig].self, forKey: .playlist_controls) ?? [:]
+        oneshots = try container.decode([String: OneshotConfig].self, forKey: .oneshots)
+        params = try container.decode([String: ParamConfig].self, forKey: .params)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(server, forKey: .server)
+        try container.encode(slots, forKey: .slots)
+        try container.encode(scenes, forKey: .scenes)
+        try container.encode(playlists, forKey: .playlists)
+        try container.encode(playlist_controls, forKey: .playlist_controls)
+        try container.encode(oneshots, forKey: .oneshots)
+        try container.encode(params, forKey: .params)
     }
 }
 
@@ -125,6 +166,28 @@ public struct SceneDeactivateAction: Codable, Sendable, Equatable {
     
     public init(enabled: Bool, request: RequestTemplate) {
         self.enabled = enabled
+        self.request = request
+    }
+}
+
+// MARK: - Playlist Config
+
+public struct PlaylistConfig: Codable, Sendable, Equatable {
+    public let id: String
+    public let on_start: RequestTemplate
+
+    public init(id: String, on_start: RequestTemplate) {
+        self.id = id
+        self.on_start = on_start
+    }
+}
+
+public struct PlaylistControlConfig: Codable, Sendable, Equatable {
+    public let action: String
+    public let request: RequestTemplate
+
+    public init(action: String, request: RequestTemplate) {
+        self.action = action
         self.request = request
     }
 }

@@ -24,6 +24,7 @@ public enum AppAction: Sendable {
     case launchpad(LaunchpadAction)
     case audio(AudioAction)
     case ui(UIAction)
+    case ledfx(LedFXAction)
     case songs(SongsAction)
 
     // MARK: - Persistence
@@ -212,6 +213,151 @@ public enum UIAction: Sendable {
     case setOscFilter(String)
 }
 
+// MARK: - LedFX Actions
+
+/// Snapshot of LedFX state fetched from server
+public struct LedFXRefreshSnapshot: Sendable, Equatable {
+    public let serverInfo: LedFXInfo?
+    public let scenes: [String: LedFXScene]
+    public let virtuals: [String: LedFXVirtual]
+    public let playlists: [String: LedFXPlaylist]
+    public let isOnline: Bool
+    public let healthSummary: String
+    public let lastHealthCheck: Date
+
+    public init(
+        serverInfo: LedFXInfo?,
+        scenes: [String: LedFXScene],
+        virtuals: [String: LedFXVirtual],
+        playlists: [String: LedFXPlaylist],
+        isOnline: Bool,
+        healthSummary: String,
+        lastHealthCheck: Date
+    ) {
+        self.serverInfo = serverInfo
+        self.scenes = scenes
+        self.virtuals = virtuals
+        self.playlists = playlists
+        self.isOnline = isOnline
+        self.healthSummary = healthSummary
+        self.lastHealthCheck = lastHealthCheck
+    }
+}
+
+/// Actions related to LedFX configuration and OSC → REST bridge
+public enum LedFXAction: Sendable {
+    /// Update the base URL field (UI state)
+    case setBaseURL(String)
+
+    /// Update the virtual IDs field (comma-separated UI state)
+    case setVirtualIds(String)
+
+    /// Update the scene filter regex (UI state)
+    case setSceneFilter(String)
+
+    /// Update the playlist filter regex (UI state)
+    case setPlaylistFilter(String)
+
+    /// Apply settings and reconnect
+    case applySettings(baseURL: String, virtualIds: [String])
+
+    /// Refresh server state (scenes, virtuals, playlists)
+    case refresh
+
+    /// Test the LedFX connection
+    case testConnection
+
+    /// Refresh succeeded with latest server snapshot
+    case refreshCompleted(LedFXRefreshSnapshot)
+
+    /// Refresh failed with error message
+    case refreshFailed(String)
+
+    /// Activate a scene by id
+    case activateScene(String)
+
+    /// Deactivate a scene by id
+    case deactivateScene(String)
+
+    /// Delete a scene by id
+    case deleteScene(String)
+
+    /// Activate a playlist by id
+    case activatePlaylist(String)
+
+    /// Playlist activated successfully
+    case playlistActivated(String)
+
+    /// Stop the current playlist
+    case stopPlaylist
+
+    /// Playlist stopped successfully
+    case playlistStopped
+
+    /// Set brightness for a virtual
+    case setVirtualBrightness(id: String, brightness: Double)
+
+    /// Generate scenes from DJ set metadata
+    case generateScenes([LedFXSceneSeed])
+
+    /// Generate a fresh OSC → REST bridge config
+    case generateBridgeConfig
+
+    /// Generated a bridge config successfully
+    case generateConfigCompleted(yaml: String, playlistCount: Int, effectsCount: Int)
+
+    /// Failed to generate bridge config
+    case generateConfigFailed(String)
+
+    /// Save the generated bridge config to disk
+    case saveGeneratedConfig
+
+    /// Load cached bridge config from disk
+    case loadCachedConfig
+
+    /// Cached config loaded successfully
+    case cachedConfigLoaded(yaml: String, playlistCount: Int)
+
+    /// Cached config failed to load
+    case cachedConfigFailed(String)
+
+    /// Load the generated bridge config into the bridge
+    case loadGeneratedConfig(yaml: String)
+
+    /// Send a test OSC message for the first scene
+    case sendTestScene
+
+    /// Send a test OSC message for the first playlist
+    case sendTestPlaylist
+
+    /// Send a test OSC message for the first oneshot
+    case sendTestOneshot
+
+    /// Apply settings completed
+    case applyCompleted
+
+    /// Update the current error message (nil clears)
+    case setError(String?)
+
+    /// Clear any LedFX error message
+    case clearError
+}
+
+/// Input model for LedFX scene generation
+public struct LedFXSceneSeed: Sendable, Equatable {
+    public let name: String
+    public let energy: Double
+    public let valence: Double
+    public let bpm: Double?
+
+    public init(name: String, energy: Double, valence: Double, bpm: Double?) {
+        self.name = name
+        self.energy = energy
+        self.valence = valence
+        self.bpm = bpm
+    }
+}
+
 // MARK: - Songs Actions
 
 import SongRepository
@@ -316,6 +462,7 @@ extension AppAction: CustomStringConvertible {
         case .launchpad(let action): return "launchpad.\(action)"
         case .audio(let action): return "audio.\(action)"
         case .ui(let action): return "ui.\(action)"
+        case .ledfx(let action): return "ledfx.\(action)"
         case .songs(let action): return "songs.\(action)"
         case .loadPersistedState: return "loadPersistedState"
         case .persistedStateLoaded: return "persistedStateLoaded"

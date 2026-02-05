@@ -132,6 +132,22 @@ public enum ConfigLoader {
                 errors.append(contentsOf: validateRequestTemplate(deactivate.request, path: "scenes.\(sceneName).on_deactivate.request"))
             }
         }
+
+        // Playlists validation
+        for (playlistName, playlist) in config.playlists {
+            if playlist.id.isEmpty {
+                errors.append(ConfigValidationError(path: "playlists.\(playlistName).id", message: "Cannot be empty"))
+            }
+            errors.append(contentsOf: validateRequestTemplate(playlist.on_start, path: "playlists.\(playlistName).on_start"))
+        }
+
+        // Playlist controls validation
+        for (controlName, control) in config.playlist_controls {
+            if control.action.isEmpty {
+                errors.append(ConfigValidationError(path: "playlist_controls.\(controlName).action", message: "Cannot be empty"))
+            }
+            errors.append(contentsOf: validateRequestTemplate(control.request, path: "playlist_controls.\(controlName).request"))
+        }
         
         // Oneshots validation
         for (oneshotName, oneshot) in config.oneshots {

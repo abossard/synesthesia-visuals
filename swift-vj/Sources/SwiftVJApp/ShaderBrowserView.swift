@@ -524,51 +524,7 @@ struct ShaderBrowserView: View {
     
     /// Find the Shaders directory in known locations
     private func findShadersDirectory() -> URL? {
-        let fileManager = FileManager.default
-        
-        // Check user-configured shaderDirectory from settings
-        let configuredPath = UserDefaults.standard.string(forKey: "shaderDirectory") ?? ""
-        if !configuredPath.isEmpty {
-            let configuredURL = URL(fileURLWithPath: configuredPath)
-            if fileManager.fileExists(atPath: configuredURL.path) {
-                return configuredURL
-            }
-        }
-        
-        // Try relative to the executable (for development)
-        let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        
-        // Go up from executable to find swift-vj/Shaders
-        var currentURL = executableURL.deletingLastPathComponent()
-        for _ in 0..<10 {
-            let shadersURL = currentURL.appendingPathComponent("Shaders")
-            if fileManager.fileExists(atPath: shadersURL.appendingPathComponent("glsl").path) {
-                return shadersURL
-            }
-            
-            // Also check swift-vj/Shaders
-            let swiftVJShaders = currentURL.appendingPathComponent("swift-vj/Shaders")
-            if fileManager.fileExists(atPath: swiftVJShaders.appendingPathComponent("glsl").path) {
-                return swiftVJShaders
-            }
-            
-            currentURL = currentURL.deletingLastPathComponent()
-        }
-        
-        // Fallback: hardcoded development path
-        let devPaths = [
-            URL(fileURLWithPath: "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Shaders"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("swift-vj/Shaders"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Shaders")
-        ]
-        
-        for devPath in devPaths {
-            if fileManager.fileExists(atPath: devPath.appendingPathComponent("glsl").path) {
-                return devPath
-            }
-        }
-        
-        return nil
+        ShaderDirectoryLocator.resolve(customPath: UserDefaults.standard.string(forKey: "shaderDirectory"))
     }
     
     private func toggleSelection(_ shaderName: String) {
@@ -648,7 +604,7 @@ struct ShaderBrowserView: View {
         // Also reload in the render engine's repository (single source of truth)
         if let shadersDir = findShadersDirectory(),
            let renderEngine = appState.renderEngine {
-            await renderEngine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
+            renderEngine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
             await renderEngine.shaderRepository.reload()
             appState.log("Reloaded shaders in ShaderRepository", level: .debug)
         }
@@ -915,13 +871,19 @@ struct ShaderBrowserView: View {
                 }
             }
             let screenshotCapture = ShaderScreenshotCapture(logger: logger)
-            let lmStudioClient = LMStudioClient(logger: logger)
+            let aiService = ShaderAnalysisService(
+                providers: [
+                    LMStudioClient(logger: logger)
+                ],
+                logger: logger
+            )
             
-            // Check if LM Studio is available (for AI analysis)
-            let aiAvailable = await lmStudioClient.isAvailable()
+            let aiAvailable = await aiService.isAvailable()
             if !aiAvailable {
-                appState.log("⚠️ LM Studio not available - will mark black shaders only", level: .warning)
+                appState.log("⚠️ No AI provider available - will mark black shaders only", level: .warning)
                 appState.log("ℹ️ Start LM Studio with: lms server start --port 1234", level: .info)
+            } else if let providerName = await aiService.activeProviderName() {
+                appState.log("🤖 Using AI provider: \(providerName)", level: .info)
             }
             
             var successCount = 0
@@ -1068,7 +1030,7 @@ struct ShaderBrowserView: View {
                     appState.log("  🖼️ Screenshot: \(screenshotPath.lastPathComponent)", level: .debug)
                     
                     let aiStartTime = Date()
-                    if let analysis = await lmStudioClient.analyzeShader(
+                    if let analysis = await aiService.analyzeShader(
                         shaderName: shaderName,
                         shaderSource: sourceContent,
                         screenshotPath: screenshotPath

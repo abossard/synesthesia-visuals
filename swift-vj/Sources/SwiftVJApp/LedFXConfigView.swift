@@ -2,71 +2,116 @@
 // Following A Philosophy of Software Design: simple UI for complex functionality
 
 import SwiftUI
-import AppKit
-import UniformTypeIdentifiers
 import SwiftVJCore
 import OscRestBridge
+import Foundation
 
 struct LedFXConfigView: View {
     @EnvironmentObject var appState: AppState
-    
-    // Settings
-    @AppStorage("ledfx_baseURL") private var baseURL = "http://127.0.0.1:8888"
-    @AppStorage("ledfx_virtualIds") private var virtualIdsString = ""
-    @AppStorage("ledfx_enabled") private var ledfxEnabled = false
-    
-    // State
-    @State private var isRefreshing = false
-    @State private var serverInfo: LedFXInfo?
-    @State private var scenes: [String: LedFXScene] = [:]
-    @State private var virtuals: [String: LedFXVirtual] = [:]
-    @State private var errorMessage: String?
+
+    // UI State
     @State private var showingSceneGenerator = false
-    @State private var isGeneratingConfig = false
-    @State private var generatedConfig: BridgeConfig?
-    @State private var generatedYaml: String?
-    @State private var supportedRouteGroups: [SupportedRouteGroup] = []
-    @State private var playlistCount: Int = 0
-    @State private var effectsCount: Int = 0
     
-    private var virtualIds: [String] {
-        virtualIdsString
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+    private var virtualIds: [String] { appState.ledfxVirtualIds }
+
+    private var slotIdsForPaths: [String] {
+        appState.ledfxSlotIdsForPaths
+    }
+
+    private var activePlaylistId: String? {
+        appState.ledfxActivePlaylistId
+    }
+
+    private var activePlaylistLabel: String {
+        guard let id = activePlaylistId else { return "None" }
+        return appState.ledfxPlaylists[id]?.name ?? id
+    }
+
+    private var sceneNameLookup: [String: String] {
+        appState.ledfxScenes.mapValues { $0.name }
+    }
+
+    private var supportedRouteGroups: [SupportedRouteGroup] {
+        guard let config = appState.ledfxGeneratedConfig else { return [] }
+        return buildSupportedRoutes(config: config)
+    }
+
+    private var sceneFilterRegex: NSRegularExpression? {
+        guard !appState.ledfxSceneFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return try? NSRegularExpression(pattern: appState.ledfxSceneFilter, options: [.caseInsensitive])
+    }
+
+    private var playlistFilterRegex: NSRegularExpression? {
+        guard !appState.ledfxPlaylistFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return try? NSRegularExpression(pattern: appState.ledfxPlaylistFilter, options: [.caseInsensitive])
+    }
+
+    private var filteredScenes: [(id: String, scene: LedFXScene)] {
+        let items = appState.ledfxScenes.keys.sorted().compactMap { id -> (id: String, scene: LedFXScene)? in
+            guard let scene = appState.ledfxScenes[id] else { return nil }
+            return (id: id, scene: scene)
+        }
+        guard let regex = sceneFilterRegex else { return items }
+        return items.filter { item in
+            let target = "\(item.scene.name) \(item.id)"
+            let range = NSRange(target.startIndex..<target.endIndex, in: target)
+            return regex.firstMatch(in: target, options: [], range: range) != nil
+        }
+    }
+
+    private var filteredPlaylists: [(id: String, playlist: LedFXPlaylist)] {
+        let items = appState.ledfxPlaylists.keys.sorted().compactMap { id -> (id: String, playlist: LedFXPlaylist)? in
+            guard let playlist = appState.ledfxPlaylists[id] else { return nil }
+            return (id: id, playlist: playlist)
+        }
+        guard let regex = playlistFilterRegex else { return items }
+        return items.filter { item in
+            let target = "\(item.playlist.name) \(item.id)"
+            let range = NSRange(target.startIndex..<target.endIndex, in: target)
+            return regex.firstMatch(in: target, options: [], range: range) != nil
+        }
+    }
+
+    private var refreshSummary: String {
+        guard let last = appState.ledfxLastHealthCheck else { return "Not refreshed yet" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: last, relativeTo: Date())
     }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Connection Settings
-                connectionSection
-                
-                // Status
-                if ledfxEnabled {
+                overviewSection
+                playlistsSection
+
+                LazyVGrid(columns: gridColumns, spacing: 16) {
+                    connectionSection
+                    filtersSection
                     statusSection
-                }
-                
-                // Scene Management
-                if ledfxEnabled && !scenes.isEmpty {
-                    sceneSection
-                }
-                
-                // Virtual Devices
-                if ledfxEnabled && !virtuals.isEmpty {
-                    virtualsSection
+                    bridgeSection
                 }
 
-                if ledfxEnabled {
-                    configSection
+                if !appState.ledfxScenes.isEmpty || !appState.ledfxVirtuals.isEmpty {
+                    LazyVGrid(columns: gridColumns, spacing: 16) {
+                        if !appState.ledfxScenes.isEmpty {
+                            sceneSection
+                        }
+                        if !appState.ledfxVirtuals.isEmpty {
+                            virtualsSection
+                        }
+                    }
                 }
 
-                if ledfxEnabled && !supportedRouteGroups.isEmpty {
+                if !supportedRouteGroups.isEmpty {
                     supportedPathsSection
                 }
-                
-                // Error Display
-                if let error = errorMessage {
+
+                if !appState.ledfxPlaylists.isEmpty || !appState.ledfxScenes.isEmpty {
+                    livePathsSection
+                }
+
+                if let error = appState.ledfxErrorMessage {
                     errorSection(error)
                 }
             }
@@ -76,32 +121,30 @@ struct LedFXConfigView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await refreshData() }
+                    appState.send(.ledfx(.refresh))
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .disabled(isRefreshing || !ledfxEnabled)
+                .disabled(appState.ledfxIsRefreshing)
             }
             
             ToolbarItem(placement: .primaryAction) {
                 Button(action: { showingSceneGenerator = true }) {
                     Label("Generate Scenes", systemImage: "wand.and.stars")
                 }
-                .disabled(!ledfxEnabled)
             }
         }
         .sheet(isPresented: $showingSceneGenerator) {
             SceneGeneratorSheet(
                 virtualIds: virtualIds,
-                onGenerate: { tracks in
-                    await generateScenes(tracks: tracks)
+                onGenerate: { seeds in
+                    appState.send(.ledfx(.generateScenes(seeds)))
                 }
             )
         }
         .task {
-            if ledfxEnabled {
-                await refreshData()
-            }
+            appState.send(.ledfx(.refresh))
+            appState.send(.ledfx(.loadCachedConfig))
         }
     }
     
@@ -110,32 +153,61 @@ struct LedFXConfigView: View {
     private var connectionSection: some View {
         GroupBox("Connection") {
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Enable LedFX Integration", isOn: $ledfxEnabled)
-                    .onChange(of: ledfxEnabled) { _, newValue in
-                        Task {
-                            if newValue {
-                                await startLedFX()
-                            } else {
-                                await stopLedFX()
-                            }
-                        }
-                    }
+                Text("LedFX bridge is always on. Apply & Reconnect regenerates OSC → REST routes.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                TextField("Base URL", text: appState.ledfxBaseURLBinding)
+                    .textFieldStyle(.roundedBorder)
                 
-                if ledfxEnabled {
-                    TextField("Base URL", text: $baseURL)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    TextField("Virtual IDs (comma-separated)", text: $virtualIdsString)
-                        .textFieldStyle(.roundedBorder)
-                    
-                    Text("Example: virtual-1, virtual-2")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Button("Test Connection") {
-                        Task { await testConnection() }
+                TextField("Virtual IDs (comma-separated)", text: appState.ledfxVirtualIdsBinding)
+                    .textFieldStyle(.roundedBorder)
+                
+                Text("Example: virtual-1, virtual-2")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 12) {
+                    Button("Apply & Reconnect") {
+                        appState.send(.ledfx(.applySettings(
+                            baseURL: appState.ledfxBaseURL,
+                            virtualIds: virtualIds
+                        )))
                     }
-                    .disabled(isRefreshing)
+                    .disabled(appState.ledfxIsApplying)
+
+                    Button("Test Connection") {
+                        appState.send(.ledfx(.testConnection))
+                    }
+                    .disabled(appState.ledfxIsRefreshing)
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var filtersSection: some View {
+        GroupBox("Filters") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Regex filters narrow the scenes/playlists lists and their OSC paths.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                TextField("Scene filter (regex)", text: appState.ledfxSceneFilterBinding)
+                    .textFieldStyle(.roundedBorder)
+
+                TextField("Playlist filter (regex)", text: appState.ledfxPlaylistFilterBinding)
+                    .textFieldStyle(.roundedBorder)
+
+                if sceneFilterRegex == nil && !appState.ledfxSceneFilter.isEmpty {
+                    Text("Scene filter regex is invalid")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                if playlistFilterRegex == nil && !appState.ledfxPlaylistFilter.isEmpty {
+                    Text("Playlist filter regex is invalid")
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             }
             .padding()
@@ -145,12 +217,13 @@ struct LedFXConfigView: View {
     private var statusSection: some View {
         GroupBox("Server Status") {
             VStack(alignment: .leading, spacing: 8) {
-                if let info = serverInfo {
+                if let info = appState.ledfxServerInfo {
                     statusRow("Server", info.name)
                     statusRow("Version", info.version)
                     statusRow("URL", info.url)
-                    statusRow("Scenes", "\(scenes.count)")
-                    statusRow("Virtuals", "\(virtuals.count)")
+                    statusRow("Scenes", "\(appState.ledfxScenes.count)")
+                    statusRow("Playlists", "\(appState.ledfxPlaylists.count)")
+                    statusRow("Virtuals", "\(appState.ledfxVirtuals.count)")
                 } else {
                     Text("Not connected")
                         .foregroundColor(.secondary)
@@ -159,19 +232,29 @@ struct LedFXConfigView: View {
             .padding()
         }
     }
-    
-    private var sceneSection: some View {
-        GroupBox("Scenes (\(scenes.count))") {
-            VStack(spacing: 8) {
-                ForEach(Array(scenes.keys.sorted()), id: \.self) { sceneId in
-                    if let scene = scenes[sceneId] {
-                        SceneRow(
-                            id: sceneId,
-                            scene: scene,
-                            onActivate: { await activateScene(id: sceneId) },
-                            onDeactivate: { await deactivateScene(id: sceneId) },
-                            onDelete: { await deleteScene(id: sceneId) }
-                        )
+
+    private var playlistsSection: some View {
+        GroupBox("Playlists (\(filteredPlaylists.count))") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Playlists are the primary LedFX control surface. Activating a scene will stop the current playlist.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if filteredPlaylists.isEmpty {
+                    Text("No playlists available. Refresh to load playlists from LedFX.")
+                        .foregroundColor(.secondary)
+                } else {
+                    LazyVGrid(columns: playlistColumns, spacing: 12) {
+                        ForEach(filteredPlaylists, id: \.id) { item in
+                            PlaylistCard(
+                                id: item.id,
+                                playlist: item.playlist,
+                                isActive: item.id == activePlaylistId,
+                                slotIds: slotIdsForPaths,
+                                sceneNames: sceneNameLookup,
+                                onActivate: { appState.send(.ledfx(.activatePlaylist(item.id))) }
+                            )
+                        }
                     }
                 }
             }
@@ -179,16 +262,33 @@ struct LedFXConfigView: View {
         }
     }
     
-    private var virtualsSection: some View {
-        GroupBox("Virtual Devices (\(virtuals.count))") {
+    private var sceneSection: some View {
+        GroupBox("Scenes (\(filteredScenes.count))") {
             VStack(spacing: 8) {
-                ForEach(Array(virtuals.keys.sorted()), id: \.self) { virtualId in
-                    if let virtual = virtuals[virtualId] {
+                ForEach(filteredScenes, id: \.id) { item in
+                    SceneRow(
+                        id: item.id,
+                        scene: item.scene,
+                        onActivate: { appState.send(.ledfx(.activateScene(item.id))) },
+                        onDeactivate: { appState.send(.ledfx(.deactivateScene(item.id))) },
+                        onDelete: { appState.send(.ledfx(.deleteScene(item.id))) }
+                    )
+                }
+            }
+            .padding()
+        }
+    }
+    
+    private var virtualsSection: some View {
+        GroupBox("Virtual Devices (\(appState.ledfxVirtuals.count))") {
+            VStack(spacing: 8) {
+                ForEach(Array(appState.ledfxVirtuals.keys.sorted()), id: \.self) { virtualId in
+                    if let virtual = appState.ledfxVirtuals[virtualId] {
                         VirtualRow(
                             id: virtualId,
                             virtual: virtual,
                             onSetBrightness: { brightness in
-                                await setVirtualBrightness(id: virtualId, brightness: brightness)
+                                appState.send(.ledfx(.setVirtualBrightness(id: virtualId, brightness: brightness)))
                             }
                         )
                     }
@@ -198,35 +298,36 @@ struct LedFXConfigView: View {
         }
     }
 
-    private var configSection: some View {
-        GroupBox("OSC REST Bridge") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Button("Generate Config") {
-                        Task { await generateBridgeConfig() }
-                    }
-                    .disabled(isGeneratingConfig)
+    private var bridgeSection: some View {
+        GroupBox("Bridge") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Auto-configured. Refresh or Apply & Reconnect to regenerate routes.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
-                    Button("Save As…") {
-                        saveConfigAs()
-                    }
-                    .disabled(generatedYaml == nil)
-
-                    Button("Load This Config") {
-                        Task { await loadGeneratedConfig() }
-                    }
-                    .disabled(generatedYaml == nil)
-                }
-
-                if isGeneratingConfig {
-                    ProgressView("Generating...")
-                }
-
-                if generatedConfig != nil {
-                    Text("Playlists: \(playlistCount) · Effects: \(effectsCount)")
+                if let config = appState.ledfxGeneratedConfig {
+                    Text("Slots: \(config.slots.count) · Scenes: \(config.scenes.count) · Playlists: \(config.playlists.count) · Params: \(config.params.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Config not loaded yet.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Global Controls")
+                        .font(.headline)
+                    Text("/ledfx/param/global_brightness/all")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("/ledfx/blackout/all")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
             }
             .padding()
         }
@@ -234,7 +335,7 @@ struct LedFXConfigView: View {
 
     private var supportedPathsSection: some View {
         GroupBox("Supported OSC Paths") {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: supportedColumns, spacing: 12) {
                 ForEach(supportedRouteGroups) { group in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(group.title)
@@ -245,6 +346,52 @@ struct LedFXConfigView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var livePathsSection: some View {
+        GroupBox("Live LedFX OSC Paths") {
+            LazyVGrid(columns: livePathsColumns, spacing: 16) {
+                if !filteredPlaylists.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Playlists")
+                            .font(.headline)
+                        ForEach(filteredPlaylists, id: \.id) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(item.playlist.name) (\(item.id))")
+                                    .font(.subheadline)
+                                ForEach(slotIdsForPaths, id: \.self) { slot in
+                                    Text("/ledfx/playlist/\(item.id)/\(slot)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if !filteredScenes.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Scenes")
+                            .font(.headline)
+                        ForEach(filteredScenes, id: \.id) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(item.scene.name) (\(item.id))")
+                                    .font(.subheadline)
+                                ForEach(slotIdsForPaths, id: \.self) { slot in
+                                    Text("/ledfx/scene/\(item.id)/\(slot)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding()
@@ -260,7 +407,7 @@ struct LedFXConfigView: View {
                     .foregroundColor(.secondary)
                 Spacer()
                 Button("Dismiss") {
-                    errorMessage = nil
+                    appState.send(.ledfx(.clearError))
                 }
             }
             .padding()
@@ -276,219 +423,51 @@ struct LedFXConfigView: View {
                 .monospacedDigit()
         }
     }
-    
-    // MARK: - Actions
-    
-    private func startLedFX() async {
-        guard appState.ledfxModule == nil else { return }
-        
-        let module = LedFXModule(baseURL: baseURL, virtualIds: virtualIds)
-        appState.ledfxModule = module
-        
-        do {
-            try await module.start()
-            await refreshData()
-        } catch {
-            errorMessage = "Failed to start LedFX: \(error.localizedDescription)"
-            ledfxEnabled = false
-        }
-    }
-    
-    private func stopLedFX() async {
-        guard let module = appState.ledfxModule else { return }
-        await module.stop()
-        appState.ledfxModule = nil
-        
-        serverInfo = nil
-        scenes = [:]
-        virtuals = [:]
-    }
-    
-    private func testConnection() async {
-        guard let module = appState.ledfxModule else { return }
-        
-        isRefreshing = true
-        errorMessage = nil
-        
-        do {
-            try await module.refreshScenes()
-            await refreshData()
-        } catch {
-            errorMessage = "Connection test failed: \(error.localizedDescription)"
-        }
-        
-        isRefreshing = false
-    }
-    
-    private func refreshData() async {
-        guard let module = appState.ledfxModule else { return }
-        
-        isRefreshing = true
-        errorMessage = nil
-        
-        do {
-            // Get server info from status
-            let status = await module.getStatus()
-            if let version = status["server_version"], case .string(let versionStr) = version {
-                serverInfo = LedFXInfo(url: baseURL, name: "LedFX", version: versionStr)
-            }
-            
-            // Refresh scenes and virtuals
-            try await module.refreshScenes()
-            try await module.refreshVirtuals()
-            
-            scenes = await module.getScenes()
-            virtuals = await module.getVirtuals()
-        } catch {
-            errorMessage = "Failed to refresh: \(error.localizedDescription)"
-        }
-        
-        isRefreshing = false
-    }
-    
-    private func activateScene(id: String) async {
-        guard let module = appState.ledfxModule else { return }
-        
-        do {
-            try await module.activateScene(id: id)
-            await refreshData()
-        } catch {
-            errorMessage = "Failed to activate scene: \(error.localizedDescription)"
-        }
-    }
-    
-    private func deactivateScene(id: String) async {
-        guard let module = appState.ledfxModule else { return }
-        
-        do {
-            try await module.deactivateScene(id: id)
-            await refreshData()
-        } catch {
-            errorMessage = "Failed to deactivate scene: \(error.localizedDescription)"
-        }
-    }
-    
-    private func deleteScene(id: String) async {
-        guard let module = appState.ledfxModule else { return }
-        
-        do {
-            try await module.deleteScene(id: id)
-            await refreshData()
-        } catch {
-            errorMessage = "Failed to delete scene: \(error.localizedDescription)"
-        }
-    }
-    
-    private func setVirtualBrightness(id: String, brightness: Double) async {
-        guard let module = appState.ledfxModule else { return }
-        
-        do {
-            try await module.setVirtualBrightness(id: id, brightness: brightness)
-            await refreshData()
-        } catch {
-            errorMessage = "Failed to set brightness: \(error.localizedDescription)"
-        }
-    }
-    
-    private func generateScenes(tracks: [(name: String, energy: Double, valence: Double, bpm: Double?)]) async {
-        guard let module = appState.ledfxModule else { return }
-        
-        do {
-            try await module.generateDJSetScenes(tracks: tracks)
-            await refreshData()
-            showingSceneGenerator = false
-        } catch {
-            errorMessage = "Failed to generate scenes: \(error.localizedDescription)"
-        }
-    }
+}
 
-    private func generateBridgeConfig() async {
-        let currentBaseURL = baseURL
+private extension LedFXConfigView {
+    var overviewSection: some View {
+        LazyVGrid(columns: overviewColumns, spacing: 12) {
+            MetricTile(
+                title: "LedFX",
+                value: appState.ledfxIsRunning ? "Online" : "Offline",
+                subtitle: appState.ledfxBaseURL,
+                status: appState.ledfxIsRunning ? .ok : .warning
+            )
 
-        await MainActor.run {
-            isGeneratingConfig = true
-            errorMessage = nil
-        }
+            MetricTile(
+                title: "Scenes",
+                value: "\(appState.ledfxScenes.count)",
+                subtitle: "Filtered: \(filteredScenes.count)"
+            )
 
-        Task.detached(priority: .userInitiated) {
-            do {
-                let client = LedFXClient(baseURL: currentBaseURL)
-                let playlistsResponse = try await client.listPlaylists()
-                let scenesResponse = try await client.listScenes()
-                let virtualsResponse = try await client.listVirtuals()
-                let effectsResponse = try await client.listEffectsCatalog()
+            MetricTile(
+                title: "Playlists",
+                value: "\(appState.ledfxPlaylists.count)",
+                subtitle: "Active: \(activePlaylistLabel) · Filtered: \(filteredPlaylists.count)"
+            )
 
-                let input = LedFXBridgeConfigGenerator.Input(
-                    baseURL: currentBaseURL,
-                    playlists: playlistsResponse.playlists,
-                    scenes: scenesResponse,
-                    virtuals: virtualsResponse,
-                    effects: effectsResponse.effects
+            MetricTile(
+                title: "Virtuals",
+                value: "\(appState.ledfxVirtuals.count)",
+                subtitle: "Last refresh: \(refreshSummary)"
+            )
+
+            if let config = appState.ledfxGeneratedConfig {
+                MetricTile(
+                    title: "Routes",
+                    value: "\(config.slots.count) slots",
+                    subtitle: "Params: \(config.params.count)"
                 )
-
-                let config = try LedFXBridgeConfigGenerator.generate(input: input)
-                let yaml = try ConfigLoader.export(config)
-                let routes = buildSupportedRoutes(config: config)
-
-                await MainActor.run {
-                    playlistCount = playlistsResponse.playlists.count
-                    effectsCount = effectsResponse.effects.count
-                    generatedConfig = config
-                    generatedYaml = yaml
-                    supportedRouteGroups = routes
-                    isGeneratingConfig = false
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = "Failed to generate config: \(error.localizedDescription)"
-                    isGeneratingConfig = false
-                }
+            } else {
+                MetricTile(
+                    title: "Routes",
+                    value: "Auto",
+                    subtitle: "Config loading…"
+                )
             }
         }
     }
-
-    @MainActor
-    private func saveConfigAs() {
-        guard let yaml = generatedYaml else {
-            errorMessage = "Generate a config before saving"
-            return
-        }
-
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "yaml") ?? .plainText]
-        panel.nameFieldStringValue = "ledfx-bridge.yaml"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try yaml.write(to: url, atomically: true, encoding: .utf8)
-            } catch {
-                errorMessage = "Failed to save config: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func loadGeneratedConfig() async {
-        guard let yaml = generatedYaml else {
-            errorMessage = "Generate a config before loading"
-            return
-        }
-
-        do {
-            let bridge = ensureOscRestBridge()
-            try await bridge.loadConfig(from: Data(yaml.utf8))
-        } catch {
-            errorMessage = "Failed to load config: \(error.localizedDescription)"
-        }
-    }
-
-    @MainActor
-    private func ensureOscRestBridge() -> OscRestBridgeService {
-        if let bridge = appState.oscRestBridge { return bridge }
-        let bridge = OscRestBridgeService(httpClient: URLSessionHTTPClient())
-        appState.oscRestBridge = bridge
-        return bridge
-    }
-
 }
 
 private struct SupportedRouteGroup: Identifiable {
@@ -500,11 +479,19 @@ private struct SupportedRouteGroup: Identifiable {
 private func buildSupportedRoutes(config: BridgeConfig) -> [SupportedRouteGroup] {
     let slotIds = config.slots.keys.sorted()
     let sceneNames = config.scenes.keys.sorted()
+    let playlistNames = config.playlists.keys.sorted()
+    let playlistControlNames = config.playlist_controls.keys.sorted()
     let oneshotNames = config.oneshots.keys.sorted()
     let paramNames = config.params.keys.sorted()
 
     let scenePaths = sceneNames.flatMap { scene in
         slotIds.map { slot in "/ledfx/scene/\(scene)/\(slot)" }
+    }
+    let playlistPaths = playlistNames.flatMap { playlist in
+        slotIds.map { slot in "/ledfx/playlist/\(playlist)/\(slot)" }
+    }
+    let playlistControlPaths = playlistControlNames.flatMap { action in
+        slotIds.map { slot in "/ledfx/playlist_control/\(action)/\(slot)" }
     }
     let oneshotPaths = oneshotNames.flatMap { oneshot in
         slotIds.map { slot in "/ledfx/oneshot/\(oneshot)/\(slot)" }
@@ -516,10 +503,102 @@ private func buildSupportedRoutes(config: BridgeConfig) -> [SupportedRouteGroup]
 
     return [
         SupportedRouteGroup(id: "scenes", title: "Scenes", paths: scenePaths),
+        SupportedRouteGroup(id: "playlists", title: "Playlists", paths: playlistPaths),
+        SupportedRouteGroup(id: "playlist_controls", title: "Playlist Controls", paths: playlistControlPaths),
         SupportedRouteGroup(id: "oneshots", title: "Oneshots", paths: oneshotPaths),
         SupportedRouteGroup(id: "params", title: "Params", paths: paramPaths),
         SupportedRouteGroup(id: "blackout", title: "Blackout", paths: blackoutPaths)
     ].filter { !$0.paths.isEmpty }
+}
+
+// MARK: - Playlist Card
+
+private struct PlaylistCard: View {
+    let id: String
+    let playlist: LedFXPlaylist
+    let isActive: Bool
+    let slotIds: [String]
+    let sceneNames: [String: String]
+    let onActivate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(playlist.name)
+                        .font(.headline)
+                    Text(playlist.id)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if isActive {
+                    Text("Active")
+                        .font(.caption2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .foregroundColor(.green)
+                        .background(Color.green.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+
+                Button(action: { onActivate() }) {
+                    Label("Activate", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isActive)
+            }
+
+            if !playlist.items.isEmpty {
+                Text("Scenes")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                ForEach(Array(playlist.items.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6) {
+                        Text(sceneNames[item.sceneId] ?? item.sceneId)
+                            .font(.subheadline)
+                        Spacer()
+                        if let duration = item.durationMs {
+                            Text("\(max(1, duration / 1000))s")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            } else {
+                Text("No scenes in playlist")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("OSC Paths")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                ForEach(slotIds, id: \.self) { slot in
+                    Text("/ledfx/playlist/\(id)/\(slot)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isActive ? Color.green.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
 }
 
 // MARK: - Scene Row
@@ -527,9 +606,9 @@ private func buildSupportedRoutes(config: BridgeConfig) -> [SupportedRouteGroup]
 private struct SceneRow: View {
     let id: String
     let scene: LedFXScene
-    let onActivate: () async -> Void
-    let onDeactivate: () async -> Void
-    let onDelete: () async -> Void
+    let onActivate: () -> Void
+    let onDeactivate: () -> Void
+    let onDelete: () -> Void
     
     var body: some View {
         HStack {
@@ -550,20 +629,20 @@ private struct SceneRow: View {
                     .foregroundColor(.green)
             }
             
-            Button(action: { Task { await onActivate() } }) {
+            Button(action: { onActivate() }) {
                 Label("Activate", systemImage: "play.circle")
                     .labelStyle(.iconOnly)
             }
             .disabled(scene.active)
             
             if scene.active {
-                Button(action: { Task { await onDeactivate() } }) {
+                Button(action: { onDeactivate() }) {
                     Label("Deactivate", systemImage: "stop.circle")
                         .labelStyle(.iconOnly)
                 }
             }
             
-            Button(role: .destructive, action: { Task { await onDelete() } }) {
+            Button(role: .destructive, action: { onDelete() }) {
                 Label("Delete", systemImage: "trash")
                     .labelStyle(.iconOnly)
             }
@@ -572,12 +651,88 @@ private struct SceneRow: View {
     }
 }
 
+private struct MetricTile: View {
+    enum Status {
+        case ok
+        case warning
+        case neutral
+    }
+
+    let title: String
+    let value: String
+    let subtitle: String
+    var status: Status = .neutral
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                LedFXStatusBadge(status: status)
+            }
+            Text(value)
+                .font(.title3)
+                .fontWeight(.semibold)
+            Text(subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor))
+                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+private struct LedFXStatusBadge: View {
+    let status: MetricTile.Status
+
+    var body: some View {
+        let (label, color): (String, Color) = {
+            switch status {
+            case .ok:
+                return ("Online", .green)
+            case .warning:
+                return ("Offline", .orange)
+            case .neutral:
+                return ("", .clear)
+            }
+        }()
+
+        if label.isEmpty {
+            EmptyView()
+        } else {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(color)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+        }
+    }
+}
+
 // MARK: - Virtual Row
 
 private struct VirtualRow: View {
     let id: String
     let virtual: LedFXVirtual
-    let onSetBrightness: (Double) async -> Void
+    let onSetBrightness: (Double) -> Void
     
     @State private var brightness: Double = 0.8
     
@@ -602,9 +757,7 @@ private struct VirtualRow: View {
                     .font(.caption)
                 Slider(value: $brightness, in: 0.0...1.0, step: 0.1)
                     .onChange(of: brightness) { _, newValue in
-                        Task {
-                            await onSetBrightness(newValue)
-                        }
+                        onSetBrightness(newValue)
                     }
                 Text("\(Int(brightness * 100))%")
                     .font(.caption)
@@ -624,7 +777,7 @@ private struct VirtualRow: View {
 private struct SceneGeneratorSheet: View {
     @Environment(\.dismiss) private var dismiss
     let virtualIds: [String]
-    let onGenerate: ([(name: String, energy: Double, valence: Double, bpm: Double?)]) async -> Void
+    let onGenerate: ([LedFXSceneSeed]) -> Void
     
     @State private var presetType: PresetType = .standard
     
@@ -652,16 +805,14 @@ private struct SceneGeneratorSheet: View {
                     .multilineTextAlignment(.center)
                 
                 Button("Generate Standard Presets") {
-                    Task {
-                        await onGenerate([
-                            ("High Energy", 0.9, 0.7, nil),
-                            ("Medium Energy", 0.5, 0.5, nil),
-                            ("Low Energy", 0.2, 0.6, nil),
-                            ("Uplifting", 0.6, 0.9, nil),
-                            ("Dark", 0.7, 0.2, nil)
-                        ])
-                        dismiss()
-                    }
+                    onGenerate([
+                        LedFXSceneSeed(name: "High Energy", energy: 0.9, valence: 0.7, bpm: nil),
+                        LedFXSceneSeed(name: "Medium Energy", energy: 0.5, valence: 0.5, bpm: nil),
+                        LedFXSceneSeed(name: "Low Energy", energy: 0.2, valence: 0.6, bpm: nil),
+                        LedFXSceneSeed(name: "Uplifting", energy: 0.6, valence: 0.9, bpm: nil),
+                        LedFXSceneSeed(name: "Dark", energy: 0.7, valence: 0.2, bpm: nil)
+                    ])
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
             } else {
@@ -685,3 +836,23 @@ private struct SceneGeneratorSheet: View {
     LedFXConfigView()
         .environmentObject(AppState())
 }
+
+private let gridColumns = [
+    GridItem(.adaptive(minimum: 320), spacing: 16)
+]
+
+private let playlistColumns = [
+    GridItem(.adaptive(minimum: 280), spacing: 12)
+]
+
+private let overviewColumns = [
+    GridItem(.adaptive(minimum: 200), spacing: 12)
+]
+
+private let supportedColumns = [
+    GridItem(.adaptive(minimum: 240), spacing: 12)
+]
+
+private let livePathsColumns = [
+    GridItem(.adaptive(minimum: 320), spacing: 16)
+]

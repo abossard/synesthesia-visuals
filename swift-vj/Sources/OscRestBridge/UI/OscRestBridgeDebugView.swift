@@ -372,6 +372,10 @@ struct DebugOSCMessageRow: View {
         switch route {
         case .scene(let slot, let name):
             Text("→ Scene: \(name) [\(slot)]")
+        case .playlist(let slot, let playlistId):
+            Text("→ Playlist: \(playlistId) [\(slot)]")
+        case .playlistControl(let slot, let action):
+            Text("→ Playlist \(action) [\(slot)]")
         case .oneshot(let slot, let name):
             Text("→ Oneshot: \(name) [\(slot)]")
         case .blackout(let slot):
@@ -459,4 +463,3 @@ struct OscRestBridgeDebugView_Previews: PreviewProvider {
     }
 }
 #endif
-

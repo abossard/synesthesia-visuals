@@ -41,28 +41,53 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             // Sidebar
-            List(SidebarTab.allCases, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
-                    .tag(tab)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 150, ideal: 180)
-            
-            // Status footer in sidebar
-            VStack(spacing: 8) {
-                Divider()
-                HStack {
-                    Circle()
-                        .fill(appState.isRunning ? .green : .red)
-                        .frame(width: 8, height: 8)
-                    Text(appState.isRunning ? "Running" : "Stopped")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(SidebarTab.allCases, id: \.self) { tab in
+                            let isSelected = selectedTab == tab
+                            let traits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : .isButton
+                            Button {
+                                selectedTab = tab
+                            } label: {
+                                Label(tab.rawValue, systemImage: tab.icon)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .cornerRadius(6)
+                            .accessibilityIdentifier(A11yID.sidebarTab(tab.rawValue))
+                            .accessibilityLabel(tab.rawValue)
+                            .accessibilityAddTraits(traits)
+                        }
+                    }
+                    .padding(6)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                .navigationSplitViewColumnWidth(min: 150, ideal: 180)
+                .accessibilityIdentifier(A11yID.sidebarList)
+                .accessibilityLabel("Sidebar")
+                .accessibilityElement(children: .contain)
+
+                // Status footer in sidebar
+                VStack(spacing: 8) {
+                    Divider()
+                    HStack {
+                        Circle()
+                            .fill(appState.isRunning ? .green : .red)
+                            .frame(width: 8, height: 8)
+                        Text(appState.isRunning ? "Running" : "Stopped")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
             }
+            .accessibilityIdentifier(A11yID.sidebarSection)
+            .accessibilityElement(children: .contain)
         } detail: {
             // Main content
             Group {
@@ -90,6 +115,8 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier(A11yID.detailSection)
+            .accessibilityElement(children: .contain)
         }
         .navigationTitle("SwiftVJ")
         .toolbar {
@@ -104,6 +131,8 @@ struct ContentView: View {
             // Autostart pipeline when app launches
             try? await appState.start()
         }
+        .accessibilityIdentifier(A11yID.mainWindow)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -132,6 +161,7 @@ private struct PhaseToolbarControl: View {
             }
             .pickerStyle(.menu)
             .frame(minWidth: 160)
+            .accessibilityIdentifier(A11yID.toolbarPhasePicker)
         }
     }
 }

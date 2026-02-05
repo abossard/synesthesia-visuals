@@ -72,6 +72,12 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         return uiReducer(state: &state.ui, action: uiAction)
             .map { AppAction.ui($0) }
 
+    case .ledfx(let ledfxAction):
+        var ledfxState = state.ledfx
+        let effect = ledfxReducer(state: &ledfxState, action: ledfxAction)
+        state.ledfx = ledfxState
+        return effect
+
     case .songs(let songsAction):
         var songsState = state.songs
         let effect = songsReducer(state: &songsState, action: songsAction, appState: &state)
@@ -439,6 +445,138 @@ public func uiReducer(
     }
 }
 
+// MARK: - LedFX Reducer
+
+/// Reducer for LedFX-related actions (effect-only)
+public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Effect<AppAction> {
+    switch action {
+    case .setBaseURL(let value):
+        state.baseURL = normalizeLedFXBaseURL(value)
+        return LedFXEffects.handle(action)
+
+    case .setVirtualIds(let value):
+        state.virtualIdsString = value
+        return LedFXEffects.handle(action)
+
+    case .setSceneFilter(let value):
+        state.sceneFilter = value
+        return .none
+
+    case .setPlaylistFilter(let value):
+        state.playlistFilter = value
+        return .none
+
+    case .applySettings(let baseURL, let virtualIds):
+        state.baseURL = normalizeLedFXBaseURL(baseURL)
+        state.virtualIdsString = virtualIds.joined(separator: ", ")
+        state.isApplying = true
+        state.errorMessage = nil
+        return LedFXEffects.handle(action)
+
+    case .applyCompleted:
+        state.isApplying = false
+        return .none
+
+    case .refresh, .testConnection:
+        state.isRefreshing = true
+        state.errorMessage = nil
+        return LedFXEffects.handle(action)
+
+    case .refreshCompleted(let snapshot):
+        state.isRefreshing = false
+        state.serverInfo = snapshot.serverInfo
+        state.scenes = snapshot.scenes
+        state.virtuals = snapshot.virtuals
+        state.playlists = snapshot.playlists
+        if let active = state.activePlaylistId,
+           snapshot.playlists[active] == nil {
+            state.activePlaylistId = nil
+        }
+        state.isRunning = snapshot.isOnline
+        state.healthSummary = snapshot.healthSummary
+        state.lastHealthCheck = snapshot.lastHealthCheck
+        return .none
+
+    case .refreshFailed(let message):
+        state.isRefreshing = false
+        state.errorMessage = message
+        state.isRunning = false
+        state.healthSummary = "Offline"
+        state.lastHealthCheck = Date()
+        return .none
+
+    case .generateBridgeConfig:
+        state.isGeneratingConfig = true
+        state.errorMessage = nil
+        return LedFXEffects.handle(action)
+
+    case .generateConfigCompleted(let yaml, let playlistCount, let effectsCount):
+        state.isGeneratingConfig = false
+        state.generatedYaml = yaml
+        state.playlistCount = playlistCount
+        state.effectsCount = effectsCount
+        return .none
+
+    case .generateConfigFailed(let message):
+        state.isGeneratingConfig = false
+        state.errorMessage = message
+        return .none
+
+    case .loadCachedConfig:
+        state.errorMessage = nil
+        return LedFXEffects.handle(action)
+
+    case .cachedConfigLoaded(let yaml, let playlistCount):
+        state.generatedYaml = yaml
+        state.playlistCount = playlistCount
+        state.effectsCount = 0
+        return .none
+
+    case .cachedConfigFailed(let message):
+        state.errorMessage = message
+        return .none
+
+    case .loadGeneratedConfig(let yaml):
+        state.errorMessage = nil
+        state.generatedYaml = yaml
+        return LedFXEffects.handle(action)
+
+    case .activateScene(_),
+         .deactivateScene(_),
+         .deleteScene(_),
+         .activatePlaylist(_),
+         .stopPlaylist,
+         .setVirtualBrightness(_, _),
+         .generateScenes(_),
+         .saveGeneratedConfig,
+         .sendTestScene,
+         .sendTestPlaylist,
+         .sendTestOneshot:
+        state.errorMessage = nil
+        return LedFXEffects.handle(action)
+
+    case .playlistActivated(let id):
+        state.activePlaylistId = id
+        return .none
+
+    case .playlistStopped:
+        state.activePlaylistId = nil
+        return .none
+
+    case .setError(let message):
+        state.errorMessage = message
+        return .none
+
+    case .clearError:
+        state.errorMessage = nil
+        return .none
+    }
+}
+
+private func normalizeLedFXBaseURL(_ baseURL: String) -> String {
+    baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 // MARK: - Songs Reducer
 
 /// Reducer for songs-related actions
@@ -628,8 +766,16 @@ public enum RenderEffects {
             await EffectEnvironment.shared.loadShader?(name)
         }
     }
-    public static func setImageIndex(_ index: Int) -> Effect<AppAction> { .none }
-    public static func loadImagesFromFolder(_ path: String) -> Effect<AppAction> { .none }
+    public static func setImageIndex(_ index: Int) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.setImageIndex?(index)
+        }
+    }
+    public static func loadImagesFromFolder(_ path: String) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.loadImagesFromFolder?(path)
+        }
+    }
     public static func startEngine() -> Effect<AppAction> { .none }
     public static func stopEngine() -> Effect<AppAction> { .none }
 }
@@ -683,6 +829,14 @@ public enum PersistenceEffects {
     public static func savePlaybackSource(_ source: String) -> Effect<AppAction> {
         .fireAndForget {
             UserDefaults.standard.set(source, forKey: "playbackSource")
+        }
+    }
+}
+
+public enum LedFXEffects {
+    public static func handle(_ action: LedFXAction) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.ledfxActionHandler?(action)
         }
     }
 }
@@ -871,7 +1025,7 @@ public enum SongsEffects {
                 if Task.isCancelled { break }
 
                 // Extract metadata
-                if let metadata = AudioMetadata.extractMetadata(from: fileURL) {
+                if let metadata = await AudioMetadata.extractMetadata(from: fileURL) {
                     let songId = SongID(artist: metadata.artist, title: metadata.title)
 
                     // Skip if already exists

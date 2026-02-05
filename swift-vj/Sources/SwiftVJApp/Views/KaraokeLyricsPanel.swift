@@ -103,6 +103,7 @@ struct KaraokeLyricsPanel: View {
                 karaokeEngine.loadTestLyrics()
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier(A11yID.karaokeLoadTestButton)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -114,6 +115,7 @@ struct KaraokeLyricsPanel: View {
         HStack {
             Toggle("Auto-scroll", isOn: $autoScroll)
                 .toggleStyle(.checkbox)
+                .accessibilityIdentifier(A11yID.karaokeAutoScrollToggle)
 
             Spacer()
 
@@ -152,6 +154,7 @@ struct KaraokeLyricsPanel: View {
             }
             .buttonStyle(.bordered)
             .disabled(!karaokeEngine.displayState.hasLyrics)
+            .accessibilityIdentifier(A11yID.karaokePrevButton)
 
             Button {
                 karaokeEngine.nextLine()
@@ -160,6 +163,7 @@ struct KaraokeLyricsPanel: View {
             }
             .buttonStyle(.bordered)
             .disabled(!karaokeEngine.displayState.hasLyrics)
+            .accessibilityIdentifier(A11yID.karaokeNextButton)
         }
     }
 

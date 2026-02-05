@@ -29,6 +29,18 @@ public enum OSCRouteParser {
             let sceneName = components[2]
             let slot = components[3]
             return .scene(slot: slot, sceneName: sceneName)
+
+        case "playlist":
+            guard components.count == 4 else { return nil }
+            let playlistId = components[2]
+            let slot = components[3]
+            return .playlist(slot: slot, playlistId: playlistId)
+
+        case "playlist_control", "playlistctl":
+            guard components.count == 4 else { return nil }
+            let action = components[2]
+            let slot = components[3]
+            return .playlistControl(slot: slot, action: action)
             
         case "oneshot":
             guard components.count == 4 else { return nil }

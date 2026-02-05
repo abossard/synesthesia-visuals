@@ -49,6 +49,8 @@ public struct BridgeStats: Sendable, Equatable {
     public var totalRestFailures: Int
     
     public var sceneActivations: [String: Int]
+    public var playlistStarts: [String: Int]
+    public var playlistActions: [String: Int]
     public var oneshotTriggers: [String: Int]
     public var paramUpdates: [String: Int]
     public var slotMessages: [String: Int]
@@ -63,6 +65,8 @@ public struct BridgeStats: Sendable, Equatable {
         self.totalRestSent = 0
         self.totalRestFailures = 0
         self.sceneActivations = [:]
+        self.playlistStarts = [:]
+        self.playlistActions = [:]
         self.oneshotTriggers = [:]
         self.paramUpdates = [:]
         self.slotMessages = [:]
@@ -107,6 +111,8 @@ public struct OSCMessageRecord: Sendable, Equatable, Identifiable {
 
 public enum ParsedOSCRoute: Sendable, Equatable {
     case scene(slot: String, sceneName: String)
+    case playlist(slot: String, playlistId: String)
+    case playlistControl(slot: String, action: String)
     case oneshot(slot: String, oneshotName: String)
     case blackout(slot: String)
     case param(slot: String, paramName: String)

@@ -20,21 +20,21 @@ public enum AudioMetadata {
 
     /// Extract artist and title from an audio file
     /// Returns nil if metadata cannot be read or is missing
-    public static func extractMetadata(from url: URL) -> (artist: String, title: String)? {
+    public static func extractMetadata(from url: URL) async -> (artist: String, title: String)? {
         let asset = AVURLAsset(url: url)
 
         var artist: String?
         var title: String?
 
-        let metadata = asset.commonMetadata
+        let metadata = (try? await asset.load(.commonMetadata)) ?? []
         for item in metadata {
             guard let key = item.commonKey else { continue }
 
             switch key {
             case .commonKeyArtist:
-                artist = item.stringValue
+                artist = try? await item.load(.stringValue)
             case .commonKeyTitle:
-                title = item.stringValue
+                title = try? await item.load(.stringValue)
             default:
                 break
             }

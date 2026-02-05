@@ -156,7 +156,7 @@ struct OSCDebugView: View {
                     
                     Image(systemName: running ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
                         .foregroundColor(running ? .green : .red)
-                    Text(":\(OSCHub.receivePort)")
+                    Text(":\(appState.oscHub.receivePort)")
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
                     

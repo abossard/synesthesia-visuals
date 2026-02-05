@@ -50,16 +50,36 @@ public final class OSCHub: @unchecked Sendable {
     // MARK: - Configuration
 
     /// Default ports from Config
-    public static let receivePort: UInt16 = 9999        // Synesthesia audio
-    public static let vdjReceivePort: UInt16 = 9010    // VDJ responses
-    public static let vdjPort: UInt16 = 9009           // Send to VDJ
-    public static let synesthesiaPort: UInt16 = 7777
-    public static let magicPort: UInt16 = 11111
+    public static let defaultReceivePort: UInt16 = Config.oscReceivePort        // Synesthesia audio
+    public static let defaultVdjReceivePort: UInt16 = 9010    // VDJ responses
+    public static let defaultVdjPort: UInt16 = Config.oscVDJPort           // Send to VDJ
+    public static let defaultSynesthesiaPort: UInt16 = Config.oscSynesthesiaPort
+    public static let defaultMagicPort: UInt16 = Config.oscMagicPort
+
+    public enum PortKeys {
+        public static let receivePort = "osc_receive_port"
+        public static let vdjPort = "osc_vdj_port"
+        public static let synesthesiaPort = "osc_synesthesia_port"
+        public static let magicPort = "osc_magic_port"
+        public static let vdjReceivePort = "osc_vdj_receive_port"
+    }
+
+    private static func loadPort(from defaults: UserDefaults, key: String, fallback: UInt16) -> UInt16 {
+        let value = defaults.integer(forKey: key)
+        guard value > 0 && value <= UInt16.max else { return fallback }
+        return UInt16(value)
+    }
 
     /// Forward targets for received messages (Magic only - Swift VJ handles rendering directly)
-    public static let forwardTargets: [(host: String, port: UInt16)] = [
-        ("127.0.0.1", magicPort)
-    ]
+    private let forwardTargets: [(host: String, port: UInt16)]
+
+    // MARK: - Ports (configured at init)
+
+    public let receivePort: UInt16
+    public let vdjReceivePort: UInt16
+    public let vdjPort: UInt16
+    public let synesthesiaPort: UInt16
+    public let magicPort: UInt16
 
     // MARK: - State
 
@@ -91,14 +111,24 @@ public final class OSCHub: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
-    public init() {}
+    public init() {
+        let defaults = UserDefaults.standard
+        self.receivePort = Self.loadPort(from: defaults, key: PortKeys.receivePort, fallback: Self.defaultReceivePort)
+        self.vdjPort = Self.loadPort(from: defaults, key: PortKeys.vdjPort, fallback: Self.defaultVdjPort)
+        self.synesthesiaPort = Self.loadPort(from: defaults, key: PortKeys.synesthesiaPort, fallback: Self.defaultSynesthesiaPort)
+        self.magicPort = Self.loadPort(from: defaults, key: PortKeys.magicPort, fallback: Self.defaultMagicPort)
+        self.vdjReceivePort = Self.loadPort(from: defaults, key: PortKeys.vdjReceivePort, fallback: Self.defaultVdjReceivePort)
+        self.forwardTargets = [
+            ("127.0.0.1", self.magicPort)
+        ]
+    }
 
     /// Start the OSC client and server
     public func start() throws {
         guard !isStarted else { return }
 
         // Start server on port 9999 for Synesthesia audio
-        let oscServer = OSCServer(port: Self.receivePort) { [weak self] message, timeTag in
+        let oscServer = OSCServer(port: receivePort) { [weak self] message, timeTag in
             await self?.handleMessage(message, timeTag: timeTag)
         }
         oscServer.isPortReuseEnabled = true
@@ -107,11 +137,11 @@ public final class OSCHub: @unchecked Sendable {
             try oscServer.start()
             self.server = oscServer
         } catch {
-            throw OSCHubError.serverFailed("Server start failed on port \(Self.receivePort): \(error.localizedDescription)")
+            throw OSCHubError.serverFailed("Server start failed on port \(receivePort): \(error.localizedDescription)")
         }
 
         // Start VDJ server on port 9010 for VDJ responses
-        let vdjOscServer = OSCServer(port: Self.vdjReceivePort) { [weak self] message, timeTag in
+        let vdjOscServer = OSCServer(port: vdjReceivePort) { [weak self] message, timeTag in
             await self?.handleMessage(message, timeTag: timeTag)
         }
         vdjOscServer.isPortReuseEnabled = true
@@ -121,7 +151,7 @@ public final class OSCHub: @unchecked Sendable {
             self.vdjServer = vdjOscServer
         } catch {
             oscServer.stop()
-            throw OSCHubError.serverFailed("VDJ Server start failed on port \(Self.vdjReceivePort): \(error.localizedDescription)")
+            throw OSCHubError.serverFailed("VDJ Server start failed on port \(vdjReceivePort): \(error.localizedDescription)")
         }
 
         // Start client for sending (no port binding needed)
@@ -160,17 +190,17 @@ public final class OSCHub: @unchecked Sendable {
 
     /// Send OSC message to VirtualDJ
     public func sendToVDJ(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: Self.vdjPort)
+        try send(address, values: values, host: "127.0.0.1", port: vdjPort)
     }
 
     /// Send OSC message to Synesthesia
     public func sendToSynesthesia(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: Self.synesthesiaPort)
+        try send(address, values: values, host: "127.0.0.1", port: synesthesiaPort)
     }
 
     /// Send OSC message to Magic Music Visuals
     public func sendToMagic(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: Self.magicPort)
+        try send(address, values: values, host: "127.0.0.1", port: magicPort)
     }
 
     /// Send OSC message to specific host and port
@@ -295,7 +325,7 @@ public final class OSCHub: @unchecked Sendable {
 
     private func forwardMessage(_ message: OSCMessage) {
         guard let oscClient = client else { return }
-        for target in Self.forwardTargets {
+        for target in forwardTargets {
             do {
                 try oscClient.send(message, to: target.host, port: target.port)
                 lock.withLock { messagesForwarded += 1 }
@@ -410,8 +440,8 @@ public final class OSCHub: @unchecked Sendable {
         lock.withLock {
             var result: [String: Any] = [
                 "running": isStarted,
-                "receivePort": Self.receivePort,
-                "vdjReceivePort": Self.vdjReceivePort,
+                "receivePort": receivePort,
+                "vdjReceivePort": vdjReceivePort,
                 "messagesSent": messagesSent,
                 "messagesReceived": messagesReceived,
                 "messagesForwarded": messagesForwarded,

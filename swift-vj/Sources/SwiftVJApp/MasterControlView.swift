@@ -125,8 +125,21 @@ struct MasterControlView: View {
                                     .frame(width: 10, height: 10)
                                 Text(appState.isRunning ? "Connected" : "Disconnected")
                             }
+                            HStack {
+                                Circle()
+                                    .fill(appState.ledfxIsRunning ? .green : .red)
+                                    .frame(width: 10, height: 10)
+                                if appState.ledfxIsRunning {
+                                    Text("LedFX Online \(appState.ledfxHealthSummary)")
+                                } else {
+                                    Text("LedFX Offline")
+                                }
+                            }
                             Text("Source: \(appState.playbackSource.uppercased())")
                                 .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("LedFX: \(appState.ledfxBaseURL)")
+                                .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }

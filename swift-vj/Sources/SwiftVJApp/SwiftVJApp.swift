@@ -106,6 +106,7 @@ public final class AppState: ObservableObject {
 
     private let store: Store<SwiftVJCore.AppState, AppAction>
     private var cancellables = Set<AnyCancellable>()
+    private let isTestMode: Bool
 
     // MARK: - Modules
 
@@ -120,8 +121,7 @@ public final class AppState: ObservableObject {
     public var launchpadModule: LaunchpadModule?
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
-    public var oscRestBridge: OscRestBridgeService?
-    public var ledfxModule: LedFXModule?
+    private let ledfxFeature: LedFXFeature
 
     // MARK: - Cache Adapters (for clearing)
     
@@ -163,6 +163,33 @@ public final class AppState: ObservableObject {
     }
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
 
+    // MARK: - LedFX UI State
+
+    @Published public private(set) var ledfxBaseURL: String = "http://127.0.0.1:8888"
+    @Published public private(set) var ledfxVirtualIdsString: String = ""
+    @Published public private(set) var ledfxIsRefreshing: Bool = false
+    @Published public private(set) var ledfxIsApplying: Bool = false
+    @Published public private(set) var ledfxIsGeneratingConfig: Bool = false
+    @Published public private(set) var ledfxServerInfo: LedFXInfo?
+    @Published public private(set) var ledfxScenes: [String: LedFXScene] = [:]
+    @Published public private(set) var ledfxVirtuals: [String: LedFXVirtual] = [:]
+    @Published public private(set) var ledfxPlaylists: [String: LedFXPlaylist] = [:]
+    @Published public private(set) var ledfxActivePlaylistId: String?
+    @Published public private(set) var ledfxSceneFilter: String = ""
+    @Published public private(set) var ledfxPlaylistFilter: String = ""
+    @Published public private(set) var ledfxErrorMessage: String?
+    @Published public private(set) var ledfxGeneratedConfig: BridgeConfig?
+    @Published public private(set) var ledfxGeneratedYaml: String?
+    @Published public private(set) var ledfxPlaylistCount: Int = 0
+    @Published public private(set) var ledfxEffectsCount: Int = 0
+    @Published public private(set) var ledfxIsRunning: Bool = false
+    @Published public private(set) var ledfxHealthSummary: String = "Unknown"
+    @Published public private(set) var ledfxLastHealthCheck: Date?
+
+    public var oscRestBridge: OscRestBridgeService? {
+        ledfxFeature.bridgeService
+    }
+
     public var effectivePhase: Phase? { currentPhase ?? detectedSongPhase }
     
     // Shader Analysis State (public read, private write - controlled via analysis methods)
@@ -176,8 +203,8 @@ public final class AppState: ObservableObject {
     @Published public private(set) var analysisErrorCount: Int = 0
     @Published public private(set) var analysisCancelled: Bool = false
 
-    private let maxLogEntries = 500
     private var vdjQueryTask: Task<Void, Never>?
+    private var lastLaunchpadSnapshot: ControllerStateSnapshot?
 
     // MARK: - Store Logger (Debug)
 
@@ -186,24 +213,52 @@ public final class AppState: ObservableObject {
 
     // MARK: - Init
 
-    public init() {
+    public convenience init() {
+        self.init(testMode: false)
+    }
+
+    public init(testMode: Bool) {
+        self.isTestMode = testMode
         // Create store with logging wrapper for state change insights
         self.store = Store(
             initialState: SwiftVJCore.AppState(),
             reducer: storeLogger.wrap(reducer: appReducer)
+        )
+        self.ledfxFeature = LedFXFeature(
+            store: store,
+            oscHub: oscHub,
+            isTestMode: testMode,
+            log: { [store] message, level in
+                let mapped: LogLevelState = switch level {
+                case .debug: .debug
+                case .info: .info
+                case .warning: .warning
+                case .error: .error
+                }
+                store.send(.ui(.log(message, mapped)))
+            }
         )
 
         // Configure logger: exclude noisy actions, async console output
         storeLogger.excludedCategories = [.audio]
         storeLogger.filterHighFrequency()
 
-        setupModules()
-        setupRenderEngine()
-        setupEffectEnvironment()
-        startOSCHub()
-        startBPMSync()
-        loadPersistedState()
+        if !testMode {
+            setupModules()
+            setupRenderEngine()
+            setupEffectEnvironment()
+            startOSCHub()
+            startBPMSync()
+        }
         setupStoreObservation()
+        if !testMode {
+            store.send(.loadPersistedState)
+            ledfxFeature.seedDefaultsInStore()
+        }
+    }
+
+    deinit {
+        // LedFX feature owns its own async tasks
     }
 
     // MARK: - Actions
@@ -221,7 +276,6 @@ public final class AppState: ObservableObject {
         // Start modules
         try await playbackModule?.start()
         launchpadModule?.start()
-        launchpadStatus = launchpadModule?.getStatus()
 
         let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(source)
@@ -248,6 +302,9 @@ public final class AppState: ObservableObject {
         try? await Task.sleep(for: .milliseconds(1000))
         await playbackModule?.poll()
 
+        // Always-on LedFX integration (OSC → REST bridge)
+        ledfxFeature.startIntegrationFromDefaults()
+
         // Process initial track if available
         if let track = await playbackModule?.currentTrack {
             log("♪ \(track.artist) - \(track.title)", level: .info)
@@ -273,25 +330,22 @@ public final class AppState: ObservableObject {
         await pipelineModule?.stop()
         await songsModule?.stop()
         launchpadModule?.stop()
-        isRunning = false
-        log("Pipeline stopped", level: .info)
+        store.send(.shutdown)
     }
 
     public func setPlaybackSource(_ source: String) async {
-        playbackSource = source
-        UserDefaults.standard.set(source, forKey: "playbackSource")
+        store.send(.playback(.sourceChanged(source)))
         let sourceType: PlaybackSourceType = source == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(sourceType)
         vdjQueryTask?.cancel()
         vdjQueryTask = nil
         if sourceType == .vdj { await setupVDJSubscriptionsAndQueries() }
-        log("Playback source: \(source)", level: .info)
     }
 
     public func adjustTiming(_ deltaMs: Int) {
-        timingOffsetMs += deltaMs
+        let newOffset = store.state.playback.timingOffsetMs + deltaMs
+        store.send(.playback(.timingOffsetChanged(newOffset)))
         Task { _ = await settings.adjustTiming(by: deltaMs) }
-        log("Timing offset: \(timingOffsetMs)ms", level: .info)
     }
 
     public func selectShader(_ name: String) {
@@ -306,12 +360,75 @@ public final class AppState: ObservableObject {
         store.send(.render(.selectPhase(phase)))
     }
 
+#if DEBUG
+    /// Test-only helper for UI tests to seed Launchpad state.
+    public func setLaunchpadStatusForTesting(status: LaunchpadStatus?, state: ControllerState?) {
+        launchpadStatus = status
+        launchpadState = state
+    }
+#endif
+
     /// Type-safe binding for Phase pickers that enforces unidirectional flow.
     /// Use this instead of $currentPhase to prevent direct @Published writes.
     public var phaseBinding: Binding<Phase?> {
         Binding(
             get: { self.currentPhase },
             set: { newPhase in self.setPhase(newPhase) }
+        )
+    }
+
+    // MARK: - LedFX Bindings
+
+    public var ledfxVirtualIds: [String] {
+        ledfxVirtualIdsString
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    public var ledfxSlotIdsForPaths: [String] {
+        if let config = ledfxGeneratedConfig, !config.slots.isEmpty {
+            return config.slots.keys.sorted()
+        }
+        if !ledfxVirtualIds.isEmpty {
+            return ledfxVirtualIds.indices.map { String($0) }
+        }
+        return ["0"]
+    }
+
+    public var ledfxBaseURLBinding: Binding<String> {
+        Binding(
+            get: { self.ledfxBaseURL },
+            set: { newValue in
+                self.send(.ledfx(.setBaseURL(newValue)))
+            }
+        )
+    }
+
+    public var ledfxVirtualIdsBinding: Binding<String> {
+        Binding(
+            get: { self.ledfxVirtualIdsString },
+            set: { newValue in
+                self.send(.ledfx(.setVirtualIds(newValue)))
+            }
+        )
+    }
+
+    public var ledfxSceneFilterBinding: Binding<String> {
+        Binding(
+            get: { self.ledfxSceneFilter },
+            set: { newValue in
+                self.send(.ledfx(.setSceneFilter(newValue)))
+            }
+        )
+    }
+
+    public var ledfxPlaylistFilterBinding: Binding<String> {
+        Binding(
+            get: { self.ledfxPlaylistFilter },
+            set: { newValue in
+                self.send(.ledfx(.setPlaylistFilter(newValue)))
+            }
         )
     }
 
@@ -426,75 +543,121 @@ public final class AppState: ObservableObject {
     // MARK: - Image Management
 
     public func loadImagesFromFolder(_ url: URL) {
-        log("[Images] Loading from: \(url.lastPathComponent)", level: .info)
-        guard let files = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) else {
-            log("[Images] Failed to read directory", level: .error)
-            return
-        }
-        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
-        let imageFiles = files.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        guard !imageFiles.isEmpty else {
-            log("[Images] No images found", level: .warning)
-            return
-        }
-        log("[Images] Found \(imageFiles.count) images", level: .info)
-        imageIndex = 0
-        imageCount = imageFiles.count
-        if let imageManager = renderEngine?.imageManager {
-            let currentCoverMode = imageManager.state.coverMode
-            imageManager.state = ImageDisplayState(
-                currentImageURL: imageFiles.first,
-                nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
-                crossfadeProgress: 0.0, isFading: false, coverMode: currentCoverMode,
-                folderImages: imageFiles, folderIndex: 0, beatsPerChange: 8
-            )
+        Task { @MainActor [weak self] in
+            let imageFiles = await Task.detached(priority: .userInitiated) {
+                Self.scanImageFolder(url)
+            }.value
+            guard let self = self else { return }
+            if imageFiles.isEmpty {
+                self.log("[Images] No images found", level: .warning)
+                return
+            }
+            self.store.send(.render(.imagesLoaded(count: imageFiles.count, folderPath: url.path)))
         }
     }
 
     public func nextImage() {
-        guard let imageManager = renderEngine?.imageManager else { return }
-        let state = imageManager.state
-        guard !state.folderImages.isEmpty else { return }
-        let nextIdx = (state.folderIndex + 1) % state.folderImages.count
-        imageManager.state = ImageDisplayState(
-            currentImageURL: state.folderImages[nextIdx],
-            nextImageURL: state.folderImages[(nextIdx + 1) % state.folderImages.count],
-            crossfadeProgress: 0.0, isFading: true, coverMode: state.coverMode,
-            folderImages: state.folderImages, folderIndex: nextIdx, beatsPerChange: state.beatsPerChange
-        )
-        imageIndex = nextIdx
+        store.send(.render(.nextImage))
     }
 
     public func prevImage() {
-        guard let imageManager = renderEngine?.imageManager else { return }
-        let state = imageManager.state
-        guard !state.folderImages.isEmpty else { return }
-        let prevIdx = (state.folderIndex - 1 + state.folderImages.count) % state.folderImages.count
-        imageManager.state = ImageDisplayState(
-            currentImageURL: state.folderImages[prevIdx],
-            nextImageURL: state.folderImages[(prevIdx + 1) % state.folderImages.count],
-            crossfadeProgress: 0.0, isFading: true, coverMode: state.coverMode,
-            folderImages: state.folderImages, folderIndex: prevIdx, beatsPerChange: state.beatsPerChange
-        )
-        imageIndex = prevIdx
+        store.send(.render(.prevImage))
+    }
+
+    nonisolated private static func scanImageFolder(_ url: URL) -> [URL] {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: nil
+        ) else {
+            return []
+        }
+        let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"]
+        return files.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func loadImagesIntoRenderer(folderPath: String) async {
+        let url = URL(fileURLWithPath: folderPath)
+        let imageFiles = Self.scanImageFolder(url)
+        guard !imageFiles.isEmpty else { return }
+        await MainActor.run {
+            guard let imageManager = self.renderEngine?.imageManager else { return }
+            let currentCoverMode = imageManager.state.coverMode
+            imageManager.state = ImageDisplayState(
+                currentImageURL: imageFiles.first,
+                nextImageURL: imageFiles.count > 1 ? imageFiles[1] : nil,
+                crossfadeProgress: 0.0,
+                isFading: false,
+                coverMode: currentCoverMode,
+                folderImages: imageFiles,
+                folderIndex: 0,
+                beatsPerChange: 8
+            )
+        }
+    }
+
+    private func setImageIndexInRenderer(_ index: Int) async {
+        await MainActor.run {
+            guard let imageManager = self.renderEngine?.imageManager else { return }
+            let state = imageManager.state
+            guard !state.folderImages.isEmpty else { return }
+            let safeIndex = max(0, min(index, state.folderImages.count - 1))
+            let nextIndex = (safeIndex + 1) % state.folderImages.count
+            imageManager.state = ImageDisplayState(
+                currentImageURL: state.folderImages[safeIndex],
+                nextImageURL: state.folderImages[nextIndex],
+                crossfadeProgress: 0.0,
+                isFading: true,
+                coverMode: state.coverMode,
+                folderImages: state.folderImages,
+                folderIndex: safeIndex,
+                beatsPerChange: state.beatsPerChange
+            )
+        }
     }
 
     // MARK: - Logging
 
     public func log(_ message: String, level: LogLevel = .info) {
-        let entry = LogEntry(message: message, level: level, timestamp: Date())
-        logEntries.append(entry)
-        if logEntries.count > maxLogEntries {
-            logEntries.removeFirst(logEntries.count - maxLogEntries)
-        }
+        store.send(.ui(.log(message, mapLogLevel(level))))
     }
 
     public func recordOSCMessage(_ address: String, args: [String]) {
-        guard oscDebugEnabled else { return }
-        guard oscFilter.isEmpty || address.localizedCaseInsensitiveContains(oscFilter) else { return }
-        oscMessages[address] = OSCLogEntry(address: address, args: args, timestamp: Date())
-        oscMessageCount += 1
+        store.send(.ui(.oscMessageReceived(address: address, args: args)))
+    }
+
+    private func mapLogLevel(_ level: LogLevel) -> LogLevelState {
+        switch level {
+        case .debug: return .debug
+        case .info: return .info
+        case .warning: return .warning
+        case .error: return .error
+        }
+    }
+
+    private func mapLogLevel(_ level: LogLevelState) -> LogLevel {
+        switch level {
+        case .debug: return .debug
+        case .info: return .info
+        case .warning: return .warning
+        case .error: return .error
+        }
+    }
+
+    private func mapLogEntry(_ entry: LogEntryState) -> LogEntry {
+        LogEntry(
+            message: entry.message,
+            level: mapLogLevel(entry.level),
+            timestamp: entry.timestamp
+        )
+    }
+
+    private func mapOSCEntry(_ entry: OSCLogEntryState) -> OSCLogEntry {
+        OSCLogEntry(
+            address: entry.address,
+            args: entry.args,
+            timestamp: entry.timestamp
+        )
     }
 
     // MARK: - Private Setup
@@ -530,11 +693,6 @@ public final class AppState: ObservableObject {
         // Wire up dispatch closures - modules send actions to Store
         launchpadModule?.dispatch = { [weak self] action in
             self?.store.send(action)
-            // Also update full launchpadState for views that need detailed state
-            if case .launchpad(.stateUpdated(_)) = action {
-                self?.launchpadState = self?.launchpadModule?.getFullState()
-                self?.launchpadStatus = self?.launchpadModule?.getStatus()
-            }
         }
 
         let lpModule = launchpadModule
@@ -561,9 +719,6 @@ public final class AppState: ObservableObject {
         )
 
         songsModule = SongsModule()
-        
-        // Initialize OSC Rest Bridge
-        oscRestBridge = createDefaultBridgeService()
     }
 
     private func wireModuleDispatchers() async {
@@ -619,6 +774,16 @@ public final class AppState: ObservableObject {
             }
         }
 
+        EffectEnvironment.shared.loadImagesFromFolder = { [weak self] folderPath in
+            guard let self else { return }
+            await self.loadImagesIntoRenderer(folderPath: folderPath)
+        }
+
+        EffectEnvironment.shared.setImageIndex = { [weak self] index in
+            guard let self else { return }
+            await self.setImageIndexInRenderer(index)
+        }
+
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
             guard let self = self else { return }
             await self.processTrackChange(track)
@@ -641,12 +806,17 @@ public final class AppState: ObservableObject {
             guard let self else { return nil }
             return await MainActor.run { self.currentPhase }
         }
+
+        EffectEnvironment.shared.ledfxActionHandler = { [weak self] action in
+            guard let self else { return }
+            await self.ledfxFeature.handle(action)
+        }
     }
 
     private func startOSCHub() {
         do {
             try oscHub.start()
-            log("OSC hub started on port \(OSCHub.receivePort)", level: .info)
+            log("OSC hub started on port \(oscHub.receivePort)", level: .info)
 
             oscHub.subscribe(pattern: "*") { [weak self] address, values in
                 guard let self = self, self._oscDebugEnabledUnsafe else { return }
@@ -672,13 +842,7 @@ public final class AppState: ObservableObject {
                 Task { @MainActor in self?.loadImagesFromFolder(URL(fileURLWithPath: folderPath)) }
             }
             
-            // Subscribe OSC Rest Bridge to /ledfx/* messages
-            oscHub.subscribe(pattern: "/ledfx/*") { [weak self] address, values in
-                Task { @MainActor [weak self] in
-                    guard let self = self, let bridge = self.oscRestBridge else { return }
-                    await bridge.handleOSCMessage(path: address, values: values)
-                }
-            }
+            ledfxFeature.registerOscSubscriptions()
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
         }
@@ -691,16 +855,6 @@ public final class AppState: ObservableObject {
                 let (bpm, _, _) = await self.synesthesiaAudio.getBPM()
                 if bpm > 0 { self.launchpadModule?.updateBpm(bpm) }
             }
-        }
-    }
-
-    private func loadPersistedState() {
-        playbackSource = UserDefaults.standard.string(forKey: "playbackSource") ?? "vdj"
-        if let savedShader = UserDefaults.standard.string(forKey: "selectedShader") {
-            selectedShader = savedShader
-        }
-        if let savedPhase = UserDefaults.standard.string(forKey: "currentPhase") {
-            currentPhase = Phase.from(savedPhase)
         }
     }
 
@@ -747,20 +901,69 @@ public final class AppState: ObservableObject {
                 if self.shaderCount != newState.render.shaderCount { self.shaderCount = newState.render.shaderCount }
                 if self.songsState != newState.songs { self.songsState = newState.songs }
 
+                // UI state (logs + OSC)
+                if self.oscFilter != newState.ui.oscFilter { self.oscFilter = newState.ui.oscFilter }
+                if self.oscDebugEnabled != newState.ui.oscDebugEnabled { self.oscDebugEnabled = newState.ui.oscDebugEnabled }
+                if self.oscMessageCount != newState.ui.oscMessageCount {
+                    self.oscMessageCount = newState.ui.oscMessageCount
+                    self.oscMessages = newState.ui.oscMessages.mapValues { self.mapOSCEntry($0) }
+                }
+                let newLogEntries = newState.ui.logEntries.map(self.mapLogEntry)
+                if self.logEntries.count != newLogEntries.count ||
+                    self.logEntries.last?.timestamp != newLogEntries.last?.timestamp {
+                    self.logEntries = newLogEntries
+                }
+
                 // Launchpad state - only update if changed
                 if let snapshot = newState.launchpad.status {
                     let newStatus = LaunchpadStatus(
                         isEnabled: snapshot.isConnected,
                         isConnected: snapshot.isConnected,
                         deviceName: snapshot.deviceName,
-                        isLearnMode: false,
+                        isLearnMode: snapshot.isLearnMode,
                         configuredPadCount: snapshot.padCount,
-                        currentBpm: 120
+                        currentBpm: snapshot.currentBpm
                     )
                     if self.launchpadStatus != newStatus {
                         self.launchpadStatus = newStatus
                     }
                 }
+                if newState.launchpad.controllerState == nil {
+                    self.lastLaunchpadSnapshot = nil
+                    self.launchpadState = nil
+                } else if self.lastLaunchpadSnapshot != newState.launchpad.controllerState {
+                    self.lastLaunchpadSnapshot = newState.launchpad.controllerState
+                    self.launchpadState = self.launchpadModule?.getFullState()
+                }
+
+                // LedFX state
+                let ledfx = newState.ledfx
+                if self.ledfxBaseURL != ledfx.baseURL { self.ledfxBaseURL = ledfx.baseURL }
+                if self.ledfxVirtualIdsString != ledfx.virtualIdsString { self.ledfxVirtualIdsString = ledfx.virtualIdsString }
+                if self.ledfxIsRefreshing != ledfx.isRefreshing { self.ledfxIsRefreshing = ledfx.isRefreshing }
+                if self.ledfxIsApplying != ledfx.isApplying { self.ledfxIsApplying = ledfx.isApplying }
+                if self.ledfxIsGeneratingConfig != ledfx.isGeneratingConfig { self.ledfxIsGeneratingConfig = ledfx.isGeneratingConfig }
+                if self.ledfxServerInfo != ledfx.serverInfo { self.ledfxServerInfo = ledfx.serverInfo }
+                if self.ledfxScenes != ledfx.scenes { self.ledfxScenes = ledfx.scenes }
+                if self.ledfxVirtuals != ledfx.virtuals { self.ledfxVirtuals = ledfx.virtuals }
+                if self.ledfxPlaylists != ledfx.playlists { self.ledfxPlaylists = ledfx.playlists }
+                if self.ledfxActivePlaylistId != ledfx.activePlaylistId { self.ledfxActivePlaylistId = ledfx.activePlaylistId }
+                if self.ledfxSceneFilter != ledfx.sceneFilter { self.ledfxSceneFilter = ledfx.sceneFilter }
+                if self.ledfxPlaylistFilter != ledfx.playlistFilter { self.ledfxPlaylistFilter = ledfx.playlistFilter }
+                if self.ledfxErrorMessage != ledfx.errorMessage { self.ledfxErrorMessage = ledfx.errorMessage }
+                if self.ledfxGeneratedYaml != ledfx.generatedYaml {
+                    self.ledfxGeneratedYaml = ledfx.generatedYaml
+                    if let yaml = ledfx.generatedYaml {
+                        self.ledfxGeneratedConfig = try? ConfigLoader.load(from: yaml)
+                    } else {
+                        self.ledfxGeneratedConfig = nil
+                    }
+                }
+                if self.ledfxPlaylistCount != ledfx.playlistCount { self.ledfxPlaylistCount = ledfx.playlistCount }
+                if self.ledfxEffectsCount != ledfx.effectsCount { self.ledfxEffectsCount = ledfx.effectsCount }
+                if self.ledfxIsRunning != ledfx.isRunning { self.ledfxIsRunning = ledfx.isRunning }
+                if self.ledfxHealthSummary != ledfx.healthSummary { self.ledfxHealthSummary = ledfx.healthSummary }
+                if self.ledfxLastHealthCheck != ledfx.lastHealthCheck { self.ledfxLastHealthCheck = ledfx.lastHealthCheck }
 
                 // Pipeline state - only update if changed
                 let newSteps = self.mapPipelineSteps(from: newState.pipeline)

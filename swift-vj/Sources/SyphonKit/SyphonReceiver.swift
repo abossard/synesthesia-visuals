@@ -64,9 +64,7 @@ public final class SyphonReceiver {
     /// - Returns: true if a matching server was found and connected
     @discardableResult
     public func connect(appName: String? = nil, serverName: String? = nil) -> Bool {
-        guard let servers = SyphonServerDirectory.shared().servers as? [[String: Any]] else {
-            return false
-        }
+        let servers = SyphonServerDirectory.shared().servers
         
         for server in servers {
             let matchesApp = appName == nil || 
@@ -113,9 +111,7 @@ extension SyphonReceiver {
     
     /// Gets all available Syphon servers
     public static func availableServers() -> [ServerInfo] {
-        guard let servers = SyphonServerDirectory.shared().servers as? [[String: Any]] else {
-            return []
-        }
+        let servers = SyphonServerDirectory.shared().servers
         
         return servers.compactMap { dict in
             let appName = dict[SyphonServerDescriptionAppNameKey as String] as? String ?? ""

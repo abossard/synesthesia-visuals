@@ -9,6 +9,8 @@ public enum TemplateEngine {
     
     public struct TemplateContext {
         public let sceneId: String?
+        public let playlistId: String?
+        public let playlistAction: String?
         public let slotName: String?
         public let slotVirtualIds: [String]?
         public let paramRaw: Double?
@@ -17,6 +19,8 @@ public enum TemplateEngine {
         
         public init(
             sceneId: String? = nil,
+            playlistId: String? = nil,
+            playlistAction: String? = nil,
             slotName: String? = nil,
             slotVirtualIds: [String]? = nil,
             paramRaw: Double? = nil,
@@ -24,6 +28,8 @@ public enum TemplateEngine {
             paramMode: String? = nil
         ) {
             self.sceneId = sceneId
+            self.playlistId = playlistId
+            self.playlistAction = playlistAction
             self.slotName = slotName
             self.slotVirtualIds = slotVirtualIds
             self.paramRaw = paramRaw
@@ -41,6 +47,14 @@ public enum TemplateEngine {
         // Scene variables
         if let sceneId = context.sceneId {
             result = result.replacingOccurrences(of: "${scene.id}", with: sceneId)
+        }
+
+        // Playlist variables
+        if let playlistId = context.playlistId {
+            result = result.replacingOccurrences(of: "${playlist.id}", with: playlistId)
+        }
+        if let playlistAction = context.playlistAction {
+            result = result.replacingOccurrences(of: "${playlist.action}", with: playlistAction)
         }
         
         // Slot variables

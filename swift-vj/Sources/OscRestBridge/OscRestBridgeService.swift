@@ -175,10 +175,15 @@ public actor OscRestBridgeService {
     // MARK: - OSC Message Handling
     
     public func handleOSCMessage(path: String, values: [Any]) async {
+        let numericValue = OSCRouteParser.extractNumeric(values)
+        await handleOSCMessage(path: path, numericValue: numericValue)
+    }
+
+    public func handleOSCMessage(path: String, numericValue: Double?) async {
         let timestamp = clock.now()
-        
+
         // Extract numeric value
-        guard let numericValue = OSCRouteParser.extractNumeric(values) else {
+        guard let numericValue else {
             recordUnknownOSC(path: path, value: 0, reason: "No numeric argument", timestamp: timestamp)
             return
         }
@@ -195,7 +200,12 @@ public actor OscRestBridgeService {
         // Update slot message count
         let slot: String
         switch parsed {
-        case .scene(let s, _), .oneshot(let s, _), .blackout(let s), .param(let s, _):
+        case .scene(let s, _),
+             .playlist(let s, _),
+             .playlistControl(let s, _),
+             .oneshot(let s, _),
+             .blackout(let s),
+             .param(let s, _):
             slot = s
         }
         stats.slotMessages[slot, default: 0] += 1
@@ -249,6 +259,10 @@ public actor OscRestBridgeService {
             
         } catch RequestBuilder.BuildError.unknownScene(let name) {
             recordUnknownOSC(path: path, value: numericValue, reason: "Unknown scene: \(name)", timestamp: timestamp)
+        } catch RequestBuilder.BuildError.unknownPlaylist(let name) {
+            recordUnknownOSC(path: path, value: numericValue, reason: "Unknown playlist: \(name)", timestamp: timestamp)
+        } catch RequestBuilder.BuildError.unknownPlaylistControl(let name) {
+            recordUnknownOSC(path: path, value: numericValue, reason: "Unknown playlist control: \(name)", timestamp: timestamp)
         } catch RequestBuilder.BuildError.unknownOneshot(let name) {
             recordUnknownOSC(path: path, value: numericValue, reason: "Unknown oneshot: \(name)", timestamp: timestamp)
         } catch RequestBuilder.BuildError.unknownParam(let name) {
@@ -339,6 +353,16 @@ public actor OscRestBridgeService {
                 stats.sceneActivations[sceneName, default: 0] += 1
             }
             
+        case .playlist(_, let playlistId):
+            if value > 0 {
+                stats.playlistStarts[playlistId, default: 0] += 1
+            }
+
+        case .playlistControl(_, let action):
+            if value > 0 {
+                stats.playlistActions[action, default: 0] += 1
+            }
+
         case .oneshot(_, let oneshotName):
             if value > 0 {
                 stats.oneshotTriggers[oneshotName, default: 0] += 1

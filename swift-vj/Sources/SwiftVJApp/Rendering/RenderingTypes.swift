@@ -124,6 +124,12 @@ struct ShaderUniforms {
     // Audio-reactive time (accumulated, not wall clock)
     var audioTime: Float = 0      // offset 92
 
+    // Extra shader uniforms (match ShaderCompiler wrapper)
+    var bin0: Float = 0           // offset 96
+    var bin1: Float = 0           // offset 100
+    var bin2: Float = 0           // offset 104
+    var zoom: Float = 1.0         // offset 108
+
     /// Update from AudioState (speed and audioTime set separately by tile)
     mutating func update(from audio: AudioState) {
         bass = audio.bass

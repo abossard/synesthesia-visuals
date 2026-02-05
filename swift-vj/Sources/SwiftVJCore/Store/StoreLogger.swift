@@ -52,7 +52,7 @@ public struct ActionLogEntry: Identifiable, Sendable {
 
 /// Fast action classification without full string conversion
 public enum ActionCategory: String, Sendable {
-    case playback, pipeline, render, launchpad, audio, ui, lifecycle, persistence
+    case playback, pipeline, render, launchpad, audio, ui, ledfx, lifecycle, persistence
 }
 
 /// Extract action category from action (fast path)
@@ -65,6 +65,7 @@ public func classifyAction<Action>(_ action: Action) -> ActionCategory {
     if typeName.contains("Launchpad") { return .launchpad }
     if typeName.contains("Audio") { return .audio }
     if typeName.contains("UI") { return .ui }
+    if typeName.contains("LedFX") { return .ledfx }
     return .lifecycle
 }
 
@@ -245,8 +246,9 @@ public final class StoreLogger<State: Equatable, Action: Sendable>: ObservableOb
 
             // Console output (async, non-blocking)
             if self.printToConsole {
+                let entryCopy = entry
                 self.consoleQueue.async {
-                    self.printEntry(entry, category: category)
+                    printLogEntry(entryCopy)
                 }
             }
 
@@ -270,26 +272,26 @@ public final class StoreLogger<State: Equatable, Action: Sendable>: ObservableOb
         return (fullDesc, "")
     }
 
-    /// Print entry to console (called on background queue)
-    private nonisolated func printEntry(_ entry: ActionLogEntry, category: ActionCategory) {
-        let timeStr = formatTime(entry.timestamp)
-        let durationStr = String(format: "%.2fms", entry.durationMs)
-        let changeIndicator = entry.stateChanged ? "Δ" : "○"
+}
 
-        print("\(timeStr) \(changeIndicator) \(entry.actionType)\(entry.actionDetail) [\(durationStr)]")
-    }
+// MARK: - Console Logging Helpers
 
-    /// Format timestamp efficiently
-    private nonisolated func formatTime(_ timestamp: Double) -> String {
-        let date = Date(timeIntervalSinceReferenceDate: timestamp)
-        let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
-        let ms = (components.nanosecond ?? 0) / 1_000_000
-        return String(format: "%02d:%02d:%02d.%03d",
-                      components.hour ?? 0,
-                      components.minute ?? 0,
-                      components.second ?? 0,
-                      ms)
-    }
+private func printLogEntry(_ entry: ActionLogEntry) {
+    let timeStr = formatLogTime(entry.timestamp)
+    let durationStr = String(format: "%.2fms", entry.durationMs)
+    let changeIndicator = entry.stateChanged ? "Δ" : "○"
+    print("\(timeStr) \(changeIndicator) \(entry.actionType)\(entry.actionDetail) [\(durationStr)]")
+}
+
+private func formatLogTime(_ timestamp: Double) -> String {
+    let date = Date(timeIntervalSinceReferenceDate: timestamp)
+    let components = Calendar.current.dateComponents([.hour, .minute, .second, .nanosecond], from: date)
+    let ms = (components.nanosecond ?? 0) / 1_000_000
+    return String(format: "%02d:%02d:%02d.%03d",
+                  components.hour ?? 0,
+                  components.minute ?? 0,
+                  components.second ?? 0,
+                  ms)
 }
 
 // MARK: - Convenience

@@ -191,6 +191,7 @@ struct KaraokeSettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(width: 150)
+                    .accessibilityIdentifier(A11yID.karaokeSettingsAnimationPicker)
                     .onAppear {
                         animationSelection = karaokeEngine.configuration.animationMode
                     }
@@ -232,31 +233,31 @@ struct KaraokeSettingsView: View {
     private var presetsSection: some View {
         Section {
             HStack(spacing: 12) {
-                PresetButton(label: "Default") {
+                PresetButton(label: "Default", identifier: A11yID.karaokePreset("default")) {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         karaokeEngine.configuration = .default
                     }
                 }
 
-                PresetButton(label: "Compact") {
+                PresetButton(label: "Compact", identifier: A11yID.karaokePreset("compact")) {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         karaokeEngine.configuration = .compact
                     }
                 }
 
-                PresetButton(label: "Dramatic") {
+                PresetButton(label: "Dramatic", identifier: A11yID.karaokePreset("dramatic")) {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         karaokeEngine.configuration = .dramatic
                     }
                 }
 
-                PresetButton(label: "Subtle") {
+                PresetButton(label: "Subtle", identifier: A11yID.karaokePreset("subtle")) {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         karaokeEngine.configuration = .subtle
                     }
                 }
 
-                PresetButton(label: "Clean") {
+                PresetButton(label: "Clean", identifier: A11yID.karaokePreset("clean")) {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         karaokeEngine.configuration = .clean
                     }
@@ -296,14 +297,17 @@ struct KaraokeSettingsView: View {
                     Button("Load Test") {
                         karaokeEngine.loadTestLyrics()
                     }
+                    .accessibilityIdentifier(A11yID.karaokeSettingsPreviewLoadTest)
 
                     Button("Prev") {
                         karaokeEngine.previousLine()
                     }
+                    .accessibilityIdentifier(A11yID.karaokeSettingsPreviewPrev)
 
                     Button("Next") {
                         karaokeEngine.nextLine()
                     }
+                    .accessibilityIdentifier(A11yID.karaokeSettingsPreviewNext)
 
                     Spacer()
 
@@ -383,14 +387,21 @@ private struct SliderRow<V: BinaryFloatingPoint>: View where V.Stride: BinaryFlo
 
 private struct PresetButton: View {
     let label: String
+    let identifier: String?
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Text(label)
                 .frame(minWidth: 60)
         }
         .buttonStyle(.bordered)
+
+        if let identifier {
+            button.accessibilityIdentifier(identifier)
+        } else {
+            button
+        }
     }
 }
 

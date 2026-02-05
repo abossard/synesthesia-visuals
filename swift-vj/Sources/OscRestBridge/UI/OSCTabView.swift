@@ -77,6 +77,10 @@ struct OSCMessageRow: View {
         switch route {
         case .scene(let slot, let name):
             Label("Scene: \(name) on slot \(slot)", systemImage: "lightbulb")
+        case .playlist(let slot, let playlistId):
+            Label("Playlist: \(playlistId) on slot \(slot)", systemImage: "music.note.list")
+        case .playlistControl(let slot, let action):
+            Label("Playlist \(action) on slot \(slot)", systemImage: "music.quarternote.3")
         case .oneshot(let slot, let name):
             Label("Oneshot: \(name) on slot \(slot)", systemImage: "bolt")
         case .blackout(let slot):

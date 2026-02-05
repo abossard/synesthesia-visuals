@@ -1,13 +1,12 @@
 // RenderEngine.swift - Main rendering orchestrator for VJ system
-// Pure CVDisplayLink-based rendering on a dedicated high-priority thread
-// GPU work runs synchronously in the display link callback
+// Headless, timer-driven rendering on a dedicated high-priority thread
+// GPU work runs synchronously in the render timer callback
 
 import Foundation
 import Metal
 import MetalKit
 import Combine
 import SwiftUI
-import CoreVideo
 import os.lock
 import SwiftVJCore
 
@@ -25,7 +24,7 @@ struct RenderFrameContext: Sendable {
 // MARK: - Render Engine
 
 /// Main rendering engine that orchestrates headless tile rendering and Syphon output
-/// CVDisplayLink callback runs GPU work synchronously on a real-time thread
+/// Headless render loop drives GPU work synchronously on a real-time thread
 final class RenderEngine: ObservableObject, @unchecked Sendable {
     // MARK: - Published State (MainActor for SwiftUI)
 
@@ -60,11 +59,10 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     // Logger closure for UI logging
     var logger: ((String) -> Void)?
 
-    // MARK: - Render Thread State (accessed from CVDisplayLink thread)
+    // MARK: - Render Thread State (accessed from headless render thread)
     
     private var device: MTLDevice?
     private(set) var headlessRenderer: HeadlessRenderer?
-    private var displayLink: CVDisplayLink?
     private var renderTimer: DispatchSourceTimer?
     
     // Thread-safe Syphon manager (NOT MainActor)
@@ -187,7 +185,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         startRenderLoop()
 
         await MainActor.run { [weak self] in self?.isRunning = true }
-        print("[RenderEngine] Started with CVDisplayLink rendering")
+        print("[RenderEngine] Started headless rendering (timer-driven)")
     }
 
     @MainActor
@@ -207,49 +205,19 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         print("[RenderEngine] Stopped")
     }
 
-    // MARK: - CVDisplayLink Render Loop
+    // MARK: - Headless Render Loop (Timer-Driven)
 
     private func startRenderLoop() {
         lastFrameTime = CFAbsoluteTimeGetCurrent()
-
-        if #available(macOS 15.0, *) {
-            startTimerRenderLoop()
-        } else {
-            // Create CVDisplayLink
-            var link: CVDisplayLink?
-            CVDisplayLinkCreateWithActiveCGDisplays(&link)
-
-            guard let link = link else {
-                print("[RenderEngine] ❌ Failed to create CVDisplayLink")
-                return
-            }
-
-            self.displayLink = link
-
-            // CVDisplayLink callback - runs on high-priority real-time thread
-            let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo -> CVReturn in
-                guard let userInfo = userInfo else { return kCVReturnSuccess }
-                let engine = Unmanaged<RenderEngine>.fromOpaque(userInfo).takeUnretainedValue()
-                engine.renderFrameSync()
-                return kCVReturnSuccess
-            }
-
-            let userInfo = Unmanaged.passUnretained(self).toOpaque()
-            CVDisplayLinkSetOutputCallback(link, callback, userInfo)
-            CVDisplayLinkStart(link)
-        }
+        startTimerRenderLoop()
         
         // Start state update task (runs async, pushes to cached state)
         startStateUpdateTask()
         
-        print("[RenderEngine] CVDisplayLink started (vsync)")
+        print("[RenderEngine] Headless render loop started (timer-driven)")
     }
     
     private func stopRenderLoop() {
-        if let link = displayLink {
-            CVDisplayLinkStop(link)
-            self.displayLink = nil
-        }
         if let renderTimer = renderTimer {
             renderTimer.setEventHandler {}
             renderTimer.cancel()
@@ -258,7 +226,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     }
 
     private func startTimerRenderLoop() {
-        let queue = DispatchQueue(label: "RenderEngine.DisplayTimer", qos: .userInteractive)
+        let queue = DispatchQueue(label: "RenderEngine.HeadlessTimer", qos: .userInteractive)
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
         timer.setEventHandler { [weak self] in
@@ -271,7 +239,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     /// Async task that gathers state from MainActor and pushes to cache
     private func startStateUpdateTask() {
         Task { [weak self] in
-            while let self = self, self.displayLink != nil {
+            while let self = self, self.renderTimer != nil {
                 await self.updateCachedState()
                 // Update at ~60Hz (slightly faster than display to stay ahead)
                 try? await Task.sleep(for: .milliseconds(14))
@@ -386,7 +354,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Synchronous render called from CVDisplayLink thread
+    /// Synchronous render called from headless render thread
     /// This is the hot path - no async, no MainActor
     private func renderFrameSync() {
         guard let renderer = headlessRenderer else { return }

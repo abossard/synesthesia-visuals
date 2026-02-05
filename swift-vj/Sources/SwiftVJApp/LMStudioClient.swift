@@ -5,32 +5,6 @@ import Foundation
 
 import SwiftVJCore
 
-/// Result of shader analysis from LLM
-struct ShaderAnalysisResult: Codable, Equatable {
-    let title: String
-    let description: String
-    let mood: String
-    let energy: Double
-    let colors: [String]
-    let effects: [String]
-    let geometry: [String]
-    let objects: [String]
-    let complexity: String
-    let visualMetadata: [String: String]
-    let djPhases: [String]?  // DJ set phases this shader fits
-
-    enum CodingKeys: String, CodingKey {
-        case title, description, mood, energy, colors, effects, geometry, objects, complexity
-        case visualMetadata = "visual_metadata"
-        case djPhases = "dj_phases"
-    }
-
-    /// Convert dj_phases strings to Phase enum set
-    var phases: Set<Phase> {
-        Phase.fromStrings(djPhases ?? [])
-    }
-}
-
 /// Client for LM Studio local LLM server
 actor LMStudioClient {
     
@@ -309,4 +283,8 @@ actor LMStudioClient {
             return nil
         }
     }
+}
+
+extension LMStudioClient: ShaderAnalysisProvider {
+    nonisolated var providerName: String { "LM Studio" }
 }

@@ -54,6 +54,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
         // YAML parsing for config files
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
+        // SwiftUI view inspection for tests
+        .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.10"),
     ],
     targets: [
         // Syphon binary framework (built from Syphon-Framework)
@@ -168,7 +170,11 @@ let package = Package(
         // SwiftVJApp tests - karaoke engine and UI behavior
         .testTarget(
             name: "SwiftVJAppTests",
-            dependencies: ["SwiftVJApp", "SwiftVJCore"]),
+            dependencies: [
+                "SwiftVJApp",
+                "SwiftVJCore",
+                .product(name: "ViewInspector", package: "ViewInspector"),
+            ]),
         
         // OscRestBridge - generic OSC → REST bridge
         .target(

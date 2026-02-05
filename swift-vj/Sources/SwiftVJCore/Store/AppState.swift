@@ -29,6 +29,9 @@ public struct AppState: Equatable, Sendable {
     /// UI state (logs, OSC debug, settings)
     public var ui: UISubState
 
+    /// LedFX integration state
+    public var ledfx: LedFXSubState
+
     /// Songs management state
     public var songs: SongsSubState
 
@@ -52,6 +55,7 @@ public struct AppState: Equatable, Sendable {
         launchpad: LaunchpadSubState = LaunchpadSubState(),
         audio: AudioSubState = AudioSubState(),
         ui: UISubState = UISubState(),
+        ledfx: LedFXSubState = LedFXSubState(),
         songs: SongsSubState = SongsSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
@@ -62,6 +66,7 @@ public struct AppState: Equatable, Sendable {
         self.launchpad = launchpad
         self.audio = audio
         self.ui = ui
+        self.ledfx = ledfx
         self.songs = songs
         self.isRunning = isRunning
         self.modules = modules
@@ -75,6 +80,7 @@ public struct AppState: Equatable, Sendable {
         lhs.launchpad == rhs.launchpad &&
         lhs.audio == rhs.audio &&
         lhs.ui == rhs.ui &&
+        lhs.ledfx == rhs.ledfx &&
         lhs.songs == rhs.songs &&
         lhs.isRunning == rhs.isRunning
     }
@@ -312,17 +318,23 @@ public struct LaunchpadStatusSnapshot: Equatable, Sendable {
     public var deviceName: String?
     public var activeBank: Int
     public var padCount: Int
+    public var isLearnMode: Bool
+    public var currentBpm: Float
 
     public init(
         isConnected: Bool = false,
         deviceName: String? = nil,
         activeBank: Int = 0,
-        padCount: Int = 0
+        padCount: Int = 0,
+        isLearnMode: Bool = false,
+        currentBpm: Float = 120
     ) {
         self.isConnected = isConnected
         self.deviceName = deviceName
         self.activeBank = activeBank
         self.padCount = padCount
+        self.isLearnMode = isLearnMode
+        self.currentBpm = currentBpm
     }
 
     public init(from status: LaunchpadStatus) {
@@ -330,6 +342,8 @@ public struct LaunchpadStatusSnapshot: Equatable, Sendable {
         self.deviceName = status.deviceName
         self.activeBank = 0  // LaunchpadStatus doesn't track activeBank
         self.padCount = status.configuredPadCount
+        self.isLearnMode = status.isLearnMode
+        self.currentBpm = status.currentBpm
     }
 }
 
@@ -429,6 +443,73 @@ public struct UISubState: Equatable, Sendable {
         let entry = OSCLogEntryState(address: address, args: args, timestamp: Date())
         oscMessages[address] = entry
         oscMessageCount += 1
+    }
+}
+
+// MARK: - LedFX Sub-State
+
+/// LedFX integration state for UI and bridge config
+public struct LedFXSubState: Equatable, Sendable {
+    public var baseURL: String
+    public var virtualIdsString: String
+    public var isRefreshing: Bool
+    public var isApplying: Bool
+    public var isGeneratingConfig: Bool
+    public var serverInfo: LedFXInfo?
+    public var scenes: [String: LedFXScene]
+    public var virtuals: [String: LedFXVirtual]
+    public var playlists: [String: LedFXPlaylist]
+    public var activePlaylistId: String?
+    public var sceneFilter: String
+    public var playlistFilter: String
+    public var errorMessage: String?
+    public var generatedYaml: String?
+    public var playlistCount: Int
+    public var effectsCount: Int
+    public var isRunning: Bool
+    public var healthSummary: String
+    public var lastHealthCheck: Date?
+
+    public init(
+        baseURL: String = "http://127.0.0.1:8888",
+        virtualIdsString: String = "",
+        isRefreshing: Bool = false,
+        isApplying: Bool = false,
+        isGeneratingConfig: Bool = false,
+        serverInfo: LedFXInfo? = nil,
+        scenes: [String: LedFXScene] = [:],
+        virtuals: [String: LedFXVirtual] = [:],
+        playlists: [String: LedFXPlaylist] = [:],
+        activePlaylistId: String? = nil,
+        sceneFilter: String = "",
+        playlistFilter: String = "",
+        errorMessage: String? = nil,
+        generatedYaml: String? = nil,
+        playlistCount: Int = 0,
+        effectsCount: Int = 0,
+        isRunning: Bool = false,
+        healthSummary: String = "Unknown",
+        lastHealthCheck: Date? = nil
+    ) {
+        self.baseURL = baseURL
+        self.virtualIdsString = virtualIdsString
+        self.isRefreshing = isRefreshing
+        self.isApplying = isApplying
+        self.isGeneratingConfig = isGeneratingConfig
+        self.serverInfo = serverInfo
+        self.scenes = scenes
+        self.virtuals = virtuals
+        self.playlists = playlists
+        self.activePlaylistId = activePlaylistId
+        self.sceneFilter = sceneFilter
+        self.playlistFilter = playlistFilter
+        self.errorMessage = errorMessage
+        self.generatedYaml = generatedYaml
+        self.playlistCount = playlistCount
+        self.effectsCount = effectsCount
+        self.isRunning = isRunning
+        self.healthSummary = healthSummary
+        self.lastHealthCheck = lastHealthCheck
     }
 }
 
