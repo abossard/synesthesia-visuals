@@ -210,6 +210,9 @@ public struct RenderSubState: Equatable, Sendable {
     /// Currently selected shader name
     public var selectedShader: String?
 
+    /// Currently selected mask shader name
+    public var selectedMaskShader: String?
+
     /// Current set phase (nil = auto)
     public var currentPhase: Phase?
 
@@ -232,6 +235,7 @@ public struct RenderSubState: Equatable, Sendable {
 
     public init(
         selectedShader: String? = nil,
+        selectedMaskShader: String? = nil,
         currentPhase: Phase? = nil,
         detectedSongPhase: Phase? = nil,
         imageIndex: Int = 0,
@@ -239,6 +243,7 @@ public struct RenderSubState: Equatable, Sendable {
         shaderCount: Int = 0
     ) {
         self.selectedShader = selectedShader
+        self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
         self.detectedSongPhase = detectedSongPhase
         self.imageIndex = imageIndex
@@ -260,8 +265,11 @@ public struct LaunchpadSubState: Equatable, Sendable {
     /// Current bank (0-7)
     public var currentBank: Int
 
-    /// Controller state (for complex state, use simplified equality)
-    public var controllerState: ControllerStateSnapshot?
+    /// Full controller state (single source of truth for Launchpad UI)
+    public var controllerState: ControllerState?
+
+    /// Monotonic revision for controllerState updates (lets app layer avoid stale comparisons)
+    public var controllerRevision: UInt64
 
     /// Connection status for UI
     public var status: LaunchpadStatusSnapshot?
@@ -270,14 +278,27 @@ public struct LaunchpadSubState: Equatable, Sendable {
         isConnected: Bool = false,
         deviceName: String? = nil,
         currentBank: Int = 0,
-        controllerState: ControllerStateSnapshot? = nil,
+        controllerState: ControllerState? = nil,
+        controllerRevision: UInt64 = 0,
         status: LaunchpadStatusSnapshot? = nil
     ) {
         self.isConnected = isConnected
         self.deviceName = deviceName
         self.currentBank = currentBank
         self.controllerState = controllerState
+        self.controllerRevision = controllerRevision
         self.status = status
+    }
+
+    public static func == (lhs: LaunchpadSubState, rhs: LaunchpadSubState) -> Bool {
+        let lhsSnapshot = lhs.controllerState.map(ControllerStateSnapshot.init(from:))
+        let rhsSnapshot = rhs.controllerState.map(ControllerStateSnapshot.init(from:))
+        return lhs.isConnected == rhs.isConnected &&
+            lhs.deviceName == rhs.deviceName &&
+            lhs.currentBank == rhs.currentBank &&
+            lhs.controllerRevision == rhs.controllerRevision &&
+            lhs.status == rhs.status &&
+            lhsSnapshot == rhsSnapshot
     }
 }
 
@@ -676,15 +697,18 @@ public struct ModuleReferences: Sendable {
 /// State that should be persisted to UserDefaults
 public struct PersistedState: Codable, Sendable {
     public var selectedShader: String?
+    public var selectedMaskShader: String?
     public var currentPhase: String?
     public var playbackSource: String
 
     public init(
         selectedShader: String? = nil,
+        selectedMaskShader: String? = nil,
         currentPhase: String? = nil,
         playbackSource: String = "vdj"
     ) {
         self.selectedShader = selectedShader
+        self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
         self.playbackSource = playbackSource
     }
@@ -692,6 +716,7 @@ public struct PersistedState: Codable, Sendable {
     /// Create from current app state
     public init(from state: AppState) {
         self.selectedShader = state.render.selectedShader
+        self.selectedMaskShader = state.render.selectedMaskShader
         self.currentPhase = state.render.currentPhase?.rawValue
         self.playbackSource = state.playback.source
     }
@@ -699,6 +724,7 @@ public struct PersistedState: Codable, Sendable {
     /// Apply to app state
     public func apply(to state: inout AppState) {
         state.render.selectedShader = selectedShader
+        state.render.selectedMaskShader = selectedMaskShader
         if let phaseStr = currentPhase {
             state.render.currentPhase = Phase.from(phaseStr)
         }

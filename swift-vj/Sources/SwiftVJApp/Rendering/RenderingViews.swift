@@ -316,6 +316,7 @@ struct AudioBar: View {
 
 /// Controls for the render engine (always running)
 struct RenderControlsView: View {
+    @EnvironmentObject var appState: AppState
     @ObservedObject var renderEngine: RenderEngine
 
     var body: some View {
@@ -336,17 +337,17 @@ struct RenderControlsView: View {
             if renderEngine.isRunning {
                 HStack(spacing: 8) {
                     Button {
-                        renderEngine.shaderSelection.prevMain()
+                        appState.selectPreviousShader()
                     } label: {
                         Image(systemName: "chevron.left")
                     }
 
-                    Text(renderEngine.shaderSelection.mainState.current?.name ?? "No Shader")
+                    Text(appState.selectedShader ?? "No Shader")
                         .font(.caption)
                         .frame(minWidth: 100)
 
                     Button {
-                        renderEngine.shaderSelection.nextMain()
+                        appState.selectNextShader()
                     } label: {
                         Image(systemName: "chevron.right")
                     }
@@ -361,8 +362,6 @@ struct RenderControlsView: View {
 /// Full rendering tab for the sidebar - ALL tiles use MTKView for 60fps
 struct RenderingView: View {
     @EnvironmentObject var appState: AppState
-    // Shader selection now goes through AppState (single source of truth)
-    @AppStorage("lastSelectedMaskShader") private var selectedMaskShader: String = "BWcarbonlattice"
     @State private var shaderSearch: String = ""
     @State private var maskSearch: String = ""
     @State private var selectedTile: String = "shader"
@@ -390,16 +389,6 @@ struct RenderingView: View {
         }
     }
 
-    /// Binding to appState.selectedShader for UI controls
-    private var selectedShaderBinding: Binding<String> {
-        Binding(
-            get: { appState.selectedShader ?? "3isacrowd" },
-            set: { newValue in
-                appState.selectShader(newValue)
-            }
-        )
-    }
-    
     @State private var karaokeAnimationSelection: TextAnimationMode = .waveDissolve
     @State private var refrainAnimationSelection: TextAnimationMode = .waveDissolve
     @State private var songInfoAnimationSelection: TextAnimationMode = .fadeInOut
@@ -424,15 +413,9 @@ struct RenderingView: View {
             Task { @MainActor in
                 try? await renderEngine?.start()
             }
-            // Mask uses selection manager
-            renderEngine?.shaderSelection.selectMask(name: selectedMaskShader)
-            // Shader is handled by AppState (single source of truth)
         }
         // NOTE: Removed onDisappear stop() - render engine should keep running
         // when switching tabs. It only stops when app quits.
-        .onChange(of: selectedMaskShader) { _, newValue in
-            renderEngine?.shaderSelection.selectMask(name: newValue)
-        }
     }
 
     // MARK: - Layout Helpers
@@ -780,8 +763,7 @@ struct RenderingView: View {
                 ForEach(shaders, id: \.name) { shader in
                     Button {
                         if isMask {
-                            selectedMaskShader = shader.name
-                            renderEngine?.shaderSelection.selectMask(name: shader.name)
+                            appState.selectMaskShader(shader.name)
                         } else {
                             appState.selectShader(shader.name)
                         }
@@ -792,7 +774,7 @@ struct RenderingView: View {
                                 .foregroundStyle(.primary)
                             Spacer()
                             if isMask {
-                                if shader.name == selectedMaskShader {
+                                if shader.name == appState.selectedMaskShader {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(.orange)
                                 }
@@ -829,7 +811,7 @@ struct RenderingView: View {
     private func shaderSelectionControls(isMask: Bool) -> some View {
         let repository = renderEngine?.shaderRepository
         let shaders = isMask ? (repository?.masks ?? []) : (repository?.regularShaders ?? [])
-        let selected = isMask ? selectedMaskShader : (appState.selectedShader ?? "")
+        let selected = isMask ? (appState.selectedMaskShader ?? "") : (appState.selectedShader ?? "")
 
         VStack(alignment: .leading, spacing: 8) {
             Text("Selected")
@@ -841,26 +823,32 @@ struct RenderingView: View {
 
             HStack(spacing: 6) {
                 Button {
-                    guard let idx = shaders.firstIndex(where: { $0.name == selected }) else { return }
-                    let prev = (idx - 1 + shaders.count) % shaders.count
-                    selectShader(name: shaders[prev].name, isMask: isMask)
+                    if isMask {
+                        appState.selectPreviousMaskShader()
+                    } else {
+                        appState.selectPreviousShader()
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.bordered)
 
                 Button {
-                    guard let idx = shaders.firstIndex(where: { $0.name == selected }) else { return }
-                    let next = (idx + 1) % shaders.count
-                    selectShader(name: shaders[next].name, isMask: isMask)
+                    if isMask {
+                        appState.selectNextMaskShader()
+                    } else {
+                        appState.selectNextShader()
+                    }
                 } label: {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.bordered)
 
                 Button("Random") {
-                    if let random = shaders.randomElement() {
-                        selectShader(name: random.name, isMask: isMask)
+                    if isMask {
+                        appState.selectRandomMaskShader()
+                    } else {
+                        appState.selectRandomShader()
                     }
                 }
                 .buttonStyle(.bordered)
@@ -874,8 +862,7 @@ struct RenderingView: View {
 
     private func selectShader(name: String, isMask: Bool) {
         if isMask {
-            selectedMaskShader = name
-            renderEngine?.shaderSelection.selectMask(name: name)
+            appState.selectMaskShader(name)
         } else {
             appState.selectShader(name)
         }
@@ -1571,17 +1558,13 @@ struct RenderingView: View {
 struct ShaderListView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject var repository: ObservableShaderRepository
-    @ObservedObject var selection: ShaderSelectionManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 // Navigation buttons - go through AppState for shader selection
                 Button {
-                    selection.prevMain()
-                    if let name = selection.mainShaderName {
-                        appState.selectShader(name)
-                    }
+                    appState.selectPreviousShader()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
@@ -1589,17 +1572,15 @@ struct ShaderListView: View {
                 .disabled(repository.regularShaders.isEmpty)
 
                 Button {
-                    selection.nextMain()
-                    if let name = selection.mainShaderName {
-                        appState.selectShader(name)
-                    }
+                    appState.selectNextShader()
                 } label: {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.bordered)
                 .disabled(repository.regularShaders.isEmpty)
-                
-                Text("\(selection.mainIndex + 1)/\(repository.regularShaders.count)")
+
+                let currentIndex = repository.regularShaders.firstIndex(where: { $0.name == appState.selectedShader })
+                Text("\((currentIndex.map { $0 + 1 } ?? 0))/\(repository.regularShaders.count)")
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundColor(.secondary)

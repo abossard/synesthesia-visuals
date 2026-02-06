@@ -3,6 +3,21 @@
 
 import Foundation
 
+public protocol LaunchpadEffectHandling: Sendable {
+    func start() async
+    func stop() async
+    func buttonPressed(x: Int, y: Int) async
+    func buttonReleased(x: Int, y: Int) async
+    func enterLearnMode() async
+    func exitLearnMode() async
+    func forceProgrammerMode() async
+    func flashAll() async
+    func rainbowPattern() async
+    func clearAll() async
+    func receiveOscEvent(_ event: OscEvent) async
+    func updateBPM(_ bpm: Float) async
+}
+
 /// Environment for effect execution, providing dependency injection.
 ///
 /// This follows TCA's environment pattern where side effects access
@@ -34,7 +49,16 @@ public final class EffectEnvironment {
     
     /// Load a shader by name (updates render engine + sends OSC)
     public var loadShader: (@Sendable (String) async -> Void)?
-    
+
+    /// Load a mask shader by name (updates render engine mask pipeline)
+    public var loadMaskShader: (@Sendable (String) async -> Void)?
+
+    /// Query available main shader names from the app layer
+    public var availableShaderNames: (@Sendable () async -> [String])?
+
+    /// Query available mask shader names from the app layer
+    public var availableMaskShaderNames: (@Sendable () async -> [String])?
+
     /// Set the current image index
     public var setImageIndex: (@Sendable (Int) async -> Void)?
     
@@ -73,11 +97,19 @@ public final class EffectEnvironment {
     /// Handle LedFX actions in the app layer
     public var ledfxActionHandler: (@Sendable (LedFXAction) async -> Void)?
 
+    // MARK: - Launchpad Effects
+
+    /// Launchpad side-effect handler (implemented in app layer, actor-isolated)
+    public var launchpadHandler: (any LaunchpadEffectHandling)?
+
     // MARK: - Reset (for testing)
 
     /// Reset all callbacks to nil (useful for testing)
     public func reset() {
         loadShader = nil
+        loadMaskShader = nil
+        availableShaderNames = nil
+        availableMaskShaderNames = nil
         setImageIndex = nil
         loadImagesFromFolder = nil
         processPipelineTrack = nil
@@ -87,5 +119,6 @@ public final class EffectEnvironment {
         sendOSC = nil
         songsModule = nil
         ledfxActionHandler = nil
+        launchpadHandler = nil
     }
 }

@@ -4,13 +4,45 @@
 import XCTest
 @testable import SwiftVJCore
 
+@MainActor
 final class RenderReducerTests: XCTestCase {
+    private actor ActionCollector {
+        private var actions: [AppAction] = []
+        func append(_ action: AppAction) { actions.append(action) }
+        func snapshot() -> [AppAction] { actions }
+    }
 
     // Helper to avoid overlapping access issues when calling reducers
     private func applyRenderReducer(_ action: RenderAction, to appState: inout AppState) {
         var renderState = appState.render
         _ = renderReducer(state: &renderState, action: action, appState: &appState)
         appState.render = renderState
+    }
+
+    private func collectActions(from effect: Effect<AppAction>) async -> [AppAction] {
+        switch effect.operation {
+        case .none:
+            return []
+        case .run(_, let operation, _):
+            let collector = ActionCollector()
+            let send = Send<AppAction> { action in
+                await collector.append(action)
+            }
+            await operation(send)
+            return await collector.snapshot()
+        case .merge(let effects):
+            var all: [AppAction] = []
+            for nested in effects {
+                all.append(contentsOf: await collectActions(from: nested))
+            }
+            return all
+        case .concatenate(let effects):
+            var all: [AppAction] = []
+            for nested in effects {
+                all.append(contentsOf: await collectActions(from: nested))
+            }
+            return all
+        }
     }
 
     // MARK: - Select Shader
@@ -42,6 +74,81 @@ final class RenderReducerTests: XCTestCase {
         applyRenderReducer(action, to: &appState)
 
         XCTAssertEqual(appState.render.selectedShader, "waves")
+    }
+
+    func testSelectMaskShaderUpdatesState() {
+        var appState = AppState()
+
+        let action = RenderAction.selectMaskShader("BWswirl")
+        applyRenderReducer(action, to: &appState)
+
+        XCTAssertEqual(appState.render.selectedMaskShader, "BWswirl")
+    }
+
+    func testMaskShaderSelectedUpdatesState() {
+        var appState = AppState()
+
+        let action = RenderAction.maskShaderSelected("BWgrid")
+        applyRenderReducer(action, to: &appState)
+
+        XCTAssertEqual(appState.render.selectedMaskShader, "BWgrid")
+    }
+
+    // MARK: - Shader Navigation Effects
+
+    func testSelectNextShaderDispatchesExpectedAction() async {
+        EffectEnvironment.shared.availableShaderNames = { ["a", "b", "c"] }
+        defer { EffectEnvironment.shared.reset() }
+
+        let emitted = await collectActions(from: RenderEffects.selectNextShader(current: "b"))
+        XCTAssertEqual(emitted.count, 1)
+
+        guard case let .render(.selectShader(name)) = emitted[0] else {
+            XCTFail("Expected render.selectShader action")
+            return
+        }
+        XCTAssertEqual(name, "c")
+    }
+
+    func testSelectPreviousMaskShaderDispatchesExpectedAction() async {
+        EffectEnvironment.shared.availableMaskShaderNames = { ["m0", "m1", "m2"] }
+        defer { EffectEnvironment.shared.reset() }
+
+        let emitted = await collectActions(from: RenderEffects.selectPreviousMaskShader(current: "m0"))
+        XCTAssertEqual(emitted.count, 1)
+
+        guard case let .render(.selectMaskShader(name)) = emitted[0] else {
+            XCTFail("Expected render.selectMaskShader action")
+            return
+        }
+        XCTAssertEqual(name, "m2")
+    }
+
+    func testRapidNavigationStressMaintainsValidSelections() async throws {
+        let shaderNames = (0..<8).map { "shader_\($0)" }
+        let maskNames = (0..<4).map { "mask_\($0)" }
+
+        EffectEnvironment.shared.availableShaderNames = { shaderNames }
+        EffectEnvironment.shared.availableMaskShaderNames = { maskNames }
+        EffectEnvironment.shared.loadShader = { _ in }
+        EffectEnvironment.shared.loadMaskShader = { _ in }
+        defer { EffectEnvironment.shared.reset() }
+
+        let store = Store(initialState: AppState(), reducer: appReducer)
+        store.send(.render(.selectShader(shaderNames[0])))
+        store.send(.render(.selectMaskShader(maskNames[0])))
+
+        for i in 0..<400 {
+            store.send(.render(i.isMultiple(of: 2) ? .selectNextShader : .selectPreviousShader))
+            store.send(.render(i.isMultiple(of: 3) ? .selectNextMaskShader : .selectPreviousMaskShader))
+        }
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        let selectedMain = store.state.render.selectedShader ?? ""
+        let selectedMask = store.state.render.selectedMaskShader ?? ""
+        XCTAssertTrue(shaderNames.contains(selectedMain), "Selected main shader must stay within available set")
+        XCTAssertTrue(maskNames.contains(selectedMask), "Selected mask shader must stay within available set")
     }
 
     // MARK: - Select Phase

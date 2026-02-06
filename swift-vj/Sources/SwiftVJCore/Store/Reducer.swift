@@ -91,7 +91,14 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
     case .persistedStateLoaded(let persisted):
         persisted.apply(to: &state)
         state.ui.addLog("Loaded persisted state", level: .debug)
-        return .none
+        var followUp: [Effect<AppAction>] = []
+        if let shader = persisted.selectedShader, !shader.isEmpty {
+            followUp.append(.send(.render(.selectShader(shader))))
+        }
+        if let mask = persisted.selectedMaskShader, !mask.isEmpty {
+            followUp.append(.send(.render(.selectMaskShader(mask))))
+        }
+        return followUp.isEmpty ? .none : .merge(followUp)
 
     case .persistState:
         let persisted = PersistedState(from: state)
@@ -272,9 +279,39 @@ public func renderReducer(
             .send(.persistState)
         )
 
+    case .selectMaskShader(let name):
+        state.selectedMaskShader = name
+        appState.ui.addLog("Selected mask: \(name)", level: .info)
+        return .merge(
+            RenderEffects.loadMaskShader(name),
+            .send(.persistState)
+        )
+
     case .shaderSelected(let name):
         state.selectedShader = name
         return .none
+
+    case .maskShaderSelected(let name):
+        state.selectedMaskShader = name
+        return .none
+
+    case .selectNextShader:
+        return RenderEffects.selectNextShader(current: state.selectedShader)
+
+    case .selectPreviousShader:
+        return RenderEffects.selectPreviousShader(current: state.selectedShader)
+
+    case .selectRandomShader:
+        return RenderEffects.selectRandomShader()
+
+    case .selectNextMaskShader:
+        return RenderEffects.selectNextMaskShader(current: state.selectedMaskShader)
+
+    case .selectPreviousMaskShader:
+        return RenderEffects.selectPreviousMaskShader(current: state.selectedMaskShader)
+
+    case .selectRandomMaskShader:
+        return RenderEffects.selectRandomMaskShader()
 
     case .selectPhase(let phase):
         state.currentPhase = phase
@@ -349,9 +386,10 @@ public func launchpadReducer(
     case .buttonReleased(let x, let y):
         return LaunchpadEffects.handleButtonRelease(x: x, y: y)
 
-    case .stateUpdated(let snapshot):
-        state.controllerState = snapshot
-        state.currentBank = snapshot.activeBank
+    case .stateUpdated(let controllerState):
+        state.controllerState = controllerState
+        state.currentBank = controllerState.activeBank
+        state.controllerRevision &+= 1
         return .none
 
     case .statusUpdated(let status):
@@ -375,6 +413,24 @@ public func launchpadReducer(
 
     case .exitLearnMode:
         return LaunchpadEffects.exitLearnMode()
+
+    case .forceProgrammerMode:
+        return LaunchpadEffects.forceProgrammerMode()
+
+    case .flashAll:
+        return LaunchpadEffects.flashAll()
+
+    case .rainbowPattern:
+        return LaunchpadEffects.rainbowPattern()
+
+    case .clearAll:
+        return LaunchpadEffects.clearAll()
+
+    case .oscEventReceived(let event):
+        return LaunchpadEffects.receiveOscEvent(event)
+
+    case .bpmUpdated(let bpm):
+        return LaunchpadEffects.updateBPM(bpm)
     }
 }
 
@@ -766,6 +822,45 @@ public enum RenderEffects {
             await EffectEnvironment.shared.loadShader?(name)
         }
     }
+
+    public static func loadMaskShader(_ name: String) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.loadMaskShader?(name)
+        }
+    }
+
+    public static func selectNextShader(current: String?) -> Effect<AppAction> {
+        selectAdjacentName(current: current, fromMasks: false, step: 1)
+    }
+
+    public static func selectPreviousShader(current: String?) -> Effect<AppAction> {
+        selectAdjacentName(current: current, fromMasks: false, step: -1)
+    }
+
+    public static func selectRandomShader() -> Effect<AppAction> {
+        .run { send in
+            let names = await EffectEnvironment.shared.availableShaderNames?() ?? []
+            guard let choice = names.randomElement() else { return }
+            await send(.render(.selectShader(choice)))
+        }
+    }
+
+    public static func selectNextMaskShader(current: String?) -> Effect<AppAction> {
+        selectAdjacentName(current: current, fromMasks: true, step: 1)
+    }
+
+    public static func selectPreviousMaskShader(current: String?) -> Effect<AppAction> {
+        selectAdjacentName(current: current, fromMasks: true, step: -1)
+    }
+
+    public static func selectRandomMaskShader() -> Effect<AppAction> {
+        .run { send in
+            let names = await EffectEnvironment.shared.availableMaskShaderNames?() ?? []
+            guard let choice = names.randomElement() else { return }
+            await send(.render(.selectMaskShader(choice)))
+        }
+    }
+
     public static func setImageIndex(_ index: Int) -> Effect<AppAction> {
         .run { _ in
             await EffectEnvironment.shared.setImageIndex?(index)
@@ -778,15 +873,120 @@ public enum RenderEffects {
     }
     public static func startEngine() -> Effect<AppAction> { .none }
     public static func stopEngine() -> Effect<AppAction> { .none }
+
+    private static func selectAdjacentName(
+        current: String?,
+        fromMasks: Bool,
+        step: Int
+    ) -> Effect<AppAction> {
+        .run { send in
+            let names = fromMasks
+                ? (await EffectEnvironment.shared.availableMaskShaderNames?() ?? [])
+                : (await EffectEnvironment.shared.availableShaderNames?() ?? [])
+
+            guard !names.isEmpty else { return }
+
+            let nextName: String
+            if let current, let index = names.firstIndex(of: current) {
+                let offset = (index + step + names.count) % names.count
+                nextName = names[offset]
+            } else {
+                nextName = names[0]
+            }
+
+            if fromMasks {
+                await send(.render(.selectMaskShader(nextName)))
+            } else {
+                await send(.render(.selectShader(nextName)))
+            }
+        }
+    }
 }
 
 public enum LaunchpadEffects {
-    public static func start() -> Effect<LaunchpadAction> { .none }
-    public static func stop() -> Effect<LaunchpadAction> { .none }
-    public static func handleButtonPress(x: Int, y: Int) -> Effect<LaunchpadAction> { .none }
-    public static func handleButtonRelease(x: Int, y: Int) -> Effect<LaunchpadAction> { .none }
-    public static func enterLearnMode() -> Effect<LaunchpadAction> { .none }
-    public static func exitLearnMode() -> Effect<LaunchpadAction> { .none }
+    public static func start() -> Effect<LaunchpadAction> {
+        .run(cancellationId: EffectCancellationId.launchpad) { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.start()
+        }
+    }
+
+    public static func stop() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.stop()
+        }
+    }
+
+    public static func handleButtonPress(x: Int, y: Int) -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.buttonPressed(x: x, y: y)
+        }
+    }
+
+    public static func handleButtonRelease(x: Int, y: Int) -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.buttonReleased(x: x, y: y)
+        }
+    }
+
+    public static func enterLearnMode() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.enterLearnMode()
+        }
+    }
+
+    public static func exitLearnMode() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.exitLearnMode()
+        }
+    }
+
+    public static func forceProgrammerMode() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.forceProgrammerMode()
+        }
+    }
+
+    public static func flashAll() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.flashAll()
+        }
+    }
+
+    public static func rainbowPattern() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.rainbowPattern()
+        }
+    }
+
+    public static func clearAll() -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.clearAll()
+        }
+    }
+
+    public static func receiveOscEvent(_ event: OscEvent) -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.receiveOscEvent(event)
+        }
+    }
+
+    public static func updateBPM(_ bpm: Float) -> Effect<LaunchpadAction> {
+        .run { _ in
+            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
+            await handler.updateBPM(bpm)
+        }
+    }
 }
 
 public enum AudioEffects {
@@ -799,11 +999,13 @@ public enum PersistenceEffects {
         .run { send in
             // Load from UserDefaults
             let shader = UserDefaults.standard.string(forKey: "selectedShader")
+            let maskShader = UserDefaults.standard.string(forKey: "selectedMaskShader")
             let phase = UserDefaults.standard.string(forKey: "currentPhase")
             let source = UserDefaults.standard.string(forKey: "playbackSource") ?? "vdj"
 
             let persisted = PersistedState(
                 selectedShader: shader,
+                selectedMaskShader: maskShader,
                 currentPhase: phase,
                 playbackSource: source
             )
@@ -816,6 +1018,13 @@ public enum PersistenceEffects {
         .fireAndForget {
             if let shader = state.selectedShader {
                 UserDefaults.standard.set(shader, forKey: "selectedShader")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedShader")
+            }
+            if let maskShader = state.selectedMaskShader {
+                UserDefaults.standard.set(maskShader, forKey: "selectedMaskShader")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedMaskShader")
             }
             if let phase = state.currentPhase {
                 UserDefaults.standard.set(phase, forKey: "currentPhase")

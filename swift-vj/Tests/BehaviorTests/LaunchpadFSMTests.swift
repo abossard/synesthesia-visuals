@@ -122,7 +122,7 @@ final class LaunchpadFSMTests: XCTestCase {
     }
 
     func testLearnModeCaptureAndSave() {
-        var state = ControllerState()
+        let state = ControllerState()
 
         let enterResult = handlePadPress(state, padId: LaunchpadButton.learn)
         XCTAssertEqual(enterResult.state.learnState.phase, .waitPad)
@@ -142,6 +142,22 @@ final class LaunchpadFSMTests: XCTestCase {
         assertEffectsContain(saveResult.effects, [
             .saveConfig,
             .logContains("Saved pad")
+        ])
+    }
+
+    func testShiftPressAndRelease() {
+        let state = ControllerState()
+
+        let pressResult = handlePadPress(state, padId: LaunchpadButton.shift)
+        XCTAssertTrue(pressResult.state.isShiftHeld)
+        assertEffectsContain(pressResult.effects, [
+            .setLed(padId: LaunchpadButton.shift, color: LP.white, blink: false)
+        ])
+
+        let releaseResult = handlePadRelease(pressResult.state, padId: LaunchpadButton.shift)
+        XCTAssertFalse(releaseResult.state.isShiftHeld)
+        assertEffectsContain(releaseResult.effects, [
+            .setLed(padId: LaunchpadButton.shift, color: LP.purpleDim, blink: false)
         ])
     }
 
@@ -169,5 +185,82 @@ final class LaunchpadFSMTests: XCTestCase {
             .sendOsc(address: "/controls/meta/brightness", args: [.float(0.5)]),
             .setLed(padId: padId, color: LP.yellow, blink: false)
         ])
+    }
+
+    func testStressRapidBankSwitchKeepsFinalBankAndBankPads() {
+        var state = ControllerState()
+        var padByBank: [Int: ButtonId] = [:]
+
+        for bank in 0..<8 {
+            let padId = ButtonId(x: bank % 4, y: bank % 8)
+            padByBank[bank] = padId
+            let behavior = PadBehavior(
+                padId: padId,
+                mode: .selector,
+                group: .custom,
+                idleColor: LP.greenDim,
+                activeColor: LP.green,
+                label: "B\(bank)",
+                oscAction: OscCommand(address: "/scenes/b\(bank)", args: [])
+            )
+            state.bankPads[bank] = [padId: behavior]
+            state.bankPadRuntime[bank] = [padId: PadRuntimeState(currentColor: behavior.idleColor)]
+        }
+
+        let iterations = 2_000
+        for idx in 0..<iterations {
+            let bank = idx % 8
+            state = handlePadPress(state, padId: LaunchpadButton.bank(bank)).state
+            if let padId = padByBank[bank] {
+                state = handlePadPress(state, padId: padId).state
+            }
+        }
+
+        let expectedFinalBank = (iterations - 1) % 8
+        XCTAssertEqual(state.activeBank, expectedFinalBank)
+        XCTAssertEqual(state.currentPage, state.bankCurrentPage[expectedFinalBank] ?? 0)
+
+        for bank in 0..<8 {
+            let padId = padByBank[bank]
+            XCTAssertNotNil(padId)
+            XCTAssertNotNil(padId.flatMap { state.bankPads[bank]?[$0] })
+            XCTAssertEqual(state.bankPads[bank]?.count, 1, "Bank \(bank) should keep exactly one configured pad")
+        }
+    }
+
+    func testStressBankScopedSelectorsStayIsolatedAcrossRapidSwitching() {
+        var state = ControllerState()
+        var padByBank: [Int: ButtonId] = [:]
+
+        for bank in 0..<8 {
+            let padId = ButtonId(x: (bank + 1) % 8, y: bank % 8)
+            padByBank[bank] = padId
+            let behavior = PadBehavior(
+                padId: padId,
+                mode: .selector,
+                group: .custom,
+                idleColor: LP.blueDim,
+                activeColor: LP.blue,
+                label: "S\(bank)",
+                oscAction: OscCommand(address: "/presets/p\(bank)", args: [])
+            )
+            state.bankPads[bank] = [padId: behavior]
+            state.bankPadRuntime[bank] = [padId: PadRuntimeState(currentColor: behavior.idleColor)]
+        }
+
+        let cycles = 1_000
+        for idx in 0..<cycles {
+            let bank = idx % 8
+            state = handlePadPress(state, padId: LaunchpadButton.bank(bank)).state
+            if let padId = padByBank[bank] {
+                state = handlePadPress(state, padId: padId).state
+            }
+        }
+
+        for bank in 0..<8 {
+            let expectedPad = padByBank[bank]
+            let selected = state.bankActiveSelectorByGroup[bank]?[.custom] ?? nil
+            XCTAssertEqual(selected, expectedPad, "Bank \(bank) selector should remain bank-scoped")
+        }
     }
 }

@@ -127,6 +127,7 @@ public final class EffectExecutor {
     }
     
     private func executeLed(padId: ButtonId, color: Int, blink: Bool) {
+        guard midi.isConnected else { return }
         // Use native Launchpad pulsing for blink mode
         if blink {
             midi.setLed(padId: padId, color: color, mode: .pulse)

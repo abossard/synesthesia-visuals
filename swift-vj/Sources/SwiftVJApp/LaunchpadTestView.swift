@@ -124,7 +124,7 @@ struct LaunchpadTestView: View {
                 } else if !viewModel.isRunning {
                     Button(action: { 
                         // Stop existing module to avoid MIDI conflicts
-                        appState.launchpadModule?.stop()
+                        appState.send(.launchpad(.stop))
                         viewModel.runTest() 
                     }) {
                         Label("Start Test Sequence", systemImage: "play.fill")
@@ -149,7 +149,7 @@ struct LaunchpadTestView: View {
         .frame(minWidth: 600, minHeight: 700)
         .onDisappear {
             // Restart module when closing test view
-            _ = appState.launchpadModule?.start()
+            appState.send(.launchpad(.start))
         }
     }
 }

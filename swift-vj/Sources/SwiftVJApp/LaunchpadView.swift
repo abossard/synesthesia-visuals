@@ -46,15 +46,11 @@ struct LaunchpadView: View {
                 Spacer()
                 
                 // Learn Mode Toggle
-                if let status = appState.launchpadStatus, status.isConnected {
+                if let status = appState.launchpadStatus {
                     Button(action: {
-                        if status.isLearnMode {
-                            appState.launchpadModule?.stopLearnMode()
-                        } else {
-                            appState.launchpadModule?.startLearnMode()
-                        }
+                        appState.send(.launchpad(status.isLearnMode ? .exitLearnMode : .enterLearnMode))
                     }) {
-                        Label(status.isLearnMode ? "Stop Learn Mode" : "Start Learn Mode", 
+                        Label(status.isLearnMode ? "Stop Learn Mode" : "Start Learn Mode",
                               systemImage: status.isLearnMode ? "recordingtape" : "graduationcap")
                     }
                     .buttonStyle(.borderedProminent)
@@ -103,7 +99,7 @@ struct LaunchpadView: View {
                     
                     if let state = appState.launchpadState {
                         // Get YAML config for bank names/colors
-                        let yamlConfig = appState.launchpadModule?.yamlConfig
+                        let yamlConfig = appState.launchpadConfig
                         
                         Group {
                             // Bank indicator with names from YAML
@@ -234,39 +230,19 @@ struct LaunchpadView: View {
                         }
                         
                         Button("Force Programmer Mode") {
-                            appState.launchpadModule?.forceProgrammerMode()
+                            appState.send(.launchpad(.forceProgrammerMode))
                         }
                         
                         Button("Flash All LEDs") {
-                            // Simple diagnostic pattern
-                            let allPads = (0...8).flatMap { x in (0...8).map { y in ButtonId(x: x, y: y) } }
-                            let updates = allPads.map { ($0, LP.red) }
-                            appState.launchpadModule?.setLeds(updates)
-                            
-                            // Clear after delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                let clears = allPads.map { ($0, LP.off) }
-                                appState.launchpadModule?.setLeds(clears)
-                            }
+                            appState.send(.launchpad(.flashAll))
                         }
                         
                         Button("Rainbow Pattern") {
-                            // Simple rainbow
-                            let colors = [LP.red, LP.orange, LP.yellow, LP.green, LP.cyan, LP.blue, LP.purple, LP.pink]
-                            var updates: [(ButtonId, Int)] = []
-                            for y in 0..<8 {
-                                for x in 0..<8 {
-                                    let colorIndex = (x + y) % colors.count
-                                    updates.append((ButtonId(x: x, y: y), colors[colorIndex]))
-                                }
-                            }
-                            appState.launchpadModule?.setLeds(updates)
+                            appState.send(.launchpad(.rainbowPattern))
                         }
                         
                         Button("Clear All") {
-                            let allPads = (0...8).flatMap { x in (0...8).map { y in ButtonId(x: x, y: y) } }
-                            let clears = allPads.map { ($0, LP.off) }
-                            appState.launchpadModule?.setLeds(clears)
+                            appState.send(.launchpad(.clearAll))
                         }
                     }
                     
@@ -278,18 +254,11 @@ struct LaunchpadView: View {
                             .foregroundColor(.orange)
                         
                         Button("Force Programmer Mode") {
-                            appState.launchpadModule?.forceProgrammerMode()
+                            appState.send(.launchpad(.forceProgrammerMode))
                         }
                         
                         Button("Flash All LEDs") {
-                            let allPads = (0...8).flatMap { x in (0...8).map { y in ButtonId(x: x, y: y) } }
-                            let updates = allPads.map { ($0, LP.red) }
-                            appState.launchpadModule?.setLeds(updates)
-                            
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                let clears = allPads.map { ($0, LP.off) }
-                                appState.launchpadModule?.setLeds(clears)
-                            }
+                            appState.send(.launchpad(.flashAll))
                         }
                     } else if appState.launchpadState == nil {
                         Text("No state available")
@@ -311,28 +280,36 @@ struct LaunchpadView: View {
 struct PadView: View {
     let id: ButtonId
     @EnvironmentObject var appState: AppState
+    @State private var isPressed = false
     
     var body: some View {
         let runtime = appState.launchpadState?.padRuntime[id]
         let behavior = appState.launchpadState?.pads[id]
+        let blinkOn = appState.launchpadState?.blinkOn ?? false
+        let isConnected = appState.launchpadStatus?.isConnected ?? false
         
-        // Determine color
-        let colorInt = runtime?.currentColor ?? LP.off
+        // Determine color (beat-sync selectors when hardware is connected)
+        let isSelectorActive = behavior?.mode == .selector && (runtime?.isActive ?? false)
+        let usesBeatBlink = isSelectorActive && isConnected
+        let colorInt = usesBeatBlink
+            ? (blinkOn ? (behavior?.activeColor ?? runtime?.currentColor ?? LP.off)
+                       : (behavior?.idleColor ?? runtime?.currentColor ?? LP.off))
+            : (runtime?.currentColor ?? LP.off)
         let color = launchpadColorToSwiftUI(colorInt)
         
         // Determine shape
         let isRound = id.isTopRow || id.isSceneButton
+        let shouldPulse = (runtime?.blinkEnabled ?? false) && !usesBeatBlink
         
         ZStack {
-            // Base shape
-            if isRound {
-                Circle()
-                    .fill(color)
-                    .frame(width: 30, height: 30)
+            // Base shape (with optional pulse)
+            if shouldPulse {
+                TimelineView(.animation) { context in
+                    let opacity = pulseOpacity(at: context.date)
+                    padShape(isRound: isRound, color: color, opacity: opacity)
+                }
             } else {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(color)
-                    .frame(width: 30, height: 30)
+                padShape(isRound: isRound, color: color, opacity: 1.0)
             }
             
             // Overlay for selection/activity
@@ -351,12 +328,41 @@ struct PadView: View {
                     .foregroundColor(.black)
             }
         }
-        .onTapGesture {
-            // Simulate press for testing/manual control
-            // In a real app, this might trigger the actual logic via LaunchpadModule
-            // For now, just print
-            print("Pad tapped: \(id)")
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !isPressed {
+                        isPressed = true
+                        appState.send(.launchpad(.buttonPressed(x: id.x, y: id.y)))
+                    }
+                }
+                .onEnded { _ in
+                    if isPressed {
+                        isPressed = false
+                        appState.send(.launchpad(.buttonReleased(x: id.x, y: id.y)))
+                    }
+                }
+        )
+    }
+
+    @ViewBuilder
+    private func padShape(isRound: Bool, color: Color, opacity: Double) -> some View {
+        if isRound {
+            Circle()
+                .fill(color.opacity(opacity))
+                .frame(width: 30, height: 30)
+        } else {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(color.opacity(opacity))
+                .frame(width: 30, height: 30)
         }
+    }
+
+    private func pulseOpacity(at date: Date) -> Double {
+        let phase = date.timeIntervalSinceReferenceDate
+        let pulse = (sin(phase * 2 * Double.pi * 1.2) + 1.0) / 2.0  // 0...1
+        return 0.25 + (0.75 * pulse)
     }
     
     // Helper to convert Launchpad color index to SwiftUI Color

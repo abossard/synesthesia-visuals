@@ -12,6 +12,106 @@ import OscRestBridge
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
 
+private func makeLaunchpadOscSender(oscHub: OSCHub) -> (OscCommand) -> Void {
+    { command in
+        // OSCHub is started from the main actor; route sends through main to keep queue ownership consistent.
+        DispatchQueue.main.async {
+            let values: [any OSCValue] = command.args.map { arg -> any OSCValue in
+                switch arg {
+                case .int(let v): return Int32(v)
+                case .float(let v): return Float32(v)
+                case .string(let v): return v
+                case .bool(let v): return v ? Int32(1) : Int32(0)
+                }
+            }
+            try? oscHub.sendToSynesthesia(command.address, values: values)
+        }
+    }
+}
+
+private func makeLaunchpadDispatchSink(
+    sendOnMain: @escaping @MainActor (AppAction) -> Void
+) -> (AppAction) -> Void {
+    { action in
+        Task { @MainActor in
+            sendOnMain(action)
+        }
+    }
+}
+
+private actor LaunchpadGateway: LaunchpadEffectHandling {
+    private let module: LaunchpadModule
+
+    init(module: LaunchpadModule) {
+        self.module = module
+    }
+
+    func start() async {
+        _ = module.start()
+    }
+
+    func stop() async {
+        module.stop()
+    }
+
+    func buttonPressed(x: Int, y: Int) async {
+        module.handleVirtualPadPress(ButtonId(x: x, y: y))
+    }
+
+    func buttonReleased(x: Int, y: Int) async {
+        module.handleVirtualPadRelease(ButtonId(x: x, y: y))
+    }
+
+    func enterLearnMode() async {
+        module.startLearnMode()
+    }
+
+    func exitLearnMode() async {
+        module.stopLearnMode()
+    }
+
+    func forceProgrammerMode() async {
+        module.forceProgrammerMode()
+    }
+
+    func flashAll() async {
+        let allPads = allPadIds()
+        module.setLeds(allPads.map { ($0, LP.red) })
+        try? await Task.sleep(for: .milliseconds(500))
+        module.setLeds(allPads.map { ($0, LP.off) })
+    }
+
+    func rainbowPattern() async {
+        let colors = [LP.red, LP.orange, LP.yellow, LP.green, LP.cyan, LP.blue, LP.purple, LP.pink]
+        var updates: [(ButtonId, Int)] = []
+        for y in 0..<8 {
+            for x in 0..<8 {
+                updates.append((ButtonId(x: x, y: y), colors[(x + y) % colors.count]))
+            }
+        }
+        module.setLeds(updates)
+    }
+
+    func clearAll() async {
+        let allPads = allPadIds()
+        module.setLeds(allPads.map { ($0, LP.off) })
+    }
+
+    func receiveOscEvent(_ event: OscEvent) async {
+        module.receiveOscEvent(event)
+    }
+
+    func updateBPM(_ bpm: Float) async {
+        module.updateBpm(bpm)
+    }
+
+    private func allPadIds() -> [ButtonId] {
+        (0...8).flatMap { x in
+            (0...8).map { y in ButtonId(x: x, y: y) }
+        }
+    }
+}
+
 @main
 struct SwiftVJApp: App {
     @StateObject private var appState = AppState()
@@ -118,7 +218,8 @@ public final class AppState: ObservableObject {
     public var shadersModule: ShadersModule?
     public var imagesModule: ImagesModule?
     public var pipelineModule: PipelineModule?
-    public var launchpadModule: LaunchpadModule?
+    private var launchpadModule: LaunchpadModule?
+    private var launchpadGateway: LaunchpadGateway?
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
     private let ledfxFeature: LedFXFeature
@@ -142,12 +243,14 @@ public final class AppState: ObservableObject {
     @Published public private(set) var timingOffsetMs: Int = 0
     @Published public private(set) var launchpadStatus: LaunchpadStatus?
     @Published public private(set) var launchpadState: ControllerState?
+    @Published public private(set) var launchpadConfig: LaunchpadYAMLConfig?
     @Published public private(set) var pipelineSteps: [PipelineStep] = []
     @Published public private(set) var pipelineResult: PipelineResult?
     @Published public private(set) var imageIndex: Int = 0
     @Published public private(set) var imageCount: Int = 0
     @Published public private(set) var shaderCount: Int = 0
     @Published public private(set) var selectedShader: String?
+    @Published public private(set) var selectedMaskShader: String?
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
@@ -204,7 +307,7 @@ public final class AppState: ObservableObject {
     @Published public private(set) var analysisCancelled: Bool = false
 
     private var vdjQueryTask: Task<Void, Never>?
-    private var lastLaunchpadSnapshot: ControllerStateSnapshot?
+    private var lastLaunchpadRevision: UInt64 = 0
 
     // MARK: - Store Logger (Debug)
 
@@ -275,7 +378,6 @@ public final class AppState: ObservableObject {
 
         // Start modules
         try await playbackModule?.start()
-        launchpadModule?.start()
 
         let source: PlaybackSourceType = playbackSource == "vdj" ? .vdj : .spotify
         await playbackModule?.setSource(source)
@@ -329,7 +431,6 @@ public final class AppState: ObservableObject {
         await playbackModule?.stop()
         await pipelineModule?.stop()
         await songsModule?.stop()
-        launchpadModule?.stop()
         store.send(.shutdown)
     }
 
@@ -351,6 +452,34 @@ public final class AppState: ObservableObject {
     public func selectShader(_ name: String) {
         // Dispatch action through store - effects handle render engine + OSC via EffectEnvironment
         store.send(.render(.selectShader(name)))
+    }
+
+    public func selectMaskShader(_ name: String) {
+        store.send(.render(.selectMaskShader(name)))
+    }
+
+    public func selectNextShader() {
+        store.send(.render(.selectNextShader))
+    }
+
+    public func selectPreviousShader() {
+        store.send(.render(.selectPreviousShader))
+    }
+
+    public func selectRandomShader() {
+        store.send(.render(.selectRandomShader))
+    }
+
+    public func selectNextMaskShader() {
+        store.send(.render(.selectNextMaskShader))
+    }
+
+    public func selectPreviousMaskShader() {
+        store.send(.render(.selectPreviousMaskShader))
+    }
+
+    public func selectRandomMaskShader() {
+        store.send(.render(.selectRandomMaskShader))
     }
 
     /// Set the current phase via unidirectional data flow.
@@ -677,28 +806,20 @@ public final class AppState: ObservableObject {
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
 
-        launchpadModule = LaunchpadModule(oscSender: { [weak self] command in
-            guard let self = self else { return }
-            let values: [any OSCValue] = command.args.map { arg -> any OSCValue in
-                switch arg {
-                case .int(let v): return Int32(v)
-                case .float(let v): return Float32(v)
-                case .string(let v): return v
-                case .bool(let v): return v ? Int32(1) : Int32(0)
-                }
-            }
-            try? self.oscHub.sendToSynesthesia(command.address, values: values)
-        })
+        let launchpadOscSender = makeLaunchpadOscSender(oscHub: oscHub)
+        launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
+        launchpadConfig = launchpadModule?.yamlConfig
+        if let launchpadModule {
+            launchpadGateway = LaunchpadGateway(module: launchpadModule)
+        }
 
-        // Wire up dispatch closures - modules send actions to Store
-        launchpadModule?.dispatch = { [weak self] action in
+        // Module dispatch sink - always hop to main actor before touching Store
+        launchpadModule?.dispatch = makeLaunchpadDispatchSink { [weak self] action in
             self?.store.send(action)
         }
 
-        let lpModule = launchpadModule
         for pattern in ["/scenes/*", "/presets/*", "/favslots/*", "/playlist/*", "/controls/meta/*", "/controls/global/*"] {
-            oscHub.subscribe(pattern: pattern) { address, values in
-                guard let module = lpModule else { return }
+            oscHub.subscribe(pattern: pattern) { [weak self] address, values in
                 let args: [OscArg] = values.compactMap { value in
                     if let v = value as? Int32 { return .int(Int(v)) }
                     if let v = value as? Float32 { return .float(Float(v)) }
@@ -706,7 +827,10 @@ public final class AppState: ObservableObject {
                     if let v = value as? Bool { return .bool(v) }
                     return nil
                 }
-                module.receiveOscEvent(OscEvent(address: address, args: args))
+                let event = OscEvent(address: address, args: args)
+                Task { @MainActor in
+                    self?.store.send(.launchpad(.oscEventReceived(event)))
+                }
             }
         }
 
@@ -756,7 +880,18 @@ public final class AppState: ObservableObject {
                     self?.log(message, level: level)
                 }
             }
-            do { try await engine.start() } catch { print("[RenderEngine] Failed: \(error)") }
+            do {
+                try await engine.start()
+                await MainActor.run {
+                    let renderState = self.store.state.render
+                    let initialMain = renderState.selectedShader.flatMap { $0.isEmpty ? nil : $0 } ?? "3isacrowd"
+                    let initialMask = renderState.selectedMaskShader.flatMap { $0.isEmpty ? nil : $0 } ?? "BWrevolvingswirl"
+                    self.store.send(.render(.selectShader(initialMain)))
+                    self.store.send(.render(.selectMaskShader(initialMask)))
+                }
+            } catch {
+                print("[RenderEngine] Failed: \(error)")
+            }
         }
     }
 
@@ -771,6 +906,25 @@ public final class AppState: ObservableObject {
                 } catch {
                     self.log("Failed to send shader to Magic: \(error)", level: .error)
                 }
+            }
+        }
+
+        EffectEnvironment.shared.loadMaskShader = { [weak self] name in
+            guard let self = self else { return }
+            await MainActor.run {
+                self.renderEngine?.shaderSelection.selectMask(name: name)
+            }
+        }
+
+        EffectEnvironment.shared.availableShaderNames = { [weak self] in
+            await MainActor.run {
+                self?.renderEngine?.shaderRepository.regularShaders.map(\.name) ?? []
+            }
+        }
+
+        EffectEnvironment.shared.availableMaskShaderNames = { [weak self] in
+            await MainActor.run {
+                self?.renderEngine?.shaderRepository.masks.map(\.name) ?? []
             }
         }
 
@@ -811,6 +965,8 @@ public final class AppState: ObservableObject {
             guard let self else { return }
             await self.ledfxFeature.handle(action)
         }
+
+        EffectEnvironment.shared.launchpadHandler = launchpadGateway
     }
 
     private func startOSCHub() {
@@ -853,7 +1009,7 @@ public final class AppState: ObservableObject {
             Task { @MainActor in
                 guard let self = self else { return }
                 let (bpm, _, _) = await self.synesthesiaAudio.getBPM()
-                if bpm > 0 { self.launchpadModule?.updateBpm(bpm) }
+                if bpm > 0 { self.store.send(.launchpad(.bpmUpdated(bpm))) }
             }
         }
     }
@@ -894,6 +1050,7 @@ public final class AppState: ObservableObject {
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
                 if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
+                if self.selectedMaskShader != newState.render.selectedMaskShader { self.selectedMaskShader = newState.render.selectedMaskShader }
                 if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
                 if self.detectedSongPhase != newState.render.detectedSongPhase { self.detectedSongPhase = newState.render.detectedSongPhase }
                 if self.imageIndex != newState.render.imageIndex { self.imageIndex = newState.render.imageIndex }
@@ -929,11 +1086,13 @@ public final class AppState: ObservableObject {
                     }
                 }
                 if newState.launchpad.controllerState == nil {
-                    self.lastLaunchpadSnapshot = nil
+                    self.lastLaunchpadRevision = 0
                     self.launchpadState = nil
-                } else if self.lastLaunchpadSnapshot != newState.launchpad.controllerState {
-                    self.lastLaunchpadSnapshot = newState.launchpad.controllerState
-                    self.launchpadState = self.launchpadModule?.getFullState()
+                } else {
+                    if self.lastLaunchpadRevision != newState.launchpad.controllerRevision {
+                        self.lastLaunchpadRevision = newState.launchpad.controllerRevision
+                        self.launchpadState = newState.launchpad.controllerState
+                    }
                 }
 
                 // LedFX state

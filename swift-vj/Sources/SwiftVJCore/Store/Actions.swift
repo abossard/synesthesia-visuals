@@ -98,8 +98,32 @@ public enum RenderAction: Sendable {
     /// Select a shader
     case selectShader(String)
 
+    /// Select a mask shader
+    case selectMaskShader(String)
+
     /// Shader selected successfully
     case shaderSelected(String)
+
+    /// Mask shader selected successfully
+    case maskShaderSelected(String)
+
+    /// Navigate to next shader
+    case selectNextShader
+
+    /// Navigate to previous shader
+    case selectPreviousShader
+
+    /// Select random shader
+    case selectRandomShader
+
+    /// Navigate to next mask shader
+    case selectNextMaskShader
+
+    /// Navigate to previous mask shader
+    case selectPreviousMaskShader
+
+    /// Select random mask shader
+    case selectRandomMaskShader
 
     /// Select a phase
     case selectPhase(Phase?)
@@ -146,7 +170,7 @@ public enum LaunchpadAction: Sendable {
     case buttonReleased(x: Int, y: Int)
 
     /// Controller state updated
-    case stateUpdated(ControllerStateSnapshot)
+    case stateUpdated(ControllerState)
 
     /// Status updated
     case statusUpdated(LaunchpadStatusSnapshot)
@@ -165,6 +189,24 @@ public enum LaunchpadAction: Sendable {
 
     /// Exit learn mode
     case exitLearnMode
+
+    /// Force Launchpad programmer mode
+    case forceProgrammerMode
+
+    /// Diagnostic: flash all pads red briefly
+    case flashAll
+
+    /// Diagnostic: render rainbow pattern on 8x8 grid
+    case rainbowPattern
+
+    /// Diagnostic: clear all pads
+    case clearAll
+
+    /// Forward OSC event into Launchpad domain
+    case oscEventReceived(OscEvent)
+
+    /// Update BPM for beat-sync behavior
+    case bpmUpdated(Float)
 }
 
 // MARK: - Audio Actions
@@ -505,7 +547,15 @@ extension RenderAction: CustomStringConvertible {
     public var description: String {
         switch self {
         case .selectShader(let name): return "selectShader(\(name))"
+        case .selectMaskShader(let name): return "selectMaskShader(\(name))"
         case .shaderSelected(let name): return "shaderSelected(\(name))"
+        case .maskShaderSelected(let name): return "maskShaderSelected(\(name))"
+        case .selectNextShader: return "selectNextShader"
+        case .selectPreviousShader: return "selectPreviousShader"
+        case .selectRandomShader: return "selectRandomShader"
+        case .selectNextMaskShader: return "selectNextMaskShader"
+        case .selectPreviousMaskShader: return "selectPreviousMaskShader"
+        case .selectRandomMaskShader: return "selectRandomMaskShader"
         case .selectPhase(let phase): return "selectPhase(\(phase?.rawValue ?? "auto"))"
         case .phaseDetected(let phase): return "phaseDetected(\(phase?.rawValue ?? "none"))"
         case .setImageIndex(let index): return "setImageIndex(\(index))"
@@ -533,6 +583,12 @@ extension LaunchpadAction: CustomStringConvertible {
         case .stop: return "stop"
         case .enterLearnMode: return "enterLearnMode"
         case .exitLearnMode: return "exitLearnMode"
+        case .forceProgrammerMode: return "forceProgrammerMode"
+        case .flashAll: return "flashAll"
+        case .rainbowPattern: return "rainbowPattern"
+        case .clearAll: return "clearAll"
+        case .oscEventReceived(let event): return "oscEventReceived(\(event.address))"
+        case .bpmUpdated(let bpm): return "bpmUpdated(\(String(format: "%.1f", bpm)))"
         }
     }
 }

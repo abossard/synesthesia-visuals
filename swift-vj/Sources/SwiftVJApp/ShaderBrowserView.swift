@@ -59,6 +59,7 @@ private enum ShaderConstants {
 
 struct ShaderBrowserView: View {
     @EnvironmentObject var appState: AppState
+    private let fileOperations = ShaderFileOperationsActor()
     @State private var searchText = ""
     @State private var selectedFolder: String = ShaderConstants.allFolders
     @State private var shaders: [CoreShaderInfo] = []
@@ -623,57 +624,34 @@ struct ShaderBrowserView: View {
             appState.log("Cannot find Shaders directory", level: .error)
             return
         }
-        
+
         // Shaders are in swift-vj/Shaders/glsl/, masks go to swift-vj/Shaders/masks/
         let masksDir = shadersDir.appendingPathComponent(ShaderConstants.masksFolder)
-        
-        // Create masks folder if it doesn't exist
-        try? FileManager.default.createDirectory(at: masksDir, withIntermediateDirectories: true)
-        
-        var movedCount = 0
-        var movedCurrentShader = false
-        
-        for shaderName in selectedShaders {
-            guard let shader = shaders.first(where: { $0.name == shaderName }) else { continue }
-            
-            // Check if this is the currently rendering shader
-            if appState.selectedShader == shaderName {
-                movedCurrentShader = true
+
+        let names = selectedShaders
+        let movedCurrentShader = appState.selectedShader.map(names.contains) ?? false
+
+        Task { @MainActor in
+            let result = await fileOperations.moveShaders(
+                names: names,
+                in: shaders,
+                to: masksDir,
+                relatedExtensions: ShaderConstants.relatedExtensions
+            )
+
+            for (name, error) in result.failed.sorted(by: { $0.key < $1.key }) {
+                appState.log("Failed to move \(name): \(error)", level: .error)
             }
-            
-            let shaderFile = URL(fileURLWithPath: shader.path)
-            let sourceDir = shaderFile.deletingLastPathComponent()
-            let baseName = shaderFile.deletingPathExtension().lastPathComponent
-            
-            // Move all related files
-            var allMoved = true
-            
-            for ext in ShaderConstants.relatedExtensions {
-                let sourceFile = sourceDir.appendingPathComponent("\(baseName).\(ext)")
-                let destFile = masksDir.appendingPathComponent("\(baseName).\(ext)")
-                
-                if FileManager.default.fileExists(atPath: sourceFile.path) {
-                    do {
-                        try FileManager.default.moveItem(at: sourceFile, to: destFile)
-                    } catch {
-                        appState.log("Failed to move \(baseName).\(ext): \(error.localizedDescription)", level: .error)
-                        allMoved = false
-                    }
-                }
+
+            appState.log("Moved \(result.succeeded.count) shaders to masks folder", level: .info)
+            selectedShaders.subtract(result.succeeded)
+
+            if movedCurrentShader && result.succeeded.contains(appState.selectedShader ?? "") {
+                appState.selectShader("")
             }
-            
-            if allMoved { movedCount += 1 }
+
+            await reloadAllShaders()
         }
-        
-        appState.log("Moved \(movedCount) shaders to masks folder", level: .info)
-        selectedShaders.removeAll()
-        
-        // Clear current shader if it was moved
-        if movedCurrentShader {
-            appState.selectShader("")
-        }
-        
-        Task { await reloadAllShaders() }
     }
 
     /// Copy selected shaders to a user-chosen folder (copies .txt, .png, .analysis.json)
@@ -687,33 +665,22 @@ struct ShaderBrowserView: View {
         panel.prompt = "Choose Folder"
 
         if panel.runModal() == .OK, let destURL = panel.url {
-            var copiedShaders: Set<String> = []
-            for shaderName in selectedShaders {
-                guard let shader = shaders.first(where: { $0.name == shaderName }) else { continue }
-                let shaderFile = URL(fileURLWithPath: shader.path)
-                let sourceDir = shaderFile.deletingLastPathComponent()
-                let baseName = shaderFile.deletingPathExtension().lastPathComponent
+            let names = selectedShaders
+            Task { @MainActor in
+                let result = await fileOperations.copyShaders(
+                    names: names,
+                    in: shaders,
+                    to: destURL,
+                    relatedExtensions: ShaderConstants.relatedExtensions
+                )
 
-                for ext in ShaderConstants.relatedExtensions {
-                    let sourceFile = sourceDir.appendingPathComponent("\(baseName).\(ext)")
-                    let destFile = destURL.appendingPathComponent("\(baseName).\(ext)")
-                    if FileManager.default.fileExists(atPath: sourceFile.path) {
-                        // Overwrite if exists
-                        if FileManager.default.fileExists(atPath: destFile.path) {
-                            try? FileManager.default.removeItem(at: destFile)
-                        }
-                        do {
-                            try FileManager.default.copyItem(at: sourceFile, to: destFile)
-                            copiedShaders.insert(shaderName)
-                        } catch {
-                            appState.log("Failed to copy \(baseName).\(ext): \(error.localizedDescription)", level: .error)
-                        }
-                    }
+                for (name, error) in result.failed.sorted(by: { $0.key < $1.key }) {
+                    appState.log("Failed to copy \(name): \(error)", level: .error)
                 }
-            }
 
-            appState.log("Copied \(copiedShaders.count) shader(s) to \(destURL.path)", level: .info)
-            Task { await reloadAllShaders() }
+                appState.log("Copied \(result.succeeded.count) shader(s) to \(destURL.path)", level: .info)
+                await reloadAllShaders()
+            }
         }
     }
 
@@ -724,41 +691,27 @@ struct ShaderBrowserView: View {
             appState.log("Cannot find Shaders directory", level: .error)
             return
         }
-        
+
         // Move from swift-vj/Shaders/masks/ to swift-vj/Shaders/glsl/
         let glslDir = shadersDir.appendingPathComponent(ShaderConstants.glslFolder)
-        
-        var movedCount = 0
-        for shaderName in selectedShaders {
-            guard let shader = shaders.first(where: { $0.name == shaderName }) else { continue }
-            
-            let shaderFile = URL(fileURLWithPath: shader.path)
-            let sourceDir = shaderFile.deletingLastPathComponent()
-            let baseName = shaderFile.deletingPathExtension().lastPathComponent
-            
-            // Move all related files
-            var allMoved = true
-            
-            for ext in ShaderConstants.relatedExtensions {
-                let sourceFile = sourceDir.appendingPathComponent("\(baseName).\(ext)")
-                let destFile = glslDir.appendingPathComponent("\(baseName).\(ext)")
-                
-                if FileManager.default.fileExists(atPath: sourceFile.path) {
-                    do {
-                        try FileManager.default.moveItem(at: sourceFile, to: destFile)
-                    } catch {
-                        appState.log("Failed to move \(baseName).\(ext): \(error.localizedDescription)", level: .error)
-                        allMoved = false
-                    }
-                }
+
+        let names = selectedShaders
+        Task { @MainActor in
+            let result = await fileOperations.moveShaders(
+                names: names,
+                in: shaders,
+                to: glslDir,
+                relatedExtensions: ShaderConstants.relatedExtensions
+            )
+
+            for (name, error) in result.failed.sorted(by: { $0.key < $1.key }) {
+                appState.log("Failed to move \(name): \(error)", level: .error)
             }
-            
-            if allMoved { movedCount += 1 }
+
+            appState.log("Moved \(result.succeeded.count) shaders back to glsl folder", level: .info)
+            selectedShaders.subtract(result.succeeded)
+            await reloadAllShaders()
         }
-        
-        appState.log("Moved \(movedCount) shaders back to glsl folder", level: .info)
-        selectedShaders.removeAll()
-        Task { await reloadAllShaders() }
     }
 
     /// Preview a shader in a Syphon-powered modal
@@ -797,40 +750,34 @@ struct ShaderBrowserView: View {
     
     /// Delete a shader (removes .txt and associated .png, .analysis.json files)
     private func deleteShader(_ shader: CoreShaderInfo) {
-        let shaderFile = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderFile.deletingLastPathComponent()
-        let baseName = shaderFile.deletingPathExtension().lastPathComponent
-        
-        // Check if this is the currently rendering shader
         let wasCurrentShader = appState.selectedShader == shader.name
-        
-        // Delete all related files
-        var deletedAny = false
-        
-        for ext in ShaderConstants.relatedExtensions {
-            let file = shaderDir.appendingPathComponent("\(baseName).\(ext)")
-            if FileManager.default.fileExists(atPath: file.path) {
-                do {
-                    try FileManager.default.removeItem(at: file)
-                    deletedAny = true
-                } catch {
-                    appState.log("Failed to delete \(baseName).\(ext): \(error.localizedDescription)", level: .error)
-                }
+        let wasCurrentMask = appState.selectedMaskShader == shader.name
+
+        Task { @MainActor in
+            let result = await fileOperations.deleteShaders(
+                names: [shader.name],
+                in: shaders,
+                relatedExtensions: ShaderConstants.relatedExtensions
+            )
+
+            for (name, error) in result.failed.sorted(by: { $0.key < $1.key }) {
+                appState.log("Failed to delete \(name): \(error)", level: .error)
             }
-        }
-        
-            if deletedAny {
-                appState.log("Deleted shader: \(shader.name)", level: .info)
-                selectedShaders.remove(shader.name)
-                
-                // Clear current shader if it was deleted
-                if wasCurrentShader {
-                    appState.selectShader("")
-                }
-                
-                Task { await reloadAllShaders() }
+
+            guard result.succeeded.contains(shader.name) else { return }
+            appState.log("Deleted shader: \(shader.name)", level: .info)
+            selectedShaders.remove(shader.name)
+
+            if wasCurrentShader {
+                appState.selectShader("")
             }
+            if wasCurrentMask {
+                appState.selectMaskShader("")
+            }
+
+            await reloadAllShaders()
         }
+    }
     
     // MARK: - Unified Analyze Function
     

@@ -352,12 +352,14 @@ final class AppStateTests: XCTestCase {
     func testPersistedState() {
         var appState = AppState()
         appState.render.selectedShader = "rainbow"
+        appState.render.selectedMaskShader = "BWgrid"
         appState.render.currentPhase = .peak
         appState.playback.source = "spotify"
 
         let persisted = PersistedState(from: appState)
 
         XCTAssertEqual(persisted.selectedShader, "rainbow")
+        XCTAssertEqual(persisted.selectedMaskShader, "BWgrid")
         XCTAssertEqual(persisted.currentPhase, "peak")
         XCTAssertEqual(persisted.playbackSource, "spotify")
 
@@ -365,6 +367,7 @@ final class AppStateTests: XCTestCase {
         persisted.apply(to: &newState)
 
         XCTAssertEqual(newState.render.selectedShader, "rainbow")
+        XCTAssertEqual(newState.render.selectedMaskShader, "BWgrid")
         XCTAssertEqual(newState.render.currentPhase, .peak)
         XCTAssertEqual(newState.playback.source, "spotify")
     }

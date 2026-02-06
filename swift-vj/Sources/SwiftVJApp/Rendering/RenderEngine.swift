@@ -156,20 +156,19 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             self.logger?("[RenderEngine] SwiftUI text renderers configured")
         }
         
-        // Load shaders from repository
-        await MainActor.run { [weak self] in
-            guard let self = self else { return }
-            Task {
-                await self.shaderRepository.reload()
-                // Select default shaders after reload
-                self.shaderSelection.selectMain(name: "3isacrowd")
-                self.shaderSelection.selectMask(name: "BWrevolvingswirl")
-            }
-        }
-        
-        // Load default shaders in renderer
-        renderer.shaderRenderer.loadShader(name: "3isacrowd")
-        renderer.maskRenderer.loadShader(name: "BWrevolvingswirl")
+        // Load shaders deterministically before starting render loop.
+        await shaderRepository.reload()
+        let regularNames = shaderRepository.regularShaders.map(\.name)
+        let maskNames = shaderRepository.masks.map(\.name)
+
+        let mainName = shaderSelection.mainShaderName ?? regularNames.first ?? "3isacrowd"
+        let maskName = shaderSelection.maskShaderName ?? maskNames.first ?? "BWrevolvingswirl"
+        shaderSelection.selectMain(name: mainName)
+        shaderSelection.selectMask(name: maskName)
+
+        // Keep renderer shader state aligned with selection state.
+        renderer.shaderRenderer.loadShader(name: shaderSelection.mainShaderName ?? mainName)
+        renderer.maskRenderer.loadShader(name: shaderSelection.maskShaderName ?? maskName)
 
         // Create thread-safe Syphon manager and start servers
         self.syphonManager = SyphonOutputManager.shared
