@@ -311,6 +311,9 @@ extension StoreLogger {
             if desc.contains("positionUpdated") { return false }
             if desc.contains("levelUpdated") { return false }
             if desc.contains("beatPhaseUpdated") { return false }
+            // OSC messages are visible in OSC View; avoid console spam.
+            if desc.contains("oscMessageReceived") { return false }
+            if desc.contains("oscEventReceived") { return false }
             return true
         }
     }

@@ -8,6 +8,12 @@ const float OUT_OUTER = 0.4; // 0.01 is nice too
 // Hash functions for particle system
 float hash(float n) { return fract(sin(n) * 43758.5453); }
 vec2 hash2(float n) { return vec2(hash(n), hash(n + 127.1)); }
+float hash12(vec2 p)
+{
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 
 // Particle state tracking (simple exponential decay envelope)
 float particleEnvelope(float hitTime, float decay)
@@ -121,86 +127,230 @@ vec2 rotate2D(vec2 p, float angle)
 	return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
 }
 
-// Render dust particles ejected from moon rim
+// Dust particles plus a short release ring when charge is released.
 vec3 renderDustParticles(vec2 centered, float radius, float highHit)
 {
 	vec3 dustColor = vec3(0.0);
-	
-	// Only spawn particles when we have a high hit
-	float particleStrength = highHit * dust_intensity;
+	float releaseAmount = dust_release;
+	float chargedAmount = max(highHit, dust_charge * 0.75);
+	float particleStrength = (chargedAmount * 0.8 + releaseAmount * 0.8) * dust_intensity;
+	particleStrength *= mix(0.9, 2.25, dust_amount);
 	if (particleStrength < 0.01) return dustColor;
-	
-	// Ring zone around the moon where particles appear
+
+	float rimStart = radius * 0.88;
+	float rimEnd = radius * (1.0 + dust_spread * 2.6 + releaseAmount * 0.4);
 	float dist = length(centered);
-	float rimStart = radius * 0.9;
-	float rimEnd = radius * (1.0 + dust_spread * 2.0);
-	
-	// Multiple particle layers for density
-	for (int layer = 0; layer < 3; layer++)
+	float activeLayers = 1.0 + dust_amount * 2.0 + releaseAmount * 0.5;
+	float beatStep = floor(syn_BeatTime * 2.0);
+	float releaseStep = floor(dust_ring * 12.0) * 17.0;
+
+	// Run particle loops only around moon rim to keep full-frame cost low.
+	float particleZoneMin = rimStart - (28.0 + radius * 0.02);
+	float particleZoneMax = rimEnd + (84.0 + releaseAmount * 64.0);
+	bool inParticleZone = dist >= particleZoneMin && dist <= particleZoneMax;
+
+	if (inParticleZone)
 	{
-		float layerOffset = float(layer) * 137.5; // golden angle spread
-		
-		// 12 particles per layer
-		for (int i = 0; i < 12; i++)
+		for (int layer = 0; layer < 3; layer++)
 		{
-			float seed = float(i) + layerOffset + floor(syn_BeatTime * 2.0);
-			
-			// Random angle around the rim
-			float angle = hash(seed) * 6.28318;
-			// Apply rim_glow to control angular coverage (0 = thin, 1 = full circle)
-			float angleSpread = mix(1.0, 6.28318, rim_glow);
-			angle = mod(angle, angleSpread) - angleSpread * 0.5;
-			
-			// Random radial distance (ejected outward)
-			float radialT = hash(seed + 50.0);
-			float particleRadius = mix(rimStart, rimEnd, radialT * radialT);
-			
-			// Add some wobble to make it organic
-			float wobbleAngle = sin(TIME * 3.0 + seed) * 0.1;
-			angle += wobbleAngle;
-			
-			// Particle position
-			vec2 particlePos = vec2(cos(angle), sin(angle)) * particleRadius;
-			
-			// Distance to this particle
-			float particleDist = length(centered - particlePos);
-			
-			// Particle size varies
-			float particleSize = mix(2.0, 8.0, hash(seed + 100.0));
-			
-			// Soft particle glow
-			float glow = particleSize / (particleDist * particleDist + 1.0);
-			
-			// Fade based on how far from rim (newly ejected = bright)
-			float radialFade = 1.0 - radialT;
-			
-			// Color variation (sandy/dusty tones)
-			vec3 pColor = mix(
-				vec3(0.8, 0.7, 0.5), // sand
-				vec3(0.6, 0.6, 0.7), // lunar dust
-				hash(seed + 200.0)
-			);
-			
-			dustColor += glow * radialFade * particleStrength * pColor * 0.15;
+			float layerMask = step(float(layer), activeLayers);
+			if (layerMask < 0.5) continue;
+
+			float layerOffset = float(layer) * 137.5;
+			for (int i = 0; i < 8; i++)
+			{
+				float seed = float(i) + layerOffset + beatStep + releaseStep;
+				float angle = hash(seed) * 6.28318;
+				float angleSpread = mix(0.8, 6.28318, rim_glow);
+				angle = mod(angle, angleSpread) - angleSpread * 0.5;
+				angle += sin(TIME * (2.5 + float(layer) * 0.3) + seed) * (0.06 + 0.06 * releaseAmount);
+
+				float radialT = hash(seed + 50.0);
+				float radialPow = mix(2.0, 0.65, releaseAmount);
+				float particleRadius = mix(rimStart, rimEnd, pow(radialT, radialPow));
+				vec2 particlePos = vec2(cos(angle), sin(angle)) * particleRadius;
+				float particleDist = length(centered - particlePos);
+
+				float particleSize = mix(2.8, 13.5, hash(seed + 100.0));
+				particleSize *= mix(0.85, 1.7, releaseAmount);
+				float glow = particleSize / (particleDist * particleDist + 1.0);
+				float radialFade = mix(1.0 - radialT, 1.0 - smoothstep(0.2, 1.0, radialT), releaseAmount);
+
+				vec3 pColor = mix(
+					vec3(0.80, 0.72, 0.58),
+					vec3(0.58, 0.60, 0.68),
+					hash(seed + 200.0)
+				);
+				dustColor += glow * radialFade * particleStrength * pColor * 0.2 * layerMask;
+			}
 		}
 	}
-	
+
+	// Cheap continuous haze so max dust still feels thick without expensive loops.
+	float angleBase = atan(centered.y, centered.x);
+	float hazeBand = smoothstep(rimStart - 80.0, rimStart + 24.0, dist)
+		* (1.0 - smoothstep(rimEnd + 95.0, rimEnd + 210.0, dist));
+	float hazePattern = 0.5 + 0.5 * sin(angleBase * 17.0 + TIME * 1.7 + releaseStep * 0.03);
+	hazePattern *= 0.65 + 0.35 * sin(angleBase * 33.0 - TIME * 1.1);
+	float hazeStrength = hazeBand * hazePattern * (dust_amount * dust_intensity) * (0.22 + 0.55 * releaseAmount);
+	dustColor += vec3(0.22, 0.22, 0.24) * hazeStrength;
+
+	// Shock ring on release for a short "burst" feeling.
+	if (releaseAmount > 0.001)
+	{
+		float ringRadius = mix(radius * 0.95, radius * (1.45 + dust_spread * 0.6), dust_ring);
+		float ringWidth = mix(24.0, 52.0, dust_spread);
+		float angle = atan(centered.y, centered.x);
+		float angleNorm = (angle + 3.14159265) / 6.2831853;
+		float sectorCount = 28.0;
+		float sectorPos = angleNorm * sectorCount;
+		float sectorIdx = floor(sectorPos);
+		float sectorT = smoothstep(0.0, 1.0, fract(sectorPos));
+		float n0 = hash(sectorIdx + releaseStep + 19.0) * 2.0 - 1.0;
+		float n1 = hash(sectorIdx + 1.0 + releaseStep + 19.0) * 2.0 - 1.0;
+		float randomDeform = mix(n0, n1, sectorT);
+		float wavDeform = sin(angle * 7.0 + TIME * 1.4 + releaseStep * 0.07) * 0.45;
+		float deformRadius = (randomDeform + wavDeform) * (8.0 + 22.0 * dust_spread) * (0.45 + releaseAmount * 0.55);
+		float ringDelta = abs(dist - (ringRadius + deformRadius));
+		if (ringDelta < ringWidth * 6.0)
+		{
+			float ring = exp(-ringDelta / ringWidth);
+			dustColor += vec3(0.40, 0.38, 0.34) * ring * releaseAmount * 0.34;
+		}
+	}
+
 	return dustColor;
+}
+
+float gridLine(float v, float w)
+{
+	return smoothstep(w, 0.0, abs(fract(v) - 0.5));
+}
+
+vec3 renderStarfield(vec2 uv, vec2 drift, float motion)
+{
+	vec3 col = vec3(0.0);
+	float density = mix(0.25, 1.35, star_density);
+	float speed = 0.02 + starfield_speed * 0.12 + motion * 0.04;
+	float twinkleTime = TIME * (0.15 + starfield_speed * 0.45);
+
+	for (int layer = 0; layer < 2; layer++)
+	{
+		float lf = float(layer);
+		float scale = mix(90.0, 220.0, star_density) / (1.0 + lf * 0.9);
+		vec2 layerUV = uv * scale;
+		layerUV += drift * (9.0 + lf * 6.0);
+		layerUV += vec2(speed * (1.0 + lf * 0.6), -speed * (0.7 + lf * 0.35)) * TIME * scale * 0.08;
+
+		vec2 cell = floor(layerUV);
+		vec2 local = fract(layerUV) - 0.5;
+		float h = hash12(cell + lf * 37.13);
+		vec2 clusterCell = floor(cell / 7.0);
+		float clusterSeed = hash12(clusterCell + lf * 13.0);
+		vec2 clusterCenter = hash2(clusterSeed * 91.73) * 7.0;
+		vec2 inCluster = fract(cell / 7.0) * 7.0 - clusterCenter;
+		float clusterFalloff = exp(-dot(inCluster, inCluster) * 0.22);
+		float clusterActive = step(0.74, clusterSeed);
+		float clusterBoost = clusterActive * clusterFalloff;
+
+		float threshold = 1.0 - (0.005 + 0.010 * density / (1.0 + lf) + 0.025 * clusterBoost);
+		float spawn = step(threshold, h);
+		float giant = step(0.988, h + clusterBoost * 0.06);
+		float size = mix(0.03, 0.24, pow(h, 1.2));
+		size = mix(size, 0.44 + 0.22 * clusterBoost, giant);
+		float star = smoothstep(size, 0.0, length(local)) * spawn;
+		float twinkle = 0.7 + 0.3 * sin(twinkleTime * (1.1 + h * 2.4) + h * 40.0);
+		float depthFade = 1.0 / (1.0 + lf * 1.4);
+		vec3 tint = mix(vec3(0.62, 0.66, 0.72), vec3(0.95, 0.94, 0.90), h * h);
+		tint = mix(tint, vec3(0.78, 0.83, 0.94), clusterBoost * 0.7);
+		col += tint * star * twinkle * depthFade * (0.95 + clusterBoost * 0.65);
+	}
+	return col * space_brightness;
+}
+
+vec3 renderDeepGrid(vec2 uv, vec2 drift, float motion)
+{
+	if (grid_visibility <= 0.001) return vec3(0.0);
+
+	float aspect = RENDERSIZE.x / RENDERSIZE.y;
+	vec2 p = uv + drift * 0.08;
+	p.x *= aspect;
+
+	float horizon = -0.03 + motion * 0.03;
+	float y = max(p.y - horizon + 0.55, 0.08);
+	float perspective = 1.0 / y;
+
+	float density = mix(4.0, 12.0, grid_density);
+	float travel = TIME * (0.06 + grid_speed * 0.28 + motion * 0.12);
+	float sideDrift = TIME * (0.01 + grid_speed * 0.06) + drift.x * 1.5;
+	vec2 g = vec2(
+		(p.x + sideDrift) * perspective * density,
+		perspective * density * 0.7 + travel
+	);
+
+	float lineW = mix(0.08, 0.03, grid_density);
+	float lines = max(gridLine(g.x, lineW), gridLine(g.y, lineW * 0.9));
+	float scan = gridLine(g.y + TIME * (0.16 + motion * 0.1), lineW * 0.55) * 0.35;
+
+	float fadeFar = smoothstep(1.2, 4.8, perspective);
+	float fadeNear = 1.0 - smoothstep(5.2, 10.0, perspective);
+	float fadeVertical = smoothstep(-0.4, 0.9, p.y) * (1.0 - smoothstep(0.85, 1.35, p.y));
+	float fade = fadeFar * fadeNear * fadeVertical;
+
+	vec3 gridCol = vec3(0.20, 0.23, 0.28) * (lines + scan);
+	return gridCol * fade * grid_visibility * space_brightness * 0.7;
+}
+
+vec3 renderMeteor(vec2 uv, vec2 drift)
+{
+	if (meteor_active < 0.5) return vec3(0.0);
+
+	vec2 dir = normalize(vec2(meteor_dir_x, meteor_dir_y) + vec2(1e-5, 1e-5));
+	vec2 p = uv + drift * 0.06;
+	vec2 pos = vec2(meteor_pos_x, meteor_pos_y);
+	vec2 rel = p - pos;
+
+	float along = dot(rel, dir);
+	float perp = length(rel - dir * along);
+	float tailLen = max(0.16, meteor_length);
+	float tail = exp(along / tailLen) * step(along, 0.0) * smoothstep(-tailLen * 1.6, -0.02, along);
+	float head = exp(-perp * 38.0) * exp(-abs(along) * 15.0);
+	float streak = exp(-perp * 18.0) * tail;
+	float sparkle = 0.75 + 0.25 * sin(TIME * 40.0 + along * 120.0);
+
+	float alpha = (head * 1.55 + streak * 1.25 * sparkle) * meteor_strength * 1.35;
+	vec3 c = mix(vec3(0.78, 0.80, 0.86), vec3(1.0, 0.98, 0.92), head);
+	return c * alpha;
+}
+
+vec3 renderSpaceBackground(vec2 centered)
+{
+	vec2 uv = centered / RENDERSIZE.y;
+	vec2 drift = vec2(bg_drift_x, bg_drift_y);
+	float motion = bg_motion;
+	vec3 base = vec3(0.006, 0.008, 0.012) * space_brightness;
+	vec3 stars = renderStarfield(uv, drift, motion);
+	vec3 grid = renderDeepGrid(uv, drift, motion);
+	vec3 meteor = renderMeteor(uv, drift);
+	return base + stars + grid + meteor;
 }
 
 vec4 renderMoon()
 {    
 	vec2 fragCoord = _xy;
 	vec2 centered = fragCoord - RENDERSIZE.xy * 0.5; // planet center
+	vec3 backgroundColor = renderSpaceBackground(centered);
 
 	vec3 lightDir = normalize(vec3(sin(syn_BassTime), sin(syn_BassTime * 0.5), cos(syn_BassTime)));
 
 	float radius = RENDERSIZE.y / 3.0; // radius
 	
 	// === BASS WOBBLE DEFORMATION ===
-	// Combine smooth bass level with transient hits for rubber-like behavior
-	float bassWobble = syn_BassLevel * 0.7 + syn_BassHits * 1.5;
-	bassWobble *= wobble_intensity;
+	// Script-smoothed drive keeps wobble fluid while hits add only a subtle accent.
+	float wobbleDrive = clamp(wobble_drive, 0.0, 1.5);
+	float wobbleHit = clamp(wobble_hit, 0.0, 1.0);
+	float bassWobble = (wobbleDrive * 0.95 + wobbleHit * 0.15) * wobble_intensity;
+	bassWobble = max(bassWobble, syn_BassLevel * wobble_intensity * 0.18);
 	
 	// Calculate radial position for rim-focused wobble
 	float distFromCenter = length(centered);
@@ -208,48 +358,48 @@ vec4 renderMoon()
 	// Rim falloff: 0 at center, ramps up toward rim (power curve for sharper transition)
 	float rimFalloff = pow(radialT, 2.5);
 	
-	// Multiple wobble frequencies for organic rubber feel
-	float wobblePhase1 = sin(TIME * wobble_speed * 4.0) * bassWobble;
-	float wobblePhase2 = sin(TIME * wobble_speed * 6.3 + 1.0) * bassWobble * 0.6;
-	float wobblePhase3 = cos(TIME * wobble_speed * 8.7 + 2.0) * bassWobble * 0.3;
+	// Lower-frequency phase blend gives smoother liquid motion.
+	float flowT = TIME * wobble_speed;
+	float wobblePhase1 = sin(flowT * 2.2) * bassWobble;
+	float wobblePhase2 = sin(flowT * 3.5 + 1.0) * bassWobble * 0.55;
+	float wobblePhase3 = cos(flowT * 4.8 + 2.2) * bassWobble * 0.25;
 	
-	// Directional wobble - different amounts in x and y for jelly effect
+	// Directional wobble with seam-safe integer harmonics (no atan branch cut seam).
 	float angle = atan(centered.y, centered.x);
-	float wobbleAmount = wobblePhase1 * sin(angle * 2.0 + TIME * wobble_speed) 
-	                   + wobblePhase2 * sin(angle * 3.0 - TIME * wobble_speed * 1.3)
-	                   + wobblePhase3 * cos(angle * 4.0 + TIME * wobble_speed * 0.7);
+	float wobbleAmount = wobblePhase1 * sin(angle * 2.0 + flowT * 0.8) 
+	                   + wobblePhase2 * sin(angle * 3.0 - flowT * 0.65)
+	                   + wobblePhase3 * cos(angle * 4.0 + flowT * 0.52);
+	float liquidDrift = sin(angle + flowT * 0.34) * sin(angle * 2.0 - flowT * 0.21);
+	wobbleAmount += liquidDrift * bassWobble * 0.18;
 	
 	// Apply rim falloff - center stays static, rim wobbles
 	wobbleAmount *= rimFalloff;
 	
-	// Apply wobble to radius (makes sphere bulge/contract directionally)
-	float wobbledRadius = radius * (1.0 + wobbleAmount * 0.15);
+	// Apply wobble to radius (reduced amplitude avoids frame-to-frame edge pops).
+	float wobbledRadius = radius * (1.0 + wobbleAmount * 0.09);
 	
 	float distSq = dot(centered, centered);
 	float dist = sqrt(distSq + 1e-6);
+	float signedEdge = dist - wobbledRadius;
+	float edgeAA = max(1.25, fwidth(dist) * 2.0 + 0.75);
+	float insideMask = 1.0 - smoothstep(-edgeAA, edgeAA, signedEdge);
+	float outsideMask = 1.0 - insideMask;
 	float normalizedDist = clamp(dist / max(wobbledRadius, 1e-3), 0.0, 1.0);
 	float innerArg = max(wobbledRadius * wobbledRadius - distSq, 0.0);
 	float zIn = sqrt(innerArg);
 
-	bool inside = distSq <= wobbledRadius * wobbledRadius;
-	float insideMask = inside ? 1.0 : 0.0;
-
-	float zOut = 0.0;
-	bool outside = distSq > wobbledRadius * wobbledRadius;
-	if (outside)
-	{
-		zOut = sqrt(distSq - wobbledRadius * wobbledRadius);
-	}
+	bool inside = insideMask > 0.001;
+	float zOut = sqrt(max(distSq - wobbledRadius * wobbledRadius, 0.0));
 
 	vec3 norm = normalize(vec3(centered, max(zIn, 1e-3))); // normals from sphere
 	
 	// Add wobble displacement to normals for surface ripple effect (only at rim)
-	float normalWobble = bassWobble * 0.3 * rimFalloff;
-	norm.x += sin(angle * 3.0 + TIME * wobble_speed * 5.0) * normalWobble;
-	norm.y += cos(angle * 2.0 - TIME * wobble_speed * 4.0) * normalWobble;
+	float normalWobble = bassWobble * 0.16 * rimFalloff;
+	norm.x += sin(angle * 2.0 + flowT * 2.7) * normalWobble;
+	norm.y += cos(angle * 3.0 - flowT * 2.2) * normalWobble;
 	norm = normalize(norm);
 	
-	vec3 normOut = outside ? normalize(vec3(centered, zOut)) : norm; // normals from outside sphere
+	vec3 normOut = normalize(vec3(centered, max(zOut, 1e-3))); // normals from outside sphere
 	float e = 0.05; // planet rugosity
 	float nx = fbm(vec3(norm.x + e, norm.y, norm.z)) * 0.5 + 0.5; // x normal displacement
 	float ny = fbm(vec3(norm.x, norm.y + e, norm.z)) * 0.5 + 0.5; // y normal displacement
@@ -262,22 +412,21 @@ vec4 renderMoon()
 	if (zIn > 0.0)
 	{
 		zInnerAtmos = (wobbledRadius * IN_OUTER) / max(zIn, 1e-3) - IN_INNER;   // inner atmos
-		zInnerAtmos = max(0.0, zInnerAtmos);
+		zInnerAtmos = max(0.0, zInnerAtmos) * insideMask;
 	}
 
 	float zOuterAtmos = 0.0;
-	if (outside && zOut > 0.0)
+	if (zOut > 0.0)
 	{
 		zOuterAtmos = (wobbledRadius * OUT_INNER) / zOut - OUT_OUTER; // outer atmos
-		zOuterAtmos = max(0.0, zOuterAtmos);
+		zOuterAtmos = max(0.0, zOuterAtmos) * outsideMask;
 	}
 
 	float diffuse = max(0.0, dot(norm, lightDir));
 	float diffuseOut = max(0.0, dot(normOut, lightDir) + 0.3); // +0.3 because outer atmosphere still shows
 
 	float glowControl = mix(0.5, 1.5, atmosphere_mix); // slider controls glow contribution
-
-	vec3 color = vec3(n * diffuse) * insideMask;
+	vec3 moonSurfaceColor = vec3(n * diffuse);
 
 	// Media projection with cubemap-style UVs
 	if (inside && media_blend > 0.0)
@@ -310,14 +459,17 @@ vec4 renderMoon()
 		float limbMask = smoothstep(0.0, 0.5 + media_limb_fade * 0.5, viewDot);
 		
 		// Blend media with surface
-		color = mix(color, mediaCol, media_blend * limbMask);
+		moonSurfaceColor = mix(moonSurfaceColor, mediaCol, media_blend * limbMask);
 	}
+
+	vec3 color = mix(backgroundColor, moonSurfaceColor, insideMask);
 
 	// Add atmosphere glow
 	color += glowControl * (zInnerAtmos * diffuse + zOuterAtmos * diffuseOut);
+	color += vec3(0.18, 0.18, 0.2) * dust_release * (zInnerAtmos + zOuterAtmos) * 0.12;
 	
 	// === DUST PARTICLES ===
-	// Triggered by high frequency hits (peaks)
+	// Triggered by highs and script-driven charge/release state.
 	float highHit = syn_HighHits + syn_MidHighHits * 0.5;
 	vec3 dustParticles = renderDustParticles(centered, wobbledRadius, highHit);
 	color += dustParticles;

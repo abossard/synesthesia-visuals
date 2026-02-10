@@ -16,7 +16,8 @@
 			"MAX" : 1,
 			"MIN" : 0,
 			"NAME" : "wobble_intensity",
-			"TYPE" : "slider",
+			"PARAMS" : 0.06,
+			"TYPE" : "slider smooth",
 			"UI_GROUP" : "wobble"
 		},
 		{
@@ -25,7 +26,8 @@
 			"MAX" : 3,
 			"MIN" : 0.1,
 			"NAME" : "wobble_speed",
-			"TYPE" : "slider",
+			"PARAMS" : 0.06,
+			"TYPE" : "slider smooth",
 			"UI_GROUP" : "wobble"
 		},
 		{
@@ -54,6 +56,167 @@
 			"NAME" : "rim_glow",
 			"TYPE" : "slider",
 			"UI_GROUP" : "dust"
+		},
+		{
+			"DEFAULT" : 0.45,
+			"DESCRIPTION" : "Overall dust particle density.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "dust_amount",
+			"TYPE" : "slider",
+			"UI_GROUP" : "dust"
+		},
+		{
+			"DEFAULT" : 0.55,
+			"DESCRIPTION" : "How quickly dust charge builds from high-energy content.",
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "dust_charge_rate",
+			"PARAMS" : 0.08,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0.9,
+			"DESCRIPTION" : "Charge needed before automatic dust release can fire.",
+			"MAX" : 1,
+			"MIN" : 0.2,
+			"NAME" : "dust_release_threshold",
+			"PARAMS" : 0.08,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0.58,
+			"DESCRIPTION" : "Size and spread of scripted dust release bursts.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "dust_release_size",
+			"TYPE" : "slider",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Manual one-shot dust burst release.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "release_trigger",
+			"PARAMS" : 0.08,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Legacy punch trigger (also forces a release burst).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "punch_button",
+			"PARAMS" : 0.08,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Hold calm mode (suppresses auto releases and meteors).",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "calm_lock",
+			"TYPE" : "toggle smooth",
+			"UI_GROUP" : "release"
+		},
+		{
+			"DEFAULT" : 0.48,
+			"DESCRIPTION" : "Brightness of subtle space background layers.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "space_brightness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.38,
+			"DESCRIPTION" : "Density of the background starfield.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "star_density",
+			"TYPE" : "slider",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.25,
+			"DESCRIPTION" : "Speed of subtle starfield motion.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "starfield_speed",
+			"PARAMS" : 0.06,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.28,
+			"DESCRIPTION" : "Visibility of deep simulation grid in the background.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_visibility",
+			"TYPE" : "slider",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.55,
+			"DESCRIPTION" : "Detail density of the deep background grid.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_density",
+			"TYPE" : "slider",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.3,
+			"DESCRIPTION" : "Forward and lateral drift speed of deep grid movement.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "grid_speed",
+			"PARAMS" : 0.06,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "space"
+		},
+		{
+			"DEFAULT" : 0.4,
+			"DESCRIPTION" : "Brightness and weight of shooting stars.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "meteor_intensity",
+			"TYPE" : "slider",
+			"UI_GROUP" : "meteors"
+		},
+		{
+			"DEFAULT" : 0.35,
+			"DESCRIPTION" : "Chance for occasional meteors when strong peaks occur.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "meteor_chance",
+			"TYPE" : "slider",
+			"UI_GROUP" : "meteors"
+		},
+		{
+			"DEFAULT" : 0.82,
+			"DESCRIPTION" : "Peak threshold needed for automatic meteor spawning.",
+			"MAX" : 1,
+			"MIN" : 0.35,
+			"NAME" : "meteor_peak_threshold",
+			"PARAMS" : 0.08,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "meteors"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Manual one-shot meteor trigger.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "meteor_trigger",
+			"PARAMS" : 0.08,
+			"TYPE" : "bang smooth",
+			"UI_GROUP" : "meteors"
 		},
 		{
 			"DEFAULT" : 0.0,
