@@ -68,6 +68,7 @@ public actor LLMClient {
     ]
 
     private let runtimeConfig: TachikomaLLMRuntimeConfig
+    private let hasConfiguredRuntimeConfig: Bool
     private let tachikomaConfiguration: TachikomaConfiguration
 
     private var backend: LLMBackend = .none
@@ -81,8 +82,10 @@ public actor LLMClient {
         runtimeConfigURL: URL? = nil
     ) {
         let selectedURL = runtimeConfigURL ?? Self.selectedConfigURLFromDefaults()
-        let resolvedConfig = runtimeConfig ?? TachikomaLLMRuntimeConfig.load(from: selectedURL)
+        let loadedConfig = runtimeConfig ?? TachikomaLLMRuntimeConfig.load(from: selectedURL)
+        let resolvedConfig = loadedConfig ?? .default
         self.runtimeConfig = resolvedConfig
+        self.hasConfiguredRuntimeConfig = loadedConfig != nil
         self.tachikomaConfiguration = resolvedConfig.makeTachikomaConfiguration()
         self.health = ServiceHealth(name: "LLM")
     }
@@ -310,6 +313,11 @@ public actor LLMClient {
 
     private func checkBackend(using providerConfig: TachikomaProviderConfig) async {
         lastCheck = Date()
+        guard hasConfiguredRuntimeConfig else {
+            backend = .none
+            await health.markUnavailable(error: "Tachikoma config not selected or invalid")
+            return
+        }
 
         let provider = providerConfig.provider.tachikomaProvider
         let hasInlineKey = !(providerConfig.apiKey?.isEmpty ?? true)
@@ -733,7 +741,11 @@ private extension LLMClient {
               !raw.isEmpty else {
             return nil
         }
-        return URL(fileURLWithPath: raw)
+        let url = URL(fileURLWithPath: raw)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
     }
 }
 

@@ -76,13 +76,7 @@ struct SettingsView: View {
         }()
 
         static let tachikomaConfigPath: String = {
-            let fm = FileManager.default
-            let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
-            let local = cwd.appendingPathComponent("tachikoma.json").standardizedFileURL.path
-            if fm.fileExists(atPath: local) {
-                return local
-            }
-            return Config.dataDirectory.appendingPathComponent("tachikoma.json").path
+            ""
         }()
     }
 
@@ -194,19 +188,19 @@ struct SettingsView: View {
                     GroupBox("AI / Tachikoma") {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                TextField("Config JSON File", text: $tachikomaConfigPath, prompt: Text(DefaultPaths.tachikomaConfigPath))
+                                TextField("Config JSON File", text: $tachikomaConfigPath, prompt: Text("Choose tachikoma.json"))
                                     .textFieldStyle(.roundedBorder)
                                 Button("Browse...") {
                                     selectFile { url in
                                         tachikomaConfigPath = url.path
                                     }
                                 }
-                                Button("Reset") {
-                                    tachikomaConfigPath = DefaultPaths.tachikomaConfigPath
+                                Button("Clear") {
+                                    tachikomaConfigPath = ""
                                 }
-                                .disabled(tachikomaConfigPath == DefaultPaths.tachikomaConfigPath)
+                                .disabled(tachikomaConfigPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
-                            Text("Default: \(DefaultPaths.tachikomaConfigPath)")
+                            Text("Required: choose a committed Tachikoma JSON config file")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -414,7 +408,7 @@ struct SettingsView: View {
         lyricsCacheDir = defaults.string(forKey: "lyricsCacheDir") ?? DefaultPaths.lyricsCacheDir
         pipelineCacheDir = defaults.string(forKey: "pipelineCacheDir") ?? DefaultPaths.pipelineCacheDir
         songImagesDir = defaults.string(forKey: "songImagesDir") ?? DefaultPaths.songImagesDir
-        tachikomaConfigPath = defaults.string(forKey: LLMClient.configPathDefaultsKey) ?? DefaultPaths.tachikomaConfigPath
+        tachikomaConfigPath = defaults.string(forKey: LLMClient.configPathDefaultsKey) ?? ""
         ledfxBaseURL = defaults.string(forKey: "ledfx_baseURL") ?? "http://127.0.0.1:8888"
 
         oscReceivePort = loadPortString(
@@ -467,12 +461,18 @@ struct SettingsView: View {
         defaults.set(pipelineCacheDir, forKey: "pipelineCacheDir")
         defaults.set(songImagesDir, forKey: "songImagesDir")
         let trimmedTachikomaPath = tachikomaConfigPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedTachikomaPath.isEmpty {
-            defaults.removeObject(forKey: LLMClient.configPathDefaultsKey)
-        } else {
-            defaults.set(trimmedTachikomaPath, forKey: LLMClient.configPathDefaultsKey)
-            tachikomaConfigPath = trimmedTachikomaPath
+        guard !trimmedTachikomaPath.isEmpty else {
+            saveErrorMessage = "Tachikoma config file is required."
+            showSaveError = true
+            return
         }
+        guard FileManager.default.fileExists(atPath: trimmedTachikomaPath) else {
+            saveErrorMessage = "Tachikoma config file not found: \(trimmedTachikomaPath)"
+            showSaveError = true
+            return
+        }
+        defaults.set(trimmedTachikomaPath, forKey: LLMClient.configPathDefaultsKey)
+        tachikomaConfigPath = trimmedTachikomaPath
         defaults.set(ledfxBaseURL, forKey: "ledfx_baseURL")
 
         defaults.set(Int(receivePortValue), forKey: OSCHub.PortKeys.receivePort)

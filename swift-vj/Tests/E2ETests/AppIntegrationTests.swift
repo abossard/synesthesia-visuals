@@ -407,7 +407,13 @@ final class AppIntegrationTests: XCTestCase {
     func test_llmClient_analysisPrompt_generatesValidJSON() async throws {
         try require(.lmStudioAvailable)
 
-        let client = LLMClient()
+        let configURL = try Self.repoTachikomaConfigURL()
+        let client = LLMClient(runtimeConfigURL: configURL)
+        await client.start()
+        let available = await client.isAvailable
+        XCTAssertTrue(available, "LLM client should be available with repo Tachikoma config")
+        let backend = await client.backendInfo
+        XCTAssertTrue(backend.contains("LMStudio"), "Expected LMStudio backend, got \(backend)")
 
         // Test with a simple analysis
         let result = try await client.analyzeSong(
@@ -496,5 +502,18 @@ final class AppIntegrationTests: XCTestCase {
         XCTAssertEqual(status["started"], .bool(true))
 
         await module.stop()
+    }
+
+    private static func repoTachikomaConfigURL(file: StaticString = #filePath) throws -> URL {
+        let fileURL = URL(fileURLWithPath: "\(file)")
+        let root = fileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let configURL = root.appendingPathComponent("tachikoma.json")
+        guard FileManager.default.fileExists(atPath: configURL.path) else {
+            throw XCTSkip("Repo tachikoma.json not found at \(configURL.path)")
+        }
+        return configURL
     }
 }

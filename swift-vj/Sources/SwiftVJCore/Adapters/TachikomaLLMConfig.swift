@@ -57,20 +57,14 @@ public struct TachikomaLLMRuntimeConfig: Codable, Equatable, Sendable {
 
     public static let `default` = TachikomaLLMRuntimeConfig()
 
-    public static var defaultFileURL: URL {
-        Config.dataDirectory.appendingPathComponent("tachikoma.json")
-    }
-
-    public static func load(from fileURL: URL? = nil) -> TachikomaLLMRuntimeConfig {
-        for url in candidateConfigURLs(explicit: fileURL) {
-            guard let data = try? Data(contentsOf: url) else {
-                continue
-            }
-            if let parsed = try? JSONDecoder().decode(TachikomaLLMRuntimeConfig.self, from: data) {
-                return parsed
-            }
+    public static func load(from fileURL: URL?) -> TachikomaLLMRuntimeConfig? {
+        guard let fileURL else {
+            return nil
         }
-        return .default
+        guard let data = try? Data(contentsOf: fileURL) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(TachikomaLLMRuntimeConfig.self, from: data)
     }
 
     public func makeTachikomaConfiguration(loadFromEnvironment: Bool = true) -> TachikomaConfiguration {
@@ -84,81 +78,6 @@ public struct TachikomaLLMRuntimeConfig: Codable, Equatable, Sendable {
             }
         }
         return configuration
-    }
-}
-
-private extension TachikomaLLMRuntimeConfig {
-    static func candidateConfigURLs(explicit: URL?) -> [URL] {
-        if let explicit {
-            return [explicit]
-        }
-
-        var urls: [URL] = []
-        let process = ProcessInfo.processInfo
-
-        if let envPath = process.environment["SWIFTVJ_TACHIKOMA_CONFIG"], !envPath.isEmpty {
-            urls.append(URL(fileURLWithPath: envPath))
-        }
-
-        // When running as app bundle, prioritize sibling tachikoma.json in repo folder.
-        // Example: <repo>/Swift VJ.app -> <repo>/tachikoma.json
-        let bundleURL = Bundle.main.bundleURL
-        if bundleURL.pathExtension == "app" {
-            let bundleParent = bundleURL.deletingLastPathComponent()
-            urls.append(bundleParent.appendingPathComponent("tachikoma.json"))
-            if let root = repositoryRoot(from: bundleParent) {
-                urls.append(root.appendingPathComponent("tachikoma.json"))
-            }
-        }
-
-        if let root = repositoryRoot(from: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
-            urls.append(root.appendingPathComponent("tachikoma.json"))
-        }
-
-        if let executableURL = Bundle.main.executableURL,
-           let root = repositoryRoot(from: executableURL.deletingLastPathComponent()) {
-            urls.append(root.appendingPathComponent("tachikoma.json"))
-        } else if let executableURL = process.arguments.first.map({ URL(fileURLWithPath: $0) }),
-                  let root = repositoryRoot(from: executableURL.deletingLastPathComponent()) {
-            urls.append(root.appendingPathComponent("tachikoma.json"))
-        }
-
-        urls.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tachikoma.json"))
-        urls.append(defaultFileURL)
-        return dedup(urls)
-    }
-
-    static func repositoryRoot(from start: URL) -> URL? {
-        var cursor = start.standardizedFileURL.resolvingSymlinksInPath()
-        let fileManager = FileManager.default
-
-        while true {
-            if fileManager.fileExists(atPath: cursor.appendingPathComponent("Package.swift").path) {
-                return cursor
-            }
-            if cursor.path == "/" {
-                return nil
-            }
-            let parent = cursor.deletingLastPathComponent()
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-            if parent.path == cursor.path || parent.path.isEmpty {
-                return nil
-            }
-            cursor = parent
-        }
-    }
-
-    static func dedup(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        var result: [URL] = []
-        for url in urls {
-            let key = url.standardizedFileURL.path
-            if seen.insert(key).inserted {
-                result.append(url)
-            }
-        }
-        return result
     }
 }
 
