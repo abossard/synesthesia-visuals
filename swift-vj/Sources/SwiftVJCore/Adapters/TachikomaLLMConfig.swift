@@ -100,12 +100,26 @@ private extension TachikomaLLMRuntimeConfig {
             urls.append(URL(fileURLWithPath: envPath))
         }
 
+        // When running as app bundle, prioritize sibling tachikoma.json in repo folder.
+        // Example: <repo>/Swift VJ.app -> <repo>/tachikoma.json
+        let bundleURL = Bundle.main.bundleURL
+        if bundleURL.pathExtension == "app" {
+            let bundleParent = bundleURL.deletingLastPathComponent()
+            urls.append(bundleParent.appendingPathComponent("tachikoma.json"))
+            if let root = repositoryRoot(from: bundleParent) {
+                urls.append(root.appendingPathComponent("tachikoma.json"))
+            }
+        }
+
         if let root = repositoryRoot(from: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
             urls.append(root.appendingPathComponent("tachikoma.json"))
         }
 
-        if let executableURL = process.arguments.first.map({ URL(fileURLWithPath: $0) }),
+        if let executableURL = Bundle.main.executableURL,
            let root = repositoryRoot(from: executableURL.deletingLastPathComponent()) {
+            urls.append(root.appendingPathComponent("tachikoma.json"))
+        } else if let executableURL = process.arguments.first.map({ URL(fileURLWithPath: $0) }),
+                  let root = repositoryRoot(from: executableURL.deletingLastPathComponent()) {
             urls.append(root.appendingPathComponent("tachikoma.json"))
         }
 
