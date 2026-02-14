@@ -129,15 +129,20 @@ private extension TachikomaLLMRuntimeConfig {
     }
 
     static func repositoryRoot(from start: URL) -> URL? {
-        var cursor = start
+        var cursor = start.standardizedFileURL.resolvingSymlinksInPath()
         let fileManager = FileManager.default
 
         while true {
             if fileManager.fileExists(atPath: cursor.appendingPathComponent("Package.swift").path) {
                 return cursor
             }
+            if cursor.path == "/" {
+                return nil
+            }
             let parent = cursor.deletingLastPathComponent()
-            if parent.path == cursor.path {
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+            if parent.path == cursor.path || parent.path.isEmpty {
                 return nil
             }
             cursor = parent

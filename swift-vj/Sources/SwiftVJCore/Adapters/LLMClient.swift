@@ -101,7 +101,11 @@ public actor LLMClient {
     }
 
     public func start() async {
-        await checkBackend()
+        await checkBackend(using: runtimeConfig.songAnalysis)
+    }
+
+    public func startShaderAnalysis() async {
+        await checkBackend(using: runtimeConfig.shaderAnalysis)
     }
 
     public func analyzeSong(
@@ -301,8 +305,11 @@ public actor LLMClient {
     }
 
     private func checkBackend() async {
+        await checkBackend(using: runtimeConfig.songAnalysis)
+    }
+
+    private func checkBackend(using providerConfig: TachikomaProviderConfig) async {
         lastCheck = Date()
-        let providerConfig = runtimeConfig.songAnalysis
 
         if providerConfig.provider == .lmstudio {
             let baseURL = providerConfig.baseURL ?? "http://localhost:1234/v1"

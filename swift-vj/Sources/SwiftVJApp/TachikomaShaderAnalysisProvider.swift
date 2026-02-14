@@ -16,7 +16,7 @@ actor TachikomaShaderAnalysisProvider: ShaderAnalysisProvider {
     nonisolated var providerName: String { "Tachikoma" }
 
     func isAvailable() async -> Bool {
-        await llmClient.start()
+        await llmClient.startShaderAnalysis()
         let available = await llmClient.isAvailable
         if available {
             let backend = await llmClient.backendInfo
