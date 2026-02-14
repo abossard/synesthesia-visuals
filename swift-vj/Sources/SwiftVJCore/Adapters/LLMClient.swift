@@ -306,10 +306,8 @@ public actor LLMClient {
 
         if providerConfig.provider == .lmstudio {
             let baseURL = providerConfig.baseURL ?? "http://localhost:1234/v1"
-            let lmstudio = LMStudioProvider(baseURL: baseURL, modelId: providerConfig.model)
-
-            if let healthStatus = try? await lmstudio.healthCheck() {
-                let model = healthStatus.model ?? providerConfig.model
+            if let detectedModel = await probeLMStudioModel(baseURL: baseURL) {
+                let model = detectedModel.isEmpty ? providerConfig.model : detectedModel
                 backend = .tachikoma(provider: "LMStudio", model: model)
                 await health.markAvailable(message: "Tachikoma LMStudio (\(model))")
                 return
@@ -335,6 +333,39 @@ public actor LLMClient {
             backend = .none
             await health.markUnavailable(error: "Missing credentials for \(provider.displayName)")
         }
+    }
+
+    private func probeLMStudioModel(baseURL: String) async -> String? {
+        guard let modelsURL = modelsEndpointURL(from: baseURL) else {
+            return nil
+        }
+
+        var request = URLRequest(url: modelsURL)
+        request.timeoutInterval = 3
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                return nil
+            }
+
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let models = json["data"] as? [[String: Any]],
+               let firstModel = models.first?["id"] as? String {
+                return firstModel
+            }
+
+            // Endpoint is healthy even if no model id was parsed.
+            return "current"
+        } catch {
+            return nil
+        }
+    }
+
+    private func modelsEndpointURL(from baseURL: String) -> URL? {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return URL(string: "\(trimmed)/models")
     }
 
     private func analyzeSongWithLLM(
