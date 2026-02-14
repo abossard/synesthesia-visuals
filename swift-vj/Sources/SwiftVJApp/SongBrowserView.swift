@@ -509,8 +509,6 @@ struct SongBrowserView: View {
         for songId in selectedSongIds {
             appState.send(.songs(.requestReanalysis(songId)))
         }
-        // Clear selection after starting analysis
-        selectedSongIds.removeAll()
     }
 
     private func clearCache(_ song: Song) {

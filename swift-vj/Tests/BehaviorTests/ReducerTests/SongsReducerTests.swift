@@ -74,4 +74,29 @@ final class SongsReducerTests: XCTestCase {
             SongID(artist: "Artist\(iterations - 1)", title: "Title\(iterations - 1)")
         )
     }
+
+    func testRequestReanalysisDoesNotClearCurrentSelection() {
+        var appState = AppState()
+        let selected = SongID(artist: "Selected Artist", title: "Selected Title")
+        let reanalyzed = SongID(artist: "Other Artist", title: "Other Title")
+        appState.songs.selectedSongId = selected
+
+        _ = applySongsReducer(.requestReanalysis(reanalyzed), to: &appState)
+
+        XCTAssertEqual(appState.songs.selectedSongId, selected)
+        XCTAssertEqual(appState.songs.reanalyzingSongId, reanalyzed)
+    }
+
+    func testReanalysisCompletedDoesNotClearCurrentSelection() {
+        var appState = AppState()
+        let selected = SongID(artist: "Selected Artist", title: "Selected Title")
+        let reanalyzed = SongID(artist: "Selected Artist", title: "Selected Title")
+        appState.songs.selectedSongId = selected
+        appState.songs.reanalyzingSongId = reanalyzed
+
+        _ = applySongsReducer(.reanalysisCompleted(reanalyzed), to: &appState)
+
+        XCTAssertEqual(appState.songs.selectedSongId, selected)
+        XCTAssertNil(appState.songs.reanalyzingSongId)
+    }
 }
