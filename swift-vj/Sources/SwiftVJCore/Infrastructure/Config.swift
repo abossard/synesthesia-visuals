@@ -15,9 +15,6 @@ public struct Config {
     public static let oscVDJPort: UInt16 = 9009
     public static let oscSynesthesiaPort: UInt16 = 7777
     
-    // Timing
-    public static let timingStepMs: Int = 200
-
     // Playback
     public static let playbackPollIntervalMs: Int = 500
 
@@ -53,27 +50,6 @@ public actor Settings {
         self.data = Self.load(from: self.filePath)
     }
 
-    // MARK: - Timing
-
-    public var timingOffsetMs: Int {
-        get { data["timing_offset_ms"] as? Int ?? 0 }
-    }
-
-    public func setTimingOffset(_ value: Int) async {
-        data["timing_offset_ms"] = value
-        save()
-    }
-
-    public var timingOffsetSec: Double {
-        Double(timingOffsetMs) / 1000.0
-    }
-
-    public func adjustTiming(by deltaMs: Int) async -> Int {
-        let newOffset = timingOffsetMs + deltaMs
-        await setTimingOffset(newOffset)
-        return newOffset
-    }
-
     // MARK: - Playback Source
 
     public var playbackSource: String {
@@ -105,10 +81,6 @@ public actor Settings {
 
     public var startVJUniverse: Bool {
         get { data["start_vjuniverse"] as? Bool ?? false }
-    }
-
-    public var startLMStudio: Bool {
-        get { data["start_lmstudio"] as? Bool ?? false }
     }
 
     // MARK: - Private

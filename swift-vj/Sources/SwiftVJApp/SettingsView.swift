@@ -10,7 +10,6 @@ struct SettingsView: View {
     
     // Draft settings state (saved only on explicit Save)
     @State private var playbackSource = "vdj"
-    @State private var timingOffsetMs = 0
     @State private var startSynesthesia = false
     @State private var playbackPollInterval = 1.0
     @State private var shaderDirectory = ""
@@ -101,25 +100,6 @@ struct SettingsView: View {
                         .padding(12)
                     }
                     
-                    GroupBox("Timing") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text("Lyrics Offset")
-                                Spacer()
-                                Text("\(timingOffsetMs) ms")
-                                    .monospacedDigit()
-                                Stepper("", value: $timingOffsetMs, in: -2000...2000, step: 10)
-                                    .labelsHidden()
-                            }
-                            
-                            Button("Reset to 0") {
-                                timingOffsetMs = 0
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                    }
-
                     GroupBox("LedFX") {
                         VStack(alignment: .leading, spacing: 8) {
                             TextField("Base URL", text: $ledfxBaseURL)
@@ -288,7 +268,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Built with SwiftUI")
                                 Text("OSC via OSCKit")
-                                Text("LLM via LM Studio")
+                                Text("LLM via Tachikoma")
                             }
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -372,7 +352,6 @@ struct SettingsView: View {
         let defaults = UserDefaults.standard
 
         playbackSource = defaults.string(forKey: "playbackSource") ?? "vdj"
-        timingOffsetMs = defaults.integer(forKey: "timingOffsetMs")
         startSynesthesia = defaults.bool(forKey: "startSynesthesia")
         let pollInterval = defaults.double(forKey: "playbackPollInterval")
         playbackPollInterval = pollInterval > 0 ? pollInterval : 1.0
@@ -432,7 +411,6 @@ struct SettingsView: View {
 
         let defaults = UserDefaults.standard
         defaults.set(playbackSource, forKey: "playbackSource")
-        defaults.set(timingOffsetMs, forKey: "timingOffsetMs")
         defaults.set(startSynesthesia, forKey: "startSynesthesia")
         defaults.set(playbackPollInterval, forKey: "playbackPollInterval")
         defaults.set(shaderDirectory, forKey: "shaderDirectory")

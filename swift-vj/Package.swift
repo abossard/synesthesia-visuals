@@ -56,6 +56,8 @@ let package = Package(
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         // SwiftUI view inspection for tests
         .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.10"),
+        // Multi-provider LLM abstraction
+        .package(path: "Vendor/Tachikoma"),
     ],
     targets: [
         // Syphon binary framework (built from Syphon-Framework)
@@ -107,6 +109,7 @@ let package = Package(
                 "SongRepository",
                 .product(name: "OSCKit", package: "OSCKit"),
                 .product(name: "Yams", package: "Yams"),
+                .product(name: "Tachikoma", package: "Tachikoma"),
             ],
             resources: [
                 .copy("Resources/launchpad-config.yaml"),
@@ -115,7 +118,9 @@ let package = Package(
         // Shader Repository - pure functions for shader management
         .target(
             name: "ShaderRepository",
-            dependencies: []),
+            dependencies: [
+                .product(name: "Tachikoma", package: "Tachikoma"),
+            ]),
 
         // Song Repository - pure functions for song management
         .target(

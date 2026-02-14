@@ -9,7 +9,7 @@ final class ShaderRepositoryTests: XCTestCase {
     // MARK: - Test Paths
     
     // Real paths to shader resources
-    static let projectRoot = URL(fileURLWithPath: #file)
+    static let projectRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()  // ShaderRepositoryTests
         .deletingLastPathComponent()  // Tests
         .deletingLastPathComponent()  // swift-vj
@@ -340,20 +340,20 @@ final class ShaderRepositoryTests: XCTestCase {
 
 final class ShaderAnalyzerTests: XCTestCase {
     
-    func testLMStudioAvailability() async throws {
+    func testLocalProviderAvailability() async throws {
         let available = await ShaderAnalyzer.isAvailable()
         
         if !available {
-            throw XCTSkip("LM Studio is not running - skipping analyzer tests")
+            throw XCTSkip("Local Tachikoma provider is not running - skipping analyzer tests")
         }
         
         XCTAssertTrue(available)
     }
     
     func testAnalyzeShader() async throws {
-        // Check if LM Studio is available
+        // Check if local provider is available
         guard await ShaderAnalyzer.isAvailable() else {
-            throw XCTSkip("LM Studio is not running")
+            throw XCTSkip("Local Tachikoma provider is not running")
         }
         guard FileManager.default.fileExists(atPath: ShaderRepositoryTests.shadersDir.path) else {
             throw XCTSkip("Shaders directory not found at \(ShaderRepositoryTests.shadersDir.path)")
@@ -366,7 +366,7 @@ final class ShaderAnalyzerTests: XCTestCase {
             throw XCTSkip("No non-black shaders found")
         }
         
-        // Try to analyze - skip if model not loaded
+        // Try to analyze - skip if local server has no model loaded
         do {
             let analysis = try await ShaderAnalyzer.analyze(shader: shader)
             
@@ -375,7 +375,7 @@ final class ShaderAnalyzerTests: XCTestCase {
             XCTAssertLessThanOrEqual(analysis.energy, 1.0)
         } catch let error as AnalyzerError {
             if case .serverError(let code, let body) = error, code == 400, body.contains("No models loaded") {
-                throw XCTSkip("LM Studio has no model loaded")
+                throw XCTSkip("Local provider has no model loaded")
             }
             throw error
         }

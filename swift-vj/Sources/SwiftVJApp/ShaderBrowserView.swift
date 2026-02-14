@@ -64,21 +64,21 @@ struct ShaderBrowserView: View {
     @State private var selectedFolder: String = ShaderConstants.allFolders
     @State private var shaders: [CoreShaderInfo] = []
     @State private var availableFolders: [String] = []
+    @State private var shaderMetadata: [String: ShaderFilterMetadata] = [:]
     @State private var selectedShaders: Set<String> = []
     // Analysis state now lives in AppState for persistence across navigation
     @State private var showDeleteConfirm: Bool = false
     @State private var shaderToDelete: CoreShaderInfo? = nil
-    @State private var showingAnalysisModal: Bool = false
-    @State private var showingPreviewModal: Bool = false
-    @State private var previewShaderName: String? = nil
+    @State private var activeModal: ActiveModal? = nil
+    @State private var activeModalKind: ModalKind? = nil
     @State private var previousSelectedShaderName: String? = nil
-    @State private var selectedAnalysis: ShaderAnalysis? = nil
     @State private var refreshId = UUID() // Forces grid refresh after analysis
     @State private var lastClickedShader: String? = nil // For shift-click range selection
     @State private var badgeFilter: BadgeFilter = .all // Filter by badge type
     @State private var phaseFilter: Phase? = nil // Filter by assigned phase
     @State private var searchResults: [CoreShaderInfo] = []
     @State private var isSearching: Bool = false
+    @State private var searchDebounceTask: Task<Void, Never>? = nil
     
     // Convenience accessors for AppState analysis state
     private var isAnalyzing: Bool { appState.isAnalyzingShaders }
@@ -99,21 +99,35 @@ struct ShaderBrowserView: View {
         case analyzed = "Analyzed"
         case notAnalyzed = "Not Analyzed"
     }
+
+    private enum ModalKind {
+        case analysis
+        case preview
+    }
+
+    private enum ActiveModal: Identifiable {
+        case analysis(ShaderAnalysis)
+        case preview(shaderName: String, shaderPath: String)
+
+        var id: String {
+            switch self {
+            case .analysis(let analysis):
+                return "analysis:\(analysis.id)"
+            case .preview(_, let shaderPath):
+                return "preview:\(shaderPath)"
+            }
+        }
+    }
     
     var filteredShaders: [CoreShaderInfo] {
-        let base: [CoreShaderInfo] = searchText.isEmpty ? shaders : searchResults
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base: [CoreShaderInfo] = query.isEmpty ? shaders : searchResults
         return base.filter { shader in
-            let matchesSearch = searchText.isEmpty || 
-                shader.name.localizedCaseInsensitiveContains(searchText) ||
-                shader.mood.localizedCaseInsensitiveContains(searchText) ||
-                shader.colors.joined(separator: " ").localizedCaseInsensitiveContains(searchText) ||
-                shader.effects.joined(separator: " ").localizedCaseInsensitiveContains(searchText)
             let matchesFolder = selectedFolder == ShaderConstants.allFolders || shader.folder == selectedFolder
             let matchesBadge = matchesBadgeFilter(shader)
             let matchesPhase = matchesPhaseFilter(shader)
-            return matchesSearch && matchesFolder && matchesBadge && matchesPhase
+            return matchesFolder && matchesBadge && matchesPhase
         }
-        .sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
     
     /// Check if shader matches current phase filter
@@ -121,21 +135,6 @@ struct ShaderBrowserView: View {
         guard let targetPhase = phaseFilter else { return true }
         let phases = getShaderPhases(shader)
         return phases.contains(targetPhase)
-    }
-    
-    /// Get phases assigned to a shader from its analysis file
-    private func getShaderPhases(_ shader: CoreShaderInfo) -> Set<Phase> {
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
-        
-        guard FileManager.default.fileExists(atPath: analysisPath.path),
-              let data = try? Data(contentsOf: analysisPath),
-              let analysis = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) else {
-            return []
-        }
-        return analysis.phases
     }
     
     /// Check if shader matches current badge filter
@@ -155,52 +154,89 @@ struct ShaderBrowserView: View {
     }
     
     /// Shader status based on analysis
-    enum ShaderStatus {
+    enum ShaderStatus: Sendable {
         case black          // Renders pure black
         case monochromatic  // Black/white/grey only (good for masks)
         case normal         // Has colors
         case unknown        // Not analyzed
     }
+
+    private struct ShaderFilterMetadata: Sendable {
+        let status: ShaderStatus
+        let phases: Set<Phase>
+        let hasAnalysis: Bool
+    }
     
     /// Check if shader has analysis file
     private func hasAnalysisFile(_ shader: CoreShaderInfo) -> Bool {
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
-        return FileManager.default.fileExists(atPath: analysisPath.path)
+        if let metadata = shaderMetadata[shader.name] {
+            return metadata.hasAnalysis
+        }
+        return FileManager.default.fileExists(atPath: Self.analysisPath(for: shader).path)
     }
     
     /// Get shader status from analysis file
     private func getShaderStatus(_ shader: CoreShaderInfo) -> ShaderStatus {
+        shaderMetadata[shader.name]?.status ?? .unknown
+    }
+
+    /// Get phases assigned to a shader from preloaded metadata
+    private func getShaderPhases(_ shader: CoreShaderInfo) -> Set<Phase> {
+        if let phases = shaderMetadata[shader.name]?.phases {
+            return phases
+        }
+        return shader.phases ?? []
+    }
+
+    nonisolated private static func analysisPath(for shader: CoreShaderInfo) -> URL {
         let shaderPath = URL(fileURLWithPath: shader.path)
         let shaderDir = shaderPath.deletingLastPathComponent()
         let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
-        
-        guard FileManager.default.fileExists(atPath: analysisPath.path),
-              let data = try? Data(contentsOf: analysisPath),
-              let analysis = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) else {
-            return .unknown
-        }
-        
-        // Collect all status hints from various sources
+        return shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
+    }
+
+    nonisolated private static func status(from analysis: ShaderAnalysisResult) -> ShaderStatus {
         let statusHints: [String] = [
-            analysis.visualMetadata[ShaderConstants.statusKey],  // Primary: visual_metadata.status
-            analysis.mood                                        // Legacy: mood field
-        ].compactMap { $0 } + analysis.colors                    // Legacy: colors array
-        
-        // Check for black status (any hint matches)
+            analysis.visualMetadata[ShaderConstants.statusKey],
+            analysis.mood
+        ].compactMap { $0 } + analysis.colors
+
         if statusHints.contains(where: ShaderConstants.isBlack) {
             return .black
         }
-        
-        // Check for monochromatic status (any hint matches)
         if statusHints.contains(where: ShaderConstants.isMonochromatic) {
             return .monochromatic
         }
-        
         return .normal
+    }
+
+    nonisolated private static func loadFilterMetadata(for shader: CoreShaderInfo) -> ShaderFilterMetadata {
+        let analysisPath = Self.analysisPath(for: shader)
+        guard FileManager.default.fileExists(atPath: analysisPath.path),
+              let data = try? Data(contentsOf: analysisPath),
+              let analysis = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) else {
+            return ShaderFilterMetadata(
+                status: .unknown,
+                phases: shader.phases ?? [],
+                hasAnalysis: false
+            )
+        }
+        return ShaderFilterMetadata(
+            status: Self.status(from: analysis),
+            phases: analysis.phases,
+            hasAnalysis: true
+        )
+    }
+
+    nonisolated private static func buildShaderMetadataIndex(for shaders: [CoreShaderInfo]) -> [String: ShaderFilterMetadata] {
+        var index: [String: ShaderFilterMetadata] = [:]
+        index.reserveCapacity(shaders.count)
+
+        for shader in shaders {
+            index[shader.name] = loadFilterMetadata(for: shader)
+        }
+
+        return index
     }
     
     var body: some View {
@@ -384,7 +420,7 @@ struct ShaderBrowserView: View {
             .padding()
             .background(.bar)
             .onChange(of: searchText) { _, _ in
-                Task { await performSearch(query: searchText) }
+                scheduleSearch(query: searchText)
             }
             
             Divider()
@@ -394,7 +430,7 @@ struct ShaderBrowserView: View {
                 LazyVGrid(columns: [
                     GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 16)
                 ], spacing: 16) {
-                    ForEach(filteredShaders, id: \.name) { shader in
+                    ForEach(filteredShaders, id: \.path) { shader in
                         ShaderCardEnhanced(
                             shader: shader,
                             isSelected: appState.selectedShader == shader.name,
@@ -431,23 +467,17 @@ struct ShaderBrowserView: View {
         .task {
             await loadShaders()
         }
-        .sheet(isPresented: $showingAnalysisModal) {
-            if let analysis = selectedAnalysis {
+        .sheet(item: $activeModal, onDismiss: handleModalDismiss) { modal in
+            switch modal {
+            case .analysis(let analysis):
                 ShaderAnalysisModal(analysis: analysis)
+            case .preview(let shaderName, _):
+                ShaderPreviewModalContent(
+                    shaderName: shaderName,
+                    onClose: { activeModal = nil }
+                )
+                .environmentObject(appState)
             }
-        }
-        .sheet(isPresented: $showingPreviewModal, onDismiss: {
-            appState.log("[Preview] Modal dismissed", level: .debug)
-            if let prev = previousSelectedShaderName {
-                appState.selectShader(prev)
-            }
-            previewShaderName = nil
-        }) {
-            ShaderPreviewModalContent(
-                shaderName: previewShaderName ?? "Preview",
-                onClose: { showingPreviewModal = false }
-            )
-            .environmentObject(appState)
         }
         .alert("Delete Shader?", isPresented: $showDeleteConfirm, presenting: shaderToDelete) { shader in
             Button("Delete", role: .destructive) {
@@ -456,6 +486,10 @@ struct ShaderBrowserView: View {
             Button("Cancel", role: .cancel) { }
         } message: { shader in
             Text("Are you sure you want to delete \"\(shader.name)\"? This cannot be undone.")
+        }
+        .onDisappear {
+            searchDebounceTask?.cancel()
+            searchDebounceTask = nil
         }
     }
     
@@ -474,8 +508,16 @@ struct ShaderBrowserView: View {
                 appState.log("Could not find Shaders directory", level: .warning)
             }
             
-            shaders = await module.allShaders
-            availableFolders = await module.availableFolders
+            let loadedShaders = await module.allShaders
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            let loadedFolders = await module.availableFolders
+            let loadedMetadata = await Task.detached(priority: .userInitiated) {
+                Self.buildShaderMetadataIndex(for: loadedShaders)
+            }.value
+
+            shaders = loadedShaders
+            availableFolders = loadedFolders
+            shaderMetadata = loadedMetadata
             
             // Log folder breakdown
             for folder in availableFolders {
@@ -486,41 +528,70 @@ struct ShaderBrowserView: View {
         
         // If still empty, show message
         if shaders.isEmpty {
+            shaderMetadata = [:]
             appState.log("No shaders found in Shaders directory.", level: .warning)
         }
         await performSearch(query: searchText)
     }
-        /// Perform async search via ShadersModule (includes metadata & analysis)
-        private func performSearch(query: String) async {
-            // If query is empty, reset to all shaders
-            guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+
+    /// Debounce shader search to keep the UI responsive on large libraries.
+    private func scheduleSearch(query: String) {
+        searchDebounceTask?.cancel()
+        searchDebounceTask = Task { [query] in
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
                 await MainActor.run {
                     self.searchResults = shaders
                     self.isSearching = false
                 }
                 return
             }
-            guard let module = appState.shadersModule else {
-                await MainActor.run {
-                    self.searchResults = shaders
-                    self.isSearching = false
-                }
-                return
-            }
-            await MainActor.run { self.isSearching = true }
-            let results = await module.search(query: query, topK: 200)
-            let base = shaders
-            let matched: [CoreShaderInfo] = results.compactMap { result in
-                let baseName = result.name.components(separatedBy: "/").last ?? result.name
-                return base.first { info in
-                    info.name == result.name || info.name == baseName || info.path.contains(baseName)
-                }
-            }
+
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            await performSearch(query: trimmed)
+        }
+    }
+
+    /// Perform async search via ShadersModule (includes metadata & analysis)
+    private func performSearch(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else {
             await MainActor.run {
-                self.searchResults = matched.isEmpty ? base.filter { $0.name.localizedCaseInsensitiveContains(query) } : matched
+                self.searchResults = shaders
                 self.isSearching = false
             }
+            return
         }
+        guard let module = appState.shadersModule else {
+            await MainActor.run {
+                self.searchResults = shaders
+                self.isSearching = false
+            }
+            return
+        }
+
+        await MainActor.run { self.isSearching = true }
+        let results = await module.search(query: trimmed, topK: 200)
+        guard !Task.isCancelled else { return }
+
+        let base = shaders
+        let matched: [CoreShaderInfo] = results.compactMap { result in
+            let baseName = result.name.components(separatedBy: "/").last ?? result.name
+            return base.first { info in
+                info.name == result.name || info.name == baseName || info.path.contains(baseName)
+            }
+        }
+        await MainActor.run {
+            let finalResults = matched.isEmpty
+                ? base.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+                : matched
+            self.searchResults = finalResults
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            self.isSearching = false
+        }
+    }
 
     
     /// Find the Shaders directory in known locations
@@ -552,17 +623,7 @@ struct ShaderBrowserView: View {
     
     /// Select all shaders that don't have analysis.json
     private func selectUnanalyzed() {
-        selectedShaders.removeAll()
-        for shader in filteredShaders {
-            let shaderPath = URL(fileURLWithPath: shader.path)
-            let shaderDir = shaderPath.deletingLastPathComponent()
-            let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-            let analysisPath = shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.analysisExtension)")
-            
-            if !FileManager.default.fileExists(atPath: analysisPath.path) {
-                selectedShaders.insert(shader.name)
-            }
-        }
+        selectedShaders = Set(filteredShaders.filter { !hasAnalysisFile($0) }.map(\.name))
         appState.log("Selected \(selectedShaders.count) unanalyzed shaders", level: .info)
     }
     
@@ -728,13 +789,23 @@ struct ShaderBrowserView: View {
         appState.log("[Preview]   • Syphon servers: \(syphonServers)", level: .debug)
         
         previousSelectedShaderName = appState.selectedShader
-        previewShaderName = shader.name
-        
-        appState.log("[Preview]   • Setting showingPreviewModal = true", level: .debug)
-        showingPreviewModal = true
+        activeModalKind = .preview
+        activeModal = .preview(shaderName: shader.name, shaderPath: shader.path)
+        appState.log("[Preview]   • Presenting preview modal", level: .debug)
         
         appState.selectShader(shader.name)
         appState.log("[Preview]   • selectShader completed", level: .debug)
+    }
+
+    private func handleModalDismiss() {
+        defer { activeModalKind = nil }
+        guard activeModalKind == .preview else { return }
+
+        appState.log("[Preview] Modal dismissed", level: .debug)
+        if let prev = previousSelectedShaderName {
+            appState.selectShader(prev)
+        }
+        previousSelectedShaderName = nil
     }
     
     /// Show confirmation for deleting selected shaders
@@ -820,7 +891,7 @@ struct ShaderBrowserView: View {
             let screenshotCapture = ShaderScreenshotCapture(logger: logger)
             let aiService = ShaderAnalysisService(
                 providers: [
-                    LMStudioClient(logger: logger)
+                    TachikomaShaderAnalysisProvider(logger: logger)
                 ],
                 logger: logger
             )
@@ -828,7 +899,7 @@ struct ShaderBrowserView: View {
             let aiAvailable = await aiService.isAvailable()
             if !aiAvailable {
                 appState.log("⚠️ No AI provider available - will mark black shaders only", level: .warning)
-                appState.log("ℹ️ Start LM Studio with: lms server start --port 1234", level: .info)
+                appState.log("ℹ️ Configure Tachikoma in ~/Library/Application Support/SwiftVJ/tachikoma.json", level: .info)
             } else if let providerName = await aiService.activeProviderName() {
                 appState.log("🤖 Using AI provider: \(providerName)", level: .info)
             }
@@ -1189,6 +1260,15 @@ struct ShaderBrowserView: View {
             
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
             let fileSizeKB = Double(fileSize) / 1024.0
+
+            let metadata = ShaderFilterMetadata(
+                status: Self.status(from: analysis),
+                phases: analysis.phases,
+                hasAnalysis: true
+            )
+            await MainActor.run {
+                self.shaderMetadata[shaderName] = metadata
+            }
             
             appState.log("  💾 JSON saved: \(String(format: "%.1f", fileSizeKB)) KB", level: .debug)
             return true
@@ -1200,10 +1280,7 @@ struct ShaderBrowserView: View {
     
     /// Save phase assignments to shader's analysis.json
     private func saveShaderPhases(shader: CoreShaderInfo, phases: Set<Phase>) {
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
+        let analysisPath = Self.analysisPath(for: shader)
         
         // Load existing analysis or create minimal one
         var analysisDict: [String: Any] = [:]
@@ -1234,6 +1311,8 @@ struct ShaderBrowserView: View {
         do {
             let data = try JSONSerialization.data(withJSONObject: analysisDict, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: analysisPath)
+            let updatedStatus = shaderMetadata[shader.name]?.status == .unknown ? .normal : (shaderMetadata[shader.name]?.status ?? .normal)
+            shaderMetadata[shader.name] = ShaderFilterMetadata(status: updatedStatus, phases: phases, hasAnalysis: true)
             appState.log("💾 Saved phases for \(shader.name): \(phases.map { $0.displayName }.joined(separator: ", "))", level: .info)
         } catch {
             appState.log("✗ Failed to save phases for \(shader.name): \(error.localizedDescription)", level: .error)
@@ -1241,47 +1320,51 @@ struct ShaderBrowserView: View {
     }
     
     private func showAnalysis(for shader: CoreShaderInfo) {
-        // Load analysis from JSON file
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let baseName = shaderPath.deletingPathExtension().lastPathComponent
-        let analysisPath = shaderDir.appendingPathComponent("\(baseName).\(ShaderConstants.analysisExtension)")
-        
-        // Try to load from file
-        if FileManager.default.fileExists(atPath: analysisPath.path),
-           let data = try? Data(contentsOf: analysisPath),
-           let result = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) {
-            // Convert ShaderAnalysisResult to ShaderAnalysis
-            selectedAnalysis = ShaderAnalysis(
-                shaderName: shader.name,
-                title: result.title,
-                description: result.description,
-                mood: result.mood,
-                energy: result.energy,
-                colors: result.colors,
-                effects: result.effects,
-                geometry: result.geometry,
-                objects: result.objects,
-                complexity: result.complexity,
-                visualMetadata: result.visualMetadata
-            )
-        } else {
-            // No analysis file - show placeholder
-            selectedAnalysis = ShaderAnalysis(
-                shaderName: shader.name,
-                title: shader.name.replacingOccurrences(of: "_", with: " ").capitalized,
-                description: "No analysis available. Run analysis to generate shader metadata.",
-                mood: "unknown",
-                energy: 0.5,
-                colors: [],
-                effects: [],
-                geometry: [],
-                objects: [],
-                complexity: "unknown",
-                visualMetadata: [:]
-            )
+        let modalID = "\(shader.path)#\(UUID().uuidString)"
+        Task {
+            let analysis = await Task.detached(priority: .userInitiated) {
+                let analysisPath = Self.analysisPath(for: shader)
+
+                if FileManager.default.fileExists(atPath: analysisPath.path),
+                   let data = try? Data(contentsOf: analysisPath),
+                   let result = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) {
+                    return ShaderAnalysis(
+                        id: modalID,
+                        shaderName: shader.name,
+                        title: result.title,
+                        description: result.description,
+                        mood: result.mood,
+                        energy: result.energy,
+                        colors: result.colors,
+                        effects: result.effects,
+                        geometry: result.geometry,
+                        objects: result.objects,
+                        complexity: result.complexity,
+                        visualMetadata: result.visualMetadata
+                    )
+                }
+
+                return ShaderAnalysis(
+                    id: modalID,
+                    shaderName: shader.name,
+                    title: shader.name.replacingOccurrences(of: "_", with: " ").capitalized,
+                    description: "No analysis available. Run analysis to generate shader metadata.",
+                    mood: "unknown",
+                    energy: 0.5,
+                    colors: [],
+                    effects: [],
+                    geometry: [],
+                    objects: [],
+                    complexity: "unknown",
+                    visualMetadata: [:]
+                )
+            }.value
+
+            // Force a fresh presentation, even if user tapped the same shader repeatedly.
+            activeModal = nil
+            activeModalKind = .analysis
+            activeModal = .analysis(analysis)
         }
-        showingAnalysisModal = true
     }
 }
 
@@ -1665,7 +1748,8 @@ struct ShaderCardEnhanced: View {
     }
 }
 
-struct ShaderAnalysis {
+struct ShaderAnalysis: Identifiable, Sendable {
+    let id: String
     let shaderName: String
     let title: String
     let description: String

@@ -8,16 +8,22 @@ struct LogViewerView: View {
     @State private var selectedLevel: LogLevel? = nil
     @State private var searchText = ""
     @State private var autoScroll = true
-    
-    var filteredLogs: [LogEntry] {
-        appState.logEntries.filter { entry in
+
+    @State private var filteredLogsCache: [LogEntry] = []
+
+    private var latestLogTimestamp: Date? {
+        appState.logEntries.last?.timestamp
+    }
+
+    private func rebuildFilteredLogs() {
+        filteredLogsCache = appState.logEntries.filter { entry in
             let matchesLevel = selectedLevel == nil || entry.level == selectedLevel
-            let matchesSearch = searchText.isEmpty || 
+            let matchesSearch = searchText.isEmpty ||
                 entry.message.localizedCaseInsensitiveContains(searchText)
             return matchesLevel && matchesSearch
         }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Filter bar
@@ -56,7 +62,7 @@ struct LogViewerView: View {
                 Toggle("Auto-scroll", isOn: $autoScroll)
                     .toggleStyle(.switch)
                 
-                Text("\(filteredLogs.count) / \(appState.logEntries.count)")
+                Text("\(filteredLogsCache.count) / \(appState.logEntries.count)")
                     .foregroundColor(.secondary)
                 
                 Button {
@@ -75,7 +81,7 @@ struct LogViewerView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(filteredLogs) { entry in
+                        ForEach(filteredLogsCache) { entry in
                             LogRow(entry: entry)
                                 .id(entry.id)
                         }
@@ -84,7 +90,16 @@ struct LogViewerView: View {
                     .padding(.vertical, 4)
                 }
                 .onChange(of: appState.logEntries.count) { _, _ in
-                    if autoScroll, let last = filteredLogs.last {
+                    rebuildFilteredLogs()
+                    if autoScroll, let last = filteredLogsCache.last {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: latestLogTimestamp) { _, _ in
+                    rebuildFilteredLogs()
+                    if autoScroll, let last = filteredLogsCache.last {
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
@@ -92,6 +107,9 @@ struct LogViewerView: View {
                 }
             }
         }
+        .onAppear { rebuildFilteredLogs() }
+        .onChange(of: selectedLevel) { _, _ in rebuildFilteredLogs() }
+        .onChange(of: searchText) { _, _ in rebuildFilteredLogs() }
     }
 }
 
@@ -144,7 +162,7 @@ struct LogRow: View {
             state.log("Fetching lyrics...", level: .debug)
             state.log("Network timeout", level: .warning)
             state.log("Retry successful", level: .info)
-            state.log("LM Studio connection failed", level: .error)
+            state.log("Tachikoma backend connection failed", level: .error)
             return state
         }())
         .frame(width: 800, height: 500)

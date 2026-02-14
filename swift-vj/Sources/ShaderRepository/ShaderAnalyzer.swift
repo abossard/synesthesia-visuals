@@ -1,72 +1,52 @@
-// ShaderAnalyzer.swift - AI-powered shader analysis via LM Studio
-// Pure async functions
-
 import Foundation
+import Tachikoma
 
-// MARK: - ShaderAnalyzer
-
-/// Analyze shaders using LM Studio local LLM
 public enum ShaderAnalyzer {
-    
-    /// Check if LM Studio server is available
-    /// - Parameter config: LM Studio configuration
-    /// - Returns: True if server responds
-    public static func isAvailable(config: LMStudioConfig = .localhost) async -> Bool {
-        guard let url = URL(string: "\(config.baseURL.absoluteString)/v1/models") else {
-            return false
+    public static func isAvailable(config: LLMServiceConfig = .defaultLocal) async -> Bool {
+        if config.provider == .lmstudio {
+            let baseURL = config.baseURL?.absoluteString ?? "http://localhost:1234/v1"
+            let provider = LMStudioProvider(baseURL: baseURL, modelId: config.model)
+            return (try? await provider.healthCheck()) != nil
         }
-        
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5  // Quick health check
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse {
-                return httpResponse.statusCode == 200
-            }
-        } catch {
-            return false
+
+        let tachikomaConfig = makeTachikomaConfiguration(from: config)
+        let provider = config.provider.tachikomaProvider
+        if let inlineKey = config.apiKey, !inlineKey.isEmpty {
+            return true
         }
-        
-        return false
+        if provider.requiresAPIKey {
+            return tachikomaConfig.hasAPIKey(for: provider)
+        }
+        return true
     }
-    
-    /// Analyze a shader using LM Studio
-    /// - Parameters:
-    ///   - shader: The shader to analyze
-    ///   - shaderSource: GLSL source code
-    ///   - screenshotData: Optional PNG screenshot data
-    ///   - config: LM Studio configuration
-    /// - Returns: ShaderAnalysis or nil if failed
+
     public static func analyze(
         shader: Shader,
         shaderSource: String,
         screenshotData: Data?,
-        config: LMStudioConfig = .localhost
+        config: LLMServiceConfig = .defaultLocal
     ) async throws -> ShaderAnalysis {
-        let prompt = buildPrompt(shaderName: shader.name, shaderSource: shaderSource, hasScreenshot: screenshotData != nil)
-        
+        let prompt = buildPrompt(
+            shaderName: shader.name,
+            shaderSource: shaderSource,
+            hasScreenshot: screenshotData != nil
+        )
+
         let response = try await chatCompletion(
             prompt: prompt,
             imageBase64: screenshotData?.base64EncodedString(),
             config: config
         )
-        
-        return try parseAnalysis(from: response, shaderName: shader.name)
+
+        return try parseAnalysis(from: response)
     }
-    
-    /// Analyze shader from source file
-    /// - Parameters:
-    ///   - shader: The shader to analyze
-    ///   - config: LM Studio configuration
-    /// - Returns: ShaderAnalysis
+
     public static func analyze(
         shader: Shader,
-        config: LMStudioConfig = .localhost
+        config: LLMServiceConfig = .defaultLocal
     ) async throws -> ShaderAnalysis {
         let source = try String(contentsOf: shader.sourceURL, encoding: .utf8)
         let screenshotData = shader.screenshotURL.flatMap { try? Data(contentsOf: $0) }
-        
         return try await analyze(
             shader: shader,
             shaderSource: source,
@@ -76,91 +56,63 @@ public enum ShaderAnalyzer {
     }
 }
 
-// MARK: - Private Implementation
-
 extension ShaderAnalyzer {
-    
-    /// Make chat completion request with optional vision
     private static func chatCompletion(
         prompt: String,
         imageBase64: String?,
-        config: LMStudioConfig
+        config: LLMServiceConfig
     ) async throws -> String {
-        guard let url = URL(string: "\(config.baseURL.absoluteString)/v1/chat/completions") else {
-            throw AnalyzerError.invalidURL
+        let model = config.languageModel
+        let tachikomaConfig = makeTachikomaConfiguration(from: config)
+        let settings = GenerationSettings(
+            maxTokens: config.maxTokens,
+            temperature: config.temperature
+        )
+
+        if let imageBase64 {
+            let image = ModelMessage.ContentPart.ImageContent(data: imageBase64, mimeType: "image/png")
+            let messages = [ModelMessage.user(text: prompt, images: [image])]
+            let result = try await generateText(
+                model: model,
+                messages: messages,
+                settings: settings,
+                timeout: config.timeout,
+                configuration: tachikomaConfig
+            )
+            return result.text
         }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = config.timeout
-        
-        // Build message content
-        let messageContent: Any
-        if let base64 = imageBase64 {
-            messageContent = [
-                ["type": "text", "text": prompt],
-                ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(base64)"]]
-            ]
-        } else {
-            messageContent = prompt
-        }
-        
-        let payload: [String: Any] = [
-            "messages": [["role": "user", "content": messageContent]],
-            "max_tokens": config.maxTokens,
-            "temperature": config.temperature
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AnalyzerError.invalidResponse
-        }
-        
-        guard httpResponse.statusCode == 200 else {
-            let body = String(data: data, encoding: .utf8) ?? "unknown"
-            throw AnalyzerError.serverError(httpResponse.statusCode, body)
-        }
-        
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw AnalyzerError.parseError("Could not extract content from response")
-        }
-        
-        return content
+
+        let result = try await generateText(
+            model: model,
+            messages: [.user(prompt)],
+            settings: settings,
+            timeout: config.timeout,
+            configuration: tachikomaConfig
+        )
+        return result.text
     }
-    
-    /// Parse analysis JSON from LLM response
-    private static func parseAnalysis(from content: String, shaderName: String) throws -> ShaderAnalysis {
+
+    private static func parseAnalysis(from content: String) throws -> ShaderAnalysis {
         guard let jsonStart = content.firstIndex(of: "{"),
               let jsonEnd = content.lastIndex(of: "}") else {
             throw AnalyzerError.parseError("No JSON found in response")
         }
-        
+
         let jsonString = String(content[jsonStart...jsonEnd])
-        
         guard let jsonData = jsonString.data(using: .utf8) else {
             throw AnalyzerError.parseError("Could not convert JSON to data")
         }
-        
         return try JSONDecoder().decode(ShaderAnalysis.self, from: jsonData)
     }
-    
-    /// Build the analysis prompt
+
     static let analysisPrompt = """
         Analyze this GLSL shader for VJ music visualization matching.
-        
+
         Shader name: %SHADER_NAME%
-        
+
         GLSL source code (first 2000 chars):
         %SHADER_SOURCE%
-        
+
         %SCREENSHOT_NOTE%
 
         Provide a JSON analysis with:
@@ -192,41 +144,91 @@ extension ShaderAnalyzer {
 
         Return ONLY the JSON object, no other text.
         """
-    
+
     private static func buildPrompt(shaderName: String, shaderSource: String, hasScreenshot: Bool) -> String {
         let screenshotNote = hasScreenshot
-            ? "I've included a screenshot of the rendered shader. Please analyze BOTH the code AND the visual output."
+            ? "I've included a screenshot of the rendered shader. Please analyze BOTH the code and the visual output."
             : ""
-        
+
         return analysisPrompt
             .replacingOccurrences(of: "%SHADER_NAME%", with: shaderName)
             .replacingOccurrences(of: "%SHADER_SOURCE%", with: String(shaderSource.prefix(2000)))
             .replacingOccurrences(of: "%SCREENSHOT_NOTE%", with: screenshotNote)
     }
+
+    private static func makeTachikomaConfiguration(from config: LLMServiceConfig) -> TachikomaConfiguration {
+        let tachikomaConfig = TachikomaConfiguration(loadFromEnvironment: true)
+        if let baseURL = config.baseURL?.absoluteString {
+            tachikomaConfig.setBaseURL(baseURL, for: config.provider.tachikomaProvider)
+        }
+        if let apiKey = config.apiKey, !apiKey.isEmpty {
+            tachikomaConfig.setAPIKey(apiKey, for: config.provider.tachikomaProvider)
+        }
+        return tachikomaConfig
+    }
 }
 
-// MARK: - AnalyzerError
-
-/// Errors from shader analysis
 public enum AnalyzerError: Error, LocalizedError {
     case invalidURL
     case invalidResponse
     case serverError(Int, String)
     case parseError(String)
     case notAvailable
-    
+
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid LM Studio URL"
+            return "Invalid LLM provider URL"
         case .invalidResponse:
-            return "Invalid response from LM Studio"
+            return "Invalid response from provider"
         case .serverError(let code, let body):
-            return "LM Studio error \(code): \(body.prefix(200))"
-        case .parseError(let msg):
-            return "Parse error: \(msg)"
+            return "LLM provider error \(code): \(body.prefix(200))"
+        case .parseError(let message):
+            return "Parse error: \(message)"
         case .notAvailable:
-            return "LM Studio is not available"
+            return "LLM provider is not available"
+        }
+    }
+}
+
+private extension LLMServiceConfig {
+    var languageModel: LanguageModel {
+        switch provider {
+        case .lmstudio:
+            if model.lowercased() == "current" {
+                return .lmstudio(.current)
+            }
+            return .lmstudio(.custom(model))
+        case .openai:
+            return .openai(.custom(model))
+        case .anthropic:
+            return .anthropic(.custom(model))
+        case .azureOpenAI:
+            return .azureOpenAI(
+                deployment: model,
+                resource: azureResource,
+                apiVersion: azureAPIVersion,
+                endpoint: azureEndpoint
+            )
+        case .ollama:
+            return .ollama(.custom(model))
+        }
+    }
+}
+
+private extension LLMProvider {
+    var tachikomaProvider: Provider {
+        switch self {
+        case .lmstudio:
+            return .lmstudio
+        case .openai:
+            return .openai
+        case .anthropic:
+            return .anthropic
+        case .azureOpenAI:
+            return .azureOpenAI
+        case .ollama:
+            return .ollama
         }
     }
 }

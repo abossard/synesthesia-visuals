@@ -355,30 +355,52 @@ public struct ShaderMatchResult: Sendable, Equatable {
     public var name: String { shader.name }
 }
 
-// MARK: - LMStudioConfig
+// MARK: - LLMServiceConfig
 
-/// Configuration for LM Studio connection
-public struct LMStudioConfig: Sendable, Equatable {
-    public let baseURL: URL
+public enum LLMProvider: String, Sendable, Codable, Equatable {
+    case lmstudio
+    case openai
+    case anthropic
+    case azureOpenAI = "azure_openai"
+    case ollama
+}
+
+/// Configuration for shader analysis provider selection.
+public struct LLMServiceConfig: Sendable, Equatable, Codable {
+    public let provider: LLMProvider
     public let model: String
+    public let baseURL: URL?
     public let timeout: TimeInterval
     public let maxTokens: Int
     public let temperature: Double
-    
+    public let apiKey: String?
+    public let azureResource: String?
+    public let azureEndpoint: String?
+    public let azureAPIVersion: String?
+
     public init(
-        baseURL: URL = URL(string: "http://localhost:1234")!,
-        model: String = "default",
+        provider: LLMProvider = .lmstudio,
+        model: String = "current",
+        baseURL: URL? = URL(string: "http://localhost:1234/v1"),
         timeout: TimeInterval = 300,
         maxTokens: Int = 1200,
-        temperature: Double = 0.7
+        temperature: Double = 0.7,
+        apiKey: String? = nil,
+        azureResource: String? = nil,
+        azureEndpoint: String? = nil,
+        azureAPIVersion: String? = nil
     ) {
-        self.baseURL = baseURL
+        self.provider = provider
         self.model = model
+        self.baseURL = baseURL
         self.timeout = timeout
         self.maxTokens = maxTokens
         self.temperature = temperature
+        self.apiKey = apiKey
+        self.azureResource = azureResource
+        self.azureEndpoint = azureEndpoint
+        self.azureAPIVersion = azureAPIVersion
     }
-    
-    /// Default localhost configuration
-    public static let localhost = LMStudioConfig()
+
+    public static let defaultLocal = LLMServiceConfig()
 }
