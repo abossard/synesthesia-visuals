@@ -67,9 +67,17 @@ public actor LLMClient {
         "romantic", "aggressive", "peaceful", "nostalgic", "uplifting"
     ]
 
-    private let runtimeConfig: TachikomaLLMRuntimeConfig
-    private let hasConfiguredRuntimeConfig: Bool
-    private let tachikomaConfiguration: TachikomaConfiguration
+    private enum BackendDomain {
+        case song
+        case shader
+    }
+
+    private let fixedRuntimeConfig: TachikomaLLMRuntimeConfig?
+    private let fixedRuntimeConfigURL: URL?
+    private var runtimeConfig: TachikomaLLMRuntimeConfig
+    private var hasConfiguredRuntimeConfig: Bool
+    private var tachikomaConfiguration: TachikomaConfiguration
+    private var hasLoadedRuntimeConfiguration: Bool
 
     private var backend: LLMBackend = .none
     private var lastCheck: Date = .distantPast
@@ -81,13 +89,19 @@ public actor LLMClient {
         runtimeConfig: TachikomaLLMRuntimeConfig? = nil,
         runtimeConfigURL: URL? = nil
     ) {
-        let selectedURL = runtimeConfigURL ?? Self.selectedConfigURLFromDefaults()
-        let loadedConfig = runtimeConfig ?? TachikomaLLMRuntimeConfig.load(from: selectedURL)
-        let resolvedConfig = loadedConfig ?? .default
-        self.runtimeConfig = resolvedConfig
-        self.hasConfiguredRuntimeConfig = loadedConfig != nil
-        self.tachikomaConfiguration = resolvedConfig.makeTachikomaConfiguration()
+        self.fixedRuntimeConfig = runtimeConfig
+        self.fixedRuntimeConfigURL = runtimeConfigURL
+        self.runtimeConfig = runtimeConfig ?? .default
+        self.hasConfiguredRuntimeConfig = runtimeConfig != nil
+        self.tachikomaConfiguration = (runtimeConfig ?? .default).makeTachikomaConfiguration()
+        self.hasLoadedRuntimeConfiguration = runtimeConfig != nil
         self.health = ServiceHealth(name: "LLM")
+    }
+
+    public func reloadConfiguration() {
+        refreshRuntimeConfiguration()
+        backend = .none
+        lastCheck = .distantPast
     }
 
     public var isAvailable: Bool {
@@ -104,11 +118,11 @@ public actor LLMClient {
     }
 
     public func start() async {
-        await checkBackend(using: runtimeConfig.songAnalysis)
+        await checkBackend(for: .song)
     }
 
     public func startShaderAnalysis() async {
-        await checkBackend(using: runtimeConfig.shaderAnalysis)
+        await checkBackend(for: .shader)
     }
 
     public func analyzeSong(
@@ -127,7 +141,7 @@ public actor LLMClient {
             return cached.withCached(true)
         }
 
-        await ensureBackend()
+        await ensureBackend(for: .song)
         if backend != .none {
             if let result = try? await analyzeSongWithLLM(lyrics: lyrics, artist: artist, title: title, album: album) {
                 analysisCache[cacheKey] = result.withCached(false)
@@ -150,7 +164,7 @@ public actor LLMClient {
             return cached
         }
 
-        await ensureBackend()
+        await ensureBackend(for: .song)
         if backend != .none, let lyrics {
             if let result = try? await categorizeWithLLM(artist: artist, title: title, lyrics: lyrics) {
                 categoriesCache[cacheKey] = result
@@ -250,7 +264,7 @@ public actor LLMClient {
         screenshotData: Data? = nil,
         timeout: TimeInterval = 120
     ) async -> LLMShaderAnalysis {
-        await ensureBackend()
+        await ensureBackend(for: .shader)
 
         guard backend != .none else {
             return LLMShaderAnalysis(shaderName: shaderName, error: "LLM not available")
@@ -301,22 +315,31 @@ public actor LLMClient {
         await health.status()
     }
 
-    private func ensureBackend() async {
+    private func ensureBackend(for domain: BackendDomain) async {
+        loadRuntimeConfigurationIfNeeded()
         if backend == .none && Date().timeIntervalSince(lastCheck) > Self.recheckInterval {
-            await checkBackend()
+            await checkBackend(for: domain)
         }
     }
 
     private func checkBackend() async {
-        await checkBackend(using: runtimeConfig.songAnalysis)
+        await checkBackend(for: .song)
     }
 
-    private func checkBackend(using providerConfig: TachikomaProviderConfig) async {
+    private func checkBackend(for domain: BackendDomain) async {
+        loadRuntimeConfigurationIfNeeded()
         lastCheck = Date()
         guard hasConfiguredRuntimeConfig else {
             backend = .none
             await health.markUnavailable(error: "Tachikoma config not selected or invalid")
             return
+        }
+
+        let providerConfig: TachikomaProviderConfig = switch domain {
+        case .song:
+            runtimeConfig.songAnalysis
+        case .shader:
+            runtimeConfig.shaderAnalysis
         }
 
         let provider = providerConfig.provider.tachikomaProvider
@@ -334,6 +357,29 @@ public actor LLMClient {
             backend = .none
             await health.markUnavailable(error: "Missing credentials for \(provider.displayName)")
         }
+    }
+
+    private func refreshRuntimeConfiguration() {
+        let resolved = Self.resolveRuntimeConfiguration(
+            fixedRuntimeConfig: fixedRuntimeConfig,
+            fixedRuntimeConfigURL: fixedRuntimeConfigURL
+        )
+        applyRuntimeConfiguration(resolved.config, configured: resolved.configured)
+    }
+
+    private func loadRuntimeConfigurationIfNeeded() {
+        guard !hasLoadedRuntimeConfiguration else { return }
+        refreshRuntimeConfiguration()
+    }
+
+    private func applyRuntimeConfiguration(
+        _ config: TachikomaLLMRuntimeConfig,
+        configured: Bool
+    ) {
+        runtimeConfig = config
+        hasConfiguredRuntimeConfig = configured
+        tachikomaConfiguration = config.makeTachikomaConfiguration()
+        hasLoadedRuntimeConfiguration = true
     }
 
     private func analyzeSongWithLLM(
@@ -734,6 +780,21 @@ public actor LLMClient {
 }
 
 private extension LLMClient {
+    static func resolveRuntimeConfiguration(
+        fixedRuntimeConfig: TachikomaLLMRuntimeConfig?,
+        fixedRuntimeConfigURL: URL?
+    ) -> (config: TachikomaLLMRuntimeConfig, configured: Bool) {
+        if let fixedRuntimeConfig {
+            return (fixedRuntimeConfig, true)
+        }
+
+        let selectedURL = fixedRuntimeConfigURL ?? selectedConfigURLFromDefaults()
+        if let loaded = TachikomaLLMRuntimeConfig.load(from: selectedURL) {
+            return (loaded, true)
+        }
+        return (.default, false)
+    }
+
     static func selectedConfigURLFromDefaults() -> URL? {
         let defaults = UserDefaults.standard
         guard let raw = defaults.string(forKey: configPathDefaultsKey)?

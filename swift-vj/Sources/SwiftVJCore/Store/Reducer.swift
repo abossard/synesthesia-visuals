@@ -18,7 +18,6 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         state.isRunning = true
         state.ui.addLog("Starting VJ system...", level: .info)
         return .merge(
-            .send(.loadPersistedState),
             .send(.playback(.startMonitoring)),
             .send(.launchpad(.start)),
             .send(.audio(.startMonitoring))
@@ -72,6 +71,12 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         return uiReducer(state: &state.ui, action: uiAction)
             .map { AppAction.ui($0) }
 
+    case .launcher(let launcherAction):
+        var launcherState = state.launcher
+        let effect = launcherReducer(state: &launcherState, action: launcherAction, appState: &state)
+        state.launcher = launcherState
+        return effect
+
     case .ledfx(let ledfxAction):
         var ledfxState = state.ledfx
         let effect = ledfxReducer(state: &ledfxState, action: ledfxAction)
@@ -91,12 +96,17 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
     case .persistedStateLoaded(let persisted):
         persisted.apply(to: &state)
         state.ui.addLog("Loaded persisted state", level: .debug)
-        var followUp: [Effect<AppAction>] = []
+        var followUp: [Effect<AppAction>] = [
+            .send(.render(.setEnabled(persisted.renderEnabled)))
+        ]
         if let shader = persisted.selectedShader, !shader.isEmpty {
             followUp.append(.send(.render(.selectShader(shader))))
         }
         if let mask = persisted.selectedMaskShader, !mask.isEmpty {
             followUp.append(.send(.render(.selectMaskShader(mask))))
+        }
+        if state.launcher.targets.contains(where: \.autoStart) {
+            followUp.append(.send(.launcher(.launchAutoStartRequested)))
         }
         return followUp.isEmpty ? .none : .merge(followUp)
 
@@ -116,23 +126,20 @@ public func playbackReducer(
 ) -> Effect<PlaybackAction> {
     switch action {
     case .trackChanged(let track):
-        let previousTrack = state.currentTrack
-        state.currentTrack = track
+        return handleTrackChange(
+            track,
+            forcePipelineRun: false,
+            state: &state,
+            appState: &appState
+        )
 
-        // Log track change
-        appState.ui.addLog("♪ \(track.artist) - \(track.title)", level: .info)
-
-        // Trigger pipeline processing if track actually changed
-        if previousTrack?.key != track.key {
-            // Dispatch pipeline processing via effect
-            // The effect will be caught by the app layer and processed
-            return Effect<PlaybackAction>.run { _ in
-                // Fire-and-forget: notify that pipeline should start
-                // The actual processing happens in SwiftVJApp via EffectEnvironment
-                await EffectEnvironment.shared.processPipelineTrack?(track)
-            }
-        }
-        return .none
+    case .demoTrackChanged(let track):
+        return handleTrackChange(
+            track,
+            forcePipelineRun: true,
+            state: &state,
+            appState: &appState
+        )
 
     case .positionUpdated(let position, let isPlaying):
         state.position = position
@@ -153,11 +160,6 @@ public func playbackReducer(
         state.isPlaying = isPlaying
         return .none
 
-    case .timingOffsetChanged(let offset):
-        state.timingOffsetMs = offset
-        appState.ui.addLog("Timing offset: \(offset)ms", level: .info)
-        return .none
-
     case .startMonitoring:
         return PlaybackEffects.startMonitoring()
 
@@ -166,6 +168,30 @@ public func playbackReducer(
 
     case .poll:
         return PlaybackEffects.poll()
+    }
+}
+
+private func handleTrackChange(
+    _ track: Track,
+    forcePipelineRun: Bool,
+    state: inout PlaybackSubState,
+    appState: inout AppState
+) -> Effect<PlaybackAction> {
+    let previousTrack = state.currentTrack
+    state.currentTrack = track
+
+    // Log track change
+    appState.ui.addLog("♪ \(track.artist) - \(track.title)", level: .info)
+
+    // Trigger pipeline processing for new tracks, or always for explicit demo play.
+    guard forcePipelineRun || previousTrack?.key != track.key else {
+        return .none
+    }
+
+    return Effect<PlaybackAction>.run { _ in
+        // Fire-and-forget: notify that pipeline should start
+        // The actual processing happens in SwiftVJApp via EffectEnvironment
+        await EffectEnvironment.shared.processPipelineTrack?(track)
     }
 }
 
@@ -188,6 +214,7 @@ public func pipelineReducer(
         state.processingTrackKey = track.key
         state.error = nil
         state.resetSteps()
+        state.expandedStepNames.removeAll()
 
         appState.ui.addLog("Processing: \(track.artist) - \(track.title)", level: .info)
 
@@ -251,6 +278,7 @@ public func pipelineReducer(
         state.isProcessing = false
         state.processingTrackKey = nil
         state.error = nil
+        state.expandedStepNames.removeAll()
         return .none
 
     case .clearCache:
@@ -258,6 +286,10 @@ public func pipelineReducer(
 
     case .updateStep(let name, let status, let details):
         state.updateStep(name, status: status, details: details)
+        return .none
+
+    case .toggleStepExpansion(let stepName):
+        state.toggleStepExpansion(stepName)
         return .none
     }
 }
@@ -271,6 +303,14 @@ public func renderReducer(
     appState: inout AppState
 ) -> Effect<AppAction> {
     switch action {
+    case .setEnabled(let enabled):
+        state.isEnabled = enabled
+        appState.ui.addLog(enabled ? "Renderer enabled" : "Renderer disabled", level: .info)
+        return .merge(
+            RenderEffects.setEnabled(enabled),
+            .send(.persistState)
+        )
+
     case .selectShader(let name):
         state.selectedShader = name
         appState.ui.addLog("Selected shader: \(name)", level: .info)
@@ -352,10 +392,20 @@ public func renderReducer(
         return .none
 
     case .startEngine:
-        return RenderEffects.startEngine()
+        state.isEnabled = true
+        appState.ui.addLog("Renderer enabled", level: .info)
+        return .merge(
+            RenderEffects.startEngine(),
+            .send(.persistState)
+        )
 
     case .stopEngine:
-        return RenderEffects.stopEngine()
+        state.isEnabled = false
+        appState.ui.addLog("Renderer disabled", level: .info)
+        return .merge(
+            RenderEffects.stopEngine(),
+            .send(.persistState)
+        )
     }
 }
 
@@ -498,6 +548,166 @@ public func uiReducer(
     case .setOscFilter(let filter):
         state.oscFilter = filter
         return .none
+
+    case .reloadTachikomaConfig:
+        return .fireAndForget {
+            await EffectEnvironment.shared.reloadLLMConfiguration?()
+        }
+    }
+}
+
+// MARK: - Launcher Reducer
+
+/// Reducer for controlled app/command launcher actions.
+public func launcherReducer(
+    state: inout LauncherSubState,
+    action: LauncherAction,
+    appState: inout AppState
+) -> Effect<AppAction> {
+    switch action {
+    case .addAppTargetsRequested(let urls):
+        state.lastError = nil
+        return LauncherEffects.analyzeDroppedItems(urls)
+            .map { AppAction.launcher($0) }
+
+    case .appTargetsAnalyzed(let incomingTargets):
+        var existingByIdentity = Dictionary(uniqueKeysWithValues: state.targets.map { ($0.normalizedIdentity, $0.id) })
+        var added = 0
+
+        for target in incomingTargets where target.kind == .app {
+            let identity = target.normalizedIdentity
+            if existingByIdentity[identity] != nil { continue }
+            state.targets.append(target)
+            existingByIdentity[identity] = target.id
+            added += 1
+        }
+
+        state.revision &+= 1
+        if added > 0 {
+            appState.ui.addLog("Launcher: added \(added) app target(s)", level: .info)
+            return .send(.persistState)
+        }
+        appState.ui.addLog("Launcher: no new app targets to add", level: .debug)
+        return .none
+
+    case .addCommandTargetRequested(let commandLine, let workingDirectory):
+        let trimmedCommand = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCommand.isEmpty else {
+            state.lastError = "Command line cannot be empty."
+            state.revision &+= 1
+            return .none
+        }
+        let trimmedCwd = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCwd = (trimmedCwd?.isEmpty == true) ? nil : trimmedCwd
+
+        let commandName = trimmedCommand.split(separator: " ").first.map(String.init) ?? "Command"
+        let target = LaunchTarget.commandTarget(
+            id: "cmd:\(UUID().uuidString)",
+            displayName: commandName,
+            commandLine: trimmedCommand,
+            workingDirectory: normalizedCwd
+        )
+
+        if state.targets.contains(where: { $0.normalizedIdentity == target.normalizedIdentity }) {
+            state.lastError = "That command target already exists."
+            state.revision &+= 1
+            return .none
+        }
+
+        state.lastError = nil
+        state.targets.append(target)
+        state.revision &+= 1
+        appState.ui.addLog("Launcher: added command target \(commandName)", level: .info)
+        return .send(.persistState)
+
+    case .removeTarget(let id):
+        let before = state.targets.count
+        state.targets.removeAll { $0.id == id }
+        state.runningTargetIDs.remove(id)
+        if state.targets.count != before {
+            state.revision &+= 1
+            appState.ui.addLog("Launcher: removed target", level: .info)
+            return .send(.persistState)
+        }
+        return .none
+
+    case .setAutoStart(let id, let enabled):
+        guard let index = state.targets.firstIndex(where: { $0.id == id }) else { return .none }
+        state.targets[index].autoStart = enabled
+        state.revision &+= 1
+        return .send(.persistState)
+
+    case .launchTargetRequested(let id):
+        guard let target = state.targets.first(where: { $0.id == id }) else {
+            state.lastError = "Launch target not found."
+            state.revision &+= 1
+            return .none
+        }
+        state.lastError = nil
+        state.revision &+= 1
+        return LauncherEffects.launchTarget(target)
+            .map { AppAction.launcher($0) }
+
+    case .launchMissingRequested:
+        state.isLaunchingAll = true
+        state.lastError = nil
+        state.revision &+= 1
+        return LauncherEffects.launchTargetsIfNeeded(state.targets)
+            .map { AppAction.launcher($0) }
+
+    case .launchAutoStartRequested:
+        let autostartTargets = state.targets.filter(\.autoStart)
+        guard !autostartTargets.isEmpty else { return .none }
+        state.isLaunchingAll = true
+        state.lastError = nil
+        state.revision &+= 1
+        return LauncherEffects.launchTargetsIfNeeded(autostartTargets)
+            .map { AppAction.launcher($0) }
+
+    case .launchTargetCompleted(let id, let launched, let error):
+        if let target = state.targets.first(where: { $0.id == id }) {
+            switch target.kind {
+            case .app:
+                if launched || error == nil {
+                    state.runningTargetIDs.insert(id)
+                    state.lastError = nil
+                }
+            case .command:
+                // Command targets always run in external terminal; we don't infer runtime state.
+                state.runningTargetIDs.remove(id)
+                if launched {
+                    state.lastError = nil
+                }
+            }
+        }
+        if let error, !error.isEmpty {
+            state.lastError = error
+            appState.ui.addLog("Launcher: \(error)", level: .error)
+        }
+        state.revision &+= 1
+        return .none
+
+    case .launchAllCompleted(let report):
+        state.isLaunchingAll = false
+        state.runningTargetIDs = report.runningTargetIDs
+        if let firstError = report.failedTargetErrors.values.sorted().first {
+            state.lastError = firstError
+        } else {
+            state.lastError = nil
+        }
+
+        let launched = report.launchedTargetIDs.count
+        let already = report.alreadyRunningTargetIDs.count
+        let failed = report.failedTargetErrors.count
+        state.lastLaunchSummary = "Launched \(launched), already running \(already), failed \(failed)"
+        appState.ui.addLog("Launcher: \(state.lastLaunchSummary ?? "completed")", level: failed > 0 ? .warning : .info)
+        state.revision &+= 1
+        return .none
+
+    case .clearError:
+        state.lastError = nil
+        state.revision &+= 1
+        return .none
     }
 }
 
@@ -505,38 +715,41 @@ public func uiReducer(
 
 /// Reducer for LedFX-related actions (effect-only)
 public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Effect<AppAction> {
+    let previous = state
+    let effect: Effect<AppAction>
+
     switch action {
     case .setBaseURL(let value):
         state.baseURL = normalizeLedFXBaseURL(value)
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .setVirtualIds(let value):
         state.virtualIdsString = value
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .setSceneFilter(let value):
         state.sceneFilter = value
-        return .none
+        effect = .none
 
     case .setPlaylistFilter(let value):
         state.playlistFilter = value
-        return .none
+        effect = .none
 
     case .applySettings(let baseURL, let virtualIds):
         state.baseURL = normalizeLedFXBaseURL(baseURL)
         state.virtualIdsString = virtualIds.joined(separator: ", ")
         state.isApplying = true
         state.errorMessage = nil
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .applyCompleted:
         state.isApplying = false
-        return .none
+        effect = .none
 
     case .refresh, .testConnection:
         state.isRefreshing = true
         state.errorMessage = nil
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .refreshCompleted(let snapshot):
         state.isRefreshing = false
@@ -551,7 +764,7 @@ public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Eff
         state.isRunning = snapshot.isOnline
         state.healthSummary = snapshot.healthSummary
         state.lastHealthCheck = snapshot.lastHealthCheck
-        return .none
+        effect = .none
 
     case .refreshFailed(let message):
         state.isRefreshing = false
@@ -559,43 +772,43 @@ public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Eff
         state.isRunning = false
         state.healthSummary = "Offline"
         state.lastHealthCheck = Date()
-        return .none
+        effect = .none
 
     case .generateBridgeConfig:
         state.isGeneratingConfig = true
         state.errorMessage = nil
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .generateConfigCompleted(let yaml, let playlistCount, let effectsCount):
         state.isGeneratingConfig = false
         state.generatedYaml = yaml
         state.playlistCount = playlistCount
         state.effectsCount = effectsCount
-        return .none
+        effect = .none
 
     case .generateConfigFailed(let message):
         state.isGeneratingConfig = false
         state.errorMessage = message
-        return .none
+        effect = .none
 
     case .loadCachedConfig:
         state.errorMessage = nil
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .cachedConfigLoaded(let yaml, let playlistCount):
         state.generatedYaml = yaml
         state.playlistCount = playlistCount
         state.effectsCount = 0
-        return .none
+        effect = .none
 
     case .cachedConfigFailed(let message):
         state.errorMessage = message
-        return .none
+        effect = .none
 
     case .loadGeneratedConfig(let yaml):
         state.errorMessage = nil
         state.generatedYaml = yaml
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .activateScene(_),
          .deactivateScene(_),
@@ -609,24 +822,29 @@ public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Eff
          .sendTestPlaylist,
          .sendTestOneshot:
         state.errorMessage = nil
-        return LedFXEffects.handle(action)
+        effect = LedFXEffects.handle(action)
 
     case .playlistActivated(let id):
         state.activePlaylistId = id
-        return .none
+        effect = .none
 
     case .playlistStopped:
         state.activePlaylistId = nil
-        return .none
+        effect = .none
 
     case .setError(let message):
         state.errorMessage = message
-        return .none
+        effect = .none
 
     case .clearError:
         state.errorMessage = nil
-        return .none
+        effect = .none
     }
+
+    if state != previous {
+        state.revision &+= 1
+    }
+    return effect
 }
 
 private func normalizeLedFXBaseURL(_ baseURL: String) -> String {
@@ -660,6 +878,19 @@ public func songsReducer(
 
     case .songSelected(let id):
         state.selectedSongId = id
+        return .none
+
+    case .demoPlayRequested(let id):
+        state.selectedSongId = id
+        return SongsEffects.demoPlay(id)
+
+    case .demoPlayStarted(let id):
+        state.selectedSongId = id
+        appState.ui.addLog("Demo Play: \(id.artist) - \(id.title)", level: .info)
+        return .none
+
+    case .demoPlayFailed(_, let reason):
+        appState.ui.addLog("Demo Play failed: \(reason)", level: .error)
         return .none
 
     case .deleteSong(let id):
@@ -816,6 +1047,12 @@ public enum PipelineEffects {
 }
 
 public enum RenderEffects {
+    public static func setEnabled(_ enabled: Bool) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.setRenderEnabled?(enabled)
+        }
+    }
+
     public static func loadShader(_ name: String) -> Effect<AppAction> {
         .run { _ in
             // Execute shader loading via environment
@@ -871,8 +1108,8 @@ public enum RenderEffects {
             await EffectEnvironment.shared.loadImagesFromFolder?(path)
         }
     }
-    public static func startEngine() -> Effect<AppAction> { .none }
-    public static func stopEngine() -> Effect<AppAction> { .none }
+    public static func startEngine() -> Effect<AppAction> { setEnabled(true) }
+    public static func stopEngine() -> Effect<AppAction> { setEnabled(false) }
 
     private static func selectAdjacentName(
         current: String?,
@@ -899,6 +1136,43 @@ public enum RenderEffects {
             } else {
                 await send(.render(.selectShader(nextName)))
             }
+        }
+    }
+}
+
+public enum LauncherEffects {
+    public static func analyzeDroppedItems(_ urls: [URL]) -> Effect<LauncherAction> {
+        .run { send in
+            guard let handler = await EffectEnvironment.shared.launcherHandler else { return }
+            let analyzed = await handler.analyzeDroppedItems(urls)
+            await send(.appTargetsAnalyzed(analyzed))
+        }
+    }
+
+    public static func launchTarget(_ target: LaunchTarget) -> Effect<LauncherAction> {
+        .run { send in
+            guard let handler = await EffectEnvironment.shared.launcherHandler else {
+                await send(.launchTargetCompleted(id: target.id, launched: false, error: "Launcher unavailable"))
+                return
+            }
+            let result = await handler.launchTarget(target)
+            await send(.launchTargetCompleted(id: target.id, launched: result.launched, error: result.error))
+        }
+    }
+
+    public static func launchTargetsIfNeeded(_ targets: [LaunchTarget]) -> Effect<LauncherAction> {
+        .run { send in
+            guard let handler = await EffectEnvironment.shared.launcherHandler else {
+                await send(.launchAllCompleted(
+                    LauncherLaunchReport(
+                        failedTargetErrors: ["launcher": "Launcher unavailable"],
+                        runningTargetIDs: []
+                    )
+                ))
+                return
+            }
+            let report = await handler.launchTargetsIfNeeded(targets)
+            await send(.launchAllCompleted(report))
         }
     }
 }
@@ -998,16 +1272,26 @@ public enum PersistenceEffects {
     public static func loadState() -> Effect<AppAction> {
         .run { send in
             // Load from UserDefaults
+            let renderEnabled = (UserDefaults.standard.object(forKey: "renderEnabled") as? Bool) ?? true
             let shader = UserDefaults.standard.string(forKey: "selectedShader")
             let maskShader = UserDefaults.standard.string(forKey: "selectedMaskShader")
             let phase = UserDefaults.standard.string(forKey: "currentPhase")
             let source = UserDefaults.standard.string(forKey: "playbackSource") ?? "vdj"
+            let launcherTargets: [LaunchTarget]
+            if let launcherData = UserDefaults.standard.data(forKey: "launcherTargets"),
+               let decoded = try? JSONDecoder().decode([LaunchTarget].self, from: launcherData) {
+                launcherTargets = decoded
+            } else {
+                launcherTargets = []
+            }
 
             let persisted = PersistedState(
+                renderEnabled: renderEnabled,
                 selectedShader: shader,
                 selectedMaskShader: maskShader,
                 currentPhase: phase,
-                playbackSource: source
+                playbackSource: source,
+                launcherTargets: launcherTargets
             )
 
             await send(.persistedStateLoaded(persisted))
@@ -1016,6 +1300,7 @@ public enum PersistenceEffects {
 
     public static func saveState(_ state: PersistedState) -> Effect<AppAction> {
         .fireAndForget {
+            UserDefaults.standard.set(state.renderEnabled, forKey: "renderEnabled")
             if let shader = state.selectedShader {
                 UserDefaults.standard.set(shader, forKey: "selectedShader")
             } else {
@@ -1032,6 +1317,11 @@ public enum PersistenceEffects {
                 UserDefaults.standard.removeObject(forKey: "currentPhase")
             }
             UserDefaults.standard.set(state.playbackSource, forKey: "playbackSource")
+            if let launcherData = try? JSONEncoder().encode(state.launcherTargets) {
+                UserDefaults.standard.set(launcherData, forKey: "launcherTargets")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "launcherTargets")
+            }
         }
     }
 
@@ -1197,6 +1487,38 @@ public enum SongsEffects {
 
             // Mark reanalysis as completed
             await send(.songs(.reanalysisCompleted(id)))
+        }
+    }
+
+    public static func demoPlay(_ id: SongID) -> Effect<AppAction> {
+        .run(cancellationId: EffectCancellationId.custom("songs.demo-play")) { send in
+            guard let songsModule = await EffectEnvironment.shared.songsModule else {
+                await send(.songs(.demoPlayFailed(id, "Songs module not available")))
+                return
+            }
+            guard let song = await songsModule.getSong(id: id) else {
+                await send(.songs(.demoPlayFailed(id, "Song not found")))
+                return
+            }
+
+            await send(.songs(.demoPlayStarted(id)))
+            await send(.pipeline(.reset))
+            await EffectEnvironment.shared.clearPipelineCache?(song.artist, song.title)
+
+            let track = Track(
+                artist: song.artist,
+                title: song.title,
+                album: song.album,
+                duration: song.duration,
+                bpm: song.bpm,
+                musicalKey: song.musicalKey
+            )
+
+            // Route through playback actions so full flow remains:
+            // UI -> AppAction -> Reducer -> Effects -> State -> View.
+            await send(.playback(.demoTrackChanged(track)))
+            await send(.playback(.positionUpdated(position: 0, isPlaying: true)))
+            await send(.playback(.playingStateChanged(true)))
         }
     }
 

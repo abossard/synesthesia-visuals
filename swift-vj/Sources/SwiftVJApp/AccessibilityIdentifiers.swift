@@ -27,4 +27,10 @@ enum A11yID {
     static let launchpadStatus = "swiftvj.launchpad.status"
     static let launchpadLearnButton = "swiftvj.launchpad.learn"
     static let launchpadRunTestButton = "swiftvj.launchpad.runTest"
+
+    static let masterLaunchAllButton = "swiftvj.master.launchAll"
+    static let masterLaunchDropZone = "swiftvj.master.launchDropZone"
+    static let masterAddCommandButton = "swiftvj.master.addCommand"
+
+    static let songDemoPlayButton = "swiftvj.song.demoPlay"
 }

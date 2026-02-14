@@ -351,6 +351,7 @@ final class AppStateTests: XCTestCase {
 
     func testPersistedState() {
         var appState = AppState()
+        appState.render.isEnabled = false
         appState.render.selectedShader = "rainbow"
         appState.render.selectedMaskShader = "BWgrid"
         appState.render.currentPhase = .peak
@@ -358,6 +359,7 @@ final class AppStateTests: XCTestCase {
 
         let persisted = PersistedState(from: appState)
 
+        XCTAssertEqual(persisted.renderEnabled, false)
         XCTAssertEqual(persisted.selectedShader, "rainbow")
         XCTAssertEqual(persisted.selectedMaskShader, "BWgrid")
         XCTAssertEqual(persisted.currentPhase, "peak")
@@ -366,6 +368,7 @@ final class AppStateTests: XCTestCase {
         var newState = AppState()
         persisted.apply(to: &newState)
 
+        XCTAssertEqual(newState.render.isEnabled, false)
         XCTAssertEqual(newState.render.selectedShader, "rainbow")
         XCTAssertEqual(newState.render.selectedMaskShader, "BWgrid")
         XCTAssertEqual(newState.render.currentPhase, .peak)

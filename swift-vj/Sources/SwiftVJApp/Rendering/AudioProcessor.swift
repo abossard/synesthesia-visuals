@@ -261,6 +261,21 @@ final class AudioStateManager: ObservableObject {
 
     /// Set state directly (call from MainActor context, for UI sync)
     func setStateDirectly(_ newState: AudioState) {
+        framesSinceLastPublish += 1
+
+        let significantLevelChange = abs(newState.level - state.level) > significantChangeThreshold
+        let significantBandChange =
+            abs(newState.bass - state.bass) > significantChangeThreshold ||
+            abs(newState.mid - state.mid) > significantChangeThreshold ||
+            abs(newState.highs - state.highs) > significantChangeThreshold
+        let significantBeatChange =
+            newState.beat4 != state.beat4 ||
+            abs(newState.beatPhase - state.beatPhase) > 0.08
+        let shouldPublish = significantLevelChange || significantBandChange || significantBeatChange ||
+            framesSinceLastPublish >= publishEveryNFrames
+
+        guard shouldPublish else { return }
+        framesSinceLastPublish = 0
         state = newState
     }
 

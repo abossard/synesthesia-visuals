@@ -99,7 +99,9 @@ public final class MIDIManager: @unchecked Sendable {
     
     private var messageCallback: MIDIMessageCallback?
     private var connectionCallback: ConnectionStateCallback?
-    private let callbackQueue = DispatchQueue(label: "midi.callback", qos: .userInteractive)
+    private let callbackQueue = DispatchQueue(label: "midi.callback", qos: .userInitiated)
+    private static let verboseLogging = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_MIDI"] == "1"
+    private static let verboseRxLogging = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_MIDI_RX"] == "1"
     
     /// Whether auto-reconnect is enabled
     private var autoReconnectEnabled = false
@@ -427,7 +429,9 @@ public final class MIDIManager: @unchecked Sendable {
     
     private func sendBytes(_ bytes: [UInt8]) {
         guard isConnected, connectedOutput != 0 else {
-            print("[MIDI] sendBytes skipped - not connected (isConnected=\(isConnected), output=\(connectedOutput))")
+            if Self.verboseLogging {
+                print("[MIDI] sendBytes skipped - not connected (isConnected=\(isConnected), output=\(connectedOutput))")
+            }
             return
         }
         
@@ -453,7 +457,7 @@ public final class MIDIManager: @unchecked Sendable {
             sendCount += 1
             if result != noErr {
                 print("[MIDI] Error sending packet: \(result) (OSStatus)")
-            } else if sendCount <= 5 || sendCount % 100 == 0 {
+            } else if Self.verboseLogging && (sendCount <= 5 || sendCount % 100 == 0) {
                 // Log first few sends and then periodically
                 print("[MIDI] Sent \(sendCount): \(bytes.map { String(format: "%02X", $0) }.joined(separator: " ")) to endpoint \(connectedOutput)")
             }
@@ -676,7 +680,7 @@ public final class MIDIManager: @unchecked Sendable {
         let data2 = Int(word & 0x7F)
         
         // Debug: log raw MIDI receive
-        if umpType == 0x2 {  // MIDI 1.0 Channel Voice
+        if Self.verboseRxLogging && umpType == 0x2 {  // MIDI 1.0 Channel Voice
             print("[MIDI] RX: type=\(umpType) status=\(String(format: "0x%X", status)) ch=\(channel) d1=\(data1) d2=\(data2)")
         }
         

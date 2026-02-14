@@ -24,6 +24,10 @@ mkdir -p "$RESOURCES_DIR"
 # Copy executable
 cp "$BUILD_DIR/SwiftVJApp" "$MACOS_DIR/SwiftVJApp"
 
+# Ensure bundled frameworks resolve at runtime.
+# SPM binaries include @rpath lookups, but default rpaths do not include the app Frameworks folder.
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/SwiftVJApp" 2>/dev/null || true
+
 # Copy resources from bundle
 if [ -d "$BUILD_DIR/SwiftVJApp_SwiftVJApp.bundle" ]; then
     cp -R "$BUILD_DIR/SwiftVJApp_SwiftVJApp.bundle/"* "$RESOURCES_DIR/"

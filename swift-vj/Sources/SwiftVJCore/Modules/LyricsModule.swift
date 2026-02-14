@@ -26,10 +26,6 @@ public actor LyricsModule: Module {
     // Adapters
     private let fetcher: LyricsFetcher
 
-    // Settings
-    private let _timingOffsetMs: Int
-    private var timingOffsetSec: Double { Double(_timingOffsetMs) / 1000.0 }
-
     // MARK: - Action Dispatcher (Unidirectional Data Flow)
 
     /// Action dispatcher - set this to integrate with Store
@@ -37,9 +33,8 @@ public actor LyricsModule: Module {
 
     // MARK: - Init
 
-    public init(fetcher: LyricsFetcher, timingOffsetMs: Int = 0) {
+    public init(fetcher: LyricsFetcher) {
         self.fetcher = fetcher
-        self._timingOffsetMs = timingOffsetMs
     }
     
     // MARK: - Module Protocol
@@ -67,9 +62,6 @@ public actor LyricsModule: Module {
     }
     
     // MARK: - Public API
-    
-    /// Timing offset in milliseconds
-    public var timingOffset: Int { _timingOffsetMs }
     
     /// Load lyrics for a track
     /// Returns the parsed lyric lines or empty array if not found
@@ -107,10 +99,9 @@ public actor LyricsModule: Module {
         hasLyrics
     }
     
-    /// Get the active line index for a given position (with timing offset applied)
+    /// Get the active line index for a given playback position.
     public func getActiveLineIndex(at position: Double) -> Int {
-        let adjustedPosition = position + timingOffsetSec
-        return SwiftVJCore.getActiveLineIndex(currentLines, position: adjustedPosition)
+        SwiftVJCore.getActiveLineIndex(currentLines, position: position)
     }
     
     /// Get the active line at position

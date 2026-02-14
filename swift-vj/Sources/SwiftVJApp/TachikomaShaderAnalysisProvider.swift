@@ -21,6 +21,11 @@ actor TachikomaShaderAnalysisProvider: ShaderAnalysisProvider {
         if available {
             let backend = await llmClient.backendInfo
             logger("  ✓ Tachikoma backend ready: \(backend)", .info)
+        } else {
+            let status = await llmClient.status()
+            if !status.error.isEmpty {
+                logger("  ✗ Tachikoma unavailable: \(status.error)", .warning)
+            }
         }
         return available
     }

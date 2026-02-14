@@ -184,6 +184,7 @@ final class PipelineReducerTests: XCTestCase {
         appState.pipeline.isProcessing = true
         appState.pipeline.processingTrackKey = "some::key"
         appState.pipeline.error = "previous error"
+        appState.pipeline.expandedStepNames = ["lyrics", "ai"]
 
         let action = PipelineAction.reset
         _ = applyPipelineReducer(action, to: &appState)
@@ -192,5 +193,18 @@ final class PipelineReducerTests: XCTestCase {
         XCTAssertNil(appState.pipeline.processingTrackKey)
         XCTAssertNil(appState.pipeline.error)
         XCTAssertTrue(appState.pipeline.steps.allSatisfy { $0.status == "pending" })
+        XCTAssertTrue(appState.pipeline.expandedStepNames.isEmpty)
+    }
+
+    // MARK: - Step Expansion
+
+    func testToggleStepExpansionExpandsAndCollapses() {
+        var appState = AppState()
+
+        _ = applyPipelineReducer(.toggleStepExpansion("lyrics"), to: &appState)
+        XCTAssertTrue(appState.pipeline.expandedStepNames.contains("lyrics"))
+
+        _ = applyPipelineReducer(.toggleStepExpansion("lyrics"), to: &appState)
+        XCTAssertFalse(appState.pipeline.expandedStepNames.contains("lyrics"))
     }
 }

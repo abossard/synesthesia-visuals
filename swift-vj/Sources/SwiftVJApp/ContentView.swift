@@ -50,19 +50,23 @@ struct ContentView: View {
                             Button {
                                 selectedTab = tab
                             } label: {
-                                Label(tab.rawValue, systemImage: tab.icon)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 6)
-                                    .padding(.horizontal, 8)
-                            }
+                                    Label(tab.rawValue, systemImage: tab.icon)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.vertical, 6)
+                                        .padding(.horizontal, 8)
+                                        .contentShape(Rectangle())
+                                }
                             .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
                             .cornerRadius(6)
+                            .contentShape(Rectangle())
                             .accessibilityIdentifier(A11yID.sidebarTab(tab.rawValue))
                             .accessibilityLabel(tab.rawValue)
                             .accessibilityAddTraits(traits)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(6)
                 }
                 .navigationSplitViewColumnWidth(min: 150, ideal: 180)

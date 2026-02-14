@@ -52,7 +52,7 @@ public struct ActionLogEntry: Identifiable, Sendable {
 
 /// Fast action classification without full string conversion
 public enum ActionCategory: String, Sendable {
-    case playback, pipeline, render, launchpad, audio, ui, ledfx, lifecycle, persistence
+    case playback, pipeline, render, launchpad, launcher, audio, ui, ledfx, lifecycle, persistence
 }
 
 /// Extract action category from action (fast path)
@@ -63,6 +63,7 @@ public func classifyAction<Action>(_ action: Action) -> ActionCategory {
     if typeName.contains("Pipeline") { return .pipeline }
     if typeName.contains("Render") { return .render }
     if typeName.contains("Launchpad") { return .launchpad }
+    if typeName.contains("Launcher") { return .launcher }
     if typeName.contains("Audio") { return .audio }
     if typeName.contains("UI") { return .ui }
     if typeName.contains("LedFX") { return .ledfx }

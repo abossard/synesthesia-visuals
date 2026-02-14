@@ -1,6 +1,7 @@
 import XCTest
 import ViewInspector
 @testable import SwiftVJApp
+import SongRepository
 
 @MainActor
 final class SwiftVJAppUITests: XCTestCase {
@@ -74,5 +75,40 @@ final class SwiftVJAppUITests: XCTestCase {
             try? $0.accessibilityIdentifier()
         }
         XCTAssertTrue(textIds.contains(A11yID.launchpadStatus))
+    }
+
+    func testMasterControlLauncherIdentifiers() throws {
+        let appState = makeTestAppState()
+        let view = MasterControlView().environmentObject(appState)
+        let inspector = try view.inspect()
+
+        let buttonIds = inspector.findAll(ViewType.Button.self).compactMap {
+            try? $0.accessibilityIdentifier()
+        }
+        XCTAssertTrue(buttonIds.contains(A11yID.masterLaunchAllButton))
+        XCTAssertTrue(buttonIds.contains(A11yID.masterAddCommandButton))
+    }
+
+    func testSongDetailViewDemoPlayButtonIdentifier() throws {
+        let song = Song(
+            id: SongID(artist: "Test Artist", title: "Test Title"),
+            artist: "Test Artist",
+            title: "Test Title"
+        )
+        let view = SongDetailView(
+            song: song,
+            onShaderChange: { _ in },
+            onReanalyze: {},
+            onDemoPlay: {},
+            onDelete: {},
+            onDeleteImage: { _ in },
+            onClearCache: {}
+        )
+        let inspector = try view.inspect()
+
+        let buttonIds = inspector.findAll(ViewType.Button.self).compactMap {
+            try? $0.accessibilityIdentifier()
+        }
+        XCTAssertTrue(buttonIds.contains(A11yID.songDemoPlayButton))
     }
 }

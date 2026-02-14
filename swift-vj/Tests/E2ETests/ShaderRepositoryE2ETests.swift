@@ -11,7 +11,7 @@ final class ShaderRepositoryE2ETests: XCTestCase {
     
     // MARK: - Test Paths
     
-    static let projectRoot = URL(fileURLWithPath: #file)
+    static let projectRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()  // E2ETests
         .deletingLastPathComponent()  // Tests
         .deletingLastPathComponent()  // swift-vj
@@ -273,8 +273,7 @@ final class ShaderRepositoryE2ETests: XCTestCase {
         // This test requires a real metallib with compiled shaders
         // Skip if no metallib available
         let metallibURL = Self.projectRoot
-            .appendingPathComponent("Shaders")
-            .appendingPathComponent("Shaders.metallib")
+            .appendingPathComponent("Sources/SwiftVJApp/Resources/Shaders.metallib")
         
         guard FileManager.default.fileExists(atPath: metallibURL.path) else {
             throw XCTSkip("Shaders.metallib not found")

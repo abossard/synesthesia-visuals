@@ -29,6 +29,9 @@ public struct AppState: Equatable, Sendable {
     /// UI state (logs, OSC debug, settings)
     public var ui: UISubState
 
+    /// Controlled app/command launcher state
+    public var launcher: LauncherSubState
+
     /// LedFX integration state
     public var ledfx: LedFXSubState
 
@@ -55,6 +58,7 @@ public struct AppState: Equatable, Sendable {
         launchpad: LaunchpadSubState = LaunchpadSubState(),
         audio: AudioSubState = AudioSubState(),
         ui: UISubState = UISubState(),
+        launcher: LauncherSubState = LauncherSubState(),
         ledfx: LedFXSubState = LedFXSubState(),
         songs: SongsSubState = SongsSubState(),
         isRunning: Bool = false,
@@ -66,6 +70,7 @@ public struct AppState: Equatable, Sendable {
         self.launchpad = launchpad
         self.audio = audio
         self.ui = ui
+        self.launcher = launcher
         self.ledfx = ledfx
         self.songs = songs
         self.isRunning = isRunning
@@ -80,6 +85,7 @@ public struct AppState: Equatable, Sendable {
         lhs.launchpad == rhs.launchpad &&
         lhs.audio == rhs.audio &&
         lhs.ui == rhs.ui &&
+        lhs.launcher == rhs.launcher &&
         lhs.ledfx == rhs.ledfx &&
         lhs.songs == rhs.songs &&
         lhs.isRunning == rhs.isRunning
@@ -102,21 +108,16 @@ public struct PlaybackSubState: Equatable, Sendable {
     /// Playback source (vdj, spotify)
     public var source: String
 
-    /// Timing offset in milliseconds
-    public var timingOffsetMs: Int
-
     public init(
         currentTrack: Track? = nil,
         position: Double = 0,
         isPlaying: Bool = false,
-        source: String = "vdj",
-        timingOffsetMs: Int = 0
+        source: String = "vdj"
     ) {
         self.currentTrack = currentTrack
         self.position = position
         self.isPlaying = isPlaying
         self.source = source
-        self.timingOffsetMs = timingOffsetMs
     }
 }
 
@@ -139,18 +140,23 @@ public struct PipelineSubState: Equatable, Sendable {
     /// Last error if processing failed
     public var error: String?
 
+    /// Expanded/collapsed state of step rows in Pipeline UI (single source of truth)
+    public var expandedStepNames: Set<String>
+
     public init(
         steps: [PipelineStepState] = PipelineStepState.defaultSteps,
         result: PipelineResult? = nil,
         isProcessing: Bool = false,
         processingTrackKey: String? = nil,
-        error: String? = nil
+        error: String? = nil,
+        expandedStepNames: Set<String> = []
     ) {
         self.steps = steps
         self.result = result
         self.isProcessing = isProcessing
         self.processingTrackKey = processingTrackKey
         self.error = error
+        self.expandedStepNames = expandedStepNames
     }
 
     /// Update a specific step
@@ -168,6 +174,15 @@ public struct PipelineSubState: Equatable, Sendable {
     /// Reset all steps to pending
     public mutating func resetSteps() {
         steps = PipelineStepState.defaultSteps
+    }
+
+    /// Toggle expansion state for a given step name
+    public mutating func toggleStepExpansion(_ stepName: String) {
+        if expandedStepNames.contains(stepName) {
+            expandedStepNames.remove(stepName)
+        } else {
+            expandedStepNames.insert(stepName)
+        }
     }
 }
 
@@ -207,6 +222,9 @@ public struct PipelineStepState: Equatable, Sendable, Identifiable {
 
 /// Rendering-related state
 public struct RenderSubState: Equatable, Sendable {
+    /// Whether rendering and Syphon output are enabled
+    public var isEnabled: Bool
+
     /// Currently selected shader name
     public var selectedShader: String?
 
@@ -234,6 +252,7 @@ public struct RenderSubState: Equatable, Sendable {
     }
 
     public init(
+        isEnabled: Bool = true,
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: Phase? = nil,
@@ -242,6 +261,7 @@ public struct RenderSubState: Equatable, Sendable {
         imageCount: Int = 0,
         shaderCount: Int = 0
     ) {
+        self.isEnabled = isEnabled
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
@@ -467,6 +487,122 @@ public struct UISubState: Equatable, Sendable {
     }
 }
 
+// MARK: - Launcher Sub-State
+
+/// A user-configured launch target for either a macOS app bundle or command line.
+public struct LaunchTarget: Codable, Equatable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Sendable, Equatable {
+        case app
+        case command
+    }
+
+    public var id: String
+    public var kind: Kind
+    public var displayName: String
+    public var autoStart: Bool
+
+    /// App target fields
+    public var appBundleIdentifier: String?
+    public var appPath: String?
+
+    /// Command target fields
+    public var commandLine: String?
+    public var workingDirectory: String?
+
+    public init(
+        id: String,
+        kind: Kind,
+        displayName: String,
+        autoStart: Bool = false,
+        appBundleIdentifier: String? = nil,
+        appPath: String? = nil,
+        commandLine: String? = nil,
+        workingDirectory: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.displayName = displayName
+        self.autoStart = autoStart
+        self.appBundleIdentifier = appBundleIdentifier
+        self.appPath = appPath
+        self.commandLine = commandLine
+        self.workingDirectory = workingDirectory
+    }
+
+    public var normalizedIdentity: String {
+        switch kind {
+        case .app:
+            if let bundle = appBundleIdentifier?.lowercased(), !bundle.isEmpty {
+                return "app.bundle:\(bundle)"
+            }
+            let app = (appPath ?? "").lowercased()
+            return "app.path:\(app)"
+        case .command:
+            let cmd = (commandLine ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let cwd = (workingDirectory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return "cmd:\(cmd)|cwd:\(cwd)"
+        }
+    }
+
+    public static func appTarget(
+        id: String,
+        displayName: String,
+        bundleIdentifier: String?,
+        appPath: String
+    ) -> LaunchTarget {
+        LaunchTarget(
+            id: id,
+            kind: .app,
+            displayName: displayName,
+            autoStart: false,
+            appBundleIdentifier: bundleIdentifier,
+            appPath: appPath
+        )
+    }
+
+    public static func commandTarget(
+        id: String,
+        displayName: String,
+        commandLine: String,
+        workingDirectory: String?
+    ) -> LaunchTarget {
+        LaunchTarget(
+            id: id,
+            kind: .command,
+            displayName: displayName,
+            autoStart: false,
+            commandLine: commandLine,
+            workingDirectory: workingDirectory
+        )
+    }
+}
+
+/// Launcher domain state used by Master page launch controls.
+public struct LauncherSubState: Equatable, Sendable {
+    public var targets: [LaunchTarget]
+    public var runningTargetIDs: Set<String>
+    public var isLaunchingAll: Bool
+    public var lastError: String?
+    public var lastLaunchSummary: String?
+    public var revision: UInt64
+
+    public init(
+        targets: [LaunchTarget] = [],
+        runningTargetIDs: Set<String> = [],
+        isLaunchingAll: Bool = false,
+        lastError: String? = nil,
+        lastLaunchSummary: String? = nil,
+        revision: UInt64 = 0
+    ) {
+        self.targets = targets
+        self.runningTargetIDs = runningTargetIDs
+        self.isLaunchingAll = isLaunchingAll
+        self.lastError = lastError
+        self.lastLaunchSummary = lastLaunchSummary
+        self.revision = revision
+    }
+}
+
 // MARK: - LedFX Sub-State
 
 /// LedFX integration state for UI and bridge config
@@ -490,6 +626,7 @@ public struct LedFXSubState: Equatable, Sendable {
     public var isRunning: Bool
     public var healthSummary: String
     public var lastHealthCheck: Date?
+    public var revision: UInt64
 
     public init(
         baseURL: String = "http://127.0.0.1:8888",
@@ -510,7 +647,8 @@ public struct LedFXSubState: Equatable, Sendable {
         effectsCount: Int = 0,
         isRunning: Bool = false,
         healthSummary: String = "Unknown",
-        lastHealthCheck: Date? = nil
+        lastHealthCheck: Date? = nil,
+        revision: UInt64 = 0
     ) {
         self.baseURL = baseURL
         self.virtualIdsString = virtualIdsString
@@ -531,6 +669,7 @@ public struct LedFXSubState: Equatable, Sendable {
         self.isRunning = isRunning
         self.healthSummary = healthSummary
         self.lastHealthCheck = lastHealthCheck
+        self.revision = revision
     }
 }
 
@@ -696,38 +835,49 @@ public struct ModuleReferences: Sendable {
 
 /// State that should be persisted to UserDefaults
 public struct PersistedState: Codable, Sendable {
+    public var renderEnabled: Bool
     public var selectedShader: String?
     public var selectedMaskShader: String?
     public var currentPhase: String?
     public var playbackSource: String
+    public var launcherTargets: [LaunchTarget]
 
     public init(
+        renderEnabled: Bool = true,
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: String? = nil,
-        playbackSource: String = "vdj"
+        playbackSource: String = "vdj",
+        launcherTargets: [LaunchTarget] = []
     ) {
+        self.renderEnabled = renderEnabled
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
         self.playbackSource = playbackSource
+        self.launcherTargets = launcherTargets
     }
 
     /// Create from current app state
     public init(from state: AppState) {
+        self.renderEnabled = state.render.isEnabled
         self.selectedShader = state.render.selectedShader
         self.selectedMaskShader = state.render.selectedMaskShader
         self.currentPhase = state.render.currentPhase?.rawValue
         self.playbackSource = state.playback.source
+        self.launcherTargets = state.launcher.targets
     }
 
     /// Apply to app state
     public func apply(to state: inout AppState) {
+        state.render.isEnabled = renderEnabled
         state.render.selectedShader = selectedShader
         state.render.selectedMaskShader = selectedMaskShader
         if let phaseStr = currentPhase {
             state.render.currentPhase = Phase.from(phaseStr)
         }
         state.playback.source = playbackSource
+        state.launcher.targets = launcherTargets
+        state.launcher.revision &+= 1
     }
 }

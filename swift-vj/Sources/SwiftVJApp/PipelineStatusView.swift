@@ -51,8 +51,10 @@ struct PipelineStatusView: View {
                             name: stepDef.name,
                             icon: stepDef.icon,
                             status: step?.status ?? "pending",
-                            details: step?.details,
-                            timestamp: step?.timestamp
+                            details: step?.details ?? [],
+                            timestamp: step?.timestamp,
+                            isExpanded: appState.pipelineExpandedSteps.contains(stepDef.name),
+                            onToggle: { appState.togglePipelineStepExpansion(stepDef.name) }
                         )
                     }
                 }
@@ -178,10 +180,10 @@ struct PipelineStepRow: View {
     let name: String
     let icon: String
     let status: String
-    let details: [String]?
+    let details: [String]
     let timestamp: Date?
-    
-    @State private var showingDetails = false
+    let isExpanded: Bool
+    let onToggle: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -202,14 +204,12 @@ struct PipelineStepRow: View {
                 Spacer()
                 
                 // Details disclosure
-                if let details = details, !details.isEmpty {
-                    Button(action: { showingDetails.toggle() }) {
-                        Image(systemName: showingDetails ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
+                Button(action: onToggle) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                .buttonStyle(.plain)
                 
                 // Timestamp
                 if let timestamp = timestamp {
@@ -224,25 +224,34 @@ struct PipelineStepRow: View {
             .cornerRadius(8)
             .contentShape(Rectangle())
             .onTapGesture {
-                if details != nil && !details!.isEmpty {
-                    showingDetails.toggle()
-                }
+                onToggle()
             }
             
             // Details panel (collapsible)
-            if showingDetails, let details = details {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(details, id: \.self) { detail in
-                        Text(detail)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            if isExpanded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if details.isEmpty {
+                            Text("No details yet.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(Array(details.enumerated()), id: \.offset) { item in
+                                Text(item.element)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.horizontal, 36)
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.secondary.opacity(0.05))
                 .cornerRadius(4)
+                .frame(maxHeight: details.count > 12 ? 220 : nil)
             }
         }
     }

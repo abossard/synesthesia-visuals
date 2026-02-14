@@ -526,12 +526,11 @@ final class SwiftUITextTileRenderer: TileRenderer {
 
     // MARK: - Content Update
 
-    func update(contentHash: String, view: AnyView) {
-        currentView = view
-        if contentHash != lastRenderedContent {
-            captureSwiftUIView()
-            lastRenderedContent = contentHash
-        }
+    func update(contentHash: String, viewBuilder: () -> AnyView) {
+        guard contentHash != lastRenderedContent else { return }
+        currentView = viewBuilder()
+        captureSwiftUIView()
+        lastRenderedContent = contentHash
     }
 
     func forceCapture() {

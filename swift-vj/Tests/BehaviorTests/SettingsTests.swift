@@ -29,54 +29,8 @@ final class SettingsTests: XCTestCase {
         let settings = Settings(filePath: tempSettingsFile)
 
         // Then: Defaults are returned
-        let offset = await settings.timingOffsetMs
-        XCTAssertEqual(offset, 0, "Default timing offset should be 0")
-
         let source = await settings.playbackSource
         XCTAssertEqual(source, "", "Default playback source should be empty")
-    }
-
-    // MARK: - Timing Offset
-
-    func test_settings_timingOffsetPersists() async {
-        // Given: Settings with custom timing offset
-        let settings = Settings(filePath: tempSettingsFile)
-        await settings.setTimingOffset(500)
-
-        // When: Creating new settings instance from same file
-        let reloaded = Settings(filePath: tempSettingsFile)
-        let offset = await reloaded.timingOffsetMs
-
-        // Then: Value persists
-        XCTAssertEqual(offset, 500)
-    }
-
-    func test_settings_adjustTimingByDelta() async {
-        // Given: Settings with initial offset
-        let settings = Settings(filePath: tempSettingsFile)
-        await settings.setTimingOffset(100)
-
-        // When: Adjusting by delta
-        let newOffset = await settings.adjustTiming(by: 200)
-
-        // Then: Offset is adjusted
-        XCTAssertEqual(newOffset, 300)
-
-        // And can be read back
-        let stored = await settings.timingOffsetMs
-        XCTAssertEqual(stored, 300)
-    }
-
-    func test_settings_timingOffsetSec() async {
-        // Given: Settings with millisecond offset
-        let settings = Settings(filePath: tempSettingsFile)
-        await settings.setTimingOffset(1500)
-
-        // When: Reading as seconds
-        let offsetSec = await settings.timingOffsetSec
-
-        // Then: Converted correctly
-        XCTAssertEqual(offsetSec, 1.5, accuracy: 0.001)
     }
 
     // MARK: - Playback Source

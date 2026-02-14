@@ -18,6 +18,12 @@ public protocol LaunchpadEffectHandling: Sendable {
     func updateBPM(_ bpm: Float) async
 }
 
+public protocol LauncherEffectHandling: Sendable {
+    func analyzeDroppedItems(_ urls: [URL]) async -> [LaunchTarget]
+    func launchTarget(_ target: LaunchTarget) async -> (launched: Bool, error: String?)
+    func launchTargetsIfNeeded(_ targets: [LaunchTarget]) async -> LauncherLaunchReport
+}
+
 /// Environment for effect execution, providing dependency injection.
 ///
 /// This follows TCA's environment pattern where side effects access
@@ -64,6 +70,9 @@ public final class EffectEnvironment {
     
     /// Load images from a folder path
     public var loadImagesFromFolder: (@Sendable (String) async -> Void)?
+
+    /// Enable or disable rendering lifecycle (render loop + Syphon exposure)
+    public var setRenderEnabled: (@Sendable (Bool) async -> Void)?
     
     // MARK: - Pipeline Effects
     
@@ -81,6 +90,11 @@ public final class EffectEnvironment {
 
     /// Current DJ phase provider
     public var currentPhaseProvider: (@Sendable () async -> Phase?)?
+
+    // MARK: - AI Effects
+
+    /// Reload Tachikoma configuration in app-layer AI clients.
+    public var reloadLLMConfiguration: (@Sendable () async -> Void)?
     
     // MARK: - OSC Effects
 
@@ -102,6 +116,11 @@ public final class EffectEnvironment {
     /// Launchpad side-effect handler (implemented in app layer, actor-isolated)
     public var launchpadHandler: (any LaunchpadEffectHandling)?
 
+    // MARK: - Launcher Effects
+
+    /// App/command launcher handler (implemented in app layer, actor-isolated)
+    public var launcherHandler: (any LauncherEffectHandling)?
+
     // MARK: - Reset (for testing)
 
     /// Reset all callbacks to nil (useful for testing)
@@ -112,13 +131,16 @@ public final class EffectEnvironment {
         availableMaskShaderNames = nil
         setImageIndex = nil
         loadImagesFromFolder = nil
+        setRenderEnabled = nil
         processPipelineTrack = nil
         clearLyricsCache = nil
         clearPipelineCache = nil
         clearImagesCache = nil
+        reloadLLMConfiguration = nil
         sendOSC = nil
         songsModule = nil
         ledfxActionHandler = nil
         launchpadHandler = nil
+        launcherHandler = nil
     }
 }

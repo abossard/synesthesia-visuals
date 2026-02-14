@@ -1,0 +1,159 @@
+# SwiftLint Configuration for Swift 6
+
+# Paths to include in linting
+included:
+  - Sources
+  - Tests
+  - Examples
+
+# Paths to exclude from linting
+excluded:
+  - .build
+  - .swiftpm
+  - Examples/**/.build
+  - Examples/**/.swiftpm
+  - Package.swift
+  - Sources/*/Resources
+  - "*/Generated"
+  - "*/Derived"
+
+# Analyzer rules (requires compilation)
+analyzer_rules:
+  - explicit_self
+  - unused_declaration
+  - unused_import
+
+# Enabled opt-in rules
+opt_in_rules:
+  # Code quality rules
+  - array_init
+  - attributes
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - empty_xctest_method
+  - explicit_init
+  - fallthrough
+  - fatal_error_message
+  - file_header
+  - file_name_no_space
+  - first_where
+  - implicit_return
+  - joined_default_parameter
+  - last_where
+  - literal_expression_end_indentation
+  - modifier_order
+  - multiline_parameters_brackets
+  - number_separator
+  - operator_usage_whitespace
+  - overridden_super_call
+  - override_in_extension
+  - pattern_matching_keywords
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - private_action
+  - private_outlet
+  - reduce_into
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  # - sorted_imports # Disabled: conflicts with SwiftFormat's testable-bottom import grouping
+  - static_operator
+  - strong_iboutlet
+  - toggle_bool
+  - trailing_closure
+  - unneeded_parentheses_in_closure_argument
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - weak_delegate
+  - yoda_condition
+
+# Disabled rules (rules that are enabled by default but we want to disable)
+disabled_rules:
+  - todo # Allow TODO comments for now
+  - explicit_acl # Too noisy for internal code and tests
+  - explicit_top_level_acl # Too noisy for internal code and tests
+  - switch_case_on_newline # Conflicts with compact switch style
+  - explicit_enum_raw_value # Not necessary for non-public enums
+  - force_unwrapping # Acceptable in tests and internal code with proper context
+  - convenience_type # Too noisy for utility classes and test classes
+  - force_cast # Acceptable in internal generic code with proper type guards
+  - file_name # Allow flexible file naming for utility modules
+  - conditional_returns_on_newline # Allow compact conditional returns
+  - non_optional_string_data_conversion # Allow .data(using:) for explicit string encoding
+  - function_default_parameter_at_end # Allow flexible parameter ordering
+  - multiline_arguments # Allow flexible argument formatting
+  - multiline_function_chains # Allow flexible function chaining
+  - multiline_literal_brackets # Allow flexible literal formatting
+  - extension_access_modifier # Allow flexible extension access control
+  - opening_brace # Allow flexible brace spacing
+  - closure_end_indentation # Allow flexible closure formatting
+  - comma # Allow flexible comma spacing
+  - number_separator # Large model tables intentionally omit separators for readability
+  - identifier_name # API payloads require snake_case identifiers
+  - for_where # Explicit if conditions improve readability in long loops
+  - nesting # Provider metadata uses deep enums by design
+  - force_try # Tests intentionally exercise throwing paths with force-try helpers
+  - modifier_order # Generated/ported code doesn't always match preferred order
+  - cyclomatic_complexity # Provider helpers aggregate multiple API cases intentionally
+  - function_body_length # Some request builders are large but still readable
+  - static_over_final_class # Final classes often expose class helpers for clarity
+
+# Rule configurations
+file_length:
+  warning: 1000
+  error: 2000
+  ignore_comment_only_lines: true
+
+function_parameter_count:
+  warning: 10
+  error: 15
+  ignores_default_parameters: true
+
+line_length:
+  warning: 140
+  error: 180
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_comments: true
+
+implicit_return:
+  included:
+    - "closure"
+    - "function"
+    - "getter"
+
+large_tuple:
+  warning: 3
+  error: 4
+
+trailing_comma:
+  mandatory_comma: true
+
+type_body_length:
+  warning: 800
+  error: 1200
+
+type_name:
+  min_length:
+    warning: 3
+    error: 2
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    - "AI"
+    - "UI"
+
+vertical_whitespace:
+  max_empty_lines: 2
+
+# Custom rules for Swift 6
+# Reporter configuration
+reporter: "xcode"

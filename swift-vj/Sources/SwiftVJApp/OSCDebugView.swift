@@ -12,29 +12,30 @@ struct OSCDebugView: View {
     @State private var testArg2 = "1.0"
     @State private var showAudioMessages = false  // Audio messages hidden by default (noisy)
     @State private var expandedGroups: Set<String> = ["shader", "textler", "image", "other"]  // Expanded by default
-    
-    /// Group OSC messages by category
-    private var groupedMessages: [(group: String, messages: [OSCLogEntry])] {
+    @State private var groupedMessagesCache: [(group: String, messages: [OSCLogEntry])] = []
+
+    /// Group OSC messages by category.
+    private func rebuildGroupedMessages() {
         let sorted = appState.oscMessages.values.sorted { $0.address < $1.address }
-        
+
         // Filter audio if hidden
         let filtered = showAudioMessages ? sorted : sorted.filter { !$0.address.hasPrefix("/audio/") }
-        
+
         // Group by first path component
         var groups: [String: [OSCLogEntry]] = [:]
         for msg in filtered {
             let group = extractGroup(from: msg.address)
             groups[group, default: []].append(msg)
         }
-        
+
         // Sort groups: audio last (if shown), then alphabetically
         let sortedGroups = groups.keys.sorted { lhs, rhs in
             if lhs == "audio" { return false }
             if rhs == "audio" { return true }
             return lhs < rhs
         }
-        
-        return sortedGroups.map { (group: $0, messages: groups[$0]!) }
+
+        groupedMessagesCache = sortedGroups.map { (group: $0, messages: groups[$0] ?? []) }
     }
     
     /// Extract group name from OSC address
@@ -107,7 +108,7 @@ struct OSCDebugView: View {
                 // Grouped message list
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(groupedMessages, id: \.group) { group in
+                        ForEach(groupedMessagesCache, id: \.group) { group in
                             DisclosureGroup(
                                 isExpanded: Binding(
                                     get: { expandedGroups.contains(group.group) },
@@ -260,11 +261,15 @@ struct OSCDebugView: View {
         }
         .onAppear {
             appState.setOscDebugEnabled(true)
+            rebuildGroupedMessages()
         }
+        .onChange(of: appState.oscMessageCount) { _, _ in rebuildGroupedMessages() }
+        .onChange(of: showAudioMessages) { _, _ in rebuildGroupedMessages() }
         .onDisappear {
             appState.setOscDebugEnabled(false)
             // Free memory - clear captured messages when view hidden
             appState.clearOscMessages()
+            groupedMessagesCache = []
         }
     }
     

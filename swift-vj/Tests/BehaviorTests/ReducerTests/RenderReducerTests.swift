@@ -19,6 +19,13 @@ final class RenderReducerTests: XCTestCase {
         appState.render = renderState
     }
 
+    private func applyRenderReducerReturningEffect(_ action: RenderAction, to appState: inout AppState) -> Effect<AppAction> {
+        var renderState = appState.render
+        let effect = renderReducer(state: &renderState, action: action, appState: &appState)
+        appState.render = renderState
+        return effect
+    }
+
     private func collectActions(from effect: Effect<AppAction>) async -> [AppAction] {
         switch effect.operation {
         case .none:
@@ -46,6 +53,20 @@ final class RenderReducerTests: XCTestCase {
     }
 
     // MARK: - Select Shader
+
+    func testSetEnabledUpdatesStateAndPersists() async {
+        var appState = AppState()
+
+        let effect = applyRenderReducerReturningEffect(.setEnabled(false), to: &appState)
+        XCTAssertFalse(appState.render.isEnabled)
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case .persistState = emitted[0] else {
+            XCTFail("Expected persistState action after renderer toggle")
+            return
+        }
+    }
 
     func testSelectShaderUpdatesState() {
         var appState = AppState()
@@ -149,6 +170,20 @@ final class RenderReducerTests: XCTestCase {
         let selectedMask = store.state.render.selectedMaskShader ?? ""
         XCTAssertTrue(shaderNames.contains(selectedMain), "Selected main shader must stay within available set")
         XCTAssertTrue(maskNames.contains(selectedMask), "Selected mask shader must stay within available set")
+    }
+
+    func testRapidRendererToggleStressMaintainsFinalState() async throws {
+        EffectEnvironment.shared.setRenderEnabled = { _ in }
+        defer { EffectEnvironment.shared.reset() }
+
+        let store = Store(initialState: AppState(), reducer: appReducer)
+        for i in 0..<400 {
+            let enabled = i.isMultiple(of: 2)
+            store.send(.render(.setEnabled(enabled)))
+        }
+
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(store.state.render.isEnabled, "Final renderer state should reflect the last toggle action")
     }
 
     // MARK: - Select Phase

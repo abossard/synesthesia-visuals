@@ -198,9 +198,35 @@ struct TilePreviewView: View {
             bitmapInfo: bitmapInfo.rawValue
         ) else { return nil }
         
-        guard let cgImage = context.makeImage() else { return nil }
-        
-        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+        guard let cgImage = context.makeImage(),
+              let flipped = verticallyFlippedCGImage(cgImage) else { return nil }
+
+        return NSImage(cgImage: flipped, size: NSSize(width: width, height: height))
+    }
+
+    /// Metal textures are top-left origin while AppKit image drawing expects bottom-left origin.
+    private func verticallyFlippedCGImage(_ image: CGImage) -> CGImage? {
+        let width = image.width
+        let height = image.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else {
+            return nil
+        }
+
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        return context.makeImage()
     }
 }
 
@@ -398,6 +424,7 @@ struct RenderingView: View {
     // Use appState.renderEngine (receives OSC updates) instead of local instance
     private var renderEngine: RenderEngine? { appState.renderEngine }
     private var audioState: AudioState { appState.renderEngine?.audioManager.state ?? .silent }
+    private var isRendererEnabled: Bool { appState.renderEnabled }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -408,14 +435,8 @@ struct RenderingView: View {
             registerPaneView
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .disabled(!isRendererEnabled)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            Task { @MainActor in
-                try? await renderEngine?.start()
-            }
-        }
-        // NOTE: Removed onDisappear stop() - render engine should keep running
-        // when switching tabs. It only stops when app quits.
     }
 
     // MARK: - Layout Helpers
@@ -522,19 +543,36 @@ struct RenderingView: View {
         let label = displayName(for: tileKey)
 
         return ZStack(alignment: .bottom) {
-            SyphonMTKView(serverName: server)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(selectedTile == tileKey ? Color.accentColor : Color.clear, lineWidth: 2)
-                )
-                .onTapGesture {
-                    selectedTile = tileKey
+            Group {
+                if isRendererEnabled {
+                    SyphonMTKView(serverName: server)
+                } else {
+                    ZStack {
+                        Color.black
+                        VStack(spacing: 6) {
+                            Image(systemName: "power")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text("Renderer Off")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(selectedTile == tileKey ? Color.accentColor : Color.clear, lineWidth: 2)
+            )
+            .onTapGesture {
+                selectedTile = tileKey
+            }
 
             Button {
+                guard isRendererEnabled else { return }
                 copyToClipboard(server)
             } label: {
                 HStack(spacing: 6) {
@@ -544,7 +582,7 @@ struct RenderingView: View {
                     Text("•")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(server)
+                    Text(isRendererEnabled ? server : "Offline")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -553,7 +591,8 @@ struct RenderingView: View {
                 .background(Color.black.opacity(0.6))
             }
             .buttonStyle(.plain)
-            .help("Click to copy Syphon name")
+            .help(isRendererEnabled ? "Click to copy Syphon name" : "Renderer is off")
+            .disabled(!isRendererEnabled)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .cornerRadius(10)
@@ -569,6 +608,11 @@ struct RenderingView: View {
     private var registerPaneView: some View {
         GroupBox("Register") {
             VStack(alignment: .leading, spacing: 12) {
+                if !isRendererEnabled {
+                    Text("Renderer is OFF. Controls are disabled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 registerTabs
                 Divider()
                 registerContent
@@ -785,12 +829,14 @@ struct RenderingView: View {
                                 }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.08))
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.08))
-                    .cornerRadius(6)
                 }
             }
             .padding(.vertical, 4)

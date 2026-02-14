@@ -190,7 +190,7 @@ final class LLMClientTests: XCTestCase {
             artist: artist,
             title: title
         )
-        XCTAssertFalse(result2.cached, "Second call should not be cached")
+        XCTAssertTrue(result2.cached, "Second call should be cached")
         
         // Results should match
         XCTAssertEqual(Set(result1.keywords), Set(result2.keywords))

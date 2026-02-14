@@ -14,6 +14,7 @@ struct SongBrowserView: View {
     @State private var selectedMood: String? = nil
     @State private var selectedPhase: Phase? = nil
     @State private var selectedStatus: SongStatus? = nil
+    @State private var syncedLyricsOnly = false
     @State private var sortOrder: SongSortOrder = .recentlyPlayed
     @State private var showDeleteConfirm = false
     @State private var songToDelete: Song? = nil
@@ -63,6 +64,7 @@ struct SongBrowserView: View {
         .onChange(of: selectedMood) { _, _ in applyFilters() }
         .onChange(of: selectedPhase) { _, _ in applyFilters() }
         .onChange(of: selectedStatus) { _, _ in applyFilters() }
+        .onChange(of: syncedLyricsOnly) { _, _ in applyFilters() }
         .onChange(of: sortOrder) { _, _ in applyFilters() }
         .alert("Delete Song?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
@@ -199,6 +201,7 @@ struct SongBrowserView: View {
                     moodPicker
                     phasePicker
                     statusPicker
+                    lyricsPicker
                     sortPicker
                     Spacer(minLength: 0)
                     clearAllCachesButton
@@ -209,6 +212,7 @@ struct SongBrowserView: View {
                         moodPicker
                         phasePicker
                         statusPicker
+                        lyricsPicker
                     }
                     HStack(spacing: 12) {
                         sortPicker
@@ -363,8 +367,25 @@ struct SongBrowserView: View {
                 // Update detail view when single item selected
                 if newSelection.count == 1, let id = newSelection.first {
                     selectedSong = displayedSongs.first { $0.id == id }
+                    appState.send(.songs(.songSelected(id)))
+                } else {
+                    appState.send(.songs(.songSelected(nil)))
                 }
             }
+        }
+    }
+
+    private var lyricsPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Lyrics")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Picker("Lyrics", selection: $syncedLyricsOnly) {
+                Text("All").tag(false)
+                Text("Synced LRC").tag(true)
+            }
+            .frame(minWidth: 130)
         }
     }
 
@@ -401,6 +422,7 @@ struct SongBrowserView: View {
                 song: song,
                 onShaderChange: { shader in updateShader(song, shader) },
                 onReanalyze: { reanalyze(song) },
+                onDemoPlay: { demoPlay(song) },
                 onDelete: { confirmDelete(song) },
                 onDeleteImage: { url in deleteImageFile(for: song, url) },
                 onClearCache: { clearCache(song) }
@@ -448,6 +470,7 @@ struct SongBrowserView: View {
             moodFilter: selectedMood,
             phaseFilter: selectedPhase,
             statusFilter: selectedStatus,
+            hasLyricsOnly: syncedLyricsOnly,
             searchQuery: searchText.isEmpty ? nil : searchText
         )
         appState.send(.songs(.applyFilter(filter)))
@@ -457,6 +480,7 @@ struct SongBrowserView: View {
         selectedMood = nil
         selectedPhase = nil
         selectedStatus = nil
+        syncedLyricsOnly = false
         appState.send(.songs(.clearFilter))
     }
 
@@ -499,6 +523,10 @@ struct SongBrowserView: View {
         Task {
             await appState.clearAllCaches()
         }
+    }
+
+    private func demoPlay(_ song: Song) {
+        appState.send(.songs(.demoPlayRequested(song.id)))
     }
 
     private func updateShader(_ song: Song, _ shader: String) {
@@ -577,37 +605,57 @@ struct SongRowView: View {
     let onReanalyze: () -> Void
 
     var body: some View {
-        HStack {
-            // Song info
-            VStack(alignment: .leading, spacing: 2) {
-                Text(song.title)
-                    .font(.headline)
-                    .lineLimit(1)
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(song.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    StatusBadge(status: song.status)
+                        .scaleEffect(0.85, anchor: .leading)
+                }
+
                 Text(song.artist)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
+
+                HStack(spacing: 10) {
+                    if song.bpm > 0 {
+                        Label("\(Int(song.bpm)) BPM", systemImage: "metronome")
+                    }
+                    if !song.musicalKey.isEmpty {
+                        Label(song.musicalKey, systemImage: "music.note")
+                    }
+                    if let phase = song.phase {
+                        Label(phase.displayName, systemImage: phase.iconName)
+                    }
+                    if let mood = compactMood {
+                        Label(mood, systemImage: "face.smiling")
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+                HStack(spacing: 4) {
+                    ReadinessChip(label: "Lyrics", isReady: isLyricsReady)
+                    ReadinessChip(label: "AI", isReady: isAIReady)
+                    ReadinessChip(label: "Shader", isReady: isShaderReady)
+                    ReadinessChip(label: "Images", isReady: isImagesReady, value: isImagesReady ? "\(song.imagesCount)" : nil)
+                }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // Badges
-            HStack(spacing: 4) {
-                if song.hasLyrics {
-                    Badge(text: "Lyrics", color: .green)
-                }
-                if song.imagesFolderPath != nil && song.imagesCount > 0 {
-                    Badge(text: "\(song.imagesCount)", color: .blue, icon: "photo")
-                }
-                if let phase = song.phase {
-                    Badge(text: phase.displayName, color: .purple, icon: phase.iconName)
+            VStack(alignment: .trailing, spacing: 8) {
+                EnergyIndicator(energy: song.energyScore)
+                if isReanalyzing {
+                    ProgressView()
+                        .scaleEffect(0.6)
                 }
             }
+            .frame(width: 30)
 
-            // Energy indicator
-            EnergyIndicator(energy: song.energyScore)
-
-            // Context menu button
             Menu {
                 Button(action: onReanalyze) {
                     Label("Re-analyze", systemImage: "arrow.clockwise")
@@ -621,17 +669,35 @@ struct SongRowView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
-            .frame(width: 30)
-
-            // Re-analyzing indicator
-            if isReanalyzing {
-                ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 20)
-            }
+            .frame(width: 24)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    private var compactMood: String? {
+        let mood = song.mood.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mood.isEmpty || mood.lowercased() == "unknown" {
+            return nil
+        }
+        return mood.capitalized
+    }
+
+    private var isLyricsReady: Bool {
+        song.hasLyrics || (song.lyricsText?.isEmpty == false)
+    }
+
+    private var isAIReady: Bool {
+        song.analysis != nil
+    }
+
+    private var isShaderReady: Bool {
+        guard let shader = song.selectedShader else { return false }
+        return !shader.isEmpty
+    }
+
+    private var isImagesReady: Bool {
+        song.imagesFolderPath != nil && song.imagesCount > 0
     }
 }
 
@@ -657,6 +723,30 @@ struct Badge: View {
     }
 }
 
+struct ReadinessChip: View {
+    let label: String
+    let isReady: Bool
+    var value: String? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: isReady ? "checkmark.circle.fill" : "xmark.circle")
+                .font(.caption2)
+            Text(label)
+                .font(.caption2)
+            if let value {
+                Text(value)
+                    .font(.caption2.monospacedDigit())
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .foregroundColor(isReady ? .green : .secondary)
+        .background((isReady ? Color.green : Color.gray).opacity(0.15))
+        .cornerRadius(4)
+    }
+}
+
 struct EnergyIndicator: View {
     let energy: Double
 
@@ -678,50 +768,77 @@ struct EnergyIndicator: View {
     }
 }
 
+struct SnapshotMetric: View {
+    let label: String
+    let value: String
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(value)
+                    .font(.caption)
+            }
+        }
+    }
+}
+
 struct SongDetailView: View {
+    private enum DetailTab: String, CaseIterable, Identifiable {
+        case analysis = "Analysis"
+        case assets = "Assets"
+        case history = "History"
+
+        var id: String { rawValue }
+    }
+
     let song: Song
     let onShaderChange: (String) -> Void
     let onReanalyze: () -> Void
+    let onDemoPlay: () -> Void
     let onDelete: () -> Void
     let onDeleteImage: (URL) -> Void
     let onClearCache: () -> Void
 
+    @State private var selectedTab: DetailTab = .analysis
     @State private var imageURLs: [URL] = []
     @State private var imageCache: [URL: NSImage] = [:]
     @State private var imageToDelete: URL? = nil
+    @State private var shaderDraft = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                songHeader
-
-                Divider()
-
-                // Analysis section
-                if let analysis = song.analysis {
-                    analysisSection(analysis)
-                    Divider()
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    songHeader
+                    songSnapshotSection
+                    detailTabs
                 }
-
-                // Shader section
-                shaderSection
-
-                Divider()
-
-                // Images section
-                imagesSection
-
-                Divider()
-
-                // Actions
-                actionsSection
+                .padding()
             }
-            .padding()
+
+            Divider()
+
+            bottomActionBar
         }
         .frame(minWidth: 300)
-        .onAppear(perform: loadImages)
-        .onChange(of: song.id) { _, _ in loadImages() }
+        .onAppear {
+            syncShaderDraft()
+            loadImages()
+        }
+        .onChange(of: song.id) { _, _ in
+            syncShaderDraft()
+            loadImages()
+        }
+        .onChange(of: song.selectedShader) { _, _ in
+            syncShaderDraft()
+        }
         .alert("Delete Image?", isPresented: Binding(
             get: { imageToDelete != nil },
             set: { newValue in if !newValue { imageToDelete = nil } }
@@ -737,44 +854,267 @@ struct SongDetailView: View {
         }
     }
 
+    private var bottomActionBar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                Button(action: onDemoPlay) {
+                    Label("Play", systemImage: "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .accessibilityIdentifier(A11yID.songDemoPlayButton)
+
+                Spacer(minLength: 0)
+
+                Button(action: onReanalyze) {
+                    Label("Re-analyze", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: onClearCache) {
+                    Label("Clear Cache", systemImage: "xmark.bin")
+                }
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: onDemoPlay) {
+                    Label("Play", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .accessibilityIdentifier(A11yID.songDemoPlayButton)
+
+                HStack(spacing: 8) {
+                    Button(action: onReanalyze) {
+                        Label("Re-analyze", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: onClearCache) {
+                        Label("Clear Cache", systemImage: "xmark.bin")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Spacer(minLength: 0)
+
+                    Button(role: .destructive, action: onDelete) {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(.windowBackgroundColor))
+    }
+
     private var songHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(song.title)
-                .font(.title)
-                .fontWeight(.bold)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(song.title)
+                        .font(.title2)
+                        .fontWeight(.bold)
 
-            Text(song.artist)
-                .font(.title2)
-                .foregroundColor(.secondary)
+                    Text(song.artist)
+                        .font(.title3)
+                        .foregroundColor(.secondary)
 
-            if !song.album.isEmpty {
-                Text(song.album)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    if !song.album.isEmpty {
+                        Text(song.album)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        if song.duration > 0 {
+                            Badge(text: formatDuration(song.duration), color: .gray, icon: "clock")
+                        }
+                        if song.bpm > 0 {
+                            Badge(text: "\(Int(song.bpm)) BPM", color: .gray, icon: "metronome")
+                        }
+                        if !song.musicalKey.isEmpty {
+                            Badge(text: song.musicalKey, color: .gray, icon: "music.note")
+                        }
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 8) {
+                    StatusBadge(status: song.status)
+                    Text("Played \(song.playCount) \(song.playCount == 1 ? "time" : "times")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if let phase = song.phase {
+                        Badge(text: phase.displayName, color: .orange, icon: phase.iconName)
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: true)
             }
 
-            HStack(spacing: 16) {
-                if song.duration > 0 {
-                    Label(formatDuration(song.duration), systemImage: "clock")
-                }
-                if song.bpm > 0 {
-                    Label("\(Int(song.bpm)) BPM", systemImage: "metronome")
-                }
-                if !song.musicalKey.isEmpty {
-                    Label(song.musicalKey, systemImage: "music.note")
-                }
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-
-            HStack {
-                StatusBadge(status: song.status)
-                Spacer()
-                Text("Played \(song.playCount) times")
+            if !missingSnapshotFields.isEmpty {
+                Text("Missing: \(missingSnapshotFields.joined(separator: ", "))")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
+        .padding(12)
+        .background(Color(.windowBackgroundColor).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    private var songSnapshotSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Song Snapshot")
+                    .font(.headline)
+
+                Spacer()
+
+                Text("Ready \(demoReadyScore)/4")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], alignment: .leading, spacing: 8) {
+                ForEach(snapshotMetrics, id: \.label) { metric in
+                    SnapshotMetric(label: metric.label, value: metric.value, icon: metric.icon)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ReadinessChip(label: "Lyrics", isReady: isLyricsReady)
+                    ReadinessChip(label: "AI", isReady: isAIReady)
+                    ReadinessChip(label: "Shader", isReady: isShaderReady)
+                    ReadinessChip(label: "Images", isReady: isImagesReady, value: isImagesReady ? "\(song.imagesCount)" : nil)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(.windowBackgroundColor).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    private var detailTabs: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Detail Tab", selection: $selectedTab) {
+                ForEach(DetailTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            selectedTabContent
+        }
+    }
+
+    @ViewBuilder
+    private var selectedTabContent: some View {
+        switch selectedTab {
+        case .analysis:
+            if let analysis = song.analysis {
+                cardSection {
+                    analysisSection(analysis)
+                }
+            } else {
+                cardSection {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Analysis")
+                            .font(.headline)
+                        Text("No AI analysis available yet.")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+        case .assets:
+            VStack(alignment: .leading, spacing: 12) {
+                cardSection { shaderSection }
+                cardSection { LyricsBrowserView(song: song) }
+                cardSection { imagesSection }
+            }
+
+        case .history:
+            cardSection { historySection }
+        }
+    }
+
+    private func cardSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color(.windowBackgroundColor).opacity(0.5))
+            .cornerRadius(10)
+    }
+
+    private var snapshotMetrics: [(label: String, value: String, icon: String)] {
+        var metrics: [(label: String, value: String, icon: String)] = []
+        if song.duration > 0 {
+            metrics.append((label: "Duration", value: formatDuration(song.duration), icon: "clock"))
+        }
+        if song.bpm > 0 {
+            metrics.append((label: "BPM", value: "\(Int(song.bpm))", icon: "metronome"))
+        }
+        if !song.musicalKey.isEmpty {
+            metrics.append((label: "Key", value: song.musicalKey, icon: "music.note"))
+        }
+        if displayMood != "n/a" {
+            metrics.append((label: "Mood", value: displayMood, icon: "face.smiling"))
+        }
+        if let phase = song.phase {
+            metrics.append((label: "Phase", value: phase.displayName, icon: phase.iconName))
+        }
+        metrics.append((label: "Energy", value: String(format: "%.2f", song.energyScore), icon: "bolt.fill"))
+        return metrics
+    }
+
+    private var missingSnapshotFields: [String] {
+        var fields: [String] = []
+        if song.duration <= 0 { fields.append("Duration") }
+        if song.bpm <= 0 { fields.append("BPM") }
+        if song.musicalKey.isEmpty { fields.append("Key") }
+        if displayMood == "n/a" { fields.append("Mood") }
+        if song.phase == nil { fields.append("Phase") }
+        return fields
+    }
+
+    private var displayMood: String {
+        let mood = song.mood.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mood.isEmpty || mood.lowercased() == "unknown" {
+            return "n/a"
+        }
+        return mood.capitalized
+    }
+
+    private var isLyricsReady: Bool {
+        song.hasLyrics || (song.lyricsText?.isEmpty == false)
+    }
+
+    private var isAIReady: Bool {
+        song.analysis != nil
+    }
+
+    private var isShaderReady: Bool {
+        guard let shader = song.selectedShader else { return false }
+        return !shader.isEmpty
+    }
+
+    private var isImagesReady: Bool {
+        song.imagesFolderPath != nil && song.imagesCount > 0
+    }
+
+    private var demoReadyScore: Int {
+        [isLyricsReady, isAIReady, isShaderReady, isImagesReady].filter { $0 }.count
     }
 
     private func analysisSection(_ analysis: StoredSongAnalysis) -> some View {
@@ -857,16 +1197,35 @@ struct SongDetailView: View {
     }
 
     private var shaderSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Shader")
                 .font(.headline)
 
-            if let shader = song.selectedShader {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text(shader)
-                        .font(.body)
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundColor(.secondary)
+
+                TextField("Shader name", text: $shaderDraft)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Apply") {
+                    applyShaderDraft()
                 }
+                .buttonStyle(.borderedProminent)
+                .disabled(shaderDraftTrimmed.isEmpty || shaderDraftTrimmed == (song.selectedShader ?? ""))
+
+                Button("Clear") {
+                    shaderDraft = ""
+                    onShaderChange("")
+                }
+                .buttonStyle(.bordered)
+                .disabled((song.selectedShader ?? "").isEmpty)
+            }
+
+            if let shader = song.selectedShader, !shader.isEmpty {
+                Text("Current: \(shader)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             } else {
                 Text("No shader assigned")
                     .foregroundColor(.secondary)
@@ -921,7 +1280,6 @@ struct SongDetailView: View {
                                     .stroke(Color(.separatorColor).opacity(0.3))
                             )
                         } else {
-                            // Placeholder while loading
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color(.textBackgroundColor))
                                 .frame(maxWidth: .infinity, minHeight: 140)
@@ -933,38 +1291,54 @@ struct SongDetailView: View {
                 Text("No images")
                     .foregroundColor(.secondary)
             }
-
-            // Lyrics section
-            Divider()
-            LyricsBrowserView(song: song)
         }
     }
 
-    private var actionsSection: some View {
-        HStack {
-            Button(action: onReanalyze) {
-                Label("Re-analyze", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("History")
+                .font(.headline)
 
-            Button(action: onClearCache) {
-                Label("Clear Cache", systemImage: "xmark.bin")
-            }
-            .buttonStyle(.bordered)
-
-            Spacer()
-
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
-            .buttonStyle(.bordered)
+            historyRow(label: "Created", value: formatDate(song.createdAt))
+            historyRow(label: "Last Played", value: song.lastPlayedAt.map(formatDate) ?? "Never")
+            historyRow(label: "Last Analyzed", value: song.lastAnalyzedAt.map(formatDate) ?? "Never")
+            historyRow(label: "Play Count", value: "\(song.playCount)")
+            historyRow(label: "Readiness", value: "\(demoReadyScore)/4")
         }
+    }
+
+    private func historyRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+                .font(.body.monospacedDigit())
+        }
+    }
+
+    private var shaderDraftTrimmed: String {
+        shaderDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func formatDuration(_ seconds: Double) -> String {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func syncShaderDraft() {
+        shaderDraft = song.selectedShader ?? ""
+    }
+
+    private func applyShaderDraft() {
+        let trimmed = shaderDraftTrimmed
+        guard !trimmed.isEmpty else { return }
+        onShaderChange(trimmed)
     }
 
     private func loadImages() {
@@ -978,10 +1352,9 @@ struct SongDetailView: View {
             guard let fileURL = element as? URL else { return nil as URL? }
             return allowed.contains(fileURL.pathExtension.lowercased()) ? fileURL : nil
         }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        
+
         imageURLs = urls
-        
-        // Load images asynchronously
+
         for imageURL in urls {
             DispatchQueue.global(qos: .userInitiated).async {
                 if let img = NSImage(contentsOf: imageURL) {
@@ -999,14 +1372,13 @@ struct SongDetailView: View {
         imageCache.removeValue(forKey: url)
     }
 }
-
 // MARK: - Lyrics Browser View
 
 struct LyricsBrowserView: View {
     let song: Song
     @State private var isExpanded = false
 
-    private var parsedLines: [(time: Double?, text: String, isRefrain: Bool)] {
+    private var parsedLines: [(time: Double?, text: String, isRefrain: Bool, repeatCount: Int)] {
         guard let lyrics = song.lyricsText, !lyrics.isEmpty else { return [] }
         return parseLRCLines(lyrics)
     }
@@ -1081,6 +1453,7 @@ struct LyricsBrowserView: View {
                                     time: line.time,
                                     text: line.text,
                                     isRefrain: line.isRefrain,
+                                    repeatCount: line.repeatCount,
                                     isSynced: song.hasLyrics
                                 )
                             }
@@ -1101,70 +1474,112 @@ struct LyricsBrowserView: View {
     }
 
     /// Parse LRC format lines, extracting timestamps if present
-    private func parseLRCLines(_ text: String) -> [(time: Double?, text: String, isRefrain: Bool)] {
+    private func parseLRCLines(_ text: String) -> [(time: Double?, text: String, isRefrain: Bool, repeatCount: Int)] {
         let lines = text.components(separatedBy: .newlines)
-        var result: [(time: Double?, text: String, isRefrain: Bool)] = []
+        var rawEntries: [(time: Double?, text: String)] = []
         var seenTexts: [String: Int] = [:]
 
-        // First pass: count occurrences
-        for line in lines {
-            let cleanText = extractText(from: line)
-            if !cleanText.isEmpty {
-                seenTexts[cleanText, default: 0] += 1
-            }
-        }
-
-        // Second pass: parse with refrain detection
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
+            guard !isMetadataLine(trimmed) else { continue }
 
             let time = extractTime(from: trimmed)
             let text = extractText(from: trimmed)
             guard !text.isEmpty else { continue }
 
-            let isRefrain = (seenTexts[text] ?? 0) >= 3
-            result.append((time: time, text: text, isRefrain: isRefrain))
+            rawEntries.append((time: time, text: text))
+            let normalized = normalizeForLyricsCompare(text)
+            if !normalized.isEmpty {
+                seenTexts[normalized, default: 0] += 1
+            }
         }
 
-        return result
+        var collapsed: [(time: Double?, text: String, isRefrain: Bool, repeatCount: Int)] = []
+
+        for entry in rawEntries {
+            let normalized = normalizeForLyricsCompare(entry.text)
+            guard !normalized.isEmpty else { continue }
+
+            if let lastIndex = collapsed.indices.last {
+                let lastNormalized = normalizeForLyricsCompare(collapsed[lastIndex].text)
+                if lastNormalized == normalized {
+                    collapsed[lastIndex].repeatCount += 1
+                    continue
+                }
+            }
+
+            let isRefrain = (seenTexts[normalized] ?? 0) >= 3
+            collapsed.append((time: entry.time, text: entry.text, isRefrain: isRefrain, repeatCount: 1))
+        }
+
+        return collapsed
     }
 
     private func extractTime(from line: String) -> Double? {
-        // Match [mm:ss.xx] or [mm:ss.xxx] format
-        let pattern = #"\[(\d+):(\d+)\.(\d+)\]"#
+        // Match [mm:ss], [mm:ss.xx], or [mm:ss.xxx] format
+        let pattern = #"\[(\d+):(\d+)(?:\.(\d+))?\]"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
             return nil
         }
 
         guard let minRange = Range(match.range(at: 1), in: line),
-              let secRange = Range(match.range(at: 2), in: line),
-              let msRange = Range(match.range(at: 3), in: line) else {
+              let secRange = Range(match.range(at: 2), in: line) else {
             return nil
         }
 
         let min = Double(line[minRange]) ?? 0
         let sec = Double(line[secRange]) ?? 0
-        let msStr = String(line[msRange])
-        let ms = Double(msStr) ?? 0
-        let msDivisor = pow(10.0, Double(msStr.count))
+        let ms: Double
+        let msDivisor: Double
+        if let msRange = Range(match.range(at: 3), in: line) {
+            let msStr = String(line[msRange])
+            ms = Double(msStr) ?? 0
+            msDivisor = pow(10.0, Double(msStr.count))
+        } else {
+            ms = 0
+            msDivisor = 1
+        }
 
         return min * 60 + sec + ms / msDivisor
     }
 
     private func extractText(from line: String) -> String {
-        // Remove timestamp patterns [mm:ss.xx]
-        let pattern = #"\[\d+:\d+\.\d+\]"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        // Remove timestamp patterns [mm:ss], [mm:ss.xx], [mm:ss.xxx]
+        let timePattern = #"\[\d+:\d+(?:\.\d+)?\]"#
+        guard let timeRegex = try? NSRegularExpression(pattern: timePattern) else {
             return line.trimmingCharacters(in: .whitespaces)
         }
-        let result = regex.stringByReplacingMatches(
+        let noTime = timeRegex.stringByReplacingMatches(
             in: line,
             range: NSRange(line.startIndex..., in: line),
             withTemplate: ""
         )
-        return result.trimmingCharacters(in: .whitespaces)
+        // Remove metadata tags like [ar:...], [ti:...]
+        let metadataPattern = #"\[[a-zA-Z]{1,8}:[^\]]*\]"#
+        if let metadataRegex = try? NSRegularExpression(pattern: metadataPattern) {
+            let stripped = metadataRegex.stringByReplacingMatches(
+                in: noTime,
+                range: NSRange(noTime.startIndex..., in: noTime),
+                withTemplate: ""
+            )
+            return stripped.trimmingCharacters(in: .whitespaces)
+        }
+        return noTime.trimmingCharacters(in: .whitespaces)
+    }
+
+    private func isMetadataLine(_ line: String) -> Bool {
+        let metadataPattern = #"^\[[a-zA-Z]{1,8}:[^\]]*\]$"#
+        guard let regex = try? NSRegularExpression(pattern: metadataPattern) else { return false }
+        return regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+    }
+
+    private func normalizeForLyricsCompare(_ text: String) -> String {
+        text.lowercased()
+            .components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
 
@@ -1173,6 +1588,7 @@ struct LyricLineRow: View {
     let time: Double?
     let text: String
     let isRefrain: Bool
+    let repeatCount: Int
     let isSynced: Bool
 
     var body: some View {
@@ -1188,25 +1604,35 @@ struct LyricLineRow: View {
                 Text(formatTime(time))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.blue)
-                    .frame(width: 50, alignment: .leading)
+                    .frame(width: 52, alignment: .leading)
             }
 
             // Lyric text
             Text(text)
                 .font(.body)
-                .foregroundColor(isRefrain ? .purple : .primary)
-                .fontWeight(isRefrain ? .semibold : .regular)
+                .foregroundColor(.primary)
+                .fontWeight(.regular)
 
-            if isRefrain {
+            if repeatCount > 1 {
+                Text("x\(repeatCount)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color(.textBackgroundColor))
+                    .cornerRadius(4)
+            }
+
+            if isRefrain && repeatCount == 1 {
                 Text("♪")
                     .font(.caption)
-                    .foregroundColor(.purple)
+                    .foregroundColor(.secondary)
             }
 
             Spacer()
         }
         .padding(.vertical, 2)
-        .background(isRefrain ? Color.purple.opacity(0.08) : Color.clear)
+        .background(isRefrain ? Color.primary.opacity(0.04) : Color.clear)
         .cornerRadius(4)
     }
 

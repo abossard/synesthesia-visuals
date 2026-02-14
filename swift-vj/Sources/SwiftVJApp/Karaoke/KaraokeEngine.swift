@@ -37,12 +37,6 @@ final class KaraokeEngine: ObservableObject {
     /// Last processed playback position
     private var lastPosition: Double = 0
 
-    /// Timing offset in milliseconds (positive = lyrics earlier)
-    var timingOffsetMs: Int = 0
-
-    /// Computed timing offset in seconds
-    private var timingOffsetSec: Double { Double(timingOffsetMs) / 1000.0 }
-
     // MARK: - Animation State
 
     /// Timer for transition animation
@@ -99,8 +93,7 @@ final class KaraokeEngine: ObservableObject {
     func updatePosition(_ position: Double) {
         guard !lines.isEmpty else { return }
 
-        // Apply timing offset and preroll
-        let adjustedPosition = position + timingOffsetSec + configuration.prerollTime
+        let adjustedPosition = position + configuration.prerollTime
         lastPosition = adjustedPosition
 
         // Find the active line index

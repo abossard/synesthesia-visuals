@@ -26,6 +26,8 @@ public actor ShadersModule: Module {
     private var usageCounts: [String: Int] = [:]
     private var lastSelected: String?
     private let usagePenalty: Double = 0.15
+    private let candidatePoolSize: Int = 12
+    private let shortlistSize: Int = 3
     
     // MARK: - Init
     
@@ -129,30 +131,67 @@ public actor ShadersModule: Module {
         phase: Phase? = nil,
         excludeLast: Bool = true
     ) async -> ShaderMatchResult? {
-        // Get candidates, prefer strict phase match when provided
+        let decision = await selectDecisionForSong(
+            categories: categories,
+            energy: energy,
+            valence: valence,
+            phase: phase,
+            excludeLast: excludeLast
+        )
+        return decision?.selected
+    }
+
+    /// Select a shader for a song and return the shortlist used to pick it.
+    ///
+    /// This makes the pipeline decision path explicit: shortlist first, then final choice.
+    public func selectDecisionForSong(
+        categories: SongCategories? = nil,
+        energy: Double = 0.5,
+        valence: Double = 0.0,
+        phase: Phase? = nil,
+        excludeLast: Bool = true
+    ) async -> ShaderSelectionDecision? {
+        _ = categories
+
+        // Stage 1: build quality-ranked candidates (optionally phase-aware)
         var candidates: [ShaderMatchResult] = []
         if let phase = phase {
-            candidates = await matcher.matchForPhase(energy: energy, valence: valence, phase: phase, topK: 10)
+            candidates = await matcher.matchForPhase(
+                energy: energy,
+                valence: valence,
+                phase: phase,
+                topK: candidatePoolSize
+            )
             if candidates.isEmpty {
                 // Fallback to soft phase bonus if no tagged shaders
-                candidates = await matcher.matchWithPhase(energy: energy, valence: valence, phase: phase, phaseWeight: 0.25, topK: 10)
+                candidates = await matcher.matchWithPhase(
+                    energy: energy,
+                    valence: valence,
+                    phase: phase,
+                    phaseWeight: 0.25,
+                    topK: candidatePoolSize
+                )
             }
         }
         if candidates.isEmpty {
-            candidates = await matcher.match(energy: energy, valence: valence, topK: 10)
+            candidates = await matcher.match(energy: energy, valence: valence, topK: candidatePoolSize)
         }
-        
+
         guard !candidates.isEmpty else { return nil }
-        
-        // Score with usage penalty
+
+        // Stage 2: keep a small shortlist of strongest raw matches.
+        var filtered = candidates.filter { candidate in
+            !(excludeLast && candidate.name == lastSelected)
+        }
+        if filtered.isEmpty {
+            filtered = candidates
+        }
+        let shortlist = Array(filtered.prefix(shortlistSize))
+
+        // Stage 3: choose best inside shortlist using usage penalty for variety.
         var scored: [(ShaderMatchResult, Double)] = []
-        
-        for candidate in candidates {
-            // Skip last selected if requested
-            if excludeLast && candidate.name == lastSelected {
-                continue
-            }
-            
+
+        for candidate in shortlist {
             // Apply usage penalty
             let usage = usageCounts[candidate.name] ?? 0
             let penalty = Double(usage) * usagePenalty
@@ -160,22 +199,24 @@ public actor ShadersModule: Module {
             
             scored.append((candidate, adjustedScore))
         }
-        
-        // Fallback if all excluded
-        if scored.isEmpty, let first = candidates.first {
+
+        let decisionShortlist: [ShaderMatchResult]
+        if shortlist.isEmpty, let first = candidates.first {
+            decisionShortlist = [first]
             scored.append((first, first.score))
+        } else {
+            decisionShortlist = shortlist
         }
-        
-        // Sort and select best
+
         scored.sort { $0.1 < $1.1 }
-        
+
         guard let best = scored.first else { return nil }
-        
+
         // Record usage
         usageCounts[best.0.name, default: 0] += 1
         lastSelected = best.0.name
-        
-        return best.0
+
+        return ShaderSelectionDecision(selected: best.0, shortlist: decisionShortlist)
     }
     
     /// Get random shader

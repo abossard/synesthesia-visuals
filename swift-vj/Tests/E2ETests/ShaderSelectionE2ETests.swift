@@ -11,7 +11,7 @@ final class ShaderSelectionE2ETests: XCTestCase {
     
     // MARK: - Test Paths
     
-    static let projectRoot = URL(fileURLWithPath: #file)
+    static let projectRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()  // E2ETests
         .deletingLastPathComponent()  // Tests
         .deletingLastPathComponent()  // swift-vj

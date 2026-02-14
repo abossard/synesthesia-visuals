@@ -37,6 +37,7 @@ public struct SpotifyPlayback: Sendable, Equatable {
 /// Error types for Spotify monitoring
 public enum SpotifyMonitorError: Error, Equatable {
     case spotifyNotRunning
+    case permissionDenied
     case scriptError(String)
     case parseError(String)
     case noTrackPlaying
@@ -77,7 +78,16 @@ public final class SpotifyMonitor: @unchecked Sendable {
     
     /// Query current Spotify playback
     public func getPlayback() async throws -> SpotifyPlayback {
-        let result = try await runAppleScript(Self.script)
+        let result: String
+        do {
+            result = try await runAppleScript(Self.script)
+        } catch SpotifyMonitorError.permissionDenied {
+            await health.markUnavailable(error: "Spotify automation permission denied")
+            throw SpotifyMonitorError.permissionDenied
+        } catch let error as SpotifyMonitorError {
+            await health.markUnavailable(error: String(describing: error))
+            throw error
+        }
         
         if result == "NOT_RUNNING" {
             await health.markUnavailable(error: "Spotify not running")
@@ -154,6 +164,13 @@ public final class SpotifyMonitor: @unchecked Sendable {
                 
                 if let error = errorInfo {
                     let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+                    let lowerMessage = message.lowercased()
+                    if lowerMessage.contains("not authorized to send apple events") ||
+                        lowerMessage.contains("not authorised to send apple events") ||
+                        lowerMessage.contains("not permitted to send apple events") {
+                        continuation.resume(throwing: SpotifyMonitorError.permissionDenied)
+                        return
+                    }
                     continuation.resume(throwing: SpotifyMonitorError.scriptError(message))
                     return
                 }

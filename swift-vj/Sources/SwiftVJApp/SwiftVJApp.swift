@@ -220,6 +220,7 @@ public final class AppState: ObservableObject {
     public var pipelineModule: PipelineModule?
     private var launchpadModule: LaunchpadModule?
     private var launchpadGateway: LaunchpadGateway?
+    private var launcherGateway: AppLauncherGateway?
     public var songsModule: SongsModule?
     public let synesthesiaAudio = SynesthesiaAudioProcessor()
     private let ledfxFeature: LedFXFeature
@@ -240,17 +241,18 @@ public final class AppState: ObservableObject {
     @Published public private(set) var playbackPosition: Double = 0
     @Published public private(set) var isPlaying: Bool = false
     @Published public private(set) var playbackSource: String = "vdj"
-    @Published public private(set) var timingOffsetMs: Int = 0
     @Published public private(set) var launchpadStatus: LaunchpadStatus?
     @Published public private(set) var launchpadState: ControllerState?
     @Published public private(set) var launchpadConfig: LaunchpadYAMLConfig?
     @Published public private(set) var pipelineSteps: [PipelineStep] = []
     @Published public private(set) var pipelineResult: PipelineResult?
+    @Published public private(set) var pipelineExpandedSteps: Set<String> = []
     @Published public private(set) var imageIndex: Int = 0
     @Published public private(set) var imageCount: Int = 0
     @Published public private(set) var shaderCount: Int = 0
     @Published public private(set) var selectedShader: String?
     @Published public private(set) var selectedMaskShader: String?
+    @Published public private(set) var renderEnabled: Bool = true
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
@@ -289,6 +291,14 @@ public final class AppState: ObservableObject {
     @Published public private(set) var ledfxHealthSummary: String = "Unknown"
     @Published public private(set) var ledfxLastHealthCheck: Date?
 
+    // MARK: - Launcher UI State
+
+    @Published public private(set) var launcherTargets: [LaunchTarget] = []
+    @Published public private(set) var launcherRunningTargetIDs: Set<String> = []
+    @Published public private(set) var launcherIsLaunchingAll: Bool = false
+    @Published public private(set) var launcherLastError: String?
+    @Published public private(set) var launcherLastLaunchSummary: String?
+
     public var oscRestBridge: OscRestBridgeService? {
         ledfxFeature.bridgeService
     }
@@ -308,6 +318,10 @@ public final class AppState: ObservableObject {
 
     private var vdjQueryTask: Task<Void, Never>?
     private var lastLaunchpadRevision: UInt64 = 0
+    private var lastLauncherRevision: UInt64 = 0
+    private var lastLedfxRevision: UInt64 = 0
+    private var lastMappedLogCount: Int = 0
+    private var lastMappedLogTimestamp: Date?
 
     // MARK: - Store Logger (Debug)
 
@@ -342,7 +356,10 @@ public final class AppState: ObservableObject {
             }
         )
 
-        // Configure logger: exclude noisy actions, async console output
+        // Configure logger: opt-in for regular debug runs to avoid reducer overhead.
+        let loggerEnabled = ProcessInfo.processInfo.environment["SWIFTVJ_STORE_LOGGER"] == "1"
+        storeLogger.isEnabled = loggerEnabled
+        storeLogger.printToConsole = loggerEnabled
         storeLogger.excludedCategories = [.audio]
         storeLogger.filterHighFrequency()
 
@@ -368,6 +385,10 @@ public final class AppState: ObservableObject {
 
     public func send(_ action: AppAction) {
         store.send(action)
+    }
+
+    public func togglePipelineStepExpansion(_ stepName: String) {
+        store.send(.pipeline(.toggleStepExpansion(stepName)))
     }
 
     // MARK: - Public API
@@ -443,12 +464,6 @@ public final class AppState: ObservableObject {
         if sourceType == .vdj { await setupVDJSubscriptionsAndQueries() }
     }
 
-    public func adjustTiming(_ deltaMs: Int) {
-        let newOffset = store.state.playback.timingOffsetMs + deltaMs
-        store.send(.playback(.timingOffsetChanged(newOffset)))
-        Task { _ = await settings.adjustTiming(by: deltaMs) }
-    }
-
     public func selectShader(_ name: String) {
         // Dispatch action through store - effects handle render engine + OSC via EffectEnvironment
         store.send(.render(.selectShader(name)))
@@ -480,6 +495,17 @@ public final class AppState: ObservableObject {
 
     public func selectRandomMaskShader() {
         store.send(.render(.selectRandomMaskShader))
+    }
+
+    public func setRenderEnabled(_ enabled: Bool) {
+        store.send(.render(.setEnabled(enabled)))
+    }
+
+    public var renderEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.renderEnabled },
+            set: { enabled in self.setRenderEnabled(enabled) }
+        )
     }
 
     /// Set the current phase via unidirectional data flow.
@@ -812,6 +838,7 @@ public final class AppState: ObservableObject {
         if let launchpadModule {
             launchpadGateway = LaunchpadGateway(module: launchpadModule)
         }
+        launcherGateway = AppLauncherGateway()
 
         // Module dispatch sink - always hop to main actor before touching Store
         launchpadModule?.dispatch = makeLaunchpadDispatchSink { [weak self] action in
@@ -869,6 +896,11 @@ public final class AppState: ObservableObject {
             let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
             await MainActor.run {
                 self.renderEngine = engine
+                if let shadersDir = ShaderDirectoryLocator.resolve(
+                    customPath: UserDefaults.standard.string(forKey: "shaderDirectory")
+                ) {
+                    engine.shaderRepository.configure(metallibURL: nil, shadersDirectory: shadersDir)
+                }
                 engine.shaderManager.logger = { [weak self] message, coreLevel in
                     // Convert SwiftVJCore.LogLevel to SwiftVJApp.LogLevel
                     let level: LogLevel = switch coreLevel {
@@ -880,18 +912,11 @@ public final class AppState: ObservableObject {
                     self?.log(message, level: level)
                 }
             }
-            do {
-                try await engine.start()
-                await MainActor.run {
-                    let renderState = self.store.state.render
-                    let initialMain = renderState.selectedShader.flatMap { $0.isEmpty ? nil : $0 } ?? "3isacrowd"
-                    let initialMask = renderState.selectedMaskShader.flatMap { $0.isEmpty ? nil : $0 } ?? "BWrevolvingswirl"
-                    self.store.send(.render(.selectShader(initialMain)))
-                    self.store.send(.render(.selectMaskShader(initialMask)))
-                }
-            } catch {
-                print("[RenderEngine] Failed: \(error)")
-            }
+
+            // Keep shader navigation/select effects operational even when renderer is disabled.
+            _ = await engine.shaderRepository.reload()
+            self.applyInitialRenderSelections(using: engine)
+            await self.applyRendererEnabledState(self.store.state.render.isEnabled)
         }
     }
 
@@ -938,6 +963,11 @@ public final class AppState: ObservableObject {
             await self.setImageIndexInRenderer(index)
         }
 
+        EffectEnvironment.shared.setRenderEnabled = { [weak self] enabled in
+            guard let self else { return }
+            await self.applyRendererEnabledState(enabled)
+        }
+
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
             guard let self = self else { return }
             await self.processTrackChange(track)
@@ -960,6 +990,10 @@ public final class AppState: ObservableObject {
             guard let self else { return nil }
             return await MainActor.run { self.currentPhase }
         }
+        EffectEnvironment.shared.reloadLLMConfiguration = { [weak self] in
+            guard let self else { return }
+            await self.reloadLLMConfiguration()
+        }
 
         EffectEnvironment.shared.ledfxActionHandler = { [weak self] action in
             guard let self else { return }
@@ -967,6 +1001,22 @@ public final class AppState: ObservableObject {
         }
 
         EffectEnvironment.shared.launchpadHandler = launchpadGateway
+        EffectEnvironment.shared.launcherHandler = launcherGateway
+    }
+
+    private func reloadLLMConfiguration() async {
+        guard let llmClient else { return }
+        await llmClient.reloadConfiguration()
+        await llmClient.start()
+        let available = await llmClient.isAvailable
+        if available {
+            let backend = await llmClient.backendInfo
+            log("Tachikoma config reloaded: \(backend)", level: .info)
+        } else {
+            let status = await llmClient.status()
+            let error = status.error.isEmpty ? "unknown error" : status.error
+            log("Tachikoma config reload failed: \(error)", level: .warning)
+        }
     }
 
     private func startOSCHub() {
@@ -996,6 +1046,16 @@ public final class AppState: ObservableObject {
             oscHub.subscribe(pattern: "/image/folder") { [weak self] _, values in
                 guard let folderPath = values.first as? String else { return }
                 Task { @MainActor in self?.loadImagesFromFolder(URL(fileURLWithPath: folderPath)) }
+            }
+
+            oscHub.subscribe(pattern: "/render/enabled") { [weak self] _, values in
+                guard
+                    let value = values.first,
+                    let enabled = Self.oscValueAsBool(value)
+                else { return }
+                Task { @MainActor in
+                    self?.setRenderEnabled(enabled)
+                }
             }
             
             ledfxFeature.registerOscSubscriptions()
@@ -1048,7 +1108,7 @@ public final class AppState: ObservableObject {
                     self.renderEngine?.onPlaybackStateChange(isPlaying: newState.playback.isPlaying)
                 }
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
-                if self.timingOffsetMs != newState.playback.timingOffsetMs { self.timingOffsetMs = newState.playback.timingOffsetMs }
+                if self.renderEnabled != newState.render.isEnabled { self.renderEnabled = newState.render.isEnabled }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
                 if self.selectedMaskShader != newState.render.selectedMaskShader { self.selectedMaskShader = newState.render.selectedMaskShader }
                 if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
@@ -1065,10 +1125,13 @@ public final class AppState: ObservableObject {
                     self.oscMessageCount = newState.ui.oscMessageCount
                     self.oscMessages = newState.ui.oscMessages.mapValues { self.mapOSCEntry($0) }
                 }
-                let newLogEntries = newState.ui.logEntries.map(self.mapLogEntry)
-                if self.logEntries.count != newLogEntries.count ||
-                    self.logEntries.last?.timestamp != newLogEntries.last?.timestamp {
-                    self.logEntries = newLogEntries
+                let rawLogEntries = newState.ui.logEntries
+                let latestLogTimestamp = rawLogEntries.last?.timestamp
+                if self.lastMappedLogCount != rawLogEntries.count ||
+                    self.lastMappedLogTimestamp != latestLogTimestamp {
+                    self.lastMappedLogCount = rawLogEntries.count
+                    self.lastMappedLogTimestamp = latestLogTimestamp
+                    self.logEntries = rawLogEntries.map(self.mapLogEntry)
                 }
 
                 // Launchpad state - only update if changed
@@ -1095,39 +1158,62 @@ public final class AppState: ObservableObject {
                     }
                 }
 
-                // LedFX state
-                let ledfx = newState.ledfx
-                if self.ledfxBaseURL != ledfx.baseURL { self.ledfxBaseURL = ledfx.baseURL }
-                if self.ledfxVirtualIdsString != ledfx.virtualIdsString { self.ledfxVirtualIdsString = ledfx.virtualIdsString }
-                if self.ledfxIsRefreshing != ledfx.isRefreshing { self.ledfxIsRefreshing = ledfx.isRefreshing }
-                if self.ledfxIsApplying != ledfx.isApplying { self.ledfxIsApplying = ledfx.isApplying }
-                if self.ledfxIsGeneratingConfig != ledfx.isGeneratingConfig { self.ledfxIsGeneratingConfig = ledfx.isGeneratingConfig }
-                if self.ledfxServerInfo != ledfx.serverInfo { self.ledfxServerInfo = ledfx.serverInfo }
-                if self.ledfxScenes != ledfx.scenes { self.ledfxScenes = ledfx.scenes }
-                if self.ledfxVirtuals != ledfx.virtuals { self.ledfxVirtuals = ledfx.virtuals }
-                if self.ledfxPlaylists != ledfx.playlists { self.ledfxPlaylists = ledfx.playlists }
-                if self.ledfxActivePlaylistId != ledfx.activePlaylistId { self.ledfxActivePlaylistId = ledfx.activePlaylistId }
-                if self.ledfxSceneFilter != ledfx.sceneFilter { self.ledfxSceneFilter = ledfx.sceneFilter }
-                if self.ledfxPlaylistFilter != ledfx.playlistFilter { self.ledfxPlaylistFilter = ledfx.playlistFilter }
-                if self.ledfxErrorMessage != ledfx.errorMessage { self.ledfxErrorMessage = ledfx.errorMessage }
-                if self.ledfxGeneratedYaml != ledfx.generatedYaml {
-                    self.ledfxGeneratedYaml = ledfx.generatedYaml
-                    if let yaml = ledfx.generatedYaml {
-                        self.ledfxGeneratedConfig = try? ConfigLoader.load(from: yaml)
-                    } else {
-                        self.ledfxGeneratedConfig = nil
+                // Launcher state
+                let launcher = newState.launcher
+                if self.lastLauncherRevision != launcher.revision {
+                    self.lastLauncherRevision = launcher.revision
+                    if self.launcherTargets != launcher.targets { self.launcherTargets = launcher.targets }
+                    if self.launcherRunningTargetIDs != launcher.runningTargetIDs {
+                        self.launcherRunningTargetIDs = launcher.runningTargetIDs
+                    }
+                    if self.launcherIsLaunchingAll != launcher.isLaunchingAll {
+                        self.launcherIsLaunchingAll = launcher.isLaunchingAll
+                    }
+                    if self.launcherLastError != launcher.lastError { self.launcherLastError = launcher.lastError }
+                    if self.launcherLastLaunchSummary != launcher.lastLaunchSummary {
+                        self.launcherLastLaunchSummary = launcher.lastLaunchSummary
                     }
                 }
-                if self.ledfxPlaylistCount != ledfx.playlistCount { self.ledfxPlaylistCount = ledfx.playlistCount }
-                if self.ledfxEffectsCount != ledfx.effectsCount { self.ledfxEffectsCount = ledfx.effectsCount }
-                if self.ledfxIsRunning != ledfx.isRunning { self.ledfxIsRunning = ledfx.isRunning }
-                if self.ledfxHealthSummary != ledfx.healthSummary { self.ledfxHealthSummary = ledfx.healthSummary }
-                if self.ledfxLastHealthCheck != ledfx.lastHealthCheck { self.ledfxLastHealthCheck = ledfx.lastHealthCheck }
+
+                // LedFX state
+                let ledfx = newState.ledfx
+                if self.lastLedfxRevision != ledfx.revision {
+                    self.lastLedfxRevision = ledfx.revision
+                    if self.ledfxBaseURL != ledfx.baseURL { self.ledfxBaseURL = ledfx.baseURL }
+                    if self.ledfxVirtualIdsString != ledfx.virtualIdsString { self.ledfxVirtualIdsString = ledfx.virtualIdsString }
+                    if self.ledfxIsRefreshing != ledfx.isRefreshing { self.ledfxIsRefreshing = ledfx.isRefreshing }
+                    if self.ledfxIsApplying != ledfx.isApplying { self.ledfxIsApplying = ledfx.isApplying }
+                    if self.ledfxIsGeneratingConfig != ledfx.isGeneratingConfig { self.ledfxIsGeneratingConfig = ledfx.isGeneratingConfig }
+                    if self.ledfxServerInfo != ledfx.serverInfo { self.ledfxServerInfo = ledfx.serverInfo }
+                    if self.ledfxScenes != ledfx.scenes { self.ledfxScenes = ledfx.scenes }
+                    if self.ledfxVirtuals != ledfx.virtuals { self.ledfxVirtuals = ledfx.virtuals }
+                    if self.ledfxPlaylists != ledfx.playlists { self.ledfxPlaylists = ledfx.playlists }
+                    if self.ledfxActivePlaylistId != ledfx.activePlaylistId { self.ledfxActivePlaylistId = ledfx.activePlaylistId }
+                    if self.ledfxSceneFilter != ledfx.sceneFilter { self.ledfxSceneFilter = ledfx.sceneFilter }
+                    if self.ledfxPlaylistFilter != ledfx.playlistFilter { self.ledfxPlaylistFilter = ledfx.playlistFilter }
+                    if self.ledfxErrorMessage != ledfx.errorMessage { self.ledfxErrorMessage = ledfx.errorMessage }
+                    if self.ledfxGeneratedYaml != ledfx.generatedYaml {
+                        self.ledfxGeneratedYaml = ledfx.generatedYaml
+                        if let yaml = ledfx.generatedYaml {
+                            self.ledfxGeneratedConfig = try? ConfigLoader.load(from: yaml)
+                        } else {
+                            self.ledfxGeneratedConfig = nil
+                        }
+                    }
+                    if self.ledfxPlaylistCount != ledfx.playlistCount { self.ledfxPlaylistCount = ledfx.playlistCount }
+                    if self.ledfxEffectsCount != ledfx.effectsCount { self.ledfxEffectsCount = ledfx.effectsCount }
+                    if self.ledfxIsRunning != ledfx.isRunning { self.ledfxIsRunning = ledfx.isRunning }
+                    if self.ledfxHealthSummary != ledfx.healthSummary { self.ledfxHealthSummary = ledfx.healthSummary }
+                    if self.ledfxLastHealthCheck != ledfx.lastHealthCheck { self.ledfxLastHealthCheck = ledfx.lastHealthCheck }
+                }
 
                 // Pipeline state - only update if changed
                 let newSteps = self.mapPipelineSteps(from: newState.pipeline)
                 if self.pipelineSteps != newSteps {
                     self.pipelineSteps = newSteps
+                }
+                if self.pipelineExpandedSteps != newState.pipeline.expandedStepNames {
+                    self.pipelineExpandedSteps = newState.pipeline.expandedStepNames
                 }
                 if let result = newState.pipeline.result, self.pipelineResult != result {
                     self.pipelineResult = result
@@ -1149,6 +1235,56 @@ public final class AppState: ObservableObject {
                 timestamp: stepState.timestamp
             )
         }
+    }
+
+    private func applyInitialRenderSelections(using engine: RenderEngine) {
+        let renderState = store.state.render
+        let initialMain = renderState.selectedShader.flatMap { $0.isEmpty ? nil : $0 }
+            ?? engine.shaderRepository.regularShaders.first?.name
+            ?? "3isacrowd"
+        let initialMask = renderState.selectedMaskShader.flatMap { $0.isEmpty ? nil : $0 }
+            ?? engine.shaderRepository.masks.first?.name
+            ?? "BWrevolvingswirl"
+        engine.shaderSelection.selectMain(name: initialMain)
+        engine.shaderSelection.selectMask(name: initialMask)
+        store.send(.render(.selectShader(initialMain)))
+        store.send(.render(.selectMaskShader(initialMask)))
+    }
+
+    private func applyRendererEnabledState(_ enabled: Bool) async {
+        guard let engine = renderEngine else { return }
+
+        if enabled {
+            guard !engine.isRunning else { return }
+            do {
+                try await engine.start()
+            } catch {
+                log("[RenderEngine] Failed to start: \(error)", level: .error)
+            }
+            return
+        }
+
+        guard engine.isRunning else { return }
+        await engine.stop()
+    }
+
+    nonisolated private static func oscValueAsBool(_ value: Any) -> Bool? {
+        if let boolValue = value as? Bool { return boolValue }
+        if let intValue = value as? Int32 { return intValue != 0 }
+        if let intValue = value as? Int { return intValue != 0 }
+        if let floatValue = value as? Float32 { return floatValue != 0 }
+        if let floatValue = value as? Float { return floatValue != 0 }
+        if let stringValue = value as? String {
+            switch stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "1", "true", "on", "yes":
+                return true
+            case "0", "false", "off", "no":
+                return false
+            default:
+                return nil
+            }
+        }
+        return nil
     }
 
     private func setupVDJSubscriptionsAndQueries() async {

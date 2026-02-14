@@ -1,9 +1,11 @@
 // ShadersModuleTests - Tests for shader selection with usage tracking
 
+import Foundation
 import XCTest
 @testable import SwiftVJCore
 
 final class ShadersModuleTests: XCTestCase {
+    private var tempDirectory: URL?
     
     // MARK: - Lifecycle Tests
     
@@ -77,5 +79,105 @@ final class ShadersModuleTests: XCTestCase {
         let status = await module.getStatus()
         
         XCTAssertNotNil(status["started"])
+    }
+
+    // MARK: - Stress / Regression
+
+    func testSelectForSong_rapidSelectionsStayInsideQualityShortlist() async throws {
+        let module = ShadersModule()
+        let shadersDir = try createShaderFixtureDirectory()
+        _ = await module.loadAllShaderFiles(from: shadersDir)
+
+        let expectedShortlist: Set<String> = ["alpha", "beta", "gamma"]
+        var selectedNames: Set<String> = []
+
+        for _ in 0..<120 {
+            guard let selected = await module.selectForSong(
+                categories: nil,
+                energy: 0.8,
+                valence: 0.2,
+                phase: nil,
+                excludeLast: false
+            ) else {
+                XCTFail("Expected shader selection")
+                return
+            }
+            selectedNames.insert(selected.name)
+        }
+
+        XCTAssertFalse(selectedNames.isEmpty)
+        XCTAssertTrue(
+            selectedNames.isSubset(of: expectedShortlist),
+            "Selection escaped shortlist: \(selectedNames.sorted())"
+        )
+    }
+
+    func testSelectDecisionForSong_returnsShortlistAndSelectedShader() async throws {
+        let module = ShadersModule()
+        let shadersDir = try createShaderFixtureDirectory()
+        _ = await module.loadAllShaderFiles(from: shadersDir)
+
+        let decision = await module.selectDecisionForSong(
+            categories: nil,
+            energy: 0.8,
+            valence: 0.2,
+            phase: nil,
+            excludeLast: false
+        )
+
+        XCTAssertNotNil(decision)
+        guard let decision else { return }
+        XCTAssertFalse(decision.shortlist.isEmpty)
+        XCTAssertLessThanOrEqual(decision.shortlist.count, 3)
+        XCTAssertTrue(decision.shortlist.contains(where: { $0.name == decision.selected.name }))
+    }
+
+    override func tearDownWithError() throws {
+        if let tempDirectory {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        tempDirectory = nil
+        try super.tearDownWithError()
+    }
+
+    private func createShaderFixtureDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ShadersModuleTests-\(UUID().uuidString)", isDirectory: true)
+        let glslDir = root.appendingPathComponent("glsl", isDirectory: true)
+        try FileManager.default.createDirectory(at: glslDir, withIntermediateDirectories: true)
+        tempDirectory = root
+
+        try writeShader(named: "alpha", energy: 0.80, valence: 0.20, in: glslDir)
+        try writeShader(named: "beta", energy: 0.78, valence: 0.22, in: glslDir)
+        try writeShader(named: "gamma", energy: 0.75, valence: 0.18, in: glslDir)
+        try writeShader(named: "delta", energy: 0.45, valence: -0.20, in: glslDir)
+        try writeShader(named: "epsilon", energy: 0.10, valence: -0.80, in: glslDir)
+
+        return root
+    }
+
+    private func writeShader(named name: String, energy: Double, valence: Double, in directory: URL) throws {
+        let shaderURL = directory.appendingPathComponent("\(name).txt")
+        try "void main() {}".write(to: shaderURL, atomically: true, encoding: .utf8)
+
+        let analysisURL = directory.appendingPathComponent("\(name).analysis.json")
+        let payload: [String: Any] = [
+            "shaderName": name,
+            "shaderType": "glsl",
+            "features": [
+                "energy_score": energy,
+                "mood_valence": valence,
+                "color_warmth": 0.5,
+                "motion_speed": 0.5,
+                "geometric_score": 0.5,
+                "visual_density": 0.5
+            ],
+            "mood": "test",
+            "colors": ["blue"],
+            "effects": ["flow"],
+            "description": "fixture"
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        try data.write(to: analysisURL)
     }
 }

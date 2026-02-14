@@ -14,6 +14,12 @@ import ShaderRepository
 /// - All mutations go through repository methods (unidirectional flow)
 @MainActor
 public final class ObservableShaderRepository: ObservableObject {
+    private struct ReloadSnapshot: Sendable {
+        let resolvedMetallibURL: URL?
+        let metallibNames: Set<String>
+        let shaders: [Shader]
+        let errorMessage: String?
+    }
     
     // MARK: - Published State
     
@@ -132,62 +138,26 @@ public final class ObservableShaderRepository: ObservableObject {
         isLoading = true
         lastError = nil
         defer { isLoading = false }
-        
-        // Parse metallib for renderable shader names
-        metallibNames.removeAll()
-        if let url = metallibURL {
-            if let names = try? MetallibParser.parseMetallib(at: url) {
-                metallibNames = Set(names)
-                print("[ShaderRepository] Found \(names.count) shaders in metallib")
-            }
-        } else {
-            // Try to find metallib in standard paths
-            let searchPaths = [
-                Bundle.main.bundleURL.appendingPathComponent("Shaders.metallib").path,
-                Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/Shaders.metallib").path,
-                Bundle.main.path(forResource: "Shaders", ofType: "metallib") ?? "",
-                "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Sources/SwiftVJApp/Resources/Shaders.metallib",
-                "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Build/Shaders.metallib"
-            ].filter { !$0.isEmpty }
-            
-            for path in searchPaths {
-                if FileManager.default.fileExists(atPath: path) {
-                    metallibURL = URL(fileURLWithPath: path)
-                    if let names = try? MetallibParser.parseMetallib(at: URL(fileURLWithPath: path)) {
-                        metallibNames = Set(names)
-                        print("[ShaderRepository] Found \(names.count) shaders in metallib: \(path)")
-                    }
-                    break
-                }
-            }
-        }
-        
-        // Load shaders from directory
-        if let dir = shadersDirectory {
-            do {
-                shaders = try ShaderRepository.Shaders.loadAll(shadersDir: dir, metallibURL: metallibURL)
-                print("[ShaderRepository] Loaded \(shaders.count) shaders from directory")
-            } catch {
-                lastError = "Failed to load shaders: \(error.localizedDescription)"
-                print("[ShaderRepository] \(lastError!)")
-                shaders = []
-            }
-        } else {
-            // Create basic shader entries from metallib names only
-            shaders = metallibNames.sorted().map {
-                Shader(
-                    name: $0,
-                    sourceURL: URL(fileURLWithPath: "/metallib/\($0).txt"),
-                    folder: "glsl",
-                    metalFunctionName: "fragment_\($0)"
-                )
-            }
-        }
-        
-        // Convert to ShaderInfo for UI
-        allShaders = shaders.map { ShaderInfo(from: $0) }
+
+        let currentMetallibURL = metallibURL
+        let currentShadersDirectory = shadersDirectory
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            Self.loadSnapshot(
+                preferredMetallibURL: currentMetallibURL,
+                shadersDirectory: currentShadersDirectory
+            )
+        }.value
+
+        metallibURL = snapshot.resolvedMetallibURL
+        metallibNames = snapshot.metallibNames
+        shaders = snapshot.shaders
+        lastError = snapshot.errorMessage
+        allShaders = snapshot.shaders.map(ShaderInfo.init(from:))
         lastReloadTime = Date()
-        
+
+        if let error = snapshot.errorMessage {
+            print("[ShaderRepository] \(error)")
+        }
         print("[ShaderRepository] Total: \(allShaders.count) shaders (\(regularShaders.count) regular, \(masks.count) masks)")
         return allShaders.count
     }
@@ -343,6 +313,77 @@ public final class ObservableShaderRepository: ObservableObject {
     /// Get random shader
     public func randomShader() -> ShaderInfo? {
         shaders.randomElement().map { ShaderInfo(from: $0) }
+    }
+
+    private nonisolated static func loadSnapshot(
+        preferredMetallibURL: URL?,
+        shadersDirectory: URL?
+    ) -> ReloadSnapshot {
+        let resolvedMetallibURL = resolveMetallibURL(preferred: preferredMetallibURL)
+        let names = parseMetallibNames(at: resolvedMetallibURL)
+
+        if let shadersDirectory {
+            do {
+                let shaders = try ShaderRepository.Shaders.loadAll(
+                    shadersDir: shadersDirectory,
+                    metallibURL: resolvedMetallibURL
+                )
+                return ReloadSnapshot(
+                    resolvedMetallibURL: resolvedMetallibURL,
+                    metallibNames: names,
+                    shaders: shaders,
+                    errorMessage: nil
+                )
+            } catch {
+                return ReloadSnapshot(
+                    resolvedMetallibURL: resolvedMetallibURL,
+                    metallibNames: names,
+                    shaders: [],
+                    errorMessage: "Failed to load shaders: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        let shaders = names.sorted().map {
+            Shader(
+                name: $0,
+                sourceURL: URL(fileURLWithPath: "/metallib/\($0).txt"),
+                folder: "glsl",
+                metalFunctionName: "fragment_\($0)"
+            )
+        }
+        return ReloadSnapshot(
+            resolvedMetallibURL: resolvedMetallibURL,
+            metallibNames: names,
+            shaders: shaders,
+            errorMessage: nil
+        )
+    }
+
+    private nonisolated static func resolveMetallibURL(preferred: URL?) -> URL? {
+        if let preferred, FileManager.default.fileExists(atPath: preferred.path) {
+            return preferred
+        }
+
+        let searchPaths = [
+            Bundle.main.bundleURL.appendingPathComponent("Shaders.metallib").path,
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/Shaders.metallib").path,
+            Bundle.main.path(forResource: "Shaders", ofType: "metallib") ?? "",
+            "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Sources/SwiftVJApp/Resources/Shaders.metallib",
+            "/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/Build/Shaders.metallib"
+        ].filter { !$0.isEmpty }
+
+        for path in searchPaths where FileManager.default.fileExists(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+        return nil
+    }
+
+    private nonisolated static func parseMetallibNames(at url: URL?) -> Set<String> {
+        guard let url, let names = try? MetallibParser.parseMetallib(at: url) else {
+            return []
+        }
+        return Set(names)
     }
 }
 

@@ -17,10 +17,6 @@ final class InfrastructureTests: XCTestCase {
         XCTAssertEqual(Config.oscSynesthesiaPort, 7777)
     }
 
-    func test_config_timingStepIsDefined() {
-        XCTAssertEqual(Config.timingStepMs, 200)
-    }
-
     // Cache no longer expires - cleared only via Song Manager UI
     func test_config_cacheNeverExpires() {
         // Verify cache directories exist for persistence

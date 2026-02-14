@@ -79,6 +79,9 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private var fpsUpdateCounter: Int = 0
     private var localFrameCount: Int = 0
 
+    // Main-actor state sync interval (separate from 60fps GPU render loop).
+    private static let stateSyncInterval: Duration = .milliseconds(33)
+
     // MARK: - Init
 
     static func create(synesthesiaAudio: SynesthesiaAudioProcessor? = nil) async -> RenderEngine {
@@ -240,8 +243,8 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         Task { [weak self] in
             while let self = self, self.renderTimer != nil {
                 await self.updateCachedState()
-                // Update at ~60Hz (slightly faster than display to stay ahead)
-                try? await Task.sleep(for: .milliseconds(14))
+                // Keep GPU rendering at 60fps, but reduce MainActor state sync pressure.
+                try? await Task.sleep(for: Self.stateSyncInterval)
             }
         }
     }
@@ -289,43 +292,46 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             }
             
             // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
-            if let renderer = self.headlessRenderer {
-                if let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
-                    let hash = Self.buildKaraokeContentHash(
-                        displayState: self.karaokeEngine.displayState,
-                        configuration: self.karaokeEngine.configuration
-                    )
-                    let view = AnyView(KaraokeView(
-                        displayState: self.karaokeEngine.displayState,
-                        configuration: self.karaokeEngine.configuration
-                    ))
-                    swiftUIRenderer.update(contentHash: hash, view: view)
-                }
+                if let renderer = self.headlessRenderer {
+                    if let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
+                        let hash = Self.buildKaraokeContentHash(
+                            displayState: self.karaokeEngine.displayState,
+                            configuration: self.karaokeEngine.configuration
+                        )
+                        swiftUIRenderer.update(contentHash: hash) {
+                            AnyView(KaraokeView(
+                                displayState: self.karaokeEngine.displayState,
+                                configuration: self.karaokeEngine.configuration
+                            ))
+                        }
+                    }
 
-                if let refrainRenderer = renderer.getSwiftUIRefrainRenderer() {
-                    let hash = Self.buildKaraokeContentHash(
-                        displayState: self.refrainEngine.displayState,
-                        configuration: self.refrainEngine.configuration
-                    )
-                    let view = AnyView(KaraokeView(
-                        displayState: self.refrainEngine.displayState,
-                        configuration: self.refrainEngine.configuration
-                    ))
-                    refrainRenderer.update(contentHash: hash, view: view)
-                }
+                    if let refrainRenderer = renderer.getSwiftUIRefrainRenderer() {
+                        let hash = Self.buildKaraokeContentHash(
+                            displayState: self.refrainEngine.displayState,
+                            configuration: self.refrainEngine.configuration
+                        )
+                        refrainRenderer.update(contentHash: hash) {
+                            AnyView(KaraokeView(
+                                displayState: self.refrainEngine.displayState,
+                                configuration: self.refrainEngine.configuration
+                            ))
+                        }
+                    }
 
-                if let songInfoRenderer = renderer.getSwiftUISongInfoRenderer() {
-                    let hash = Self.buildSongInfoContentHash(
-                        displayState: self.songInfoEngine.displayState,
-                        configuration: self.songInfoEngine.configuration
-                    )
-                    let view = AnyView(SongInfoView(
-                        displayState: self.songInfoEngine.displayState,
-                        configuration: self.songInfoEngine.configuration
-                    ))
-                    songInfoRenderer.update(contentHash: hash, view: view)
+                    if let songInfoRenderer = renderer.getSwiftUISongInfoRenderer() {
+                        let hash = Self.buildSongInfoContentHash(
+                            displayState: self.songInfoEngine.displayState,
+                            configuration: self.songInfoEngine.configuration
+                        )
+                        songInfoRenderer.update(contentHash: hash) {
+                            AnyView(SongInfoView(
+                                displayState: self.songInfoEngine.displayState,
+                                configuration: self.songInfoEngine.configuration
+                            ))
+                        }
+                    }
                 }
-            }
 
             return RenderFrameContext(
                 audioState: self.audioManager.state,

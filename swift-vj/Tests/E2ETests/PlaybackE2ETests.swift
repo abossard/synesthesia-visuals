@@ -27,7 +27,12 @@ final class PlaybackE2ETests: XCTestCase {
         let monitor = SpotifyMonitor()
         
         // When: Getting playback
-        let playback = try await monitor.getPlayback()
+        let playback: SpotifyPlayback
+        do {
+            playback = try await monitor.getPlayback()
+        } catch SpotifyMonitorError.permissionDenied {
+            throw XCTSkip("Spotify automation permission denied (System Settings > Privacy & Security > Automation)")
+        }
         
         // Then: We get valid playback data
         // Note: This may throw if Spotify is paused/stopped
@@ -44,7 +49,12 @@ final class PlaybackE2ETests: XCTestCase {
         
         // Given: Playing track
         let monitor = SpotifyMonitor()
-        let playback = try await monitor.getPlayback()
+        let playback: SpotifyPlayback
+        do {
+            playback = try await monitor.getPlayback()
+        } catch SpotifyMonitorError.permissionDenied {
+            throw XCTSkip("Spotify automation permission denied (System Settings > Privacy & Security > Automation)")
+        }
         
         // When: Getting track key
         let key = playback.trackKey

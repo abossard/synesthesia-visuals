@@ -24,6 +24,7 @@ public enum AppAction: Sendable {
     case launchpad(LaunchpadAction)
     case audio(AudioAction)
     case ui(UIAction)
+    case launcher(LauncherAction)
     case ledfx(LedFXAction)
     case songs(SongsAction)
 
@@ -40,6 +41,9 @@ public enum PlaybackAction: Sendable {
     /// Track changed (from VDJ/Spotify)
     case trackChanged(Track)
 
+    /// Track changed from Song Manager demo flow; always re-runs pipeline
+    case demoTrackChanged(Track)
+
     /// Playback position updated
     case positionUpdated(position: Double, isPlaying: Bool)
 
@@ -48,9 +52,6 @@ public enum PlaybackAction: Sendable {
 
     /// Playing state changed
     case playingStateChanged(Bool)
-
-    /// Timing offset adjusted
-    case timingOffsetChanged(Int)
 
     /// Request to start playback monitoring
     case startMonitoring
@@ -89,12 +90,18 @@ public enum PipelineAction: Sendable {
 
     /// Update step status directly
     case updateStep(name: String, status: String, details: [String]?)
+
+    /// Toggle expanded/collapsed state for a step in Pipeline UI
+    case toggleStepExpansion(String)
 }
 
 // MARK: - Render Actions
 
 /// Actions related to rendering state
 public enum RenderAction: Sendable {
+    /// Enable or disable the renderer and Syphon output
+    case setEnabled(Bool)
+
     /// Select a shader
     case selectShader(String)
 
@@ -253,6 +260,67 @@ public enum UIAction: Sendable {
 
     /// Set OSC filter
     case setOscFilter(String)
+
+    /// Reload Tachikoma configuration in app-layer AI modules
+    case reloadTachikomaConfig
+}
+
+// MARK: - Launcher Actions
+
+/// Aggregate launch results for batch startup operations.
+public struct LauncherLaunchReport: Sendable, Equatable {
+    public var launchedTargetIDs: [String]
+    public var alreadyRunningTargetIDs: [String]
+    public var failedTargetErrors: [String: String]
+    public var runningTargetIDs: Set<String>
+
+    public init(
+        launchedTargetIDs: [String] = [],
+        alreadyRunningTargetIDs: [String] = [],
+        failedTargetErrors: [String: String] = [:],
+        runningTargetIDs: Set<String> = []
+    ) {
+        self.launchedTargetIDs = launchedTargetIDs
+        self.alreadyRunningTargetIDs = alreadyRunningTargetIDs
+        self.failedTargetErrors = failedTargetErrors
+        self.runningTargetIDs = runningTargetIDs
+    }
+}
+
+/// Actions related to controlled app/command launching.
+public enum LauncherAction: Sendable {
+    /// User dropped one or more file URLs to analyze as launch targets.
+    case addAppTargetsRequested([URL])
+
+    /// App-layer analysis produced normalized app targets.
+    case appTargetsAnalyzed([LaunchTarget])
+
+    /// Add a command-line launch target.
+    case addCommandTargetRequested(commandLine: String, workingDirectory: String?)
+
+    /// Remove an existing launch target.
+    case removeTarget(id: String)
+
+    /// Enable/disable startup autostart for a launch target.
+    case setAutoStart(id: String, enabled: Bool)
+
+    /// Launch a single target now.
+    case launchTargetRequested(id: String)
+
+    /// Launch all configured targets that are not currently running.
+    case launchMissingRequested
+
+    /// Launch only autostart-enabled targets that are not running.
+    case launchAutoStartRequested
+
+    /// Completion for single-target launch request.
+    case launchTargetCompleted(id: String, launched: Bool, error: String?)
+
+    /// Completion for a batch launch request.
+    case launchAllCompleted(LauncherLaunchReport)
+
+    /// Clear last launcher error.
+    case clearError
 }
 
 // MARK: - LedFX Actions
@@ -418,6 +486,15 @@ public enum SongsAction: Sendable {
     /// Song selected in browser
     case songSelected(SongID?)
 
+    /// Start a demo playback for a selected song (UI-triggered test flow)
+    case demoPlayRequested(SongID)
+
+    /// Demo playback initialized successfully
+    case demoPlayStarted(SongID)
+
+    /// Demo playback failed to start
+    case demoPlayFailed(SongID, String)
+
     /// Request to delete a song
     case deleteSong(SongID)
 
@@ -504,6 +581,7 @@ extension AppAction: CustomStringConvertible {
         case .launchpad(let action): return "launchpad.\(action)"
         case .audio(let action): return "audio.\(action)"
         case .ui(let action): return "ui.\(action)"
+        case .launcher(let action): return "launcher.\(action)"
         case .ledfx(let action): return "ledfx.\(action)"
         case .songs(let action): return "songs.\(action)"
         case .loadPersistedState: return "loadPersistedState"
@@ -517,10 +595,10 @@ extension PlaybackAction: CustomStringConvertible {
     public var description: String {
         switch self {
         case .trackChanged(let track): return "trackChanged(\(track.artist) - \(track.title))"
+        case .demoTrackChanged(let track): return "demoTrackChanged(\(track.artist) - \(track.title))"
         case .positionUpdated(let pos, let playing): return "positionUpdated(\(String(format: "%.1f", pos)), playing: \(playing))"
         case .sourceChanged(let source): return "sourceChanged(\(source))"
         case .playingStateChanged(let playing): return "playingStateChanged(\(playing))"
-        case .timingOffsetChanged(let offset): return "timingOffsetChanged(\(offset))"
         case .startMonitoring: return "startMonitoring"
         case .stopMonitoring: return "stopMonitoring"
         case .poll: return "poll"
@@ -539,6 +617,7 @@ extension PipelineAction: CustomStringConvertible {
         case .reset: return "reset"
         case .clearCache: return "clearCache"
         case .updateStep(let name, let status, _): return "updateStep(\(name): \(status))"
+        case .toggleStepExpansion(let step): return "toggleStepExpansion(\(step))"
         }
     }
 }
@@ -546,6 +625,7 @@ extension PipelineAction: CustomStringConvertible {
 extension RenderAction: CustomStringConvertible {
     public var description: String {
         switch self {
+        case .setEnabled(let enabled): return "setEnabled(\(enabled))"
         case .selectShader(let name): return "selectShader(\(name))"
         case .selectMaskShader(let name): return "selectMaskShader(\(name))"
         case .shaderSelected(let name): return "shaderSelected(\(name))"
@@ -615,6 +695,30 @@ extension UIAction: CustomStringConvertible {
         case .clearOscMessages: return "clearOscMessages"
         case .setOscDebugEnabled(let enabled): return "setOscDebugEnabled(\(enabled))"
         case .setOscFilter(let filter): return "setOscFilter(\(filter))"
+        case .reloadTachikomaConfig: return "reloadTachikomaConfig"
+        }
+    }
+}
+
+extension LauncherAction: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .addAppTargetsRequested(let urls): return "addAppTargetsRequested(\(urls.count))"
+        case .appTargetsAnalyzed(let targets): return "appTargetsAnalyzed(\(targets.count))"
+        case .addCommandTargetRequested(let commandLine, let workingDirectory):
+            let cwd = workingDirectory ?? "-"
+            return "addCommandTargetRequested(\(commandLine), cwd: \(cwd))"
+        case .removeTarget(let id): return "removeTarget(\(id))"
+        case .setAutoStart(let id, let enabled): return "setAutoStart(\(id), \(enabled))"
+        case .launchTargetRequested(let id): return "launchTargetRequested(\(id))"
+        case .launchMissingRequested: return "launchMissingRequested"
+        case .launchAutoStartRequested: return "launchAutoStartRequested"
+        case .launchTargetCompleted(let id, let launched, let error):
+            if let error { return "launchTargetCompleted(\(id), launched: \(launched), error: \(error))" }
+            return "launchTargetCompleted(\(id), launched: \(launched))"
+        case .launchAllCompleted(let report):
+            return "launchAllCompleted(launched: \(report.launchedTargetIDs.count), failed: \(report.failedTargetErrors.count))"
+        case .clearError: return "clearError"
         }
     }
 }
@@ -626,6 +730,9 @@ extension SongsAction: CustomStringConvertible {
         case .loaded(let count): return "loaded(\(count))"
         case .songRecorded(let artist, let title): return "songRecorded(\(artist) - \(title))"
         case .songSelected(let id): return "songSelected(\(id?.rawValue ?? "none"))"
+        case .demoPlayRequested(let id): return "demoPlayRequested(\(id.rawValue))"
+        case .demoPlayStarted(let id): return "demoPlayStarted(\(id.rawValue))"
+        case .demoPlayFailed(let id, let reason): return "demoPlayFailed(\(id.rawValue), \(reason))"
         case .deleteSong(let id): return "deleteSong(\(id))"
         case .songDeleted(let id): return "songDeleted(\(id))"
         case .requestReanalysis(let id): return "requestReanalysis(\(id))"

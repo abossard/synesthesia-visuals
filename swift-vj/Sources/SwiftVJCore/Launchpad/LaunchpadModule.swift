@@ -62,6 +62,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     private var blinkTimer: DispatchSourceTimer?
     private var blinkEnabled = true  // User preference
     private var currentBpm: Float = 120.0
+    private static let verboseRuntimeLogs = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_LAUNCHPAD"] == "1"
     
     // MARK: - Init
     
@@ -455,7 +456,7 @@ public final class LaunchpadModule: @unchecked Sendable {
                 self.executor.executeAll(effectsToExecute)
                 self.publishState(currentState, includeStatus: false)
 
-                if !appliedBanks.isEmpty {
+                if Self.verboseRuntimeLogs && !appliedBanks.isEmpty {
                     print("[Dynamic] Refreshed banks \(appliedBanks.sorted()) scenes=\(scenes.count) controls=\(controls.count)")
                 }
             }
@@ -682,10 +683,14 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Set multiple LEDs (requires device connected)
     public func setLeds(_ updates: [(ButtonId, Int)]) {
         guard withStateSync({ isEnabled }) else {
-            print("[Launchpad] setLeds ignored - module disabled")
+            if Self.verboseRuntimeLogs {
+                print("[Launchpad] setLeds ignored - module disabled")
+            }
             return
         }
-        print("[Launchpad] setLeds: updating \(updates.count) pads")
+        if Self.verboseRuntimeLogs {
+            print("[Launchpad] setLeds: updating \(updates.count) pads")
+        }
         for (padId, color) in updates {
             midi.setLed(padId: padId, color: color)
         }
@@ -739,8 +744,10 @@ public final class LaunchpadModule: @unchecked Sendable {
         }
         timer.resume()
         blinkTimer = timer
-        
-        print("[Launchpad] Beat-sync blink timer started at \(currentBpm) BPM")
+
+        if Self.verboseRuntimeLogs {
+            print("[Launchpad] Beat-sync blink timer started at \(currentBpm) BPM")
+        }
     }
     
     private func stopBlinkTimer() {

@@ -167,7 +167,17 @@ public actor PipelineModule: Module {
             stepsCompleted.append("lyrics")
             let refrainCount = lines.filter { $0.isRefrain }.count
             let kwCount = lines.filter { !$0.keywords.isEmpty }.count
-            await fireStepComplete(.lyrics, .lyrics(lineCount: lines.count, refrainCount: refrainCount, keywordCount: kwCount))
+            let status = PipelineStepStatus.lyrics(
+                lineCount: lines.count,
+                refrainCount: refrainCount,
+                keywordCount: kwCount
+            )
+            await fireStepComplete(.lyrics, status)
+            await fireStepDetails(
+                .lyrics,
+                status: status.displayText,
+                details: Self.lrclibLyricsDetails(lines: lines)
+            )
         }
         // If no LRC lyrics, leave step in "pending" state - AI step will update it
         
@@ -188,33 +198,52 @@ public actor PipelineModule: Module {
             if !analysis.keywords.isEmpty || !analysis.themes.isEmpty {
                 stepsCompleted.append("lyrics")
                 // Update lyrics step to show LLM provided the data
-                await fireStepComplete(.lyrics, .lyrics(
+                let status = PipelineStepStatus.lyrics(
                     lineCount: 0,
                     refrainCount: analysis.refrainLines.count,
                     keywordCount: analysis.keywords.count
-                ))
+                )
+                await fireStepComplete(.lyrics, status)
+                await fireStepDetails(
+                    .lyrics,
+                    status: status.displayText,
+                    details: Self.lyricsFallbackDetails(analysis: analysis)
+                )
             } else {
                 stepsSkipped.append("lyrics")
-                await fireStepComplete(.lyrics, .skipped(reason: "No lyrics found"))
+                let status = PipelineStepStatus.skipped(reason: "No lyrics found")
+                await fireStepComplete(.lyrics, status)
+                await fireStepDetails(
+                    .lyrics,
+                    status: status.displayText,
+                    details: ["LRCLib: no lyrics returned.", "AI: no fallback lyrics metadata found."]
+                )
             }
         }
         
         stepsCompleted.append("ai")
         stepTimings["ai"] = Int(Date().timeIntervalSince(aiStart) * 1000)
-        await fireStepComplete(.ai, .ai(
+        let aiStatus = PipelineStepStatus.ai(
             mood: analysis.mood,
             energy: analysis.energy,
             valence: analysis.valence,
             keywords: analysis.keywords,
             themes: analysis.themes
-        ))
+        )
+        await fireStepComplete(.ai, aiStatus)
+        await fireStepDetails(
+            .ai,
+            status: aiStatus.displayText,
+            details: Self.aiStepDetails(analysis: analysis)
+        )
         
         // === STEP 3 & 4: Shaders + Images (parallel) ===
         var shaderMatch: ShaderMatchResult?
+        var shaderShortlist: [ShaderMatchResult] = []
         var imageResult: ImageResult?
 
         enum ParallelStepResult: Sendable {
-            case shaders(match: ShaderMatchResult?, timingMs: Int, completed: Bool)
+            case shaders(match: ShaderMatchResult?, shortlist: [ShaderMatchResult], timingMs: Int, completed: Bool)
             case images(result: ImageResult?, timingMs: Int, completed: Bool)
         }
 
@@ -227,21 +256,38 @@ public actor PipelineModule: Module {
 
                     let currentPhase = await EffectEnvironment.shared.currentPhaseProvider?()
                     
-                    let match = await shadersModule.selectForSong(
-                        categories: nil,
+                    let decision = await shadersModule.selectDecisionForSong(
+                        categories: SongCategories(scores: analysis.categories),
                         energy: analysis.energy,
                         valence: analysis.valence,
                         phase: currentPhase
                     )
                     let timingMs = Int(Date().timeIntervalSince(shaderStart) * 1000)
 
-                    if let match = match {
-                        await self.fireStepComplete(.shaders, .shaders(name: match.name, score: match.score))
-                        return .shaders(match: match, timingMs: timingMs, completed: true)
+                    if let decision = decision {
+                        let status = PipelineStepStatus.shaders(
+                            name: decision.selected.name,
+                            score: decision.selected.score
+                        )
+                        await self.fireStepComplete(.shaders, status)
+                        await self.fireStepDetails(
+                            .shaders,
+                            status: status.displayText,
+                            details: Self.shaderDecisionDetails(
+                                selected: decision.selected,
+                                shortlist: decision.shortlist
+                            )
+                        )
+                        return .shaders(
+                            match: decision.selected,
+                            shortlist: decision.shortlist,
+                            timingMs: timingMs,
+                            completed: true
+                        )
                     }
 
                     await self.fireStepComplete(.shaders, .skipped(reason: "No match"))
-                    return .shaders(match: nil, timingMs: timingMs, completed: false)
+                    return .shaders(match: nil, shortlist: [], timingMs: timingMs, completed: false)
                 }
             } else {
                 stepsSkipped.append("shaders")
@@ -280,8 +326,9 @@ public actor PipelineModule: Module {
 
             for await result in group {
                 switch result {
-                case .shaders(let match, let timingMs, let completed):
+                case .shaders(let match, let shortlist, let timingMs, let completed):
                     shaderMatch = match
+                    shaderShortlist = shortlist
                     stepTimings["shaders"] = timingMs
                     if completed {
                         stepsCompleted.append("shaders")
@@ -302,7 +349,7 @@ public actor PipelineModule: Module {
 
         // Ensure we always have a shader selection; fallback to random if needed
         if shaderMatch == nil, let shadersModule = shadersModule, let random = await shadersModule.randomShader() {
-            shaderMatch = ShaderMatchResult(
+            let fallbackMatch = ShaderMatchResult(
                 name: random.name,
                 path: random.path,
                 score: 0,
@@ -310,8 +357,19 @@ public actor PipelineModule: Module {
                 moodValence: random.moodValence,
                 mood: random.mood
             )
+            shaderMatch = fallbackMatch
             stepsCompleted.append("shaders")
-            await self.fireStepComplete(.shaders, .shaders(name: random.name, score: 0))
+            shaderShortlist = [fallbackMatch]
+            let status = PipelineStepStatus.shaders(name: random.name, score: 0)
+            await self.fireStepComplete(.shaders, status)
+            await self.fireStepDetails(
+                .shaders,
+                status: status.displayText,
+                details: Self.shaderDecisionDetails(
+                    selected: fallbackMatch,
+                    shortlist: shaderShortlist
+                )
+            )
         }
         
         // === STEP 5: OSC Broadcast ===
@@ -319,14 +377,29 @@ public actor PipelineModule: Module {
         let oscStart = Date()
         
         if let hub = oscHub {
-            await sendToOSC(hub: hub, track: track, lines: lines, analysis: analysis, shader: shaderMatch, images: imageResult)
+            let oscMessages = await sendToOSC(
+                hub: hub,
+                track: track,
+                lines: lines,
+                analysis: analysis,
+                shader: shaderMatch,
+                images: imageResult
+            )
             stepsCompleted.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            await fireStepComplete(.osc, .osc(sent: true))
+            let status = PipelineStepStatus.osc(sent: true)
+            await fireStepComplete(.osc, status)
+            await fireStepDetails(.osc, status: status.displayText, details: oscMessages)
         } else {
             stepsSkipped.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
-            await fireStepComplete(.osc, .osc(sent: false))
+            let status = PipelineStepStatus.osc(sent: false)
+            await fireStepComplete(.osc, status)
+            await fireStepDetails(
+                .osc,
+                status: status.displayText,
+                details: ["OSC hub unavailable; no messages were sent."]
+            )
         }
         
         // Build result
@@ -450,7 +523,16 @@ public actor PipelineModule: Module {
     
     // MARK: - Private
     
-    private func sendToOSC(hub: OSCHub, track: Track, lines: [LyricLine], analysis: SongAnalysis, shader: ShaderMatchResult?, images: ImageResult?) async {
+    private func sendToOSC(
+        hub: OSCHub,
+        track: Track,
+        lines: [LyricLine],
+        analysis: SongAnalysis,
+        shader: ShaderMatchResult?,
+        images: ImageResult?
+    ) async -> [String] {
+        var sentMessages: [String] = []
+
         // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
         try? hub.sendToMagic(
             "/textler/track",
@@ -464,9 +546,24 @@ public actor PipelineModule: Module {
                 Int32(lines.isEmpty ? 0 : 1)
             ]
         )
+        sentMessages.append(
+            Self.oscMessageLine(
+                "/textler/track",
+                args: [
+                    "1",
+                    "pipeline",
+                    track.artist,
+                    track.title,
+                    track.album,
+                    String(format: "%.2f", track.duration),
+                    lines.isEmpty ? "0" : "1"
+                ]
+            )
+        )
         
         // Send lyrics reset: /textler/lyrics/reset
         try? hub.sendToMagic("/textler/lyrics/reset")
+        sentMessages.append(Self.oscMessageLine("/textler/lyrics/reset"))
         
         // Send each line: /textler/lyrics/line [index, time, text]
         for (index, line) in lines.enumerated() {
@@ -474,10 +571,17 @@ public actor PipelineModule: Module {
                 "/textler/lyrics/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
             )
+            sentMessages.append(
+                Self.oscMessageLine(
+                    "/textler/lyrics/line",
+                    args: [String(index), Self.formatSeconds(line.timeSec), line.text]
+                )
+            )
         }
         
         // Send refrain reset: /textler/refrain/reset
         try? hub.sendToMagic("/textler/refrain/reset")
+        sentMessages.append(Self.oscMessageLine("/textler/refrain/reset"))
         
         // Send refrain lines: /textler/refrain/line [index, time, text]
         let refrainLines = lines.filter { $0.isRefrain }
@@ -486,10 +590,17 @@ public actor PipelineModule: Module {
                 "/textler/refrain/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
             )
+            sentMessages.append(
+                Self.oscMessageLine(
+                    "/textler/refrain/line",
+                    args: [String(index), Self.formatSeconds(line.timeSec), line.text]
+                )
+            )
         }
         
         // Send keywords reset: /textler/keywords/reset
         try? hub.sendToMagic("/textler/keywords/reset")
+        sentMessages.append(Self.oscMessageLine("/textler/keywords/reset"))
         
         // Send keywords per line: /textler/keywords/line [index, time, keywords]
         for (index, line) in lines.enumerated() {
@@ -497,6 +608,12 @@ public actor PipelineModule: Module {
                 try? hub.sendToMagic(
                     "/textler/keywords/line",
                     values: [Int32(index), Float32(line.timeSec), line.keywords]
+                )
+                sentMessages.append(
+                    Self.oscMessageLine(
+                        "/textler/keywords/line",
+                        args: [String(index), Self.formatSeconds(line.timeSec), line.keywords]
+                    )
                 )
             }
         }
@@ -506,23 +623,27 @@ public actor PipelineModule: Module {
         let keywordsJoined = analysis.keywords.joined(separator: ",")
         if !keywordsJoined.isEmpty {
             try? hub.sendToMagic("/textler/metadata/keywords", values: [keywordsJoined])
+            sentMessages.append(Self.oscMessageLine("/textler/metadata/keywords", args: [keywordsJoined]))
         }
         
         // Themes: /textler/metadata/themes [comma-separated]
         let themesJoined = analysis.themes.joined(separator: ",")
         if !themesJoined.isEmpty {
             try? hub.sendToMagic("/textler/metadata/themes", values: [themesJoined])
+            sentMessages.append(Self.oscMessageLine("/textler/metadata/themes", args: [themesJoined]))
         }
         
         // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
         let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
         if !visualsJoined.isEmpty {
             try? hub.sendToMagic("/textler/metadata/visuals", values: [visualsJoined])
+            sentMessages.append(Self.oscMessageLine("/textler/metadata/visuals", args: [visualsJoined]))
         }
         
         // Mood: /textler/metadata/mood [string]
         if !analysis.mood.isEmpty {
             try? hub.sendToMagic("/textler/metadata/mood", values: [analysis.mood])
+            sentMessages.append(Self.oscMessageLine("/textler/metadata/mood", args: [analysis.mood]))
         }
         
         // AI analysis summary: /ai/analysis [mood, energy, valence]
@@ -533,6 +654,16 @@ public actor PipelineModule: Module {
                 Float32(analysis.energy),
                 Float32(analysis.valence)
             ]
+        )
+        sentMessages.append(
+            Self.oscMessageLine(
+                "/ai/analysis",
+                args: [
+                    analysis.mood,
+                    String(format: "%.2f", analysis.energy),
+                    String(format: "%.2f", analysis.valence)
+                ]
+            )
         )
         
         // Send shader if matched: /shader/load [name, energy, valence]
@@ -545,6 +676,16 @@ public actor PipelineModule: Module {
                     Float32(shader.moodValence)
                 ]
             )
+            sentMessages.append(
+                Self.oscMessageLine(
+                    "/shader/load",
+                    args: [
+                        shader.name,
+                        String(format: "%.2f", shader.energyScore),
+                        String(format: "%.2f", shader.moodValence)
+                    ]
+                )
+            )
         }
         
         // Send image folder if available
@@ -554,12 +695,97 @@ public actor PipelineModule: Module {
                 "/image/fit",
                 values: ["cover"]
             )
+            sentMessages.append(Self.oscMessageLine("/image/fit", args: ["cover"]))
             // Send folder path: /image/folder [path]
             try? hub.sendToMagic(
                 "/image/folder",
                 values: [images.folder.path]
             )
+            sentMessages.append(Self.oscMessageLine("/image/folder", args: [images.folder.path]))
         }
+
+        return sentMessages
+    }
+
+    private static func shaderDecisionDetails(
+        selected: ShaderMatchResult,
+        shortlist: [ShaderMatchResult]
+    ) -> [String] {
+        var lines: [String] = []
+        lines.append("Selected: \(selected.name) (\(Int(selected.score * 100))%)")
+        lines.append("Candidates considered: \(shortlist.count)")
+        for (index, candidate) in shortlist.enumerated() {
+            lines.append("\(index + 1). \(candidate.name) (\(Int(candidate.score * 100))%)")
+        }
+        return lines
+    }
+
+    private static func lrclibLyricsDetails(lines: [LyricLine]) -> [String] {
+        var details: [String] = ["LRCLib returned \(lines.count) synced line(s)."]
+        for line in lines {
+            details.append("[\(formatSeconds(line.timeSec))] \(line.text)")
+        }
+        return details
+    }
+
+    private static func lyricsFallbackDetails(analysis: SongAnalysis) -> [String] {
+        var details: [String] = [
+            "LRCLib returned no synced lines.",
+            "Lyrics metadata inferred from AI fallback."
+        ]
+        if !analysis.refrainLines.isEmpty {
+            details.append("Refrain hints: \(analysis.refrainLines.joined(separator: " | "))")
+        }
+        if !analysis.keywords.isEmpty {
+            details.append("Keywords: \(analysis.keywords.joined(separator: ", "))")
+        }
+        if !analysis.themes.isEmpty {
+            details.append("Themes: \(analysis.themes.joined(separator: ", "))")
+        }
+        return details
+    }
+
+    private static func aiStepDetails(analysis: SongAnalysis) -> [String] {
+        var details: [String] = [
+            "Mood: \(analysis.mood)",
+            "Energy: \(String(format: "%.2f", analysis.energy))",
+            "Valence: \(String(format: "%.2f", analysis.valence))"
+        ]
+
+        if !analysis.keywords.isEmpty {
+            details.append("Keywords: \(analysis.keywords.joined(separator: ", "))")
+        }
+        if !analysis.themes.isEmpty {
+            details.append("Themes: \(analysis.themes.joined(separator: ", "))")
+        }
+        if !analysis.visualAdjectives.isEmpty {
+            details.append("Visuals: \(analysis.visualAdjectives.joined(separator: ", "))")
+        }
+
+        let sortedCategories = analysis.categories
+            .sorted { $0.value > $1.value }
+            .filter { $0.value > 0 }
+        if !sortedCategories.isEmpty {
+            details.append("Categories:")
+            for (name, score) in sortedCategories {
+                details.append("  \(name): \(String(format: "%.2f", score))")
+            }
+        }
+
+        return details
+    }
+
+    private static func oscMessageLine(_ address: String, args: [String] = []) -> String {
+        if args.isEmpty { return address }
+        return "\(address) [\(args.joined(separator: ", "))]"
+    }
+
+    private static func formatSeconds(_ seconds: Double) -> String {
+        let totalHundredths = Int((seconds * 100).rounded())
+        let mins = totalHundredths / 6000
+        let secs = (totalHundredths % 6000) / 100
+        let hundredths = totalHundredths % 100
+        return String(format: "%02d:%02d.%02d", mins, secs, hundredths)
     }
     
     private func fireStepStart(_ step: PipelineStep) async {
@@ -568,6 +794,10 @@ public actor PipelineModule: Module {
 
     private func fireStepComplete(_ step: PipelineStep, _ status: PipelineStepStatus) async {
         await dispatch?(.pipeline(.stepCompleted(step.rawValue, status)))
+    }
+
+    private func fireStepDetails(_ step: PipelineStep, status: String, details: [String]) async {
+        await dispatch?(.pipeline(.updateStep(name: step.rawValue, status: status, details: details)))
     }
 
     private func fireComplete(_ result: PipelineResult) async {

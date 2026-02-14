@@ -6,6 +6,9 @@ import SwiftVJCore
 
 struct MasterControlView: View {
     @EnvironmentObject var appState: AppState
+    @State private var commandLineDraft: String = ""
+    @State private var workingDirectoryDraft: String = ""
+    @State private var launcherSectionWidth: CGFloat = 0
     
     var body: some View {
         ScrollView {
@@ -145,39 +148,187 @@ struct MasterControlView: View {
                     }
                     .padding()
                 }
-                
-                // Timing Controls
-                GroupBox("Timing Adjustment") {
-                    VStack(spacing: 16) {
-                        HStack {
-                            Text("Offset:")
-                                .foregroundColor(.secondary)
-                            Text("\(appState.timingOffsetMs) ms")
-                                .font(.title2)
-                                .fontWeight(.medium)
-                                .monospacedDigit()
-                            Spacer()
+
+                GroupBox("Renderer") {
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Render Engine", systemImage: "power.circle.fill")
+                                .font(.headline)
+                            Text(appState.renderEnabled ? "ON" : "OFF")
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(appState.renderEnabled ? .green : .secondary)
+                            Text("Disables all shader/text/image rendering and Syphon output when OFF.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        
-                        HStack(spacing: 12) {
-                            ForEach([-100, -50, -10, 10, 50, 100], id: \.self) { delta in
-                                Button {
-                                    appState.adjustTiming(delta)
-                                } label: {
-                                    Text(delta > 0 ? "+\(delta)" : "\(delta)")
-                                        .monospacedDigit()
+
+                        Spacer()
+
+                        Toggle("", isOn: appState.renderEnabledBinding)
+                            .toggleStyle(.switch)
+                            .scaleEffect(1.4)
+                            .labelsHidden()
+                    }
+                    .padding()
+                }
+
+                GroupBox("Launch Control") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Button {
+                            appState.send(.launcher(.launchMissingRequested))
+                        } label: {
+                            HStack {
+                                Image(systemName: "play.rectangle.fill")
+                                Text(appState.launcherIsLaunchingAll ? "Launching..." : "Launch Missing Controlled Apps")
+                                    .fontWeight(.semibold)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(appState.launcherIsLaunchingAll || appState.launcherTargets.isEmpty)
+                        .accessibilityIdentifier(A11yID.masterLaunchAllButton)
+
+                        if let summary = appState.launcherLastLaunchSummary, !summary.isEmpty {
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let error = appState.launcherLastError, !error.isEmpty {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+
+                        let spacing: CGFloat = 16
+                        let hasMeasuredWidth = launcherSectionWidth > 0
+                        let usableWidth = max(launcherSectionWidth - spacing, 0)
+                        let listColumnWidth = hasMeasuredWidth ? usableWidth * 0.7 : nil
+                        let controlsColumnWidth = hasMeasuredWidth ? usableWidth * 0.3 : nil
+
+                        HStack(alignment: .top, spacing: spacing) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Controlled Apps & Commands")
+                                    .font(.headline)
+
+                                if appState.launcherTargets.isEmpty {
+                                    Text("No controlled apps or commands configured yet.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    VStack(spacing: 8) {
+                                        ForEach(appState.launcherTargets) { target in
+                                            let isRunning = appState.launcherRunningTargetIDs.contains(target.id)
+
+                                            HStack(alignment: .center, spacing: 12) {
+                                                Circle()
+                                                    .fill(isRunning ? .green : .gray)
+                                                    .frame(width: 8, height: 8)
+
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(target.displayName)
+                                                        .font(.subheadline.weight(.semibold))
+                                                    Text(target.kind == .app
+                                                         ? (target.appPath ?? "App")
+                                                         : (target.commandLine ?? "Command"))
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                        .lineLimit(1)
+                                                }
+
+                                                Spacer()
+
+                                                Toggle(
+                                                    "Auto-Start",
+                                                    isOn: Binding(
+                                                        get: { target.autoStart },
+                                                        set: { enabled in
+                                                            appState.send(.launcher(.setAutoStart(id: target.id, enabled: enabled)))
+                                                        }
+                                                    )
+                                                )
+                                                .toggleStyle(.switch)
+                                                .labelsHidden()
+
+                                                Button("Launch") {
+                                                    appState.send(.launcher(.launchTargetRequested(id: target.id)))
+                                                }
+                                                .buttonStyle(.borderedProminent)
+                                                .disabled(appState.launcherIsLaunchingAll)
+
+                                                Button(role: .destructive) {
+                                                    appState.send(.launcher(.removeTarget(id: target.id)))
+                                                } label: {
+                                                    Image(systemName: "trash")
+                                                }
+                                                .buttonStyle(.bordered)
+                                            }
+                                            .padding(.vertical, 4)
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.bordered)
                             }
-                            
-                            Spacer()
-                            
-                            Button("Reset") {
-                                let current = appState.timingOffsetMs
-                                appState.adjustTiming(-current)
+                            .frame(width: listColumnWidth, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                                    .foregroundStyle(.secondary)
+                                    .frame(height: 90)
+                                    .overlay {
+                                        VStack(spacing: 4) {
+                                            Image(systemName: "square.and.arrow.down.on.square")
+                                            Text("Drag macOS apps here (Spotify.app, Synesthesia.app, etc.)")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .dropDestination(for: URL.self) { droppedURLs, _ in
+                                        appState.send(.launcher(.addAppTargetsRequested(droppedURLs)))
+                                        return true
+                                    }
+                                    .accessibilityIdentifier(A11yID.masterLaunchDropZone)
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Add Command")
+                                        .font(.headline)
+
+                                    TextField("Command line (example: uv run ledfx)", text: $commandLineDraft)
+                                        .textFieldStyle(.roundedBorder)
+
+                                    TextField("Working directory (optional, example: ~/Desktop/projects/ledfx)", text: $workingDirectoryDraft)
+                                        .textFieldStyle(.roundedBorder)
+
+                                    Button("Add Command Target") {
+                                        let cwd = workingDirectoryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        appState.send(.launcher(.addCommandTargetRequested(
+                                            commandLine: commandLineDraft,
+                                            workingDirectory: cwd.isEmpty ? nil : cwd
+                                        )))
+                                        commandLineDraft = ""
+                                        workingDirectoryDraft = ""
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(commandLineDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    .accessibilityIdentifier(A11yID.masterAddCommandButton)
+                                }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                            .frame(width: controlsColumnWidth, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear
+                                    .onAppear {
+                                        launcherSectionWidth = proxy.size.width
+                                    }
+                                    .onChange(of: proxy.size.width) { _, newValue in
+                                        launcherSectionWidth = newValue
+                                    }
+                            }
                         }
                     }
                     .padding()

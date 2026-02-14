@@ -481,6 +481,7 @@ struct SettingsView: View {
         defaults.set(Int(magicPortValue), forKey: OSCHub.PortKeys.magicPort)
         defaults.set(Int(vdjReceiveValue), forKey: OSCHub.PortKeys.vdjReceivePort)
 
+        appState.send(.ui(.reloadTachikomaConfig))
         appState.send(.ledfx(.setBaseURL(ledfxBaseURL)))
 
         showRestartNotice = true

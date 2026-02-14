@@ -382,7 +382,7 @@ public struct PipelineResult: Sendable, Equatable, Codable {
 /// Information about a shader - bridge type for UI/module compatibility
 /// Wraps ShaderRepository.Shader with additional UI metadata
 public struct ShaderInfo: Sendable, Equatable, Codable, Identifiable {
-    public var id: String { name }  // Use name as unique ID
+    public var id: String { path }  // Path is unique even when names are duplicated across folders
     public let name: String
     public let path: String
     public let folder: String  // Folder name (e.g. "glsl", "masks")
@@ -399,8 +399,11 @@ public struct ShaderInfo: Sendable, Equatable, Codable, Identifiable {
     // Pre-compiled Metal support
     public let metalFunctionName: String?  // Function name in .metallib (nil = runtime compile)
     
-    /// Whether this shader is a mask (derived from folder == "masks")
-    public var isMask: Bool { folder == "masks" }
+    /// Whether this shader is a mask.
+    /// Prefer explicit rating, then fall back to folder naming.
+    public var isMask: Bool {
+        rating == .mask || folder.caseInsensitiveCompare("masks") == .orderedSame
+    }
 
     public init(
         name: String,
@@ -486,6 +489,19 @@ public struct ShaderMatchResult: Sendable, Equatable {
         self.energyScore = result.shader.energyScore
         self.moodValence = result.shader.analysis?.featureVector[1] ?? 0.0
         self.mood = result.shader.mood
+    }
+}
+
+/// Decision payload for song-driven shader selection.
+///
+/// The shortlist contains the top candidates considered before the final pick.
+public struct ShaderSelectionDecision: Sendable, Equatable {
+    public let selected: ShaderMatchResult
+    public let shortlist: [ShaderMatchResult]
+
+    public init(selected: ShaderMatchResult, shortlist: [ShaderMatchResult]) {
+        self.selected = selected
+        self.shortlist = shortlist
     }
 }
 
