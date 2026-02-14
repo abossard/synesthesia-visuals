@@ -167,4 +167,26 @@ final class LLMClientShaderBackendTests: XCTestCase {
         let reloadedBackend = await client.backendInfo
         XCTAssertTrue(reloadedBackend.contains("Anthropic"))
     }
+
+    func testShaderAnalysisErrorMessageNormalizesMissingDataError() {
+        struct MissingDataError: LocalizedError {
+            var errorDescription: String? {
+                "The data couldn't be read because it is missing."
+            }
+        }
+
+        let message = LLMClient.shaderAnalysisErrorMessage(MissingDataError())
+        XCTAssertEqual(message, "Provider returned an incomplete response payload")
+    }
+
+    func testShaderAnalysisErrorMessagePassesThroughOtherErrors() {
+        struct GenericError: LocalizedError {
+            var errorDescription: String? {
+                "request timed out"
+            }
+        }
+
+        let message = LLMClient.shaderAnalysisErrorMessage(GenericError())
+        XCTAssertEqual(message, "request timed out")
+    }
 }

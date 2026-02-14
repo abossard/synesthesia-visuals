@@ -270,10 +270,11 @@ public actor LLMClient {
             return LLMShaderAnalysis(shaderName: shaderName, error: "LLM not available")
         }
 
+        let hasScreenshot = screenshotData != nil
         let prompt = buildShaderAnalysisPrompt(
             shaderName: shaderName,
             source: shaderSource,
-            hasScreenshot: screenshotData != nil
+            hasScreenshot: hasScreenshot
         )
 
         do {
@@ -298,17 +299,75 @@ public actor LLMClient {
                 visualMetadata: parsed.visualMetadata,
                 djPhases: parsed.djPhases,
                 features: parsed.features,
-                hasScreenshot: screenshotData != nil,
+                hasScreenshot: hasScreenshot,
                 error: parsed.error
             )
             return parsed
-        } catch {
+        } catch let primaryError {
+            if hasScreenshot {
+                do {
+                    let fallbackPrompt = buildShaderAnalysisPrompt(
+                        shaderName: shaderName,
+                        source: shaderSource,
+                        hasScreenshot: false
+                    )
+                    let fallbackContent = try await sendShaderAnalysisRequest(
+                        prompt: fallbackPrompt,
+                        screenshotData: nil,
+                        maxTokens: 1400,
+                        timeout: timeout
+                    )
+                    var parsed = parseShaderAnalysisResponse(fallbackContent, shaderName: shaderName)
+                    parsed = LLMShaderAnalysis(
+                        shaderName: parsed.shaderName,
+                        title: parsed.title.isEmpty ? shaderName : parsed.title,
+                        mood: parsed.mood,
+                        energy: parsed.energy,
+                        colors: parsed.colors,
+                        effects: parsed.effects,
+                        geometry: parsed.geometry,
+                        objects: parsed.objects,
+                        complexity: parsed.complexity,
+                        description: parsed.description,
+                        visualMetadata: parsed.visualMetadata,
+                        djPhases: parsed.djPhases,
+                        features: parsed.features,
+                        hasScreenshot: false,
+                        error: parsed.error
+                    )
+                    return parsed
+                } catch let fallbackError {
+                    return LLMShaderAnalysis(
+                        shaderName: shaderName,
+                        hasScreenshot: false,
+                        error: "Vision request failed: \(Self.shaderAnalysisErrorMessage(primaryError)). Fallback text-only request failed: \(Self.shaderAnalysisErrorMessage(fallbackError))."
+                    )
+                }
+            }
             return LLMShaderAnalysis(
                 shaderName: shaderName,
-                hasScreenshot: screenshotData != nil,
-                error: error.localizedDescription
+                hasScreenshot: hasScreenshot,
+                error: Self.shaderAnalysisErrorMessage(primaryError)
             )
         }
+    }
+
+    static func shaderAnalysisErrorMessage(_ error: Error) -> String {
+        if let decodingError = error as? DecodingError {
+            if case .keyNotFound(_, _) = decodingError {
+                return "Provider returned an incomplete response payload"
+            }
+        }
+
+        let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if description.isEmpty {
+            return String(describing: error)
+        }
+        if description.contains("The data couldn't be read because it is missing")
+            || description.contains("The data couldn\u{2019}t be read because it is missing") {
+            return "Provider returned an incomplete response payload"
+        }
+        return description
     }
 
     public func status() async -> ServiceHealthStatus {
