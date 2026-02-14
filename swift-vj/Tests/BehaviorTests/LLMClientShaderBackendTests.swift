@@ -5,9 +5,9 @@ final class LLMClientShaderBackendTests: XCTestCase {
     func testStartShaderAnalysisUsesShaderConfig() async throws {
         let runtimeConfig = TachikomaLLMRuntimeConfig(
             songAnalysis: TachikomaProviderConfig(
-                provider: .lmstudio,
-                model: "current",
-                baseURL: "not a url"
+                provider: .openai,
+                model: "gpt-4o-mini",
+                apiKey: "test-key"
             ),
             shaderAnalysis: TachikomaProviderConfig(
                 provider: .ollama,
@@ -18,7 +18,9 @@ final class LLMClientShaderBackendTests: XCTestCase {
 
         await client.start()
         let songAvailable = await client.isAvailable
-        XCTAssertFalse(songAvailable, "Song LM Studio provider should be unavailable")
+        XCTAssertTrue(songAvailable, "Song provider should be available")
+        let songBackend = await client.backendInfo
+        XCTAssertTrue(songBackend.contains("OpenAI"), "Expected OpenAI backend after start()")
 
         await client.startShaderAnalysis()
         let shaderAvailable = await client.isAvailable

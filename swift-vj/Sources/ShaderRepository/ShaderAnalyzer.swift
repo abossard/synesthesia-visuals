@@ -3,11 +3,6 @@ import Tachikoma
 
 public enum ShaderAnalyzer {
     public static func isAvailable(config: LLMServiceConfig = .defaultLocal) async -> Bool {
-        if config.provider == .lmstudio {
-            let baseURL = config.baseURL?.absoluteString ?? "http://localhost:1234/v1"
-            return await probeLMStudio(baseURL: baseURL)
-        }
-
         let tachikomaConfig = makeTachikomaConfiguration(from: config)
         let provider = config.provider.tachikomaProvider
         if let inlineKey = config.apiKey, !inlineKey.isEmpty {
@@ -17,29 +12,6 @@ public enum ShaderAnalyzer {
             return tachikomaConfig.hasAPIKey(for: provider)
         }
         return true
-    }
-
-    private static func probeLMStudio(baseURL: String) async -> Bool {
-        guard let url = modelsEndpointURL(from: baseURL) else {
-            return false
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 3
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                return false
-            }
-            return http.statusCode == 200
-        } catch {
-            return false
-        }
-    }
-
-    private static func modelsEndpointURL(from baseURL: String) -> URL? {
-        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return URL(string: "\(trimmed)/models")
     }
 
     public static func analyze(
