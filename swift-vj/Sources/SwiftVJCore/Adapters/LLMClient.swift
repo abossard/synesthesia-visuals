@@ -58,6 +58,7 @@ public struct SongAnalysis: Sendable, Equatable {
 }
 
 public actor LLMClient {
+    public static let configPathDefaultsKey = "tachikomaConfigPath"
     private static let recheckInterval: TimeInterval = 30
     private static let requestTimeout: TimeInterval = 60
 
@@ -79,7 +80,8 @@ public actor LLMClient {
         runtimeConfig: TachikomaLLMRuntimeConfig? = nil,
         runtimeConfigURL: URL? = nil
     ) {
-        let resolvedConfig = runtimeConfig ?? TachikomaLLMRuntimeConfig.load(from: runtimeConfigURL)
+        let selectedURL = runtimeConfigURL ?? Self.selectedConfigURLFromDefaults()
+        let resolvedConfig = runtimeConfig ?? TachikomaLLMRuntimeConfig.load(from: selectedURL)
         self.runtimeConfig = resolvedConfig
         self.tachikomaConfiguration = resolvedConfig.makeTachikomaConfiguration()
         self.health = ServiceHealth(name: "LLM")
@@ -729,6 +731,18 @@ public actor LLMClient {
     ) -> String {
         let fingerprint = String((lyrics ?? "").lowercased().hashValue)
         return [artist.lowercased(), title.lowercased(), fingerprint].joined(separator: "|")
+    }
+}
+
+private extension LLMClient {
+    static func selectedConfigURLFromDefaults() -> URL? {
+        let defaults = UserDefaults.standard
+        guard let raw = defaults.string(forKey: configPathDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        return URL(fileURLWithPath: raw)
     }
 }
 

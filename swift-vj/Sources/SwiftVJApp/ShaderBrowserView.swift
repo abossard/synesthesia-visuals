@@ -899,7 +899,13 @@ struct ShaderBrowserView: View {
             let aiAvailable = await aiService.isAvailable()
             if !aiAvailable {
                 appState.log("⚠️ No AI provider available - will mark black shaders only", level: .warning)
-                appState.log("ℹ️ Configure Tachikoma in ./tachikoma.json (repo root, committed)", level: .info)
+                let selectedPath = UserDefaults.standard.string(forKey: LLMClient.configPathDefaultsKey)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let selectedPath, !selectedPath.isEmpty {
+                    appState.log("ℹ️ Tachikoma config file: \(selectedPath)", level: .info)
+                } else {
+                    appState.log("ℹ️ Configure Tachikoma config in Settings > AI / Tachikoma", level: .info)
+                }
             } else if let providerName = await aiService.activeProviderName() {
                 appState.log("🤖 Using AI provider: \(providerName)", level: .info)
             }

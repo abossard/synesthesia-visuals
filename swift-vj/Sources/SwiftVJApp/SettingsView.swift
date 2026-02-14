@@ -4,6 +4,7 @@
 import SwiftUI
 import SwiftVJCore
 import Darwin
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -17,6 +18,7 @@ struct SettingsView: View {
     @State private var lyricsCacheDir = ""
     @State private var pipelineCacheDir = ""
     @State private var songImagesDir = ""
+    @State private var tachikomaConfigPath = ""
     @State private var ledfxBaseURL = "http://127.0.0.1:8888"
     @State private var oscReceivePort = ""
     @State private var oscVDJPort = ""
@@ -71,6 +73,16 @@ struct SettingsView: View {
                 return ""
             }
             return appSupport.appendingPathComponent("SwiftVJ/song_images").path
+        }()
+
+        static let tachikomaConfigPath: String = {
+            let fm = FileManager.default
+            let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
+            let local = cwd.appendingPathComponent("tachikoma.json").standardizedFileURL.path
+            if fm.fileExists(atPath: local) {
+                return local
+            }
+            return Config.dataDirectory.appendingPathComponent("tachikoma.json").path
         }()
     }
 
@@ -174,6 +186,29 @@ struct SettingsView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                    }
+
+                    GroupBox("AI / Tachikoma") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                TextField("Config JSON File", text: $tachikomaConfigPath, prompt: Text(DefaultPaths.tachikomaConfigPath))
+                                    .textFieldStyle(.roundedBorder)
+                                Button("Browse...") {
+                                    selectFile { url in
+                                        tachikomaConfigPath = url.path
+                                    }
+                                }
+                                Button("Reset") {
+                                    tachikomaConfigPath = DefaultPaths.tachikomaConfigPath
+                                }
+                                .disabled(tachikomaConfigPath == DefaultPaths.tachikomaConfigPath)
+                            }
+                            Text("Default: \(DefaultPaths.tachikomaConfigPath)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
@@ -348,6 +383,18 @@ struct SettingsView: View {
         }
     }
 
+    private func selectFile(completion: @escaping (URL) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+
+        if panel.runModal() == .OK, let url = panel.url {
+            completion(url)
+        }
+    }
+
     private func loadSettings() {
         let defaults = UserDefaults.standard
 
@@ -367,6 +414,7 @@ struct SettingsView: View {
         lyricsCacheDir = defaults.string(forKey: "lyricsCacheDir") ?? DefaultPaths.lyricsCacheDir
         pipelineCacheDir = defaults.string(forKey: "pipelineCacheDir") ?? DefaultPaths.pipelineCacheDir
         songImagesDir = defaults.string(forKey: "songImagesDir") ?? DefaultPaths.songImagesDir
+        tachikomaConfigPath = defaults.string(forKey: LLMClient.configPathDefaultsKey) ?? DefaultPaths.tachikomaConfigPath
         ledfxBaseURL = defaults.string(forKey: "ledfx_baseURL") ?? "http://127.0.0.1:8888"
 
         oscReceivePort = loadPortString(
@@ -418,6 +466,13 @@ struct SettingsView: View {
         defaults.set(lyricsCacheDir, forKey: "lyricsCacheDir")
         defaults.set(pipelineCacheDir, forKey: "pipelineCacheDir")
         defaults.set(songImagesDir, forKey: "songImagesDir")
+        let trimmedTachikomaPath = tachikomaConfigPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedTachikomaPath.isEmpty {
+            defaults.removeObject(forKey: LLMClient.configPathDefaultsKey)
+        } else {
+            defaults.set(trimmedTachikomaPath, forKey: LLMClient.configPathDefaultsKey)
+            tachikomaConfigPath = trimmedTachikomaPath
+        }
         defaults.set(ledfxBaseURL, forKey: "ledfx_baseURL")
 
         defaults.set(Int(receivePortValue), forKey: OSCHub.PortKeys.receivePort)
