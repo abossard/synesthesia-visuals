@@ -1,5 +1,6 @@
 import XCTest
 @testable import SwiftVJCore
+import Tachikoma
 
 final class TachikomaLMStudioE2ETests: XCTestCase {
     func test_llmClient_usesUserSelectedRepoConfigWithLMStudio() async throws {
@@ -37,5 +38,29 @@ final class TachikomaLMStudioE2ETests: XCTestCase {
             throw XCTSkip("Repo tachikoma.json not found at \(configURL.path)")
         }
         return configURL
+    }
+
+    func test_tachikoma_roundTrip_generate_hitsLMStudio() async throws {
+        try require(.lmStudioAvailable)
+        let configURL = try repoTachikomaConfigURL()
+        guard let runtimeConfig = TachikomaLLMRuntimeConfig.load(from: configURL) else {
+            XCTFail("Failed to load Tachikoma config from \(configURL.path)")
+            return
+        }
+
+        let prompt = "Reply with exactly: SWIFTVJ_BACKEND_OK"
+        let output = try await generate(
+            prompt,
+            using: runtimeConfig.songAnalysis.languageModel,
+            maxTokens: 48,
+            temperature: 0.0,
+            timeout: 20,
+            configuration: runtimeConfig.makeTachikomaConfiguration()
+        )
+
+        let normalized = output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        XCTAssertFalse(normalized.isEmpty, "Expected non-empty LM Studio response")
     }
 }
