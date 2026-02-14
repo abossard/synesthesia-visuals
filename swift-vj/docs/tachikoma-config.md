@@ -1,10 +1,17 @@
 # Tachikoma Runtime Config
 
-SwiftVJ reads LLM provider configuration from:
+Primary config (committed in repo):
 
-`~/Library/Application Support/SwiftVJ/tachikoma.json`
+`/Users/abossard/Desktop/projects/synesthesia-visuals/swift-vj/tachikoma.json`
 
-If the file is missing or invalid, SwiftVJ falls back to local LM Studio:
+Lookup order:
+
+1. `SWIFTVJ_TACHIKOMA_CONFIG` (if set)
+2. repo-root `tachikoma.json`
+3. current-working-directory `tachikoma.json`
+4. fallback `~/Library/Application Support/SwiftVJ/tachikoma.json`
+
+Default committed config:
 
 ```json
 {

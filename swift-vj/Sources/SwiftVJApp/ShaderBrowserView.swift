@@ -899,7 +899,7 @@ struct ShaderBrowserView: View {
             let aiAvailable = await aiService.isAvailable()
             if !aiAvailable {
                 appState.log("⚠️ No AI provider available - will mark black shaders only", level: .warning)
-                appState.log("ℹ️ Configure Tachikoma in ./tachikoma.json (repo root) or ~/Library/Application Support/SwiftVJ/tachikoma.json", level: .info)
+                appState.log("ℹ️ Configure Tachikoma in ./tachikoma.json (repo root, committed)", level: .info)
             } else if let providerName = await aiService.activeProviderName() {
                 appState.log("🤖 Using AI provider: \(providerName)", level: .info)
             }
