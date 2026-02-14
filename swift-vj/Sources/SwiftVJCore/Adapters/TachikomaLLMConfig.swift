@@ -62,15 +62,15 @@ public struct TachikomaLLMRuntimeConfig: Codable, Equatable, Sendable {
     }
 
     public static func load(from fileURL: URL? = nil) -> TachikomaLLMRuntimeConfig {
-        let url = fileURL ?? defaultFileURL
-        guard let data = try? Data(contentsOf: url) else {
-            return .default
+        for url in candidateConfigURLs(explicit: fileURL) {
+            guard let data = try? Data(contentsOf: url) else {
+                continue
+            }
+            if let parsed = try? JSONDecoder().decode(TachikomaLLMRuntimeConfig.self, from: data) {
+                return parsed
+            }
         }
-
-        guard let parsed = try? JSONDecoder().decode(TachikomaLLMRuntimeConfig.self, from: data) else {
-            return .default
-        }
-        return parsed
+        return .default
     }
 
     public func makeTachikomaConfiguration(loadFromEnvironment: Bool = true) -> TachikomaConfiguration {
@@ -84,6 +84,62 @@ public struct TachikomaLLMRuntimeConfig: Codable, Equatable, Sendable {
             }
         }
         return configuration
+    }
+}
+
+private extension TachikomaLLMRuntimeConfig {
+    static func candidateConfigURLs(explicit: URL?) -> [URL] {
+        if let explicit {
+            return [explicit]
+        }
+
+        var urls: [URL] = []
+        let process = ProcessInfo.processInfo
+
+        if let envPath = process.environment["SWIFTVJ_TACHIKOMA_CONFIG"], !envPath.isEmpty {
+            urls.append(URL(fileURLWithPath: envPath))
+        }
+
+        if let root = repositoryRoot(from: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)) {
+            urls.append(root.appendingPathComponent("tachikoma.json"))
+        }
+
+        if let executableURL = process.arguments.first.map({ URL(fileURLWithPath: $0) }),
+           let root = repositoryRoot(from: executableURL.deletingLastPathComponent()) {
+            urls.append(root.appendingPathComponent("tachikoma.json"))
+        }
+
+        urls.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("tachikoma.json"))
+        urls.append(defaultFileURL)
+        return dedup(urls)
+    }
+
+    static func repositoryRoot(from start: URL) -> URL? {
+        var cursor = start
+        let fileManager = FileManager.default
+
+        while true {
+            if fileManager.fileExists(atPath: cursor.appendingPathComponent("Package.swift").path) {
+                return cursor
+            }
+            let parent = cursor.deletingLastPathComponent()
+            if parent.path == cursor.path {
+                return nil
+            }
+            cursor = parent
+        }
+    }
+
+    static func dedup(_ urls: [URL]) -> [URL] {
+        var seen: Set<String> = []
+        var result: [URL] = []
+        for url in urls {
+            let key = url.standardizedFileURL.path
+            if seen.insert(key).inserted {
+                result.append(url)
+            }
+        }
+        return result
     }
 }
 

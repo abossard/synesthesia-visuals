@@ -1,0 +1,12 @@
+{
+  "songAnalysis": {
+    "provider": "lmstudio",
+    "model": "current",
+    "baseURL": "http://localhost:1234/v1"
+  },
+  "shaderAnalysis": {
+    "provider": "lmstudio",
+    "model": "current",
+    "baseURL": "http://localhost:1234/v1"
+  }
+}
