@@ -579,7 +579,7 @@ struct ShaderBrowserView: View {
                     ForEach(filteredShaders, id: \.path) { shader in
                         ShaderCardEnhanced(
                             shader: shader,
-                            isSelected: appState.selectedShader == shader.name,
+                            isSelected: selectedShaders.contains(shader.name),
                             shaderStatus: getShaderStatus(shader),
                             refreshId: refreshId,
                             isAnalyzing: isAnalyzing,
