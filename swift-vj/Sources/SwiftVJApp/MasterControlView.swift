@@ -150,24 +150,43 @@ struct MasterControlView: View {
                 }
 
                 GroupBox("Renderer") {
-                    HStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label("Render Engine", systemImage: "power.circle.fill")
-                                .font(.headline)
-                            Text(appState.renderEnabled ? "ON" : "OFF")
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(appState.renderEnabled ? .green : .secondary)
-                            Text("Disables all shader/text/image rendering and Syphon output when OFF.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Render Engine", systemImage: "power.circle.fill")
+                                    .font(.headline)
+                                Text(appState.renderEnabled ? "ON" : "OFF")
+                                    .font(.title2.weight(.bold))
+                                    .foregroundStyle(appState.renderEnabled ? .green : .secondary)
+                                Text("Disables all shader/text/image rendering and Syphon output when OFF.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Toggle("", isOn: appState.renderEnabledBinding)
+                                .toggleStyle(.switch)
+                                .scaleEffect(1.4)
+                                .labelsHidden()
                         }
 
-                        Spacer()
+                        Divider()
 
-                        Toggle("", isOn: appState.renderEnabledBinding)
-                            .toggleStyle(.switch)
-                            .scaleEffect(1.4)
-                            .labelsHidden()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Syphon Outputs")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            ForEach(RenderOutput.allCases, id: \.self) { output in
+                                HStack {
+                                    Text(renderOutputLabel(output))
+                                        .font(.caption)
+                                    Spacer()
+                                    Toggle("", isOn: appState.renderOutputBinding(output))
+                                        .labelsHidden()
+                                }
+                            }
+                        }
                     }
                     .padding()
                 }
@@ -356,6 +375,17 @@ struct MasterControlView: View {
     private func progressRatio(track: Track) -> Double {
         guard track.duration > 0 else { return 0 }
         return min(1.0, max(0.0, appState.playbackPosition / track.duration))
+    }
+
+    private func renderOutputLabel(_ output: RenderOutput) -> String {
+        switch output {
+        case .shader: return "Shader"
+        case .mask: return "Mask"
+        case .lyrics: return "Lyrics"
+        case .refrain: return "Refrain"
+        case .songInfo: return "Song Info"
+        case .image: return "Image"
+        }
     }
 }
 

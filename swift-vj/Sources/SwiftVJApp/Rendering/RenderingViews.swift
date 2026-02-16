@@ -415,6 +415,28 @@ struct RenderingView: View {
         }
     }
 
+    private func renderOutput(for key: String) -> RenderOutput? {
+        switch key {
+        case "shader": return .shader
+        case "mask": return .mask
+        case "lyrics": return .lyrics
+        case "refrain": return .refrain
+        case "songInfo": return .songInfo
+        case "image": return .image
+        default: return nil
+        }
+    }
+
+    private func isOutputEnabled(for key: String) -> Bool {
+        guard let output = renderOutput(for: key) else { return true }
+        return appState.isRenderOutputEnabled(output)
+    }
+
+    private func outputBinding(for key: String) -> Binding<Bool> {
+        guard let output = renderOutput(for: key) else { return .constant(true) }
+        return appState.renderOutputBinding(output)
+    }
+
     @State private var karaokeAnimationSelection: TextAnimationMode = .waveDissolve
     @State private var refrainAnimationSelection: TextAnimationMode = .waveDissolve
     @State private var songInfoAnimationSelection: TextAnimationMode = .fadeInOut
@@ -435,7 +457,6 @@ struct RenderingView: View {
             registerPaneView
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .disabled(!isRendererEnabled)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -541,11 +562,27 @@ struct RenderingView: View {
     private func tilePreviewCard(tileKey: String) -> some View {
         let server = serverName(for: tileKey)
         let label = displayName(for: tileKey)
+        let outputEnabled = isOutputEnabled(for: tileKey)
+        let canInteract = isRendererEnabled && outputEnabled
 
         return ZStack(alignment: .bottom) {
             Group {
                 if isRendererEnabled {
-                    SyphonMTKView(serverName: server)
+                    if outputEnabled {
+                        SyphonMTKView(serverName: server)
+                    } else {
+                        ZStack {
+                            Color.black
+                            VStack(spacing: 6) {
+                                Image(systemName: "slash.circle")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                                Text("Output Off")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 } else {
                     ZStack {
                         Color.black
@@ -570,9 +607,18 @@ struct RenderingView: View {
             .onTapGesture {
                 selectedTile = tileKey
             }
+            .overlay(alignment: .topTrailing) {
+                Toggle("", isOn: outputBinding(for: tileKey))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .scaleEffect(0.75)
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(6)
+            }
 
             Button {
-                guard isRendererEnabled else { return }
+                guard canInteract else { return }
                 copyToClipboard(server)
             } label: {
                 HStack(spacing: 6) {
@@ -582,7 +628,7 @@ struct RenderingView: View {
                     Text("•")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(isRendererEnabled ? server : "Offline")
+                    Text(canInteract ? server : (isRendererEnabled ? "Output Off" : "Offline"))
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -591,8 +637,8 @@ struct RenderingView: View {
                 .background(Color.black.opacity(0.6))
             }
             .buttonStyle(.plain)
-            .help(isRendererEnabled ? "Click to copy Syphon name" : "Renderer is off")
-            .disabled(!isRendererEnabled)
+            .help(canInteract ? "Click to copy Syphon name" : (isRendererEnabled ? "\(label) output is off" : "Renderer is off"))
+            .disabled(!canInteract)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .cornerRadius(10)
@@ -606,10 +652,17 @@ struct RenderingView: View {
 
     @ViewBuilder
     private var registerPaneView: some View {
+        let selectedOutputEnabled = isOutputEnabled(for: selectedTile)
+
         GroupBox("Register") {
             VStack(alignment: .leading, spacing: 12) {
                 if !isRendererEnabled {
-                    Text("Renderer is OFF. Controls are disabled.")
+                    Text("Renderer is OFF. Previews are paused.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if isRendererEnabled && !selectedOutputEnabled {
+                    Text("\(displayName(for: selectedTile)) output is OFF. Controls are disabled.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -617,6 +670,7 @@ struct RenderingView: View {
                 Divider()
                 registerContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .disabled(!isRendererEnabled || !selectedOutputEnabled)
             }
             .padding(.vertical, 4)
         }
@@ -629,10 +683,15 @@ struct RenderingView: View {
                 Button {
                     selectedTile = key
                 } label: {
-                    Text(displayName(for: key))
-                        .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                    HStack(spacing: 4) {
+                        Text(displayName(for: key))
+                            .font(.caption)
+                        Image(systemName: isOutputEnabled(for: key) ? "checkmark.circle.fill" : "slash.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(isOutputEnabled(for: key) ? .green : .secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                 }
                 .buttonStyle(.bordered)
                 .tint(selectedTile == key ? .accentColor : .gray)
