@@ -75,9 +75,6 @@ struct ShaderBrowserView: View {
     @State private var isSearching: Bool = false
     @State private var searchDebounceTask: Task<Void, Never>? = nil
     @State private var phaseWriteDebounceTasks: [String: Task<Void, Never>] = [:]
-    @State private var workspacePreset: WorkspacePreset = .neutral
-    @State private var workspaceDraft: ShaderWorkspaceControls = .default
-    @State private var copiedWorkspaceControls: ShaderWorkspaceControls?
     
     // Convenience accessors for AppState analysis state
     private var isAnalyzing: Bool { appState.isAnalyzingShaders }
@@ -91,13 +88,6 @@ struct ShaderBrowserView: View {
     private var analysisErrorCount: Int { appState.analysisErrorCount }
     
     private var selectedShaders: Set<String> { appState.shaderCatalog.selectedShaders }
-    private var workspaceTargetShaders: [String] {
-        let selected = shaders.map(\.name).filter { selectedShaders.contains($0) }
-        if !selected.isEmpty { return selected }
-        if let current = appState.selectedShader, !current.isEmpty { return [current] }
-        return []
-    }
-    private var hasWorkspaceTargets: Bool { !workspaceTargetShaders.isEmpty }
 
     private enum ModalKind {
         case analysis
@@ -118,26 +108,6 @@ struct ShaderBrowserView: View {
         }
     }
 
-    private enum WorkspacePreset: String, CaseIterable {
-        case neutral = "Neutral"
-        case pulse = "Pulse"
-        case boost = "Boost"
-        case warp = "Warp"
-
-        var controls: ShaderWorkspaceControls {
-            switch self {
-            case .neutral:
-                return .default
-            case .pulse:
-                return ShaderWorkspaceControls(bin0: 0.35, bin1: 0.0, bin2: 0.0, zoom: 1.0)
-            case .boost:
-                return ShaderWorkspaceControls(bin0: 0.2, bin1: 0.3, bin2: 0.25, zoom: 1.05)
-            case .warp:
-                return ShaderWorkspaceControls(bin0: 0.4, bin1: 0.5, bin2: 0.15, zoom: 1.2)
-            }
-        }
-    }
-    
     var filteredShaders: [CoreShaderInfo] {
         let query = appState.shaderCatalog.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let base: [CoreShaderInfo] = query.isEmpty ? shaders : searchResults
@@ -288,7 +258,6 @@ struct ShaderBrowserView: View {
         VStack(spacing: 0) {
             actionBar
             if !selectedShaders.isEmpty { bulkPhaseBar }
-            if hasWorkspaceTargets { shaderWorkspacePanel }
             Divider()
             if isAnalyzing { progressBar }
             filterBar
@@ -298,7 +267,6 @@ struct ShaderBrowserView: View {
         }
         .task {
             await loadShaders()
-            syncWorkspaceDraftFromTargets()
         }
         .sheet(item: $activeModal, onDismiss: handleModalDismiss) { modal in
             switch modal {
@@ -327,15 +295,6 @@ struct ShaderBrowserView: View {
                 task.cancel()
             }
             phaseWriteDebounceTasks.removeAll()
-        }
-        .onChange(of: selectedShaders) { _, _ in
-            syncWorkspaceDraftFromTargets()
-        }
-        .onChange(of: appState.selectedShader) { _, _ in
-            syncWorkspaceDraftFromTargets()
-        }
-        .onChange(of: appState.shaderControlsByShader) { _, _ in
-            syncWorkspaceDraftFromTargets()
         }
     }
 
@@ -506,121 +465,6 @@ struct ShaderBrowserView: View {
         .background(.quaternary)
     }
 
-    private var shaderWorkspacePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("Shader Workspace")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                Text("Targets: \(workspaceTargetShaders.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Divider().frame(height: 16)
-
-                Picker("Preset", selection: $workspacePreset) {
-                    ForEach(WorkspacePreset.allCases, id: \.self) { preset in
-                        Text(preset.rawValue).tag(preset)
-                    }
-                }
-                .frame(width: 120)
-                .labelsHidden()
-
-                Button("Load Preset") {
-                    workspaceDraft = workspacePreset.controls
-                }
-                .buttonStyle(.bordered)
-
-                Button("Apply") {
-                    applyWorkspaceDraftToTargets()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Reset") {
-                    resetWorkspaceTargets()
-                }
-                .buttonStyle(.bordered)
-
-                Button("Copy") {
-                    copiedWorkspaceControls = workspaceDraft
-                }
-                .buttonStyle(.bordered)
-
-                Button("Paste") {
-                    guard let copiedWorkspaceControls else { return }
-                    workspaceDraft = copiedWorkspaceControls
-                }
-                .buttonStyle(.bordered)
-                .disabled(copiedWorkspaceControls == nil)
-
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Dynamics")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                workspaceSliderRow(
-                    title: "Timing",
-                    value: Binding(
-                        get: { Double(workspaceDraft.bin0) },
-                        set: { workspaceDraft.bin0 = Float($0) }
-                    ),
-                    range: 0...1
-                )
-                workspaceSliderRow(
-                    title: "Distortion",
-                    value: Binding(
-                        get: { Double(workspaceDraft.bin1) },
-                        set: { workspaceDraft.bin1 = Float($0) }
-                    ),
-                    range: 0...1
-                )
-                workspaceSliderRow(
-                    title: "Color Drift",
-                    value: Binding(
-                        get: { Double(workspaceDraft.bin2) },
-                        set: { workspaceDraft.bin2 = Float($0) }
-                    ),
-                    range: 0...1
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Lens")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                workspaceSliderRow(
-                    title: "Zoom",
-                    value: Binding(
-                        get: { Double(workspaceDraft.zoom) },
-                        set: { workspaceDraft.zoom = Float($0) }
-                    ),
-                    range: 0.5...1.8
-                )
-            }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.quaternary)
-    }
-
-    private func workspaceSliderRow(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>
-    ) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .frame(width: 80, alignment: .leading)
-            Slider(value: value, in: range)
-            Text(String(format: "%.2f", value.wrappedValue))
-                .font(.caption.monospacedDigit())
-                .frame(width: 44, alignment: .trailing)
-        }
-    }
-
     private var filterBar: some View {
         HStack(spacing: 12) {
             HStack {
@@ -736,15 +580,11 @@ struct ShaderBrowserView: View {
                         ShaderCardEnhanced(
                             shader: shader,
                             isSelected: appState.selectedShader == shader.name,
-                            isChecked: selectedShaders.contains(shader.name),
                             shaderStatus: getShaderStatus(shader),
                             refreshId: refreshId,
                             isAnalyzing: isAnalyzing,
-                            onTap: {
-                                appState.selectShader(shader.name)
-                            },
-                            onCheck: { modifiers in
-                                handleCheckClick(shader.name, modifiers: modifiers)
+                            onSelectMouseDown: { modifiers in
+                                handlePrimarySelectionMouseDown(shader.name, modifiers: modifiers)
                             },
                             onShowAnalysis: {
                                 showAnalysis(for: shader)
@@ -768,25 +608,26 @@ struct ShaderBrowserView: View {
         } else {
             List(filteredShaders, id: \.path) { shader in
                 HStack(spacing: 10) {
-                    Image(systemName: selectedShaders.contains(shader.name) ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(selectedShaders.contains(shader.name) ? Color.accentColor : Color.secondary)
-                        .onTapGesture {
-                            let modifiers = currentSelectionModifiers()
-                            handleCheckClick(shader.name, modifiers: modifiers)
-                        }
                     Text(shader.name)
                         .font(.caption.monospaced())
                         .lineLimit(1)
-                        .foregroundStyle(appState.selectedShader == shader.name ? .primary : .secondary)
-                        .onTapGesture {
-                            appState.selectShader(shader.name)
-                        }
+                        .foregroundStyle(selectedShaders.contains(shader.name) ? .primary : .secondary)
                     Spacer()
                     Text(getShaderStatusLabel(shader))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                .frame(height: 30)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selectedShaders.contains(shader.name) ? Color.accentColor.opacity(0.12) : Color.clear)
+                )
                 .contentShape(Rectangle())
+                .onMouseDown {
+                    let modifiers = currentSelectionModifiers()
+                    handlePrimarySelectionMouseDown(shader.name, modifiers: modifiers)
+                }
             }
             .listStyle(.plain)
         }
@@ -928,18 +769,34 @@ struct ShaderBrowserView: View {
         appState.log("Selected \(selectedShaders.count) unanalyzed shaders", level: .info)
     }
     
-    /// Handle check click with modifier keys (shift for range, cmd for toggle)
+    /// Handle modifier-based selection (shift for range, cmd for toggle)
     private func handleCheckClick(_ shaderName: String, modifiers: EventModifiers) {
-        if modifiers.contains(.shift), let lastClicked = lastClickedShader {
-            // Shift-click: select range between last clicked and current
-            selectRange(from: lastClicked, to: shaderName)
+        if modifiers.contains(.shift) {
+            let anchor = lastClickedShader
+                ?? appState.selectedShader
+                ?? filteredShaders.first(where: { selectedShaders.contains($0.name) })?.name
+            if let anchor {
+                selectRange(from: anchor, to: shaderName)
+            } else {
+                appState.setShaderCatalogSelection([shaderName])
+                lastClickedShader = shaderName
+            }
         } else if modifiers.contains(.command) {
-            // Cmd-click: toggle single item (same as normal click)
             toggleSelection(shaderName)
         } else {
-            // Normal click: toggle selection
-            toggleSelection(shaderName)
+            appState.setShaderCatalogSelection([shaderName])
+            lastClickedShader = shaderName
         }
+    }
+
+    private func handlePrimarySelectionMouseDown(_ shaderName: String, modifiers: EventModifiers) {
+        appState.selectShader(shaderName)
+        if modifiers.contains(.shift) || modifiers.contains(.command) {
+            handleCheckClick(shaderName, modifiers: modifiers)
+            return
+        }
+        appState.setShaderCatalogSelection([shaderName])
+        lastClickedShader = shaderName
     }
     
     /// Select range of shaders between two names
@@ -1047,35 +904,6 @@ struct ShaderBrowserView: View {
             "Queued phase assignment (\(bulkPhases.map(\.displayName).joined(separator: ", "))) for \(selectedShaderInfos.count) shader(s)",
             level: .info
         )
-    }
-
-    private func syncWorkspaceDraftFromTargets() {
-        guard let primary = workspaceTargetShaders.first else {
-            workspaceDraft = .default
-            workspacePreset = .neutral
-            return
-        }
-        let controls = appState.shaderWorkspaceControls(for: primary)
-        workspaceDraft = controls
-        workspacePreset = WorkspacePreset.allCases.first(where: { $0.controls == controls }) ?? .neutral
-    }
-
-    private func applyWorkspaceDraftToTargets() {
-        let targets = workspaceTargetShaders
-        guard !targets.isEmpty else { return }
-        for shaderName in targets {
-            appState.setShaderWorkspaceControls(workspaceDraft, shaderName: shaderName)
-        }
-        appState.log("Applied shader workspace controls to \(targets.count) shader(s)", level: .info)
-    }
-
-    private func resetWorkspaceTargets() {
-        let targets = workspaceTargetShaders
-        guard !targets.isEmpty else { return }
-        for shaderName in targets {
-            appState.resetShaderWorkspaceControls(shaderName: shaderName)
-        }
-        workspaceDraft = .default
     }
 
     private func currentSelectionModifiers() -> EventModifiers {
@@ -1871,12 +1699,10 @@ struct ShaderCardEnhanced: View {
     @EnvironmentObject var appState: AppState
     let shader: CoreShaderInfo
     let isSelected: Bool
-    let isChecked: Bool
     let shaderStatus: ShaderBrowserView.ShaderStatus
     let refreshId: UUID // Forces screenshot reload when changed
     let isAnalyzing: Bool  // Disables interactions during analysis
-    let onTap: () -> Void
-    let onCheck: (EventModifiers) -> Void
+    let onSelectMouseDown: (EventModifiers) -> Void
     let onShowAnalysis: () -> Void
     let onPreview: () -> Void
     let onDelete: () -> Void
@@ -1890,22 +1716,8 @@ struct ShaderCardEnhanced: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Top row with checkbox and delete button
+            // Top row with action buttons
             HStack {
-                // Checkbox with modifier support for shift/cmd click
-                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .foregroundColor(isChecked ? .blue : .secondary)
-                    .opacity(isAnalyzing ? 0.5 : 1.0)
-                    .onTapGesture {
-                        guard !isAnalyzing else { return }
-                        // Capture current modifier keys from NSEvent
-                        let modifiers = NSEvent.modifierFlags
-                        var eventModifiers: EventModifiers = []
-                        if modifiers.contains(.shift) { eventModifiers.insert(.shift) }
-                        if modifiers.contains(.command) { eventModifiers.insert(.command) }
-                        onCheck(eventModifiers)
-                    }
-                
                 Spacer()
 
                 // Preview button
@@ -1966,10 +1778,6 @@ struct ShaderCardEnhanced: View {
                 }
             }
             .opacity(isAnalyzing ? 0.7 : 1.0)
-            .onTapGesture {
-                guard !isAnalyzing else { return }
-                onTap()
-            }
             .onAppear { loadAssets(forceRefresh: false) }
             .onChange(of: refreshId) { _, _ in loadAssets(forceRefresh: true) }
             
@@ -2107,12 +1915,17 @@ struct ShaderCardEnhanced: View {
             }
         }
         .padding(12)
+        .frame(height: 310, alignment: .top)
         .background(isSelected ? Color.blue.opacity(0.15) : Color(.controlBackgroundColor))
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
         )
+        .onMouseDown {
+            guard !isAnalyzing else { return }
+            onSelectMouseDown(currentSelectionModifiers())
+        }
         .onAppear {
             // Load phases from analysis data when card appears
             if let phases = analysisData?.djPhases {
@@ -2157,6 +1970,14 @@ struct ShaderCardEnhanced: View {
                 loggedAnalysisParseFailure = false
             }
         }
+    }
+
+    private func currentSelectionModifiers() -> EventModifiers {
+        let modifiers = NSEvent.modifierFlags
+        var eventModifiers: EventModifiers = []
+        if modifiers.contains(.shift) { eventModifiers.insert(.shift) }
+        if modifiers.contains(.command) { eventModifiers.insert(.command) }
+        return eventModifiers
     }
 }
 
@@ -2253,6 +2074,32 @@ private actor ShaderCardAssetCache {
 
         analysisEntries[key] = .parsed(analysis)
         return .parsed(analysis)
+    }
+}
+
+private struct MouseDownSelectionModifier: ViewModifier {
+    let action: () -> Void
+    @State private var hasFiredInCurrentPress = false
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    if !hasFiredInCurrentPress {
+                        hasFiredInCurrentPress = true
+                        action()
+                    }
+                }
+                .onEnded { _ in
+                    hasFiredInCurrentPress = false
+                }
+        )
+    }
+}
+
+private extension View {
+    func onMouseDown(_ action: @escaping () -> Void) -> some View {
+        modifier(MouseDownSelectionModifier(action: action))
     }
 }
 
