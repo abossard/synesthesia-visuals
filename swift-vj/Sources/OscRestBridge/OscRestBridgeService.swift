@@ -6,6 +6,12 @@ import OSCKit
 
 /// Main OSC → REST bridge service
 public actor OscRestBridgeService {
+    private struct QueuedRequest: Sendable {
+        let id: UUID
+        let plan: HTTPRequestPlan
+        let config: BridgeConfig
+        let timestamp: Date
+    }
     
     // MARK: - Dependencies (protocols for testing)
     
@@ -32,6 +38,12 @@ public actor OscRestBridgeService {
     
     // Dry run mode
     private var dryRun: Bool = false
+
+    // Request execution control
+    private let maxConcurrentRequests: Int = 8
+    private var inFlightRequests: [UUID: Task<Void, Never>] = [:]
+    private var pendingRequests: [QueuedRequest] = []
+    private var pendingRequestHead: Int = 0
     
     // MARK: - Initialization
     
@@ -76,6 +88,14 @@ public actor OscRestBridgeService {
         // No OSC transport to stop - unsubscription handled externally
         
         isRunning = false
+
+        // Cancel running requests and clear queued work.
+        for task in inFlightRequests.values {
+            task.cancel()
+        }
+        inFlightRequests.removeAll(keepingCapacity: true)
+        pendingRequests.removeAll(keepingCapacity: false)
+        pendingRequestHead = 0
         
         eventContinuation.yield(.stopped(timestamp: clock.now()))
     }
@@ -181,6 +201,7 @@ public actor OscRestBridgeService {
 
     public func handleOSCMessage(path: String, numericValue: Double?) async {
         let timestamp = clock.now()
+        guard isRunning else { return }
 
         // Extract numeric value
         guard let numericValue else {
@@ -247,10 +268,14 @@ public actor OscRestBridgeService {
                         httpBuffer.append(record)
                     }
                 } else {
-                    // Execute in background (don't block OSC processing)
-                    Task.detached(priority: .userInitiated) { [weak self, plan, config, timestamp] in
-                        await self?.executeRequest(plan, config: config, timestamp: timestamp)
-                    }
+                    enqueueRequest(
+                        QueuedRequest(
+                            id: UUID(),
+                            plan: plan,
+                            config: config,
+                            timestamp: timestamp
+                        )
+                    )
                 }
             }
             
@@ -272,6 +297,49 @@ public actor OscRestBridgeService {
         } catch {
             recordUnknownOSC(path: path, value: numericValue, reason: "Build error: \(error.localizedDescription)", timestamp: timestamp)
         }
+    }
+
+    private func enqueueRequest(_ request: QueuedRequest) {
+        pendingRequests.append(request)
+        startQueuedRequestsIfPossible()
+    }
+
+    private func dequeueRequest() -> QueuedRequest? {
+        guard pendingRequestHead < pendingRequests.count else {
+            if pendingRequestHead > 0 {
+                pendingRequests.removeAll(keepingCapacity: true)
+                pendingRequestHead = 0
+            }
+            return nil
+        }
+
+        let request = pendingRequests[pendingRequestHead]
+        pendingRequestHead += 1
+
+        if pendingRequestHead > 64 && pendingRequestHead * 2 >= pendingRequests.count {
+            pendingRequests.removeFirst(pendingRequestHead)
+            pendingRequestHead = 0
+        }
+
+        return request
+    }
+
+    private func startQueuedRequestsIfPossible() {
+        guard isRunning else { return }
+
+        while inFlightRequests.count < maxConcurrentRequests, let request = dequeueRequest() {
+            let requestId = request.id
+            inFlightRequests[requestId] = Task { [weak self] in
+                guard let self else { return }
+                await self.executeRequest(request.plan, config: request.config, timestamp: request.timestamp)
+                await self.markRequestFinished(requestId)
+            }
+        }
+    }
+
+    private func markRequestFinished(_ requestId: UUID) {
+        inFlightRequests[requestId] = nil
+        startQueuedRequestsIfPossible()
     }
     
     private func recordUnknownOSC(path: String, value: Double, reason: String, timestamp: Date) {
@@ -319,6 +387,8 @@ public actor OscRestBridgeService {
                 httpBuffer.append(record)
             }
             
+        } catch is CancellationError {
+            // Cancellation is expected during shutdown.
         } catch {
             stats.totalRestFailures += 1
             

@@ -429,6 +429,46 @@ final class ServiceE2ETests: XCTestCase {
         XCTAssertEqual(state.stats.totalRestPlanned, 1)
         XCTAssertEqual(state.stats.totalRestSent, 0)
     }
+
+    // MARK: - Concurrency Tests
+
+    func test_burstRequests_respectConcurrencyLimit() async throws {
+        let throttledClient = DelayedTrackingHTTPClient(delay: .milliseconds(120))
+        let throttledService = OscRestBridgeService(httpClient: throttledClient, clock: clock)
+        try await throttledService.loadConfig(from: simpleSceneConfigYAML().data(using: .utf8)!)
+        try await throttledService.start()
+
+        for _ in 0..<24 {
+            await throttledService.handleOSCMessage(path: "/ledfx/scene/test/0", values: [1.0])
+        }
+
+        try await Task.sleep(for: .milliseconds(900))
+
+        let snapshot = await throttledClient.snapshot()
+        XCTAssertLessThanOrEqual(snapshot.maxInFlight, 8)
+        XCTAssertEqual(snapshot.started, 24)
+        XCTAssertEqual(snapshot.completed, 24)
+    }
+
+    func test_stop_cancelsInFlightAndDropsQueuedRequests() async throws {
+        let slowClient = DelayedTrackingHTTPClient(delay: .seconds(2))
+        let cancellableService = OscRestBridgeService(httpClient: slowClient, clock: clock)
+        try await cancellableService.loadConfig(from: simpleSceneConfigYAML().data(using: .utf8)!)
+        try await cancellableService.start()
+
+        for _ in 0..<12 {
+            await cancellableService.handleOSCMessage(path: "/ledfx/scene/test/0", values: [1.0])
+        }
+
+        try await Task.sleep(for: .milliseconds(100))
+        await cancellableService.stop()
+        try await Task.sleep(for: .milliseconds(150))
+
+        let snapshot = await slowClient.snapshot()
+        XCTAssertLessThanOrEqual(snapshot.started, 8)
+        XCTAssertEqual(snapshot.completed, 0)
+        XCTAssertGreaterThan(snapshot.cancelled, 0)
+    }
     
     // MARK: - HTTP Failure Tests
     
@@ -474,6 +514,34 @@ final class ServiceE2ETests: XCTestCase {
         XCTAssertEqual(state.stats.totalRestFailures, 1)
         XCTAssertTrue(state.recentHttp.contains { $0.error != nil })
     }
+
+    private func simpleSceneConfigYAML() -> String {
+        """
+        version: 1
+        server:
+          osc_listen:
+            host: "0.0.0.0"
+            port: 9000
+          http:
+            base_url: "http://localhost:8888"
+            timeout_ms: 1500
+        slots:
+          "0":
+            name: "main"
+            targets:
+              virtual_ids: ["virtual-1"]
+        scenes:
+          test:
+            id: "test"
+            on_activate:
+              request:
+                method: "PUT"
+                path: "/api/test"
+                body: {}
+        oneshots: {}
+        params: {}
+        """
+    }
 }
 
 // MARK: - Test HTTP Client Extension
@@ -487,5 +555,44 @@ extension TestHTTPClient {
     
     private func updateShouldFail(_ value: Bool) {
         self.shouldFail = value
+    }
+}
+
+actor DelayedTrackingHTTPClient: HTTPClient {
+    private let delay: Duration
+    private var inFlight: Int = 0
+    private(set) var maxInFlight: Int = 0
+    private(set) var started: Int = 0
+    private(set) var completed: Int = 0
+    private(set) var cancelled: Int = 0
+
+    init(delay: Duration) {
+        self.delay = delay
+    }
+
+    func execute(
+        method: String,
+        url: String,
+        headers: [String : String],
+        body: Data?,
+        timeoutMs: Int
+    ) async throws -> (statusCode: Int, body: Data) {
+        started += 1
+        inFlight += 1
+        maxInFlight = max(maxInFlight, inFlight)
+        defer { inFlight -= 1 }
+
+        do {
+            try await Task.sleep(for: delay)
+            completed += 1
+            return (200, Data())
+        } catch is CancellationError {
+            cancelled += 1
+            throw CancellationError()
+        }
+    }
+
+    func snapshot() -> (started: Int, completed: Int, cancelled: Int, maxInFlight: Int) {
+        (started, completed, cancelled, maxInFlight)
     }
 }
