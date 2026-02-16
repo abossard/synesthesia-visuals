@@ -72,6 +72,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private let cachedContext = OSAllocatedUnfairLock<RenderFrameContext?>(initialState: nil)
     private let pendingShaderName = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let pendingMaskName = OSAllocatedUnfairLock<String?>(initialState: nil)
+    private let outputState = OSAllocatedUnfairLock<RenderOutputsState>(initialState: RenderOutputsState())
     
     // FPS tracking (render thread only)
     private var lastFrameTime: CFAbsoluteTime = 0
@@ -175,7 +176,8 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
         // Create thread-safe Syphon manager and start servers
         self.syphonManager = SyphonOutputManager.shared
-        syphonManager?.createStandardServers()
+        let outputs = outputState.withLock { $0 }
+        syncSyphonServers(for: outputs)
         
         // Start MainActor managers
         await MainActor.run { [weak self] in
@@ -290,48 +292,50 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
                 self.frameTimeAccum = 0
                 self.frameCount = self.localFrameCount
             }
-            
-            // Update SwiftUI lyrics renderer if enabled (runs on MainActor)
-                if let renderer = self.headlessRenderer {
-                    if let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
-                        let hash = Self.buildKaraokeContentHash(
+
+            let outputs = self.outputState.withLock { $0 }
+
+            // Update SwiftUI text renderers only when their output is enabled.
+            if let renderer = self.headlessRenderer {
+                if outputs.lyrics, let swiftUIRenderer = renderer.getSwiftUILyricsRenderer() {
+                    let hash = Self.buildKaraokeContentHash(
+                        displayState: self.karaokeEngine.displayState,
+                        configuration: self.karaokeEngine.configuration
+                    )
+                    swiftUIRenderer.update(contentHash: hash) {
+                        AnyView(KaraokeView(
                             displayState: self.karaokeEngine.displayState,
                             configuration: self.karaokeEngine.configuration
-                        )
-                        swiftUIRenderer.update(contentHash: hash) {
-                            AnyView(KaraokeView(
-                                displayState: self.karaokeEngine.displayState,
-                                configuration: self.karaokeEngine.configuration
-                            ))
-                        }
-                    }
-
-                    if let refrainRenderer = renderer.getSwiftUIRefrainRenderer() {
-                        let hash = Self.buildKaraokeContentHash(
-                            displayState: self.refrainEngine.displayState,
-                            configuration: self.refrainEngine.configuration
-                        )
-                        refrainRenderer.update(contentHash: hash) {
-                            AnyView(KaraokeView(
-                                displayState: self.refrainEngine.displayState,
-                                configuration: self.refrainEngine.configuration
-                            ))
-                        }
-                    }
-
-                    if let songInfoRenderer = renderer.getSwiftUISongInfoRenderer() {
-                        let hash = Self.buildSongInfoContentHash(
-                            displayState: self.songInfoEngine.displayState,
-                            configuration: self.songInfoEngine.configuration
-                        )
-                        songInfoRenderer.update(contentHash: hash) {
-                            AnyView(SongInfoView(
-                                displayState: self.songInfoEngine.displayState,
-                                configuration: self.songInfoEngine.configuration
-                            ))
-                        }
+                        ))
                     }
                 }
+
+                if outputs.refrain, let refrainRenderer = renderer.getSwiftUIRefrainRenderer() {
+                    let hash = Self.buildKaraokeContentHash(
+                        displayState: self.refrainEngine.displayState,
+                        configuration: self.refrainEngine.configuration
+                    )
+                    refrainRenderer.update(contentHash: hash) {
+                        AnyView(KaraokeView(
+                            displayState: self.refrainEngine.displayState,
+                            configuration: self.refrainEngine.configuration
+                        ))
+                    }
+                }
+
+                if outputs.songInfo, let songInfoRenderer = renderer.getSwiftUISongInfoRenderer() {
+                    let hash = Self.buildSongInfoContentHash(
+                        displayState: self.songInfoEngine.displayState,
+                        configuration: self.songInfoEngine.configuration
+                    )
+                    songInfoRenderer.update(contentHash: hash) {
+                        AnyView(SongInfoView(
+                            displayState: self.songInfoEngine.displayState,
+                            configuration: self.songInfoEngine.configuration
+                        ))
+                    }
+                }
+            }
 
             return RenderFrameContext(
                 audioState: self.audioManager.state,
@@ -374,9 +378,13 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         frameTimeAccum += deltaTime
         fpsUpdateCounter += 1
         localFrameCount += 1
+
+        let outputs = outputState.withLock { $0 }
         
         // Update renderer state
-        renderer.imageRenderer.imageState = context.imageState
+        if outputs.image {
+            renderer.imageRenderer.imageState = context.imageState
+        }
         
         // Handle shader changes
         let currentShaderName = renderer.shaderRenderer.currentShaderName
@@ -404,8 +412,24 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         // Render all tiles + publish to Syphon (synchronous GPU work)
         renderer.renderFrame(
             audioState: context.audioState,
-            syphonManager: syphonManager
+            syphonManager: syphonManager,
+            outputs: outputs
         )
+    }
+
+    @MainActor
+    func setOutputState(_ outputs: RenderOutputsState) {
+        outputState.withLock { $0 = outputs }
+        syncSyphonServers(for: outputs)
+    }
+
+    @MainActor
+    func setOutputEnabled(_ output: RenderOutput, enabled: Bool) {
+        let updated = outputState.withLock { state -> RenderOutputsState in
+            state.setEnabled(enabled, for: output)
+            return state
+        }
+        syncSyphonServers(for: updated)
     }
 
     // MARK: - Convenience Methods
@@ -427,6 +451,35 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     /// Get all tile names
     func getTileNames() -> [String] {
         ["shader", "mask", "lyrics", "refrain", "songInfo", "image"]
+    }
+
+    private func syncSyphonServers(for outputs: RenderOutputsState) {
+        guard let manager = syphonManager else { return }
+        for output in RenderOutput.allCases {
+            let serverName = Self.syphonServerName(for: output)
+            if outputs.isEnabled(output) {
+                manager.createServer(name: serverName)
+            } else {
+                manager.stopServer(name: serverName)
+            }
+        }
+    }
+
+    private static func syphonServerName(for output: RenderOutput) -> String {
+        switch output {
+        case .shader:
+            return TileConfig.shader.syphonName
+        case .mask:
+            return TileConfig.mask.syphonName
+        case .lyrics:
+            return TileConfig.lyrics.syphonName
+        case .refrain:
+            return TileConfig.refrain.syphonName
+        case .songInfo:
+            return TileConfig.songInfo.syphonName
+        case .image:
+            return TileConfig.image.syphonName
+        }
     }
 
     // MARK: - SwiftUI Text Hashing

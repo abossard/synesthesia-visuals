@@ -942,6 +942,9 @@ public final class AppState: ObservableObject {
             // Keep shader navigation/select effects operational even when renderer is disabled.
             _ = await engine.shaderRepository.reload()
             self.applyInitialRenderSelections(using: engine)
+            await MainActor.run {
+                engine.setOutputState(self.store.state.render.outputs)
+            }
             await self.applyRendererEnabledState(self.store.state.render.isEnabled)
         }
     }
@@ -994,8 +997,11 @@ public final class AppState: ObservableObject {
             await self.applyRendererEnabledState(enabled)
         }
 
-        EffectEnvironment.shared.setRenderOutputEnabled = { _, _ in
-            // Stage 1 wiring only; RenderEngine/Pipeline handling is added in later stages.
+        EffectEnvironment.shared.setRenderOutputEnabled = { [weak self] output, enabled in
+            guard let self else { return }
+            await MainActor.run {
+                self.renderEngine?.setOutputEnabled(output, enabled: enabled)
+            }
         }
 
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in

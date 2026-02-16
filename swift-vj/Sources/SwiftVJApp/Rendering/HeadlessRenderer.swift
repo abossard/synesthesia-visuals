@@ -9,6 +9,7 @@ import CoreGraphics
 import AppKit
 import SwiftUI
 import SyphonKit
+import SwiftVJCore
 
 // MARK: - Tile Renderer Protocol
 
@@ -1063,7 +1064,8 @@ final class HeadlessRenderer {
     /// Thread-safe - can be called from the headless render loop thread
     func renderFrame(
         audioState: AudioState,
-        syphonManager: SyphonOutputManager?
+        syphonManager: SyphonOutputManager?,
+        outputs: RenderOutputsState
     ) {
         // Wait for available command buffer slot (triple buffering)
         _ = inflightSemaphore.wait(timeout: .now() + .milliseconds(16))
@@ -1122,46 +1124,53 @@ final class HeadlessRenderer {
         }
         
         // 1. Render all tiles to their textures (SAME command buffer)
-        shaderRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
-        maskRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        if outputs.shader {
+            shaderRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
+        if outputs.mask {
+            maskRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
         
         // Text: SwiftUI renderers
-        swiftUILyricsRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
-        swiftUIRefrainRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
-        swiftUISongInfoRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        if outputs.lyrics {
+            swiftUILyricsRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
+        if outputs.refrain {
+            swiftUIRefrainRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
+        if outputs.songInfo {
+            swiftUISongInfoRenderer?.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
         
-        imageRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        if outputs.image {
+            imageRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+        }
         
         // Handle beat-based image switching
-        imageRenderer.handleBeat(beat4: Int(audioState.beat4))
+        if outputs.image {
+            imageRenderer.handleBeat(beat4: Int(audioState.beat4))
+        }
         
         // 2. Publish ALL to Syphon (SAME command buffer, before commit)
         if let manager = syphonManager {
-            var publishCount = 0
-            if let tex = shaderRenderer.texture {
+            if outputs.shader, let tex = shaderRenderer.texture {
                 manager.publish(name: TileConfig.shader.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
-            if let tex = maskRenderer.texture {
+            if outputs.mask, let tex = maskRenderer.texture {
                 manager.publish(name: TileConfig.mask.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
             // Lyrics: publish SwiftUI texture only
-            if let tex = swiftUILyricsRenderer?.texture {
+            if outputs.lyrics, let tex = swiftUILyricsRenderer?.texture {
                 manager.publish(name: TileConfig.lyrics.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
-            if let tex = swiftUIRefrainRenderer?.texture {
+            if outputs.refrain, let tex = swiftUIRefrainRenderer?.texture {
                 manager.publish(name: TileConfig.refrain.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
-            if let tex = swiftUISongInfoRenderer?.texture {
+            if outputs.songInfo, let tex = swiftUISongInfoRenderer?.texture {
                 manager.publish(name: TileConfig.songInfo.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
-            if let tex = imageRenderer.texture {
+            if outputs.image, let tex = imageRenderer.texture {
                 manager.publish(name: TileConfig.image.syphonName, texture: tex, commandBuffer: commandBuffer)
-                publishCount += 1
             }
         }
         
