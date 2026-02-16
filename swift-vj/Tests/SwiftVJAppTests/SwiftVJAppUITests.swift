@@ -9,6 +9,10 @@ final class SwiftVJAppUITests: XCTestCase {
         AppState(testMode: true)
     }
 
+    private func waitForStateSync() async {
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+
     func testContentViewHasSidebarAndPhaseIdentifiers() throws {
         let appState = makeTestAppState()
         let view = ContentView().environmentObject(appState)
@@ -110,5 +114,30 @@ final class SwiftVJAppUITests: XCTestCase {
             try? $0.accessibilityIdentifier()
         }
         XCTAssertTrue(buttonIds.contains(A11yID.songDemoPlayButton))
+    }
+
+    func testRenderOutputBindingUpdatesAppState() async {
+        let appState = makeTestAppState()
+
+        XCTAssertTrue(appState.isRenderOutputEnabled(.shader))
+        appState.renderOutputBinding(.shader).wrappedValue = false
+        await waitForStateSync()
+        XCTAssertFalse(appState.isRenderOutputEnabled(.shader))
+
+        appState.renderOutputBinding(.shader).wrappedValue = true
+        await waitForStateSync()
+        XCTAssertTrue(appState.isRenderOutputEnabled(.shader))
+    }
+
+    func testRenderOutputToggleWorksWhenRendererOff() async {
+        let appState = makeTestAppState()
+
+        appState.setRenderEnabled(false)
+        await waitForStateSync()
+        XCTAssertFalse(appState.renderEnabled)
+        appState.renderOutputBinding(.lyrics).wrappedValue = false
+        await waitForStateSync()
+
+        XCTAssertFalse(appState.isRenderOutputEnabled(.lyrics))
     }
 }
