@@ -89,4 +89,36 @@ final class ShaderFileOperationsActorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: glslDir.appendingPathComponent("test_delete.png").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: glslDir.appendingPathComponent("test_delete.analysis.json").path))
     }
+
+    func testMoveShadersReturnsFailureForMissingShader() async throws {
+        let actor = ShaderFileOperationsActor()
+
+        let result = await actor.moveShaders(
+            names: ["missing_shader"],
+            in: [],
+            to: masksDir,
+            relatedExtensions: relatedExtensions
+        )
+
+        XCTAssertTrue(result.succeeded.isEmpty)
+        XCTAssertEqual(result.failed["missing_shader"], "Shader not found")
+    }
+
+    func testCopyShadersReturnsFailureWhenNoSourceFilesExist() async throws {
+        let actor = ShaderFileOperationsActor()
+        let phantomPath = glslDir.appendingPathComponent("phantom.txt")
+        let phantom = ShaderInfo(name: "phantom", path: phantomPath.path, folder: glslDir.lastPathComponent)
+        let exportDir = tempDir.appendingPathComponent("export-missing")
+        try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+
+        let result = await actor.copyShaders(
+            names: [phantom.name],
+            in: [phantom],
+            to: exportDir,
+            relatedExtensions: relatedExtensions
+        )
+
+        XCTAssertTrue(result.succeeded.isEmpty)
+        XCTAssertEqual(result.failed["phantom"], "No source files found")
+    }
 }

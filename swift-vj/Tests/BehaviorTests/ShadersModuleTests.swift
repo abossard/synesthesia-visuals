@@ -132,6 +132,20 @@ final class ShadersModuleTests: XCTestCase {
         XCTAssertTrue(decision.shortlist.contains(where: { $0.name == decision.selected.name }))
     }
 
+    func testSearch_largeLibraryRemainsResponsive() async throws {
+        let module = ShadersModule()
+        let shadersDir = try createShaderFixtureDirectory(shaderCount: 400)
+        let loaded = await module.loadAllShaderFiles(from: shadersDir)
+        XCTAssertEqual(loaded, 400)
+
+        let start = DispatchTime.now()
+        let results = await module.search(query: "shader_039", topK: 30)
+        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+
+        XCTAssertFalse(results.isEmpty)
+        XCTAssertLessThan(elapsedMs, 4_000, "Large-library search took \(elapsedMs)ms")
+    }
+
     override func tearDownWithError() throws {
         if let tempDirectory {
             try? FileManager.default.removeItem(at: tempDirectory)
@@ -140,18 +154,31 @@ final class ShadersModuleTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private func createShaderFixtureDirectory() throws -> URL {
+    private func createShaderFixtureDirectory(shaderCount: Int = 5) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("ShadersModuleTests-\(UUID().uuidString)", isDirectory: true)
         let glslDir = root.appendingPathComponent("glsl", isDirectory: true)
         try FileManager.default.createDirectory(at: glslDir, withIntermediateDirectories: true)
         tempDirectory = root
 
-        try writeShader(named: "alpha", energy: 0.80, valence: 0.20, in: glslDir)
-        try writeShader(named: "beta", energy: 0.78, valence: 0.22, in: glslDir)
-        try writeShader(named: "gamma", energy: 0.75, valence: 0.18, in: glslDir)
-        try writeShader(named: "delta", energy: 0.45, valence: -0.20, in: glslDir)
-        try writeShader(named: "epsilon", energy: 0.10, valence: -0.80, in: glslDir)
+        if shaderCount <= 5 {
+            try writeShader(named: "alpha", energy: 0.80, valence: 0.20, in: glslDir)
+            try writeShader(named: "beta", energy: 0.78, valence: 0.22, in: glslDir)
+            try writeShader(named: "gamma", energy: 0.75, valence: 0.18, in: glslDir)
+            try writeShader(named: "delta", energy: 0.45, valence: -0.20, in: glslDir)
+            try writeShader(named: "epsilon", energy: 0.10, valence: -0.80, in: glslDir)
+        } else {
+            for index in 0..<shaderCount {
+                let energy = min(1.0, max(0.0, 0.2 + Double(index % 100) / 120.0))
+                let valence = -0.8 + (Double(index % 80) / 80.0) * 1.6
+                try writeShader(
+                    named: String(format: "shader_%03d", index),
+                    energy: energy,
+                    valence: valence,
+                    in: glslDir
+                )
+            }
+        }
 
         return root
     }

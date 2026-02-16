@@ -1868,6 +1868,7 @@ extension SwiftVJCore.ShaderRating {
 }
 
 struct ShaderCardEnhanced: View {
+    @EnvironmentObject var appState: AppState
     let shader: CoreShaderInfo
     let isSelected: Bool
     let isChecked: Bool
@@ -1885,6 +1886,7 @@ struct ShaderCardEnhanced: View {
     @State private var analysisData: ShaderAnalysisResult?
     @State private var hasAnalysis: Bool = false
     @State private var assignedPhases: Set<Phase> = []
+    @State private var loggedAnalysisParseFailure = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2148,6 +2150,12 @@ struct ShaderCardEnhanced: View {
             screenshotImage = image
             hasAnalysis = assets.hasAnalysis
             analysisData = assets.analysis
+            if assets.analysisParseFailed && !loggedAnalysisParseFailure {
+                appState.log("✗ Failed to parse analysis cache for shader \(shader.name)", level: .error)
+                loggedAnalysisParseFailure = true
+            } else if !assets.analysisParseFailed {
+                loggedAnalysisParseFailure = false
+            }
         }
     }
 }
@@ -2156,6 +2164,7 @@ private struct ShaderCardAssets: Sendable {
     let screenshotData: Data?
     let analysis: ShaderAnalysisResult?
     let hasAnalysis: Bool
+    let analysisParseFailed: Bool
 }
 
 private actor ShaderCardAssetCache {
@@ -2182,11 +2191,11 @@ private actor ShaderCardAssetCache {
 
         switch analysisEntry {
         case .parsed(let analysis):
-            return ShaderCardAssets(screenshotData: screenshotData, analysis: analysis, hasAnalysis: true)
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: analysis, hasAnalysis: true, analysisParseFailed: false)
         case .parseFailed:
-            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: true)
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: true, analysisParseFailed: true)
         case .missing:
-            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: false)
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: false, analysisParseFailed: false)
         }
     }
 
