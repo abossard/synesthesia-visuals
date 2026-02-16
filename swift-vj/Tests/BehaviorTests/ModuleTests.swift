@@ -124,6 +124,18 @@ final class PipelineModuleTests: XCTestCase {
         let ai = AIModule()
         return PipelineModule(lyricsModule: lyrics, aiModule: ai)
     }
+
+    private func createPipelineWithShaders() -> PipelineModule {
+        let fetcher = LyricsFetcher()
+        let lyrics = LyricsModule(fetcher: fetcher)
+        let ai = AIModule()
+        let shaders = ShadersModule(matcher: ShaderMatcher())
+        return PipelineModule(
+            lyricsModule: lyrics,
+            aiModule: ai,
+            shadersModule: shaders
+        )
+    }
     
     func testStartStartsDependencies() async throws {
         let pipeline = createPipeline()
@@ -184,6 +196,60 @@ final class PipelineModuleTests: XCTestCase {
             XCTFail("Expected cache_size to be an int")
         }
         
+        await pipeline.stop()
+    }
+
+    func testProcessSkipsLyricsWhenTextOutputsDisabled() async throws {
+        let pipeline = createPipeline()
+        await pipeline.setExecutionPolicy(
+            PipelineExecutionPolicy(
+                shaderOutputEnabled: true,
+                imageOutputEnabled: true,
+                lyricsOutputEnabled: false,
+                refrainOutputEnabled: false,
+                songInfoOutputEnabled: false
+            )
+        )
+        try await pipeline.start()
+
+        let track = Track(
+            artist: "PolicyTextSkip-\(UUID().uuidString)",
+            title: "Song",
+            duration: 180
+        )
+        let result = await pipeline.process(track: track)
+
+        XCTAssertFalse(result.lyricsFound)
+        XCTAssertEqual(result.lyricsLineCount, 0)
+        XCTAssertFalse(result.stepsCompleted.contains("lyrics"))
+
+        await pipeline.stop()
+    }
+
+    func testProcessDoesNotFallbackShaderWhenShaderOutputDisabled() async throws {
+        let pipeline = createPipelineWithShaders()
+        await pipeline.setExecutionPolicy(
+            PipelineExecutionPolicy(
+                shaderOutputEnabled: false,
+                imageOutputEnabled: true,
+                lyricsOutputEnabled: true,
+                refrainOutputEnabled: true,
+                songInfoOutputEnabled: true
+            )
+        )
+        try await pipeline.start()
+
+        let track = Track(
+            artist: "PolicyShaderSkip-\(UUID().uuidString)",
+            title: "Song",
+            duration: 180
+        )
+        let result = await pipeline.process(track: track)
+
+        XCTAssertFalse(result.shaderMatched)
+        XCTAssertTrue(result.shaderName.isEmpty)
+        XCTAssertFalse(result.stepsCompleted.contains("shaders"))
+
         await pipeline.stop()
     }
 }

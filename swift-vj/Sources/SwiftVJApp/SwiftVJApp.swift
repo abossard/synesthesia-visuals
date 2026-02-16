@@ -411,7 +411,12 @@ public final class AppState: ObservableObject {
             log("VDJ subscribed", level: .info)
         }
 
-        try await pipelineModule?.start()
+        if let pipelineModule {
+            await pipelineModule.setExecutionPolicy(
+                .from(renderOutputs: store.state.render.outputs)
+            )
+            try await pipelineModule.start()
+        }
         try await songsModule?.start()
 
         // Update store state
@@ -443,7 +448,8 @@ public final class AppState: ObservableObject {
         if let pipeline = pipelineModule {
             let result = await pipeline.process(track: track)
             logPipelineResult(result)
-            if result.imagesFound, !result.imagesFolder.isEmpty {
+            let imageOutputEnabled = await MainActor.run { self.renderOutputs.image }
+            if imageOutputEnabled, result.imagesFound, !result.imagesFolder.isEmpty {
                 loadImagesFromFolder(URL(fileURLWithPath: result.imagesFolder))
             }
         }
@@ -999,6 +1005,7 @@ public final class AppState: ObservableObject {
 
         EffectEnvironment.shared.setRenderOutputEnabled = { [weak self] output, enabled in
             guard let self else { return }
+            await self.pipelineModule?.setRenderOutputEnabled(output, enabled: enabled)
             await MainActor.run {
                 self.renderEngine?.setOutputEnabled(output, enabled: enabled)
             }
@@ -1243,10 +1250,12 @@ public final class AppState: ObservableObject {
                 }
                 if let result = newState.pipeline.result, self.pipelineResult != result {
                     self.pipelineResult = result
-                    self.renderEngine?.onLyricsLoaded(
-                        result.lyricsLines,
-                        refrainLines: result.refrainLines
-                    )
+                    if self.renderOutputs.hasAnyTextOutputEnabled {
+                        self.renderEngine?.onLyricsLoaded(
+                            result.lyricsLines,
+                            refrainLines: result.refrainLines
+                        )
+                    }
                 }
             }
             .store(in: &cancellables)

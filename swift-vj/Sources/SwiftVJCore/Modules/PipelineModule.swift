@@ -13,6 +13,59 @@ public enum PipelineStep: String, CaseIterable, Sendable {
     case osc = "osc"
 }
 
+public struct PipelineExecutionPolicy: Equatable, Sendable {
+    public var shaderOutputEnabled: Bool
+    public var imageOutputEnabled: Bool
+    public var lyricsOutputEnabled: Bool
+    public var refrainOutputEnabled: Bool
+    public var songInfoOutputEnabled: Bool
+
+    public var textOutputsEnabled: Bool {
+        lyricsOutputEnabled || refrainOutputEnabled || songInfoOutputEnabled
+    }
+
+    public init(
+        shaderOutputEnabled: Bool = true,
+        imageOutputEnabled: Bool = true,
+        lyricsOutputEnabled: Bool = true,
+        refrainOutputEnabled: Bool = true,
+        songInfoOutputEnabled: Bool = true
+    ) {
+        self.shaderOutputEnabled = shaderOutputEnabled
+        self.imageOutputEnabled = imageOutputEnabled
+        self.lyricsOutputEnabled = lyricsOutputEnabled
+        self.refrainOutputEnabled = refrainOutputEnabled
+        self.songInfoOutputEnabled = songInfoOutputEnabled
+    }
+
+    public mutating func setOutput(_ output: RenderOutput, enabled: Bool) {
+        switch output {
+        case .shader:
+            shaderOutputEnabled = enabled
+        case .image:
+            imageOutputEnabled = enabled
+        case .lyrics:
+            lyricsOutputEnabled = enabled
+        case .refrain:
+            refrainOutputEnabled = enabled
+        case .songInfo:
+            songInfoOutputEnabled = enabled
+        case .mask:
+            break
+        }
+    }
+
+    public static func from(renderOutputs: RenderOutputsState) -> PipelineExecutionPolicy {
+        PipelineExecutionPolicy(
+            shaderOutputEnabled: renderOutputs.shader,
+            imageOutputEnabled: renderOutputs.image,
+            lyricsOutputEnabled: renderOutputs.lyrics,
+            refrainOutputEnabled: renderOutputs.refrain,
+            songInfoOutputEnabled: renderOutputs.songInfo
+        )
+    }
+}
+
 /// Pipeline module - orchestrates track analysis workflow
 ///
 /// Deep module interface:
@@ -29,6 +82,7 @@ public actor PipelineModule: Module {
     private var isProcessing: Bool = false
     private var lastResult: PipelineResult?
     private var currentTrackKey: String?
+    private var executionPolicy: PipelineExecutionPolicy = .init()
     
     // Dependencies
     private let lyricsModule: LyricsModule
@@ -150,36 +204,55 @@ public actor PipelineModule: Module {
         var stepsCompleted: [String] = []
         var stepsSkipped: [String] = []
         var stepTimings: [String: Int] = [:]
-        
+        let policy = executionPolicy
+
+        var lines: [LyricLine] = []
+        var lrcLyricsFound = false
+        var refrainLines: [String] = []
+        var keywords: [String] = []
+        var plainLyrics = ""
+
         // === STEP 1: Lyrics (LRC from LRCLIB) ===
-        await fireStepStart(.lyrics)
-        let lyricsStart = Date()
-        
-        let lines = await lyricsModule.loadLyrics(for: track)
-        let lrcLyricsFound = !lines.isEmpty
-        var refrainLines = await lyricsModule.refrainLines.map { $0.text }
-        var keywords = await lyricsModule.keywords
-        let plainLyrics = lines.map { $0.text }.joined(separator: "\n")
-        
-        stepTimings["lyrics"] = Int(Date().timeIntervalSince(lyricsStart) * 1000)
-        
-        if lrcLyricsFound {
-            stepsCompleted.append("lyrics")
-            let refrainCount = lines.filter { $0.isRefrain }.count
-            let kwCount = lines.filter { !$0.keywords.isEmpty }.count
-            let status = PipelineStepStatus.lyrics(
-                lineCount: lines.count,
-                refrainCount: refrainCount,
-                keywordCount: kwCount
-            )
+        if policy.textOutputsEnabled {
+            await fireStepStart(.lyrics)
+            let lyricsStart = Date()
+
+            lines = await lyricsModule.loadLyrics(for: track)
+            lrcLyricsFound = !lines.isEmpty
+            refrainLines = await lyricsModule.refrainLines.map { $0.text }
+            keywords = await lyricsModule.keywords
+            plainLyrics = lines.map { $0.text }.joined(separator: "\n")
+
+            stepTimings["lyrics"] = Int(Date().timeIntervalSince(lyricsStart) * 1000)
+
+            if lrcLyricsFound {
+                stepsCompleted.append("lyrics")
+                let refrainCount = lines.filter { $0.isRefrain }.count
+                let kwCount = lines.filter { !$0.keywords.isEmpty }.count
+                let status = PipelineStepStatus.lyrics(
+                    lineCount: lines.count,
+                    refrainCount: refrainCount,
+                    keywordCount: kwCount
+                )
+                await fireStepComplete(.lyrics, status)
+                await fireStepDetails(
+                    .lyrics,
+                    status: status.displayText,
+                    details: Self.lrclibLyricsDetails(lines: lines)
+                )
+            }
+            // If no LRC lyrics, leave step in "pending" state - AI step will update it.
+        } else {
+            stepsSkipped.append("lyrics")
+            stepTimings["lyrics"] = 0
+            let status = PipelineStepStatus.skipped(reason: "Output disabled")
             await fireStepComplete(.lyrics, status)
             await fireStepDetails(
                 .lyrics,
                 status: status.displayText,
-                details: Self.lrclibLyricsDetails(lines: lines)
+                details: ["Lyrics/Refrain/Song Info outputs are disabled; skipping lyrics loading."]
             )
         }
-        // If no LRC lyrics, leave step in "pending" state - AI step will update it
         
         // === STEP 2: AI Analysis (always runs) ===
         await fireStepStart(.ai)
@@ -188,7 +261,7 @@ public actor PipelineModule: Module {
         let analysis = await aiModule.analyze(track: track, lyrics: plainLyrics)
         
         // If LRC didn't have lyrics but LLM found some, update data and step status
-        if !lrcLyricsFound {
+        if policy.textOutputsEnabled, !lrcLyricsFound {
             if !analysis.keywords.isEmpty {
                 keywords = analysis.keywords.flatMap { $0.split(separator: " ").map(String.init) }
             }
@@ -249,7 +322,7 @@ public actor PipelineModule: Module {
 
         await withTaskGroup(of: ParallelStepResult.self) { group in
             // Shader matching
-            if let shadersModule = shadersModule {
+            if policy.shaderOutputEnabled, let shadersModule = shadersModule {
                 group.addTask {
                     await self.fireStepStart(.shaders)
                     let shaderStart = Date()
@@ -291,10 +364,21 @@ public actor PipelineModule: Module {
                 }
             } else {
                 stepsSkipped.append("shaders")
+                stepTimings["shaders"] = 0
+                let reason = policy.shaderOutputEnabled ? "Module unavailable" : "Output disabled"
+                let status = PipelineStepStatus.skipped(reason: reason)
+                await self.fireStepComplete(.shaders, status)
+                await self.fireStepDetails(
+                    .shaders,
+                    status: status.displayText,
+                    details: [policy.shaderOutputEnabled
+                        ? "Shaders module unavailable; skipping shader matching."
+                        : "Shader output disabled; skipping shader matching."]
+                )
             }
             
             // Image fetching
-            if let imagesModule = imagesModule {
+            if policy.imageOutputEnabled, let imagesModule = imagesModule {
                 group.addTask {
                     await self.fireStepStart(.images)
                     let imagesStart = Date()
@@ -322,6 +406,17 @@ public actor PipelineModule: Module {
                 }
             } else {
                 stepsSkipped.append("images")
+                stepTimings["images"] = 0
+                let reason = policy.imageOutputEnabled ? "Module unavailable" : "Output disabled"
+                let status = PipelineStepStatus.skipped(reason: reason)
+                await self.fireStepComplete(.images, status)
+                await self.fireStepDetails(
+                    .images,
+                    status: status.displayText,
+                    details: [policy.imageOutputEnabled
+                        ? "Images module unavailable; skipping image fetch."
+                        : "Image output disabled; skipping image fetch."]
+                )
             }
 
             for await result in group {
@@ -347,8 +442,11 @@ public actor PipelineModule: Module {
             }
         }
 
-        // Ensure we always have a shader selection; fallback to random if needed
-        if shaderMatch == nil, let shadersModule = shadersModule, let random = await shadersModule.randomShader() {
+        // Ensure we always have a shader selection when shader output is enabled.
+        if policy.shaderOutputEnabled,
+           shaderMatch == nil,
+           let shadersModule = shadersModule,
+           let random = await shadersModule.randomShader() {
             let fallbackMatch = ShaderMatchResult(
                 name: random.name,
                 path: random.path,
@@ -383,7 +481,8 @@ public actor PipelineModule: Module {
                 lines: lines,
                 analysis: analysis,
                 shader: shaderMatch,
-                images: imageResult
+                images: imageResult,
+                policy: policy
             )
             stepsCompleted.append("osc")
             stepTimings["osc"] = Int(Date().timeIntervalSince(oscStart) * 1000)
@@ -459,6 +558,16 @@ public actor PipelineModule: Module {
     /// Set action dispatcher for Store integration
     public func setDispatch(_ dispatch: @escaping @Sendable (AppAction) async -> Void) {
         self.dispatch = dispatch
+    }
+
+    /// Replace execution policy used for per-step skipping.
+    public func setExecutionPolicy(_ policy: PipelineExecutionPolicy) {
+        executionPolicy = policy
+    }
+
+    /// Incrementally update execution policy from a single output toggle.
+    public func setRenderOutputEnabled(_ output: RenderOutput, enabled: Bool) {
+        executionPolicy.setOutput(output, enabled: enabled)
     }
     
     /// Clear cache
@@ -545,38 +654,40 @@ public actor PipelineModule: Module {
         lines: [LyricLine],
         analysis: SongAnalysis,
         shader: ShaderMatchResult?,
-        images: ImageResult?
+        images: ImageResult?,
+        policy: PipelineExecutionPolicy
     ) async -> [String] {
         var sentMessages: [String] = []
 
-        // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
-        await performOscSend(operation: "OSC send /textler/track") {
-            try hub.sendToMagic(
-            "/textler/track",
-            values: [
-                Int32(1),  // active
-                "pipeline",
-                track.artist,
-                track.title,
-                track.album,
-                Float32(track.duration),
-                Int32(lines.isEmpty ? 0 : 1)
-            ]
-        )}
-        sentMessages.append(
-            Self.oscMessageLine(
+        if policy.textOutputsEnabled {
+            // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
+            await performOscSend(operation: "OSC send /textler/track") {
+                try hub.sendToMagic(
                 "/textler/track",
-                args: [
-                    "1",
+                values: [
+                    Int32(1),  // active
                     "pipeline",
                     track.artist,
                     track.title,
                     track.album,
-                    String(format: "%.2f", track.duration),
-                    lines.isEmpty ? "0" : "1"
+                    Float32(track.duration),
+                    Int32(lines.isEmpty ? 0 : 1)
                 ]
+            )}
+            sentMessages.append(
+                Self.oscMessageLine(
+                    "/textler/track",
+                    args: [
+                        "1",
+                        "pipeline",
+                        track.artist,
+                        track.title,
+                        track.album,
+                        String(format: "%.2f", track.duration),
+                        lines.isEmpty ? "0" : "1"
+                    ]
+                )
             )
-        )
         
         // Send lyrics reset: /textler/lyrics/reset
         await performOscSend(operation: "OSC send /textler/lyrics/reset") {
@@ -680,66 +791,77 @@ public actor PipelineModule: Module {
             sentMessages.append(Self.oscMessageLine("/textler/metadata/mood", args: [analysis.mood]))
         }
         
-        // AI analysis summary: /ai/analysis [mood, energy, valence]
-        await performOscSend(operation: "OSC send /ai/analysis") {
-            try hub.sendToMagic(
-            "/ai/analysis",
-            values: [
-                analysis.mood,
-                Float32(analysis.energy),
-                Float32(analysis.valence)
-            ]
-        )}
-        sentMessages.append(
-            Self.oscMessageLine(
-                "/ai/analysis",
-                args: [
-                    analysis.mood,
-                    String(format: "%.2f", analysis.energy),
-                    String(format: "%.2f", analysis.valence)
-                ]
-            )
-        )
-        
-        // Send shader if matched: /shader/load [name, energy, valence]
-        if let shader = shader {
-            await performOscSend(operation: "OSC send /shader/load") {
+            // AI analysis summary: /ai/analysis [mood, energy, valence]
+            await performOscSend(operation: "OSC send /ai/analysis") {
                 try hub.sendToMagic(
-                "/shader/load",
+                "/ai/analysis",
                 values: [
-                    shader.name,
-                    Float32(shader.energyScore),
-                    Float32(shader.moodValence)
+                    analysis.mood,
+                    Float32(analysis.energy),
+                    Float32(analysis.valence)
                 ]
             )}
             sentMessages.append(
                 Self.oscMessageLine(
-                    "/shader/load",
+                    "/ai/analysis",
                     args: [
-                        shader.name,
-                        String(format: "%.2f", shader.energyScore),
-                        String(format: "%.2f", shader.moodValence)
+                        analysis.mood,
+                        String(format: "%.2f", analysis.energy),
+                        String(format: "%.2f", analysis.valence)
                     ]
                 )
             )
+        } else {
+            sentMessages.append("text outputs disabled; skipped /textler/* and /ai/analysis")
+        }
+        
+        // Send shader if matched: /shader/load [name, energy, valence]
+        if policy.shaderOutputEnabled {
+            if let shader = shader {
+                await performOscSend(operation: "OSC send /shader/load") {
+                    try hub.sendToMagic(
+                    "/shader/load",
+                    values: [
+                        shader.name,
+                        Float32(shader.energyScore),
+                        Float32(shader.moodValence)
+                    ]
+                )}
+                sentMessages.append(
+                    Self.oscMessageLine(
+                        "/shader/load",
+                        args: [
+                            shader.name,
+                            String(format: "%.2f", shader.energyScore),
+                            String(format: "%.2f", shader.moodValence)
+                        ]
+                    )
+                )
+            }
+        } else {
+            sentMessages.append("shader output disabled; skipped /shader/load")
         }
         
         // Send image folder if available
-        if let images = images {
-            // Send fit mode first: /image/fit [mode]
-            await performOscSend(operation: "OSC send /image/fit") {
-                try hub.sendToMagic(
-                "/image/fit",
-                values: ["cover"]
-            )}
-            sentMessages.append(Self.oscMessageLine("/image/fit", args: ["cover"]))
-            // Send folder path: /image/folder [path]
-            await performOscSend(operation: "OSC send /image/folder") {
-                try hub.sendToMagic(
-                "/image/folder",
-                values: [images.folder.path]
-            )}
-            sentMessages.append(Self.oscMessageLine("/image/folder", args: [images.folder.path]))
+        if policy.imageOutputEnabled {
+            if let images = images {
+                // Send fit mode first: /image/fit [mode]
+                await performOscSend(operation: "OSC send /image/fit") {
+                    try hub.sendToMagic(
+                    "/image/fit",
+                    values: ["cover"]
+                )}
+                sentMessages.append(Self.oscMessageLine("/image/fit", args: ["cover"]))
+                // Send folder path: /image/folder [path]
+                await performOscSend(operation: "OSC send /image/folder") {
+                    try hub.sendToMagic(
+                    "/image/folder",
+                    values: [images.folder.path]
+                )}
+                sentMessages.append(Self.oscMessageLine("/image/folder", args: [images.folder.path]))
+            }
+        } else {
+            sentMessages.append("image output disabled; skipped /image/*")
         }
 
         return sentMessages
