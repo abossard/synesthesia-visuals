@@ -12,7 +12,10 @@ import OscRestBridge
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
 
-private func makeLaunchpadOscSender(oscHub: OSCHub) -> (OscCommand) -> Void {
+private func makeLaunchpadOscSender(
+    oscHub: OSCHub,
+    onError: @escaping @Sendable (String) -> Void
+) -> (OscCommand) -> Void {
     { command in
         // OSCHub is started from the main actor; route sends through main to keep queue ownership consistent.
         DispatchQueue.main.async {
@@ -24,7 +27,11 @@ private func makeLaunchpadOscSender(oscHub: OSCHub) -> (OscCommand) -> Void {
                 case .bool(let v): return v ? Int32(1) : Int32(0)
                 }
             }
-            try? oscHub.sendToSynesthesia(command.address, values: values)
+            do {
+                try oscHub.sendToSynesthesia(command.address, values: values)
+            } catch {
+                onError("OSC send to Synesthesia failed (\(command.address)): \(error)")
+            }
         }
     }
 }
@@ -772,6 +779,10 @@ public final class AppState: ObservableObject {
         store.send(.ui(.log(message, mapLogLevel(level))))
     }
 
+    private func logRuntimeError(operation: String, error: Error) {
+        log("[RuntimeError] \(operation): \(error)", level: .error)
+    }
+
     public func recordOSCMessage(_ address: String, args: [String]) {
         store.send(.ui(.oscMessageReceived(address: address, args: args)))
     }
@@ -827,7 +838,11 @@ public final class AppState: ObservableObject {
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
 
-        let launchpadOscSender = makeLaunchpadOscSender(oscHub: oscHub)
+        let launchpadOscSender = makeLaunchpadOscSender(oscHub: oscHub) { [weak self] message in
+            Task { @MainActor in
+                self?.log(message, level: .error)
+            }
+        }
         launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
         launchpadConfig = launchpadModule?.yamlConfig
         if let launchpadModule {
@@ -1280,22 +1295,35 @@ public final class AppState: ObservableObject {
             }
             try oscHub.sendToVDJ("/vdj/subscribe/crossfader")
         } catch {
-            log("Failed to send VDJ subscriptions: \(error)", level: .error)
+            logRuntimeError(operation: "VDJ subscription send", error: error)
         }
 
         vdjQueryTask = Task.detached { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch is CancellationError {
+                    break
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.logRuntimeError(operation: "VDJ query loop sleep", error: error)
+                    }
+                    continue
+                }
                 guard let self = self else { break }
                 let hub = await MainActor.run { self.oscHub }
-                playbackOSCQueue.async {
+                playbackOSCQueue.async { [weak self] in
                     do {
                         for deck in [1, 2] {
                             for verb in ["get_title", "get_artist", "get_album", "get_bpm", "get_songlength", "song_pos", "play", "volume", "is_audible"] {
                                 try hub.sendToVDJ("/vdj/query/deck/\(deck)/\(verb)")
                             }
                         }
-                    } catch {}
+                    } catch {
+                        Task { @MainActor in
+                            self?.logRuntimeError(operation: "VDJ query send", error: error)
+                        }
+                    }
                 }
             }
         }

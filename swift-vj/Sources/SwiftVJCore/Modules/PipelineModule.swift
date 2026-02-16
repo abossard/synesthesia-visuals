@@ -501,6 +501,9 @@ public actor PipelineModule: Module {
                 }
             }
         } catch {
+            Task { [dispatch] in
+                await dispatch?(.ui(.log("[PipelineModule] Cache load failed: \(error)", .error)))
+            }
         }
     }
     
@@ -517,11 +520,24 @@ public actor PipelineModule: Module {
             let data = try encoder.encode(cacheData)
             try data.write(to: cacheFile)
         } catch {
-            // Cache save error - silent
+            Task { [dispatch] in
+                await dispatch?(.ui(.log("[PipelineModule] Cache save failed: \(error)", .error)))
+            }
         }
     }
     
     // MARK: - Private
+
+    private func performOscSend(
+        operation: String,
+        _ send: () throws -> Void
+    ) async {
+        do {
+            try send()
+        } catch {
+            await dispatch?(.ui(.log("[PipelineModule] \(operation) failed: \(error)", .error)))
+        }
+    }
     
     private func sendToOSC(
         hub: OSCHub,
@@ -534,7 +550,8 @@ public actor PipelineModule: Module {
         var sentMessages: [String] = []
 
         // Send track info: /textler/track [active, source, artist, title, album, duration, has_lyrics]
-        try? hub.sendToMagic(
+        await performOscSend(operation: "OSC send /textler/track") {
+            try hub.sendToMagic(
             "/textler/track",
             values: [
                 Int32(1),  // active
@@ -545,7 +562,7 @@ public actor PipelineModule: Module {
                 Float32(track.duration),
                 Int32(lines.isEmpty ? 0 : 1)
             ]
-        )
+        )}
         sentMessages.append(
             Self.oscMessageLine(
                 "/textler/track",
@@ -562,15 +579,18 @@ public actor PipelineModule: Module {
         )
         
         // Send lyrics reset: /textler/lyrics/reset
-        try? hub.sendToMagic("/textler/lyrics/reset")
+        await performOscSend(operation: "OSC send /textler/lyrics/reset") {
+            try hub.sendToMagic("/textler/lyrics/reset")
+        }
         sentMessages.append(Self.oscMessageLine("/textler/lyrics/reset"))
         
         // Send each line: /textler/lyrics/line [index, time, text]
         for (index, line) in lines.enumerated() {
-            try? hub.sendToMagic(
+            await performOscSend(operation: "OSC send /textler/lyrics/line") {
+                try hub.sendToMagic(
                 "/textler/lyrics/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
-            )
+            )}
             sentMessages.append(
                 Self.oscMessageLine(
                     "/textler/lyrics/line",
@@ -580,16 +600,19 @@ public actor PipelineModule: Module {
         }
         
         // Send refrain reset: /textler/refrain/reset
-        try? hub.sendToMagic("/textler/refrain/reset")
+        await performOscSend(operation: "OSC send /textler/refrain/reset") {
+            try hub.sendToMagic("/textler/refrain/reset")
+        }
         sentMessages.append(Self.oscMessageLine("/textler/refrain/reset"))
         
         // Send refrain lines: /textler/refrain/line [index, time, text]
         let refrainLines = lines.filter { $0.isRefrain }
         for (index, line) in refrainLines.enumerated() {
-            try? hub.sendToMagic(
+            await performOscSend(operation: "OSC send /textler/refrain/line") {
+                try hub.sendToMagic(
                 "/textler/refrain/line",
                 values: [Int32(index), Float32(line.timeSec), line.text]
-            )
+            )}
             sentMessages.append(
                 Self.oscMessageLine(
                     "/textler/refrain/line",
@@ -599,16 +622,19 @@ public actor PipelineModule: Module {
         }
         
         // Send keywords reset: /textler/keywords/reset
-        try? hub.sendToMagic("/textler/keywords/reset")
+        await performOscSend(operation: "OSC send /textler/keywords/reset") {
+            try hub.sendToMagic("/textler/keywords/reset")
+        }
         sentMessages.append(Self.oscMessageLine("/textler/keywords/reset"))
         
         // Send keywords per line: /textler/keywords/line [index, time, keywords]
         for (index, line) in lines.enumerated() {
             if !line.keywords.isEmpty {
-                try? hub.sendToMagic(
+                await performOscSend(operation: "OSC send /textler/keywords/line") {
+                    try hub.sendToMagic(
                     "/textler/keywords/line",
                     values: [Int32(index), Float32(line.timeSec), line.keywords]
-                )
+                )}
                 sentMessages.append(
                     Self.oscMessageLine(
                         "/textler/keywords/line",
@@ -622,39 +648,48 @@ public actor PipelineModule: Module {
         // Keywords: /textler/metadata/keywords [comma-separated]
         let keywordsJoined = analysis.keywords.joined(separator: ",")
         if !keywordsJoined.isEmpty {
-            try? hub.sendToMagic("/textler/metadata/keywords", values: [keywordsJoined])
+            await performOscSend(operation: "OSC send /textler/metadata/keywords") {
+                try hub.sendToMagic("/textler/metadata/keywords", values: [keywordsJoined])
+            }
             sentMessages.append(Self.oscMessageLine("/textler/metadata/keywords", args: [keywordsJoined]))
         }
         
         // Themes: /textler/metadata/themes [comma-separated]
         let themesJoined = analysis.themes.joined(separator: ",")
         if !themesJoined.isEmpty {
-            try? hub.sendToMagic("/textler/metadata/themes", values: [themesJoined])
+            await performOscSend(operation: "OSC send /textler/metadata/themes") {
+                try hub.sendToMagic("/textler/metadata/themes", values: [themesJoined])
+            }
             sentMessages.append(Self.oscMessageLine("/textler/metadata/themes", args: [themesJoined]))
         }
         
         // Visual adjectives for VJ: /textler/metadata/visuals [comma-separated]
         let visualsJoined = analysis.visualAdjectives.joined(separator: ",")
         if !visualsJoined.isEmpty {
-            try? hub.sendToMagic("/textler/metadata/visuals", values: [visualsJoined])
+            await performOscSend(operation: "OSC send /textler/metadata/visuals") {
+                try hub.sendToMagic("/textler/metadata/visuals", values: [visualsJoined])
+            }
             sentMessages.append(Self.oscMessageLine("/textler/metadata/visuals", args: [visualsJoined]))
         }
         
         // Mood: /textler/metadata/mood [string]
         if !analysis.mood.isEmpty {
-            try? hub.sendToMagic("/textler/metadata/mood", values: [analysis.mood])
+            await performOscSend(operation: "OSC send /textler/metadata/mood") {
+                try hub.sendToMagic("/textler/metadata/mood", values: [analysis.mood])
+            }
             sentMessages.append(Self.oscMessageLine("/textler/metadata/mood", args: [analysis.mood]))
         }
         
         // AI analysis summary: /ai/analysis [mood, energy, valence]
-        try? hub.sendToMagic(
+        await performOscSend(operation: "OSC send /ai/analysis") {
+            try hub.sendToMagic(
             "/ai/analysis",
             values: [
                 analysis.mood,
                 Float32(analysis.energy),
                 Float32(analysis.valence)
             ]
-        )
+        )}
         sentMessages.append(
             Self.oscMessageLine(
                 "/ai/analysis",
@@ -668,14 +703,15 @@ public actor PipelineModule: Module {
         
         // Send shader if matched: /shader/load [name, energy, valence]
         if let shader = shader {
-            try? hub.sendToMagic(
+            await performOscSend(operation: "OSC send /shader/load") {
+                try hub.sendToMagic(
                 "/shader/load",
                 values: [
                     shader.name,
                     Float32(shader.energyScore),
                     Float32(shader.moodValence)
                 ]
-            )
+            )}
             sentMessages.append(
                 Self.oscMessageLine(
                     "/shader/load",
@@ -691,16 +727,18 @@ public actor PipelineModule: Module {
         // Send image folder if available
         if let images = images {
             // Send fit mode first: /image/fit [mode]
-            try? hub.sendToMagic(
+            await performOscSend(operation: "OSC send /image/fit") {
+                try hub.sendToMagic(
                 "/image/fit",
                 values: ["cover"]
-            )
+            )}
             sentMessages.append(Self.oscMessageLine("/image/fit", args: ["cover"]))
             // Send folder path: /image/folder [path]
-            try? hub.sendToMagic(
+            await performOscSend(operation: "OSC send /image/folder") {
+                try hub.sendToMagic(
                 "/image/folder",
                 values: [images.folder.path]
-            )
+            )}
             sentMessages.append(Self.oscMessageLine("/image/folder", args: [images.folder.path]))
         }
 
