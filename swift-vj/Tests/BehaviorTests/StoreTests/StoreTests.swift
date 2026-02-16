@@ -352,6 +352,14 @@ final class AppStateTests: XCTestCase {
     func testPersistedState() {
         var appState = AppState()
         appState.render.isEnabled = false
+        appState.render.outputs = RenderOutputsState(
+            shader: true,
+            mask: false,
+            lyrics: true,
+            refrain: false,
+            songInfo: true,
+            image: false
+        )
         appState.render.selectedShader = "rainbow"
         appState.render.selectedMaskShader = "BWgrid"
         appState.render.currentPhase = .peak
@@ -360,6 +368,9 @@ final class AppStateTests: XCTestCase {
         let persisted = PersistedState(from: appState)
 
         XCTAssertEqual(persisted.renderEnabled, false)
+        XCTAssertEqual(persisted.renderOutputs.mask, false)
+        XCTAssertEqual(persisted.renderOutputs.refrain, false)
+        XCTAssertEqual(persisted.renderOutputs.image, false)
         XCTAssertEqual(persisted.selectedShader, "rainbow")
         XCTAssertEqual(persisted.selectedMaskShader, "BWgrid")
         XCTAssertEqual(persisted.currentPhase, "peak")
@@ -369,6 +380,9 @@ final class AppStateTests: XCTestCase {
         persisted.apply(to: &newState)
 
         XCTAssertEqual(newState.render.isEnabled, false)
+        XCTAssertEqual(newState.render.outputs.mask, false)
+        XCTAssertEqual(newState.render.outputs.refrain, false)
+        XCTAssertEqual(newState.render.outputs.image, false)
         XCTAssertEqual(newState.render.selectedShader, "rainbow")
         XCTAssertEqual(newState.render.selectedMaskShader, "BWgrid")
         XCTAssertEqual(newState.render.currentPhase, .peak)

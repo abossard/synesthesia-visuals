@@ -72,6 +72,9 @@ public final class EffectEnvironment {
 
     /// Enable or disable rendering lifecycle (render loop + Syphon exposure)
     public var setRenderEnabled: (@Sendable (Bool) async -> Void)?
+
+    /// Enable or disable a specific Syphon/render output
+    public var setRenderOutputEnabled: (@Sendable (RenderOutput, Bool) async -> Void)?
     
     // MARK: - Pipeline Effects
     
@@ -131,6 +134,7 @@ public final class EffectEnvironment {
         setImageIndex = nil
         loadImagesFromFolder = nil
         setRenderEnabled = nil
+        setRenderOutputEnabled = nil
         processPipelineTrack = nil
         clearLyricsCache = nil
         clearPipelineCache = nil

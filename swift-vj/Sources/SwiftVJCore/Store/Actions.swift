@@ -102,6 +102,9 @@ public enum RenderAction: Sendable {
     /// Enable or disable the renderer and Syphon output
     case setEnabled(Bool)
 
+    /// Enable or disable a specific Syphon/render output
+    case setOutputEnabled(output: RenderOutput, enabled: Bool)
+
     /// Select a shader
     case selectShader(String)
 
@@ -623,6 +626,7 @@ extension RenderAction: CustomStringConvertible {
     public var description: String {
         switch self {
         case .setEnabled(let enabled): return "setEnabled(\(enabled))"
+        case .setOutputEnabled(let output, let enabled): return "setOutputEnabled(\(output.rawValue), \(enabled))"
         case .selectShader(let name): return "selectShader(\(name))"
         case .selectMaskShader(let name): return "selectMaskShader(\(name))"
         case .shaderSelected(let name): return "shaderSelected(\(name))"

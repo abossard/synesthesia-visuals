@@ -99,6 +99,14 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         var followUp: [Effect<AppAction>] = [
             .send(.render(.setEnabled(persisted.renderEnabled)))
         ]
+        for output in RenderOutput.allCases {
+            followUp.append(
+                .send(.render(.setOutputEnabled(
+                    output: output,
+                    enabled: persisted.renderOutputs.isEnabled(output)
+                )))
+            )
+        }
         if let shader = persisted.selectedShader, !shader.isEmpty {
             followUp.append(.send(.render(.selectShader(shader))))
         }
@@ -310,6 +318,18 @@ public func renderReducer(
             RenderEffects.setEnabled(enabled),
             .send(.persistState)
         )
+
+    case .setOutputEnabled(let output, let enabled):
+        let wasEnabled = state.outputs.isEnabled(output)
+        state.outputs.setEnabled(enabled, for: output)
+        if wasEnabled != enabled {
+            appState.ui.addLog("\(output.displayName) output \(enabled ? "enabled" : "disabled")", level: .info)
+            return .merge(
+                RenderEffects.setOutputEnabled(output, enabled: enabled),
+                .send(.persistState)
+            )
+        }
+        return RenderEffects.setOutputEnabled(output, enabled: enabled)
 
     case .selectShader(let name):
         state.selectedShader = name
@@ -1050,6 +1070,12 @@ public enum RenderEffects {
         }
     }
 
+    public static func setOutputEnabled(_ output: RenderOutput, enabled: Bool) -> Effect<AppAction> {
+        .run { _ in
+            await EffectEnvironment.shared.setRenderOutputEnabled?(output, enabled)
+        }
+    }
+
     public static func loadShader(_ name: String) -> Effect<AppAction> {
         .run { _ in
             // Execute shader loading via environment
@@ -1264,6 +1290,14 @@ public enum PersistenceEffects {
         .run { send in
             // Load from UserDefaults
             let renderEnabled = (UserDefaults.standard.object(forKey: "renderEnabled") as? Bool) ?? true
+            let renderOutputs = RenderOutputsState(
+                shader: (UserDefaults.standard.object(forKey: "renderOutput.shader") as? Bool) ?? true,
+                mask: (UserDefaults.standard.object(forKey: "renderOutput.mask") as? Bool) ?? true,
+                lyrics: (UserDefaults.standard.object(forKey: "renderOutput.lyrics") as? Bool) ?? true,
+                refrain: (UserDefaults.standard.object(forKey: "renderOutput.refrain") as? Bool) ?? true,
+                songInfo: (UserDefaults.standard.object(forKey: "renderOutput.songInfo") as? Bool) ?? true,
+                image: (UserDefaults.standard.object(forKey: "renderOutput.image") as? Bool) ?? true
+            )
             let shader = UserDefaults.standard.string(forKey: "selectedShader")
             let maskShader = UserDefaults.standard.string(forKey: "selectedMaskShader")
             let phase = UserDefaults.standard.string(forKey: "currentPhase")
@@ -1278,6 +1312,7 @@ public enum PersistenceEffects {
 
             let persisted = PersistedState(
                 renderEnabled: renderEnabled,
+                renderOutputs: renderOutputs,
                 selectedShader: shader,
                 selectedMaskShader: maskShader,
                 currentPhase: phase,
@@ -1292,6 +1327,12 @@ public enum PersistenceEffects {
     public static func saveState(_ state: PersistedState) -> Effect<AppAction> {
         .fireAndForget {
             UserDefaults.standard.set(state.renderEnabled, forKey: "renderEnabled")
+            UserDefaults.standard.set(state.renderOutputs.shader, forKey: "renderOutput.shader")
+            UserDefaults.standard.set(state.renderOutputs.mask, forKey: "renderOutput.mask")
+            UserDefaults.standard.set(state.renderOutputs.lyrics, forKey: "renderOutput.lyrics")
+            UserDefaults.standard.set(state.renderOutputs.refrain, forKey: "renderOutput.refrain")
+            UserDefaults.standard.set(state.renderOutputs.songInfo, forKey: "renderOutput.songInfo")
+            UserDefaults.standard.set(state.renderOutputs.image, forKey: "renderOutput.image")
             if let shader = state.selectedShader {
                 UserDefaults.standard.set(shader, forKey: "selectedShader")
             } else {

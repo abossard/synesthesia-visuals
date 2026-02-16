@@ -220,10 +220,82 @@ public struct PipelineStepState: Equatable, Sendable, Identifiable {
 
 // MARK: - Render Sub-State
 
+public enum RenderOutput: String, CaseIterable, Codable, Sendable {
+    case shader
+    case mask
+    case lyrics
+    case refrain
+    case songInfo
+    case image
+
+    public var displayName: String {
+        switch self {
+        case .songInfo:
+            return "Song Info"
+        default:
+            return rawValue.capitalized
+        }
+    }
+}
+
+public struct RenderOutputsState: Equatable, Codable, Sendable {
+    public var shader: Bool
+    public var mask: Bool
+    public var lyrics: Bool
+    public var refrain: Bool
+    public var songInfo: Bool
+    public var image: Bool
+
+    public init(
+        shader: Bool = true,
+        mask: Bool = true,
+        lyrics: Bool = true,
+        refrain: Bool = true,
+        songInfo: Bool = true,
+        image: Bool = true
+    ) {
+        self.shader = shader
+        self.mask = mask
+        self.lyrics = lyrics
+        self.refrain = refrain
+        self.songInfo = songInfo
+        self.image = image
+    }
+
+    public func isEnabled(_ output: RenderOutput) -> Bool {
+        switch output {
+        case .shader: return shader
+        case .mask: return mask
+        case .lyrics: return lyrics
+        case .refrain: return refrain
+        case .songInfo: return songInfo
+        case .image: return image
+        }
+    }
+
+    public mutating func setEnabled(_ enabled: Bool, for output: RenderOutput) {
+        switch output {
+        case .shader: shader = enabled
+        case .mask: mask = enabled
+        case .lyrics: lyrics = enabled
+        case .refrain: refrain = enabled
+        case .songInfo: songInfo = enabled
+        case .image: image = enabled
+        }
+    }
+
+    public var hasAnyTextOutputEnabled: Bool {
+        lyrics || refrain || songInfo
+    }
+}
+
 /// Rendering-related state
 public struct RenderSubState: Equatable, Sendable {
     /// Whether rendering and Syphon output are enabled
     public var isEnabled: Bool
+
+    /// Per-output enablement for Syphon/render tiles
+    public var outputs: RenderOutputsState
 
     /// Currently selected shader name
     public var selectedShader: String?
@@ -253,6 +325,7 @@ public struct RenderSubState: Equatable, Sendable {
 
     public init(
         isEnabled: Bool = true,
+        outputs: RenderOutputsState = RenderOutputsState(),
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: Phase? = nil,
@@ -262,6 +335,7 @@ public struct RenderSubState: Equatable, Sendable {
         shaderCount: Int = 0
     ) {
         self.isEnabled = isEnabled
+        self.outputs = outputs
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
@@ -828,6 +902,7 @@ public struct ModuleReferences: Sendable {
 /// State that should be persisted to UserDefaults
 public struct PersistedState: Codable, Sendable {
     public var renderEnabled: Bool
+    public var renderOutputs: RenderOutputsState
     public var selectedShader: String?
     public var selectedMaskShader: String?
     public var currentPhase: String?
@@ -836,6 +911,7 @@ public struct PersistedState: Codable, Sendable {
 
     public init(
         renderEnabled: Bool = true,
+        renderOutputs: RenderOutputsState = RenderOutputsState(),
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: String? = nil,
@@ -843,6 +919,7 @@ public struct PersistedState: Codable, Sendable {
         launcherTargets: [LaunchTarget] = []
     ) {
         self.renderEnabled = renderEnabled
+        self.renderOutputs = renderOutputs
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
@@ -853,6 +930,7 @@ public struct PersistedState: Codable, Sendable {
     /// Create from current app state
     public init(from state: AppState) {
         self.renderEnabled = state.render.isEnabled
+        self.renderOutputs = state.render.outputs
         self.selectedShader = state.render.selectedShader
         self.selectedMaskShader = state.render.selectedMaskShader
         self.currentPhase = state.render.currentPhase?.rawValue
@@ -863,6 +941,7 @@ public struct PersistedState: Codable, Sendable {
     /// Apply to app state
     public func apply(to state: inout AppState) {
         state.render.isEnabled = renderEnabled
+        state.render.outputs = renderOutputs
         state.render.selectedShader = selectedShader
         state.render.selectedMaskShader = selectedMaskShader
         if let phaseStr = currentPhase {

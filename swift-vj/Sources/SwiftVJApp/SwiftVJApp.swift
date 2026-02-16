@@ -256,6 +256,7 @@ public final class AppState: ObservableObject {
     @Published public private(set) var selectedShader: String?
     @Published public private(set) var selectedMaskShader: String?
     @Published public private(set) var renderEnabled: Bool = true
+    @Published public private(set) var renderOutputs: RenderOutputsState = RenderOutputsState()
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
@@ -501,6 +502,21 @@ public final class AppState: ObservableObject {
 
     public func setRenderEnabled(_ enabled: Bool) {
         store.send(.render(.setEnabled(enabled)))
+    }
+
+    public func setRenderOutputEnabled(_ output: RenderOutput, enabled: Bool) {
+        store.send(.render(.setOutputEnabled(output: output, enabled: enabled)))
+    }
+
+    public func isRenderOutputEnabled(_ output: RenderOutput) -> Bool {
+        renderOutputs.isEnabled(output)
+    }
+
+    public func renderOutputBinding(_ output: RenderOutput) -> Binding<Bool> {
+        Binding(
+            get: { self.isRenderOutputEnabled(output) },
+            set: { enabled in self.setRenderOutputEnabled(output, enabled: enabled) }
+        )
     }
 
     public var renderEnabledBinding: Binding<Bool> {
@@ -978,6 +994,10 @@ public final class AppState: ObservableObject {
             await self.applyRendererEnabledState(enabled)
         }
 
+        EffectEnvironment.shared.setRenderOutputEnabled = { _, _ in
+            // Stage 1 wiring only; RenderEngine/Pipeline handling is added in later stages.
+        }
+
         EffectEnvironment.shared.processPipelineTrack = { [weak self] track in
             guard let self = self else { return }
             await self.processTrackChange(track)
@@ -1109,6 +1129,7 @@ public final class AppState: ObservableObject {
                 }
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
                 if self.renderEnabled != newState.render.isEnabled { self.renderEnabled = newState.render.isEnabled }
+                if self.renderOutputs != newState.render.outputs { self.renderOutputs = newState.render.outputs }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
                 if self.selectedMaskShader != newState.render.selectedMaskShader { self.selectedMaskShader = newState.render.selectedMaskShader }
                 if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }

@@ -12,6 +12,12 @@ final class RenderReducerTests: XCTestCase {
         func snapshot() -> [AppAction] { actions }
     }
 
+    private actor OutputToggleCollector {
+        private(set) var calls: [(RenderOutput, Bool)] = []
+        func record(_ output: RenderOutput, enabled: Bool) { calls.append((output, enabled)) }
+        func snapshot() -> [(RenderOutput, Bool)] { calls }
+    }
+
     // Helper to avoid overlapping access issues when calling reducers
     private func applyRenderReducer(_ action: RenderAction, to appState: inout AppState) {
         var renderState = appState.render
@@ -66,6 +72,56 @@ final class RenderReducerTests: XCTestCase {
             XCTFail("Expected persistState action after renderer toggle")
             return
         }
+    }
+
+    func testSetOutputEnabledUpdatesStatePersistsAndDispatchesEffect() async {
+        var appState = AppState()
+        let collector = OutputToggleCollector()
+        EffectEnvironment.shared.setRenderOutputEnabled = { output, enabled in
+            await collector.record(output, enabled: enabled)
+        }
+        defer { EffectEnvironment.shared.reset() }
+
+        let effect = applyRenderReducerReturningEffect(
+            .setOutputEnabled(output: .lyrics, enabled: false),
+            to: &appState
+        )
+        XCTAssertFalse(appState.render.outputs.lyrics)
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case .persistState = emitted[0] else {
+            XCTFail("Expected persistState action after output toggle")
+            return
+        }
+
+        let calls = await collector.snapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.0, .lyrics)
+        XCTAssertEqual(calls.first?.1, false)
+    }
+
+    func testSetOutputEnabledNoStateChangeStillDispatchesEffectWithoutPersist() async {
+        var appState = AppState()
+        appState.render.outputs.lyrics = true
+        let collector = OutputToggleCollector()
+        EffectEnvironment.shared.setRenderOutputEnabled = { output, enabled in
+            await collector.record(output, enabled: enabled)
+        }
+        defer { EffectEnvironment.shared.reset() }
+
+        let effect = applyRenderReducerReturningEffect(
+            .setOutputEnabled(output: .lyrics, enabled: true),
+            to: &appState
+        )
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertTrue(emitted.isEmpty)
+
+        let calls = await collector.snapshot()
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.0, .lyrics)
+        XCTAssertEqual(calls.first?.1, true)
     }
 
     func testSelectShaderUpdatesState() {
