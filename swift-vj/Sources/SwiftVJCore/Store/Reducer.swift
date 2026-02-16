@@ -478,10 +478,6 @@ public func launchpadReducer(
 
     case .oscEventReceived(let event):
         return LaunchpadEffects.receiveOscEvent(event)
-
-    case .bpmUpdated(let bpm):
-        _ = bpm
-        return .none
     }
 }
 

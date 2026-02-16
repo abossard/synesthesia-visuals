@@ -364,7 +364,6 @@ public final class AppState: ObservableObject {
             setupRenderEngine()
             setupEffectEnvironment()
             startOSCHub()
-            startBPMSync()
         }
         setupStoreObservation()
         if !testMode {
@@ -1057,16 +1056,6 @@ public final class AppState: ObservableObject {
             ledfxFeature.registerOscSubscriptions()
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
-        }
-    }
-
-    private func startBPMSync() {
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self else { return }
-                let (bpm, _, _) = await self.synesthesiaAudio.getBPM()
-                if bpm > 0 { self.store.send(.launchpad(.bpmUpdated(bpm))) }
-            }
         }
     }
 

@@ -211,9 +211,6 @@ public enum LaunchpadAction: Sendable {
 
     /// Forward OSC event into Launchpad domain
     case oscEventReceived(OscEvent)
-
-    /// Update BPM for beat-sync behavior
-    case bpmUpdated(Float)
 }
 
 // MARK: - Audio Actions
@@ -668,7 +665,6 @@ extension LaunchpadAction: CustomStringConvertible {
         case .rainbowPattern: return "rainbowPattern"
         case .clearAll: return "clearAll"
         case .oscEventReceived(let event): return "oscEventReceived(\(event.address))"
-        case .bpmUpdated(let bpm): return "bpmUpdated(\(String(format: "%.1f", bpm)))"
         }
     }
 }

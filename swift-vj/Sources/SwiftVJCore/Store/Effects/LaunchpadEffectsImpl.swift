@@ -107,13 +107,13 @@ public enum LaunchpadEffectsImpl {
         .none
     }
 
-    /// Update BPM for beat sync
+    /// Legacy placeholder kept for compatibility while BPM sync is removed.
     public static func updateBPM(
         _ bpm: Float,
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
-        .fireAndForget {
-            launchpadModule.updateBpm(bpm)
-        }
+        _ = bpm
+        _ = launchpadModule
+        return .none
     }
 }

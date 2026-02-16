@@ -1011,13 +1011,6 @@ public func suggestedColors(for address: String) -> (idle: Int, active: Int) {
     return (LP.off, LP.red)                 // Default: off -> red
 }
 
-/// Toggle blink state for animations
-public func toggleBlink(_ state: ControllerState) -> ControllerState {
-    var newState = state
-    newState.blinkOn = !state.blinkOn
-    return newState
-}
-
 /// Generate effects to refresh all LEDs
 public func refreshAllLeds(_ state: ControllerState) -> [LaunchpadEffect] {
     renderState(state)

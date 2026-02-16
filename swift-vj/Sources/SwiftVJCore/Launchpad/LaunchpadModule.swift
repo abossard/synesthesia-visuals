@@ -58,9 +58,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Action dispatcher - set this to integrate with Store
     public var dispatch: ((AppAction) -> Void)?
     
-    // Beat-sync blinking
-    private var blinkTimer: DispatchSourceTimer?
-    private var blinkEnabled = true  // User preference
+    // Retained for status reporting only (no BPM-driven behavior)
     private var currentBpm: Float = 120.0
     private static let verboseRuntimeLogs = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_LAUNCHPAD"] == "1"
     
@@ -139,7 +137,6 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Stop the Launchpad module - disconnect and disable auto-reconnect
     public func stop() {
         withStateSync {
-            stopBlinkTimer()
             midi.disableAutoReconnect()
             if isEnabled {
                 midi.clearAllLeds()
@@ -188,9 +185,6 @@ public final class LaunchpadModule: @unchecked Sendable {
                 // Refresh dynamic banks (scenes/params)
                 self.refreshDynamicBanks()
 
-                // Start beat-sync blink timer
-                self.startBlinkTimer()
-
                 // Dispatch connection and initial state
                 let currentState = self.state
                 let statusSnapshot = self.makeStatusSnapshot(from: currentState)
@@ -201,7 +195,6 @@ public final class LaunchpadModule: @unchecked Sendable {
                 }
             } else {
                 self.isEnabled = false
-                self.stopBlinkTimer()
                 print("[Launchpad] ○ Disabled - device disconnected")
 
                 // Dispatch disconnection
@@ -575,20 +568,6 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Handle incoming OSC event for recording
     public func receiveOscEvent(_ event: OscEvent) {
-        // Handle BPM updates for beat-sync blinking (Synesthesia control messages only)
-        if event.address == "/syn/bpm" || event.address == "/controls/meta/bpm" {
-            if case .float(let bpm) = event.args.first, bpm > 0 {
-                updateBpm(bpm)
-            }
-        }
-        
-        // Handle beat pulse for immediate blink toggle (Synesthesia control messages only)
-        if event.address == "/syn/beat" || event.address == "/controls/meta/onbeat" {
-            if case .float(let val) = event.args.first, val > 0.5 {
-                handleBeatPulse()
-            }
-        }
-        
         // Capture dynamic scenes/controls
         if event.address.hasPrefix("/controls/") {
             Task {
@@ -715,102 +694,5 @@ public final class LaunchpadModule: @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.midi.sendProgrammerModeSysEx()
         }
-    }
-    
-    // MARK: - Beat-Sync Blinking
-    
-    /// Enable or disable beat-sync LED blinking
-    public func setBlinkEnabled(_ enabled: Bool) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            self.blinkEnabled = enabled
-            if !enabled {
-                // Reset all blinking pads to steady state
-                self.refreshLeds()
-            }
-        }
-    }
-    
-    private func startBlinkTimer() {
-        stopBlinkTimer()
-        
-        // Default to 120 BPM = 500ms per beat = 250ms per half-beat (blink rate)
-        let interval = 60.0 / Double(currentBpm) / 2.0
-
-        let timer = DispatchSource.makeTimerSource(queue: stateQueue)
-        timer.schedule(deadline: .now() + interval, repeating: interval)
-        timer.setEventHandler { [weak self] in
-            self?.handleBlinkTickOnQueue()
-        }
-        timer.resume()
-        blinkTimer = timer
-
-        if Self.verboseRuntimeLogs {
-            print("[Launchpad] Beat-sync blink timer started at \(currentBpm) BPM")
-        }
-    }
-    
-    private func stopBlinkTimer() {
-        blinkTimer?.setEventHandler {}
-        blinkTimer?.cancel()
-        blinkTimer = nil
-    }
-    
-    public func updateBpm(_ bpm: Float) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            guard bpm > 20 && bpm < 300 else { return }  // Sanity check
-
-            let bpmChanged = abs(self.currentBpm - bpm) > 1.0
-            self.currentBpm = bpm
-
-            // Restart timer with new BPM if significantly changed
-            if bpmChanged && self.blinkTimer != nil {
-                self.startBlinkTimer()
-            }
-
-            if bpmChanged {
-                let statusSnapshot = self.makeStatusSnapshot(from: self.state)
-                DispatchQueue.main.async { [weak self] in
-                    self?.dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
-                }
-            }
-        }
-    }
-    
-    private func handleBeatPulse() {
-        // Immediate blink toggle on beat (more responsive than timer)
-        onStateQueue { [weak self] in
-            self?.handleBlinkTickOnQueue()
-        }
-    }
-    
-    private func handleBlinkTickOnQueue() {
-        guard isEnabled && blinkEnabled else { return }
-
-        // Toggle blink state
-        state = toggleBlink(state)
-        let blinkOn = state.blinkOn
-        
-        // Notify UI (for blink visualization)
-        let currentState = state
-        DispatchQueue.main.async { [weak self] in
-            self?.dispatch?(.launchpad(.stateUpdated(currentState)))
-        }
-        
-        // Update LEDs for pads that should blink (active selectors)
-        var blinkEffects: [LaunchpadEffect] = []
-        for (padId, behavior) in state.pads {
-            guard behavior.mode == .selector else { continue }
-            
-            let runtime = state.padRuntime[padId] ?? PadRuntimeState()
-            guard runtime.isActive else { continue }
-            
-            // Alternate between active and dimmed color
-            let color = blinkOn ? behavior.activeColor : behavior.idleColor
-            blinkEffects.append(.setLed(padId: padId, color: color, blink: false))
-        }
-
-        executor.executeAll(blinkEffects)
     }
 }
