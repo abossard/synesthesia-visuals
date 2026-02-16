@@ -807,13 +807,6 @@ public func handleOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResu
     var newState = state
     var effects: [LaunchpadEffect] = []
     
-    // Handle beat events
-    if event.address == "/audio/beat/onbeat" {
-        if case .float(let val) = event.args.first {
-            newState.beatPulse = val > 0.5
-        }
-    }
-    
     // Handle scene/preset changes for selector sync
     if event.address.hasPrefix("/scenes/") {
         let sceneName = event.address.components(separatedBy: "/").last ?? ""

@@ -575,15 +575,8 @@ public struct ControllerState: Sendable {
     public var activePreset: String?
     public var activeColorHue: Float?
     
-    // Audio/beat state
-    public var beatPhase: Float
-    public var beatPulse: Bool
-    
     // FSM state
     public var learnState: LearnState
-    
-    // Animation state
-    public var blinkOn: Bool
     
     // Modifier keys
     /// Shift button held (scene button y=5)
@@ -620,10 +613,7 @@ public struct ControllerState: Sendable {
         self.activeScene = nil
         self.activePreset = nil
         self.activeColorHue = nil
-        self.beatPhase = 0
-        self.beatPulse = false
         self.learnState = LearnState()
-        self.blinkOn = false
         self.isShiftHeld = false
         self.bankPageCount = [:]
         self.bankCurrentPage = [:]

@@ -33,7 +33,6 @@ final class LaunchpadReducerTests: XCTestCase {
             controllerState.activeBank = idx % 8
             controllerState.activeScene = "scene-\(idx)"
             controllerState.activePreset = "preset-\(idx)"
-            controllerState.blinkOn = (idx % 2 == 0)
             applyLaunchpadReducer(.stateUpdated(controllerState), to: &appState)
         }
 
@@ -41,6 +40,5 @@ final class LaunchpadReducerTests: XCTestCase {
         XCTAssertEqual(appState.launchpad.currentBank, (iterations - 1) % 8)
         XCTAssertEqual(appState.launchpad.controllerState?.activeScene, "scene-\(iterations - 1)")
         XCTAssertEqual(appState.launchpad.controllerState?.activePreset, "preset-\(iterations - 1)")
-        XCTAssertEqual(appState.launchpad.controllerState?.blinkOn, false)
     }
 }

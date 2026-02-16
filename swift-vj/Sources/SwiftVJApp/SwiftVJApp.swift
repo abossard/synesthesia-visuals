@@ -1126,8 +1126,7 @@ public final class AppState: ObservableObject {
                         isConnected: snapshot.isConnected,
                         deviceName: snapshot.deviceName,
                         isLearnMode: snapshot.isLearnMode,
-                        configuredPadCount: snapshot.padCount,
-                        currentBpm: snapshot.currentBpm
+                        configuredPadCount: snapshot.padCount
                     )
                     if self.launchpadStatus != newStatus {
                         self.launchpadStatus = newStatus

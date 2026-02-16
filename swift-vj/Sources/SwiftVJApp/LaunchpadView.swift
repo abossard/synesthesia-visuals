@@ -127,7 +127,6 @@ struct LaunchpadView: View {
                             
                             DetailRow(label: "Active Scene", value: state.activeScene ?? "-")
                             DetailRow(label: "Active Preset", value: state.activePreset ?? "-")
-                            DetailRow(label: "BPM", value: String(format: "%.1f", appState.launchpadStatus?.currentBpm ?? 0.0))
                         }
                         
                         Divider()
@@ -285,21 +284,12 @@ struct PadView: View {
     var body: some View {
         let runtime = appState.launchpadState?.padRuntime[id]
         let behavior = appState.launchpadState?.pads[id]
-        let blinkOn = appState.launchpadState?.blinkOn ?? false
-        let isConnected = appState.launchpadStatus?.isConnected ?? false
-        
-        // Determine color (beat-sync selectors when hardware is connected)
-        let isSelectorActive = behavior?.mode == .selector && (runtime?.isActive ?? false)
-        let usesBeatBlink = isSelectorActive && isConnected
-        let colorInt = usesBeatBlink
-            ? (blinkOn ? (behavior?.activeColor ?? runtime?.currentColor ?? LP.off)
-                       : (behavior?.idleColor ?? runtime?.currentColor ?? LP.off))
-            : (runtime?.currentColor ?? LP.off)
+        let colorInt = runtime?.currentColor ?? LP.off
         let color = launchpadColorToSwiftUI(colorInt)
         
         // Determine shape
         let isRound = id.isTopRow || id.isSceneButton
-        let shouldPulse = (runtime?.blinkEnabled ?? false) && !usesBeatBlink
+        let shouldPulse = runtime?.blinkEnabled ?? false
         
         ZStack {
             // Base shape (with optional pulse)

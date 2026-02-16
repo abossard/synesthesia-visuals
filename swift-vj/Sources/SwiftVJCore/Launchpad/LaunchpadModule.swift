@@ -15,22 +15,19 @@ public struct LaunchpadStatus: Sendable, Equatable {
     public let deviceName: String?
     public let isLearnMode: Bool
     public let configuredPadCount: Int
-    public let currentBpm: Float
     
     public init(
         isEnabled: Bool,
         isConnected: Bool,
         deviceName: String?,
         isLearnMode: Bool,
-        configuredPadCount: Int,
-        currentBpm: Float
+        configuredPadCount: Int
     ) {
         self.isEnabled = isEnabled
         self.isConnected = isConnected
         self.deviceName = deviceName
         self.isLearnMode = isLearnMode
         self.configuredPadCount = configuredPadCount
-        self.currentBpm = currentBpm
     }
 }
 
@@ -58,8 +55,6 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Action dispatcher - set this to integrate with Store
     public var dispatch: ((AppAction) -> Void)?
     
-    // Retained for status reporting only (no BPM-driven behavior)
-    private var currentBpm: Float = 120.0
     private static let verboseRuntimeLogs = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_LAUNCHPAD"] == "1"
     
     // MARK: - Init
@@ -155,8 +150,7 @@ public final class LaunchpadModule: @unchecked Sendable {
                 isConnected: midi.isConnected,
                 deviceName: midi.connectedDeviceName,
                 isLearnMode: state.learnState.phase != .idle,
-                configuredPadCount: state.pads.count,
-                currentBpm: currentBpm
+                configuredPadCount: state.pads.count
             )
         }
     }
@@ -340,8 +334,7 @@ public final class LaunchpadModule: @unchecked Sendable {
             deviceName: midi.connectedDeviceName,
             activeBank: snapshot.activeBank,
             padCount: snapshot.pads.count,
-            isLearnMode: snapshot.learnState.phase != .idle,
-            currentBpm: currentBpm
+            isLearnMode: snapshot.learnState.phase != .idle
         )
     }
 

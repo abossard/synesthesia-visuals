@@ -328,20 +328,17 @@ public struct ControllerStateSnapshot: Equatable, Sendable {
     public var activeScene: String?
     public var activePreset: String?
     public var learnPhase: String
-    public var blinkOn: Bool
 
     public init(
         activeBank: Int = 0,
         activeScene: String? = nil,
         activePreset: String? = nil,
-        learnPhase: String = "idle",
-        blinkOn: Bool = false
+        learnPhase: String = "idle"
     ) {
         self.activeBank = activeBank
         self.activeScene = activeScene
         self.activePreset = activePreset
         self.learnPhase = learnPhase
-        self.blinkOn = blinkOn
     }
 
     public init(from state: ControllerState) {
@@ -349,7 +346,6 @@ public struct ControllerStateSnapshot: Equatable, Sendable {
         self.activeScene = state.activeScene
         self.activePreset = state.activePreset
         self.learnPhase = String(describing: state.learnState.phase)
-        self.blinkOn = state.blinkOn
     }
 }
 
@@ -360,22 +356,19 @@ public struct LaunchpadStatusSnapshot: Equatable, Sendable {
     public var activeBank: Int
     public var padCount: Int
     public var isLearnMode: Bool
-    public var currentBpm: Float
 
     public init(
         isConnected: Bool = false,
         deviceName: String? = nil,
         activeBank: Int = 0,
         padCount: Int = 0,
-        isLearnMode: Bool = false,
-        currentBpm: Float = 120
+        isLearnMode: Bool = false
     ) {
         self.isConnected = isConnected
         self.deviceName = deviceName
         self.activeBank = activeBank
         self.padCount = padCount
         self.isLearnMode = isLearnMode
-        self.currentBpm = currentBpm
     }
 
     public init(from status: LaunchpadStatus) {
@@ -384,7 +377,6 @@ public struct LaunchpadStatusSnapshot: Equatable, Sendable {
         self.activeBank = 0  // LaunchpadStatus doesn't track activeBank
         self.padCount = status.configuredPadCount
         self.isLearnMode = status.isLearnMode
-        self.currentBpm = status.currentBpm
     }
 }
 
