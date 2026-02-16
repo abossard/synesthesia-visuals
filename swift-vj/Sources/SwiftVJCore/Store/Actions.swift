@@ -156,6 +156,12 @@ public enum RenderAction: Sendable {
     /// Update shader count
     case shaderCountUpdated(Int)
 
+    /// Update per-shader workspace controls (bin0/bin1/bin2/zoom)
+    case setShaderWorkspaceControls(shaderName: String, controls: ShaderWorkspaceControls)
+
+    /// Reset per-shader workspace controls to defaults
+    case resetShaderWorkspaceControls(shaderName: String)
+
     /// Start render engine
     case startEngine
 
@@ -260,6 +266,36 @@ public enum UIAction: Sendable {
 
     /// Set OSC filter
     case setOscFilter(String)
+
+    /// Set shader catalog search text
+    case setShaderCatalogSearchText(String)
+
+    /// Set shader catalog folder filter
+    case setShaderCatalogFolder(String)
+
+    /// Set shader catalog badge filter
+    case setShaderCatalogBadgeFilter(ShaderCatalogBadgeFilter)
+
+    /// Set shader catalog phase filter
+    case setShaderCatalogPhaseFilter(Phase?)
+
+    /// Set shader catalog sort order
+    case setShaderCatalogSortOrder(ShaderCatalogSortOrder)
+
+    /// Set shader catalog view mode
+    case setShaderCatalogViewMode(ShaderCatalogViewMode)
+
+    /// Replace shader catalog selection set
+    case setShaderCatalogSelection(Set<String>)
+
+    /// Toggle one shader in catalog selection
+    case toggleShaderCatalogSelection(String)
+
+    /// Clear shader catalog selection set
+    case clearShaderCatalogSelection
+
+    /// Set pending bulk phases for shader catalog
+    case setShaderCatalogBulkPhases(Set<Phase>)
 
     /// Reload Tachikoma configuration in app-layer AI modules
     case reloadTachikomaConfig
@@ -644,6 +680,9 @@ extension RenderAction: CustomStringConvertible {
         case .prevImage: return "prevImage"
         case .imagesLoaded(let count, _): return "imagesLoaded(\(count))"
         case .shaderCountUpdated(let count): return "shaderCountUpdated(\(count))"
+        case .setShaderWorkspaceControls(let shaderName, let controls):
+            return "setShaderWorkspaceControls(\(shaderName), bin0: \(String(format: "%.2f", controls.bin0)), bin1: \(String(format: "%.2f", controls.bin1)), bin2: \(String(format: "%.2f", controls.bin2)), zoom: \(String(format: "%.2f", controls.zoom)))"
+        case .resetShaderWorkspaceControls(let shaderName): return "resetShaderWorkspaceControls(\(shaderName))"
         case .startEngine: return "startEngine"
         case .stopEngine: return "stopEngine"
         }
@@ -695,6 +734,16 @@ extension UIAction: CustomStringConvertible {
         case .clearOscMessages: return "clearOscMessages"
         case .setOscDebugEnabled(let enabled): return "setOscDebugEnabled(\(enabled))"
         case .setOscFilter(let filter): return "setOscFilter(\(filter))"
+        case .setShaderCatalogSearchText(let query): return "setShaderCatalogSearchText(\(query))"
+        case .setShaderCatalogFolder(let folder): return "setShaderCatalogFolder(\(folder))"
+        case .setShaderCatalogBadgeFilter(let filter): return "setShaderCatalogBadgeFilter(\(filter.rawValue))"
+        case .setShaderCatalogPhaseFilter(let phase): return "setShaderCatalogPhaseFilter(\(phase?.rawValue ?? "all"))"
+        case .setShaderCatalogSortOrder(let order): return "setShaderCatalogSortOrder(\(order.rawValue))"
+        case .setShaderCatalogViewMode(let mode): return "setShaderCatalogViewMode(\(mode.rawValue))"
+        case .setShaderCatalogSelection(let names): return "setShaderCatalogSelection(\(names.count))"
+        case .toggleShaderCatalogSelection(let name): return "toggleShaderCatalogSelection(\(name))"
+        case .clearShaderCatalogSelection: return "clearShaderCatalogSelection"
+        case .setShaderCatalogBulkPhases(let phases): return "setShaderCatalogBulkPhases(\(phases.count))"
         case .reloadTachikomaConfig: return "reloadTachikomaConfig"
         }
     }

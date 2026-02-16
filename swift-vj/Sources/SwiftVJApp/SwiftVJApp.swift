@@ -257,9 +257,11 @@ public final class AppState: ObservableObject {
     @Published public private(set) var selectedMaskShader: String?
     @Published public private(set) var renderEnabled: Bool = true
     @Published public private(set) var renderOutputs: RenderOutputsState = RenderOutputsState()
+    @Published public private(set) var shaderControlsByShader: [String: ShaderWorkspaceControls] = [:]
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
+    @Published public private(set) var shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
 
     // MARK: - UI State (private(set) enforces unidirectional flow)
     
@@ -532,6 +534,19 @@ public final class AppState: ObservableObject {
         )
     }
 
+    public func shaderWorkspaceControls(for shaderName: String?) -> ShaderWorkspaceControls {
+        guard let shaderName else { return .default }
+        return shaderControlsByShader[shaderName] ?? .default
+    }
+
+    public func setShaderWorkspaceControls(_ controls: ShaderWorkspaceControls, shaderName: String) {
+        store.send(.render(.setShaderWorkspaceControls(shaderName: shaderName, controls: controls)))
+    }
+
+    public func resetShaderWorkspaceControls(shaderName: String) {
+        store.send(.render(.resetShaderWorkspaceControls(shaderName: shaderName)))
+    }
+
     /// Set the current phase via unidirectional data flow.
     /// Dispatches through Store → Reducer → @Published sync.
     /// Do NOT write directly to currentPhase to avoid state trickling.
@@ -554,6 +569,90 @@ public final class AppState: ObservableObject {
             get: { self.currentPhase },
             set: { newPhase in self.setPhase(newPhase) }
         )
+    }
+
+    // MARK: - Shader Catalog Bindings
+
+    public func setShaderCatalogSearchText(_ query: String) {
+        store.send(.ui(.setShaderCatalogSearchText(query)))
+    }
+
+    public var shaderCatalogSearchBinding: Binding<String> {
+        Binding(
+            get: { self.shaderCatalog.searchText },
+            set: { self.setShaderCatalogSearchText($0) }
+        )
+    }
+
+    public func setShaderCatalogFolder(_ folder: String) {
+        store.send(.ui(.setShaderCatalogFolder(folder)))
+    }
+
+    public var shaderCatalogFolderBinding: Binding<String> {
+        Binding(
+            get: { self.shaderCatalog.selectedFolder },
+            set: { self.setShaderCatalogFolder($0) }
+        )
+    }
+
+    public func setShaderCatalogBadgeFilter(_ filter: ShaderCatalogBadgeFilter) {
+        store.send(.ui(.setShaderCatalogBadgeFilter(filter)))
+    }
+
+    public var shaderCatalogBadgeFilterBinding: Binding<ShaderCatalogBadgeFilter> {
+        Binding(
+            get: { self.shaderCatalog.badgeFilter },
+            set: { self.setShaderCatalogBadgeFilter($0) }
+        )
+    }
+
+    public func setShaderCatalogPhaseFilter(_ phase: Phase?) {
+        store.send(.ui(.setShaderCatalogPhaseFilter(phase)))
+    }
+
+    public var shaderCatalogPhaseFilterBinding: Binding<Phase?> {
+        Binding(
+            get: { self.shaderCatalog.phaseFilter },
+            set: { self.setShaderCatalogPhaseFilter($0) }
+        )
+    }
+
+    public func setShaderCatalogSortOrder(_ sortOrder: ShaderCatalogSortOrder) {
+        store.send(.ui(.setShaderCatalogSortOrder(sortOrder)))
+    }
+
+    public var shaderCatalogSortOrderBinding: Binding<ShaderCatalogSortOrder> {
+        Binding(
+            get: { self.shaderCatalog.sortOrder },
+            set: { self.setShaderCatalogSortOrder($0) }
+        )
+    }
+
+    public func setShaderCatalogViewMode(_ viewMode: ShaderCatalogViewMode) {
+        store.send(.ui(.setShaderCatalogViewMode(viewMode)))
+    }
+
+    public var shaderCatalogViewModeBinding: Binding<ShaderCatalogViewMode> {
+        Binding(
+            get: { self.shaderCatalog.viewMode },
+            set: { self.setShaderCatalogViewMode($0) }
+        )
+    }
+
+    public func setShaderCatalogSelection(_ selectedShaders: Set<String>) {
+        store.send(.ui(.setShaderCatalogSelection(selectedShaders)))
+    }
+
+    public func toggleShaderCatalogSelection(_ shaderName: String) {
+        store.send(.ui(.toggleShaderCatalogSelection(shaderName)))
+    }
+
+    public func clearShaderCatalogSelection() {
+        store.send(.ui(.clearShaderCatalogSelection))
+    }
+
+    public func setShaderCatalogBulkPhases(_ phases: Set<Phase>) {
+        store.send(.ui(.setShaderCatalogBulkPhases(phases)))
     }
 
     // MARK: - LedFX Bindings
@@ -950,6 +1049,7 @@ public final class AppState: ObservableObject {
             self.applyInitialRenderSelections(using: engine)
             await MainActor.run {
                 engine.setOutputState(self.store.state.render.outputs)
+                engine.setShaderControlsByShader(self.store.state.render.shaderControlsByShader)
             }
             await self.applyRendererEnabledState(self.store.state.render.isEnabled)
         }
@@ -1143,6 +1243,10 @@ public final class AppState: ObservableObject {
                 if self.playbackSource != newState.playback.source { self.playbackSource = newState.playback.source }
                 if self.renderEnabled != newState.render.isEnabled { self.renderEnabled = newState.render.isEnabled }
                 if self.renderOutputs != newState.render.outputs { self.renderOutputs = newState.render.outputs }
+                if self.shaderControlsByShader != newState.render.shaderControlsByShader {
+                    self.shaderControlsByShader = newState.render.shaderControlsByShader
+                    self.renderEngine?.setShaderControlsByShader(newState.render.shaderControlsByShader)
+                }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
                 if self.selectedMaskShader != newState.render.selectedMaskShader { self.selectedMaskShader = newState.render.selectedMaskShader }
                 if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
@@ -1151,6 +1255,7 @@ public final class AppState: ObservableObject {
                 if self.imageCount != newState.render.imageCount { self.imageCount = newState.render.imageCount }
                 if self.shaderCount != newState.render.shaderCount { self.shaderCount = newState.render.shaderCount }
                 if self.songsState != newState.songs { self.songsState = newState.songs }
+                if self.shaderCatalog != newState.ui.shaderCatalog { self.shaderCatalog = newState.ui.shaderCatalog }
 
                 // UI state (logs + OSC)
                 if self.oscFilter != newState.ui.oscFilter { self.oscFilter = newState.ui.oscFilter }

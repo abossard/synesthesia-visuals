@@ -60,12 +60,9 @@ private enum ShaderConstants {
 struct ShaderBrowserView: View {
     @EnvironmentObject var appState: AppState
     private let fileOperations = ShaderFileOperationsActor()
-    @State private var searchText = ""
-    @State private var selectedFolder: String = ShaderConstants.allFolders
     @State private var shaders: [CoreShaderInfo] = []
     @State private var availableFolders: [String] = []
     @State private var shaderMetadata: [String: ShaderFilterMetadata] = [:]
-    @State private var selectedShaders: Set<String> = []
     // Analysis state now lives in AppState for persistence across navigation
     @State private var showDeleteConfirm: Bool = false
     @State private var shaderToDelete: CoreShaderInfo? = nil
@@ -74,11 +71,13 @@ struct ShaderBrowserView: View {
     @State private var previousSelectedShaderName: String? = nil
     @State private var refreshId = UUID() // Forces grid refresh after analysis
     @State private var lastClickedShader: String? = nil // For shift-click range selection
-    @State private var badgeFilter: BadgeFilter = .all // Filter by badge type
-    @State private var phaseFilter: Phase? = nil // Filter by assigned phase
     @State private var searchResults: [CoreShaderInfo] = []
     @State private var isSearching: Bool = false
     @State private var searchDebounceTask: Task<Void, Never>? = nil
+    @State private var phaseWriteDebounceTasks: [String: Task<Void, Never>] = [:]
+    @State private var workspacePreset: WorkspacePreset = .neutral
+    @State private var workspaceDraft: ShaderWorkspaceControls = .default
+    @State private var copiedWorkspaceControls: ShaderWorkspaceControls?
     
     // Convenience accessors for AppState analysis state
     private var isAnalyzing: Bool { appState.isAnalyzingShaders }
@@ -91,14 +90,14 @@ struct ShaderBrowserView: View {
     private var analysisBlackCount: Int { appState.analysisBlackCount }
     private var analysisErrorCount: Int { appState.analysisErrorCount }
     
-    /// Badge filter options
-    enum BadgeFilter: String, CaseIterable {
-        case all = "All"
-        case black = "Black"
-        case monochromatic = "Monochromatic"
-        case analyzed = "Analyzed"
-        case notAnalyzed = "Not Analyzed"
+    private var selectedShaders: Set<String> { appState.shaderCatalog.selectedShaders }
+    private var workspaceTargetShaders: [String] {
+        let selected = shaders.map(\.name).filter { selectedShaders.contains($0) }
+        if !selected.isEmpty { return selected }
+        if let current = appState.selectedShader, !current.isEmpty { return [current] }
+        return []
     }
+    private var hasWorkspaceTargets: Bool { !workspaceTargetShaders.isEmpty }
 
     private enum ModalKind {
         case analysis
@@ -118,28 +117,74 @@ struct ShaderBrowserView: View {
             }
         }
     }
+
+    private enum WorkspacePreset: String, CaseIterable {
+        case neutral = "Neutral"
+        case pulse = "Pulse"
+        case boost = "Boost"
+        case warp = "Warp"
+
+        var controls: ShaderWorkspaceControls {
+            switch self {
+            case .neutral:
+                return .default
+            case .pulse:
+                return ShaderWorkspaceControls(bin0: 0.35, bin1: 0.0, bin2: 0.0, zoom: 1.0)
+            case .boost:
+                return ShaderWorkspaceControls(bin0: 0.2, bin1: 0.3, bin2: 0.25, zoom: 1.05)
+            case .warp:
+                return ShaderWorkspaceControls(bin0: 0.4, bin1: 0.5, bin2: 0.15, zoom: 1.2)
+            }
+        }
+    }
     
     var filteredShaders: [CoreShaderInfo] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = appState.shaderCatalog.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let base: [CoreShaderInfo] = query.isEmpty ? shaders : searchResults
-        return base.filter { shader in
+        let filtered = base.filter { shader in
             let matchesFolder = selectedFolder == ShaderConstants.allFolders || shader.folder == selectedFolder
             let matchesBadge = matchesBadgeFilter(shader)
             let matchesPhase = matchesPhaseFilter(shader)
             return matchesFolder && matchesBadge && matchesPhase
         }
+        return sortShaders(filtered)
+    }
+
+    private var selectedFolder: String {
+        appState.shaderCatalog.selectedFolder
+    }
+
+    private func sortShaders(_ shaders: [CoreShaderInfo]) -> [CoreShaderInfo] {
+        switch appState.shaderCatalog.sortOrder {
+        case .name:
+            return shaders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .unanalyzedFirst:
+            return shaders.sorted { lhs, rhs in
+                let lhsUnanalyzed = !hasAnalysisFile(lhs)
+                let rhsUnanalyzed = !hasAnalysisFile(rhs)
+                if lhsUnanalyzed != rhsUnanalyzed { return lhsUnanalyzed && !rhsUnanalyzed }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        case .phaseCoverage:
+            return shaders.sorted { lhs, rhs in
+                let lhsCount = getShaderPhases(lhs).count
+                let rhsCount = getShaderPhases(rhs).count
+                if lhsCount != rhsCount { return lhsCount > rhsCount }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        }
     }
     
     /// Check if shader matches current phase filter
     private func matchesPhaseFilter(_ shader: CoreShaderInfo) -> Bool {
-        guard let targetPhase = phaseFilter else { return true }
+        guard let targetPhase = appState.shaderCatalog.phaseFilter else { return true }
         let phases = getShaderPhases(shader)
         return phases.contains(targetPhase)
     }
     
     /// Check if shader matches current badge filter
     private func matchesBadgeFilter(_ shader: CoreShaderInfo) -> Bool {
-        switch badgeFilter {
+        switch appState.shaderCatalog.badgeFilter {
         case .all:
             return true
         case .black:
@@ -188,7 +233,7 @@ struct ShaderBrowserView: View {
         return shader.phases ?? []
     }
 
-    nonisolated private static func analysisPath(for shader: CoreShaderInfo) -> URL {
+    nonisolated fileprivate static func analysisPath(for shader: CoreShaderInfo) -> URL {
         let shaderPath = URL(fileURLWithPath: shader.path)
         let shaderDir = shaderPath.deletingLastPathComponent()
         let baseName = shaderPath.deletingPathExtension().lastPathComponent
@@ -241,191 +286,448 @@ struct ShaderBrowserView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Action buttons bar
-            HStack(spacing: 12) {
-                Button(action: { Task { await reloadAllShaders() } }) {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .help("Reload shaders from disk and metallib")
-                .disabled(isAnalyzing)
-                
-                Divider().frame(height: 20)
-                
-                // Selection buttons
-                Button(action: selectAll) {
-                    Label("Select All", systemImage: "checkmark.square.fill")
-                }
-                .keyboardShortcut("a", modifiers: .command)
-                .disabled(isAnalyzing)
-                
-                Button(action: deselectAll) {
-                    Label("Deselect", systemImage: "square")
-                }
-                .keyboardShortcut("d", modifiers: .command)
-                .disabled(isAnalyzing)
-                
-                Button(action: selectUnanalyzed) {
-                    Label("Unanalyzed", systemImage: "exclamationmark.triangle")
-                }
-                .help("Select all shaders without analysis.json")
-                .disabled(isAnalyzing)
-                
-                Divider().frame(height: 20)
-                
-                // Move to masks / back
-                Button(action: { copySelectedToFolder() }) {
-                    Label("Copy to Folder", systemImage: "folder.badge.plus")
-                }
-                .disabled(selectedShaders.isEmpty || isAnalyzing)
-                .help("Copy selected shaders to a folder")
-
-                Button(action: { moveSelectedToMasks() }) {
-                    Label("→ Masks", systemImage: "theatermask.and.paintbrush")
-                }
-                .disabled(selectedShaders.isEmpty || selectedFolder == ShaderConstants.masksFolder || isAnalyzing)
-                .help("Move selected shaders to masks folder")
-                
-                Button(action: { moveSelectedFromMasks() }) {
-                    Label("← Shaders", systemImage: "arrow.uturn.backward")
-                }
-                .disabled(selectedShaders.isEmpty || selectedFolder != ShaderConstants.masksFolder || isAnalyzing)
-                .help("Move selected shaders back to Shaders folder")
-                
-                Divider().frame(height: 20)
-                
-                // Delete
-                Button(role: .destructive, action: { confirmDeleteSelected() }) {
-                    Label("Delete", systemImage: "trash")
-                }
-                .disabled(selectedShaders.isEmpty || isAnalyzing)
-                .help("Delete selected shaders")
-                
-                Spacer()
-                
-                if isAnalyzing {
-                    Button(role: .destructive, action: { cancelAnalysis() }) {
-                        Label("Cancel", systemImage: "xmark.circle.fill")
-                    }
-                    .foregroundColor(.red)
-                } else {
-                    Button(action: { startAnalyze() }) {
-                        Label("Analyze", systemImage: "sparkle.magnifyingglass")
-                    }
-                    .disabled(selectedShaders.isEmpty)
-                }
-            }
-            .padding()
-            .background(.bar)
-            
+            actionBar
+            if !selectedShaders.isEmpty { bulkPhaseBar }
+            if hasWorkspaceTargets { shaderWorkspacePanel }
             Divider()
-            
-            // Progress indicator
-            if isAnalyzing {
-                VStack(spacing: 8) {
-                    HStack {
-                        Image(systemName: "sparkle.magnifyingglass")
-                            .foregroundColor(.blue)
-                        Text("Analyzing: \(analysisCurrent)/\(analysisTotal)")
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text(currentAnalysisShader)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    
-                    ProgressView(value: analysisProgress)
-                        .tint(.blue)
-                    
-                    HStack(spacing: 16) {
-                        Label("\(analysisSuccessCount)", systemImage: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Label("\(analysisBlackCount)", systemImage: "circle.fill")
-                            .foregroundColor(.red)
-                        Label("\(analysisErrorCount)", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Spacer()
-                        if analysisCancelled {
-                            Text("Cancelling...")
-                                .foregroundColor(.red)
-                                .italic()
-                        } else {
-                            Text("\(Int(analysisProgress * 100))%")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .font(.caption)
-                }
-                .padding()
-                .background(.quaternary)
+            if isAnalyzing { progressBar }
+            filterBar
+            Divider()
+            shaderResults
+            keyboardShortcutHost
+        }
+        .task {
+            await loadShaders()
+            syncWorkspaceDraftFromTargets()
+        }
+        .sheet(item: $activeModal, onDismiss: handleModalDismiss) { modal in
+            switch modal {
+            case .analysis(let analysis):
+                ShaderAnalysisModal(analysis: analysis)
+            case .preview(let shaderName, _):
+                ShaderPreviewModalContent(
+                    shaderName: shaderName,
+                    onClose: { activeModal = nil }
+                )
+                .environmentObject(appState)
             }
-            
-            // Search and filter bar
-            HStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
-                    TextField("Search shaders...", text: $searchText)
-                        .textFieldStyle(.plain)
+        }
+        .alert("Delete Shader?", isPresented: $showDeleteConfirm, presenting: shaderToDelete) { shader in
+            Button("Delete", role: .destructive) {
+                deleteShader(shader)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { shader in
+            Text("Are you sure you want to delete \"\(shader.name)\"? This cannot be undone.")
+        }
+        .onDisappear {
+            searchDebounceTask?.cancel()
+            searchDebounceTask = nil
+            for task in phaseWriteDebounceTasks.values {
+                task.cancel()
+            }
+            phaseWriteDebounceTasks.removeAll()
+        }
+        .onChange(of: selectedShaders) { _, _ in
+            syncWorkspaceDraftFromTargets()
+        }
+        .onChange(of: appState.selectedShader) { _, _ in
+            syncWorkspaceDraftFromTargets()
+        }
+        .onChange(of: appState.shaderControlsByShader) { _, _ in
+            syncWorkspaceDraftFromTargets()
+        }
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 12) {
+            Button(action: { Task { await reloadAllShaders() } }) {
+                Label("Reload", systemImage: "arrow.clockwise")
+            }
+            .help("Reload shaders from disk and metallib")
+            .disabled(isAnalyzing)
+
+            Divider().frame(height: 20)
+
+            Button(action: selectAll) {
+                Label("Select All", systemImage: "checkmark.square.fill")
+            }
+            .keyboardShortcut("a", modifiers: .command)
+            .disabled(isAnalyzing)
+
+            Button(action: deselectAll) {
+                Label("Deselect", systemImage: "square")
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(isAnalyzing)
+
+            Button(action: selectUnanalyzed) {
+                Label("Unanalyzed", systemImage: "exclamationmark.triangle")
+            }
+            .help("Select all shaders without analysis.json")
+            .disabled(isAnalyzing)
+
+            Divider().frame(height: 20)
+
+            Button(action: { copySelectedToFolder() }) {
+                Label("Copy to Folder", systemImage: "folder.badge.plus")
+            }
+            .disabled(selectedShaders.isEmpty || isAnalyzing)
+            .help("Copy selected shaders to a folder")
+
+            Button(action: { moveSelectedToMasks() }) {
+                Label("→ Masks", systemImage: "theatermask.and.paintbrush")
+            }
+            .disabled(selectedShaders.isEmpty || selectedFolder == ShaderConstants.masksFolder || isAnalyzing)
+            .help("Move selected shaders to masks folder")
+
+            Button(action: { moveSelectedFromMasks() }) {
+                Label("← Shaders", systemImage: "arrow.uturn.backward")
+            }
+            .disabled(selectedShaders.isEmpty || selectedFolder != ShaderConstants.masksFolder || isAnalyzing)
+            .help("Move selected shaders back to Shaders folder")
+
+            Divider().frame(height: 20)
+
+            Button(role: .destructive, action: { confirmDeleteSelected() }) {
+                Label("Delete", systemImage: "trash")
+            }
+            .disabled(selectedShaders.isEmpty || isAnalyzing)
+            .help("Delete selected shaders")
+
+            Divider().frame(height: 20)
+
+            Picker("View", selection: appState.shaderCatalogViewModeBinding) {
+                ForEach(ShaderCatalogViewMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
                 }
-                .padding(8)
-                .background(.quaternary)
-                .cornerRadius(8)
-                
-                // Folder filter (dynamically populated from available folders + masks)
-                Picker("Folder", selection: $selectedFolder) {
-                    Text(ShaderConstants.allFolders).tag(ShaderConstants.allFolders)
-                    Text(ShaderConstants.masksFolder).tag(ShaderConstants.masksFolder)
-                    ForEach(availableFolders.filter { $0 != ShaderConstants.masksFolder }, id: \.self) { folder in
-                        Text(folder).tag(folder)
-                    }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 130)
+
+            Spacer()
+
+            if isAnalyzing {
+                Button(role: .destructive, action: { cancelAnalysis() }) {
+                    Label("Cancel", systemImage: "xmark.circle.fill")
                 }
-                .pickerStyle(.segmented)
-                .frame(minWidth: 200)
-                
-                Divider().frame(height: 20)
-                
-                // Badge filter
-                Picker("Badge", selection: $badgeFilter) {
-                    ForEach(BadgeFilter.allCases, id: \.self) { filter in
-                        HStack {
-                            if filter == .black {
-                                Circle().fill(.red).frame(width: 8, height: 8)
-                            } else if filter == .monochromatic {
-                                Circle().fill(.gray).frame(width: 8, height: 8)
-                            }
-                            Text(filter.rawValue)
-                        }.tag(filter)
-                    }
+                .foregroundColor(.red)
+            } else {
+                Button(action: { startAnalyze() }) {
+                    Label("Analyze", systemImage: "sparkle.magnifyingglass")
                 }
-                .pickerStyle(.menu)
-                .frame(minWidth: 120)
-                
-                // Phase filter
-                Picker("Phase", selection: $phaseFilter) {
-                    Text("All Phases").tag(Phase?.none)
-                    Divider()
-                    ForEach(Phase.allCases, id: \.self) { phase in
-                        Label(phase.displayName, systemImage: phase.iconName)
-                            .tag(Phase?.some(phase))
-                    }
+                .disabled(selectedShaders.isEmpty)
+            }
+        }
+        .padding()
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var bulkPhaseBar: some View {
+        HStack(spacing: 8) {
+            Text("Bulk phases")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            ForEach(Phase.allCases, id: \.self) { phase in
+                let isSelected = appState.shaderCatalog.bulkPhases.contains(phase)
+                Button {
+                    toggleBulkPhase(phase)
+                } label: {
+                    Image(systemName: phase.iconName)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(isSelected ? phaseColor(phase) : Color.clear)
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(phaseColor(phase).opacity(0.5), lineWidth: 1)
+                        )
                 }
-                .pickerStyle(.menu)
-                .frame(minWidth: 120)
-                
+                .buttonStyle(.plain)
+                .help("\(phase.displayName) (Cmd+\(phaseShortcutLabel(phase)))")
+                .keyboardShortcut(phaseShortcutKey(phase), modifiers: .command)
+            }
+            Button("Apply to \(selectedShaders.count)") {
+                applyBulkPhasesToSelection()
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(appState.shaderCatalog.bulkPhases.isEmpty || isAnalyzing)
+            Button("Clear") {
+                appState.setShaderCatalogBulkPhases([])
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.shaderCatalog.bulkPhases.isEmpty || isAnalyzing)
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.quaternary)
+    }
+
+    private var progressBar: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .foregroundColor(.blue)
+                Text("Analyzing: \(analysisCurrent)/\(analysisTotal)")
+                    .fontWeight(.medium)
                 Spacer()
-                
+                Text(currentAnalysisShader)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            ProgressView(value: analysisProgress)
+                .tint(.blue)
+
+            HStack(spacing: 16) {
+                Label("\(analysisSuccessCount)", systemImage: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                Label("\(analysisBlackCount)", systemImage: "circle.fill")
+                    .foregroundColor(.red)
+                Label("\(analysisErrorCount)", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                Spacer()
+                if analysisCancelled {
+                    Text("Cancelling...")
+                        .foregroundColor(.red)
+                        .italic()
+                } else {
+                    Text("\(Int(analysisProgress * 100))%")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .font(.caption)
+        }
+        .padding()
+        .background(.quaternary)
+    }
+
+    private var shaderWorkspacePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Text("Shader Workspace")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text("Targets: \(workspaceTargetShaders.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider().frame(height: 16)
+
+                Picker("Preset", selection: $workspacePreset) {
+                    ForEach(WorkspacePreset.allCases, id: \.self) { preset in
+                        Text(preset.rawValue).tag(preset)
+                    }
+                }
+                .frame(width: 120)
+                .labelsHidden()
+
+                Button("Load Preset") {
+                    workspaceDraft = workspacePreset.controls
+                }
+                .buttonStyle(.bordered)
+
+                Button("Apply") {
+                    applyWorkspaceDraftToTargets()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Reset") {
+                    resetWorkspaceTargets()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Copy") {
+                    copiedWorkspaceControls = workspaceDraft
+                }
+                .buttonStyle(.bordered)
+
+                Button("Paste") {
+                    guard let copiedWorkspaceControls else { return }
+                    workspaceDraft = copiedWorkspaceControls
+                }
+                .buttonStyle(.bordered)
+                .disabled(copiedWorkspaceControls == nil)
+
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Dynamics")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                workspaceSliderRow(
+                    title: "Timing",
+                    value: Binding(
+                        get: { Double(workspaceDraft.bin0) },
+                        set: { workspaceDraft.bin0 = Float($0) }
+                    ),
+                    range: 0...1
+                )
+                workspaceSliderRow(
+                    title: "Distortion",
+                    value: Binding(
+                        get: { Double(workspaceDraft.bin1) },
+                        set: { workspaceDraft.bin1 = Float($0) }
+                    ),
+                    range: 0...1
+                )
+                workspaceSliderRow(
+                    title: "Color Drift",
+                    value: Binding(
+                        get: { Double(workspaceDraft.bin2) },
+                        set: { workspaceDraft.bin2 = Float($0) }
+                    ),
+                    range: 0...1
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Lens")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                workspaceSliderRow(
+                    title: "Zoom",
+                    value: Binding(
+                        get: { Double(workspaceDraft.zoom) },
+                        set: { workspaceDraft.zoom = Float($0) }
+                    ),
+                    range: 0.5...1.8
+                )
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.quaternary)
+    }
+
+    private func workspaceSliderRow(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .frame(width: 80, alignment: .leading)
+            Slider(value: value, in: range)
+            Text(String(format: "%.2f", value.wrappedValue))
+                .font(.caption.monospacedDigit())
+                .frame(width: 44, alignment: .trailing)
+        }
+    }
+
+    private var filterBar: some View {
+        HStack(spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("Search shaders...", text: appState.shaderCatalogSearchBinding)
+                    .textFieldStyle(.plain)
+            }
+            .padding(8)
+            .background(.quaternary)
+            .cornerRadius(8)
+
+            Picker("Folder", selection: appState.shaderCatalogFolderBinding) {
+                Text(ShaderConstants.allFolders).tag(ShaderConstants.allFolders)
+                Text(ShaderConstants.masksFolder).tag(ShaderConstants.masksFolder)
+                ForEach(availableFolders.filter { $0 != ShaderConstants.masksFolder }, id: \.self) { folder in
+                    Text(folder).tag(folder)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(minWidth: 200)
+
+            Divider().frame(height: 20)
+
+            Picker("Badge", selection: appState.shaderCatalogBadgeFilterBinding) {
+                ForEach(ShaderCatalogBadgeFilter.allCases, id: \.self) { filter in
+                    HStack {
+                        if filter == .black {
+                            Circle().fill(.red).frame(width: 8, height: 8)
+                        } else if filter == .monochromatic {
+                            Circle().fill(.gray).frame(width: 8, height: 8)
+                        }
+                        Text(filter.rawValue)
+                    }.tag(filter)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(minWidth: 120)
+
+            Picker("Phase", selection: appState.shaderCatalogPhaseFilterBinding) {
+                Text("All Phases").tag(Phase?.none)
+                Divider()
+                ForEach(Phase.allCases, id: \.self) { phase in
+                    Label(phase.displayName, systemImage: phase.iconName)
+                        .tag(Phase?.some(phase))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(minWidth: 120)
+
+            Picker("Sort", selection: appState.shaderCatalogSortOrderBinding) {
+                ForEach(ShaderCatalogSortOrder.allCases, id: \.self) { sort in
+                    Text(sort.rawValue).tag(sort)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(minWidth: 150)
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
                 Text("\(filteredShaders.count) shaders | \(selectedShaders.count) selected")
                     .foregroundColor(.secondary)
+                Text("Cmd+Up/Down move, Cmd+Shift+Up/Down multi-select, Cmd+T toggle, Cmd+1...5 tags, Cmd+Return apply")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
-            .padding()
-            .background(.bar)
-            .onChange(of: searchText) { _, _ in
-                scheduleSearch(query: searchText)
+        }
+        .padding()
+        .background(.bar)
+        .onChange(of: appState.shaderCatalog.searchText) { _, newQuery in
+            scheduleSearch(query: newQuery)
+        }
+    }
+
+    private var keyboardShortcutHost: some View {
+        VStack(spacing: 0) {
+            Button(action: { moveKeyboardSelection(offset: -1, extendSelection: false) }) {
+                EmptyView()
             }
-            
-            Divider()
-            
-            // Shader grid
+            .keyboardShortcut(.upArrow, modifiers: .command)
+            Button(action: { moveKeyboardSelection(offset: 1, extendSelection: false) }) {
+                EmptyView()
+            }
+            .keyboardShortcut(.downArrow, modifiers: .command)
+            Button(action: { moveKeyboardSelection(offset: -1, extendSelection: true) }) {
+                EmptyView()
+            }
+            .keyboardShortcut(.upArrow, modifiers: [.command, .shift])
+            Button(action: { moveKeyboardSelection(offset: 1, extendSelection: true) }) {
+                EmptyView()
+            }
+            .keyboardShortcut(.downArrow, modifiers: [.command, .shift])
+            Button(action: { toggleCurrentShaderSelectionFromKeyboard() }) {
+                EmptyView()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+        }
+        .buttonStyle(.plain)
+        .frame(width: 0, height: 0)
+        .opacity(0.001)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var shaderResults: some View {
+        if appState.shaderCatalog.viewMode == .grid {
             ScrollView {
                 LazyVGrid(columns: [
                     GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 16)
@@ -463,38 +765,36 @@ struct ShaderBrowserView: View {
                 }
                 .padding()
             }
-        }
-        .task {
-            await loadShaders()
-        }
-        .sheet(item: $activeModal, onDismiss: handleModalDismiss) { modal in
-            switch modal {
-            case .analysis(let analysis):
-                ShaderAnalysisModal(analysis: analysis)
-            case .preview(let shaderName, _):
-                ShaderPreviewModalContent(
-                    shaderName: shaderName,
-                    onClose: { activeModal = nil }
-                )
-                .environmentObject(appState)
+        } else {
+            List(filteredShaders, id: \.path) { shader in
+                HStack(spacing: 10) {
+                    Image(systemName: selectedShaders.contains(shader.name) ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(selectedShaders.contains(shader.name) ? Color.accentColor : Color.secondary)
+                        .onTapGesture {
+                            let modifiers = currentSelectionModifiers()
+                            handleCheckClick(shader.name, modifiers: modifiers)
+                        }
+                    Text(shader.name)
+                        .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .foregroundStyle(appState.selectedShader == shader.name ? .primary : .secondary)
+                        .onTapGesture {
+                            appState.selectShader(shader.name)
+                        }
+                    Spacer()
+                    Text(getShaderStatusLabel(shader))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
-        }
-        .alert("Delete Shader?", isPresented: $showDeleteConfirm, presenting: shaderToDelete) { shader in
-            Button("Delete", role: .destructive) {
-                deleteShader(shader)
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: { shader in
-            Text("Are you sure you want to delete \"\(shader.name)\"? This cannot be undone.")
-        }
-        .onDisappear {
-            searchDebounceTask?.cancel()
-            searchDebounceTask = nil
+            .listStyle(.plain)
         }
     }
     
     private func loadShaders() async {
         appState.log("Loading shaders from swift-vj/Shaders...", level: .debug)
+        await ShaderCardAssetCache.shared.invalidateAll()
         
         // Get shaders from module
         if let module = appState.shadersModule {
@@ -518,6 +818,11 @@ struct ShaderBrowserView: View {
             shaders = loadedShaders
             availableFolders = loadedFolders
             shaderMetadata = loadedMetadata
+            let validNames = Set(loadedShaders.map(\.name))
+            let prunedSelection = selectedShaders.intersection(validNames)
+            if prunedSelection != selectedShaders {
+                appState.setShaderCatalogSelection(prunedSelection)
+            }
             
             // Log folder breakdown
             for folder in availableFolders {
@@ -531,7 +836,7 @@ struct ShaderBrowserView: View {
             shaderMetadata = [:]
             appState.log("No shaders found in Shaders directory.", level: .warning)
         }
-        await performSearch(query: searchText)
+        await performSearch(query: appState.shaderCatalog.searchText)
     }
 
     /// Debounce shader search to keep the UI responsive on large libraries.
@@ -600,11 +905,7 @@ struct ShaderBrowserView: View {
     }
     
     private func toggleSelection(_ shaderName: String) {
-        if selectedShaders.contains(shaderName) {
-            selectedShaders.remove(shaderName)
-        } else {
-            selectedShaders.insert(shaderName)
-        }
+        appState.toggleShaderCatalogSelection(shaderName)
         lastClickedShader = shaderName
     }
     
@@ -612,18 +913,18 @@ struct ShaderBrowserView: View {
     
     /// Select all shaders in current filter
     private func selectAll() {
-        selectedShaders = Set(filteredShaders.map { $0.name })
+        appState.setShaderCatalogSelection(Set(filteredShaders.map { $0.name }))
     }
     
     /// Deselect all shaders
     private func deselectAll() {
-        selectedShaders.removeAll()
+        appState.clearShaderCatalogSelection()
         lastClickedShader = nil
     }
     
     /// Select all shaders that don't have analysis.json
     private func selectUnanalyzed() {
-        selectedShaders = Set(filteredShaders.filter { !hasAnalysisFile($0) }.map(\.name))
+        appState.setShaderCatalogSelection(Set(filteredShaders.filter { !hasAnalysisFile($0) }.map(\.name)))
         appState.log("Selected \(selectedShaders.count) unanalyzed shaders", level: .info)
     }
     
@@ -651,10 +952,157 @@ struct ShaderBrowserView: View {
         }
         
         let range = min(startIndex, endIndex)...max(startIndex, endIndex)
+        var updatedSelection = selectedShaders
         for i in range {
-            selectedShaders.insert(names[i])
+            updatedSelection.insert(names[i])
         }
+        appState.setShaderCatalogSelection(updatedSelection)
         lastClickedShader = end
+    }
+
+    private func toggleBulkPhase(_ phase: Phase) {
+        var phases = appState.shaderCatalog.bulkPhases
+        if phases.contains(phase) {
+            phases.remove(phase)
+        } else {
+            phases.insert(phase)
+        }
+        appState.setShaderCatalogBulkPhases(phases)
+    }
+
+    private func phaseShortcutKey(_ phase: Phase) -> KeyEquivalent {
+        switch phase {
+        case .disco: return "1"
+        case .buildup: return "2"
+        case .peak: return "3"
+        case .release: return "4"
+        case .feature: return "5"
+        }
+    }
+
+    private func phaseShortcutLabel(_ phase: Phase) -> String {
+        switch phase {
+        case .disco: return "1"
+        case .buildup: return "2"
+        case .peak: return "3"
+        case .release: return "4"
+        case .feature: return "5"
+        }
+    }
+
+    private func moveKeyboardSelection(offset: Int, extendSelection: Bool) {
+        let names = filteredShaders.map(\.name)
+        guard !names.isEmpty else { return }
+
+        let targetIndex: Int
+        let origin: String?
+        if let current = appState.selectedShader,
+           !current.isEmpty,
+           let currentIndex = names.firstIndex(of: current) {
+            origin = current
+            targetIndex = min(max(currentIndex + offset, 0), names.count - 1)
+        } else {
+            origin = nil
+            targetIndex = offset >= 0 ? 0 : names.count - 1
+        }
+
+        let target = names[targetIndex]
+        appState.selectShader(target)
+        if extendSelection {
+            var updated = selectedShaders
+            if let origin { updated.insert(origin) }
+            updated.insert(target)
+            appState.setShaderCatalogSelection(updated)
+        }
+        lastClickedShader = target
+    }
+
+    private func toggleCurrentShaderSelectionFromKeyboard() {
+        let names = filteredShaders.map(\.name)
+        guard !names.isEmpty else { return }
+        let current = appState.selectedShader
+        let target: String
+        if let current, !current.isEmpty, names.contains(current) {
+            target = current
+        } else {
+            target = names[0]
+            appState.selectShader(target)
+        }
+        toggleSelection(target)
+    }
+
+    private func applyBulkPhasesToSelection() {
+        let bulkPhases = appState.shaderCatalog.bulkPhases
+        guard !bulkPhases.isEmpty else { return }
+
+        let selectedNames = selectedShaders
+        let selectedShaderInfos = shaders.filter { selectedNames.contains($0.name) }
+        guard !selectedShaderInfos.isEmpty else { return }
+
+        for shader in selectedShaderInfos {
+            saveShaderPhases(shader: shader, phases: bulkPhases)
+        }
+
+        appState.log(
+            "Queued phase assignment (\(bulkPhases.map(\.displayName).joined(separator: ", "))) for \(selectedShaderInfos.count) shader(s)",
+            level: .info
+        )
+    }
+
+    private func syncWorkspaceDraftFromTargets() {
+        guard let primary = workspaceTargetShaders.first else {
+            workspaceDraft = .default
+            workspacePreset = .neutral
+            return
+        }
+        let controls = appState.shaderWorkspaceControls(for: primary)
+        workspaceDraft = controls
+        workspacePreset = WorkspacePreset.allCases.first(where: { $0.controls == controls }) ?? .neutral
+    }
+
+    private func applyWorkspaceDraftToTargets() {
+        let targets = workspaceTargetShaders
+        guard !targets.isEmpty else { return }
+        for shaderName in targets {
+            appState.setShaderWorkspaceControls(workspaceDraft, shaderName: shaderName)
+        }
+        appState.log("Applied shader workspace controls to \(targets.count) shader(s)", level: .info)
+    }
+
+    private func resetWorkspaceTargets() {
+        let targets = workspaceTargetShaders
+        guard !targets.isEmpty else { return }
+        for shaderName in targets {
+            appState.resetShaderWorkspaceControls(shaderName: shaderName)
+        }
+        workspaceDraft = .default
+    }
+
+    private func currentSelectionModifiers() -> EventModifiers {
+        let modifiers = NSEvent.modifierFlags
+        var eventModifiers: EventModifiers = []
+        if modifiers.contains(.shift) { eventModifiers.insert(.shift) }
+        if modifiers.contains(.command) { eventModifiers.insert(.command) }
+        return eventModifiers
+    }
+
+    private func getShaderStatusLabel(_ shader: CoreShaderInfo) -> String {
+        switch getShaderStatus(shader) {
+        case .black: return ShaderConstants.blackBadge
+        case .monochromatic: return ShaderConstants.monoBadge
+        case .normal: return "Analyzed"
+        case .unknown: return "Not Analyzed"
+        }
+    }
+
+    private func phaseColor(_ phase: Phase) -> Color {
+        switch phase {
+        case .disco: return .purple
+        case .buildup: return .orange
+        case .peak: return .red
+        case .release: return .cyan
+        case .feature: return .yellow
+        }
     }
     
     // MARK: - File Operations
@@ -705,7 +1153,9 @@ struct ShaderBrowserView: View {
             }
 
             appState.log("Moved \(result.succeeded.count) shaders to masks folder", level: .info)
-            selectedShaders.subtract(result.succeeded)
+            var updatedSelection = selectedShaders
+            updatedSelection.subtract(result.succeeded)
+            appState.setShaderCatalogSelection(updatedSelection)
 
             if movedCurrentShader && result.succeeded.contains(appState.selectedShader ?? "") {
                 appState.selectShader("")
@@ -770,7 +1220,9 @@ struct ShaderBrowserView: View {
             }
 
             appState.log("Moved \(result.succeeded.count) shaders back to glsl folder", level: .info)
-            selectedShaders.subtract(result.succeeded)
+            var updatedSelection = selectedShaders
+            updatedSelection.subtract(result.succeeded)
+            appState.setShaderCatalogSelection(updatedSelection)
             await reloadAllShaders()
         }
     }
@@ -837,7 +1289,9 @@ struct ShaderBrowserView: View {
 
             guard result.succeeded.contains(shader.name) else { return }
             appState.log("Deleted shader: \(shader.name)", level: .info)
-            selectedShaders.remove(shader.name)
+            var updatedSelection = selectedShaders
+            updatedSelection.remove(shader.name)
+            appState.setShaderCatalogSelection(updatedSelection)
 
             if wasCurrentShader {
                 appState.selectShader("")
@@ -1286,16 +1740,41 @@ struct ShaderBrowserView: View {
     
     /// Save phase assignments to shader's analysis.json
     private func saveShaderPhases(shader: CoreShaderInfo, phases: Set<Phase>) {
+        let updatedStatus = shaderMetadata[shader.name]?.status == .unknown
+            ? .normal
+            : (shaderMetadata[shader.name]?.status ?? .normal)
+        shaderMetadata[shader.name] = ShaderFilterMetadata(status: updatedStatus, phases: phases, hasAnalysis: true)
+
+        let shaderPath = shader.path
+        phaseWriteDebounceTasks[shaderPath]?.cancel()
+        phaseWriteDebounceTasks[shaderPath] = Task { [shader, phases] in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+
+            do {
+                try await Task.detached(priority: .utility) {
+                    try Self.persistShaderPhasesToDisk(shader: shader, phases: phases)
+                }.value
+                await ShaderCardAssetCache.shared.invalidate(shaderPath: shader.path)
+                appState.log(
+                    "💾 Saved phases for \(shader.name): \(phases.map { $0.displayName }.joined(separator: ", "))",
+                    level: .debug
+                )
+            } catch {
+                appState.log("✗ Failed to save phases for \(shader.name): \(error.localizedDescription)", level: .error)
+            }
+        }
+    }
+
+    nonisolated private static func persistShaderPhasesToDisk(shader: CoreShaderInfo, phases: Set<Phase>) throws {
         let analysisPath = Self.analysisPath(for: shader)
-        
-        // Load existing analysis or create minimal one
+
         var analysisDict: [String: Any] = [:]
         if FileManager.default.fileExists(atPath: analysisPath.path),
            let data = try? Data(contentsOf: analysisPath),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             analysisDict = json
         } else {
-            // Create minimal analysis with just phases
             analysisDict = [
                 "title": shader.name,
                 "description": "",
@@ -1309,20 +1788,10 @@ struct ShaderBrowserView: View {
                 "visual_metadata": [:]
             ]
         }
-        
-        // Update dj_phases
+
         analysisDict["dj_phases"] = phases.map { $0.rawValue }
-        
-        // Save back
-        do {
-            let data = try JSONSerialization.data(withJSONObject: analysisDict, options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: analysisPath)
-            let updatedStatus = shaderMetadata[shader.name]?.status == .unknown ? .normal : (shaderMetadata[shader.name]?.status ?? .normal)
-            shaderMetadata[shader.name] = ShaderFilterMetadata(status: updatedStatus, phases: phases, hasAnalysis: true)
-            appState.log("💾 Saved phases for \(shader.name): \(phases.map { $0.displayName }.joined(separator: ", "))", level: .info)
-        } catch {
-            appState.log("✗ Failed to save phases for \(shader.name): \(error.localizedDescription)", level: .error)
-        }
+        let data = try JSONSerialization.data(withJSONObject: analysisDict, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: analysisPath)
     }
     
     private func showAnalysis(for shader: CoreShaderInfo) {
@@ -1417,31 +1886,6 @@ struct ShaderCardEnhanced: View {
     @State private var hasAnalysis: Bool = false
     @State private var assignedPhases: Set<Phase> = []
     
-    /// Find screenshot path for this shader
-    private var screenshotPath: URL? {
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-        
-        let possibleFiles = [
-            shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.screenshotExtension)"),
-            shaderDir.appendingPathComponent(ShaderConstants.screenshotFilename),
-            shaderDir.appendingPathComponent(ShaderConstants.previewFilename)
-        ]
-        
-        return possibleFiles.first { FileManager.default.fileExists(atPath: $0.path) }
-    }
-    
-    /// Find analysis.json path for this shader
-    private var analysisPath: URL? {
-        let shaderPath = URL(fileURLWithPath: shader.path)
-        let shaderDir = shaderPath.deletingLastPathComponent()
-        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-        
-        let path = shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.analysisExtension)")
-        return FileManager.default.fileExists(atPath: path.path) ? path : nil
-    }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Top row with checkbox and delete button
@@ -1524,8 +1968,8 @@ struct ShaderCardEnhanced: View {
                 guard !isAnalyzing else { return }
                 onTap()
             }
-            .onAppear { loadScreenshot(); loadAnalysis() }
-            .onChange(of: refreshId) { _, _ in loadScreenshot(); loadAnalysis() }
+            .onAppear { loadAssets(forceRefresh: false) }
+            .onChange(of: refreshId) { _, _ in loadAssets(forceRefresh: true) }
             
             // Name and analysis button
             HStack {
@@ -1691,66 +2135,115 @@ struct ShaderCardEnhanced: View {
         }
     }
     
-    /// Load screenshot from disk
-    private func loadScreenshot() {
-        // Move ALL file I/O to background thread (including path existence checks)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let shaderPath = URL(fileURLWithPath: shader.path)
-            let shaderDir = shaderPath.deletingLastPathComponent()
-            let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-
-            let possibleFiles = [
-                shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.screenshotExtension)"),
-                shaderDir.appendingPathComponent(ShaderConstants.screenshotFilename),
-                shaderDir.appendingPathComponent(ShaderConstants.previewFilename)
-            ]
-
-            guard let path = possibleFiles.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
-                  let image = NSImage(contentsOf: path) else {
-                DispatchQueue.main.async {
-                    self.screenshotImage = nil
-                }
-                return
+    private func loadAssets(forceRefresh: Bool) {
+        let shaderPath = shader.path
+        Task {
+            if forceRefresh {
+                await ShaderCardAssetCache.shared.invalidate(shaderPath: shaderPath)
             }
+            let assets = await ShaderCardAssetCache.shared.assets(for: shader)
+            guard !Task.isCancelled else { return }
 
-            DispatchQueue.main.async {
-                self.screenshotImage = image
-            }
+            let image = assets.screenshotData.flatMap(NSImage.init(data:))
+            screenshotImage = image
+            hasAnalysis = assets.hasAnalysis
+            analysisData = assets.analysis
         }
     }
-    
-    /// Load analysis JSON from disk
-    private func loadAnalysis() {
-        // Move ALL file I/O to background thread (including path existence check)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let shaderPath = URL(fileURLWithPath: shader.path)
-            let shaderDir = shaderPath.deletingLastPathComponent()
-            let shaderName = shaderPath.deletingPathExtension().lastPathComponent
-            let path = shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.analysisExtension)")
+}
 
-            guard FileManager.default.fileExists(atPath: path.path) else {
-                DispatchQueue.main.async {
-                    self.hasAnalysis = false
-                    self.analysisData = nil
-                }
-                return
-            }
+private struct ShaderCardAssets: Sendable {
+    let screenshotData: Data?
+    let analysis: ShaderAnalysisResult?
+    let hasAnalysis: Bool
+}
 
-            do {
-                let data = try Data(contentsOf: path)
-                let analysis = try JSONDecoder().decode(ShaderAnalysisResult.self, from: data)
-                DispatchQueue.main.async {
-                    self.hasAnalysis = true
-                    self.analysisData = analysis
-                }
-            } catch {
-                // File exists but couldn't parse - still mark as analyzed
-                DispatchQueue.main.async {
-                    self.hasAnalysis = true
-                    self.analysisData = nil
-                }
-            }
+private actor ShaderCardAssetCache {
+    static let shared = ShaderCardAssetCache()
+
+    private enum ScreenshotEntry: Sendable {
+        case data(Data)
+        case missing
+    }
+
+    private enum AnalysisEntry: Sendable {
+        case parsed(ShaderAnalysisResult)
+        case parseFailed
+        case missing
+    }
+
+    private var screenshotEntries: [String: ScreenshotEntry] = [:]
+    private var analysisEntries: [String: AnalysisEntry] = [:]
+
+    func assets(for shader: CoreShaderInfo) -> ShaderCardAssets {
+        let key = shader.path
+        let screenshotData = loadScreenshotData(for: shader, key: key)
+        let analysisEntry = loadAnalysis(for: shader, key: key)
+
+        switch analysisEntry {
+        case .parsed(let analysis):
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: analysis, hasAnalysis: true)
+        case .parseFailed:
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: true)
+        case .missing:
+            return ShaderCardAssets(screenshotData: screenshotData, analysis: nil, hasAnalysis: false)
         }
+    }
+
+    func invalidate(shaderPath: String) {
+        screenshotEntries.removeValue(forKey: shaderPath)
+        analysisEntries.removeValue(forKey: shaderPath)
+    }
+
+    func invalidateAll() {
+        screenshotEntries.removeAll()
+        analysisEntries.removeAll()
+    }
+
+    private func loadScreenshotData(for shader: CoreShaderInfo, key: String) -> Data? {
+        if let cached = screenshotEntries[key] {
+            if case .data(let data) = cached {
+                return data
+            }
+            return nil
+        }
+
+        let shaderPath = URL(fileURLWithPath: shader.path)
+        let shaderDir = shaderPath.deletingLastPathComponent()
+        let shaderName = shaderPath.deletingPathExtension().lastPathComponent
+        let possibleFiles = [
+            shaderDir.appendingPathComponent("\(shaderName).\(ShaderConstants.screenshotExtension)"),
+            shaderDir.appendingPathComponent(ShaderConstants.screenshotFilename),
+            shaderDir.appendingPathComponent(ShaderConstants.previewFilename)
+        ]
+        guard let screenshotURL = possibleFiles.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let data = try? Data(contentsOf: screenshotURL) else {
+            screenshotEntries[key] = .missing
+            return nil
+        }
+        screenshotEntries[key] = .data(data)
+        return data
+    }
+
+    private func loadAnalysis(for shader: CoreShaderInfo, key: String) -> AnalysisEntry {
+        if let cached = analysisEntries[key] {
+            return cached
+        }
+
+        let analysisPath = ShaderBrowserView.analysisPath(for: shader)
+        guard FileManager.default.fileExists(atPath: analysisPath.path) else {
+            analysisEntries[key] = .missing
+            return .missing
+        }
+
+        guard let data = try? Data(contentsOf: analysisPath),
+              let analysis = try? JSONDecoder().decode(ShaderAnalysisResult.self, from: data) else {
+            analysisEntries[key] = .parseFailed
+            return .parseFailed
+        }
+
+        analysisEntries[key] = .parsed(analysis)
+        return .parsed(analysis)
     }
 }
 

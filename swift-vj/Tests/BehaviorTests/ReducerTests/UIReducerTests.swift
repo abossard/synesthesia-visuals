@@ -154,4 +154,49 @@ final class UIReducerTests: XCTestCase {
         _ = uiReducer(state: &state, action: .setOscFilter(""))
         XCTAssertEqual(state.oscFilter, "")
     }
+
+    // MARK: - Shader Catalog
+
+    func testShaderCatalogFiltersAndSortUpdateState() {
+        var state = UISubState()
+
+        _ = uiReducer(state: &state, action: .setShaderCatalogSearchText("nebula"))
+        _ = uiReducer(state: &state, action: .setShaderCatalogFolder("Particles"))
+        _ = uiReducer(state: &state, action: .setShaderCatalogBadgeFilter(.analyzed))
+        _ = uiReducer(state: &state, action: .setShaderCatalogPhaseFilter(.peak))
+        _ = uiReducer(state: &state, action: .setShaderCatalogSortOrder(.phaseCoverage))
+        _ = uiReducer(state: &state, action: .setShaderCatalogViewMode(.list))
+
+        XCTAssertEqual(state.shaderCatalog.searchText, "nebula")
+        XCTAssertEqual(state.shaderCatalog.selectedFolder, "Particles")
+        XCTAssertEqual(state.shaderCatalog.badgeFilter, .analyzed)
+        XCTAssertEqual(state.shaderCatalog.phaseFilter, .peak)
+        XCTAssertEqual(state.shaderCatalog.sortOrder, .phaseCoverage)
+        XCTAssertEqual(state.shaderCatalog.viewMode, .list)
+    }
+
+    func testShaderCatalogSelectionActionsUpdateState() {
+        var state = UISubState()
+
+        _ = uiReducer(state: &state, action: .setShaderCatalogSelection(["A", "B"]))
+        XCTAssertEqual(state.shaderCatalog.selectedShaders, Set(["A", "B"]))
+
+        _ = uiReducer(state: &state, action: .toggleShaderCatalogSelection("A"))
+        XCTAssertEqual(state.shaderCatalog.selectedShaders, Set(["B"]))
+
+        _ = uiReducer(state: &state, action: .toggleShaderCatalogSelection("C"))
+        XCTAssertEqual(state.shaderCatalog.selectedShaders, Set(["B", "C"]))
+
+        _ = uiReducer(state: &state, action: .clearShaderCatalogSelection)
+        XCTAssertTrue(state.shaderCatalog.selectedShaders.isEmpty)
+    }
+
+    func testShaderCatalogBulkPhasesUpdatesState() {
+        var state = UISubState()
+        let phases: Set<Phase> = [.disco, .release]
+
+        _ = uiReducer(state: &state, action: .setShaderCatalogBulkPhases(phases))
+
+        XCTAssertEqual(state.shaderCatalog.bulkPhases, phases)
+    }
 }

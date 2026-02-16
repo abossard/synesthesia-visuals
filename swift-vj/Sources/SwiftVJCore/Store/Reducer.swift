@@ -411,6 +411,19 @@ public func renderReducer(
         appState.ui.addLog("Shaders: \(count) loaded", level: .info)
         return .none
 
+    case .setShaderWorkspaceControls(let shaderName, let controls):
+        if controls == .default {
+            state.shaderControlsByShader.removeValue(forKey: shaderName)
+        } else {
+            state.shaderControlsByShader[shaderName] = controls
+        }
+        return .send(.persistState)
+
+    case .resetShaderWorkspaceControls(let shaderName):
+        state.shaderControlsByShader.removeValue(forKey: shaderName)
+        appState.ui.addLog("Reset shader controls for \(shaderName)", level: .info)
+        return .send(.persistState)
+
     case .startEngine:
         state.isEnabled = true
         appState.ui.addLog("Renderer enabled", level: .info)
@@ -564,6 +577,46 @@ public func uiReducer(
 
     case .setOscFilter(let filter):
         state.oscFilter = filter
+        return .none
+
+    case .setShaderCatalogSearchText(let query):
+        state.shaderCatalog.searchText = query
+        return .none
+
+    case .setShaderCatalogFolder(let folder):
+        state.shaderCatalog.selectedFolder = folder
+        return .none
+
+    case .setShaderCatalogBadgeFilter(let filter):
+        state.shaderCatalog.badgeFilter = filter
+        return .none
+
+    case .setShaderCatalogPhaseFilter(let phase):
+        state.shaderCatalog.phaseFilter = phase
+        return .none
+
+    case .setShaderCatalogSortOrder(let order):
+        state.shaderCatalog.sortOrder = order
+        return .none
+
+    case .setShaderCatalogViewMode(let mode):
+        state.shaderCatalog.viewMode = mode
+        return .none
+
+    case .setShaderCatalogSelection(let names):
+        state.shaderCatalog.selectedShaders = names
+        return .none
+
+    case .toggleShaderCatalogSelection(let name):
+        state.shaderCatalog.toggleSelection(name)
+        return .none
+
+    case .clearShaderCatalogSelection:
+        state.shaderCatalog.selectedShaders.removeAll()
+        return .none
+
+    case .setShaderCatalogBulkPhases(let phases):
+        state.shaderCatalog.bulkPhases = phases
         return .none
 
     case .reloadTachikomaConfig:
@@ -1309,10 +1362,18 @@ public enum PersistenceEffects {
             } else {
                 launcherTargets = []
             }
+            let shaderControlsByShader: [String: ShaderWorkspaceControls]
+            if let controlsData = UserDefaults.standard.data(forKey: "shaderControlsByShader"),
+               let decoded = try? JSONDecoder().decode([String: ShaderWorkspaceControls].self, from: controlsData) {
+                shaderControlsByShader = decoded
+            } else {
+                shaderControlsByShader = [:]
+            }
 
             let persisted = PersistedState(
                 renderEnabled: renderEnabled,
                 renderOutputs: renderOutputs,
+                shaderControlsByShader: shaderControlsByShader,
                 selectedShader: shader,
                 selectedMaskShader: maskShader,
                 currentPhase: phase,
@@ -1333,6 +1394,11 @@ public enum PersistenceEffects {
             UserDefaults.standard.set(state.renderOutputs.refrain, forKey: "renderOutput.refrain")
             UserDefaults.standard.set(state.renderOutputs.songInfo, forKey: "renderOutput.songInfo")
             UserDefaults.standard.set(state.renderOutputs.image, forKey: "renderOutput.image")
+            if let controlsData = try? JSONEncoder().encode(state.shaderControlsByShader) {
+                UserDefaults.standard.set(controlsData, forKey: "shaderControlsByShader")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "shaderControlsByShader")
+            }
             if let shader = state.selectedShader {
                 UserDefaults.standard.set(shader, forKey: "selectedShader")
             } else {

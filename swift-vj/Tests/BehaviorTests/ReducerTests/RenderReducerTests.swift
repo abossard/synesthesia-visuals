@@ -380,6 +380,44 @@ final class RenderReducerTests: XCTestCase {
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("100") })
     }
 
+    func testSetShaderWorkspaceControlsStoresAndPersists() async {
+        var appState = AppState()
+        let controls = ShaderWorkspaceControls(bin0: 0.2, bin1: 0.3, bin2: 0.4, zoom: 1.1)
+
+        let effect = applyRenderReducerReturningEffect(
+            .setShaderWorkspaceControls(shaderName: "rainbow", controls: controls),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderControlsByShader["rainbow"], controls)
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case .persistState = emitted[0] else {
+            XCTFail("Expected persistState after shader workspace controls update")
+            return
+        }
+    }
+
+    func testResetShaderWorkspaceControlsRemovesEntryAndPersists() async {
+        var appState = AppState()
+        appState.render.shaderControlsByShader["rainbow"] = ShaderWorkspaceControls(bin0: 0.2, bin1: 0.3, bin2: 0.4, zoom: 1.1)
+
+        let effect = applyRenderReducerReturningEffect(
+            .resetShaderWorkspaceControls(shaderName: "rainbow"),
+            to: &appState
+        )
+
+        XCTAssertNil(appState.render.shaderControlsByShader["rainbow"])
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case .persistState = emitted[0] else {
+            XCTFail("Expected persistState after shader workspace controls reset")
+            return
+        }
+    }
+
     // MARK: - Effective Phase
 
     func testEffectivePhaseReturnsManualPhase() {

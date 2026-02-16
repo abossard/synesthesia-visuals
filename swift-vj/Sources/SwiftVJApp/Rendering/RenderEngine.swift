@@ -73,6 +73,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private let pendingShaderName = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let pendingMaskName = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let outputState = OSAllocatedUnfairLock<RenderOutputsState>(initialState: RenderOutputsState())
+    private let shaderControlsState = OSAllocatedUnfairLock<[String: ShaderWorkspaceControls]>(initialState: [:])
     
     // FPS tracking (render thread only)
     private var lastFrameTime: CFAbsoluteTime = 0
@@ -413,7 +414,19 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         renderer.renderFrame(
             audioState: context.audioState,
             syphonManager: syphonManager,
-            outputs: outputs
+            outputs: outputs,
+            shaderControls: shaderControlsState.withLock { controlsByShader in
+                if let shaderName = context.shaderState.current?.name {
+                    return controlsByShader[shaderName]
+                }
+                return nil
+            },
+            maskControls: shaderControlsState.withLock { controlsByShader in
+                if let maskName = context.maskState.current?.name {
+                    return controlsByShader[maskName]
+                }
+                return nil
+            }
         )
     }
 
@@ -430,6 +443,11 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             return state
         }
         syncSyphonServers(for: updated)
+    }
+
+    @MainActor
+    func setShaderControlsByShader(_ controlsByShader: [String: ShaderWorkspaceControls]) {
+        shaderControlsState.withLock { $0 = controlsByShader }
     }
 
     // MARK: - Convenience Methods

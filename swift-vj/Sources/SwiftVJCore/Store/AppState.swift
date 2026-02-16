@@ -289,6 +289,27 @@ public struct RenderOutputsState: Equatable, Codable, Sendable {
     }
 }
 
+public struct ShaderWorkspaceControls: Equatable, Codable, Sendable {
+    public var bin0: Float
+    public var bin1: Float
+    public var bin2: Float
+    public var zoom: Float
+
+    public init(
+        bin0: Float = 0,
+        bin1: Float = 0,
+        bin2: Float = 0,
+        zoom: Float = 1
+    ) {
+        self.bin0 = bin0
+        self.bin1 = bin1
+        self.bin2 = bin2
+        self.zoom = zoom
+    }
+
+    public static let `default` = ShaderWorkspaceControls()
+}
+
 /// Rendering-related state
 public struct RenderSubState: Equatable, Sendable {
     /// Whether rendering and Syphon output are enabled
@@ -318,6 +339,9 @@ public struct RenderSubState: Equatable, Sendable {
     /// Available shader count
     public var shaderCount: Int
 
+    /// Per-shader workspace controls (bin0/bin1/bin2/zoom)
+    public var shaderControlsByShader: [String: ShaderWorkspaceControls]
+
     /// Effective phase (manual or detected)
     public var effectivePhase: Phase? {
         currentPhase ?? detectedSongPhase
@@ -332,7 +356,8 @@ public struct RenderSubState: Equatable, Sendable {
         detectedSongPhase: Phase? = nil,
         imageIndex: Int = 0,
         imageCount: Int = 0,
-        shaderCount: Int = 0
+        shaderCount: Int = 0,
+        shaderControlsByShader: [String: ShaderWorkspaceControls] = [:]
     ) {
         self.isEnabled = isEnabled
         self.outputs = outputs
@@ -343,6 +368,12 @@ public struct RenderSubState: Equatable, Sendable {
         self.imageIndex = imageIndex
         self.imageCount = imageCount
         self.shaderCount = shaderCount
+        self.shaderControlsByShader = shaderControlsByShader
+    }
+
+    public func shaderControls(for shaderName: String?) -> ShaderWorkspaceControls {
+        guard let shaderName else { return .default }
+        return shaderControlsByShader[shaderName] ?? .default
     }
 }
 
@@ -500,6 +531,68 @@ public struct AudioSubState: Equatable, Sendable {
 
 // MARK: - UI Sub-State
 
+/// Badge filter options for shader catalog workflow
+public enum ShaderCatalogBadgeFilter: String, CaseIterable, Codable, Sendable {
+    case all = "All"
+    case black = "Black"
+    case monochromatic = "Monochromatic"
+    case analyzed = "Analyzed"
+    case notAnalyzed = "Not Analyzed"
+}
+
+/// Sort options for shader catalog workflow
+public enum ShaderCatalogSortOrder: String, CaseIterable, Codable, Sendable {
+    case name = "Name"
+    case unanalyzedFirst = "Unanalyzed First"
+    case phaseCoverage = "Phase Coverage"
+}
+
+/// Display mode for shader catalog workflow
+public enum ShaderCatalogViewMode: String, CaseIterable, Codable, Sendable {
+    case grid = "Grid"
+    case list = "List"
+}
+
+/// UI state for shader browsing and curation workflow.
+public struct ShaderCatalogSubState: Equatable, Sendable {
+    public var searchText: String
+    public var selectedFolder: String
+    public var badgeFilter: ShaderCatalogBadgeFilter
+    public var phaseFilter: Phase?
+    public var sortOrder: ShaderCatalogSortOrder
+    public var viewMode: ShaderCatalogViewMode
+    public var selectedShaders: Set<String>
+    public var bulkPhases: Set<Phase>
+
+    public init(
+        searchText: String = "",
+        selectedFolder: String = "ALL",
+        badgeFilter: ShaderCatalogBadgeFilter = .all,
+        phaseFilter: Phase? = nil,
+        sortOrder: ShaderCatalogSortOrder = .name,
+        viewMode: ShaderCatalogViewMode = .grid,
+        selectedShaders: Set<String> = [],
+        bulkPhases: Set<Phase> = []
+    ) {
+        self.searchText = searchText
+        self.selectedFolder = selectedFolder
+        self.badgeFilter = badgeFilter
+        self.phaseFilter = phaseFilter
+        self.sortOrder = sortOrder
+        self.viewMode = viewMode
+        self.selectedShaders = selectedShaders
+        self.bulkPhases = bulkPhases
+    }
+
+    public mutating func toggleSelection(_ shaderName: String) {
+        if selectedShaders.contains(shaderName) {
+            selectedShaders.remove(shaderName)
+        } else {
+            selectedShaders.insert(shaderName)
+        }
+    }
+}
+
 /// UI-related state
 public struct UISubState: Equatable, Sendable {
     /// Log entries
@@ -517,6 +610,9 @@ public struct UISubState: Equatable, Sendable {
     /// Whether OSC debug is enabled
     public var oscDebugEnabled: Bool
 
+    /// Shader catalog UI workflow state
+    public var shaderCatalog: ShaderCatalogSubState
+
     /// Maximum log entries to keep
     public static let maxLogEntries = 500
 
@@ -525,13 +621,15 @@ public struct UISubState: Equatable, Sendable {
         oscMessages: [String: OSCLogEntryState] = [:],
         oscMessageCount: Int = 0,
         oscFilter: String = "",
-        oscDebugEnabled: Bool = false
+        oscDebugEnabled: Bool = false,
+        shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
     ) {
         self.logEntries = logEntries
         self.oscMessages = oscMessages
         self.oscMessageCount = oscMessageCount
         self.oscFilter = oscFilter
         self.oscDebugEnabled = oscDebugEnabled
+        self.shaderCatalog = shaderCatalog
     }
 
     /// Add a log entry, trimming old entries if needed
@@ -903,6 +1001,7 @@ public struct ModuleReferences: Sendable {
 public struct PersistedState: Codable, Sendable {
     public var renderEnabled: Bool
     public var renderOutputs: RenderOutputsState
+    public var shaderControlsByShader: [String: ShaderWorkspaceControls]
     public var selectedShader: String?
     public var selectedMaskShader: String?
     public var currentPhase: String?
@@ -912,6 +1011,7 @@ public struct PersistedState: Codable, Sendable {
     public init(
         renderEnabled: Bool = true,
         renderOutputs: RenderOutputsState = RenderOutputsState(),
+        shaderControlsByShader: [String: ShaderWorkspaceControls] = [:],
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: String? = nil,
@@ -920,6 +1020,7 @@ public struct PersistedState: Codable, Sendable {
     ) {
         self.renderEnabled = renderEnabled
         self.renderOutputs = renderOutputs
+        self.shaderControlsByShader = shaderControlsByShader
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
@@ -931,6 +1032,7 @@ public struct PersistedState: Codable, Sendable {
     public init(from state: AppState) {
         self.renderEnabled = state.render.isEnabled
         self.renderOutputs = state.render.outputs
+        self.shaderControlsByShader = state.render.shaderControlsByShader
         self.selectedShader = state.render.selectedShader
         self.selectedMaskShader = state.render.selectedMaskShader
         self.currentPhase = state.render.currentPhase?.rawValue
@@ -942,6 +1044,7 @@ public struct PersistedState: Codable, Sendable {
     public func apply(to state: inout AppState) {
         state.render.isEnabled = renderEnabled
         state.render.outputs = renderOutputs
+        state.render.shaderControlsByShader = shaderControlsByShader
         state.render.selectedShader = selectedShader
         state.render.selectedMaskShader = selectedMaskShader
         if let phaseStr = currentPhase {

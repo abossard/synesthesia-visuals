@@ -362,6 +362,9 @@ final class AppStateTests: XCTestCase {
         )
         appState.render.selectedShader = "rainbow"
         appState.render.selectedMaskShader = "BWgrid"
+        appState.render.shaderControlsByShader = [
+            "rainbow": ShaderWorkspaceControls(bin0: 0.22, bin1: 0.31, bin2: 0.44, zoom: 1.15)
+        ]
         appState.render.currentPhase = .peak
         appState.playback.source = "spotify"
 
@@ -371,6 +374,8 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(persisted.renderOutputs.mask, false)
         XCTAssertEqual(persisted.renderOutputs.refrain, false)
         XCTAssertEqual(persisted.renderOutputs.image, false)
+        XCTAssertEqual(persisted.shaderControlsByShader["rainbow"]?.bin0, 0.22)
+        XCTAssertEqual(persisted.shaderControlsByShader["rainbow"]?.zoom, 1.15)
         XCTAssertEqual(persisted.selectedShader, "rainbow")
         XCTAssertEqual(persisted.selectedMaskShader, "BWgrid")
         XCTAssertEqual(persisted.currentPhase, "peak")
@@ -383,6 +388,8 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(newState.render.outputs.mask, false)
         XCTAssertEqual(newState.render.outputs.refrain, false)
         XCTAssertEqual(newState.render.outputs.image, false)
+        XCTAssertEqual(newState.render.shaderControlsByShader["rainbow"]?.bin1, 0.31)
+        XCTAssertEqual(newState.render.shaderControlsByShader["rainbow"]?.bin2, 0.44)
         XCTAssertEqual(newState.render.selectedShader, "rainbow")
         XCTAssertEqual(newState.render.selectedMaskShader, "BWgrid")
         XCTAssertEqual(newState.render.currentPhase, .peak)

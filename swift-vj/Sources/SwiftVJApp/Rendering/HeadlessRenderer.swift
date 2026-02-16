@@ -1065,7 +1065,9 @@ final class HeadlessRenderer {
     func renderFrame(
         audioState: AudioState,
         syphonManager: SyphonOutputManager?,
-        outputs: RenderOutputsState
+        outputs: RenderOutputsState,
+        shaderControls: ShaderWorkspaceControls?,
+        maskControls: ShaderWorkspaceControls?
     ) {
         // Wait for available command buffer slot (triple buffering)
         _ = inflightSemaphore.wait(timeout: .now() + .milliseconds(16))
@@ -1110,6 +1112,14 @@ final class HeadlessRenderer {
         uniforms.mouse = smoothedMouse
         
         uniforms.update(from: audioState)
+        var shaderUniforms = uniforms
+        if let shaderControls {
+            applyShaderWorkspaceControls(shaderControls, to: &shaderUniforms)
+        }
+        var maskUniforms = uniforms
+        if let maskControls {
+            applyShaderWorkspaceControls(maskControls, to: &maskUniforms)
+        }
         
         // Create single command buffer
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
@@ -1125,10 +1135,10 @@ final class HeadlessRenderer {
         
         // 1. Render all tiles to their textures (SAME command buffer)
         if outputs.shader {
-            shaderRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+            shaderRenderer.render(commandBuffer: commandBuffer, uniforms: shaderUniforms)
         }
         if outputs.mask {
-            maskRenderer.render(commandBuffer: commandBuffer, uniforms: uniforms)
+            maskRenderer.render(commandBuffer: commandBuffer, uniforms: maskUniforms)
         }
         
         // Text: SwiftUI renderers
@@ -1176,6 +1186,13 @@ final class HeadlessRenderer {
         
         // 3. Single commit
         commandBuffer.commit()
+    }
+
+    private func applyShaderWorkspaceControls(_ controls: ShaderWorkspaceControls, to uniforms: inout ShaderUniforms) {
+        uniforms.bin0 = controls.bin0
+        uniforms.bin1 = controls.bin1
+        uniforms.bin2 = controls.bin2
+        uniforms.zoom = controls.zoom
     }
     
     // MARK: - Audio Reactive Speed
