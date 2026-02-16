@@ -480,7 +480,8 @@ public func launchpadReducer(
         return LaunchpadEffects.receiveOscEvent(event)
 
     case .bpmUpdated(let bpm):
-        return LaunchpadEffects.updateBPM(bpm)
+        _ = bpm
+        return .none
     }
 }
 
@@ -1255,12 +1256,6 @@ public enum LaunchpadEffects {
         }
     }
 
-    public static func updateBPM(_ bpm: Float) -> Effect<LaunchpadAction> {
-        .run { _ in
-            guard let handler = await EffectEnvironment.shared.launchpadHandler else { return }
-            await handler.updateBPM(bpm)
-        }
-    }
 }
 
 public enum AudioEffects {

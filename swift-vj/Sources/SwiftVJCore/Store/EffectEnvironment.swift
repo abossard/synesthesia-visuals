@@ -15,7 +15,6 @@ public protocol LaunchpadEffectHandling: Sendable {
     func rainbowPattern() async
     func clearAll() async
     func receiveOscEvent(_ event: OscEvent) async
-    func updateBPM(_ bpm: Float) async
 }
 
 public protocol LauncherEffectHandling: Sendable {

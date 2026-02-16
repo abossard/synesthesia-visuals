@@ -101,10 +101,6 @@ private actor LaunchpadGateway: LaunchpadEffectHandling {
         module.receiveOscEvent(event)
     }
 
-    func updateBPM(_ bpm: Float) async {
-        module.updateBpm(bpm)
-    }
-
     private func allPadIds() -> [ButtonId] {
         (0...8).flatMap { x in
             (0...8).map { y in ButtonId(x: x, y: y) }
