@@ -365,8 +365,37 @@ final class AppStateTests: XCTestCase {
         appState.render.shaderControlsByShader = [
             "rainbow": ShaderWorkspaceControls(bin0: 0.22, bin1: 0.31, bin2: 0.44, zoom: 1.15)
         ]
+        appState.render.shaderPlaylistByPhase = [
+            "peak": ["rainbow", "rainbow", "strobe"]
+        ]
+        appState.render.maskPlaylistByPhase = [
+            "peak": ["maskA", "maskB"]
+        ]
+        appState.render.shaderPlaylistIndexByPhase = ["peak": 2]
+        appState.render.maskPlaylistIndexByPhase = ["peak": 1]
+        appState.render.shaderAutoAdvanceOnSongChange = true
+        appState.render.maskAutoAdvanceOnSongChange = false
         appState.render.currentPhase = .peak
         appState.playback.source = "spotify"
+        appState.automation.isEnabled = false
+        appState.automation.autoRecordEnabled = true
+        appState.automation.autoRecordPrefixes = ["/ledfx/", "/custom/"]
+        appState.automation.timelineBySongId = [
+            "Artist::Title": SongAutomationTimeline(
+                cues: [
+                    AutomationCue(timeSec: 12, actionType: .ledfxActivateScene, value: "drop")
+                ],
+                valueLanes: [
+                    AutomationValueLane(
+                        id: "ledfx-brightness:main",
+                        displayName: "Brightness main",
+                        targetType: .ledfxVirtualBrightness,
+                        target: "main",
+                        points: [AutomationValuePoint(timeSec: 0, value: 0.4)]
+                    )
+                ]
+            )
+        ]
 
         let persisted = PersistedState(from: appState)
 
@@ -376,10 +405,20 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(persisted.renderOutputs.image, false)
         XCTAssertEqual(persisted.shaderControlsByShader["rainbow"]?.bin0, 0.22)
         XCTAssertEqual(persisted.shaderControlsByShader["rainbow"]?.zoom, 1.15)
+        XCTAssertEqual(persisted.shaderPlaylistByPhase["peak"], ["rainbow", "rainbow", "strobe"])
+        XCTAssertEqual(persisted.maskPlaylistByPhase["peak"], ["maskA", "maskB"])
+        XCTAssertEqual(persisted.shaderPlaylistIndexByPhase["peak"], 2)
+        XCTAssertEqual(persisted.maskPlaylistIndexByPhase["peak"], 1)
+        XCTAssertTrue(persisted.shaderAutoAdvanceOnSongChange)
+        XCTAssertFalse(persisted.maskAutoAdvanceOnSongChange)
         XCTAssertEqual(persisted.selectedShader, "rainbow")
         XCTAssertEqual(persisted.selectedMaskShader, "BWgrid")
         XCTAssertEqual(persisted.currentPhase, "peak")
         XCTAssertEqual(persisted.playbackSource, "spotify")
+        XCTAssertFalse(persisted.automationEnabled)
+        XCTAssertTrue(persisted.automationAutoRecordEnabled)
+        XCTAssertEqual(persisted.automationAutoRecordPrefixes, ["/ledfx/", "/custom/"])
+        XCTAssertEqual(persisted.automationTimelinesBySongId["Artist::Title"]?.cues.first?.value, "drop")
 
         var newState = AppState()
         persisted.apply(to: &newState)
@@ -390,9 +429,19 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(newState.render.outputs.image, false)
         XCTAssertEqual(newState.render.shaderControlsByShader["rainbow"]?.bin1, 0.31)
         XCTAssertEqual(newState.render.shaderControlsByShader["rainbow"]?.bin2, 0.44)
+        XCTAssertEqual(newState.render.shaderPlaylistByPhase["peak"], ["rainbow", "rainbow", "strobe"])
+        XCTAssertEqual(newState.render.maskPlaylistByPhase["peak"], ["maskA", "maskB"])
+        XCTAssertEqual(newState.render.shaderPlaylistIndexByPhase["peak"], 2)
+        XCTAssertEqual(newState.render.maskPlaylistIndexByPhase["peak"], 1)
+        XCTAssertTrue(newState.render.shaderAutoAdvanceOnSongChange)
+        XCTAssertFalse(newState.render.maskAutoAdvanceOnSongChange)
         XCTAssertEqual(newState.render.selectedShader, "rainbow")
         XCTAssertEqual(newState.render.selectedMaskShader, "BWgrid")
         XCTAssertEqual(newState.render.currentPhase, .peak)
         XCTAssertEqual(newState.playback.source, "spotify")
+        XCTAssertFalse(newState.automation.isEnabled)
+        XCTAssertTrue(newState.automation.autoRecordEnabled)
+        XCTAssertEqual(newState.automation.autoRecordPrefixes, ["/ledfx/", "/custom/"])
+        XCTAssertEqual(newState.automation.timelineBySongId["Artist::Title"]?.valueLanes.count, 1)
     }
 }

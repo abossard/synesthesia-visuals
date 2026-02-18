@@ -140,4 +140,13 @@ final class SwiftVJAppUITests: XCTestCase {
 
         XCTAssertFalse(appState.isRenderOutputEnabled(.lyrics))
     }
+
+    func testAutomationPrefixesBindingUpdatesState() async {
+        let appState = makeTestAppState()
+
+        appState.automationAutoRecordPrefixesStringBinding.wrappedValue = "/ledfx/, /custom/"
+        await waitForStateSync()
+
+        XCTAssertEqual(appState.automationState.autoRecordPrefixes, ["/ledfx/", "/custom/"])
+    }
 }

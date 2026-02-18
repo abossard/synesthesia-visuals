@@ -38,6 +38,9 @@ public struct AppState: Equatable, Sendable {
     /// Songs management state
     public var songs: SongsSubState
 
+    /// Song timecoded automation state
+    public var automation: AutomationSubState
+
     /// Whether the system is running
     public var isRunning: Bool
 
@@ -61,6 +64,7 @@ public struct AppState: Equatable, Sendable {
         launcher: LauncherSubState = LauncherSubState(),
         ledfx: LedFXSubState = LedFXSubState(),
         songs: SongsSubState = SongsSubState(),
+        automation: AutomationSubState = AutomationSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
     ) {
@@ -73,6 +77,7 @@ public struct AppState: Equatable, Sendable {
         self.launcher = launcher
         self.ledfx = ledfx
         self.songs = songs
+        self.automation = automation
         self.isRunning = isRunning
         self.modules = modules
     }
@@ -88,6 +93,7 @@ public struct AppState: Equatable, Sendable {
         lhs.launcher == rhs.launcher &&
         lhs.ledfx == rhs.ledfx &&
         lhs.songs == rhs.songs &&
+        lhs.automation == rhs.automation &&
         lhs.isRunning == rhs.isRunning
     }
 }
@@ -342,6 +348,30 @@ public struct RenderSubState: Equatable, Sendable {
     /// Per-shader workspace controls (bin0/bin1/bin2/zoom)
     public var shaderControlsByShader: [String: ShaderWorkspaceControls]
 
+    /// Ordered shader playlist entries per phase (duplicates allowed).
+    public var shaderPlaylistByPhase: [String: [String]]
+
+    /// Ordered mask playlist entries per phase (duplicates allowed).
+    public var maskPlaylistByPhase: [String: [String]]
+
+    /// Active shader playlist index per phase.
+    public var shaderPlaylistIndexByPhase: [String: Int]
+
+    /// Active mask playlist index per phase.
+    public var maskPlaylistIndexByPhase: [String: Int]
+
+    /// Auto-advance shader playlist on song change.
+    public var shaderAutoAdvanceOnSongChange: Bool
+
+    /// Auto-advance mask playlist on song change.
+    public var maskAutoAdvanceOnSongChange: Bool
+
+    /// Last AI-selected shader suggestion from pipeline.
+    public var aiSuggestedShaderName: String?
+
+    /// Phase associated with the AI shader suggestion.
+    public var aiSuggestedShaderPhase: Phase?
+
     /// Effective phase (manual or detected)
     public var effectivePhase: Phase? {
         currentPhase ?? detectedSongPhase
@@ -357,7 +387,15 @@ public struct RenderSubState: Equatable, Sendable {
         imageIndex: Int = 0,
         imageCount: Int = 0,
         shaderCount: Int = 0,
-        shaderControlsByShader: [String: ShaderWorkspaceControls] = [:]
+        shaderControlsByShader: [String: ShaderWorkspaceControls] = [:],
+        shaderPlaylistByPhase: [String: [String]] = [:],
+        maskPlaylistByPhase: [String: [String]] = [:],
+        shaderPlaylistIndexByPhase: [String: Int] = [:],
+        maskPlaylistIndexByPhase: [String: Int] = [:],
+        shaderAutoAdvanceOnSongChange: Bool = false,
+        maskAutoAdvanceOnSongChange: Bool = false,
+        aiSuggestedShaderName: String? = nil,
+        aiSuggestedShaderPhase: Phase? = nil
     ) {
         self.isEnabled = isEnabled
         self.outputs = outputs
@@ -369,11 +407,47 @@ public struct RenderSubState: Equatable, Sendable {
         self.imageCount = imageCount
         self.shaderCount = shaderCount
         self.shaderControlsByShader = shaderControlsByShader
+        self.shaderPlaylistByPhase = shaderPlaylistByPhase
+        self.maskPlaylistByPhase = maskPlaylistByPhase
+        self.shaderPlaylistIndexByPhase = shaderPlaylistIndexByPhase
+        self.maskPlaylistIndexByPhase = maskPlaylistIndexByPhase
+        self.shaderAutoAdvanceOnSongChange = shaderAutoAdvanceOnSongChange
+        self.maskAutoAdvanceOnSongChange = maskAutoAdvanceOnSongChange
+        self.aiSuggestedShaderName = aiSuggestedShaderName
+        self.aiSuggestedShaderPhase = aiSuggestedShaderPhase
     }
 
     public func shaderControls(for shaderName: String?) -> ShaderWorkspaceControls {
         guard let shaderName else { return .default }
         return shaderControlsByShader[shaderName] ?? .default
+    }
+
+    private static func phaseKey(_ phase: Phase) -> String {
+        phase.rawValue
+    }
+
+    public func shaderPlaylist(for phase: Phase) -> [String] {
+        shaderPlaylistByPhase[Self.phaseKey(phase)] ?? []
+    }
+
+    public func maskPlaylist(for phase: Phase) -> [String] {
+        maskPlaylistByPhase[Self.phaseKey(phase)] ?? []
+    }
+
+    public func shaderPlaylistCurrentIndex(for phase: Phase) -> Int? {
+        let key = Self.phaseKey(phase)
+        guard let index = shaderPlaylistIndexByPhase[key] else { return nil }
+        let playlist = shaderPlaylistByPhase[key] ?? []
+        guard !playlist.isEmpty, playlist.indices.contains(index) else { return nil }
+        return index
+    }
+
+    public func maskPlaylistCurrentIndex(for phase: Phase) -> Int? {
+        let key = Self.phaseKey(phase)
+        guard let index = maskPlaylistIndexByPhase[key] else { return nil }
+        let playlist = maskPlaylistByPhase[key] ?? []
+        guard !playlist.isEmpty, playlist.indices.contains(index) else { return nil }
+        return index
     }
 }
 
@@ -983,6 +1057,247 @@ public struct FolderScanProgress: Equatable, Sendable {
     }
 }
 
+// MARK: - Automation Sub-State
+
+public enum AutomationCueActionType: String, CaseIterable, Codable, Sendable {
+    case ledfxActivateScene
+    case ledfxActivatePlaylist
+    case ledfxStopPlaylist
+    case osc
+}
+
+public enum AutomationOSCTarget: String, CaseIterable, Codable, Sendable {
+    case synesthesia
+    case magic
+    case vdj
+}
+
+public enum AutomationOSCValue: Equatable, Codable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case intValue
+        case floatValue
+        case stringValue
+        case boolValue
+    }
+
+    case int(Int)
+    case float(Double)
+    case string(String)
+    case bool(Bool)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+        switch type {
+        case "int":
+            self = .int(try container.decode(Int.self, forKey: .intValue))
+        case "float":
+            self = .float(try container.decode(Double.self, forKey: .floatValue))
+        case "string":
+            self = .string(try container.decode(String.self, forKey: .stringValue))
+        case "bool":
+            self = .bool(try container.decode(Bool.self, forKey: .boolValue))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type,
+                in: container,
+                debugDescription: "Unsupported automation OSC value type: \(type)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .int(let value):
+            try container.encode("int", forKey: .type)
+            try container.encode(value, forKey: .intValue)
+        case .float(let value):
+            try container.encode("float", forKey: .type)
+            try container.encode(value, forKey: .floatValue)
+        case .string(let value):
+            try container.encode("string", forKey: .type)
+            try container.encode(value, forKey: .stringValue)
+        case .bool(let value):
+            try container.encode("bool", forKey: .type)
+            try container.encode(value, forKey: .boolValue)
+        }
+    }
+}
+
+public struct AutomationCue: Equatable, Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var timeSec: Double
+    public var actionType: AutomationCueActionType
+    public var value: String
+    public var oscTarget: AutomationOSCTarget?
+    public var args: [AutomationOSCValue]
+    public var source: String?
+
+    public init(
+        id: UUID = UUID(),
+        timeSec: Double,
+        actionType: AutomationCueActionType,
+        value: String,
+        oscTarget: AutomationOSCTarget? = nil,
+        args: [AutomationOSCValue] = [],
+        source: String? = nil
+    ) {
+        self.id = id
+        self.timeSec = max(0, timeSec)
+        self.actionType = actionType
+        self.value = value
+        self.oscTarget = oscTarget
+        self.args = args
+        self.source = source
+    }
+}
+
+public enum AutomationValueTargetType: String, CaseIterable, Codable, Sendable {
+    case ledfxVirtualBrightness
+}
+
+public struct AutomationValuePoint: Equatable, Codable, Sendable, Identifiable {
+    public var id: UUID
+    public var timeSec: Double
+    public var value: Double
+
+    public init(id: UUID = UUID(), timeSec: Double, value: Double) {
+        self.id = id
+        self.timeSec = max(0, timeSec)
+        self.value = min(1, max(0, value))
+    }
+}
+
+public struct AutomationValueLane: Equatable, Codable, Sendable, Identifiable {
+    public var id: String
+    public var displayName: String
+    public var targetType: AutomationValueTargetType
+    public var target: String
+    public var points: [AutomationValuePoint]
+
+    public init(
+        id: String,
+        displayName: String,
+        targetType: AutomationValueTargetType,
+        target: String,
+        points: [AutomationValuePoint] = []
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.targetType = targetType
+        self.target = target
+        self.points = points
+    }
+}
+
+public struct SongAutomationTimeline: Equatable, Codable, Sendable {
+    public var cues: [AutomationCue]
+    public var valueLanes: [AutomationValueLane]
+    public var updatedAt: Date
+
+    public init(
+        cues: [AutomationCue] = [],
+        valueLanes: [AutomationValueLane] = [],
+        updatedAt: Date = Date()
+    ) {
+        self.cues = cues
+        self.valueLanes = valueLanes
+        self.updatedAt = updatedAt
+    }
+
+    public static let empty = SongAutomationTimeline()
+}
+
+public struct AutomationRecordedOSCSample: Equatable, Sendable {
+    public var timeSec: Double
+    public var args: [AutomationOSCValue]
+
+    public init(timeSec: Double, args: [AutomationOSCValue]) {
+        self.timeSec = timeSec
+        self.args = args
+    }
+}
+
+public struct AutomationSubState: Equatable, Sendable {
+    /// Master switch for timeline replay and recording.
+    public var isEnabled: Bool
+
+    /// Auto-record incoming controls into the active song timeline.
+    public var autoRecordEnabled: Bool
+
+    /// OSC address prefixes to include while auto-recording.
+    public var autoRecordPrefixes: [String]
+
+    /// Max auto-record sample frequency in Hz.
+    public var autoRecordMaxHz: Double
+
+    /// Minimum numeric delta required to record another value sample.
+    public var autoRecordMinDelta: Double
+
+    /// Song selected in the timeline editor.
+    public var selectedSongId: SongID?
+
+    /// Song currently playing (drives runtime replay).
+    public var playbackSongId: SongID?
+
+    /// Persisted timelines keyed by song ID raw value.
+    public var timelineBySongId: [String: SongAutomationTimeline]
+
+    /// Runtime replay state: last playback position by song.
+    public var lastPlaybackPositionBySongId: [String: Double]
+
+    /// Runtime replay state: fired one-shot cue IDs by song.
+    public var firedCueIdsBySongId: [String: Set<UUID>]
+
+    /// Runtime replay state: last emitted value-lane sample by song/lane.
+    public var lastLaneValueBySongId: [String: [String: Double]]
+
+    /// Runtime auto-record state: last recorded OSC sample by song/address.
+    public var lastRecordedOSCBySongId: [String: [String: AutomationRecordedOSCSample]]
+
+    public init(
+        isEnabled: Bool = true,
+        autoRecordEnabled: Bool = false,
+        autoRecordPrefixes: [String] = [
+            "/ledfx/",
+            "/scenes/",
+            "/presets/",
+            "/favslots/",
+            "/playlist/",
+            "/controls/"
+        ],
+        autoRecordMaxHz: Double = 10,
+        autoRecordMinDelta: Double = 0.01,
+        selectedSongId: SongID? = nil,
+        playbackSongId: SongID? = nil,
+        timelineBySongId: [String: SongAutomationTimeline] = [:],
+        lastPlaybackPositionBySongId: [String: Double] = [:],
+        firedCueIdsBySongId: [String: Set<UUID>] = [:],
+        lastLaneValueBySongId: [String: [String: Double]] = [:],
+        lastRecordedOSCBySongId: [String: [String: AutomationRecordedOSCSample]] = [:]
+    ) {
+        self.isEnabled = isEnabled
+        self.autoRecordEnabled = autoRecordEnabled
+        self.autoRecordPrefixes = autoRecordPrefixes
+        self.autoRecordMaxHz = autoRecordMaxHz
+        self.autoRecordMinDelta = autoRecordMinDelta
+        self.selectedSongId = selectedSongId
+        self.playbackSongId = playbackSongId
+        self.timelineBySongId = timelineBySongId
+        self.lastPlaybackPositionBySongId = lastPlaybackPositionBySongId
+        self.firedCueIdsBySongId = firedCueIdsBySongId
+        self.lastLaneValueBySongId = lastLaneValueBySongId
+        self.lastRecordedOSCBySongId = lastRecordedOSCBySongId
+    }
+
+    public func timeline(for songId: SongID?) -> SongAutomationTimeline? {
+        guard let songId else { return nil }
+        return timelineBySongId[songId.rawValue]
+    }
+}
+
 // MARK: - Module References
 
 /// References to module instances (not part of equatable state).
@@ -1002,30 +1317,60 @@ public struct PersistedState: Codable, Sendable {
     public var renderEnabled: Bool
     public var renderOutputs: RenderOutputsState
     public var shaderControlsByShader: [String: ShaderWorkspaceControls]
+    public var shaderPlaylistByPhase: [String: [String]]
+    public var maskPlaylistByPhase: [String: [String]]
+    public var shaderPlaylistIndexByPhase: [String: Int]
+    public var maskPlaylistIndexByPhase: [String: Int]
+    public var shaderAutoAdvanceOnSongChange: Bool
+    public var maskAutoAdvanceOnSongChange: Bool
     public var selectedShader: String?
     public var selectedMaskShader: String?
     public var currentPhase: String?
     public var playbackSource: String
     public var launcherTargets: [LaunchTarget]
+    public var automationEnabled: Bool
+    public var automationAutoRecordEnabled: Bool
+    public var automationAutoRecordPrefixes: [String]
+    public var automationTimelinesBySongId: [String: SongAutomationTimeline]
 
     public init(
         renderEnabled: Bool = true,
         renderOutputs: RenderOutputsState = RenderOutputsState(),
         shaderControlsByShader: [String: ShaderWorkspaceControls] = [:],
+        shaderPlaylistByPhase: [String: [String]] = [:],
+        maskPlaylistByPhase: [String: [String]] = [:],
+        shaderPlaylistIndexByPhase: [String: Int] = [:],
+        maskPlaylistIndexByPhase: [String: Int] = [:],
+        shaderAutoAdvanceOnSongChange: Bool = false,
+        maskAutoAdvanceOnSongChange: Bool = false,
         selectedShader: String? = nil,
         selectedMaskShader: String? = nil,
         currentPhase: String? = nil,
         playbackSource: String = "vdj",
-        launcherTargets: [LaunchTarget] = []
+        launcherTargets: [LaunchTarget] = [],
+        automationEnabled: Bool = true,
+        automationAutoRecordEnabled: Bool = false,
+        automationAutoRecordPrefixes: [String] = AutomationSubState().autoRecordPrefixes,
+        automationTimelinesBySongId: [String: SongAutomationTimeline] = [:]
     ) {
         self.renderEnabled = renderEnabled
         self.renderOutputs = renderOutputs
         self.shaderControlsByShader = shaderControlsByShader
+        self.shaderPlaylistByPhase = shaderPlaylistByPhase
+        self.maskPlaylistByPhase = maskPlaylistByPhase
+        self.shaderPlaylistIndexByPhase = shaderPlaylistIndexByPhase
+        self.maskPlaylistIndexByPhase = maskPlaylistIndexByPhase
+        self.shaderAutoAdvanceOnSongChange = shaderAutoAdvanceOnSongChange
+        self.maskAutoAdvanceOnSongChange = maskAutoAdvanceOnSongChange
         self.selectedShader = selectedShader
         self.selectedMaskShader = selectedMaskShader
         self.currentPhase = currentPhase
         self.playbackSource = playbackSource
         self.launcherTargets = launcherTargets
+        self.automationEnabled = automationEnabled
+        self.automationAutoRecordEnabled = automationAutoRecordEnabled
+        self.automationAutoRecordPrefixes = automationAutoRecordPrefixes
+        self.automationTimelinesBySongId = automationTimelinesBySongId
     }
 
     /// Create from current app state
@@ -1033,11 +1378,21 @@ public struct PersistedState: Codable, Sendable {
         self.renderEnabled = state.render.isEnabled
         self.renderOutputs = state.render.outputs
         self.shaderControlsByShader = state.render.shaderControlsByShader
+        self.shaderPlaylistByPhase = state.render.shaderPlaylistByPhase
+        self.maskPlaylistByPhase = state.render.maskPlaylistByPhase
+        self.shaderPlaylistIndexByPhase = state.render.shaderPlaylistIndexByPhase
+        self.maskPlaylistIndexByPhase = state.render.maskPlaylistIndexByPhase
+        self.shaderAutoAdvanceOnSongChange = state.render.shaderAutoAdvanceOnSongChange
+        self.maskAutoAdvanceOnSongChange = state.render.maskAutoAdvanceOnSongChange
         self.selectedShader = state.render.selectedShader
         self.selectedMaskShader = state.render.selectedMaskShader
         self.currentPhase = state.render.currentPhase?.rawValue
         self.playbackSource = state.playback.source
         self.launcherTargets = state.launcher.targets
+        self.automationEnabled = state.automation.isEnabled
+        self.automationAutoRecordEnabled = state.automation.autoRecordEnabled
+        self.automationAutoRecordPrefixes = state.automation.autoRecordPrefixes
+        self.automationTimelinesBySongId = state.automation.timelineBySongId
     }
 
     /// Apply to app state
@@ -1045,6 +1400,12 @@ public struct PersistedState: Codable, Sendable {
         state.render.isEnabled = renderEnabled
         state.render.outputs = renderOutputs
         state.render.shaderControlsByShader = shaderControlsByShader
+        state.render.shaderPlaylistByPhase = shaderPlaylistByPhase
+        state.render.maskPlaylistByPhase = maskPlaylistByPhase
+        state.render.shaderPlaylistIndexByPhase = shaderPlaylistIndexByPhase
+        state.render.maskPlaylistIndexByPhase = maskPlaylistIndexByPhase
+        state.render.shaderAutoAdvanceOnSongChange = shaderAutoAdvanceOnSongChange
+        state.render.maskAutoAdvanceOnSongChange = maskAutoAdvanceOnSongChange
         state.render.selectedShader = selectedShader
         state.render.selectedMaskShader = selectedMaskShader
         if let phaseStr = currentPhase {
@@ -1053,5 +1414,13 @@ public struct PersistedState: Codable, Sendable {
         state.playback.source = playbackSource
         state.launcher.targets = launcherTargets
         state.launcher.revision &+= 1
+        state.automation.isEnabled = automationEnabled
+        state.automation.autoRecordEnabled = automationAutoRecordEnabled
+        state.automation.autoRecordPrefixes = automationAutoRecordPrefixes
+        state.automation.timelineBySongId = automationTimelinesBySongId
+        state.automation.lastPlaybackPositionBySongId = [:]
+        state.automation.firedCueIdsBySongId = [:]
+        state.automation.lastLaneValueBySongId = [:]
+        state.automation.lastRecordedOSCBySongId = [:]
     }
 }

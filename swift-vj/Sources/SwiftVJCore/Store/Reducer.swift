@@ -43,7 +43,18 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         var playbackState = state.playback
         let effect = playbackReducer(state: &playbackState, action: playbackAction, appState: &state)
         state.playback = playbackState
-        return effect.map { AppAction.playback($0) }
+        var followUp: [Effect<AppAction>] = [
+            effect.map { AppAction.playback($0) }
+        ]
+        switch playbackAction {
+        case .trackChanged(let track), .demoTrackChanged(let track):
+            followUp.append(.send(.automation(.trackChanged(SongID(artist: track.artist, title: track.title)))))
+        case .positionUpdated(let position, let isPlaying):
+            followUp.append(.send(.automation(.playbackTick(position: position, isPlaying: isPlaying))))
+        default:
+            break
+        }
+        return .merge(followUp)
 
     case .pipeline(let pipelineAction):
         var pipelineState = state.pipeline
@@ -87,6 +98,12 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         var songsState = state.songs
         let effect = songsReducer(state: &songsState, action: songsAction, appState: &state)
         state.songs = songsState
+        return effect
+
+    case .automation(let automationAction):
+        var automationState = state.automation
+        let effect = automationReducer(state: &automationState, action: automationAction, appState: &state)
+        state.automation = automationState
         return effect
 
     // MARK: Persistence
@@ -261,9 +278,14 @@ public func pipelineReducer(
 
         // Update render state from result
         var effects: [Effect<AppAction>] = []
-
-        if result.shaderMatched {
-            effects.append(.send(.render(.selectShader(result.shaderName))))
+        effects.append(
+            .send(.render(.setAISuggestedShader(
+                name: result.shaderMatched ? result.shaderName : nil,
+                phase: appState.render.effectivePhase
+            )))
+        )
+        if let phase = appState.render.effectivePhase {
+            effects.append(.send(.render(.advancePhasePlaylistsOnSongChange(phase: phase))))
         }
 
         if result.imagesFound && !result.imagesFolder.isEmpty {
@@ -424,6 +446,187 @@ public func renderReducer(
         appState.ui.addLog("Reset shader controls for \(shaderName)", level: .info)
         return .send(.persistState)
 
+    case .setShaderAutoAdvanceOnSongChange(let enabled):
+        state.shaderAutoAdvanceOnSongChange = enabled
+        appState.ui.addLog("Shader auto-advance on song change \(enabled ? "enabled" : "disabled")", level: .info)
+        return .send(.persistState)
+
+    case .setMaskAutoAdvanceOnSongChange(let enabled):
+        state.maskAutoAdvanceOnSongChange = enabled
+        appState.ui.addLog("Mask auto-advance on song change \(enabled ? "enabled" : "disabled")", level: .info)
+        return .send(.persistState)
+
+    case .setAISuggestedShader(let name, let phase):
+        state.aiSuggestedShaderName = name?.isEmpty == true ? nil : name
+        state.aiSuggestedShaderPhase = phase
+        return .none
+
+    case .addShaderToPhasePlaylist(let phase, let shaderName, let activate):
+        let phaseKey = phase.rawValue
+        var playlist = state.shaderPlaylistByPhase[phaseKey] ?? []
+        playlist.insert(shaderName, at: 0)
+        state.shaderPlaylistByPhase[phaseKey] = playlist
+        if activate {
+            state.shaderPlaylistIndexByPhase[phaseKey] = 0
+            appState.ui.addLog("Added + activated shader \(shaderName) for \(phase.displayName)", level: .info)
+            return .send(.render(.selectShader(shaderName)))
+        }
+        if let currentIndex = state.shaderPlaylistIndexByPhase[phaseKey] {
+            state.shaderPlaylistIndexByPhase[phaseKey] = currentIndex + 1
+        }
+        appState.ui.addLog("Added shader \(shaderName) to top of \(phase.displayName) playlist", level: .info)
+        return .send(.persistState)
+
+    case .addMaskToPhasePlaylist(let phase, let maskName, let activate):
+        let phaseKey = phase.rawValue
+        var playlist = state.maskPlaylistByPhase[phaseKey] ?? []
+        playlist.insert(maskName, at: 0)
+        state.maskPlaylistByPhase[phaseKey] = playlist
+        if activate {
+            state.maskPlaylistIndexByPhase[phaseKey] = 0
+            appState.ui.addLog("Added + activated mask \(maskName) for \(phase.displayName)", level: .info)
+            return .send(.render(.selectMaskShader(maskName)))
+        }
+        if let currentIndex = state.maskPlaylistIndexByPhase[phaseKey] {
+            state.maskPlaylistIndexByPhase[phaseKey] = currentIndex + 1
+        }
+        appState.ui.addLog("Added mask \(maskName) to top of \(phase.displayName) playlist", level: .info)
+        return .send(.persistState)
+
+    case .removeShaderFromPhasePlaylist(let phase, let index):
+        let phaseKey = phase.rawValue
+        var playlist = state.shaderPlaylistByPhase[phaseKey] ?? []
+        guard playlist.indices.contains(index) else { return .none }
+        playlist.remove(at: index)
+        state.shaderPlaylistByPhase[phaseKey] = playlist
+
+        if playlist.isEmpty {
+            state.shaderPlaylistIndexByPhase.removeValue(forKey: phaseKey)
+            return .send(.persistState)
+        }
+
+        if let currentIndex = state.shaderPlaylistIndexByPhase[phaseKey] {
+            let adjustedIndex: Int
+            if currentIndex > index {
+                adjustedIndex = max(0, currentIndex - 1)
+            } else if currentIndex == index {
+                adjustedIndex = min(index, playlist.count - 1)
+            } else {
+                adjustedIndex = currentIndex
+            }
+            state.shaderPlaylistIndexByPhase[phaseKey] = adjustedIndex
+            if phase == state.effectivePhase, currentIndex == index {
+                return .send(.render(.selectShader(playlist[adjustedIndex])))
+            }
+        }
+        return .send(.persistState)
+
+    case .removeMaskFromPhasePlaylist(let phase, let index):
+        let phaseKey = phase.rawValue
+        var playlist = state.maskPlaylistByPhase[phaseKey] ?? []
+        guard playlist.indices.contains(index) else { return .none }
+        playlist.remove(at: index)
+        state.maskPlaylistByPhase[phaseKey] = playlist
+
+        if playlist.isEmpty {
+            state.maskPlaylistIndexByPhase.removeValue(forKey: phaseKey)
+            return .send(.persistState)
+        }
+
+        if let currentIndex = state.maskPlaylistIndexByPhase[phaseKey] {
+            let adjustedIndex: Int
+            if currentIndex > index {
+                adjustedIndex = max(0, currentIndex - 1)
+            } else if currentIndex == index {
+                adjustedIndex = min(index, playlist.count - 1)
+            } else {
+                adjustedIndex = currentIndex
+            }
+            state.maskPlaylistIndexByPhase[phaseKey] = adjustedIndex
+            if phase == state.effectivePhase, currentIndex == index {
+                return .send(.render(.selectMaskShader(playlist[adjustedIndex])))
+            }
+        }
+        return .send(.persistState)
+
+    case .moveShaderInPhasePlaylist(let phase, let fromIndices, let toIndex):
+        let phaseKey = phase.rawValue
+        let oldPlaylist = state.shaderPlaylistByPhase[phaseKey] ?? []
+        let movedPlaylist = movePlaylistItems(oldPlaylist, fromIndices: fromIndices, toIndex: toIndex)
+        guard movedPlaylist != oldPlaylist else { return .none }
+        state.shaderPlaylistByPhase[phaseKey] = movedPlaylist
+        if let currentIndex = state.shaderPlaylistIndexByPhase[phaseKey] {
+            let oldOrder = Array(oldPlaylist.indices)
+            let newOrder = movePlaylistItems(oldOrder, fromIndices: fromIndices, toIndex: toIndex)
+            if let remappedIndex = newOrder.firstIndex(of: currentIndex) {
+                state.shaderPlaylistIndexByPhase[phaseKey] = remappedIndex
+            } else {
+                state.shaderPlaylistIndexByPhase[phaseKey] = min(currentIndex, max(0, movedPlaylist.count - 1))
+            }
+        }
+        return .send(.persistState)
+
+    case .moveMaskInPhasePlaylist(let phase, let fromIndices, let toIndex):
+        let phaseKey = phase.rawValue
+        let oldPlaylist = state.maskPlaylistByPhase[phaseKey] ?? []
+        let movedPlaylist = movePlaylistItems(oldPlaylist, fromIndices: fromIndices, toIndex: toIndex)
+        guard movedPlaylist != oldPlaylist else { return .none }
+        state.maskPlaylistByPhase[phaseKey] = movedPlaylist
+        if let currentIndex = state.maskPlaylistIndexByPhase[phaseKey] {
+            let oldOrder = Array(oldPlaylist.indices)
+            let newOrder = movePlaylistItems(oldOrder, fromIndices: fromIndices, toIndex: toIndex)
+            if let remappedIndex = newOrder.firstIndex(of: currentIndex) {
+                state.maskPlaylistIndexByPhase[phaseKey] = remappedIndex
+            } else {
+                state.maskPlaylistIndexByPhase[phaseKey] = min(currentIndex, max(0, movedPlaylist.count - 1))
+            }
+        }
+        return .send(.persistState)
+
+    case .activateShaderInPhasePlaylist(let phase, let index):
+        let phaseKey = phase.rawValue
+        let playlist = state.shaderPlaylistByPhase[phaseKey] ?? []
+        guard playlist.indices.contains(index) else { return .none }
+        state.shaderPlaylistIndexByPhase[phaseKey] = index
+        return .send(.render(.selectShader(playlist[index])))
+
+    case .activateMaskInPhasePlaylist(let phase, let index):
+        let phaseKey = phase.rawValue
+        let playlist = state.maskPlaylistByPhase[phaseKey] ?? []
+        guard playlist.indices.contains(index) else { return .none }
+        state.maskPlaylistIndexByPhase[phaseKey] = index
+        return .send(.render(.selectMaskShader(playlist[index])))
+
+    case .advancePhasePlaylistsOnSongChange(let phase):
+        let phaseKey = phase.rawValue
+        var followUp: [Effect<AppAction>] = []
+
+        if state.shaderAutoAdvanceOnSongChange {
+            let shaderPlaylist = state.shaderPlaylistByPhase[phaseKey] ?? []
+            if !shaderPlaylist.isEmpty {
+                let currentIndex = state.shaderPlaylistCurrentIndex(for: phase) ?? -1
+                let nextIndex = (currentIndex + 1 + shaderPlaylist.count) % shaderPlaylist.count
+                state.shaderPlaylistIndexByPhase[phaseKey] = nextIndex
+                let shaderName = shaderPlaylist[nextIndex]
+                appState.ui.addLog("Performance shader: \(shaderName) (\(phase.displayName))", level: .info)
+                followUp.append(.send(.render(.selectShader(shaderName))))
+            }
+        }
+
+        if state.maskAutoAdvanceOnSongChange {
+            let maskPlaylist = state.maskPlaylistByPhase[phaseKey] ?? []
+            if !maskPlaylist.isEmpty {
+                let currentIndex = state.maskPlaylistCurrentIndex(for: phase) ?? -1
+                let nextIndex = (currentIndex + 1 + maskPlaylist.count) % maskPlaylist.count
+                state.maskPlaylistIndexByPhase[phaseKey] = nextIndex
+                let maskName = maskPlaylist[nextIndex]
+                appState.ui.addLog("Performance mask: \(maskName) (\(phase.displayName))", level: .info)
+                followUp.append(.send(.render(.selectMaskShader(maskName))))
+            }
+        }
+
+        return followUp.isEmpty ? .none : .merge(followUp)
+
     case .startEngine:
         state.isEnabled = true
         appState.ui.addLog("Renderer enabled", level: .info)
@@ -440,6 +643,27 @@ public func renderReducer(
             .send(.persistState)
         )
     }
+}
+
+private func movePlaylistItems<T>(
+    _ values: [T],
+    fromIndices: [Int],
+    toIndex: Int
+) -> [T] {
+    guard !values.isEmpty else { return values }
+    let uniqueSorted = Array(Set(fromIndices.filter { values.indices.contains($0) })).sorted()
+    guard !uniqueSorted.isEmpty else { return values }
+
+    var result = values
+    let movingItems = uniqueSorted.map { result[$0] }
+    for index in uniqueSorted.reversed() {
+        result.remove(at: index)
+    }
+
+    let removedBeforeTarget = uniqueSorted.filter { $0 < toIndex }.count
+    let adjustedTarget = max(0, min(toIndex - removedBeforeTarget, result.count))
+    result.insert(contentsOf: movingItems, at: adjustedTarget)
+    return result
 }
 
 // MARK: - Launchpad Reducer
@@ -1101,6 +1325,391 @@ public func songsReducer(
     }
 }
 
+// MARK: - Automation Reducer
+
+public func automationReducer(
+    state: inout AutomationSubState,
+    action: AutomationAction,
+    appState: inout AppState
+) -> Effect<AppAction> {
+    switch action {
+    case .setEnabled(let enabled):
+        state.isEnabled = enabled
+        appState.ui.addLog("Automation \(enabled ? "enabled" : "disabled")", level: .info)
+        return .send(.persistState)
+
+    case .setAutoRecordEnabled(let enabled):
+        state.autoRecordEnabled = enabled
+        appState.ui.addLog("Automation auto-record \(enabled ? "enabled" : "disabled")", level: .info)
+        return .send(.persistState)
+
+    case .setAutoRecordPrefixes(let prefixes):
+        let normalized = prefixes
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        state.autoRecordPrefixes = normalized
+        appState.ui.addLog("Automation record prefixes updated (\(normalized.count))", level: .info)
+        return .send(.persistState)
+
+    case .selectSong(let songID):
+        state.selectedSongId = songID
+        return .none
+
+    case .trackChanged(let songID):
+        state.playbackSongId = songID
+        if state.selectedSongId == nil {
+            state.selectedSongId = songID
+        }
+        return .none
+
+    case .ensureTimeline(let songID):
+        _ = ensureAutomationTimeline(for: songID, state: &state)
+        return .send(.persistState)
+
+    case .setTimeline(let songID, let timeline):
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .clearTimeline(let songID):
+        state.timelineBySongId[songID.rawValue] = SongAutomationTimeline.empty
+        state.firedCueIdsBySongId[songID.rawValue] = []
+        state.lastLaneValueBySongId[songID.rawValue] = [:]
+        state.lastPlaybackPositionBySongId[songID.rawValue] = 0
+        state.lastRecordedOSCBySongId[songID.rawValue] = [:]
+        return .send(.persistState)
+
+    case .addCue(let songID, let cue):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        timeline.cues.append(cue)
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .updateCue(let songID, let cue):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        if let index = timeline.cues.firstIndex(where: { $0.id == cue.id }) {
+            timeline.cues[index] = cue
+            state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+            return .send(.persistState)
+        }
+        return .none
+
+    case .removeCue(let songID, let cueID):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        timeline.cues.removeAll { $0.id == cueID }
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        state.firedCueIdsBySongId[songID.rawValue]?.remove(cueID)
+        return .send(.persistState)
+
+    case .addValueLane(let songID, let lane):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        guard !timeline.valueLanes.contains(where: { $0.id == lane.id }) else { return .none }
+        timeline.valueLanes.append(lane)
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .removeValueLane(let songID, let laneID):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        timeline.valueLanes.removeAll { $0.id == laneID }
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        state.lastLaneValueBySongId[songID.rawValue]?[laneID] = nil
+        return .send(.persistState)
+
+    case .addValuePoint(let songID, let laneID, let point):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        if let laneIndex = timeline.valueLanes.firstIndex(where: { $0.id == laneID }) {
+            timeline.valueLanes[laneIndex].points.append(point)
+            state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+            return .send(.persistState)
+        }
+        return .none
+
+    case .updateValuePoint(let songID, let laneID, let point):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        guard let laneIndex = timeline.valueLanes.firstIndex(where: { $0.id == laneID }),
+              let pointIndex = timeline.valueLanes[laneIndex].points.firstIndex(where: { $0.id == point.id }) else {
+            return .none
+        }
+        timeline.valueLanes[laneIndex].points[pointIndex] = point
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .removeValuePoint(let songID, let laneID, let pointID):
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        guard let laneIndex = timeline.valueLanes.firstIndex(where: { $0.id == laneID }) else {
+            return .none
+        }
+        timeline.valueLanes[laneIndex].points.removeAll { $0.id == pointID }
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .recordLedFXAction(let songID, let position, let action):
+        guard state.isEnabled, state.autoRecordEnabled else { return .none }
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        var changed = false
+
+        switch action {
+        case .activateScene(let sceneID):
+            timeline.cues.append(
+                AutomationCue(
+                    timeSec: position,
+                    actionType: .ledfxActivateScene,
+                    value: sceneID,
+                    source: "auto-ledfx"
+                )
+            )
+            changed = true
+        case .activatePlaylist(let playlistID):
+            timeline.cues.append(
+                AutomationCue(
+                    timeSec: position,
+                    actionType: .ledfxActivatePlaylist,
+                    value: playlistID,
+                    source: "auto-ledfx"
+                )
+            )
+            changed = true
+        case .stopPlaylist:
+            timeline.cues.append(
+                AutomationCue(
+                    timeSec: position,
+                    actionType: .ledfxStopPlaylist,
+                    value: "",
+                    source: "auto-ledfx"
+                )
+            )
+            changed = true
+        case .setVirtualBrightness(let virtualID, let brightness):
+            let laneID = "ledfx-brightness:\(virtualID)"
+            if let laneIndex = timeline.valueLanes.firstIndex(where: { $0.id == laneID }) {
+                timeline.valueLanes[laneIndex].points.append(
+                    AutomationValuePoint(timeSec: position, value: brightness)
+                )
+            } else {
+                timeline.valueLanes.append(
+                    AutomationValueLane(
+                        id: laneID,
+                        displayName: "Brightness \(virtualID)",
+                        targetType: .ledfxVirtualBrightness,
+                        target: virtualID,
+                        points: [AutomationValuePoint(timeSec: position, value: brightness)]
+                    )
+                )
+            }
+            changed = true
+        default:
+            break
+        }
+
+        guard changed else { return .none }
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .recordOSC(let songID, let position, let target, let address, let args, let source):
+        guard state.isEnabled, state.autoRecordEnabled else { return .none }
+        guard shouldRecordOSCAddress(address, prefixes: state.autoRecordPrefixes) else { return .none }
+        var timeline = ensureAutomationTimeline(for: songID, state: &state)
+        let sampleKey = "\(target.rawValue):\(address)"
+        var samplesByAddress = state.lastRecordedOSCBySongId[songID.rawValue] ?? [:]
+        let previousSample = samplesByAddress[sampleKey]
+        guard shouldRecordOSCSample(
+            previous: previousSample,
+            currentTime: position,
+            currentArgs: args,
+            maxHz: state.autoRecordMaxHz,
+            minDelta: state.autoRecordMinDelta
+        ) else {
+            return .none
+        }
+        samplesByAddress[sampleKey] = AutomationRecordedOSCSample(timeSec: max(0, position), args: args)
+        state.lastRecordedOSCBySongId[songID.rawValue] = samplesByAddress
+
+        timeline.cues.append(
+            AutomationCue(
+                timeSec: position,
+                actionType: .osc,
+                value: address,
+                oscTarget: target,
+                args: args,
+                source: source ?? "auto-osc"
+            )
+        )
+        state.timelineBySongId[songID.rawValue] = normalizedTimeline(timeline)
+        return .send(.persistState)
+
+    case .playbackTick(let position, let isPlaying):
+        guard let songID = state.playbackSongId ?? state.selectedSongId else { return .none }
+        let songKey = songID.rawValue
+        let previous = state.lastPlaybackPositionBySongId[songKey] ?? position
+        state.lastPlaybackPositionBySongId[songKey] = position
+
+        guard state.isEnabled, isPlaying, let timeline = state.timelineBySongId[songKey] else {
+            return .none
+        }
+
+        var firedCueIDs = state.firedCueIdsBySongId[songKey] ?? Set<UUID>()
+        let seekBack = position + 0.05 < previous
+
+        if seekBack {
+            let keep = Set(timeline.cues.filter { $0.timeSec <= position }.map(\.id))
+            firedCueIDs = firedCueIDs.intersection(keep)
+        }
+
+        var commands: [AutomationRuntimeCommand] = []
+        if !seekBack {
+            for cue in timeline.cues where cue.timeSec > previous && cue.timeSec <= position {
+                if firedCueIDs.insert(cue.id).inserted {
+                    commands.append(.cue(cue))
+                }
+            }
+        }
+
+        var laneValues = state.lastLaneValueBySongId[songKey] ?? [:]
+        for lane in timeline.valueLanes {
+            guard lane.targetType == .ledfxVirtualBrightness,
+                  let value = sampleAutomationValue(points: lane.points, at: position) else {
+                continue
+            }
+            if let last = laneValues[lane.id], abs(last - value) < 0.01 {
+                continue
+            }
+            laneValues[lane.id] = value
+            commands.append(.ledfxBrightness(virtualID: lane.target, value: value))
+        }
+
+        state.lastLaneValueBySongId[songKey] = laneValues
+        state.firedCueIdsBySongId[songKey] = firedCueIDs
+
+        guard !commands.isEmpty else { return .none }
+        return .merge(commands.map(AutomationEffects.execute))
+    }
+}
+
+private enum AutomationRuntimeCommand {
+    case cue(AutomationCue)
+    case ledfxBrightness(virtualID: String, value: Double)
+}
+
+private func ensureAutomationTimeline(
+    for songID: SongID,
+    state: inout AutomationSubState
+) -> SongAutomationTimeline {
+    if let existing = state.timelineBySongId[songID.rawValue] {
+        return existing
+    }
+    let timeline = SongAutomationTimeline(
+        valueLanes: [
+            AutomationValueLane(
+                id: "ledfx-brightness:main",
+                displayName: "Brightness main",
+                targetType: .ledfxVirtualBrightness,
+                target: "main",
+                points: []
+            )
+        ]
+    )
+    state.timelineBySongId[songID.rawValue] = timeline
+    return timeline
+}
+
+private func normalizedTimeline(_ timeline: SongAutomationTimeline) -> SongAutomationTimeline {
+    let sortedCues = timeline.cues.sorted { lhs, rhs in
+        if lhs.timeSec == rhs.timeSec {
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        return lhs.timeSec < rhs.timeSec
+    }
+    let sortedLanes = timeline.valueLanes.map { lane in
+        var copy = lane
+        copy.points = lane.points.sorted { lhs, rhs in
+            if lhs.timeSec == rhs.timeSec {
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            return lhs.timeSec < rhs.timeSec
+        }
+        return copy
+    }
+    return SongAutomationTimeline(
+        cues: sortedCues,
+        valueLanes: sortedLanes,
+        updatedAt: Date()
+    )
+}
+
+private func sampleAutomationValue(
+    points: [AutomationValuePoint],
+    at position: Double
+) -> Double? {
+    guard !points.isEmpty else { return nil }
+    let sorted = points.sorted { $0.timeSec < $1.timeSec }
+    if position <= sorted[0].timeSec {
+        return sorted[0].value
+    }
+    if position >= sorted[sorted.count - 1].timeSec {
+        return sorted[sorted.count - 1].value
+    }
+    for index in 1..<sorted.count {
+        let left = sorted[index - 1]
+        let right = sorted[index]
+        guard position >= left.timeSec, position <= right.timeSec else { continue }
+        let span = right.timeSec - left.timeSec
+        guard span > 0 else { return right.value }
+        let t = (position - left.timeSec) / span
+        return left.value + (right.value - left.value) * t
+    }
+    return sorted.last?.value
+}
+
+private func shouldRecordOSCAddress(_ address: String, prefixes: [String]) -> Bool {
+    let normalizedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedAddress.isEmpty else { return false }
+    guard !prefixes.isEmpty else { return true }
+    return prefixes.contains { prefix in
+        let normalizedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPrefix.isEmpty else { return false }
+        return normalizedAddress.hasPrefix(normalizedPrefix)
+    }
+}
+
+private func shouldRecordOSCSample(
+    previous: AutomationRecordedOSCSample?,
+    currentTime: Double,
+    currentArgs: [AutomationOSCValue],
+    maxHz: Double,
+    minDelta: Double
+) -> Bool {
+    guard let previous else { return true }
+    let minInterval = maxHz > 0 ? 1.0 / maxHz : 0
+    if currentTime - previous.timeSec < minInterval {
+        return false
+    }
+    return hasSignificantOSCArgsChange(previous.args, currentArgs, minDelta: minDelta)
+}
+
+private func hasSignificantOSCArgsChange(
+    _ lhs: [AutomationOSCValue],
+    _ rhs: [AutomationOSCValue],
+    minDelta: Double
+) -> Bool {
+    if lhs.count != rhs.count { return true }
+    for (left, right) in zip(lhs, rhs) {
+        switch (left, right) {
+        case (.float(let l), .float(let r)):
+            if abs(l - r) >= minDelta { return true }
+        case (.int(let l), .int(let r)):
+            if abs(Double(l) - Double(r)) >= minDelta { return true }
+        case (.int(let l), .float(let r)):
+            if abs(Double(l) - r) >= minDelta { return true }
+        case (.float(let l), .int(let r)):
+            if abs(l - Double(r)) >= minDelta { return true }
+        case (.string(let l), .string(let r)):
+            if l != r { return true }
+        default:
+            return true
+        }
+    }
+    return false
+}
+
 // MARK: - Effect Placeholders
 
 /// Placeholder effects - to be implemented in Phase 3
@@ -1212,6 +1821,58 @@ public enum RenderEffects {
             } else {
                 await send(.render(.selectShader(nextName)))
             }
+        }
+    }
+}
+
+enum AutomationEffects {
+    fileprivate static func execute(_ command: AutomationRuntimeCommand) -> Effect<AppAction> {
+        switch command {
+        case .ledfxBrightness(let virtualID, let value):
+            return .send(.ledfx(.setVirtualBrightness(id: virtualID, brightness: value)))
+
+        case .cue(let cue):
+            switch cue.actionType {
+            case .ledfxActivateScene:
+                guard !cue.value.isEmpty else { return .none }
+                return .send(.ledfx(.activateScene(cue.value)))
+            case .ledfxActivatePlaylist:
+                guard !cue.value.isEmpty else { return .none }
+                return .send(.ledfx(.activatePlaylist(cue.value)))
+            case .ledfxStopPlaylist:
+                return .send(.ledfx(.stopPlaylist))
+            case .osc:
+                guard let target = cue.oscTarget else {
+                    return .send(.ui(.log("Automation cue missing OSC target for \(cue.value)", .warning)))
+                }
+                return .run { send in
+                    do {
+                        try await EffectEnvironment.shared.sendOSC?(
+                            target.rawValue,
+                            cue.value,
+                            automationOSCValuesToSendable(cue.args),
+                            cue.source ?? "automation-replay"
+                        )
+                    } catch {
+                        await send(.ui(.log("Automation OSC failed (\(cue.value)): \(error.localizedDescription)", .error)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private func automationOSCValuesToSendable(_ values: [AutomationOSCValue]) -> [any Sendable] {
+    values.map { value in
+        switch value {
+        case .int(let intValue):
+            return intValue
+        case .float(let floatValue):
+            return floatValue
+        case .string(let stringValue):
+            return stringValue
+        case .bool(let boolValue):
+            return boolValue
         }
     }
 }
@@ -1369,16 +2030,71 @@ public enum PersistenceEffects {
             } else {
                 shaderControlsByShader = [:]
             }
+            let shaderPlaylistByPhase: [String: [String]]
+            if let playlistData = UserDefaults.standard.data(forKey: "shaderPlaylistByPhase"),
+               let decoded = try? JSONDecoder().decode([String: [String]].self, from: playlistData) {
+                shaderPlaylistByPhase = decoded
+            } else {
+                shaderPlaylistByPhase = [:]
+            }
+            let maskPlaylistByPhase: [String: [String]]
+            if let playlistData = UserDefaults.standard.data(forKey: "maskPlaylistByPhase"),
+               let decoded = try? JSONDecoder().decode([String: [String]].self, from: playlistData) {
+                maskPlaylistByPhase = decoded
+            } else {
+                maskPlaylistByPhase = [:]
+            }
+            let shaderPlaylistIndexByPhase: [String: Int]
+            if let indexData = UserDefaults.standard.data(forKey: "shaderPlaylistIndexByPhase"),
+               let decoded = try? JSONDecoder().decode([String: Int].self, from: indexData) {
+                shaderPlaylistIndexByPhase = decoded
+            } else {
+                shaderPlaylistIndexByPhase = [:]
+            }
+            let maskPlaylistIndexByPhase: [String: Int]
+            if let indexData = UserDefaults.standard.data(forKey: "maskPlaylistIndexByPhase"),
+               let decoded = try? JSONDecoder().decode([String: Int].self, from: indexData) {
+                maskPlaylistIndexByPhase = decoded
+            } else {
+                maskPlaylistIndexByPhase = [:]
+            }
+            let shaderAutoAdvanceOnSongChange = (UserDefaults.standard.object(forKey: "shaderAutoAdvanceOnSongChange") as? Bool) ?? false
+            let maskAutoAdvanceOnSongChange = (UserDefaults.standard.object(forKey: "maskAutoAdvanceOnSongChange") as? Bool) ?? false
+            let automationEnabled = (UserDefaults.standard.object(forKey: "automationEnabled") as? Bool) ?? true
+            let automationAutoRecordEnabled = (UserDefaults.standard.object(forKey: "automationAutoRecordEnabled") as? Bool) ?? false
+            let automationAutoRecordPrefixes: [String]
+            if UserDefaults.standard.object(forKey: "automationAutoRecordPrefixes") != nil {
+                automationAutoRecordPrefixes = UserDefaults.standard.stringArray(forKey: "automationAutoRecordPrefixes") ?? []
+            } else {
+                automationAutoRecordPrefixes = AutomationSubState().autoRecordPrefixes
+            }
+            let automationTimelinesBySongId: [String: SongAutomationTimeline]
+            if let data = UserDefaults.standard.data(forKey: "automationTimelinesBySongId"),
+               let decoded = try? JSONDecoder().decode([String: SongAutomationTimeline].self, from: data) {
+                automationTimelinesBySongId = decoded
+            } else {
+                automationTimelinesBySongId = [:]
+            }
 
             let persisted = PersistedState(
                 renderEnabled: renderEnabled,
                 renderOutputs: renderOutputs,
                 shaderControlsByShader: shaderControlsByShader,
+                shaderPlaylistByPhase: shaderPlaylistByPhase,
+                maskPlaylistByPhase: maskPlaylistByPhase,
+                shaderPlaylistIndexByPhase: shaderPlaylistIndexByPhase,
+                maskPlaylistIndexByPhase: maskPlaylistIndexByPhase,
+                shaderAutoAdvanceOnSongChange: shaderAutoAdvanceOnSongChange,
+                maskAutoAdvanceOnSongChange: maskAutoAdvanceOnSongChange,
                 selectedShader: shader,
                 selectedMaskShader: maskShader,
                 currentPhase: phase,
                 playbackSource: source,
-                launcherTargets: launcherTargets
+                launcherTargets: launcherTargets,
+                automationEnabled: automationEnabled,
+                automationAutoRecordEnabled: automationAutoRecordEnabled,
+                automationAutoRecordPrefixes: automationAutoRecordPrefixes,
+                automationTimelinesBySongId: automationTimelinesBySongId
             )
 
             await send(.persistedStateLoaded(persisted))
@@ -1399,6 +2115,28 @@ public enum PersistenceEffects {
             } else {
                 UserDefaults.standard.removeObject(forKey: "shaderControlsByShader")
             }
+            if let playlistData = try? JSONEncoder().encode(state.shaderPlaylistByPhase) {
+                UserDefaults.standard.set(playlistData, forKey: "shaderPlaylistByPhase")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "shaderPlaylistByPhase")
+            }
+            if let playlistData = try? JSONEncoder().encode(state.maskPlaylistByPhase) {
+                UserDefaults.standard.set(playlistData, forKey: "maskPlaylistByPhase")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "maskPlaylistByPhase")
+            }
+            if let indexData = try? JSONEncoder().encode(state.shaderPlaylistIndexByPhase) {
+                UserDefaults.standard.set(indexData, forKey: "shaderPlaylistIndexByPhase")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "shaderPlaylistIndexByPhase")
+            }
+            if let indexData = try? JSONEncoder().encode(state.maskPlaylistIndexByPhase) {
+                UserDefaults.standard.set(indexData, forKey: "maskPlaylistIndexByPhase")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "maskPlaylistIndexByPhase")
+            }
+            UserDefaults.standard.set(state.shaderAutoAdvanceOnSongChange, forKey: "shaderAutoAdvanceOnSongChange")
+            UserDefaults.standard.set(state.maskAutoAdvanceOnSongChange, forKey: "maskAutoAdvanceOnSongChange")
             if let shader = state.selectedShader {
                 UserDefaults.standard.set(shader, forKey: "selectedShader")
             } else {
@@ -1419,6 +2157,14 @@ public enum PersistenceEffects {
                 UserDefaults.standard.set(launcherData, forKey: "launcherTargets")
             } else {
                 UserDefaults.standard.removeObject(forKey: "launcherTargets")
+            }
+            UserDefaults.standard.set(state.automationEnabled, forKey: "automationEnabled")
+            UserDefaults.standard.set(state.automationAutoRecordEnabled, forKey: "automationAutoRecordEnabled")
+            UserDefaults.standard.set(state.automationAutoRecordPrefixes, forKey: "automationAutoRecordPrefixes")
+            if let automationData = try? JSONEncoder().encode(state.automationTimelinesBySongId) {
+                UserDefaults.standard.set(automationData, forKey: "automationTimelinesBySongId")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "automationTimelinesBySongId")
             }
         }
     }

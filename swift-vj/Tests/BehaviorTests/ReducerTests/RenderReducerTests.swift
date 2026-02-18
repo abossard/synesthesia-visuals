@@ -418,6 +418,101 @@ final class RenderReducerTests: XCTestCase {
         }
     }
 
+    func testAddShaderToPhasePlaylistAllowsDuplicatesAndPersists() async {
+        var appState = AppState()
+        _ = applyRenderReducerReturningEffect(
+            .addShaderToPhasePlaylist(phase: .peak, shaderName: "rainbow", activate: false),
+            to: &appState
+        )
+        let effect = applyRenderReducerReturningEffect(
+            .addShaderToPhasePlaylist(phase: .peak, shaderName: "rainbow", activate: false),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderPlaylist(for: .peak), ["rainbow", "rainbow"])
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case .persistState = emitted[0] else {
+            XCTFail("Expected persistState after playlist add")
+            return
+        }
+    }
+
+    func testAddShaderToPhasePlaylistInsertsAtTopAndShiftsActiveIndex() {
+        var appState = AppState()
+        appState.render.shaderPlaylistByPhase[Phase.peak.rawValue] = ["first", "second"]
+        appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue] = 1
+
+        _ = applyRenderReducerReturningEffect(
+            .addShaderToPhasePlaylist(phase: .peak, shaderName: "newTop", activate: false),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderPlaylist(for: .peak), ["newTop", "first", "second"])
+        XCTAssertEqual(appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue], 2)
+    }
+
+    func testActivateShaderInPhasePlaylistSelectsEntry() async {
+        var appState = AppState()
+        appState.render.shaderPlaylistByPhase[Phase.peak.rawValue] = ["a", "b"]
+
+        let effect = applyRenderReducerReturningEffect(
+            .activateShaderInPhasePlaylist(phase: .peak, index: 1),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue], 1)
+        let emitted = await collectActions(from: effect)
+        XCTAssertEqual(emitted.count, 1)
+        guard case let .render(.selectShader(name)) = emitted[0] else {
+            XCTFail("Expected render.selectShader after playlist activation")
+            return
+        }
+        XCTAssertEqual(name, "b")
+    }
+
+    func testMoveShaderInPhasePlaylistRemapsActiveIndex() {
+        var appState = AppState()
+        appState.render.shaderPlaylistByPhase[Phase.peak.rawValue] = ["a", "b", "c"]
+        appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue] = 1
+
+        _ = applyRenderReducerReturningEffect(
+            .moveShaderInPhasePlaylist(phase: .peak, fromIndices: [1], toIndex: 3),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderPlaylist(for: .peak), ["a", "c", "b"])
+        XCTAssertEqual(appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue], 2)
+    }
+
+    func testAdvancePhasePlaylistsOnSongChangeSelectsNextWhenEnabled() async {
+        var appState = AppState()
+        appState.render.shaderAutoAdvanceOnSongChange = true
+        appState.render.maskAutoAdvanceOnSongChange = true
+        appState.render.shaderPlaylistByPhase[Phase.peak.rawValue] = ["s0", "s1"]
+        appState.render.maskPlaylistByPhase[Phase.peak.rawValue] = ["m0", "m1"]
+        appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue] = 0
+        appState.render.maskPlaylistIndexByPhase[Phase.peak.rawValue] = 0
+
+        let effect = applyRenderReducerReturningEffect(
+            .advancePhasePlaylistsOnSongChange(phase: .peak),
+            to: &appState
+        )
+
+        XCTAssertEqual(appState.render.shaderPlaylistIndexByPhase[Phase.peak.rawValue], 1)
+        XCTAssertEqual(appState.render.maskPlaylistIndexByPhase[Phase.peak.rawValue], 1)
+
+        let emitted = await collectActions(from: effect)
+        XCTAssertTrue(emitted.contains {
+            if case let .render(.selectShader(name)) = $0 { return name == "s1" }
+            return false
+        })
+        XCTAssertTrue(emitted.contains {
+            if case let .render(.selectMaskShader(name)) = $0 { return name == "m1" }
+            return false
+        })
+    }
+
     // MARK: - Effective Phase
 
     func testEffectivePhaseReturnsManualPhase() {

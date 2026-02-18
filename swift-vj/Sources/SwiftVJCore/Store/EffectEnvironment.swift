@@ -101,7 +101,7 @@ public final class EffectEnvironment {
     // MARK: - OSC Effects
 
     /// Send OSC message to a target
-    public var sendOSC: (@Sendable (String, String, [any Sendable]) async throws -> Void)?
+    public var sendOSC: (@Sendable (String, String, [any Sendable], String?) async throws -> Void)?
 
     // MARK: - Songs Module
 

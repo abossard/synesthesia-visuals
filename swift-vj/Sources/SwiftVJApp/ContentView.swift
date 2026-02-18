@@ -11,9 +11,10 @@ struct ContentView: View {
     enum SidebarTab: String, CaseIterable, Identifiable {
         case master = "Master"
         case rendering = "Rendering"
-        case pipeline = "Pipeline"
+        case pipeline = "Performance"
         case shaders = "Shaders"
         case songs = "Songs"
+        case automation = "Automation"
         case osc = "OSC"
         case ledfx = "LedFX"
         case launchpad = "Launchpad"
@@ -29,6 +30,7 @@ struct ContentView: View {
             case .pipeline: return "arrow.triangle.branch"
             case .shaders: return "sparkles"
             case .songs: return "music.note.list"
+            case .automation: return "timeline.selection"
             case .osc: return "antenna.radiowaves.left.and.right"
             case .ledfx: return "lightbulb.led"
             case .launchpad: return "square.grid.3x3.fill"
@@ -101,11 +103,13 @@ struct ContentView: View {
                 case .rendering:
                     RenderingView()
                 case .pipeline:
-                    PipelineStatusView()
+                    PerformanceView()
                 case .shaders:
                     ShaderBrowserView()
                 case .songs:
                     SongBrowserView()
+                case .automation:
+                    AutomationTimelineView()
                 case .osc:
                     OSCContainerView()
                 case .ledfx:

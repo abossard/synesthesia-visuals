@@ -8,6 +8,7 @@ import AppKit
 import Combine
 import OSCKit
 import OscRestBridge
+import SongRepository
 
 // Serial queue to process high-rate playback OSC off the main actor
 private let playbackOSCQueue = DispatchQueue(label: "vj.playback.osc.queue", qos: .userInitiated)
@@ -28,7 +29,7 @@ private func makeLaunchpadOscSender(
                 }
             }
             do {
-                try oscHub.sendToSynesthesia(command.address, values: values)
+                try oscHub.sendToSynesthesia(command.address, values: values, source: "launchpad")
             } catch {
                 onError("OSC send to Synesthesia failed (\(command.address)): \(error)")
             }
@@ -258,9 +259,18 @@ public final class AppState: ObservableObject {
     @Published public private(set) var renderEnabled: Bool = true
     @Published public private(set) var renderOutputs: RenderOutputsState = RenderOutputsState()
     @Published public private(set) var shaderControlsByShader: [String: ShaderWorkspaceControls] = [:]
+    @Published public private(set) var shaderPlaylistByPhase: [String: [String]] = [:]
+    @Published public private(set) var maskPlaylistByPhase: [String: [String]] = [:]
+    @Published public private(set) var shaderPlaylistIndexByPhase: [String: Int] = [:]
+    @Published public private(set) var maskPlaylistIndexByPhase: [String: Int] = [:]
+    @Published public private(set) var shaderAutoAdvanceOnSongChange: Bool = false
+    @Published public private(set) var maskAutoAdvanceOnSongChange: Bool = false
+    @Published public private(set) var aiSuggestedShaderName: String?
+    @Published public private(set) var aiSuggestedShaderPhase: Phase?
     @Published public private(set) var currentPhase: Phase?
     @Published public private(set) var detectedSongPhase: Phase?
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
+    @Published public private(set) var automationState: AutomationSubState = AutomationSubState()
     @Published public private(set) var shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
 
     // MARK: - UI State (private(set) enforces unidirectional flow)
@@ -368,6 +378,8 @@ public final class AppState: ObservableObject {
         storeLogger.printToConsole = loggerEnabled
         storeLogger.excludedCategories = [.audio]
         storeLogger.filterHighFrequency()
+
+        setupAutomationOSCAutoRecordBridge()
 
         if !testMode {
             setupModules()
@@ -547,6 +559,87 @@ public final class AppState: ObservableObject {
         store.send(.render(.resetShaderWorkspaceControls(shaderName: shaderName)))
     }
 
+    public func shaderPlaylist(for phase: Phase) -> [String] {
+        shaderPlaylistByPhase[phase.rawValue] ?? []
+    }
+
+    public func maskPlaylist(for phase: Phase) -> [String] {
+        maskPlaylistByPhase[phase.rawValue] ?? []
+    }
+
+    public func shaderPlaylistCurrentIndex(for phase: Phase) -> Int? {
+        let playlist = shaderPlaylist(for: phase)
+        guard let index = shaderPlaylistIndexByPhase[phase.rawValue], playlist.indices.contains(index) else {
+            return nil
+        }
+        return index
+    }
+
+    public func maskPlaylistCurrentIndex(for phase: Phase) -> Int? {
+        let playlist = maskPlaylist(for: phase)
+        guard let index = maskPlaylistIndexByPhase[phase.rawValue], playlist.indices.contains(index) else {
+            return nil
+        }
+        return index
+    }
+
+    public func setShaderAutoAdvanceOnSongChange(_ enabled: Bool) {
+        store.send(.render(.setShaderAutoAdvanceOnSongChange(enabled)))
+    }
+
+    public func setMaskAutoAdvanceOnSongChange(_ enabled: Bool) {
+        store.send(.render(.setMaskAutoAdvanceOnSongChange(enabled)))
+    }
+
+    public func addShaderToPhasePlaylist(phase: Phase, shaderName: String, activate: Bool = false) {
+        store.send(.render(.addShaderToPhasePlaylist(phase: phase, shaderName: shaderName, activate: activate)))
+    }
+
+    public func addMaskToPhasePlaylist(phase: Phase, maskName: String, activate: Bool = false) {
+        store.send(.render(.addMaskToPhasePlaylist(phase: phase, maskName: maskName, activate: activate)))
+    }
+
+    public func removeShaderFromPhasePlaylist(phase: Phase, index: Int) {
+        store.send(.render(.removeShaderFromPhasePlaylist(phase: phase, index: index)))
+    }
+
+    public func removeMaskFromPhasePlaylist(phase: Phase, index: Int) {
+        store.send(.render(.removeMaskFromPhasePlaylist(phase: phase, index: index)))
+    }
+
+    public func moveShaderInPhasePlaylist(phase: Phase, fromOffsets: IndexSet, toOffset: Int) {
+        store.send(.render(.moveShaderInPhasePlaylist(
+            phase: phase,
+            fromIndices: Array(fromOffsets),
+            toIndex: toOffset
+        )))
+    }
+
+    public func moveMaskInPhasePlaylist(phase: Phase, fromOffsets: IndexSet, toOffset: Int) {
+        store.send(.render(.moveMaskInPhasePlaylist(
+            phase: phase,
+            fromIndices: Array(fromOffsets),
+            toIndex: toOffset
+        )))
+    }
+
+    public func activateShaderInPhasePlaylist(phase: Phase, index: Int) {
+        store.send(.render(.activateShaderInPhasePlaylist(phase: phase, index: index)))
+    }
+
+    public func activateMaskInPhasePlaylist(phase: Phase, index: Int) {
+        store.send(.render(.activateMaskInPhasePlaylist(phase: phase, index: index)))
+    }
+
+    public func addAISuggestedShaderToPlaylistAndActivate(phase: Phase) {
+        guard let aiSuggestedShaderName, !aiSuggestedShaderName.isEmpty else { return }
+        store.send(.render(.addShaderToPhasePlaylist(
+            phase: phase,
+            shaderName: aiSuggestedShaderName,
+            activate: true
+        )))
+    }
+
     /// Set the current phase via unidirectional data flow.
     /// Dispatches through Store → Reducer → @Published sync.
     /// Do NOT write directly to currentPhase to avoid state trickling.
@@ -653,6 +746,157 @@ public final class AppState: ObservableObject {
 
     public func setShaderCatalogBulkPhases(_ phases: Set<Phase>) {
         store.send(.ui(.setShaderCatalogBulkPhases(phases)))
+    }
+
+    // MARK: - Automation Timeline
+
+    private var currentPlaybackSongID: SongID? {
+        guard let track = currentTrack else { return nil }
+        return SongID(artist: track.artist, title: track.title)
+    }
+
+    public func setAutomationEnabled(_ enabled: Bool) {
+        store.send(.automation(.setEnabled(enabled)))
+    }
+
+    public var automationEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.automationState.isEnabled },
+            set: { self.setAutomationEnabled($0) }
+        )
+    }
+
+    public func setAutomationAutoRecordEnabled(_ enabled: Bool) {
+        store.send(.automation(.setAutoRecordEnabled(enabled)))
+    }
+
+    public var automationAutoRecordBinding: Binding<Bool> {
+        Binding(
+            get: { self.automationState.autoRecordEnabled },
+            set: { self.setAutomationAutoRecordEnabled($0) }
+        )
+    }
+
+    public func setAutomationAutoRecordPrefixes(_ prefixes: [String]) {
+        store.send(.automation(.setAutoRecordPrefixes(prefixes)))
+    }
+
+    public var automationAutoRecordPrefixesStringBinding: Binding<String> {
+        Binding(
+            get: { self.automationState.autoRecordPrefixes.joined(separator: ", ") },
+            set: { rawValue in
+                let prefixes = rawValue
+                    .split(whereSeparator: { $0 == "," || $0 == "\n" })
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                self.setAutomationAutoRecordPrefixes(prefixes)
+            }
+        )
+    }
+
+    public func selectAutomationSong(_ songID: SongID?) {
+        store.send(.automation(.selectSong(songID)))
+        if let songID {
+            store.send(.automation(.ensureTimeline(songID)))
+        }
+    }
+
+    public var automationSelectedSongBinding: Binding<SongID?> {
+        Binding(
+            get: { self.automationState.selectedSongId },
+            set: { self.selectAutomationSong($0) }
+        )
+    }
+
+    public func automationTimeline(for songID: SongID?) -> SongAutomationTimeline? {
+        automationState.timeline(for: songID)
+    }
+
+    public func clearAutomationTimeline(songID: SongID) {
+        store.send(.automation(.clearTimeline(songID)))
+    }
+
+    public func addAutomationCue(songID: SongID, cue: AutomationCue) {
+        store.send(.automation(.addCue(songID: songID, cue: cue)))
+    }
+
+    public func updateAutomationCue(songID: SongID, cue: AutomationCue) {
+        store.send(.automation(.updateCue(songID: songID, cue: cue)))
+    }
+
+    public func removeAutomationCue(songID: SongID, cueID: UUID) {
+        store.send(.automation(.removeCue(songID: songID, cueID: cueID)))
+    }
+
+    public func addAutomationValueLane(songID: SongID, lane: AutomationValueLane) {
+        store.send(.automation(.addValueLane(songID: songID, lane: lane)))
+    }
+
+    public func removeAutomationValueLane(songID: SongID, laneID: String) {
+        store.send(.automation(.removeValueLane(songID: songID, laneID: laneID)))
+    }
+
+    public func addAutomationValuePoint(songID: SongID, laneID: String, point: AutomationValuePoint) {
+        store.send(.automation(.addValuePoint(songID: songID, laneID: laneID, point: point)))
+    }
+
+    public func updateAutomationValuePoint(songID: SongID, laneID: String, point: AutomationValuePoint) {
+        store.send(.automation(.updateValuePoint(songID: songID, laneID: laneID, point: point)))
+    }
+
+    public func removeAutomationValuePoint(songID: SongID, laneID: String, pointID: UUID) {
+        store.send(.automation(.removeValuePoint(songID: songID, laneID: laneID, pointID: pointID)))
+    }
+
+    public func sendLedFXAction(_ action: LedFXAction) {
+        store.send(.ledfx(action))
+        guard automationState.isEnabled,
+              automationState.autoRecordEnabled,
+              let songID = currentPlaybackSongID else {
+            return
+        }
+        store.send(.automation(.recordLedFXAction(
+            songID: songID,
+            position: playbackPosition,
+            action: action
+        )))
+    }
+
+    private func recordOutgoingOSCForAutomation(
+        target: String,
+        address: String,
+        args: [OscArg],
+        source: String?
+    ) {
+        guard automationState.isEnabled,
+              automationState.autoRecordEnabled,
+              let songID = currentPlaybackSongID else {
+            return
+        }
+        guard source != "automation-replay" else { return }
+        guard let oscTarget = AutomationOSCTarget(rawValue: target.lowercased()) else { return }
+        let converted = args.map(Self.automationOSCValue(from:))
+        store.send(.automation(.recordOSC(
+            songID: songID,
+            position: playbackPosition,
+            target: oscTarget,
+            address: address,
+            args: converted,
+            source: source
+        )))
+    }
+
+    private static func automationOSCValue(from arg: OscArg) -> AutomationOSCValue {
+        switch arg {
+        case .int(let value):
+            return .int(value)
+        case .float(let value):
+            return .float(Double(value))
+        case .string(let value):
+            return .string(value)
+        case .bool(let value):
+            return .bool(value)
+        }
     }
 
     // MARK: - LedFX Bindings
@@ -944,6 +1188,19 @@ public final class AppState: ObservableObject {
 
     // MARK: - Private Setup
 
+    private func setupAutomationOSCAutoRecordBridge() {
+        oscHub.outgoingMessageHandler = { [weak self] target, address, args, source in
+            Task { @MainActor in
+                self?.recordOutgoingOSCForAutomation(
+                    target: target,
+                    address: address,
+                    args: args,
+                    source: source
+                )
+            }
+        }
+    }
+
     private func setupModules() {
         let fetcher = LyricsFetcher()
         self.lyricsFetcher = fetcher
@@ -959,11 +1216,14 @@ public final class AppState: ObservableObject {
         shadersModule = ShadersModule(matcher: shaderMatcher)
         imagesModule = ImagesModule(scraper: imageScraper)
 
-        let launchpadOscSender = makeLaunchpadOscSender(oscHub: oscHub) { [weak self] message in
-            Task { @MainActor in
-                self?.log(message, level: .error)
+        let launchpadOscSender = makeLaunchpadOscSender(
+            oscHub: oscHub,
+            onError: { [weak self] message in
+                Task { @MainActor in
+                    self?.log(message, level: .error)
+                }
             }
-        }
+        )
         launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
         launchpadConfig = launchpadModule?.yamlConfig
         if let launchpadModule {
@@ -1138,6 +1398,27 @@ public final class AppState: ObservableObject {
             await self.reloadLLMConfiguration()
         }
 
+        EffectEnvironment.shared.sendOSC = { [weak self] target, address, values, source in
+            guard let self else { return }
+            try await MainActor.run {
+                let oscValues = values.compactMap(Self.mapSendableToOSCValue)
+                switch target.lowercased() {
+                case "magic":
+                    try self.oscHub.sendToMagic(address, values: oscValues, source: source)
+                case "synesthesia":
+                    try self.oscHub.sendToSynesthesia(address, values: oscValues, source: source)
+                case "vdj":
+                    try self.oscHub.sendToVDJ(address, values: oscValues, source: source)
+                default:
+                    throw NSError(
+                        domain: "SwiftVJApp.OSC",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Unsupported OSC target: \(target)"]
+                    )
+                }
+            }
+        }
+
         EffectEnvironment.shared.ledfxActionHandler = { [weak self] action in
             guard let self else { return }
             await self.ledfxFeature.handle(action)
@@ -1247,6 +1528,30 @@ public final class AppState: ObservableObject {
                     self.shaderControlsByShader = newState.render.shaderControlsByShader
                     self.renderEngine?.setShaderControlsByShader(newState.render.shaderControlsByShader)
                 }
+                if self.shaderPlaylistByPhase != newState.render.shaderPlaylistByPhase {
+                    self.shaderPlaylistByPhase = newState.render.shaderPlaylistByPhase
+                }
+                if self.maskPlaylistByPhase != newState.render.maskPlaylistByPhase {
+                    self.maskPlaylistByPhase = newState.render.maskPlaylistByPhase
+                }
+                if self.shaderPlaylistIndexByPhase != newState.render.shaderPlaylistIndexByPhase {
+                    self.shaderPlaylistIndexByPhase = newState.render.shaderPlaylistIndexByPhase
+                }
+                if self.maskPlaylistIndexByPhase != newState.render.maskPlaylistIndexByPhase {
+                    self.maskPlaylistIndexByPhase = newState.render.maskPlaylistIndexByPhase
+                }
+                if self.shaderAutoAdvanceOnSongChange != newState.render.shaderAutoAdvanceOnSongChange {
+                    self.shaderAutoAdvanceOnSongChange = newState.render.shaderAutoAdvanceOnSongChange
+                }
+                if self.maskAutoAdvanceOnSongChange != newState.render.maskAutoAdvanceOnSongChange {
+                    self.maskAutoAdvanceOnSongChange = newState.render.maskAutoAdvanceOnSongChange
+                }
+                if self.aiSuggestedShaderName != newState.render.aiSuggestedShaderName {
+                    self.aiSuggestedShaderName = newState.render.aiSuggestedShaderName
+                }
+                if self.aiSuggestedShaderPhase != newState.render.aiSuggestedShaderPhase {
+                    self.aiSuggestedShaderPhase = newState.render.aiSuggestedShaderPhase
+                }
                 if self.selectedShader != newState.render.selectedShader { self.selectedShader = newState.render.selectedShader }
                 if self.selectedMaskShader != newState.render.selectedMaskShader { self.selectedMaskShader = newState.render.selectedMaskShader }
                 if self.currentPhase != newState.render.currentPhase { self.currentPhase = newState.render.currentPhase }
@@ -1255,6 +1560,7 @@ public final class AppState: ObservableObject {
                 if self.imageCount != newState.render.imageCount { self.imageCount = newState.render.imageCount }
                 if self.shaderCount != newState.render.shaderCount { self.shaderCount = newState.render.shaderCount }
                 if self.songsState != newState.songs { self.songsState = newState.songs }
+                if self.automationState != newState.automation { self.automationState = newState.automation }
                 if self.shaderCatalog != newState.ui.shaderCatalog { self.shaderCatalog = newState.ui.shaderCatalog }
 
                 // UI state (logs + OSC)
@@ -1424,6 +1730,17 @@ public final class AppState: ObservableObject {
                 return nil
             }
         }
+        return nil
+    }
+
+    nonisolated private static func mapSendableToOSCValue(_ value: any Sendable) -> (any OSCValue)? {
+        if let int32Value = value as? Int32 { return int32Value }
+        if let intValue = value as? Int { return Int32(intValue) }
+        if let float32Value = value as? Float32 { return float32Value }
+        if let floatValue = value as? Float { return Float32(floatValue) }
+        if let doubleValue = value as? Double { return Float32(doubleValue) }
+        if let stringValue = value as? String { return stringValue }
+        if let boolValue = value as? Bool { return boolValue ? Int32(1) : Int32(0) }
         return nil
     }
 

@@ -252,7 +252,7 @@ struct LedFXConfigView: View {
                                 isActive: item.id == activePlaylistId,
                                 slotIds: slotIdsForPaths,
                                 sceneNames: sceneNameLookup,
-                                onActivate: { appState.send(.ledfx(.activatePlaylist(item.id))) }
+                                onActivate: { appState.sendLedFXAction(.activatePlaylist(item.id)) }
                             )
                         }
                     }
@@ -269,9 +269,9 @@ struct LedFXConfigView: View {
                     SceneRow(
                         id: item.id,
                         scene: item.scene,
-                        onActivate: { appState.send(.ledfx(.activateScene(item.id))) },
-                        onDeactivate: { appState.send(.ledfx(.deactivateScene(item.id))) },
-                        onDelete: { appState.send(.ledfx(.deleteScene(item.id))) }
+                        onActivate: { appState.sendLedFXAction(.activateScene(item.id)) },
+                        onDeactivate: { appState.sendLedFXAction(.deactivateScene(item.id)) },
+                        onDelete: { appState.sendLedFXAction(.deleteScene(item.id)) }
                     )
                 }
             }
@@ -288,7 +288,7 @@ struct LedFXConfigView: View {
                             id: virtualId,
                             virtual: virtual,
                             onSetBrightness: { brightness in
-                                appState.send(.ledfx(.setVirtualBrightness(id: virtualId, brightness: brightness)))
+                                appState.sendLedFXAction(.setVirtualBrightness(id: virtualId, brightness: brightness))
                             }
                         )
                     }

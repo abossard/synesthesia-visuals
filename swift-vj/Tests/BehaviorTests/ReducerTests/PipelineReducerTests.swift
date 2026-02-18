@@ -6,12 +6,44 @@ import XCTest
 
 final class PipelineReducerTests: XCTestCase {
 
+    private actor ActionCollector {
+        private var actions: [AppAction] = []
+        func append(_ action: AppAction) { actions.append(action) }
+        func snapshot() -> [AppAction] { actions }
+    }
+
     // Helper to avoid overlapping access issues when calling reducers
     private func applyPipelineReducer(_ action: PipelineAction, to appState: inout AppState) -> Effect<AppAction> {
         var pipelineState = appState.pipeline
         let effect = pipelineReducer(state: &pipelineState, action: action, appState: &appState)
         appState.pipeline = pipelineState
         return effect
+    }
+
+    private func collectActions(from effect: Effect<AppAction>) async -> [AppAction] {
+        switch effect.operation {
+        case .none:
+            return []
+        case .run(_, let operation, _):
+            let collector = ActionCollector()
+            let send = Send<AppAction> { action in
+                await collector.append(action)
+            }
+            await operation(send)
+            return await collector.snapshot()
+        case .merge(let effects):
+            var all: [AppAction] = []
+            for nested in effects {
+                all.append(contentsOf: await collectActions(from: nested))
+            }
+            return all
+        case .concatenate(let effects):
+            var all: [AppAction] = []
+            for nested in effects {
+                all.append(contentsOf: await collectActions(from: nested))
+            }
+            return all
+        }
     }
 
     // MARK: - Start Processing
@@ -152,6 +184,35 @@ final class PipelineReducerTests: XCTestCase {
         _ = applyPipelineReducer(action, to: &appState)
 
         XCTAssertTrue(appState.ui.logEntries.contains { $0.message.contains("2000ms") })
+    }
+
+    func testProcessingCompletedQueuesAISuggestionAndPhaseAdvance() async {
+        var appState = AppState()
+        appState.render.currentPhase = .peak
+
+        let result = PipelineResult(
+            artist: "Artist",
+            title: "Title",
+            success: true,
+            shaderMatched: true,
+            shaderName: "ai-choice"
+        )
+
+        let effect = applyPipelineReducer(.processingCompleted(result), to: &appState)
+        let emitted = await collectActions(from: effect)
+
+        XCTAssertTrue(emitted.contains {
+            if case let .render(.setAISuggestedShader(name, phase)) = $0 {
+                return name == "ai-choice" && phase == .peak
+            }
+            return false
+        })
+        XCTAssertTrue(emitted.contains {
+            if case let .render(.advancePhasePlaylistsOnSongChange(phase)) = $0 {
+                return phase == .peak
+            }
+            return false
+        })
     }
 
     // MARK: - Processing Failed

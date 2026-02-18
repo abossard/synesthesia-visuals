@@ -27,6 +27,7 @@ public enum AppAction: Sendable {
     case launcher(LauncherAction)
     case ledfx(LedFXAction)
     case songs(SongsAction)
+    case automation(AutomationAction)
 
     // MARK: - Persistence
     case loadPersistedState
@@ -161,6 +162,42 @@ public enum RenderAction: Sendable {
 
     /// Reset per-shader workspace controls to defaults
     case resetShaderWorkspaceControls(shaderName: String)
+
+    /// Toggle shader playlist auto-advance on song change
+    case setShaderAutoAdvanceOnSongChange(Bool)
+
+    /// Toggle mask playlist auto-advance on song change
+    case setMaskAutoAdvanceOnSongChange(Bool)
+
+    /// Set latest AI shader suggestion (optional if no match)
+    case setAISuggestedShader(name: String?, phase: Phase?)
+
+    /// Add shader to phase playlist (duplicates allowed)
+    case addShaderToPhasePlaylist(phase: Phase, shaderName: String, activate: Bool)
+
+    /// Add mask to phase playlist (duplicates allowed)
+    case addMaskToPhasePlaylist(phase: Phase, maskName: String, activate: Bool)
+
+    /// Remove shader playlist item at index
+    case removeShaderFromPhasePlaylist(phase: Phase, index: Int)
+
+    /// Remove mask playlist item at index
+    case removeMaskFromPhasePlaylist(phase: Phase, index: Int)
+
+    /// Move shader playlist items
+    case moveShaderInPhasePlaylist(phase: Phase, fromIndices: [Int], toIndex: Int)
+
+    /// Move mask playlist items
+    case moveMaskInPhasePlaylist(phase: Phase, fromIndices: [Int], toIndex: Int)
+
+    /// Activate shader playlist item at index
+    case activateShaderInPhasePlaylist(phase: Phase, index: Int)
+
+    /// Activate mask playlist item at index
+    case activateMaskInPhasePlaylist(phase: Phase, index: Int)
+
+    /// Advance active shader/mask playlist entries for the phase on song change
+    case advancePhasePlaylistsOnSongChange(phase: Phase)
 
     /// Start render engine
     case startEngine
@@ -603,6 +640,75 @@ public enum SongsAction: Sendable {
     case scanCancelled
 }
 
+// MARK: - Automation Actions
+
+/// Actions related to per-song timecoded automation and replay.
+public enum AutomationAction: Sendable {
+    /// Master enable/disable for timeline replay/recording.
+    case setEnabled(Bool)
+
+    /// Enable/disable auto-recording from live control actions.
+    case setAutoRecordEnabled(Bool)
+
+    /// Update OSC address prefixes used by auto-recording.
+    case setAutoRecordPrefixes([String])
+
+    /// Select song in timeline editor.
+    case selectSong(SongID?)
+
+    /// Playback track changed - update active runtime song.
+    case trackChanged(SongID?)
+
+    /// Playback tick used for deterministic timeline replay.
+    case playbackTick(position: Double, isPlaying: Bool)
+
+    /// Ensure timeline object exists for a song.
+    case ensureTimeline(SongID)
+
+    /// Replace full timeline for a song.
+    case setTimeline(songID: SongID, timeline: SongAutomationTimeline)
+
+    /// Clear all cues/lanes for a song.
+    case clearTimeline(SongID)
+
+    /// Add cue to timeline.
+    case addCue(songID: SongID, cue: AutomationCue)
+
+    /// Update cue in timeline.
+    case updateCue(songID: SongID, cue: AutomationCue)
+
+    /// Remove cue from timeline.
+    case removeCue(songID: SongID, cueID: UUID)
+
+    /// Add value lane (for graphs).
+    case addValueLane(songID: SongID, lane: AutomationValueLane)
+
+    /// Remove value lane.
+    case removeValueLane(songID: SongID, laneID: String)
+
+    /// Add value keyframe point.
+    case addValuePoint(songID: SongID, laneID: String, point: AutomationValuePoint)
+
+    /// Update value keyframe point.
+    case updateValuePoint(songID: SongID, laneID: String, point: AutomationValuePoint)
+
+    /// Remove value keyframe point.
+    case removeValuePoint(songID: SongID, laneID: String, pointID: UUID)
+
+    /// Auto-record LedFX action from UI interaction.
+    case recordLedFXAction(songID: SongID, position: Double, action: LedFXAction)
+
+    /// Auto-record outgoing OSC command from any target.
+    case recordOSC(
+        songID: SongID,
+        position: Double,
+        target: AutomationOSCTarget,
+        address: String,
+        args: [AutomationOSCValue],
+        source: String?
+    )
+}
+
 // MARK: - Action Descriptions (for debugging)
 
 extension AppAction: CustomStringConvertible {
@@ -620,6 +726,7 @@ extension AppAction: CustomStringConvertible {
         case .launcher(let action): return "launcher.\(action)"
         case .ledfx(let action): return "ledfx.\(action)"
         case .songs(let action): return "songs.\(action)"
+        case .automation(let action): return "automation.\(action)"
         case .loadPersistedState: return "loadPersistedState"
         case .persistedStateLoaded: return "persistedStateLoaded"
         case .persistState: return "persistState"
@@ -683,6 +790,28 @@ extension RenderAction: CustomStringConvertible {
         case .setShaderWorkspaceControls(let shaderName, let controls):
             return "setShaderWorkspaceControls(\(shaderName), bin0: \(String(format: "%.2f", controls.bin0)), bin1: \(String(format: "%.2f", controls.bin1)), bin2: \(String(format: "%.2f", controls.bin2)), zoom: \(String(format: "%.2f", controls.zoom)))"
         case .resetShaderWorkspaceControls(let shaderName): return "resetShaderWorkspaceControls(\(shaderName))"
+        case .setShaderAutoAdvanceOnSongChange(let enabled): return "setShaderAutoAdvanceOnSongChange(\(enabled))"
+        case .setMaskAutoAdvanceOnSongChange(let enabled): return "setMaskAutoAdvanceOnSongChange(\(enabled))"
+        case .setAISuggestedShader(let name, let phase):
+            return "setAISuggestedShader(\(name ?? "nil"), phase: \(phase?.rawValue ?? "nil"))"
+        case .addShaderToPhasePlaylist(let phase, let shaderName, let activate):
+            return "addShaderToPhasePlaylist(\(phase.rawValue), \(shaderName), activate: \(activate))"
+        case .addMaskToPhasePlaylist(let phase, let maskName, let activate):
+            return "addMaskToPhasePlaylist(\(phase.rawValue), \(maskName), activate: \(activate))"
+        case .removeShaderFromPhasePlaylist(let phase, let index):
+            return "removeShaderFromPhasePlaylist(\(phase.rawValue), index: \(index))"
+        case .removeMaskFromPhasePlaylist(let phase, let index):
+            return "removeMaskFromPhasePlaylist(\(phase.rawValue), index: \(index))"
+        case .moveShaderInPhasePlaylist(let phase, let fromIndices, let toIndex):
+            return "moveShaderInPhasePlaylist(\(phase.rawValue), from: \(fromIndices), to: \(toIndex))"
+        case .moveMaskInPhasePlaylist(let phase, let fromIndices, let toIndex):
+            return "moveMaskInPhasePlaylist(\(phase.rawValue), from: \(fromIndices), to: \(toIndex))"
+        case .activateShaderInPhasePlaylist(let phase, let index):
+            return "activateShaderInPhasePlaylist(\(phase.rawValue), index: \(index))"
+        case .activateMaskInPhasePlaylist(let phase, let index):
+            return "activateMaskInPhasePlaylist(\(phase.rawValue), index: \(index))"
+        case .advancePhasePlaylistsOnSongChange(let phase):
+            return "advancePhasePlaylistsOnSongChange(\(phase.rawValue))"
         case .startEngine: return "startEngine"
         case .stopEngine: return "stopEngine"
         }
@@ -805,6 +934,38 @@ extension SongsAction: CustomStringConvertible {
         case .scanCompleted: return "scanCompleted"
         case .cancelScanRequested: return "cancelScanRequested"
         case .scanCancelled: return "scanCancelled"
+        }
+    }
+}
+
+extension AutomationAction: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .setEnabled(let enabled): return "setEnabled(\(enabled))"
+        case .setAutoRecordEnabled(let enabled): return "setAutoRecordEnabled(\(enabled))"
+        case .setAutoRecordPrefixes(let prefixes): return "setAutoRecordPrefixes(\(prefixes.count))"
+        case .selectSong(let id): return "selectSong(\(id?.rawValue ?? "none"))"
+        case .trackChanged(let id): return "trackChanged(\(id?.rawValue ?? "none"))"
+        case .playbackTick(let position, let isPlaying):
+            return "playbackTick(\(String(format: "%.2f", position)), playing: \(isPlaying))"
+        case .ensureTimeline(let songID): return "ensureTimeline(\(songID.rawValue))"
+        case .setTimeline(let songID, _): return "setTimeline(\(songID.rawValue))"
+        case .clearTimeline(let songID): return "clearTimeline(\(songID.rawValue))"
+        case .addCue(let songID, let cue): return "addCue(\(songID.rawValue), \(cue.actionType.rawValue), t:\(String(format: "%.2f", cue.timeSec)))"
+        case .updateCue(let songID, let cue): return "updateCue(\(songID.rawValue), \(cue.id.uuidString))"
+        case .removeCue(let songID, let cueID): return "removeCue(\(songID.rawValue), \(cueID.uuidString))"
+        case .addValueLane(let songID, let lane): return "addValueLane(\(songID.rawValue), \(lane.id))"
+        case .removeValueLane(let songID, let laneID): return "removeValueLane(\(songID.rawValue), \(laneID))"
+        case .addValuePoint(let songID, let laneID, let point):
+            return "addValuePoint(\(songID.rawValue), \(laneID), t:\(String(format: "%.2f", point.timeSec)), v:\(String(format: "%.2f", point.value)))"
+        case .updateValuePoint(let songID, let laneID, let point):
+            return "updateValuePoint(\(songID.rawValue), \(laneID), \(point.id.uuidString))"
+        case .removeValuePoint(let songID, let laneID, let pointID):
+            return "removeValuePoint(\(songID.rawValue), \(laneID), \(pointID.uuidString))"
+        case .recordLedFXAction(let songID, let position, let action):
+            return "recordLedFXAction(\(songID.rawValue), t:\(String(format: "%.2f", position)), \(action))"
+        case .recordOSC(let songID, let position, let target, let address, _, let source):
+            return "recordOSC(\(songID.rawValue), t:\(String(format: "%.2f", position)), \(target.rawValue), \(address), src: \(source ?? "-"))"
         }
     }
 }

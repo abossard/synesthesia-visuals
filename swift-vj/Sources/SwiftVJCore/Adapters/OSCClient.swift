@@ -7,6 +7,7 @@ import OSCKit
 
 /// OSC message handler type
 public typealias OSCMessageHandler = @Sendable (String, [any OSCValue]) -> Void
+public typealias OSCOutgoingMessageHandler = @Sendable (String, String, [OscArg], String?) -> Void
 
 /// Error types for OSC operations
 public enum OSCHubError: Error, Equatable {
@@ -102,6 +103,9 @@ public final class OSCHub: @unchecked Sendable {
     private var messagesSent: Int = 0
     private var messagesReceived: Int = 0
     private var messagesForwarded: Int = 0
+
+    /// Optional observer invoked after successful outgoing sends.
+    public var outgoingMessageHandler: OSCOutgoingMessageHandler?
     
     // Latency monitoring
     private var latencyEnabled: Bool = false
@@ -189,22 +193,29 @@ public final class OSCHub: @unchecked Sendable {
     // MARK: - Send Methods
 
     /// Send OSC message to VirtualDJ
-    public func sendToVDJ(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: vdjPort)
+    public func sendToVDJ(_ address: String, values: [any OSCValue] = [], source: String? = nil) throws {
+        try send(address, values: values, host: "127.0.0.1", port: vdjPort, target: "vdj", source: source)
     }
 
     /// Send OSC message to Synesthesia
-    public func sendToSynesthesia(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: synesthesiaPort)
+    public func sendToSynesthesia(_ address: String, values: [any OSCValue] = [], source: String? = nil) throws {
+        try send(address, values: values, host: "127.0.0.1", port: synesthesiaPort, target: "synesthesia", source: source)
     }
 
     /// Send OSC message to Magic Music Visuals
-    public func sendToMagic(_ address: String, values: [any OSCValue] = []) throws {
-        try send(address, values: values, host: "127.0.0.1", port: magicPort)
+    public func sendToMagic(_ address: String, values: [any OSCValue] = [], source: String? = nil) throws {
+        try send(address, values: values, host: "127.0.0.1", port: magicPort, target: "magic", source: source)
     }
 
     /// Send OSC message to specific host and port
-    public func send(_ address: String, values: [any OSCValue] = [], host: String, port: UInt16) throws {
+    public func send(
+        _ address: String,
+        values: [any OSCValue] = [],
+        host: String,
+        port: UInt16,
+        target: String? = nil,
+        source: String? = nil
+    ) throws {
         guard isStarted else {
             throw OSCHubError.notStarted
         }
@@ -216,8 +227,23 @@ public final class OSCHub: @unchecked Sendable {
         do {
             try oscClient.send(message, to: host, port: port)
             lock.withLock { messagesSent += 1 }
+            let outgoingTarget = target ?? "custom"
+            outgoingMessageHandler?(outgoingTarget, address, Self.mapOutgoingArgs(values), source)
         } catch {
             throw OSCHubError.sendFailed(error.localizedDescription)
+        }
+    }
+
+    private static func mapOutgoingArgs(_ values: [any OSCValue]) -> [OscArg] {
+        values.compactMap { value in
+            if let int32 = value as? Int32 { return .int(Int(int32)) }
+            if let int = value as? Int { return .int(int) }
+            if let float32 = value as? Float32 { return .float(Float(float32)) }
+            if let float = value as? Float { return .float(float) }
+            if let double = value as? Double { return .float(Float(double)) }
+            if let string = value as? String { return .string(string) }
+            if let bool = value as? Bool { return .bool(bool) }
+            return nil
         }
     }
 

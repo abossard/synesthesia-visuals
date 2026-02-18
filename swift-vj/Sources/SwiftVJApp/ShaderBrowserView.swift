@@ -75,6 +75,7 @@ struct ShaderBrowserView: View {
     @State private var isSearching: Bool = false
     @State private var searchDebounceTask: Task<Void, Never>? = nil
     @State private var phaseWriteDebounceTasks: [String: Task<Void, Never>] = [:]
+    @State private var playlistTargetPhase: Phase = .disco
     
     // Convenience accessors for AppState analysis state
     private var isAnalyzing: Bool { appState.isAnalyzingShaders }
@@ -288,6 +289,11 @@ struct ShaderBrowserView: View {
         } message: { shader in
             Text("Are you sure you want to delete \"\(shader.name)\"? This cannot be undone.")
         }
+        .onAppear {
+            if let phase = appState.effectivePhase {
+                playlistTargetPhase = phase
+            }
+        }
         .onDisappear {
             searchDebounceTask?.cancel()
             searchDebounceTask = nil
@@ -345,6 +351,29 @@ struct ShaderBrowserView: View {
             }
             .disabled(selectedShaders.isEmpty || selectedFolder != ShaderConstants.masksFolder || isAnalyzing)
             .help("Move selected shaders back to Shaders folder")
+
+            Divider().frame(height: 20)
+
+            Picker("Playlist Phase", selection: $playlistTargetPhase) {
+                ForEach(Phase.allCases, id: \.self) { phase in
+                    Label(phase.displayName, systemImage: phase.iconName)
+                        .tag(phase)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(minWidth: 130)
+
+            Button(action: addSelectedToShaderPlaylist) {
+                Label("→ Shader PL", systemImage: "sparkles")
+            }
+            .disabled(selectedShaders.isEmpty || isAnalyzing)
+            .help("Add selected shaders to top of phase shader playlist")
+
+            Button(action: addSelectedToMaskPlaylist) {
+                Label("→ Mask PL", systemImage: "theatermask.and.paintbrush")
+            }
+            .disabled(selectedShaders.isEmpty || isAnalyzing)
+            .help("Add selected masks to top of phase mask playlist")
 
             Divider().frame(height: 20)
 
@@ -767,6 +796,51 @@ struct ShaderBrowserView: View {
     private func selectUnanalyzed() {
         appState.setShaderCatalogSelection(Set(filteredShaders.filter { !hasAnalysisFile($0) }.map(\.name)))
         appState.log("Selected \(selectedShaders.count) unanalyzed shaders", level: .info)
+    }
+
+    private func addSelectedToShaderPlaylist() {
+        let orderedSelection = selectedShaderInfosForPlaylist()
+        let shaderNames = orderedSelection.filter { !$0.isMask }.map(\.name)
+        guard !shaderNames.isEmpty else {
+            appState.log("No non-mask shaders selected for playlist add", level: .warning)
+            return
+        }
+        // Reducer inserts each item at top; reverse here to preserve visible ordering.
+        for name in shaderNames.reversed() {
+            appState.addShaderToPhasePlaylist(phase: playlistTargetPhase, shaderName: name, activate: false)
+        }
+        appState.log(
+            "Added \(shaderNames.count) shader(s) to top of \(playlistTargetPhase.displayName) playlist",
+            level: .info
+        )
+    }
+
+    private func addSelectedToMaskPlaylist() {
+        let orderedSelection = selectedShaderInfosForPlaylist()
+        let maskNames = orderedSelection.filter(\.isMask).map(\.name)
+        guard !maskNames.isEmpty else {
+            appState.log("No mask shaders selected for playlist add", level: .warning)
+            return
+        }
+        // Reducer inserts each item at top; reverse here to preserve visible ordering.
+        for name in maskNames.reversed() {
+            appState.addMaskToPhasePlaylist(phase: playlistTargetPhase, maskName: name, activate: false)
+        }
+        appState.log(
+            "Added \(maskNames.count) mask shader(s) to top of \(playlistTargetPhase.displayName) playlist",
+            level: .info
+        )
+    }
+
+    private func selectedShaderInfosForPlaylist() -> [CoreShaderInfo] {
+        let selected = selectedShaders
+        let orderedInFilter = filteredShaders.filter { selected.contains($0.name) }
+        if orderedInFilter.count == selected.count {
+            return orderedInFilter
+        }
+        let seen = Set(orderedInFilter.map(\.name))
+        let remaining = shaders.filter { selected.contains($0.name) && !seen.contains($0.name) }
+        return orderedInFilter + remaining
     }
     
     /// Handle modifier-based selection (shift for range, cmd for toggle)
