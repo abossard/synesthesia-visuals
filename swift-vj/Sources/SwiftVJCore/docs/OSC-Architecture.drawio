@@ -1,0 +1,1159 @@
+<mxfile host="app.diagrams.net" modified="2026-02-21" agent="Copilot" version="24.0">
+
+  <!-- ============================================ -->
+  <!-- TAB 1: OSC System-Level Architecture -->
+  <!-- ============================================ -->
+  <diagram id="osc-system" name="1. OSC System Architecture">
+    <mxGraphModel dx="2000" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2800" pageHeight="1800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="OSC System Architecture — SwiftVJCore" style="text;html=1;fontSize=24;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="800" y="20" width="600" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Central OSCHub with dual servers, prefix-trie routing, and forwarding to Magic" style="text;html=1;fontSize=12;fontStyle=2;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="700" y="55" width="800" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- EXTERNAL SYSTEMS -->
+        <!-- ============================================ -->
+        <mxCell id="ext-group" value="External Systems" style="swimlane;startSize=25;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="100" y="100" width="2100" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="synesthesia" value="&lt;b&gt;Synesthesia&lt;/b&gt;&#xa;VJ Software&#xa;&#xa;OSC port 9999 (sends audio)&#xa;OSC port 7777 (receives)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=center;" vertex="1" parent="ext-group">
+          <mxGeometry x="30" y="30" width="200" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vdj" value="&lt;b&gt;VirtualDJ&lt;/b&gt;&#xa;DJ Software&#xa;&#xa;OSC port 9009 (receives)&#xa;OSC port 9010 (responds)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="ext-group">
+          <mxGeometry x="470" y="30" width="200" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="magic" value="&lt;b&gt;Magic Music Visuals&lt;/b&gt;&#xa;(Textler Rendering)&#xa;&#xa;OSC port 11111 (receives)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=center;" vertex="1" parent="ext-group">
+          <mxGeometry x="910" y="30" width="200" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="launchpad" value="&lt;b&gt;Launchpad&lt;/b&gt;&#xa;MIDI Controller&#xa;(native CoreMIDI, not OSC)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=center;" vertex="1" parent="ext-group">
+          <mxGeometry x="1350" y="30" width="190" height="75" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ledfx" value="&lt;b&gt;LedFX&lt;/b&gt;&#xa;LED Controller&#xa;&#xa;REST API :8888" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=center;" vertex="1" parent="ext-group">
+          <mxGeometry x="1780" y="30" width="170" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- OSCHub (Central) -->
+        <!-- ============================================ -->
+        <mxCell id="hub-group" value="OSCHub — Central OSC Transport (class, @unchecked Sendable)" style="swimlane;startSize=28;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="250" y="280" width="1200" height="340" as="geometry" />
+        </mxCell>
+
+        <!-- Receive side -->
+        <mxCell id="server-9999" value="&lt;b&gt;OSCServer&lt;/b&gt;&#xa;port 9999&#xa;(Synesthesia audio)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="hub-group">
+          <mxGeometry x="20" y="45" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="server-9010" value="&lt;b&gt;OSCServer&lt;/b&gt;&#xa;port 9010&#xa;(VDJ responses)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="hub-group">
+          <mxGeometry x="20" y="115" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Message handler -->
+        <mxCell id="handler" value="&lt;b&gt;handleMessage()&lt;/b&gt;&#xa;&#xa;1. messagesReceived++&#xa;2. forwardMessage() → Magic&#xa;3. dispatchMessageOptimized()&#xa;4. track latency (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="220" y="45" width="210" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- Dispatch engine -->
+        <mxCell id="dispatch" value="&lt;b&gt;dispatchMessageOptimized()&lt;/b&gt;&#xa;&#xa;1. anyHandlers[] → broadcast (*, /)&#xa;2. exactHandlers[addr] → exact match&#xa;3. prefixTrie.match(addr) → O(n) prefix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="220" y="160" width="260" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Trie -->
+        <mxCell id="trie" value="&lt;b&gt;PrefixTrie&lt;[Handler]&gt;&lt;/b&gt;&#xa;&#xa;Character-by-character walk&#xa;Collects entries at each node&#xa;O(address.length) matching&#xa;Thread-safe (NSLock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="220" y="255" width="200" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Send side -->
+        <mxCell id="client" value="&lt;b&gt;OSCClient&lt;/b&gt;&#xa;(OSCKit)&#xa;&#xa;Sends to VDJ, Synesthesia,&#xa;Magic, custom targets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="530" y="45" width="175" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="send-methods" value="&lt;b&gt;Send Methods&lt;/b&gt;&#xa;&#xa;sendToVDJ()       → 127.0.0.1:9009&#xa;sendToSynesthesia() → 127.0.0.1:7777&#xa;sendToMagic()     → 127.0.0.1:11111&#xa;send(host, port)  → custom target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="hub-group">
+          <mxGeometry x="530" y="145" width="260" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- Forward -->
+        <mxCell id="forward" value="&lt;b&gt;Auto-Forward&lt;/b&gt;&#xa;All received → Magic (11111)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;dashed=1;" vertex="1" parent="hub-group">
+          <mxGeometry x="530" y="260" width="175" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Stats & monitor -->
+        <mxCell id="stats" value="&lt;b&gt;Stats &amp; Monitoring&lt;/b&gt;&#xa;&#xa;messagesSent / Received / Forwarded&#xa;latencyStats (avg, max, count)&#xa;outgoingMessageHandler callback&#xa;(all protected by NSLock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="840" y="45" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="subscribe-api" value="&lt;b&gt;subscribe(pattern, handler)&lt;/b&gt;&#xa;&#xa;classifyPattern()&#xa;  ├ any: *, / → anyHandlers&#xa;  ├ exact: /path → exactHandlers&#xa;  └ prefix: /p* → prefixTrie&#xa;&#xa;&lt;b&gt;unsubscribe(pattern)&lt;/b&gt;&#xa;&lt;b&gt;clearSubscriptions()&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="hub-group">
+          <mxGeometry x="840" y="165" width="220" height="145" as="geometry" />
+        </mxCell>
+
+        <!-- Internal edges in hub -->
+        <mxCell id="e-srv1-handler" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;" edge="1" source="server-9999" target="handler" parent="hub-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-srv2-handler" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;" edge="1" source="server-9010" target="handler" parent="hub-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-handler-dispatch" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=1;" edge="1" source="handler" target="dispatch" parent="hub-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-dispatch-trie" value="prefix lookup" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=1;dashed=1;fontSize=9;" edge="1" source="dispatch" target="trie" parent="hub-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- CONSUMERS (Subscribers) -->
+        <!-- ============================================ -->
+        <mxCell id="consumer-group" value="OSC Consumers — Subscribers to OSCHub" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="100" y="670" width="1900" height="250" as="geometry" />
+        </mxCell>
+
+        <mxCell id="audio-proc" value="&lt;b&gt;SynesthesiaAudioProcessor&lt;/b&gt;&#xa;(actor + os_unfair_lock accumulator)&#xa;&#xa;Pattern: /audio/*&#xa;Rate: 300+ msg/s&#xa;&#xa;→ OSCAudioLevels&#xa;→ AudioState (rendering)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="20" y="40" width="220" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vdj-monitor" value="&lt;b&gt;VDJMonitor&lt;/b&gt;&#xa;(actor)&#xa;&#xa;Pattern: /deck/*, /vdj/*,&#xa;  /crossfader&#xa;Rate: event-driven + 1Hz poll&#xa;&#xa;→ VDJDeck → VDJPlayback&#xa;→ PlaybackState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="270" y="40" width="215" height="145" as="geometry" />
+        </mxCell>
+
+        <mxCell id="launchpad-mod" value="&lt;b&gt;LaunchpadModule&lt;/b&gt;&#xa;(class, DispatchQueue)&#xa;&#xa;Patterns: /scenes/*, /presets/*,&#xa;  /favslots/*, /playlist/*,&#xa;  /controls/meta/*, /controls/global/*,&#xa;  /ledfx/*&#xa;Input: native CoreMIDI (not OSC)&#xa;&#xa;→ DynamicControlStore&#xa;→ Learn mode capture" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="515" y="40" width="210" height="145" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osc-debug" value="&lt;b&gt;OSC Debug View&lt;/b&gt;&#xa;(via oscHub.subscribe(&amp;quot;*&amp;quot;))&#xa;&#xa;Pattern: * (all incoming)&#xa;Records incoming messages&#xa;Filter by substring match&#xa;Toggle audio messages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="735" y="40" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="bridge-consumer" value="&lt;b&gt;OscRestBridgeService&lt;/b&gt;&#xa;(actor)&#xa;&#xa;Pattern: /ledfx/*&#xa;Rate: event-driven&#xa;&#xa;→ ParsedOSCRoute&#xa;→ HTTPRequestPlan → REST" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="965" y="40" width="210" height="125" as="geometry" />
+        </mxCell>
+
+        <mxCell id="automation" value="&lt;b&gt;AutomationReducer&lt;/b&gt;&#xa;(NOT an OSCHub subscriber)&#xa;&#xa;Records OUTGOING OSC via&#xa;outgoingMessageHandler callback&#xa;for song timeline replay&#xa;&#xa;→ AutomationCue per (timeSec,&#xa;   target, addr, args)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="1205" y="40" width="195" height="145" as="geometry" />
+        </mxCell>
+
+        <mxCell id="image-handler" value="&lt;b&gt;Image Folder Handler&lt;/b&gt;&#xa;&#xa;Pattern: /image/folder&#xa;Exact match (not prefix)&#xa;&#xa;→ loadImagesFromFolder()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="1430" y="40" width="185" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="render-handler" value="&lt;b&gt;Render Toggle Handler&lt;/b&gt;&#xa;&#xa;Pattern: /render/enabled&#xa;Exact match (not prefix)&#xa;&#xa;→ setRenderEnabled()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="consumer-group">
+          <mxGeometry x="1645" y="40" width="185" height="95" as="geometry" />
+        </mxCell>
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- PRODUCERS (send via OSCHub) -->
+        <!-- ============================================ -->
+        <mxCell id="producer-group" value="OSC Producers — Send via OSCHub" style="swimlane;startSize=28;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="100" y="970" width="1600" height="220" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pipeline" value="&lt;b&gt;PipelineModule&lt;/b&gt;&#xa;(actor, per-track processing)&#xa;&#xa;Sends to Magic (11111):&#xa;/textler/track, /textler/lyrics/*&#xa;/textler/refrain/*, /textler/keywords/*&#xa;/textler/metadata/*, /ai/analysis&#xa;/shader/load, /image/fit, /image/folder&#xa;&#xa;Rate: ~50-200 msgs per track&#xa;Gated by RenderOutputsState" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="producer-group">
+          <mxGeometry x="20" y="40" width="280" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="playback-effects" value="&lt;b&gt;PlaybackEffectsImpl&lt;/b&gt;&#xa;&#xa;Sends to VDJ (9009):&#xa;/vdj/subscribe/deck/{1,2}/*&#xa;/vdj/query/deck/{1,2}/*&#xa;&#xa;Rate: subscription + 1Hz poll" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="producer-group">
+          <mxGeometry x="330" y="40" width="220" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="launchpad-send" value="&lt;b&gt;LaunchpadEffectsImpl&lt;/b&gt;&#xa;&#xa;Sends OSC events as actions&#xa;via EffectEnvironment.sendOSC&#xa;&#xa;Target: varies" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="producer-group">
+          <mxGeometry x="580" y="40" width="195" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="effect-env" value="&lt;b&gt;EffectEnvironment&lt;/b&gt;&#xa;(@MainActor, dependency injection)&#xa;&#xa;sendOSC: (target, addr, args, source)&#xa;  → routes to OSCHub.send*()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="producer-group">
+          <mxGeometry x="805" y="40" width="250" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="store-actions" value="&lt;b&gt;Store Actions ↔ Effects&lt;/b&gt;&#xa;&#xa;UIAction.oscMessageReceived&#xa;LaunchpadAction.oscEventReceived&#xa;AutomationAction.recordOSC&#xa;&#xa;→ dispatched via Reducer → Effect" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="producer-group">
+          <mxGeometry x="1085" y="40" width="225" height="115" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- DATA TYPES -->
+        <!-- ============================================ -->
+        <mxCell id="data-group" value="Data Types (Immutable / Sendable)" style="swimlane;startSize=28;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="100" y="1240" width="1600" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osc-audio" value="&lt;b&gt;OSCAudioLevels&lt;/b&gt;&#xa;bass, mid, midHigh, high, all,&#xa;presenceBass/Mid/High,&#xa;hitsBass/Mid/High,&#xa;onBeat, beatTime, bpm,&#xa;bpmTwitcher, bpmSin4" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="20" y="40" width="170" height="105" as="geometry" />
+        </mxCell>
+
+        <mxCell id="audio-state" value="&lt;b&gt;AudioState&lt;/b&gt;&#xa;(20+ fields, immutable)&#xa;bass, mid, high*, energy*,&#xa;kickEnv, beatPhase,&#xa;bpmTwitcher, syntheticMouse&#xa;&#xa;Used by Metal rendering" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="210" y="40" width="165" height="115" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vdj-deck" value="&lt;b&gt;VDJDeck&lt;/b&gt;&#xa;artist, title, album,&#xa;bpm, position, duration,&#xa;isPlaying, isAudible, volume&#xa;&#xa;&lt;b&gt;VDJPlayback&lt;/b&gt;&#xa;deck1, deck2, masterBPM,&#xa;crossfader" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="395" y="40" width="155" height="125" as="geometry" />
+        </mxCell>
+
+        <mxCell id="playback-state" value="&lt;b&gt;PlaybackState&lt;/b&gt;&#xa;track?, position, isPlaying,&#xa;source (spotify | vdj)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="570" y="40" width="155" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osc-arg" value="&lt;b&gt;OscArg&lt;/b&gt; (enum)&#xa;.int(Int)&#xa;.float(Float)&#xa;.string(String)&#xa;.bool(Bool)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="745" y="40" width="110" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osc-latency" value="&lt;b&gt;OSCLatencyStats&lt;/b&gt;&#xa;averageMs, maxMs,&#xa;sampleCount" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="875" y="40" width="130" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osc-hub-error" value="&lt;b&gt;OSCHubError&lt;/b&gt;&#xa;.notStarted&#xa;.sendFailed(String)&#xa;.serverFailed(String)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="1025" y="40" width="140" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pattern-entry" value="&lt;b&gt;PatternEntry&lt;T&gt;&lt;/b&gt;&#xa;order: Int&#xa;pattern: String&#xa;value: T (handlers)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="1185" y="40" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="render-outputs" value="&lt;b&gt;RenderOutputsState&lt;/b&gt;&#xa;shaderOutputEnabled&#xa;imageOutputEnabled&#xa;lyricsOutputEnabled&#xa;refrainOutputEnabled&#xa;songInfoOutputEnabled" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="data-group">
+          <mxGeometry x="1335" y="40" width="155" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- ============================================ -->
+        <!-- EDGES: External → Hub -->
+        <!-- ============================================ -->
+        <mxCell id="e-syn-to-hub" value="/audio/* (300+ msg/s)" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;fontStyle=1;" edge="1" source="synesthesia" target="server-9999" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-vdj-to-hub" value="/deck/*, /crossfader" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;" edge="1" source="vdj" target="server-9010" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Hub → External (sends) -->
+        <mxCell id="e-hub-to-vdj" value="/vdj/subscribe/*, /vdj/query/*" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;dashed=1;fontSize=9;" edge="1" source="send-methods" target="vdj" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1660" y="470" />
+              <mxPoint x="1660" y="150" />
+              <mxPoint x="670" y="150" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e-hub-to-magic" value="/textler/*, /shader/*, /image/*, /ai/*" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=2;fontSize=9;" edge="1" source="forward" target="magic" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1730" y="570" />
+              <mxPoint x="1730" y="148" />
+              <mxPoint x="1010" y="148" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Hub → Consumers -->
+        <mxCell id="e-hub-to-audio" value="/audio/*" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=9;" edge="1" source="dispatch" target="audio-proc" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-hub-to-vdjmon" value="/deck/*, /vdj/*, /crossfader" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;fontSize=9;" edge="1" source="dispatch" target="vdj-monitor" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-hub-to-lp" value="/scenes/*, /presets/*, /favslots/*,&#xa;/playlist/*, /controls/meta/*,&#xa;/controls/global/*, /ledfx/*" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;strokeWidth=1;fontSize=9;" edge="1" source="dispatch" target="launchpad-mod" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-hub-to-bridge" value="/ledfx/*" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=1;fontSize=9;" edge="1" source="dispatch" target="bridge-consumer" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Bridge → LedFX -->
+        <mxCell id="e-bridge-to-ledfx" value="REST API calls" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b85450;strokeWidth=2;fontSize=9;" edge="1" source="bridge-consumer" target="ledfx" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1770" y="790" />
+              <mxPoint x="1770" y="170" />
+              <mxPoint x="1865" y="170" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Producers → Hub -->
+        <mxCell id="e-pipeline-to-hub" value="sendToMagic()" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=1;fontSize=9;" edge="1" source="pipeline" target="send-methods" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-playback-to-hub" value="sendToVDJ()" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;fontSize=9;" edge="1" source="playback-effects" target="send-methods" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 2: OSCHub Internal Design -->
+  <!-- ============================================ -->
+  <diagram id="osc-hub-internal" name="2. OSCHub Internal Design">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title2" value="OSCHub — Internal Module Design" style="text;html=1;fontSize=22;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="500" y="20" width="500" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle2" value="Deep module: simple public API hiding complex subscription routing and concurrency" style="text;html=1;fontSize=11;fontStyle=2;align=center;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="400" y="50" width="700" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Public API surface -->
+        <mxCell id="api-group" value="Public API (narrow interface)" style="swimlane;startSize=25;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="90" width="1300" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-lifecycle" value="&lt;b&gt;Lifecycle&lt;/b&gt;&#xa;start() / stop()&#xa;running: Bool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="10" y="32" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-subscribe" value="&lt;b&gt;Subscriptions&lt;/b&gt;&#xa;subscribe(pattern, handler)&#xa;unsubscribe(pattern)&#xa;clearSubscriptions()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="155" y="32" width="195" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-send" value="&lt;b&gt;Send&lt;/b&gt;&#xa;sendToVDJ(addr, values?, source?)&#xa;sendToSynesthesia(addr, values?, source?)&#xa;sendToMagic(addr, values?, source?)&#xa;send(addr, host, port, target?, source?)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="365" y="32" width="280" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-stats" value="&lt;b&gt;Monitoring&lt;/b&gt;&#xa;stats() → [String: Any]&#xa;resetStats()&#xa;latencyStats()&#xa;setLatencyMonitoring(enabled)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="660" y="32" width="200" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-callback" value="&lt;b&gt;Observer&lt;/b&gt;&#xa;outgoingMessageHandler:&#xa;  OSCOutgoingMessageHandler?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="875" y="32" width="195" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-ports" value="&lt;b&gt;Ports (readonly)&lt;/b&gt;&#xa;receivePort, vdjReceivePort,&#xa;vdjPort, synesthesiaPort,&#xa;magicPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="api-group">
+          <mxGeometry x="1085" y="32" width="160" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Internal implementation -->
+        <mxCell id="impl-group" value="Private Implementation (deep module internals)" style="swimlane;startSize=25;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="100" y="230" width="1300" height="550" as="geometry" />
+        </mxCell>
+
+        <!-- OSCKit dependencies -->
+        <mxCell id="osckit-client" value="&lt;b&gt;OSCKit.OSCClient&lt;/b&gt;&#xa;(external library)&#xa;&#xa;UDP send" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="20" y="40" width="145" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osckit-server1" value="&lt;b&gt;OSCKit.OSCServer&lt;/b&gt;&#xa;port 9999 (Synesthesia)&#xa;isPortReuseEnabled = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="20" y="120" width="175" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="osckit-server2" value="&lt;b&gt;OSCKit.OSCServer&lt;/b&gt;&#xa;port 9010 (VDJ responses)&#xa;isPortReuseEnabled = true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="20" y="190" width="175" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Subscription storage -->
+        <mxCell id="sub-storage" value="&lt;b&gt;Subscription Storage (3 tiers)&lt;/b&gt;" style="text;html=1;fontSize=12;fontStyle=1;align=left;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="35" width="250" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="any-handlers" value="&lt;b&gt;Tier 1: anyHandlers&lt;/b&gt;&#xa;[OSCMessageHandler]&#xa;&#xa;Patterns: &quot;*&quot;, &quot;/&quot;, &quot;&quot;&#xa;Match: ALL messages&#xa;Priority: checked first" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="60" width="180" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="exact-handlers" value="&lt;b&gt;Tier 2: exactHandlers&lt;/b&gt;&#xa;[String: [OSCMessageHandler]]&#xa;&#xa;Pattern: &quot;/audio/level/bass&quot;&#xa;Match: O(1) dict lookup&#xa;Priority: checked second" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="440" y="60" width="200" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="prefix-trie" value="&lt;b&gt;Tier 3: PrefixTrie&lt;/b&gt;&#xa;PrefixTrie&lt;[OSCMessageHandler]&gt;&#xa;&#xa;Pattern: &quot;/audio/*&quot; stored as &quot;/audio/&quot;&#xa;Match: O(addr.length) trie walk&#xa;Priority: checked third&#xa;Collects ALL matching prefixes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="660" y="60" width="230" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Trie internals -->
+        <mxCell id="trie-node" value="&lt;b&gt;PrefixTrieNode&lt;T&gt;&lt;/b&gt;&#xa;children: [Character: Node]&#xa;entries: [PatternEntry&lt;T&gt;]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="910" y="60" width="180" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="trie-visual" value="Example Trie Walk:&#xa;&#xa;/ → a → u → d → i → o → / → l → e → v → e → l&#xa;                               ↑ entries here&#xa;&#xa;Pattern &quot;/audio/*&quot; stored at /audio/ node&#xa;Matches: /audio/level/bass, /audio/hits/mid, ..." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;align=left;spacingLeft=5;fontFamily=Courier New;" vertex="1" parent="impl-group">
+          <mxGeometry x="910" y="130" width="330" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Message handling pipeline -->
+        <mxCell id="pipeline-label" value="&lt;b&gt;Message Handling Pipeline&lt;/b&gt;" style="text;html=1;fontSize=12;fontStyle=1;align=left;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="195" width="250" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="1. handleMessage()&#xa;messagesReceived++" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="225" width="155" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step2" value="2. forwardMessage()&#xa;→ Magic:11111&#xa;messagesForwarded++" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="impl-group">
+          <mxGeometry x="420" y="225" width="155" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step3" value="3. dispatchOptimized()&#xa;anyH → exactH → trie&#xa;(snapshot under lock)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="impl-group">
+          <mxGeometry x="600" y="225" width="165" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step4" value="4. latency tracking&#xa;(if enabled)&#xa;CFAbsoluteTimeGetCurrent()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="impl-group">
+          <mxGeometry x="790" y="225" width="175" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-s1-s2" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;" edge="1" source="step1" target="step2" parent="impl-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s2-s3" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;" edge="1" source="step2" target="step3" parent="impl-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-s3-s4" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#9673a6;" edge="1" source="step3" target="step4" parent="impl-group">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Concurrency model -->
+        <mxCell id="conc-label" value="&lt;b&gt;Concurrency Model&lt;/b&gt;" style="text;html=1;fontSize=12;fontStyle=1;align=left;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="310" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="conc-lock" value="&lt;b&gt;NSLock&lt;/b&gt; protects:&#xa;• subscriptions dict&#xa;• anyHandlers, exactHandlers&#xa;• message counters&#xa;• latency stats&#xa;&#xa;Snapshot pattern: lock → copy&#xa;→ unlock → iterate copy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="240" y="340" width="195" height="125" as="geometry" />
+        </mxCell>
+
+        <mxCell id="conc-callback" value="&lt;b&gt;Callback Threading&lt;/b&gt;&#xa;&#xa;OSCServer callback → async&#xa;handlers called synchronously&#xa;on server's dispatch queue&#xa;&#xa;outgoingMessageHandler&#xa;called on sender's thread" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="460" y="340" width="200" height="125" as="geometry" />
+        </mxCell>
+
+        <mxCell id="conc-forward" value="&lt;b&gt;Forward Targets&lt;/b&gt;&#xa;(immutable array)&#xa;&#xa;[(&quot;127.0.0.1&quot;, magicPort)]&#xa;&#xa;Fire-and-forget pattern,&#xa;errors silently ignored" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="685" y="340" width="175" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- Port config -->
+        <mxCell id="port-config" value="&lt;b&gt;Port Configuration&lt;/b&gt;&#xa;&#xa;UserDefaults override → fallback to Config.*&#xa;&#xa;Receive: 9999 (Synesthesia), 9010 (VDJ)&#xa;Send: 9009 (VDJ), 7777 (Syn), 11111 (Magic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="impl-group">
+          <mxGeometry x="885" y="340" width="240" height="90" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 3: OSC Address Map -->
+  <!-- ============================================ -->
+  <diagram id="osc-address-map" name="3. OSC Address Map">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title3" value="OSC Address Map — All Message Routes" style="text;html=1;fontSize=22;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="600" y="20" width="500" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- INCOMING AUDIO -->
+        <mxCell id="in-audio" value="INCOMING: Synesthesia Audio (port 9999, 300+ msg/s)" style="swimlane;startSize=25;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="50" y="80" width="650" height="310" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-level" value="/audio/level/bass&#xa;/audio/level/mid&#xa;/audio/level/midhigh&#xa;/audio/level/high&#xa;/audio/level/all" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="10" y="35" width="195" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-presence" value="/audio/presence/bass&#xa;/audio/presence/mid&#xa;/audio/presence/high" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="220" y="35" width="195" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-hits" value="/audio/hits/bass&#xa;/audio/hits/mid&#xa;/audio/hits/high" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="430" y="35" width="195" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-beat" value="/audio/beat/onbeat&#xa;/audio/beat/beattime&#xa;/audio/beat/toggleonbeat&#xa;/audio/beat/randomonbeat" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="10" y="135" width="220" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-bpm" value="/audio/bpm/bpmtwitcher&#xa;/audio/bpm/bpmsin4&#xa;/audio/bpm/bpmconfidence&#xa;/audio/bpm/bpm" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="250" y="135" width="205" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-energy" value="/audio/energy/intensity" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-audio">
+          <mxGeometry x="475" y="135" width="165" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="audio-consumer" value="Consumer: SynesthesiaAudioProcessor&#xa;Threading: os_unfair_lock accumulator&#xa;Transform: → OSCAudioLevels → AudioState → Metal uniforms" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="in-audio">
+          <mxGeometry x="10" y="225" width="330" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- INCOMING VDJ -->
+        <mxCell id="in-vdj" value="INCOMING: VirtualDJ Responses (port 9010, event-driven)" style="swimlane;startSize=25;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="730" y="80" width="550" height="310" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-deck" value="/deck/1/artist        /deck/2/artist&#xa;/deck/1/title         /deck/2/title&#xa;/deck/1/album         /deck/2/album&#xa;/deck/1/get_bpm       /deck/2/get_bpm&#xa;/deck/1/get_position   /deck/2/get_position&#xa;/deck/1/song_pos      /deck/2/song_pos&#xa;/deck/1/play          /deck/2/play&#xa;/deck/1/is_audible    /deck/2/is_audible&#xa;/deck/1/volume        /deck/2/volume" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-vdj">
+          <mxGeometry x="10" y="35" width="350" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-cross" value="/crossfader&#xa;/masterdeck_bpm (dead — no subscription)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="in-vdj">
+          <mxGeometry x="380" y="35" width="145" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vdj-consumer" value="Consumer: VDJMonitor (actor)&#xa;Transform: → VDJDeck → VDJPlayback → PlaybackState&#xa;Logic: infers audibility, selects louder deck" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="in-vdj">
+          <mxGeometry x="10" y="225" width="310" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- OUTGOING VDJ -->
+        <mxCell id="out-vdj" value="OUTGOING: VDJ Subscriptions &amp; Queries (→ port 9009)" style="swimlane;startSize=25;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="80" width="400" height="310" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-sub" value="/vdj/subscribe/deck/1/get_title&#xa;/vdj/subscribe/deck/1/get_artist&#xa;/vdj/subscribe/deck/1/get_album&#xa;/vdj/subscribe/deck/1/get_bpm&#xa;/vdj/subscribe/deck/1/get_songlength&#xa;/vdj/subscribe/deck/1/loaded&#xa;... (same for deck/2)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-vdj">
+          <mxGeometry x="10" y="35" width="280" height="115" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-query" value="/vdj/query/deck/1/get_title&#xa;/vdj/query/deck/1/get_artist&#xa;/vdj/query/deck/1/song_pos&#xa;/vdj/query/deck/1/play&#xa;... (1Hz polling)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-vdj">
+          <mxGeometry x="10" y="165" width="280" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="vdj-producer" value="Producer: PlaybackEffectsImpl + VDJMonitor" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="out-vdj">
+          <mxGeometry x="10" y="265" width="280" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- OUTGOING MAGIC / TEXTLER -->
+        <mxCell id="out-magic" value="OUTGOING: Pipeline → Magic (→ port 11111, 50-200 msgs/track)" style="swimlane;startSize=25;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="50" y="420" width="900" height="380" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-textler-track" value="/textler/track  [active, source, artist, title,&#xa;                 album, duration, has_lyrics]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="35" width="400" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-textler-lyrics" value="/textler/lyrics/reset&#xa;/textler/lyrics/line  [index, timeSec, text]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="85" width="350" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-textler-refrain" value="/textler/refrain/reset&#xa;/textler/refrain/line  [index, timeSec, text]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="135" width="350" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-textler-kw" value="/textler/keywords/reset&#xa;/textler/keywords/line  [index, timeSec, keywords]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="185" width="365" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-metadata" value="/textler/metadata/keywords  [comma-separated]&#xa;/textler/metadata/themes    [comma-separated]&#xa;/textler/metadata/visuals   [comma-separated]&#xa;/textler/metadata/mood      [string]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="235" width="400" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-ai-shader" value="/ai/analysis    [mood, energy, valence]&#xa;/shader/load    [name, energyScore, moodValence]&#xa;/image/fit      [cover]&#xa;/image/folder   [path]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-magic">
+          <mxGeometry x="10" y="315" width="380" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="magic-gates" value="&lt;b&gt;Output Gating&lt;/b&gt;&#xa;&#xa;Each address group is independently&#xa;gated by RenderOutputsState:&#xa;&#xa;✓/✗ shaderOutputEnabled → /shader/load&#xa;✓/✗ imageOutputEnabled  → /image/*&#xa;✓/✗ lyricsOutputEnabled → /textler/lyrics/*, /textler/track&#xa;✓/✗ refrainOutputEnabled → /textler/refrain/*&#xa;✓/✗ songInfoOutputEnabled → /textler/metadata/*, /ai/*" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="out-magic">
+          <mxGeometry x="460" y="35" width="410" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="magic-producer" value="Producer: PipelineModule (actor)&#xa;Triggered by: track change → analyze → broadcast" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="out-magic">
+          <mxGeometry x="460" y="205" width="310" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- LEDFX BRIDGE -->
+        <mxCell id="out-ledfx" value="INTERNAL: OscRestBridge (OSC → REST, event-driven)" style="swimlane;startSize=25;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="420" width="440" height="250" as="geometry" />
+        </mxCell>
+
+        <mxCell id="addr-ledfx" value="/ledfx/scene/{sceneName}/{slot}     [0 or 1]&#xa;/ledfx/playlist/{id}/{slot}          [1]&#xa;/ledfx/playlist_control/{action}/{slot}&#xa;/ledfx/oneshot/{name}/{slot}         [1]&#xa;/ledfx/blackout/{slot}               [0 or 1]&#xa;/ledfx/param/{paramName}/{slot}      [0-127]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=8;fontFamily=Courier New;" vertex="1" parent="out-ledfx">
+          <mxGeometry x="10" y="35" width="410" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ledfx-note" value="Consumer: OscRestBridgeService (actor)&#xa;Transform: OSC → ParsedOSCRoute → RequestBuilder&#xa;  → TemplateEngine → JSONPatcher → HTTPRequestPlan&#xa;  → REST API call to LedFX (:8888)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="out-ledfx">
+          <mxGeometry x="10" y="155" width="350" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- AUTO-FORWARD -->
+        <mxCell id="auto-fwd" value="AUTO-FORWARD: All port 9999 messages → Magic:11111" style="swimlane;startSize=25;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="700" width="440" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fwd-note" value="Every message received on port 9999 (Synesthesia audio)&#xa;is automatically re-sent to Magic (port 11111).&#xa;Errors silently ignored (fire-and-forget)." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="auto-fwd">
+          <mxGeometry x="10" y="35" width="410" height="50" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 4: Sequence - Audio Flow -->
+  <!-- ============================================ -->
+  <diagram id="seq-audio" name="4. Flow: Synesthesia Audio (60 FPS)">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="seq-audio-title" value="Sequence: Real-Time Audio OSC (300+ msg/s, os_unfair_lock Pipeline)" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Lifelines -->
+        <mxCell id="ll-syn" value="Synesthesia&#xa;(port 9999)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="110" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-hub" value="OSCHub&#xa;(server 9999)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="70" width="120" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-magic-fwd" value="Magic&#xa;(forward :11111)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="70" width="120" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-audio" value="Synesthesia&#xa;AudioProcessor&#xa;(os_unfair_lock)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="70" width="130" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-accum" value="OSCAccumulator&#xa;(os_unfair_lock)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f8cecc;strokeColor=#b85450;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="70" width="130" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-render" value="Render Loop&#xa;(Metal, 60 FPS)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="70" width="120" height="950" as="geometry" />
+        </mxCell>
+        <mxCell id="ll-shader" value="Shader Uniforms&#xa;(AudioState)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="70" width="130" height="950" as="geometry" />
+        </mxCell>
+
+        <!-- High-rate loop -->
+        <mxCell id="loop1" value="loop [300+ msg/s from Synesthesia]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=200;height=20;fillColor=none;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="140" width="870" height="350" as="geometry" />
+        </mxCell>
+
+        <!-- Message arrives -->
+        <mxCell id="a1" value="/audio/level/bass [0.73]" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="115" y="180" as="sourcePoint" />
+            <mxPoint x="320" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Forward to Magic -->
+        <mxCell id="a2" value="forward (fire &amp; forget)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="210" as="sourcePoint" />
+            <mxPoint x="520" y="210" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Dispatch to handler -->
+        <mxCell id="a3" value="prefixTrie.match(&quot;/audio/level/bass&quot;)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="250" as="sourcePoint" />
+            <mxPoint x="380" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="a3note" value="Pattern &quot;/audio/*&quot;&#xa;matched at trie node" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="390" y="250" width="130" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Call handler -->
+        <mxCell id="a4" value="handleOSCFast(addr, values)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="310" as="sourcePoint" />
+            <mxPoint x="725" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="a4note" value="nonisolated — no actor hop!&#xa;Runs on OSCServer thread" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="530" y="320" width="170" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Accumulator write -->
+        <mxCell id="a5" value="os_unfair_lock { accum.bass = 0.73 }" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="725" y="380" as="sourcePoint" />
+            <mxPoint x="935" y="380" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="a5note" value="Lock held &lt; 1μs&#xa;No allocation, no copy&#xa;Just field assignment" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="740" y="395" width="150" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- unlock & return -->
+        <mxCell id="a5r" value="" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="935" y="460" as="sourcePoint" />
+            <mxPoint x="725" y="460" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Render loop -->
+        <mxCell id="loop2" value="loop [60 FPS render frame]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=140;height=20;fillColor=none;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="520" width="700" height="380" as="geometry" />
+        </mxCell>
+
+        <!-- Read snapshot -->
+        <mxCell id="a6" value="getLevels() (once per frame)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1140" y="570" as="sourcePoint" />
+            <mxPoint x="725" y="570" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="a7" value="os_unfair_lock { snapshot = accum; reset }" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="725" y="610" as="sourcePoint" />
+            <mxPoint x="935" y="610" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a7r" value="OSCAudioLevels (snapshot)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="935" y="640" as="sourcePoint" />
+            <mxPoint x="725" y="640" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a8" value="OSCAudioLevels" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="725" y="670" as="sourcePoint" />
+            <mxPoint x="1140" y="670" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Transform to AudioState -->
+        <mxCell id="a9note" value="Pure calculation (no side effects):&#xa;lerp, clamp, smoothing&#xa;calcSyntheticMouse()&#xa;beatPhase, kickEnvelope" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1155" y="690" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Set uniforms -->
+        <mxCell id="a10" value="setUniforms(AudioState)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1140" y="780" as="sourcePoint" />
+            <mxPoint x="1345" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="a10note" value="syn_Level, syn_BassLevel&#xa;syn_BeatTime, syn_BPM&#xa;syn_BpmTwitcher&#xa;→ Metal shader uniforms" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="800" width="170" height="65" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 5: Sequence - VDJ Track Detection -->
+  <!-- ============================================ -->
+  <diagram id="seq-vdj" name="5. Flow: VDJ Track Detection &amp; Pipeline">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="seq-vdj-title" value="Sequence: VDJ Track Change → Pipeline → Magic Broadcast" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Lifelines -->
+        <mxCell id="lv-vdj" value="VirtualDJ" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-hub" value="OSCHub" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-vdjmon" value="VDJMonitor&#xa;(actor)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="70" width="110" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-playback" value="Playback&#xa;Module" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="580" y="70" width="110" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-store" value="Store&#xa;(Reducer)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-pipeline" value="Pipeline&#xa;Module" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="940" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-hub2" value="OSCHub&#xa;(send)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+        <mxCell id="lv-magic" value="Magic&#xa;(Textler)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="70" width="100" height="1050" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1: VDJ sends subscription response -->
+        <mxCell id="v1" value="/deck/1/artist [&quot;Queen&quot;]" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="160" as="sourcePoint" />
+            <mxPoint x="270" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v2" value="dispatch → /deck/* handler" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="270" y="195" as="sourcePoint" />
+            <mxPoint x="455" y="195" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v3" value="/deck/1/title [&quot;Bohemian Rhapsody&quot;]" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="230" as="sourcePoint" />
+            <mxPoint x="455" y="230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v3note" value="VDJMonitor accumulates fields&#xa;into VDJDeck struct (actor-isolated)&#xa;Infers audibility from volume +&#xa;position changes" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="470" y="240" width="215" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Track change detected -->
+        <mxCell id="v4" value="trackChanged(deck1)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="455" y="340" as="sourcePoint" />
+            <mxPoint x="635" y="340" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v5" value="VDJPlayback → PlaybackState" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="480" y="350" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Dispatch action -->
+        <mxCell id="v6" value="dispatch(.playback(.trackChanged(track)))" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="635" y="410" as="sourcePoint" />
+            <mxPoint x="810" y="410" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v7note" value="Reducer:&#xa;• state.playback.track = track&#xa;• Returns Effect:&#xa;  pipeline.processTrack(track)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="830" y="420" width="215" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline processes -->
+        <mxCell id="v8" value="processTrack(track)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="810" y="510" as="sourcePoint" />
+            <mxPoint x="990" y="510" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v8note" value="Pipeline steps (async):&#xa;1. Fetch lyrics (LRCLib → LLM fallback)&#xa;2. AI analysis (mood, energy, valence)&#xa;3. Shader selection (energy → shader)&#xa;4. Image scraping (album cover)&#xa;5. Broadcast results via OSC" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="520" width="250" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- OSC broadcast -->
+        <mxCell id="v9" value="sendToMagic(&quot;/textler/track&quot;, [...])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="990" y="650" as="sourcePoint" />
+            <mxPoint x="1170" y="650" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v9b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1170" y="670" as="sourcePoint" />
+            <mxPoint x="1350" y="670" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v10" value="sendToMagic(&quot;/textler/lyrics/line&quot;, [n, t, text])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="990" y="710" as="sourcePoint" />
+            <mxPoint x="1170" y="710" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v10b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1170" y="730" as="sourcePoint" />
+            <mxPoint x="1350" y="730" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v10note" value="repeat for each lyric line&#xa;(50-200 messages)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="740" width="150" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="v11" value="sendToMagic(&quot;/shader/load&quot;, [name, energy, valence])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="990" y="800" as="sourcePoint" />
+            <mxPoint x="1170" y="800" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v11b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1170" y="820" as="sourcePoint" />
+            <mxPoint x="1350" y="820" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="v12" value="sendToMagic(&quot;/ai/analysis&quot;, [mood, energy, valence])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="990" y="860" as="sourcePoint" />
+            <mxPoint x="1170" y="860" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="v12b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1170" y="880" as="sourcePoint" />
+            <mxPoint x="1350" y="880" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Completion -->
+        <mxCell id="v13" value="dispatch(.pipeline(.processingCompleted))" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="990" y="940" as="sourcePoint" />
+            <mxPoint x="810" y="940" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 6: Sequence - OSCHub Startup -->
+  <!-- ============================================ -->
+  <diagram id="seq-startup" name="6. Flow: OSCHub Lifecycle &amp; Subscription">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="seq-start-title" value="Sequence: OSCHub Startup, Subscription Wiring &amp; Shutdown" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="250" y="20" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Lifelines -->
+        <mxCell id="ls-app" value="App Launch" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="70" width="100" height="850" as="geometry" />
+        </mxCell>
+        <mxCell id="ls-hub" value="OSCHub" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="70" width="100" height="850" as="geometry" />
+        </mxCell>
+        <mxCell id="ls-osckit" value="OSCKit&#xa;(External)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="440" y="70" width="100" height="850" as="geometry" />
+        </mxCell>
+        <mxCell id="ls-audio" value="Synesthesia&#xa;AudioProcessor" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="630" y="70" width="130" height="850" as="geometry" />
+        </mxCell>
+        <mxCell id="ls-vdjmon" value="VDJMonitor" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="70" width="100" height="850" as="geometry" />
+        </mxCell>
+        <mxCell id="ls-bridge" value="OscRestBridge&#xa;Service" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f8cecc;strokeColor=#b85450;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="70" width="120" height="850" as="geometry" />
+        </mxCell>
+
+        <!-- Init -->
+        <mxCell id="s1" value="OSCHub()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="110" y="150" as="sourcePoint" />
+            <mxPoint x="300" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s1note" value="Reads UserDefaults for port overrides&#xa;Falls back to Config.* constants" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="155" width="220" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Start -->
+        <mxCell id="s2" value="try hub.start()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="110" y="220" as="sourcePoint" />
+            <mxPoint x="300" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Create servers -->
+        <mxCell id="s3" value="OSCServer(port: 9999) + start()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="255" as="sourcePoint" />
+            <mxPoint x="490" y="255" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s4" value="OSCServer(port: 9010) + start()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="290" as="sourcePoint" />
+            <mxPoint x="490" y="290" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s5" value="OSCClient() + start()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="325" as="sourcePoint" />
+            <mxPoint x="490" y="325" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s5note" value="isStarted = true&#xa;Rollback: if any fails,&#xa;stop previously started" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="340" width="170" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Wire subscribers -->
+        <mxCell id="s6" value="subscribe(&quot;/audio/*&quot;, audioHandler)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="695" y="420" as="sourcePoint" />
+            <mxPoint x="300" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s6note" value="→ prefixTrie.add(&quot;/audio/&quot;, handler)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="430" width="220" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s7" value="subscribe(&quot;/deck/*&quot;, &quot;/vdj/*&quot;, &quot;/crossfader&quot;)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="890" y="480" as="sourcePoint" />
+            <mxPoint x="300" y="480" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s7note" value="→ prefixTrie: /deck/, /vdj/; exact: /crossfader" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="490" width="215" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s8" value="subscribe(&quot;/ledfx/*&quot;, bridgeHandler)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1090" y="540" as="sourcePoint" />
+            <mxPoint x="300" y="540" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s8note" value="→ prefixTrie.add(&quot;/ledfx/&quot;, handler)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="550" width="215" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Running state -->
+        <mxCell id="running-note" value="OSCHub now running:&#xa;• 2 servers listening (9999, 9010)&#xa;• 1 client ready to send&#xa;• N subscriptions in trie&#xa;• Auto-forward to Magic:11111" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="110" y="600" width="200" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- Shutdown -->
+        <mxCell id="sep-line" value="" style="line;html=1;strokeWidth=1;strokeColor=#999999;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="710" width="1120" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="sep-label" value="[app shutdown]" style="text;html=1;fontSize=10;fontStyle=2;fontColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="50" y="720" width="100" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s9" value="hub.stop()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="110" y="760" as="sourcePoint" />
+            <mxPoint x="300" y="760" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s10" value="client.stop()&#xa;server.stop()&#xa;vdjServer.stop()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="795" as="sourcePoint" />
+            <mxPoint x="490" y="795" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s10note" value="isStarted = false&#xa;All refs set to nil" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="810" width="140" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <!-- ============================================ -->
+  <!-- TAB 7: Sequence - Output Gating -->
+  <!-- ============================================ -->
+  <diagram id="seq-gating" name="7. Flow: Output Gating (RenderOutputsState)">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="seq-gate-title" value="Sequence: Pipeline Output Gating via RenderOutputsState" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="20" width="550" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Lifelines -->
+        <mxCell id="lg-pipeline" value="Pipeline&#xa;Module" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="100" height="750" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-policy" value="Execution&#xa;Policy" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="70" width="100" height="750" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-hub" value="OSCHub&#xa;(send)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="70" width="100" height="750" as="geometry" />
+        </mxCell>
+        <mxCell id="lg-magic" value="Magic" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="680" y="70" width="80" height="750" as="geometry" />
+        </mxCell>
+
+        <!-- Lyrics gate: ENABLED -->
+        <mxCell id="g1" value="check lyricsOutputEnabled" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="160" as="sourcePoint" />
+            <mxPoint x="330" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g1r" value="true ✓" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;fontColor=#009900;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="185" as="sourcePoint" />
+            <mxPoint x="130" y="185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g2" value="sendToMagic(&quot;/textler/lyrics/line&quot;, [...])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="220" as="sourcePoint" />
+            <mxPoint x="530" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g2b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="240" as="sourcePoint" />
+            <mxPoint x="720" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Shader gate: DISABLED -->
+        <mxCell id="g3" value="check shaderOutputEnabled" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="310" as="sourcePoint" />
+            <mxPoint x="330" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g3r" value="false ✗" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;fontColor=#CC0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="335" as="sourcePoint" />
+            <mxPoint x="130" y="335" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="g3note" value="SKIPPED: /shader/load&#xa;not sent to Magic" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="150" y="350" width="150" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Image gate: ENABLED -->
+        <mxCell id="g4" value="check imageOutputEnabled" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="420" as="sourcePoint" />
+            <mxPoint x="330" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g4r" value="true ✓" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;fontColor=#009900;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="445" as="sourcePoint" />
+            <mxPoint x="130" y="445" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g5" value="sendToMagic(&quot;/image/folder&quot;, [path])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="475" as="sourcePoint" />
+            <mxPoint x="530" y="475" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="g5b" value="→ Magic" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=9;strokeColor=#d6b656;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530" y="495" as="sourcePoint" />
+            <mxPoint x="720" y="495" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Summary -->
+        <mxCell id="gate-summary" value="&lt;b&gt;Key Principle:&lt;/b&gt; Output gating is &lt;i&gt;orthogonal&lt;/i&gt; to&#xa;pipeline logic. The pipeline always runs fully,&#xa;but each output step checks its gate before&#xa;sending OSC. No pipeline code changes needed&#xa;to suppress any output category." style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="80" y="560" width="340" height="85" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gate-table" value="&lt;table style='font-size:10px'&gt;&#xa;&lt;tr&gt;&lt;th&gt;Gate&lt;/th&gt;&lt;th&gt;Address Group&lt;/th&gt;&lt;/tr&gt;&#xa;&lt;tr&gt;&lt;td&gt;shaderOutputEnabled&lt;/td&gt;&lt;td&gt;/shader/load&lt;/td&gt;&lt;/tr&gt;&#xa;&lt;tr&gt;&lt;td&gt;imageOutputEnabled&lt;/td&gt;&lt;td&gt;/image/*&lt;/td&gt;&lt;/tr&gt;&#xa;&lt;tr&gt;&lt;td&gt;lyricsOutputEnabled&lt;/td&gt;&lt;td&gt;/textler/lyrics/*, /textler/track&lt;/td&gt;&lt;/tr&gt;&#xa;&lt;tr&gt;&lt;td&gt;refrainOutputEnabled&lt;/td&gt;&lt;td&gt;/textler/refrain/*&lt;/td&gt;&lt;/tr&gt;&#xa;&lt;tr&gt;&lt;td&gt;songInfoOutputEnabled&lt;/td&gt;&lt;td&gt;/textler/metadata/*, /ai/*&lt;/td&gt;&lt;/tr&gt;&#xa;&lt;/table&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="560" width="300" height="120" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+</mxfile>

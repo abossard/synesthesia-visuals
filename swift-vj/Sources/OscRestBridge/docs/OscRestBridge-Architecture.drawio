@@ -1,0 +1,860 @@
+<mxfile host="65bd71144e">
+    <diagram id="arch-overview" name="Module Architecture">
+        <mxGraphModel dx="10" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1600" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="OscRestBridge — Module Architecture" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="20" width="600" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Grokking Simplicity layers: Data → Calculations → Actions → Orchestration" style="text;html=1;fontSize=12;fontStyle=2;align=center;verticalAlign=middle;fontColor=#666666;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="55" width="600" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="ext-group" value="External Systems" style="swimlane;startSize=25;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="100" width="1400" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="osc-source" value="OSC Source&#xa;(Synesthesia / Launchpad)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="ext-group" vertex="1">
+                    <mxGeometry x="40" y="35" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="rest-target" value="REST API Target&#xa;(LedFX / HTTP Service)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=15;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="ext-group" vertex="1">
+                    <mxGeometry x="1150" y="35" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="yaml-file" value="config.yaml&#xa;(YAML Config File)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" parent="ext-group" vertex="1">
+                    <mxGeometry x="590" y="30" width="150" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="orch-group" value="Layer 4 — Orchestrator (Deep Module / Actor)" style="swimlane;startSize=28;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="240" width="1200" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="service" value="&lt;b&gt;OscRestBridgeService&lt;/b&gt;&#xa;(Actor)&#xa;&#xa;• start() / stop()&#xa;• loadConfig(url) / reloadConfig()&#xa;• handleOSCMessage(path, values)&#xa;• getState() → BridgeStateSnapshot&#xa;• setDryRun(_)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;align=left;spacingLeft=8;" parent="orch-group" vertex="1">
+                    <mxGeometry x="30" y="38" width="260" height="145" as="geometry"/>
+                </mxCell>
+                <mxCell id="concurrency" value="&lt;b&gt;Concurrency Control&lt;/b&gt;&#xa;&#xa;• Max 8 concurrent HTTP&#xa;• Request queue (FIFO)&#xa;• Actor isolation&#xa;• Task cancellation on stop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;align=left;spacingLeft=8;" parent="orch-group" vertex="1">
+                    <mxGeometry x="320" y="38" width="200" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ring-buffers" value="&lt;b&gt;Ring Buffers (100 items)&lt;/b&gt;&#xa;&#xa;• CircularBuffer&lt;OSCMessageRecord&gt;&#xa;• CircularBuffer&lt;HTTPRequestRecord&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=8;" parent="orch-group" vertex="1">
+                    <mxGeometry x="550" y="38" width="250" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="event-stream" value="&lt;b&gt;Event Stream&lt;/b&gt;&#xa;AsyncStream&lt;BridgeEvent&gt;&#xa;&#xa;• oscReceived / oscUnknown&#xa;• restPlanned / restSent&#xa;• restResponse / restFailure&#xa;• config / lifecycle events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="orch-group" vertex="1">
+                    <mxGeometry x="830" y="38" width="200" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="state-snapshot" value="&lt;b&gt;BridgeStateSnapshot&lt;/b&gt;&#xa;(immutable export)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;dashed=1;" parent="orch-group" vertex="1">
+                    <mxGeometry x="1060" y="65" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="calc-group" value="Layer 1 — Pure Calculations (Stateless Enums)" style="swimlane;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="480" width="1400" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="osc-parser" value="&lt;b&gt;OSCRouteParser&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;parse(path) → ParsedOSCRoute?&#xa;extractNumeric(values) → Double?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="calc-group" vertex="1">
+                    <mxGeometry x="20" y="40" width="225" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="param-scaling" value="&lt;b&gt;ParameterScaling&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;scale(raw, config) → (scaled, mode)&#xa;Curves: linear, square, sqrt, exp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="calc-group" vertex="1">
+                    <mxGeometry x="265" y="40" width="225" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="template-engine" value="&lt;b&gt;TemplateEngine&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;interpolate(template, ctx) → String&#xa;substituteJSON(value, ctx) → Any&#xa;${scene.id}, ${param.scaled}, ..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="calc-group" vertex="1">
+                    <mxGeometry x="510" y="40" width="225" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="json-patcher" value="&lt;b&gt;JSONPatcher&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;applyPatches(ops, json, ctx)&#xa;RFC 6901 JSON Pointers&#xa;ops: set, merge, delete" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="calc-group" vertex="1">
+                    <mxGeometry x="755" y="40" width="210" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="request-builder" value="&lt;b&gt;RequestBuilder&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;build(route, value, config)&#xa;  → [HTTPRequestPlan]&#xa;&#xa;Chains: Parse → Scale → Template → Patch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;fontStyle=0;" parent="calc-group" vertex="1">
+                    <mxGeometry x="985" y="40" width="230" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="config-loader" value="&lt;b&gt;ConfigLoader&lt;/b&gt;&#xa;(enum, static)&#xa;&#xa;load(url/data/yaml) → BridgeConfig&#xa;validate(config) → [Error]&#xa;summary(config) → Summary" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=8;" parent="calc-group" vertex="1">
+                    <mxGeometry x="1235" y="40" width="145" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="adapter-group" value="Layer 2 — Adapters (Actions / Side Effects)" style="swimlane;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="690" width="700" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="http-protocol" value="&lt;b&gt;«protocol»&lt;/b&gt;&#xa;&lt;b&gt;HTTPClient&lt;/b&gt;&#xa;&#xa;execute(method, url, headers,&#xa;  body, timeoutMs)&#xa;  → (statusCode, body)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;fontStyle=0;dashed=1;" parent="adapter-group" vertex="1">
+                    <mxGeometry x="20" y="40" width="200" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="urlsession-client" value="&lt;b&gt;URLSessionHTTPClient&lt;/b&gt;&#xa;: HTTPClient&#xa;&#xa;Foundation.URLSession wrapper" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="adapter-group" vertex="1">
+                    <mxGeometry x="250" y="40" width="190" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="clock-protocol" value="&lt;b&gt;«protocol» Clock&lt;/b&gt;&#xa;now() → Date" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;dashed=1;" parent="adapter-group" vertex="1">
+                    <mxGeometry x="470" y="40" width="120" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="system-clock" value="&lt;b&gt;SystemClock&lt;/b&gt;&#xa;: Clock" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;align=left;spacingLeft=8;" parent="adapter-group" vertex="1">
+                    <mxGeometry x="470" y="93" width="120" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="data-group" value="Layer 3 — Data Types (Immutable / Codable / Sendable)" style="swimlane;startSize=28;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="870" width="1400" height="250" as="geometry"/>
+                </mxCell>
+                <mxCell id="bridge-config" value="&lt;b&gt;BridgeConfig&lt;/b&gt;&#xa;version, server,&#xa;slots, scenes,&#xa;playlists, oneshots, params" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="20" y="40" width="155" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="server-config" value="&lt;b&gt;ServerConfig&lt;/b&gt;&#xa;osc_listen: {host, port}&#xa;http: {base_url, timeout,&#xa;  default_headers}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="195" y="40" width="155" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="slot-config" value="&lt;b&gt;SlotConfig&lt;/b&gt;&#xa;name, targets {virtual_ids}&#xa;blackout? {scene, restore}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="370" y="40" width="165" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="scene-config" value="&lt;b&gt;SceneConfig&lt;/b&gt;&#xa;id, on_activate {request}&#xa;on_deactivate? {enabled, request}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="555" y="40" width="185" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="param-config" value="&lt;b&gt;ParamConfig&lt;/b&gt;&#xa;input {accepted, default_mode}&#xa;scale {type, curve, in/out min/max}&#xa;request {method, path, body, patches}" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="760" y="40" width="210" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="request-template" value="&lt;b&gt;RequestTemplate&lt;/b&gt;&#xa;method, path,&#xa;body?, headers?" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="990" y="40" width="130" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="any-codable" value="&lt;b&gt;AnyCodable&lt;/b&gt;&#xa;Dynamic JSON wrapper" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="1140" y="40" width="130" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="bridge-stats" value="&lt;b&gt;BridgeStats&lt;/b&gt;&#xa;counters, rates,&#xa;per-entity breakdowns" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="20" y="145" width="145" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="slot-state" value="&lt;b&gt;SlotState&lt;/b&gt;&#xa;blackoutActive,&#xa;lastActiveScene,&#xa;lastChangeTime" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="185" y="145" width="130" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="osc-record" value="&lt;b&gt;OSCMessageRecord&lt;/b&gt;&#xa;id, timestamp, path,&#xa;value, parsed?, unknownReason?" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="335" y="145" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="http-record" value="&lt;b&gt;HTTPRequestRecord&lt;/b&gt;&#xa;id, timestamp, method, url,&#xa;bodyPreview?, statusCode?,&#xa;responsePreview?, error?, planned" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="535" y="145" width="195" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="parsed-route" value="&lt;b&gt;ParsedOSCRoute&lt;/b&gt;&#xa;(enum)&#xa;scene | playlist |&#xa;playlistControl |&#xa;oneshot | blackout | param" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="750" y="145" width="155" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="bridge-event" value="&lt;b&gt;BridgeEvent&lt;/b&gt;&#xa;(enum, Sendable, Equatable)&#xa;oscReceived | oscUnknown |&#xa;restPlanned | restSent |&#xa;restResponse | restFailure |&#xa;configLoaded | started | stopped" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="925" y="135" width="195" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="request-plan" value="&lt;b&gt;HTTPRequestPlan&lt;/b&gt;&#xa;method, url,&#xa;headers, body?" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;align=left;spacingLeft=5;" parent="data-group" vertex="1">
+                    <mxGeometry x="1140" y="145" width="130" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui-group" value="UI Layer — SwiftUI Views (Polling, Read-Only)" style="swimlane;startSize=28;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="690" width="600" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="debug-view" value="&lt;b&gt;OscRestBridgeDebugView&lt;/b&gt;&#xa;(main container, polls 1s)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="10" y="38" width="175" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="config-tab" value="ConfigTabView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="10" y="90" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="osc-tab" value="OSCTabView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="120" y="90" width="85" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="rest-tab" value="RESTTabView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="215" y="90" width="85" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="state-tab" value="StateTabView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="310" y="90" width="85" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="stats-tab" value="StatsTabView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="ui-group" vertex="1">
+                    <mxGeometry x="405" y="90" width="85" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-osc-to-service" value="OSC messages" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;" parent="1" source="osc-source" target="service" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-service-to-rest" value="HTTP requests" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=2;fontSize=10;" parent="1" source="service" target="rest-target" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1600" y="350"/>
+                            <mxPoint x="1600" y="175"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e-yaml-to-loader" value="YAML file" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=1;dashed=1;fontSize=10;" parent="1" source="yaml-file" target="config-loader" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-service-to-parser" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;fontSize=10;" parent="1" source="service" target="osc-parser" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-service-to-builder" value="delegates to" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;fontSize=10;" parent="1" source="service" target="request-builder" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-rb-to-scaling" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;dashed=1;fontSize=9;entryX=0.5;entryY=1;" parent="1" source="request-builder" target="param-scaling" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-rb-to-template" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="request-builder" target="template-engine" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-rb-to-patcher" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="request-builder" target="json-patcher" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-patcher-to-template" value="uses" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#82b366;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="json-patcher" target="template-engine" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-service-to-http" value="executes via" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;fontSize=10;" parent="1" source="service" target="http-protocol" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-proto-to-impl" value="implements" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="urlsession-client" target="http-protocol" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-clock-impl" value="" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#6c8ebf;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="system-clock" target="clock-protocol" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-ui-to-service" value="polls getState() every 1s" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#666666;strokeWidth=1;dashed=1;fontSize=10;" parent="1" source="debug-view" target="state-snapshot" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-service-to-config" value="reads" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#d6b656;strokeWidth=1;dashed=1;fontSize=9;" parent="1" source="service" target="bridge-config" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-osc-rest" name="Flow 1: OSC Message → REST Call">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq1-title" value="Sequence: OSC Message → REST API Call (Scene Activation)" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="600" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-osc" value="OSC Source" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="70" width="120" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-service" value="OscRestBridge&#xa;Service (Actor)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="70" width="130" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-parser" value="OSCRoute&#xa;Parser" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="510" y="70" width="100" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-builder" value="Request&#xa;Builder" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="690" y="70" width="100" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-template" value="Template&#xa;Engine" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="70" width="100" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-http" value="HTTPClient&#xa;(URLSession)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1050" y="70" width="110" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll-target" value="REST API&#xa;(LedFX)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1240" y="70" width="100" height="1200" as="geometry"/>
+                </mxCell>
+                <mxCell id="m1" value="handleOSCMessage(&#xa;  path: &quot;/ledfx/scene/strobe/0&quot;,&#xa;  values: [1.0])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;exitX=1;exitY=0;exitDx=0;exitDy=0;" parent="1" edge="1">
+                    <mxGeometry x="0.01" y="15" relative="1" as="geometry">
+                        <mxPoint x="140" y="170" as="sourcePoint"/>
+                        <mxPoint x="365" y="170" as="targetPoint"/>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m2" value="extractNumeric(values) → 1.0" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="220" as="sourcePoint"/>
+                        <mxPoint x="560" y="220" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m2r" value="Double(1.0)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="560" y="240" as="sourcePoint"/>
+                        <mxPoint x="365" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m3" value="parse(&quot;/ledfx/scene/strobe/0&quot;)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="280" as="sourcePoint"/>
+                        <mxPoint x="560" y="280" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m3r" value=".scene(slot: &quot;0&quot;, name: &quot;strobe&quot;)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="560" y="300" as="sourcePoint"/>
+                        <mxPoint x="365" y="300" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n1" value="Record in oscBuffer&#xa;Update stats.totalOscReceived&#xa;Emit .oscReceived event" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="320" width="180" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="m4" value="build(route, value: 1.0, config)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="400" as="sourcePoint"/>
+                        <mxPoint x="740" y="400" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n2" value="Lookup scene &quot;strobe&quot; in config.scenes&#xa;Lookup slot &quot;0&quot; in config.slots&#xa;value &gt; 0 → use on_activate template" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="420" width="230" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="m5" value="interpolate(path, ctx)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="740" y="500" as="sourcePoint"/>
+                        <mxPoint x="920" y="500" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m5b" value="interpolate(body, ctx)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="740" y="530" as="sourcePoint"/>
+                        <mxPoint x="920" y="530" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m5r" value="resolved URL path + body" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="920" y="555" as="sourcePoint"/>
+                        <mxPoint x="740" y="555" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m6" value="[HTTPRequestPlan]" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="740" y="590" as="sourcePoint"/>
+                        <mxPoint x="365" y="590" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n3" value="Check: dryRun?&#xa;Check: inFlight &lt; 8?&#xa;Enqueue or execute" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="610" width="150" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="m7" value="execute(PUT, url, headers, body, timeout)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="700" as="sourcePoint"/>
+                        <mxPoint x="1105" y="700" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n4" value="Emit .restRequestSent&#xa;stats.totalRestSent++" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="720" width="150" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="m8" value="PUT /api/scenes {id:&quot;strobe&quot;, action:&quot;activate&quot;}" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1105" y="790" as="sourcePoint"/>
+                        <mxPoint x="1290" y="790" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m9" value="200 OK" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1290" y="840" as="sourcePoint"/>
+                        <mxPoint x="1105" y="840" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="m10" value="(statusCode: 200, body)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1105" y="880" as="sourcePoint"/>
+                        <mxPoint x="365" y="880" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="n5" value="Record in httpBuffer&#xa;Update slotState (lastScene = &quot;strobe&quot;)&#xa;Emit .restResponse event" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="900" width="210" height="55" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-config-load" name="Flow 2: Configuration Loading">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq2-title" value="Sequence: Configuration Loading &amp; Validation" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="500" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll2-ui" value="UI / Caller" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="70" width="100" height="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll2-service" value="OscRestBridge&#xa;Service" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="70" width="130" height="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll2-loader" value="ConfigLoader" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="70" width="110" height="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll2-yams" value="Yams&#xa;(YAML Parser)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="780" y="70" width="110" height="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll2-events" value="Event Stream&#xa;(subscribers)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1000" y="70" width="110" height="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1" value="loadConfig(from: url)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="150" y="160" as="sourcePoint"/>
+                        <mxPoint x="385" y="160" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c2" value="load(from: url)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="385" y="200" as="sourcePoint"/>
+                        <mxPoint x="615" y="200" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c2a" value="Read file → Data" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="215" width="100" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="c3" value="YAMLDecoder.decode(data)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="615" y="270" as="sourcePoint"/>
+                        <mxPoint x="835" y="270" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c3r" value="BridgeConfig (decoded)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="835" y="300" as="sourcePoint"/>
+                        <mxPoint x="615" y="300" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c4" value="validate(config)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="615" y="340" as="sourcePoint"/>
+                        <mxPoint x="650" y="340" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c4note" value="Validates:&#xa;• version == 1&#xa;• server fields non-empty&#xa;• slots have targets&#xa;• scenes have valid methods&#xa;• param curves valid&#xa;• blackout scene exists" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="660" y="330" width="160" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="alt-frame" value="alt" style="shape=umlFrame;whiteSpace=wrap;html=1;width=30;height=20;fillColor=none;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="460" width="900" height="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="alt-valid" value="[validation passed]" style="text;html=1;fontSize=10;fontStyle=2;fontColor=#009900;" parent="1" vertex="1">
+                    <mxGeometry x="210" y="480" width="120" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="c5" value="BridgeConfig" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="615" y="520" as="sourcePoint"/>
+                        <mxPoint x="385" y="520" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c5note" value="Store config&#xa;Reset slotStates&#xa;Build ConfigSummary" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="535" width="130" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="c6" value="Emit .configLoaded(summary)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="385" y="610" as="sourcePoint"/>
+                        <mxPoint x="1055" y="610" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="alt-sep" value="" style="line;html=1;strokeWidth=1;strokeColor=#666666;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="650" width="900" height="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="alt-invalid" value="[validation failed]" style="text;html=1;fontSize=10;fontStyle=2;fontColor=#CC0000;" parent="1" vertex="1">
+                    <mxGeometry x="210" y="665" width="120" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="c7" value="throw LoadError.validationFailed(errors)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;strokeColor=#CC0000;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="615" y="710" as="sourcePoint"/>
+                        <mxPoint x="385" y="710" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c8" value="Emit .configInvalid(errors)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#CC0000;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="385" y="750" as="sourcePoint"/>
+                        <mxPoint x="1055" y="750" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c9" value="throws to caller" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;strokeColor=#CC0000;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="385" y="790" as="sourcePoint"/>
+                        <mxPoint x="150" y="790" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-param" name="Flow 3: Parameter Scaling &amp; Patching">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq3-title" value="Sequence: Parameter OSC → Scaled Value → JSON Patch → REST" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="20" width="700" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-osc" value="OSC Source" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-service" value="OscRestBridge&#xa;Service" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="70" width="130" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-parser" value="OSCRoute&#xa;Parser" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="450" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-builder" value="Request&#xa;Builder" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="630" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-scaling" value="Parameter&#xa;Scaling" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="810" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-patcher" value="JSON&#xa;Patcher" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="990" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-template" value="Template&#xa;Engine" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1160" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll3-http" value="HTTPClient" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1340" y="70" width="100" height="1050" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1" value="handleOSCMessage(&#xa;  &quot;/ledfx/param/strobe_speed/0&quot;,&#xa;  values: [100])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry x="0.01" y="15" relative="1" as="geometry">
+                        <mxPoint x="110" y="160" as="sourcePoint"/>
+                        <mxPoint x="315" y="160" as="targetPoint"/>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p2" value="parse(&quot;/ledfx/param/strobe_speed/0&quot;)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="315" y="210" as="sourcePoint"/>
+                        <mxPoint x="500" y="210" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p2r" value=".param(slot: &quot;0&quot;, name: &quot;strobe_speed&quot;)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="500" y="235" as="sourcePoint"/>
+                        <mxPoint x="315" y="235" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p3" value="build(.param, value: 100, config)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="315" y="290" as="sourcePoint"/>
+                        <mxPoint x="680" y="290" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4" value="scale(raw: 100, paramScale, paramInput)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="680" y="340" as="sourcePoint"/>
+                        <mxPoint x="860" y="340" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p4note" value="detectMode(100) → midi_0_127&#xa;mapRange(100, 0→127, 0.5→20.0)&#xa;applyCurve(&quot;square&quot;, 0.787) → 0.619&#xa;lerp(0.5, 20.0, 0.619) → 12.57" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="880" y="350" width="220" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4r" value="(scaled: 12.57, mode: &quot;midi_0_127&quot;)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="860" y="440" as="sourcePoint"/>
+                        <mxPoint x="680" y="440" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5" value="interpolate(path, ctx{param.scaled=12.57})" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="680" y="490" as="sourcePoint"/>
+                        <mxPoint x="1210" y="490" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p5r" value="resolved path" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1210" y="510" as="sourcePoint"/>
+                        <mxPoint x="680" y="510" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p6note" value="body_template: {config: {speed_hz: 1.0}}&#xa;patch_ops: [{op: &quot;set&quot;,&#xa;  pointer: &quot;/config/speed_hz&quot;,&#xa;  value: &quot;${param.scaled}&quot;}]" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="530" width="220" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="p6" value="applyPatches(ops, body, ctx)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="680" y="620" as="sourcePoint"/>
+                        <mxPoint x="1040" y="620" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p7" value="substituteJSON(&quot;${param.scaled}&quot;, ctx)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1040" y="660" as="sourcePoint"/>
+                        <mxPoint x="1210" y="660" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p7r" value="12.57 (Double)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1210" y="685" as="sourcePoint"/>
+                        <mxPoint x="1040" y="685" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p8note" value="RFC 6901:&#xa;Navigate /config/speed_hz&#xa;Set value = 12.57" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="1060" y="700" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="p6r" value="{config: {speed_hz: 12.57}}" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1040" y="770" as="sourcePoint"/>
+                        <mxPoint x="680" y="770" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p9" value="[HTTPRequestPlan{PUT, url, patched body}]" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="680" y="810" as="sourcePoint"/>
+                        <mxPoint x="315" y="810" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p10" value="execute(PUT, .../effects, {config:{speed_hz:12.57}})" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="315" y="870" as="sourcePoint"/>
+                        <mxPoint x="1390" y="870" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="p10r" value="200 OK" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1390" y="910" as="sourcePoint"/>
+                        <mxPoint x="315" y="910" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-ui-poll" name="Flow 4: UI State Polling">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="800" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq4-title" value="Sequence: UI State Polling &amp; Display" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll4-debug" value="DebugView&#xa;(main)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="70" width="100" height="650" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll4-service" value="OscRestBridge&#xa;Service (Actor)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="70" width="130" height="650" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll4-tabs" value="Tab Views&#xa;(children)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f5f5f5;strokeColor=#666666;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="580" y="70" width="100" height="650" as="geometry"/>
+                </mxCell>
+                <mxCell id="u1" value=".task { start polling }" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="150" as="sourcePoint"/>
+                        <mxPoint x="170" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="loop-frame" value="loop [every 1000ms]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=120;height=20;fillColor=none;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="180" width="600" height="330" as="geometry"/>
+                </mxCell>
+                <mxCell id="u2" value="await getState()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="230" as="sourcePoint"/>
+                        <mxPoint x="395" y="230" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="u2note" value="Captures snapshot:&#xa;isRunning, configStatus,&#xa;stats, slotState,&#xa;recentOsc[100], recentHttp[100],&#xa;dryRun" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="420" y="240" width="165" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="u3" value="BridgeStateSnapshot" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="395" y="340" as="sourcePoint"/>
+                        <mxPoint x="130" y="340" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="u4" value="@State state = snapshot" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="380" as="sourcePoint"/>
+                        <mxPoint x="170" y="380" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="u5" value="pass snapshot to child views" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="420" as="sourcePoint"/>
+                        <mxPoint x="630" y="420" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="u5note" value="ConfigTab: reads configStatus&#xa;OSCTab: reads recentOsc&#xa;RESTTab: reads recentHttp&#xa;StateTab: reads slotState, dryRun&#xa;StatsTab: reads stats" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="440" width="175" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="u6" value="try await Task.sleep(1s)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;fontColor=#999999;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="480" as="sourcePoint"/>
+                        <mxPoint x="170" y="480" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="action-frame" value="opt [user toggles dry-run]" style="shape=umlFrame;whiteSpace=wrap;html=1;width=140;height=20;fillColor=none;fontSize=11;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="540" width="530" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="u7" value="toggle dry-run" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="630" y="580" as="sourcePoint"/>
+                        <mxPoint x="130" y="580" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="u8" value="await setDryRun(true)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="610" as="sourcePoint"/>
+                        <mxPoint x="395" y="610" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-blackout" name="Flow 5: Blackout Toggle">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq5-title" value="Sequence: Blackout Toggle with Scene Restore" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="500" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll5-osc" value="OSC Source" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="70" width="100" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll5-service" value="OscRestBridge&#xa;Service" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="70" width="130" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll5-builder" value="Request&#xa;Builder" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#d5e8d4;strokeColor=#82b366;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="530" y="70" width="100" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll5-http" value="HTTPClient" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="750" y="70" width="100" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="b1" value="handleOSC(&quot;/ledfx/blackout/0&quot;, [1.0])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="160" as="sourcePoint"/>
+                        <mxPoint x="365" y="160" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b1note" value="value &gt; 0 → blackout ON&#xa;Save: slotState[&quot;0&quot;].lastActiveScene&#xa;Set: slotState[&quot;0&quot;].blackoutActive = true" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="170" width="210" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="b2" value="build(.blackout, value: 1.0, config)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="250" as="sourcePoint"/>
+                        <mxPoint x="580" y="250" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b2note" value="Lookup slot.blackout.scene → &quot;blackout&quot;&#xa;Build scene activate request for &quot;blackout&quot;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="600" y="260" width="240" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="b2r" value="[HTTPRequestPlan: activate &quot;blackout&quot;]" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="580" y="315" as="sourcePoint"/>
+                        <mxPoint x="365" y="315" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b3" value="PUT /api/scenes {blackout, activate}" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="360" as="sourcePoint"/>
+                        <mxPoint x="800" y="360" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b3r" value="200 OK" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="800" y="390" as="sourcePoint"/>
+                        <mxPoint x="365" y="390" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="bsep" value="... time passes ..." style="text;html=1;fontSize=10;fontStyle=2;fontColor=#999999;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="420" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="b4" value="handleOSC(&quot;/ledfx/blackout/0&quot;, [0.0])" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="470" as="sourcePoint"/>
+                        <mxPoint x="365" y="470" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b4note" value="value == 0 → blackout OFF&#xa;Set: blackoutActive = false&#xa;Check: restore_previous_scene?&#xa;Restore: lastActiveScene → &quot;strobe&quot;" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" parent="1" vertex="1">
+                    <mxGeometry x="390" y="480" width="210" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="b5" value="build(.scene(&quot;strobe&quot;), value: 1.0, config)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="570" as="sourcePoint"/>
+                        <mxPoint x="580" y="570" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b5r" value="[HTTPRequestPlan: activate &quot;strobe&quot;]" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="580" y="600" as="sourcePoint"/>
+                        <mxPoint x="365" y="600" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b6" value="PUT /api/scenes {strobe, activate}" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="365" y="640" as="sourcePoint"/>
+                        <mxPoint x="800" y="640" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="b6r" value="200 OK (scene restored)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="800" y="670" as="sourcePoint"/>
+                        <mxPoint x="365" y="670" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-concurrency" name="Flow 6: Request Concurrency Control">
+        <mxGraphModel dx="907" dy="646" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq6-title" value="Sequence: HTTP Request Concurrency Control (max 8 in-flight)" style="text;html=1;fontSize=18;fontStyle=1;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="20" width="550" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll6-msgs" value="Rapid OSC&#xa;Messages" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="70" width="100" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll6-service" value="OscRestBridge&#xa;Service" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#e1d5e7;strokeColor=#9673a6;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="70" width="130" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll6-queue" value="Request Queue&#xa;(pendingRequests)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#fff2cc;strokeColor=#d6b656;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="70" width="130" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll6-tasks" value="In-Flight Tasks&#xa;(max 8)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#f8cecc;strokeColor=#b85450;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="800" y="70" width="110" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="ll6-http" value="HTTPClient" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;fillColor=#dae8fc;strokeColor=#6c8ebf;size=40;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1040" y="70" width="100" height="750" as="geometry"/>
+                </mxCell>
+                <mxCell id="q1" value="plan #1 (inFlight: 0/8)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="160" as="sourcePoint"/>
+                        <mxPoint x="375" y="160" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q1a" value="spawn Task" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="185" as="sourcePoint"/>
+                        <mxPoint x="855" y="185" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q1b" value="execute()" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="855" y="210" as="sourcePoint"/>
+                        <mxPoint x="1090" y="210" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q2" value="plans #2-#8 (filling up)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="270" as="sourcePoint"/>
+                        <mxPoint x="375" y="270" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q2a" value="spawn Tasks #2-#8" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="295" as="sourcePoint"/>
+                        <mxPoint x="855" y="295" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q2note" value="inFlight = 8/8 (FULL)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="305" width="140" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="q3" value="plan #9 (inFlight: 8/8 — FULL)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#CC0000;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="130" y="370" as="sourcePoint"/>
+                        <mxPoint x="375" y="370" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q3a" value="enqueue (FIFO)" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;strokeColor=#CC0000;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="395" as="sourcePoint"/>
+                        <mxPoint x="625" y="395" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q3note" value="Request queued,&#xa;NOT executed yet" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="400" width="120" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="q4" value="200 OK (task #1 completes)" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1090" y="480" as="sourcePoint"/>
+                        <mxPoint x="855" y="480" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q4a" value="task #1 done → remove" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="855" y="510" as="sourcePoint"/>
+                        <mxPoint x="375" y="510" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q4note" value="inFlight: 7/8 → slot free!&#xa;Check pendingRequests queue" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="520" width="170" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="q5" value="dequeue #9" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="580" as="sourcePoint"/>
+                        <mxPoint x="625" y="580" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q5r" value="plan #9" style="html=1;verticalAlign=bottom;endArrow=open;dashed=1;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="625" y="600" as="sourcePoint"/>
+                        <mxPoint x="375" y="600" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q6" value="spawn Task #9" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="375" y="630" as="sourcePoint"/>
+                        <mxPoint x="855" y="630" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q6a" value="execute() plan #9" style="html=1;verticalAlign=bottom;endArrow=block;fontSize=10;" parent="1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="855" y="660" as="sourcePoint"/>
+                        <mxPoint x="1090" y="660" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="q6note" value="inFlight: 8/8 (back to full)" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="670" width="155" height="25" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
