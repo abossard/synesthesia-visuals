@@ -157,6 +157,10 @@ public enum PadMode: String, Codable, CaseIterable, Sendable {
     case increment
     /// Decrement value by step (normal: -step, shift: set to min)
     case decrement
+    /// Cycle through predefined RGB colors and send /r,/g,/b updates
+    case colorCycle
+    /// 2D vector control using paired /x and /y addresses
+    case vector2
 }
 
 // MARK: - Button Group
@@ -191,6 +195,7 @@ public enum BankRole: String, Codable, CaseIterable, Sendable {
     case scenes2      // Additional scene page (dynamic, legacy)
     case presets      // Preset selection (dynamic)
     case params       // Dynamic control parameters (auto populated)
+    case meta         // Scene-agnostic meta/global controls (dynamic)
     case global       // Global parameters
     case favorites    // Favorites/quick actions
     case shaders      // VJUniverse shader selection
@@ -252,6 +257,7 @@ public struct OscCommand: Hashable, Codable, Sendable {
             "/presets/",
             "/favslots/",
             "/playlist/",
+            "/ledfx/",
             "/media/",
             "/render/",
             "/controls/",  // All controls (meta, global, etc.)
@@ -302,9 +308,23 @@ public struct PadBehavior: Codable, Sendable {
     public let step: Float
     public let minValue: Float
     public let maxValue: Float
+    public let enumOptionCount: Int?
+
+    // Color cycle mode data (RGB palette + channel addresses)
+    public let colorCycleAddresses: [String]
+    public let colorCyclePalette: [[Float]]
+    public let colorCycleLedColors: [Int]
+    public let colorCycleIndex: Int
+
+    // Vector2 mode data (paired X/Y channels)
+    public let vector2Addresses: [String]
+    public let vector2Current: [Float]
+    public let vector2Default: [Float]
 
     enum CodingKeys: String, CodingKey {
-        case padId, mode, group, idleColor, activeColor, label, oscOn, oscOff, oscAction, additionalOsc, step, minValue, maxValue
+        case padId, mode, group, idleColor, activeColor, label, oscOn, oscOff, oscAction, additionalOsc, step, minValue, maxValue, enumOptionCount
+        case colorCycleAddresses, colorCyclePalette, colorCycleLedColors, colorCycleIndex
+        case vector2Addresses, vector2Current, vector2Default
     }
     
     public init(
@@ -320,7 +340,15 @@ public struct PadBehavior: Codable, Sendable {
         additionalOsc: [OscCommand] = [],
         step: Float = 0.1,
         minValue: Float = 0.0,
-        maxValue: Float = 1.0
+        maxValue: Float = 1.0,
+        enumOptionCount: Int? = nil,
+        colorCycleAddresses: [String] = [],
+        colorCyclePalette: [[Float]] = [],
+        colorCycleLedColors: [Int] = [],
+        colorCycleIndex: Int = 0,
+        vector2Addresses: [String] = [],
+        vector2Current: [Float] = [],
+        vector2Default: [Float] = []
     ) {
         self.padId = padId
         self.mode = mode
@@ -335,6 +363,14 @@ public struct PadBehavior: Codable, Sendable {
         self.step = step
         self.minValue = minValue
         self.maxValue = maxValue
+        self.enumOptionCount = enumOptionCount
+        self.colorCycleAddresses = colorCycleAddresses
+        self.colorCyclePalette = colorCyclePalette
+        self.colorCycleLedColors = colorCycleLedColors
+        self.colorCycleIndex = colorCycleIndex
+        self.vector2Addresses = vector2Addresses
+        self.vector2Current = vector2Current
+        self.vector2Default = vector2Default
     }
 
     public init(from decoder: Decoder) throws {
@@ -352,6 +388,14 @@ public struct PadBehavior: Codable, Sendable {
         step = try container.decodeIfPresent(Float.self, forKey: .step) ?? 0.1
         minValue = try container.decodeIfPresent(Float.self, forKey: .minValue) ?? 0.0
         maxValue = try container.decodeIfPresent(Float.self, forKey: .maxValue) ?? 1.0
+        enumOptionCount = try container.decodeIfPresent(Int.self, forKey: .enumOptionCount)
+        colorCycleAddresses = try container.decodeIfPresent([String].self, forKey: .colorCycleAddresses) ?? []
+        colorCyclePalette = try container.decodeIfPresent([[Float]].self, forKey: .colorCyclePalette) ?? []
+        colorCycleLedColors = try container.decodeIfPresent([Int].self, forKey: .colorCycleLedColors) ?? []
+        colorCycleIndex = try container.decodeIfPresent(Int.self, forKey: .colorCycleIndex) ?? 0
+        vector2Addresses = try container.decodeIfPresent([String].self, forKey: .vector2Addresses) ?? []
+        vector2Current = try container.decodeIfPresent([Float].self, forKey: .vector2Current) ?? []
+        vector2Default = try container.decodeIfPresent([Float].self, forKey: .vector2Default) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -369,6 +413,14 @@ public struct PadBehavior: Codable, Sendable {
         try container.encode(step, forKey: .step)
         try container.encode(minValue, forKey: .minValue)
         try container.encode(maxValue, forKey: .maxValue)
+        try container.encodeIfPresent(enumOptionCount, forKey: .enumOptionCount)
+        if !colorCycleAddresses.isEmpty { try container.encode(colorCycleAddresses, forKey: .colorCycleAddresses) }
+        if !colorCyclePalette.isEmpty { try container.encode(colorCyclePalette, forKey: .colorCyclePalette) }
+        if !colorCycleLedColors.isEmpty { try container.encode(colorCycleLedColors, forKey: .colorCycleLedColors) }
+        if colorCycleIndex != 0 { try container.encode(colorCycleIndex, forKey: .colorCycleIndex) }
+        if !vector2Addresses.isEmpty { try container.encode(vector2Addresses, forKey: .vector2Addresses) }
+        if !vector2Current.isEmpty { try container.encode(vector2Current, forKey: .vector2Current) }
+        if !vector2Default.isEmpty { try container.encode(vector2Default, forKey: .vector2Default) }
     }
 }
 
@@ -383,6 +435,8 @@ public struct PadRuntimeState: Sendable {
     public var ledMode: LedMode
     /// Current value for increment/decrement controls (0.0-1.0)
     public var currentValue: Float
+    /// Secondary value used by vector2 controls (Y axis)
+    public var secondaryValue: Float
     
     public init(
         isActive: Bool = false,
@@ -390,7 +444,8 @@ public struct PadRuntimeState: Sendable {
         currentColor: Int = LP.off,
         blinkEnabled: Bool = false,
         ledMode: LedMode = .static,
-        currentValue: Float = 0.5
+        currentValue: Float = 0.5,
+        secondaryValue: Float = 0.5
     ) {
         self.isActive = isActive
         self.isOn = isOn
@@ -398,6 +453,7 @@ public struct PadRuntimeState: Sendable {
         self.blinkEnabled = blinkEnabled
         self.ledMode = ledMode
         self.currentValue = currentValue
+        self.secondaryValue = secondaryValue
     }
 }
 
@@ -553,6 +609,8 @@ public struct ControllerState: Sendable {
     
     /// Active selector per group per bank
     public var bankActiveSelectorByGroup: [Int: [ButtonGroupType: ButtonId?]]
+    /// Active vector2 target pad per bank
+    public var bankActiveVectorPad: [Int: ButtonId?]
     
     // Convenience accessors for current bank
     public var pads: [ButtonId: PadBehavior] {
@@ -568,6 +626,11 @@ public struct ControllerState: Sendable {
     public var activeSelectorByGroup: [ButtonGroupType: ButtonId?] {
         get { bankActiveSelectorByGroup[activeBank] ?? [:] }
         set { bankActiveSelectorByGroup[activeBank] = newValue }
+    }
+
+    public var activeVectorPad: ButtonId? {
+        get { bankActiveVectorPad[activeBank] ?? nil }
+        set { bankActiveVectorPad[activeBank] = newValue }
     }
     
     // Synesthesia state
@@ -602,12 +665,14 @@ public struct ControllerState: Sendable {
         self.bankPads = [:]
         self.bankPadRuntime = [:]
         self.bankActiveSelectorByGroup = [:]
+        self.bankActiveVectorPad = [:]
         
         // Initialize empty banks
         for i in 0..<BankConfig.count {
             self.bankPads[i] = [:]
             self.bankPadRuntime[i] = [:]
             self.bankActiveSelectorByGroup[i] = [:]
+            self.bankActiveVectorPad[i] = nil
         }
         
         self.activeScene = nil

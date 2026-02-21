@@ -46,6 +46,28 @@ colors:
   magenta: 61
 
 # ============================================================================
+# DYNAMIC CONTROL OPTIONS
+# ============================================================================
+# Expandable runtime hints for auto-generated controls.
+
+dynamic:
+  # Used by dynamic color-cycle controls (e.g. /controls/<scene>/color1/{r,g,b})
+  # Ordered list: tap cycles forward, Shift+tap cycles backward.
+  colorCyclePalette:
+    - { name: "white",   rgb: [1.0, 1.0, 1.0], ledColor: white }
+    - { name: "red",     rgb: [1.0, 0.2, 0.2], ledColor: red }
+    - { name: "orange",  rgb: [1.0, 0.5, 0.1], ledColor: orange }
+    - { name: "yellow",  rgb: [1.0, 0.9, 0.2], ledColor: yellow }
+    - { name: "lime",    rgb: [0.6, 1.0, 0.2], ledColor: greenBright }
+    - { name: "green",   rgb: [0.2, 0.9, 0.3], ledColor: green }
+    - { name: "cyan",    rgb: [0.2, 0.9, 1.0], ledColor: cyan }
+    - { name: "blue",    rgb: [0.2, 0.4, 1.0], ledColor: blue }
+    - { name: "indigo",  rgb: [0.4, 0.3, 1.0], ledColor: blueBright }
+    - { name: "purple",  rgb: [0.7, 0.3, 1.0], ledColor: purple }
+    - { name: "magenta", rgb: [1.0, 0.3, 0.9], ledColor: magenta }
+    - { name: "pink",    rgb: [1.0, 0.5, 0.7], ledColor: pink }
+
+# ============================================================================
 # SELECTOR GROUPS
 # ============================================================================
 # Groups define mutually exclusive selections. Items can be:
@@ -87,8 +109,8 @@ global:
     - { cc: 93, bank: 2, name: "Global",      idleColor: cyan,    activeColor: white }
     - { cc: 94, bank: 3, name: "Favorites",   idleColor: green,   activeColor: white }
     - { cc: 95, bank: 4, name: "Shaders",     idleColor: orange,  activeColor: white }
-    - { cc: 96, bank: 5, name: "Audio",       idleColor: pink,    activeColor: white }
-    - { cc: 97, bank: 6, name: "Visual",      idleColor: yellow,  activeColor: white }
+    - { cc: 96, bank: 5, name: "Meta",        idleColor: pink,    activeColor: white }
+    - { cc: 97, bank: 6, name: "SceneCtl",    idleColor: yellow,  activeColor: white }
     - { cc: 98, bank: 7, name: "Custom",      idleColor: grey,    activeColor: white }
 
   # Scene column buttons (right side)
@@ -943,14 +965,14 @@ bank4:
   presetsRow: null
 
 # ============================================================================
-# BANK 5: COLORS
+# BANK 5: META
 # ============================================================================
-# Example: Color palette selection, hue/saturation controls
+# Scene-agnostic controls (`/controls/meta/*`, `/controls/global/*`)
 
 bank5:
-  name: "Audio"
-  purpose: "Audio bindings and routing"
-  role: audio
+  name: "Meta"
+  purpose: "Static meta/global controls"
+  role: meta
   
   pads:
     # Row 7: Preset palettes
@@ -1042,14 +1064,14 @@ bank5:
   presetsRow: null
 
 # ============================================================================
-# BANK 6: AUDIO
+# BANK 6: SCENE CONTROLS
 # ============================================================================
-# Example: Audio routing, input selection, level controls
+# Scene-scoped controls (`/controls/<scene>/*`)
 
 bank6:
-  name: "Visual"
-  purpose: "Visual controls"
-  role: visual
+  name: "SceneCtl"
+  purpose: "Dynamic scene controls"
+  role: params
   
   pads:
     # Row 7: Audio source selection

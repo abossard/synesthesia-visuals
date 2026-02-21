@@ -282,7 +282,11 @@ public final class AppState: ObservableObject {
     @Published public private(set) var oscDebugEnabled: Bool = false {
         didSet { _oscDebugEnabledUnsafe = oscDebugEnabled }
     }
+    @Published public private(set) var oscAudioMessagesEnabled: Bool = false {
+        didSet { _oscAudioMessagesEnabledUnsafe = oscAudioMessagesEnabled }
+    }
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
+    nonisolated(unsafe) private var _oscAudioMessagesEnabledUnsafe: Bool = false
 
     // MARK: - LedFX UI State
 
@@ -338,6 +342,8 @@ public final class AppState: ObservableObject {
     private var lastLedfxRevision: UInt64 = 0
     private var lastMappedLogCount: Int = 0
     private var lastMappedLogTimestamp: Date?
+    private var mcpDataService: SwiftVJMCPDataService?
+    private var mcpDataServer: SwiftVJMCPServer?
 
     // MARK: - Store Logger (Debug)
 
@@ -386,6 +392,7 @@ public final class AppState: ObservableObject {
             setupRenderEngine()
             setupEffectEnvironment()
             startOSCHub()
+            setupMCPDataServerIfEnabled()
         }
         setupStoreObservation()
         if !testMode {
@@ -472,10 +479,33 @@ public final class AppState: ObservableObject {
     public func stop() async {
         vdjQueryTask?.cancel()
         vdjQueryTask = nil
+        mcpDataServer?.stop()
+        mcpDataServer = nil
+        mcpDataService = nil
         await playbackModule?.stop()
         await pipelineModule?.stop()
         await songsModule?.stop()
         store.send(.shutdown)
+    }
+
+    private func setupMCPDataServerIfEnabled() {
+        let enabledValue = ProcessInfo.processInfo.environment["SWIFTVJ_MCP_ENABLED"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard enabledValue == "1" || enabledValue == "true" else {
+            return
+        }
+
+        let service = SwiftVJMCPDataService(appState: self)
+        let server = SwiftVJMCPServer { [weak service] requestData in
+            guard let service else { return nil }
+            return await service.handle(messageData: requestData)
+        }
+
+        mcpDataService = service
+        mcpDataServer = server
+        server.start()
+        log("MCP data server enabled on stdio (SWIFTVJ_MCP_ENABLED=1)", level: .info)
     }
 
     public func setPlaybackSource(_ source: String) async {
@@ -755,6 +785,11 @@ public final class AppState: ObservableObject {
         return SongID(artist: track.artist, title: track.title)
     }
 
+    private var currentRecordingSongID: SongID? {
+        guard isPlaying else { return nil }
+        return currentPlaybackSongID
+    }
+
     public func setAutomationEnabled(_ enabled: Bool) {
         store.send(.automation(.setEnabled(enabled)))
     }
@@ -812,6 +847,17 @@ public final class AppState: ObservableObject {
         automationState.timeline(for: songID)
     }
 
+    public func automationPlaybackEnabled(songID: SongID?) -> Bool {
+        guard let songID else { return false }
+        return automationState.timeline(for: songID)?.playbackEnabled ?? false
+    }
+
+    public func setAutomationPlaybackEnabled(songID: SongID, enabled: Bool) {
+        var timeline = automationState.timeline(for: songID) ?? .empty
+        timeline.playbackEnabled = enabled
+        store.send(.automation(.setTimeline(songID: songID, timeline: timeline)))
+    }
+
     public func clearAutomationTimeline(songID: SongID) {
         store.send(.automation(.clearTimeline(songID)))
     }
@@ -852,7 +898,7 @@ public final class AppState: ObservableObject {
         store.send(.ledfx(action))
         guard automationState.isEnabled,
               automationState.autoRecordEnabled,
-              let songID = currentPlaybackSongID else {
+              let songID = currentRecordingSongID else {
             return
         }
         store.send(.automation(.recordLedFXAction(
@@ -870,7 +916,7 @@ public final class AppState: ObservableObject {
     ) {
         guard automationState.isEnabled,
               automationState.autoRecordEnabled,
-              let songID = currentPlaybackSongID else {
+              let songID = currentRecordingSongID else {
             return
         }
         guard source != "automation-replay" else { return }
@@ -974,11 +1020,24 @@ public final class AppState: ObservableObject {
         store.send(.ui(.setOscDebugEnabled(enabled)))
     }
 
+    /// Include or exclude audio OSC messages from debug capture through Store.
+    public func setOscAudioMessagesEnabled(_ enabled: Bool) {
+        store.send(.ui(.setOscAudioMessagesEnabled(enabled)))
+    }
+
     /// Type-safe binding for OSC debug toggle.
     public var oscDebugEnabledBinding: Binding<Bool> {
         Binding(
             get: { self.oscDebugEnabled },
             set: { enabled in self.setOscDebugEnabled(enabled) }
+        )
+    }
+
+    /// Type-safe binding for OSC audio capture toggle.
+    public var oscAudioMessagesEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { self.oscAudioMessagesEnabled },
+            set: { enabled in self.setOscAudioMessagesEnabled(enabled) }
         )
     }
 
@@ -1180,6 +1239,7 @@ public final class AppState: ObservableObject {
 
     private func mapOSCEntry(_ entry: OSCLogEntryState) -> OSCLogEntry {
         OSCLogEntry(
+            id: entry.id,
             address: entry.address,
             args: entry.args,
             timestamp: entry.timestamp
@@ -1197,8 +1257,20 @@ public final class AppState: ObservableObject {
                     args: args,
                     source: source
                 )
+                self?.forwardOutgoingOSCToLaunchpadCapture(
+                    address: address,
+                    args: args,
+                    source: source
+                )
             }
         }
+    }
+
+    private func forwardOutgoingOSCToLaunchpadCapture(address: String, args: [OscArg], source: String?) {
+        guard source != "automation-replay" else { return }
+        guard address.hasPrefix("/ledfx/") else { return }
+        let event = OscEvent(address: address, args: args)
+        store.send(.launchpad(.oscEventReceived(event)))
     }
 
     private func setupModules() {
@@ -1236,7 +1308,7 @@ public final class AppState: ObservableObject {
             self?.store.send(action)
         }
 
-        for pattern in ["/scenes/*", "/presets/*", "/favslots/*", "/playlist/*", "/controls/meta/*", "/controls/global/*"] {
+        for pattern in ["/scenes/*", "/presets/*", "/favslots/*", "/playlist/*", "/controls/meta/*", "/controls/global/*", "/ledfx/*"] {
             oscHub.subscribe(pattern: pattern) { [weak self] address, values in
                 let args: [OscArg] = values.compactMap { value in
                     if let v = value as? Int32 { return .int(Int(v)) }
@@ -1450,6 +1522,7 @@ public final class AppState: ObservableObject {
 
             oscHub.subscribe(pattern: "*") { [weak self] address, values in
                 guard let self = self, self._oscDebugEnabledUnsafe else { return }
+                guard self._oscAudioMessagesEnabledUnsafe || !address.hasPrefix("/audio/") else { return }
                 let argsStr = values.map { "\($0)" }.joined(separator: ", ")
                 Task { @MainActor in self.recordOSCMessage(address, args: [argsStr]) }
             }
@@ -1566,6 +1639,9 @@ public final class AppState: ObservableObject {
                 // UI state (logs + OSC)
                 if self.oscFilter != newState.ui.oscFilter { self.oscFilter = newState.ui.oscFilter }
                 if self.oscDebugEnabled != newState.ui.oscDebugEnabled { self.oscDebugEnabled = newState.ui.oscDebugEnabled }
+                if self.oscAudioMessagesEnabled != newState.ui.oscAudioMessagesEnabled {
+                    self.oscAudioMessagesEnabled = newState.ui.oscAudioMessagesEnabled
+                }
                 if self.oscMessageCount != newState.ui.oscMessageCount {
                     self.oscMessageCount = newState.ui.oscMessageCount
                     self.oscMessages = newState.ui.oscMessages.mapValues { self.mapOSCEntry($0) }
@@ -1842,8 +1918,15 @@ public enum LogLevel: String, CaseIterable, Sendable {
 }
 
 public struct OSCLogEntry: Identifiable {
-    public let id = UUID()
+    public let id: UUID
     public let address: String
     public let args: [String]
     public let timestamp: Date
+
+    public init(id: UUID = UUID(), address: String, args: [String], timestamp: Date = Date()) {
+        self.id = id
+        self.address = address
+        self.args = args
+        self.timestamp = timestamp
+    }
 }

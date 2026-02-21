@@ -88,7 +88,8 @@ final class AutomationReducerTests: XCTestCase {
                     value: "drop"
                 )
             ],
-            valueLanes: []
+            valueLanes: [],
+            playbackEnabled: true
         )
 
         let first = applyAutomationReducer(.playbackTick(position: 4.9, isPlaying: true), to: &appState)
@@ -127,7 +128,8 @@ final class AutomationReducerTests: XCTestCase {
                         AutomationValuePoint(timeSec: 10, value: 1)
                     ]
                 )
-            ]
+            ],
+            playbackEnabled: true
         )
 
         _ = applyAutomationReducer(.playbackTick(position: 0, isPlaying: true), to: &appState)
@@ -141,6 +143,28 @@ final class AutomationReducerTests: XCTestCase {
         }
         XCTAssertEqual(id, "main")
         XCTAssertEqual(brightness, 0.5, accuracy: 0.001)
+    }
+
+    func testPlaybackTickSkipsWhenSongPlaybackDisabled() async {
+        var appState = AppState()
+        let songID = SongID(artist: "Artist", title: "Song")
+        appState.automation.isEnabled = true
+        appState.automation.playbackSongId = songID
+        appState.automation.timelineBySongId[songID.rawValue] = SongAutomationTimeline(
+            cues: [
+                AutomationCue(
+                    timeSec: 1.0,
+                    actionType: .ledfxActivateScene,
+                    value: "drop"
+                )
+            ],
+            valueLanes: [],
+            playbackEnabled: false
+        )
+
+        let effect = applyAutomationReducer(.playbackTick(position: 2.0, isPlaying: true), to: &appState)
+        let emitted = await collectActions(from: effect)
+        XCTAssertTrue(emitted.isEmpty)
     }
 
     func testRecordOSCIgnoresAddressOutsideConfiguredPrefixes() async {

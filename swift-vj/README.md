@@ -36,6 +36,16 @@ swift test --filter E2ETests
 swift run swift-vj lyrics --artist "Queen" --title "Bohemian Rhapsody" --local
 ```
 
+### Optional: MCP data-management server
+
+The app can expose a local stdio MCP server for **data management only** (shaders, masks, songs, automation timelines, playlists):
+
+```bash
+SWIFTVJ_MCP_ENABLED=1 swift run SwiftVJApp
+```
+
+This MCP surface intentionally excludes live performance/runtime controls (render previews, playback control, and pipeline triggers).
+
 ## Project Structure
 
 ```text

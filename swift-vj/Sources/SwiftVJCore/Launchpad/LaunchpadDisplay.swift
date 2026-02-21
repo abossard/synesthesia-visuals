@@ -46,6 +46,7 @@ private func renderIdle(_ state: ControllerState) -> [LaunchpadEffect] {
         effects.append(.setLed(padId: ButtonId(x: 8, y: y), color: LP.off, blink: false))
     }
     effects.append(contentsOf: renderPagingIndicators(state))
+    effects.append(contentsOf: renderVectorNudgeIndicators(state))
     
     // Then render configured pads with their current color
     for (padId, behavior) in state.pads {
@@ -307,12 +308,39 @@ private func renderModeSelect(_ learn: LearnState) -> [LaunchpadEffect] {
             // Fast flash (like stepping through values)
             let phase = now.truncatingRemainder(dividingBy: 1.0)
             color = phase < 0.3 ? brightColor : dimColor
+        case .colorCycle:
+            // Medium pulse for color stepping mode
+            let phase = now.truncatingRemainder(dividingBy: 2.0)
+            color = phase < 1.0 ? brightColor : dimColor
+        case .vector2:
+            // Medium pulse for vector controls
+            let phase = now.truncatingRemainder(dividingBy: 2.0)
+            color = phase < 1.0 ? brightColor : dimColor
         }
         
         effects.append(.setLed(padId: ButtonId(x: x, y: 3), color: color, blink: false))
     }
     
     return effects
+}
+
+private func renderVectorNudgeIndicators(_ state: ControllerState) -> [LaunchpadEffect] {
+    guard let vectorPad = state.activeVectorPad,
+          let behavior = state.pads[vectorPad],
+          behavior.mode == .vector2 else {
+        return []
+    }
+
+    let runtime = state.padRuntime[vectorPad] ?? PadRuntimeState(currentValue: 0.5, secondaryValue: 0.5)
+    let x = max(0.0, min(1.0, runtime.currentValue))
+    let y = max(0.0, min(1.0, runtime.secondaryValue))
+
+    return [
+        .setLed(padId: ButtonId(x: 8, y: 1), color: y > 0.0001 ? LP.blue : LP.blueDim, blink: false),      // down
+        .setLed(padId: ButtonId(x: 8, y: 2), color: x > 0.0001 ? LP.orange : LP.orangeDim, blink: false),   // left
+        .setLed(padId: ButtonId(x: 8, y: 3), color: x < 0.9999 ? LP.orange : LP.orangeDim, blink: false),   // right
+        .setLed(padId: ButtonId(x: 8, y: 4), color: y < 0.9999 ? LP.blue : LP.blueDim, blink: false),       // up
+    ]
 }
 
 /// Render color selection - 32 colors in 4 rows x 8 columns (rows 0-3)

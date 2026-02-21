@@ -1,7 +1,34 @@
 import XCTest
 import ViewInspector
 @testable import SwiftVJApp
+import class SwiftVJCore.EffectEnvironment
+import protocol SwiftVJCore.LaunchpadEffectHandling
+import enum SwiftVJCore.OscArg
+import struct SwiftVJCore.OscEvent
+import struct SwiftVJCore.Track
 import SongRepository
+
+private actor LaunchpadHandlerSpy: LaunchpadEffectHandling {
+    private var receivedEvents: [OscEvent] = []
+
+    func start() async {}
+    func stop() async {}
+    func buttonPressed(x: Int, y: Int) async {}
+    func buttonReleased(x: Int, y: Int) async {}
+    func enterLearnMode() async {}
+    func exitLearnMode() async {}
+    func forceProgrammerMode() async {}
+    func flashAll() async {}
+    func rainbowPattern() async {}
+    func clearAll() async {}
+    func receiveOscEvent(_ event: OscEvent) async {
+        receivedEvents.append(event)
+    }
+
+    func snapshot() -> [OscEvent] {
+        receivedEvents
+    }
+}
 
 @MainActor
 final class SwiftVJAppUITests: XCTestCase {
@@ -148,5 +175,119 @@ final class SwiftVJAppUITests: XCTestCase {
         await waitForStateSync()
 
         XCTAssertEqual(appState.automationState.autoRecordPrefixes, ["/ledfx/", "/custom/"])
+    }
+
+    func testOutgoingLedFXOSCBridgeDispatchesLaunchpadEvent() async {
+        let appState = makeTestAppState()
+        let handler = LaunchpadHandlerSpy()
+        EffectEnvironment.shared.launchpadHandler = handler
+        defer { EffectEnvironment.shared.reset() }
+
+        appState.oscHub.outgoingMessageHandler?(
+            "magic",
+            "/ledfx/scene/strobe/0",
+            [.float(1.0)],
+            "ui"
+        )
+        await waitForStateSync()
+
+        let events = await handler.snapshot()
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.address, "/ledfx/scene/strobe/0")
+        XCTAssertEqual(events.first?.args, [.float(1.0)])
+    }
+
+    func testOutgoingLedFXOSCBridgeIgnoresAutomationReplaySource() async {
+        let appState = makeTestAppState()
+        let handler = LaunchpadHandlerSpy()
+        EffectEnvironment.shared.launchpadHandler = handler
+        defer { EffectEnvironment.shared.reset() }
+
+        appState.oscHub.outgoingMessageHandler?(
+            "magic",
+            "/ledfx/scene/strobe/0",
+            [.float(1.0)],
+            "automation-replay"
+        )
+        await waitForStateSync()
+
+        let events = await handler.snapshot()
+        XCTAssertTrue(events.isEmpty)
+    }
+
+    func testOutgoingLedFXOSCDoesNotRecordAutomationWithoutPlayback() async {
+        let appState = makeTestAppState()
+        let songID = SongID(artist: "Artist", title: "Manual Song")
+
+        appState.setAutomationEnabled(true)
+        appState.setAutomationAutoRecordEnabled(true)
+        appState.selectAutomationSong(songID)
+        await waitForStateSync()
+
+        appState.oscHub.outgoingMessageHandler?(
+            "magic",
+            "/ledfx/scene/strobe/0",
+            [.float(1.0)],
+            "ui"
+        )
+        await waitForStateSync()
+
+        let cues = appState.automationTimeline(for: songID)?.cues ?? []
+        XCTAssertTrue(cues.isEmpty)
+    }
+
+    func testSendLedFXActionDoesNotRecordWithoutPlayback() async {
+        let appState = makeTestAppState()
+        let songID = SongID(artist: "Artist", title: "Manual Song")
+
+        appState.setAutomationEnabled(true)
+        appState.setAutomationAutoRecordEnabled(true)
+        appState.selectAutomationSong(songID)
+        await waitForStateSync()
+
+        appState.sendLedFXAction(.activateScene("drop"))
+        await waitForStateSync()
+
+        let cues = appState.automationTimeline(for: songID)?.cues ?? []
+        XCTAssertTrue(cues.isEmpty)
+    }
+
+    func testSendLedFXActionRecordsToCurrentPlaybackSongWhenPlaying() async {
+        let appState = makeTestAppState()
+        let selectedSong = SongID(artist: "Artist", title: "Manual Song")
+        let playbackTrack = Track(artist: "DJ", title: "Live Track")
+        let playbackSong = SongID(artist: playbackTrack.artist, title: playbackTrack.title)
+
+        appState.setAutomationEnabled(true)
+        appState.setAutomationAutoRecordEnabled(true)
+        appState.selectAutomationSong(selectedSong)
+        appState.send(.playback(.trackChanged(playbackTrack)))
+        appState.send(.playback(.positionUpdated(position: 42, isPlaying: true)))
+        await waitForStateSync()
+
+        appState.sendLedFXAction(.activateScene("drop"))
+        await waitForStateSync()
+
+        let playbackCues = appState.automationTimeline(for: playbackSong)?.cues ?? []
+        XCTAssertEqual(playbackCues.count, 1)
+        XCTAssertEqual(playbackCues.first?.actionType, .ledfxActivateScene)
+        XCTAssertEqual(playbackCues.first?.value, "drop")
+        XCTAssertEqual(playbackCues.first?.source, "auto-ledfx")
+
+        let selectedCues = appState.automationTimeline(for: selectedSong)?.cues ?? []
+        XCTAssertTrue(selectedCues.isEmpty)
+    }
+
+    func testAutomationPlaybackEnableDefaultsOffAndCanBeEnabledPerSong() async {
+        let appState = makeTestAppState()
+        let songID = SongID(artist: "Artist", title: "Song")
+
+        appState.selectAutomationSong(songID)
+        await waitForStateSync()
+        XCTAssertFalse(appState.automationPlaybackEnabled(songID: songID))
+
+        appState.setAutomationPlaybackEnabled(songID: songID, enabled: true)
+        await waitForStateSync()
+        XCTAssertTrue(appState.automationPlaybackEnabled(songID: songID))
     }
 }

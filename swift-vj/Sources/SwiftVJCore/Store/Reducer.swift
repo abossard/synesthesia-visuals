@@ -799,6 +799,10 @@ public func uiReducer(
         state.oscDebugEnabled = enabled
         return .none
 
+    case .setOscAudioMessagesEnabled(let enabled):
+        state.oscAudioMessagesEnabled = enabled
+        return .none
+
     case .setOscFilter(let filter):
         state.oscFilter = filter
         return .none
@@ -1542,7 +1546,10 @@ public func automationReducer(
         let previous = state.lastPlaybackPositionBySongId[songKey] ?? position
         state.lastPlaybackPositionBySongId[songKey] = position
 
-        guard state.isEnabled, isPlaying, let timeline = state.timelineBySongId[songKey] else {
+        guard state.isEnabled,
+              isPlaying,
+              let timeline = state.timelineBySongId[songKey],
+              timeline.playbackEnabled else {
             return .none
         }
 
@@ -1631,7 +1638,8 @@ private func normalizedTimeline(_ timeline: SongAutomationTimeline) -> SongAutom
     return SongAutomationTimeline(
         cues: sortedCues,
         valueLanes: sortedLanes,
-        updatedAt: Date()
+        updatedAt: Date(),
+        playbackEnabled: timeline.playbackEnabled
     )
 }
 

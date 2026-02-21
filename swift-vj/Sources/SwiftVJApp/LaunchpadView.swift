@@ -409,6 +409,8 @@ func modeDisplayName(_ mode: PadMode?) -> String {
     case .push: return "Push"
     case .increment: return "Increment"
     case .decrement: return "Decrement"
+    case .colorCycle: return "Color Cycle"
+    case .vector2: return "Vector 2D"
     }
 }
 

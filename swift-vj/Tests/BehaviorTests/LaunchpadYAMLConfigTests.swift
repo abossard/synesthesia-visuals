@@ -550,6 +550,23 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
       XCTAssertEqual(config.bankName(1), "Presets")
       XCTAssertEqual(config.bankPurpose(0), "Live performance scenes")
     }
+
+    func test_bankRoles_includeMetaAndSceneControls() throws {
+        let config = try LaunchpadConfigLoader.loadBundled()
+
+        XCTAssertEqual(config.bankRole(5), .meta)
+        XCTAssertEqual(config.bankRole(6), .params)
+    }
+
+    func test_dynamicColorCyclePalette_loadedFromYAML() throws {
+        let config = try LaunchpadConfigLoader.loadBundled()
+
+        let palette = config.dynamic?.colorCyclePalette
+        XCTAssertNotNil(palette)
+        XCTAssertEqual(palette?.count, 12)
+        XCTAssertEqual(palette?.first?.name, "white")
+        XCTAssertEqual(palette?.first?.rgb, [1.0, 1.0, 1.0])
+    }
     
     // MARK: - DynamicGroupStore Tests
     
@@ -576,6 +593,24 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
         
         let items = await store.items(for: "$synesthesia/scenes")
         XCTAssertTrue(items.isEmpty)
+    }
+
+    func test_dynamicControlStore_itemsExcludeMetadata() async {
+        let store = DynamicControlStore()
+        await store.update(address: "/controls/meta/playbackmode", args: [.float(1.0)])
+        await store.update(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)])
+        await store.update(address: "/controls/meta/playbackmode/label", args: [.string("shuffle")])
+
+        let items = await store.items()
+        XCTAssertEqual(items, ["/controls/meta/playbackmode"])
+    }
+
+    func test_dynamicControlStore_metadataRemainsReadable() async {
+        let store = DynamicControlStore()
+        await store.update(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)])
+
+        let metadata = await store.value(address: "/controls/meta/playbackmode/numoptions")
+        XCTAssertEqual(metadata, [.int(4)])
     }
     
     func test_groupItemsAsync_staticGroup() async throws {

@@ -95,6 +95,16 @@ struct AutomationTimelineView: View {
                         .toggleStyle(.switch)
                     Toggle("Auto Record", isOn: appState.automationAutoRecordBinding)
                         .toggleStyle(.switch)
+                    if let songID = selectedSongID {
+                        Toggle(
+                            "Replay Selected Song",
+                            isOn: Binding(
+                                get: { appState.automationPlaybackEnabled(songID: songID) },
+                                set: { appState.setAutomationPlaybackEnabled(songID: songID, enabled: $0) }
+                            )
+                        )
+                        .toggleStyle(.switch)
+                    }
                     Spacer()
                     Text("Playhead: \(String(format: "%.2f", appState.playbackPosition))s")
                         .font(.caption.monospacedDigit())

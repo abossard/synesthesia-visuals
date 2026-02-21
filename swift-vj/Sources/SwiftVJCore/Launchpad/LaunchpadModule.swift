@@ -3,15 +3,14 @@
 // Unidirectional Data Flow: dispatches actions instead of callbacks
 //
 // Wires: MIDIManager → FSM → EffectExecutor
-// Auto-connects to real hardware - disabled when no device connected
-// NO MOCKING - requires real Launchpad hardware
+// Auto-connects to real hardware and keeps a UI simulation twin active.
 
 import Foundation
 
 /// Status of the Launchpad module
 public struct LaunchpadStatus: Sendable, Equatable {
     public let isEnabled: Bool         // True only when real device connected
-    public let isConnected: Bool       // Alias for isEnabled
+    public let isConnected: Bool       // True when hardware is connected or simulation twin is active
     public let deviceName: String?
     public let isLearnMode: Bool
     public let configuredPadCount: Int
@@ -31,8 +30,7 @@ public struct LaunchpadStatus: Sendable, Equatable {
     }
 }
 
-/// Launchpad controller module - requires real hardware
-/// Auto-enables when Launchpad connected, auto-disables when disconnected
+/// Launchpad controller module with shared state/effect path for hardware + UI simulation
 public final class LaunchpadModule: @unchecked Sendable {
     
     // MARK: - Components
@@ -42,6 +40,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     private var state: ControllerState
     private var rolesByBank: [Int: BankRole] = [:]
     private var dynamicRefreshEpochByBank: [Int: Int] = [:]
+    private var activeDynamicSceneName: String?
     private let stateQueue = DispatchQueue(label: "swiftvj.launchpad.state", qos: .userInitiated)
     private let stateQueueKey = DispatchSpecificKey<UInt8>()
     
@@ -49,6 +48,7 @@ public final class LaunchpadModule: @unchecked Sendable {
 
     /// Module is enabled only when real device is connected
     private(set) var isEnabled = false
+    private var simulationTwinActive = false
 
     // MARK: - Action Dispatcher (Unidirectional Data Flow)
 
@@ -82,6 +82,9 @@ public final class LaunchpadModule: @unchecked Sendable {
     @discardableResult
     public func start() -> Bool {
         let (currentState, connected): (ControllerState, Bool) = withStateSync {
+            simulationTwinActive = true
+            activeDynamicSceneName = nil
+
             // Load saved config (ready for when device connects)
             executor.loadConfig()
 
@@ -126,12 +129,15 @@ public final class LaunchpadModule: @unchecked Sendable {
 
         // Publish initial state/status so UI can act as a twin even without hardware.
         publishState(currentState, includeStatus: true)
+        refreshDynamicBanks()
         return connected
     }
     
     /// Stop the Launchpad module - disconnect and disable auto-reconnect
     public func stop() {
         withStateSync {
+            simulationTwinActive = false
+            activeDynamicSceneName = nil
             midi.disableAutoReconnect()
             if isEnabled {
                 midi.clearAllLeds()
@@ -145,10 +151,11 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Get current status
     public func getStatus() -> LaunchpadStatus {
         withStateSync {
-            LaunchpadStatus(
+            let connection = effectiveConnectionStatus()
+            return LaunchpadStatus(
                 isEnabled: isEnabled,
-                isConnected: midi.isConnected,
-                deviceName: midi.connectedDeviceName,
+                isConnected: connection.isConnected,
+                deviceName: connection.deviceName,
                 isLearnMode: state.learnState.phase != .idle,
                 configuredPadCount: state.pads.count
             )
@@ -194,8 +201,11 @@ public final class LaunchpadModule: @unchecked Sendable {
                 // Dispatch disconnection
                 let currentState = self.state
                 let statusSnapshot = self.makeStatusSnapshot(from: currentState)
+                let shouldEmitDisconnected = !self.simulationTwinActive
                 DispatchQueue.main.async { [weak self] in
-                    self?.dispatch?(.launchpad(.disconnected))
+                    if shouldEmitDisconnected {
+                        self?.dispatch?(.launchpad(.disconnected))
+                    }
                     self?.dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
                 }
             }
@@ -329,25 +339,36 @@ public final class LaunchpadModule: @unchecked Sendable {
     }
 
     private func makeStatusSnapshot(from snapshot: ControllerState) -> LaunchpadStatusSnapshot {
-        LaunchpadStatusSnapshot(
-            isConnected: midi.isConnected,
-            deviceName: midi.connectedDeviceName,
+        let connection = effectiveConnectionStatus()
+        return LaunchpadStatusSnapshot(
+            isConnected: connection.isConnected,
+            deviceName: connection.deviceName,
             activeBank: snapshot.activeBank,
             padCount: snapshot.pads.count,
             isLearnMode: snapshot.learnState.phase != .idle
         )
     }
 
+    private func effectiveConnectionStatus() -> (isConnected: Bool, deviceName: String?) {
+        let hardwareConnected = midi.isConnected
+        if hardwareConnected {
+            return (true, midi.connectedDeviceName)
+        }
+        if simulationTwinActive {
+            return (true, "Launchpad Simulator")
+        }
+        return (false, nil)
+    }
+
     private func isDynamicRole(_ role: BankRole) -> Bool {
-        role == .scenes || role == .scenes2 || role == .presets || role == .params
+        role == .scenes || role == .scenes2 || role == .presets || role == .params || role == .meta
     }
 
     // MARK: - Dynamic Banks
 
     private func refreshDynamicBanks(for banks: [Int]? = nil) {
-        // Keep offline UI twin deterministic: dynamic bank materialization only
-        // runs when hardware is connected/enabled.
-        guard withStateSync({ isEnabled }) else { return }
+        // Dynamic bank materialization feeds the shared state path for hardware + UI twin.
+        guard withStateSync({ isEnabled || simulationTwinActive }) else { return }
 
         let refreshRequests: [Int: (epoch: Int, page: Int, role: BankRole)] = withStateSync {
             let banksToRefresh = banks ?? Array(rolesByBank.keys)
@@ -369,6 +390,11 @@ public final class LaunchpadModule: @unchecked Sendable {
             let scenes = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
             let controls = await DynamicControlStore.shared.items()
             let presets = await DynamicGroupStore.shared.items(for: "$synesthesia/presets")
+            let activeScene = self.withStateSync { self.activeDynamicSceneName }
+            let sceneControls = self.sceneScopedControlAddresses(controls, activeScene: activeScene).sorted()
+            let metaControls = self.metaControlAddresses(controls).sorted()
+            let sceneTargets = self.collapseColorControls(in: sceneControls)
+            let metaTargets = self.collapseColorControls(in: metaControls)
 
             // Build behaviors per bank
             var updates: [Int: [ButtonId: PadBehavior]] = [:]
@@ -401,13 +427,23 @@ public final class LaunchpadModule: @unchecked Sendable {
                     updates[bank] = dynamicPads
                 case .params:
                     let pageSize = 64
-                    let totalPages = max(1, Int(ceil(Double(controls.count) / Double(pageSize))))
+                    let totalPages = max(1, Int(ceil(Double(sceneTargets.count) / Double(pageSize))))
                     pageCounts[bank] = totalPages
                     let currentPage = min(request.page, totalPages - 1)
                     let start = currentPage * pageSize
-                    let end = min(start + pageSize, controls.count)
-                    let pageControls = start < end ? Array(controls[start..<end]) : []
-                    let dynamicPads = await generateParamBehaviors(addresses: pageControls)
+                    let end = min(start + pageSize, sceneTargets.count)
+                    let pageControls = start < end ? Array(sceneTargets[start..<end]) : []
+                    let dynamicPads = await generateParamBehaviors(targets: pageControls)
+                    updates[bank] = dynamicPads
+                case .meta:
+                    let pageSize = 64
+                    let totalPages = max(1, Int(ceil(Double(metaTargets.count) / Double(pageSize))))
+                    pageCounts[bank] = totalPages
+                    let currentPage = min(request.page, totalPages - 1)
+                    let start = currentPage * pageSize
+                    let end = min(start + pageSize, metaTargets.count)
+                    let pageControls = start < end ? Array(metaTargets[start..<end]) : []
+                    let dynamicPads = await generateParamBehaviors(targets: pageControls)
                     updates[bank] = dynamicPads
                 default:
                     break
@@ -417,7 +453,7 @@ public final class LaunchpadModule: @unchecked Sendable {
             let finalUpdates = updates
             let finalPageCounts = pageCounts
             self.onStateQueue {
-                guard self.isEnabled else { return }
+                guard self.isEnabled || self.simulationTwinActive else { return }
                 var appliedBanks: [Int] = []
                 for (bank, request) in refreshRequests {
                     guard self.dynamicRefreshEpochByBank[bank] == request.epoch else {
@@ -433,7 +469,17 @@ public final class LaunchpadModule: @unchecked Sendable {
                     let pads = finalUpdates[bank] ?? [:]
                     // Always apply, even if empty, to avoid stale pads from older refreshes.
                     self.state.bankPads[bank] = pads
-                    self.state.bankPadRuntime[bank] = pads.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
+                    self.state.bankPadRuntime[bank] = pads.mapValues { self.initialRuntimeState(for: $0) }
+                    if let activeVectorPad = self.state.bankActiveVectorPad[bank] ?? nil,
+                       let activeBehavior = pads[activeVectorPad],
+                       activeBehavior.mode == .vector2 {
+                        var runtime = self.state.bankPadRuntime[bank]?[activeVectorPad] ?? self.initialRuntimeState(for: activeBehavior)
+                        runtime.isActive = true
+                        runtime.currentColor = activeBehavior.activeColor
+                        self.state.bankPadRuntime[bank]?[activeVectorPad] = runtime
+                    } else {
+                        self.state.bankActiveVectorPad[bank] = nil
+                    }
                     appliedBanks.append(bank)
                 }
 
@@ -503,25 +549,49 @@ public final class LaunchpadModule: @unchecked Sendable {
         return result
     }
 
-    private func generateParamBehaviors(addresses: [String]) async -> [ButtonId: PadBehavior] {
+    private enum DynamicControlTarget: Sendable {
+        case scalar(address: String)
+        case color(base: String, channels: [String])
+        case vector2(base: String, xAddress: String, yAddress: String)
+    }
+
+    private struct DynamicColorPaletteEntry: Sendable {
+        let rgb: [Float]
+        let ledColor: Int
+    }
+
+    private func generateParamBehaviors(targets: [DynamicControlTarget]) async -> [ButtonId: PadBehavior] {
         var result: [ButtonId: PadBehavior] = [:]
-        for (idx, address) in addresses.enumerated() {
+        let palette = configuredColorCyclePalette()
+        for (idx, target) in targets.enumerated() {
             let x = idx % 8
             let y = idx / 8
             let padId = ButtonId(x: x, y: y)
-            let label = address.split(separator: "/").last.map(String.init) ?? address
-            let args = (await awaitDynamicControlValue(address: address)) ?? []
-            let behavior = PadBehavior(
-                padId: padId,
-                mode: .push,
-                group: .custom,
-                idleColor: LP.blueDim,
-                activeColor: LP.blue,
-                label: label,
-                oscOn: nil,
-                oscOff: nil,
-                oscAction: OscCommand(address: address, args: args)
-            )
+
+            let behavior: PadBehavior
+            switch target {
+            case .scalar(let address):
+                let args = (await awaitDynamicControlValue(address: address)) ?? []
+                behavior = await inferParamBehavior(
+                    address: address,
+                    args: args,
+                    padId: padId
+                )
+            case .color(let base, let channels):
+                behavior = await makeColorCycleBehavior(
+                    baseAddress: base,
+                    channels: channels,
+                    palette: palette,
+                    padId: padId
+                )
+            case .vector2(let base, let xAddress, let yAddress):
+                behavior = await makeVector2Behavior(
+                    baseAddress: base,
+                    xAddress: xAddress,
+                    yAddress: yAddress,
+                    padId: padId
+                )
+            }
             result[padId] = behavior
         }
         return result
@@ -530,10 +600,461 @@ public final class LaunchpadModule: @unchecked Sendable {
     private func awaitDynamicControlValue(address: String) async -> [OscArg]? {
         await DynamicControlStore.shared.value(address: address)
     }
+
+    private func configuredColorCyclePalette() -> [DynamicColorPaletteEntry] {
+        if let yaml = executor.yamlConfig,
+           let configured = yaml.dynamic?.colorCyclePalette,
+           !configured.isEmpty {
+            let mapped = configured.compactMap { entry -> DynamicColorPaletteEntry? in
+                guard entry.rgb.count == 3 else { return nil }
+                let rgb = entry.rgb.map { Float($0) }
+                let ledColor = entry.ledColor.map(yaml.color) ?? LP.white
+                return DynamicColorPaletteEntry(rgb: rgb, ledColor: ledColor)
+            }
+            if !mapped.isEmpty {
+                return mapped
+            }
+        }
+        return Self.defaultColorCyclePalette
+    }
+
+    private static let defaultColorCyclePalette: [DynamicColorPaletteEntry] = [
+        DynamicColorPaletteEntry(rgb: [1.0, 1.0, 1.0], ledColor: LP.white),
+        DynamicColorPaletteEntry(rgb: [1.0, 0.2, 0.2], ledColor: LP.red),
+        DynamicColorPaletteEntry(rgb: [1.0, 0.5, 0.1], ledColor: LP.orange),
+        DynamicColorPaletteEntry(rgb: [1.0, 0.9, 0.2], ledColor: LP.yellow),
+        DynamicColorPaletteEntry(rgb: [0.6, 1.0, 0.2], ledColor: LP.green),
+        DynamicColorPaletteEntry(rgb: [0.2, 0.9, 0.3], ledColor: LP.green),
+        DynamicColorPaletteEntry(rgb: [0.2, 0.9, 1.0], ledColor: LP.cyan),
+        DynamicColorPaletteEntry(rgb: [0.2, 0.4, 1.0], ledColor: LP.blue),
+        DynamicColorPaletteEntry(rgb: [0.4, 0.3, 1.0], ledColor: LP.blue),
+        DynamicColorPaletteEntry(rgb: [0.7, 0.3, 1.0], ledColor: LP.purple),
+        DynamicColorPaletteEntry(rgb: [1.0, 0.3, 0.9], ledColor: LP.pink),
+        DynamicColorPaletteEntry(rgb: [1.0, 0.5, 0.7], ledColor: LP.pink),
+    ]
+
+    private func makeColorCycleBehavior(
+        baseAddress: String,
+        channels: [String],
+        palette: [DynamicColorPaletteEntry],
+        padId: ButtonId
+    ) async -> PadBehavior {
+        let label = dynamicControlLabel(for: baseAddress)
+        let rgbAddresses = channels.sorted { lhs, rhs in
+            colorChannelOrder(lhs) < colorChannelOrder(rhs)
+        }
+
+        var currentRGB: [Float] = []
+        currentRGB.reserveCapacity(rgbAddresses.count)
+        for address in rgbAddresses {
+            let args = await awaitDynamicControlValue(address: address) ?? []
+            currentRGB.append(firstNumericArg(args) ?? 0.0)
+        }
+        let nearestIndex = nearestPaletteIndex(for: currentRGB, palette: palette)
+        let ledColors = palette.map(\.ledColor)
+        let paletteValues = palette.map(\.rgb)
+        let idleColor = ledColors.indices.contains(nearestIndex) ? ledColors[nearestIndex] : LP.white
+
+        return PadBehavior(
+            padId: padId,
+            mode: .colorCycle,
+            group: .custom,
+            idleColor: idleColor,
+            activeColor: idleColor,
+            label: label,
+            colorCycleAddresses: rgbAddresses,
+            colorCyclePalette: paletteValues,
+            colorCycleLedColors: ledColors,
+            colorCycleIndex: nearestIndex
+        )
+    }
+
+    private func makeVector2Behavior(
+        baseAddress: String,
+        xAddress: String,
+        yAddress: String,
+        padId: ButtonId
+    ) async -> PadBehavior {
+        let label = dynamicControlLabel(for: baseAddress)
+        let xArgs = await awaitDynamicControlValue(address: xAddress) ?? []
+        let yArgs = await awaitDynamicControlValue(address: yAddress) ?? []
+        let xValue = clampUnit(firstNumericArg(xArgs) ?? 0.5)
+        let yValue = clampUnit(firstNumericArg(yArgs) ?? 0.5)
+
+        return PadBehavior(
+            padId: padId,
+            mode: .vector2,
+            group: .custom,
+            idleColor: LP.cyanDim,
+            activeColor: LP.cyan,
+            label: label,
+            step: 0.1,
+            minValue: 0.0,
+            maxValue: 1.0,
+            vector2Addresses: [xAddress, yAddress],
+            vector2Current: [xValue, yValue],
+            vector2Default: [0.5, 0.5]
+        )
+    }
+
+    private func nearestPaletteIndex(for rgb: [Float], palette: [DynamicColorPaletteEntry]) -> Int {
+        guard rgb.count == 3, !palette.isEmpty else { return 0 }
+        var bestIndex = 0
+        var bestDistance = Float.greatestFiniteMagnitude
+        for (index, entry) in palette.enumerated() where entry.rgb.count == 3 {
+            let dr = rgb[0] - entry.rgb[0]
+            let dg = rgb[1] - entry.rgb[1]
+            let db = rgb[2] - entry.rgb[2]
+            let distance = dr * dr + dg * dg + db * db
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = index
+            }
+        }
+        return bestIndex
+    }
+
+    private func colorChannelOrder(_ address: String) -> Int {
+        if address.hasSuffix("/r") { return 0 }
+        if address.hasSuffix("/g") { return 1 }
+        if address.hasSuffix("/b") { return 2 }
+        return 99
+    }
+
+    private enum DynamicParamMode {
+        case toggle
+        case stepped(min: Float, max: Float, step: Float, current: Float)
+        case enumerated(optionCount: Int, current: Float, normalized: Bool)
+        case trigger
+    }
+
+    private func inferParamBehavior(address: String, args: [OscArg], padId: ButtonId) async -> PadBehavior {
+        let mode = await inferParamMode(address: address, args: args)
+        let label = dynamicControlLabel(for: address)
+
+        switch mode {
+        case .toggle:
+            return PadBehavior(
+                padId: padId,
+                mode: .toggle,
+                group: .custom,
+                idleColor: LP.greenDim,
+                activeColor: LP.green,
+                label: label,
+                oscOn: OscCommand(address: address, args: [.float(1.0)]),
+                oscOff: OscCommand(address: address, args: [.float(0.0)])
+            )
+        case .stepped(let min, let max, let step, let current):
+            return PadBehavior(
+                padId: padId,
+                mode: .increment,
+                group: .custom,
+                idleColor: LP.orangeDim,
+                activeColor: LP.orange,
+                label: label,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: address, args: [.float(current)]),
+                step: step,
+                minValue: min,
+                maxValue: max
+            )
+        case .enumerated(let optionCount, let current, let normalized):
+            let maxIndex = max(1, optionCount - 1)
+            let step = normalized ? (1.0 / Float(maxIndex)) : 1.0
+            let maxValue = normalized ? 1.0 : Float(maxIndex)
+            return PadBehavior(
+                padId: padId,
+                mode: .increment,
+                group: .custom,
+                idleColor: LP.purpleDim,
+                activeColor: LP.purple,
+                label: label,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: address, args: [.float(current)]),
+                step: step,
+                minValue: 0.0,
+                maxValue: maxValue,
+                enumOptionCount: optionCount
+            )
+        case .trigger:
+            return PadBehavior(
+                padId: padId,
+                mode: .oneShot,
+                group: .custom,
+                idleColor: LP.blueDim,
+                activeColor: LP.blue,
+                label: label,
+                oscOn: nil,
+                oscOff: nil,
+                oscAction: OscCommand(address: address, args: args)
+            )
+        }
+    }
+
+    private func inferParamMode(address: String, args: [OscArg]) async -> DynamicParamMode {
+        if address.lowercased().contains("reset") {
+            return .trigger
+        }
+
+        if let optionCount = await enumOptionCount(for: address), optionCount > 1 {
+            let currentRaw = firstNumericArg(args) ?? 0.0
+            if isNormalizedEnumValue(currentRaw) {
+                return .enumerated(
+                    optionCount: optionCount,
+                    current: max(0.0, min(1.0, currentRaw)),
+                    normalized: true
+                )
+            }
+
+            let maxIndex = Float(max(0, optionCount - 1))
+            return .enumerated(
+                optionCount: optionCount,
+                current: max(0.0, min(maxIndex, currentRaw.rounded())),
+                normalized: false
+            )
+        }
+
+        if args.count == 1, let value = firstNumericArg(args) {
+            if isBinaryValue(value) {
+                return .toggle
+            }
+            if (0.0...1.0).contains(value) {
+                return .stepped(min: 0.0, max: 1.0, step: 0.05, current: value)
+            }
+            let range = max(1.0, abs(value))
+            return .stepped(
+                min: -range,
+                max: range,
+                step: max(0.1, range * 0.05),
+                current: value
+            )
+        }
+
+        return .trigger
+    }
+
+    private func enumOptionCount(for address: String) async -> Int? {
+        guard let args = await awaitDynamicControlValue(address: "\(address)/numoptions"),
+              let raw = firstNumericArg(args) else {
+            return nil
+        }
+        return Int(raw.rounded())
+    }
+
+    private func firstNumericArg(_ args: [OscArg]) -> Float? {
+        guard let first = args.first else { return nil }
+        return numericValue(from: first)
+    }
+
+    private func numericValue(from arg: OscArg) -> Float? {
+        switch arg {
+        case .float(let value): return value
+        case .int(let value): return Float(value)
+        case .bool(let value): return value ? 1.0 : 0.0
+        case .string: return nil
+        }
+    }
+
+    private func isBinaryValue(_ value: Float) -> Bool {
+        abs(value) < 0.0001 || abs(value - 1.0) < 0.0001
+    }
+
+    private func isNormalizedEnumValue(_ value: Float) -> Bool {
+        value >= -0.0001 && value <= 1.0001
+    }
+
+    private func clampUnit(_ value: Float) -> Float {
+        max(0.0, min(1.0, value))
+    }
+
+    private func dynamicControlLabel(for address: String) -> String {
+        let parts = address.split(separator: "/")
+        guard parts.count >= 3 else { return address }
+
+        if parts[1] == "meta" || parts[1] == "global" {
+            return parts.suffix(2).joined(separator: "/")
+        }
+
+        if parts.count >= 4 {
+            return String(parts[3])
+        }
+
+        return String(parts.last ?? "")
+    }
+
+    private func initialRuntimeState(for behavior: PadBehavior) -> PadRuntimeState {
+        var runtime = PadRuntimeState(currentColor: behavior.idleColor)
+        if behavior.mode == .colorCycle {
+            runtime.isActive = true
+            runtime.currentValue = Float(behavior.colorCycleIndex)
+            return runtime
+        }
+        if behavior.mode == .vector2 {
+            let current = behavior.vector2Current.count == 2 ? behavior.vector2Current : [0.5, 0.5]
+            runtime.currentValue = clampUnit(current[0])
+            runtime.secondaryValue = clampUnit(current[1])
+            return runtime
+        }
+        if (behavior.mode == .increment || behavior.mode == .decrement),
+           let seedArg = behavior.oscAction?.args.first,
+           let seedValue = numericValue(from: seedArg) {
+            runtime.currentValue = seedValue
+        }
+        return runtime
+    }
+
+    private func sceneScopedControlAddresses(_ controls: [String], activeScene: String?) -> [String] {
+        controls.filter { address in
+            guard let scope = controlScope(for: address) else { return false }
+            if scope == "meta" || scope == "global" {
+                return false
+            }
+            if let activeScene, !activeScene.isEmpty {
+                return scope == activeScene
+            }
+            return true
+        }
+    }
+
+    private func metaControlAddresses(_ controls: [String]) -> [String] {
+        controls.filter { address in
+            guard let scope = controlScope(for: address) else { return false }
+            return scope == "meta" || scope == "global"
+        }
+    }
+
+    private func collapseColorControls(in addresses: [String]) -> [DynamicControlTarget] {
+        var colorGroupChannels: [String: Set<String>] = [:]
+        var vectorGroupAxes: [String: Set<String>] = [:]
+        for address in addresses {
+            guard let base = colorControlBase(for: address),
+                  let channel = colorChannel(for: address) else {
+                if let vectorBase = vectorControlBase(for: address),
+                   let axis = vectorAxis(for: address) {
+                    vectorGroupAxes[vectorBase, default: []].insert(axis)
+                }
+                continue
+            }
+            colorGroupChannels[base, default: []].insert(channel)
+        }
+
+        var result: [DynamicControlTarget] = []
+        var emittedBases: Set<String> = []
+        var emittedVectorBases: Set<String> = []
+        for address in addresses {
+            if let base = colorControlBase(for: address),
+               let channels = colorGroupChannels[base] {
+                guard !emittedBases.contains(base) else { continue }
+                emittedBases.insert(base)
+                if channels == Set(["r", "g", "b"]) {
+                    result.append(.color(base: base, channels: ["\(base)/r", "\(base)/g", "\(base)/b"]))
+                } else {
+                    let ordered = channels.sorted()
+                    for channel in ordered {
+                        result.append(.scalar(address: "\(base)/\(channel)"))
+                    }
+                }
+            } else if let vectorBase = vectorControlBase(for: address),
+                      let axes = vectorGroupAxes[vectorBase] {
+                guard !emittedVectorBases.contains(vectorBase) else { continue }
+                emittedVectorBases.insert(vectorBase)
+                if axes == Set(["x", "y"]) {
+                    result.append(
+                        .vector2(
+                            base: vectorBase,
+                            xAddress: "\(vectorBase)/x",
+                            yAddress: "\(vectorBase)/y"
+                        )
+                    )
+                } else {
+                    let ordered = axes.sorted()
+                    for axis in ordered {
+                        result.append(.scalar(address: "\(vectorBase)/\(axis)"))
+                    }
+                }
+            } else {
+                result.append(.scalar(address: address))
+            }
+        }
+        return result
+    }
+
+    private func colorControlBase(for address: String) -> String? {
+        let parts = address.split(separator: "/")
+        guard parts.count >= 4, parts[0] == "controls" else { return nil }
+        let channel = parts.last.map(String.init) ?? ""
+        guard channel == "r" || channel == "g" || channel == "b" else { return nil }
+        return "/" + parts.dropLast().joined(separator: "/")
+    }
+
+    private func colorChannel(for address: String) -> String? {
+        let channel = address.split(separator: "/").last.map(String.init)
+        guard channel == "r" || channel == "g" || channel == "b" else { return nil }
+        return channel
+    }
+
+    private func vectorControlBase(for address: String) -> String? {
+        let parts = address.split(separator: "/")
+        guard parts.count >= 4, parts[0] == "controls" else { return nil }
+        let axis = parts.last.map(String.init) ?? ""
+        guard axis == "x" || axis == "y" else { return nil }
+        return "/" + parts.dropLast().joined(separator: "/")
+    }
+
+    private func vectorAxis(for address: String) -> String? {
+        let axis = address.split(separator: "/").last.map(String.init)
+        guard axis == "x" || axis == "y" else { return nil }
+        return axis
+    }
+
+    private func dynamicControlSortKey(for address: String, activeScene: String?) -> (Int, String) {
+        guard let scope = controlScope(for: address) else { return (3, address) }
+        if let activeScene, scope == activeScene {
+            return (0, address)
+        }
+        if scope == "meta" {
+            return (1, address)
+        }
+        if scope == "global" {
+            return (2, address)
+        }
+        return (3, address)
+    }
+
+    private func controlScope(for address: String) -> String? {
+        let parts = address.split(separator: "/")
+        guard parts.count >= 3, parts[0] == "controls" else { return nil }
+        return String(parts[1])
+    }
+
+    private func shouldTrackDynamicControl(address: String) -> Bool {
+        guard let scope = controlScope(for: address) else { return false }
+        if scope == "meta" || scope == "global" {
+            return true
+        }
+        guard let activeDynamicSceneName, !activeDynamicSceneName.isEmpty else {
+            return true
+        }
+        return scope == activeDynamicSceneName
+    }
+
+    private func sceneName(from event: OscEvent) -> String? {
+        let parts = event.address.split(separator: "/")
+        guard parts.count >= 2, parts[0] == "scenes" else { return nil }
+        if parts[1] == "select" {
+            guard let firstArg = event.args.first, case .string(let selected) = firstArg else {
+                return nil
+            }
+            return selected.isEmpty ? nil : selected
+        }
+        return String(parts[1])
+    }
     
     // MARK: - Learn Mode
     
-    /// Enter learn mode (requires device connected)
+    /// Enter learn mode (available for hardware and UI simulation twin)
     public func startLearnMode() {
         onStateQueue { [weak self] in
             guard let self else { return }
@@ -563,22 +1084,31 @@ public final class LaunchpadModule: @unchecked Sendable {
     public func receiveOscEvent(_ event: OscEvent) {
         // Capture dynamic scenes/controls
         if event.address.hasPrefix("/controls/") {
-            Task {
-                await DynamicControlStore.shared.update(address: event.address, args: event.args)
+            let shouldTrack = withStateSync { shouldTrackDynamicControl(address: event.address) }
+            if shouldTrack {
+                Task { [weak self] in
+                    await DynamicControlStore.shared.update(address: event.address, args: event.args)
+                    guard let self else { return }
+                    let controlBanks = self.withStateSync {
+                        self.rolesByBank.filter { $0.value == .params || $0.value == .meta }.map { $0.key }
+                    }
+                    if !controlBanks.isEmpty { self.refreshDynamicBanks(for: controlBanks) }
+                }
             }
-            let paramsBanks = withStateSync { rolesByBank.filter { $0.value == .params }.map { $0.key } }
-            if !paramsBanks.isEmpty { refreshDynamicBanks(for: paramsBanks) }
         }
-        if event.address.hasPrefix("/scenes/") {
-            let name = event.address.components(separatedBy: "/").last ?? ""
-            if !name.isEmpty {
-                Task {
+        if event.address.hasPrefix("/scenes/"), let name = sceneName(from: event), !name.isEmpty {
+            withStateSync { activeDynamicSceneName = name }
+            Task { [weak self] in
+                guard let self else { return }
+                await DynamicControlStore.shared.clearSceneScopedControls()
+                let paramsBanks = self.withStateSync { self.rolesByBank.filter { $0.value == .params }.map { $0.key } }
+                if !paramsBanks.isEmpty { self.refreshDynamicBanks(for: paramsBanks) }
+
                     var items = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
                     if !items.contains(name) { items.append(name) }
                     await DynamicGroupStore.shared.update(source: "$synesthesia/scenes", items: items)
                     let sceneBanks = self.withStateSync { self.rolesByBank.filter { $0.value == .scenes || $0.value == .scenes2 }.map { $0.key } }
-                    if !sceneBanks.isEmpty { refreshDynamicBanks(for: sceneBanks) }
-                }
+                    if !sceneBanks.isEmpty { self.refreshDynamicBanks(for: sceneBanks) }
             }
         }
         if event.address.hasPrefix("/presets/") {
@@ -596,9 +1126,21 @@ public final class LaunchpadModule: @unchecked Sendable {
 
         onStateQueue { [weak self] in
             guard let self else { return }
-            let result = handleOscEvent(self.state, event: event)
-            self.state = result.state
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
+            var workingState = self.state
+            var combinedEffects: [LaunchpadEffect] = []
+
+            if workingState.learnState.phase == .config {
+                let captureResult = captureOscEvent(workingState, event: event)
+                workingState = captureResult.state
+                combinedEffects.append(contentsOf: captureResult.effects)
+            }
+
+            let syncResult = handleOscEvent(workingState, event: event)
+            workingState = syncResult.state
+            combinedEffects.append(contentsOf: syncResult.effects)
+
+            self.state = workingState
+            let effectsToExecute = self.mergedEffectsWithRender(from: combinedEffects)
             let currentState = self.state
             self.publishState(currentState, includeStatus: false)
             self.executor.executeAll(effectsToExecute)

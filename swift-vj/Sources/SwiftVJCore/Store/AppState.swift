@@ -684,6 +684,9 @@ public struct UISubState: Equatable, Sendable {
     /// Whether OSC debug is enabled
     public var oscDebugEnabled: Bool
 
+    /// Whether audio OSC should be included in debug capture
+    public var oscAudioMessagesEnabled: Bool
+
     /// Shader catalog UI workflow state
     public var shaderCatalog: ShaderCatalogSubState
 
@@ -696,6 +699,7 @@ public struct UISubState: Equatable, Sendable {
         oscMessageCount: Int = 0,
         oscFilter: String = "",
         oscDebugEnabled: Bool = false,
+        oscAudioMessagesEnabled: Bool = false,
         shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
     ) {
         self.logEntries = logEntries
@@ -703,6 +707,7 @@ public struct UISubState: Equatable, Sendable {
         self.oscMessageCount = oscMessageCount
         self.oscFilter = oscFilter
         self.oscDebugEnabled = oscDebugEnabled
+        self.oscAudioMessagesEnabled = oscAudioMessagesEnabled
         self.shaderCatalog = shaderCatalog
     }
 
@@ -718,6 +723,7 @@ public struct UISubState: Equatable, Sendable {
     /// Record an OSC message
     public mutating func recordOSC(_ address: String, args: [String]) {
         guard oscDebugEnabled else { return }
+        guard oscAudioMessagesEnabled || !address.hasPrefix("/audio/") else { return }
         guard oscFilter.isEmpty || address.localizedCaseInsensitiveContains(oscFilter) else { return }
         let entry = OSCLogEntryState(address: address, args: args, timestamp: Date())
         oscMessages[address] = entry
@@ -1196,15 +1202,41 @@ public struct SongAutomationTimeline: Equatable, Codable, Sendable {
     public var cues: [AutomationCue]
     public var valueLanes: [AutomationValueLane]
     public var updatedAt: Date
+    public var playbackEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case cues
+        case valueLanes
+        case updatedAt
+        case playbackEnabled
+    }
 
     public init(
         cues: [AutomationCue] = [],
         valueLanes: [AutomationValueLane] = [],
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        playbackEnabled: Bool = false
     ) {
         self.cues = cues
         self.valueLanes = valueLanes
         self.updatedAt = updatedAt
+        self.playbackEnabled = playbackEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cues = try container.decodeIfPresent([AutomationCue].self, forKey: .cues) ?? []
+        valueLanes = try container.decodeIfPresent([AutomationValueLane].self, forKey: .valueLanes) ?? []
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        playbackEnabled = try container.decodeIfPresent(Bool.self, forKey: .playbackEnabled) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cues, forKey: .cues)
+        try container.encode(valueLanes, forKey: .valueLanes)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(playbackEnabled, forKey: .playbackEnabled)
     }
 
     public static let empty = SongAutomationTimeline()

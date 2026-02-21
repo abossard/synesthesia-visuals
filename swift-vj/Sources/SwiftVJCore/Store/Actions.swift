@@ -301,6 +301,9 @@ public enum UIAction: Sendable {
     /// Toggle OSC debug mode
     case setOscDebugEnabled(Bool)
 
+    /// Include audio OSC messages in debug capture
+    case setOscAudioMessagesEnabled(Bool)
+
     /// Set OSC filter
     case setOscFilter(String)
 
@@ -862,6 +865,7 @@ extension UIAction: CustomStringConvertible {
         case .oscMessageReceived(let address, _): return "oscMessageReceived(\(address))"
         case .clearOscMessages: return "clearOscMessages"
         case .setOscDebugEnabled(let enabled): return "setOscDebugEnabled(\(enabled))"
+        case .setOscAudioMessagesEnabled(let enabled): return "setOscAudioMessagesEnabled(\(enabled))"
         case .setOscFilter(let filter): return "setOscFilter(\(filter))"
         case .setShaderCatalogSearchText(let query): return "setShaderCatalogSearchText(\(query))"
         case .setShaderCatalogFolder(let folder): return "setShaderCatalogFolder(\(folder))"

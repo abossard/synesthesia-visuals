@@ -120,8 +120,9 @@ public func selectPadForConfig(_ state: ControllerState, padId: ButtonId) -> FSM
 /// Strategy:
 /// - `/scenes/*`: Keep the latest scene (replaces previous)
 /// - `/controls/*`: Group by address, keep latest value per control
+/// - `/ledfx/*`: Group by address, keep latest value per control
 /// - All captured OSC enabled (they form complete state)
-/// 
+///
 /// This way: scene + preset selection = scene + all final control values
 public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMResult {
     guard state.learnState.phase == .config else {
@@ -136,8 +137,9 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
     // Only capture scenes and controls (what Synesthesia actually outputs)
     let isScene = event.address.hasPrefix("/scenes/")
     let isControl = event.address.hasPrefix("/controls/")
-    
-    guard isScene || isControl else {
+    let isLedFX = event.address.hasPrefix("/ledfx/")
+
+    guard isScene || isControl || isLedFX else {
         return FSMResult(state: state)
     }
     
@@ -165,17 +167,17 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
         )
     }
     
-    if isControl {
-        // Control: replace existing with same address (keep latest value)
+    if isControl || isLedFX {
+        // Control/LedFX: replace existing with same address (keep latest value)
         if let existingIndex = newState.learnState.capturedOsc.firstIndex(where: { $0.command.address == event.address }) {
-            // Update existing control with new value
+            // Update existing command with new value
             newState.learnState.capturedOsc[existingIndex] = CapturedOsc(
                 command: event.toCommand(),
                 priority: PRIORITY_CONTROL,
                 isEnabled: true
             )
         } else {
-            // New control address
+            // New command address
             let captured = CapturedOsc(
                 command: event.toCommand(),
                 priority: PRIORITY_CONTROL,
@@ -183,10 +185,11 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
             )
             newState.learnState.capturedOsc.append(captured)
         }
-        
+
+        let category = isLedFX ? "LedFX" : "Control"
         return FSMResult(
             state: newState,
-            effects: [.log(message: "Control: \(event.address)", level: .debug)]
+            effects: [.log(message: "\(category): \(event.address)", level: .debug)]
         )
     }
     
@@ -274,6 +277,11 @@ public func handlePadPress(_ state: ControllerState, padId: ButtonId) -> FSMResu
             state: newState,
             effects: [.setLed(padId: padId, color: LP.white, blink: false)]
         )
+    }
+
+    // Vector2 side-row nudges (rows 1-4) when a vector target is active.
+    if let vectorNudgeResult = handleVectorNudgePress(state, padId: padId) {
+        return vectorNudgeResult
     }
     
     // Page button - advance page within bank pageCount
@@ -377,6 +385,10 @@ public func handleNormalPress(_ state: ControllerState, padId: ButtonId) -> FSMR
         return handleIncrementPress(state, padId: padId, behavior: behavior, isIncrement: true)
     case .decrement:
         return handleIncrementPress(state, padId: padId, behavior: behavior, isIncrement: false)
+    case .colorCycle:
+        return handleColorCyclePress(state, padId: padId, behavior: behavior)
+    case .vector2:
+        return handleVector2Press(state, padId: padId, behavior: behavior)
     }
 }
 
@@ -512,6 +524,193 @@ private func handleOneShotPress(_ state: ControllerState, padId: ButtonId, behav
     return FSMResult(state: newState, effects: effects)
 }
 
+private func handleColorCyclePress(_ state: ControllerState, padId: ButtonId, behavior: PadBehavior) -> FSMResult {
+    guard behavior.colorCycleAddresses.count == 3,
+          !behavior.colorCyclePalette.isEmpty else {
+        return FSMResult(state: state)
+    }
+
+    var newState = state
+    var effects: [LaunchpadEffect] = []
+    let paletteCount = behavior.colorCyclePalette.count
+
+    let currentRuntime = state.padRuntime[padId] ?? PadRuntimeState(
+        isActive: true,
+        currentColor: behavior.idleColor,
+        currentValue: Float(behavior.colorCycleIndex)
+    )
+    let currentIndex = max(0, min(paletteCount - 1, Int(currentRuntime.currentValue.rounded())))
+    let delta = state.isShiftHeld ? -1 : 1
+    var nextIndex = (currentIndex + delta) % paletteCount
+    if nextIndex < 0 { nextIndex += paletteCount }
+
+    let rgb = behavior.colorCyclePalette[nextIndex]
+    guard rgb.count == 3 else { return FSMResult(state: state) }
+
+    let ledColor = behavior.colorCycleLedColors.indices.contains(nextIndex)
+        ? behavior.colorCycleLedColors[nextIndex]
+        : behavior.activeColor
+
+    newState.padRuntime[padId] = PadRuntimeState(
+        isActive: true,
+        isOn: false,
+        currentColor: ledColor,
+        currentValue: Float(nextIndex)
+    )
+    effects.append(.setLed(padId: padId, color: ledColor, blink: false))
+
+    effects.append(.sendOsc(OscCommand(address: behavior.colorCycleAddresses[0], args: [.float(rgb[0])])))
+    effects.append(.sendOsc(OscCommand(address: behavior.colorCycleAddresses[1], args: [.float(rgb[1])])))
+    effects.append(.sendOsc(OscCommand(address: behavior.colorCycleAddresses[2], args: [.float(rgb[2])])))
+    effects.append(.log(message: "\(behavior.label): palette \(nextIndex + 1)/\(paletteCount)", level: .debug))
+
+    return FSMResult(state: newState, effects: effects)
+}
+
+private enum VectorDirection {
+    case left
+    case right
+    case up
+    case down
+}
+
+private func handleVector2Press(_ state: ControllerState, padId: ButtonId, behavior: PadBehavior) -> FSMResult {
+    guard behavior.vector2Addresses.count == 2 else {
+        return FSMResult(state: state)
+    }
+
+    var newState = state
+    var effects: [LaunchpadEffect] = []
+    let runtime = state.padRuntime[padId] ?? vectorRuntimeSeed(behavior)
+    let defaults = vectorDefaults(for: behavior)
+
+    if state.activeVectorPad == padId {
+        newState.padRuntime[padId] = PadRuntimeState(
+            isActive: true,
+            currentColor: behavior.activeColor,
+            currentValue: defaults.x,
+            secondaryValue: defaults.y
+        )
+        effects.append(.setLed(padId: padId, color: behavior.activeColor, blink: false))
+        effects.append(.sendOsc(OscCommand(address: behavior.vector2Addresses[0], args: [.float(defaults.x)])))
+        effects.append(.sendOsc(OscCommand(address: behavior.vector2Addresses[1], args: [.float(defaults.y)])))
+        effects.append(.log(message: "\(behavior.label): reset to center", level: .debug))
+        return FSMResult(state: newState, effects: effects)
+    }
+
+    if let previousPad = state.activeVectorPad,
+       previousPad != padId,
+       let previousBehavior = state.pads[previousPad] {
+        let previousRuntime = state.padRuntime[previousPad] ?? vectorRuntimeSeed(previousBehavior)
+        newState.padRuntime[previousPad] = PadRuntimeState(
+            isActive: false,
+            isOn: previousRuntime.isOn,
+            currentColor: previousBehavior.idleColor,
+            currentValue: previousRuntime.currentValue,
+            secondaryValue: previousRuntime.secondaryValue
+        )
+        effects.append(.setLed(padId: previousPad, color: previousBehavior.idleColor, blink: false))
+    }
+
+    newState.activeVectorPad = padId
+    newState.padRuntime[padId] = PadRuntimeState(
+        isActive: true,
+        currentColor: behavior.activeColor,
+        currentValue: runtime.currentValue,
+        secondaryValue: runtime.secondaryValue
+    )
+    effects.append(.setLed(padId: padId, color: behavior.activeColor, blink: false))
+    effects.append(.log(message: "\(behavior.label): vector selected", level: .debug))
+    return FSMResult(state: newState, effects: effects)
+}
+
+private func handleVectorNudgePress(_ state: ControllerState, padId: ButtonId) -> FSMResult? {
+    guard state.learnState.phase == .idle,
+          let direction = vectorDirection(for: padId),
+          let vectorPad = state.activeVectorPad,
+          let behavior = state.pads[vectorPad],
+          behavior.mode == .vector2,
+          behavior.vector2Addresses.count == 2 else {
+        return nil
+    }
+
+    var newState = state
+    var effects: [LaunchpadEffect] = []
+    let runtime = state.padRuntime[vectorPad] ?? vectorRuntimeSeed(behavior)
+    let step = behavior.step > 0 ? behavior.step : 0.1
+
+    let oldX = clampUnit(runtime.currentValue)
+    let oldY = clampUnit(runtime.secondaryValue)
+    var newX = oldX
+    var newY = oldY
+
+    switch direction {
+    case .left:
+        newX = clampUnit(oldX - step)
+    case .right:
+        newX = clampUnit(oldX + step)
+    case .up:
+        newY = clampUnit(oldY + step)
+    case .down:
+        newY = clampUnit(oldY - step)
+    }
+
+    if abs(newX - oldX) > 0.0001 {
+        effects.append(.sendOsc(OscCommand(address: behavior.vector2Addresses[0], args: [.float(newX)])))
+    }
+    if abs(newY - oldY) > 0.0001 {
+        effects.append(.sendOsc(OscCommand(address: behavior.vector2Addresses[1], args: [.float(newY)])))
+    }
+
+    newState.padRuntime[vectorPad] = PadRuntimeState(
+        isActive: true,
+        currentColor: behavior.activeColor,
+        currentValue: newX,
+        secondaryValue: newY
+    )
+    effects.append(.setLed(padId: vectorPad, color: behavior.activeColor, blink: false))
+    effects.append(
+        .log(
+            message: "\(behavior.label): x \(String(format: "%.2f", newX)) y \(String(format: "%.2f", newY))",
+            level: .debug
+        )
+    )
+    return FSMResult(state: newState, effects: effects)
+}
+
+private func vectorDirection(for padId: ButtonId) -> VectorDirection? {
+    guard padId.x == 8 else { return nil }
+    switch padId.y {
+    case 1: return .down
+    case 2: return .left
+    case 3: return .right
+    case 4: return .up
+    default: return nil
+    }
+}
+
+private func vectorRuntimeSeed(_ behavior: PadBehavior) -> PadRuntimeState {
+    let defaults = vectorDefaults(for: behavior)
+    let current = behavior.vector2Current.count == 2 ? behavior.vector2Current : [defaults.x, defaults.y]
+    return PadRuntimeState(
+        isActive: false,
+        currentColor: behavior.idleColor,
+        currentValue: clampUnit(current[0]),
+        secondaryValue: clampUnit(current[1])
+    )
+}
+
+private func vectorDefaults(for behavior: PadBehavior) -> (x: Float, y: Float) {
+    if behavior.vector2Default.count == 2 {
+        return (clampUnit(behavior.vector2Default[0]), clampUnit(behavior.vector2Default[1]))
+    }
+    return (0.5, 0.5)
+}
+
+private func clampUnit(_ value: Float) -> Float {
+    max(0.0, min(1.0, value))
+}
+
 private func handlePushPress(_ state: ControllerState, padId: ButtonId, behavior: PadBehavior) -> FSMResult {
     var effects: [LaunchpadEffect] = []
     var newState = state
@@ -547,13 +746,23 @@ private func handleIncrementPress(_ state: ControllerState, padId: ButtonId, beh
     
     // Calculate new value
     let newValue: Float
-    if state.isShiftHeld {
+    let logMessage: String
+    if let optionCount = behavior.enumOptionCount, optionCount > 1 {
+        let baseDelta = isIncrement ? 1 : -1
+        let delta = state.isShiftHeld ? -baseDelta : baseDelta
+        let currentIndex = enumIndex(for: currentValue, behavior: behavior, optionCount: optionCount)
+        let nextIndex = wrappedEnumIndex(currentIndex + delta, optionCount: optionCount)
+        newValue = enumValue(for: nextIndex, behavior: behavior, optionCount: optionCount)
+        logMessage = "\(behavior.label): option \(nextIndex + 1)/\(optionCount)"
+    } else if state.isShiftHeld {
         // Shift: jump to extreme
         newValue = isIncrement ? behavior.maxValue : behavior.minValue
+        logMessage = "\(behavior.label): \(String(format: "%.2f", newValue))"
     } else {
         // Normal: increment/decrement by step
         let delta = isIncrement ? behavior.step : -behavior.step
         newValue = max(behavior.minValue, min(behavior.maxValue, currentValue + delta))
+        logMessage = "\(behavior.label): \(String(format: "%.2f", newValue))"
     }
     
     // Update runtime state
@@ -569,9 +778,32 @@ private func handleIncrementPress(_ state: ControllerState, padId: ButtonId, beh
     
     // Send OSC with new value
     effects.append(.sendOsc(OscCommand(address: oscAction.address, args: [.float(newValue)])))
-    effects.append(.log(message: "\(behavior.label): \(String(format: "%.2f", newValue))", level: .debug))
+    effects.append(.log(message: logMessage, level: .debug))
     
     return FSMResult(state: newState, effects: effects)
+}
+
+private func enumIndex(for currentValue: Float, behavior: PadBehavior, optionCount: Int) -> Int {
+    let maxIndex = max(0, optionCount - 1)
+    if behavior.maxValue <= 1.0001 {
+        let normalized = max(0.0, min(1.0, currentValue))
+        return max(0, min(maxIndex, Int((normalized * Float(maxIndex)).rounded())))
+    }
+    return max(0, min(maxIndex, Int(currentValue.rounded())))
+}
+
+private func enumValue(for index: Int, behavior: PadBehavior, optionCount: Int) -> Float {
+    if behavior.maxValue <= 1.0001 {
+        guard optionCount > 1 else { return 0.0 }
+        return Float(index) / Float(optionCount - 1)
+    }
+    return Float(index)
+}
+
+private func wrappedEnumIndex(_ value: Int, optionCount: Int) -> Int {
+    guard optionCount > 0 else { return 0 }
+    let wrapped = value % optionCount
+    return wrapped >= 0 ? wrapped : wrapped + optionCount
 }
 
 // MARK: - Config Phase Handlers
@@ -684,22 +916,26 @@ private func saveConfig(_ state: ControllerState) -> FSMResult {
         return exitLearnMode(state)
     }
     
-    // Get all enabled captured OSC, sorted: scenes first, then controls
+    // Get all enabled captured OSC, sorted: scenes first, then non-scene commands
     let allCaptured = learn.capturedOsc.filter { $0.isEnabled }
     
-    // Find the primary command (scene if present, otherwise first control)
+    // Find the primary command (scene if present, otherwise first non-scene command)
     let sceneCmd = allCaptured.first { $0.command.address.hasPrefix("/scenes/") }?.command
-    let controlCmds = allCaptured.filter { $0.command.address.hasPrefix("/controls/") }.map { $0.command }
+    let nonSceneCmds = allCaptured
+        .filter {
+            $0.command.address.hasPrefix("/controls/") || $0.command.address.hasPrefix("/ledfx/")
+        }
+        .map { $0.command }
     
     // Primary command determines the pad behavior
-    guard let primaryCmd = sceneCmd ?? controlCmds.first else {
+    guard let primaryCmd = sceneCmd ?? nonSceneCmds.first else {
         return exitLearnMode(state)
     }
     
     let (_, _, group) = categorizeOsc(primaryCmd.address)
     
-    // Additional OSC = all controls (sent after primary)
-    let additionalOsc = sceneCmd != nil ? controlCmds : Array(controlCmds.dropFirst())
+    // Additional OSC = all non-scene commands (sent after primary)
+    let additionalOsc = sceneCmd != nil ? nonSceneCmds : Array(nonSceneCmds.dropFirst())
     
     let behavior = createPadBehavior(
         padId: selectedPad,
@@ -724,8 +960,8 @@ private func saveConfig(_ state: ControllerState) -> FSMResult {
     effects.append(.saveConfig)
     
     let summary = sceneCmd != nil 
-        ? "1 scene + \(controlCmds.count) controls"
-        : "\(controlCmds.count) controls"
+        ? "1 scene + \(nonSceneCmds.count) extras"
+        : "\(nonSceneCmds.count) commands"
     effects.append(.log(message: "Saved pad \(selectedPad): \(summary)", level: .info))
     
     return FSMResult(state: result.state, effects: effects)

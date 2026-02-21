@@ -4,39 +4,14 @@
 import SwiftUI
 import SwiftVJCore
 import OSCKit
+import AppKit
 
 struct OSCDebugView: View {
     @EnvironmentObject var appState: AppState
     @State private var testAddress = "/test/message"
     @State private var testArg1 = "hello"
     @State private var testArg2 = "1.0"
-    @State private var showAudioMessages = false  // Audio messages hidden by default (noisy)
-    @State private var expandedGroups: Set<String> = ["shader", "textler", "image", "other"]  // Expanded by default
-    @State private var groupedMessagesCache: [(group: String, messages: [OSCLogEntry])] = []
-
-    /// Group OSC messages by category.
-    private func rebuildGroupedMessages() {
-        let sorted = appState.oscMessages.values.sorted { $0.address < $1.address }
-
-        // Filter audio if hidden
-        let filtered = showAudioMessages ? sorted : sorted.filter { !$0.address.hasPrefix("/audio/") }
-
-        // Group by first path component
-        var groups: [String: [OSCLogEntry]] = [:]
-        for msg in filtered {
-            let group = extractGroup(from: msg.address)
-            groups[group, default: []].append(msg)
-        }
-
-        // Sort groups: audio last (if shown), then alphabetically
-        let sortedGroups = groups.keys.sorted { lhs, rhs in
-            if lhs == "audio" { return false }
-            if rhs == "audio" { return true }
-            return lhs < rhs
-        }
-
-        groupedMessagesCache = sortedGroups.map { (group: $0, messages: groups[$0] ?? []) }
-    }
+    @State private var selectedMessageIDs: Set<UUID> = []
     
     /// Extract group name from OSC address
     private func extractGroup(from address: String) -> String {
@@ -62,6 +37,33 @@ struct OSCDebugView: View {
         case "level": return .yellow
         default: return .gray
         }
+    }
+
+    private var visibleMessages: [OSCLogEntry] {
+        let sorted = appState.oscMessages.values.sorted { $0.address < $1.address }
+        if appState.oscAudioMessagesEnabled { return sorted }
+        return sorted.filter { !$0.address.hasPrefix("/audio/") }
+    }
+
+    private func selectedMessagesPayload() -> String? {
+        guard !selectedMessageIDs.isEmpty else { return nil }
+        let byID = Dictionary(uniqueKeysWithValues: visibleMessages.map { ($0.id, $0) })
+        let rows = selectedMessageIDs.compactMap { byID[$0] }.sorted { $0.address < $1.address }
+        guard !rows.isEmpty else { return nil }
+        return rows
+            .map { "\($0.timestamp.ISO8601Format()) \($0.address) \($0.args.joined(separator: ", "))" }
+        .joined(separator: "\n")
+    }
+
+    private func selectedMessagesProviders() -> [NSItemProvider] {
+        guard let payload = selectedMessagesPayload() else { return [] }
+        return [NSItemProvider(object: payload as NSString)]
+    }
+
+    private func copySelectedMessages() {
+        guard let payload = selectedMessagesPayload() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
     }
     
     var body: some View {
@@ -91,12 +93,12 @@ struct OSCDebugView: View {
                     Divider().frame(height: 20)
                     
                     // Audio toggle
-                    Toggle(isOn: $showAudioMessages) {
+                    Toggle(isOn: appState.oscAudioMessagesEnabledBinding) {
                         Label("Audio", systemImage: "waveform")
                     }
                     .toggleStyle(.button)
                     .buttonStyle(.bordered)
-                    .tint(showAudioMessages ? .orange : .gray)
+                    .tint(appState.oscAudioMessagesEnabled ? .orange : .gray)
                 }
                 .padding(8)
                 .background(.quaternary)
@@ -105,46 +107,13 @@ struct OSCDebugView: View {
                 
                 Divider()
                 
-                // Grouped message list
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(groupedMessagesCache, id: \.group) { group in
-                            DisclosureGroup(
-                                isExpanded: Binding(
-                                    get: { expandedGroups.contains(group.group) },
-                                    set: { isExpanded in
-                                        if isExpanded {
-                                            expandedGroups.insert(group.group)
-                                        } else {
-                                            expandedGroups.remove(group.group)
-                                        }
-                                    }
-                                )
-                            ) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    ForEach(group.messages) { msg in
-                                        OSCMessageRow(message: msg, groupColor: groupColor(group.group))
-                                    }
-                                }
-                                .padding(.leading, 8)
-                            } label: {
-                                HStack {
-                                    Circle()
-                                        .fill(groupColor(group.group))
-                                        .frame(width: 10, height: 10)
-                                    Text(group.group.uppercased())
-                                        .font(.headline)
-                                        .foregroundColor(groupColor(group.group))
-                                    Text("(\(group.messages.count))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                    }
-                    .padding(.vertical)
+                // Latest message per address (select rows, Cmd-C to copy full payload with args)
+                List(visibleMessages, selection: $selectedMessageIDs) { msg in
+                    OSCMessageRow(message: msg, groupColor: groupColor(extractGroup(from: msg.address)))
+                        .tag(msg.id)
                 }
+                .listStyle(.plain)
+                .onCopyCommand { selectedMessagesProviders() }
                 
                 Divider()
                 
@@ -187,20 +156,6 @@ struct OSCDebugView: View {
             
             // Test sender (right)
             VStack(spacing: 16) {
-                GroupBox("Audio Levels") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let audioManager = appState.renderEngine?.audioManager {
-                            AudioVisualizerView(audioManager: audioManager)
-                                .frame(height: 60)
-                        } else {
-                            Text("Audio manager not available")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding()
-                }
-
                 GroupBox("Send Test Message") {
                     VStack(alignment: .leading, spacing: 12) {
                         TextField("Address", text: $testAddress)
@@ -261,15 +216,12 @@ struct OSCDebugView: View {
         }
         .onAppear {
             appState.setOscDebugEnabled(true)
-            rebuildGroupedMessages()
         }
-        .onChange(of: appState.oscMessageCount) { _, _ in rebuildGroupedMessages() }
-        .onChange(of: showAudioMessages) { _, _ in rebuildGroupedMessages() }
         .onDisappear {
             appState.setOscDebugEnabled(false)
             // Free memory - clear captured messages when view hidden
             appState.clearOscMessages()
-            groupedMessagesCache = []
+            selectedMessageIDs.removeAll()
         }
     }
     
@@ -311,10 +263,6 @@ struct OSCMessageRow: View {
             Text(message.address)
                 .font(.system(.body, design: .monospaced))
                 .foregroundColor(groupColor)
-            
-            Text(message.args.joined(separator: ", "))
-                .font(.system(.body, design: .monospaced))
-                .foregroundColor(.secondary)
                 .lineLimit(1)
             
             Spacer()
@@ -323,6 +271,17 @@ struct OSCMessageRow: View {
         .padding(.horizontal, 8)
         .background(groupColor.opacity(0.05))
         .cornerRadius(4)
+        .contextMenu {
+            Button("Copy Message") {
+                copyMessageToClipboard()
+            }
+        }
+    }
+
+    private func copyMessageToClipboard() {
+        let payload = "\(message.timestamp.ISO8601Format()) \(message.address) \(message.args.joined(separator: ", "))"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
     }
 }
 

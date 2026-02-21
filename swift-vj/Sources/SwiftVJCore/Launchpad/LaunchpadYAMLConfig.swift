@@ -12,6 +12,7 @@ import Yams
 public struct LaunchpadYAMLConfig: Codable, Sendable {
     public let version: Int
     public let colors: [String: Int]
+    public let dynamic: DynamicYAMLConfig?
     public let groups: [String: GroupConfig]
     public let global: GlobalYAMLConfig
     public let bank0: BankYAMLConfig
@@ -68,6 +69,16 @@ public struct LaunchpadYAMLConfig: Codable, Sendable {
 }
 
 // MARK: - Group Config
+
+public struct DynamicYAMLConfig: Codable, Sendable {
+    public let colorCyclePalette: [ColorCycleColorYAML]?
+}
+
+public struct ColorCycleColorYAML: Codable, Sendable {
+    public let name: String?
+    public let rgb: [Double]
+    public let ledColor: String?
+}
 
 public struct GroupConfig: Codable, Sendable {
     public let type: String  // "static" or "dynamic"
@@ -289,7 +300,7 @@ public enum LaunchpadConfigLoader {
                     if pad.oscOn == nil || pad.oscOff == nil {
                         errors.append("Bank \(bankIndex) pad (\(pad.x),\(pad.y)): toggle mode requires 'oscOn' and 'oscOff'")
                     }
-                case "increment", "decrement":
+                case "increment", "decrement", "colorCycle", "vector2":
                     // osc optional; no validation
                     break
                 case "oneShot", "push":
@@ -308,6 +319,22 @@ public enum LaunchpadConfigLoader {
             }
             if config.colors[btn.activeColor] == nil {
                 errors.append("Bank button CC \(btn.cc): unknown activeColor '\(btn.activeColor)'")
+            }
+        }
+
+        // Validate dynamic color-cycle palette entries
+        if let palette = config.dynamic?.colorCyclePalette {
+            for (index, entry) in palette.enumerated() {
+                if entry.rgb.count != 3 {
+                    errors.append("dynamic.colorCyclePalette[\(index)]: rgb must have exactly 3 values")
+                    continue
+                }
+                if entry.rgb.contains(where: { $0 < 0.0 || $0 > 1.0 }) {
+                    errors.append("dynamic.colorCyclePalette[\(index)]: rgb values must be within 0.0...1.0")
+                }
+                if let ledColor = entry.ledColor, config.colors[ledColor] == nil {
+                    errors.append("dynamic.colorCyclePalette[\(index)]: unknown ledColor '\(ledColor)'")
+                }
             }
         }
         
@@ -480,12 +507,34 @@ public actor DynamicControlStore {
         return isNew
     }
     public func items() -> [String] {
-        Array(controls.keys).sorted()
+        Array(controls.keys)
+            .filter { DynamicControlStore.isPadBindableAddress($0) }
+            .sorted()
     }
     public func value(address: String) -> [OscArg]? {
         controls[address]
     }
     public func clear() { controls.removeAll() }
+    public func clearSceneScopedControls() {
+        controls = controls.filter { address, _ in
+            guard let scope = DynamicControlStore.controlScope(for: address) else { return false }
+            return scope == "meta" || scope == "global"
+        }
+    }
+
+    private static func isPadBindableAddress(_ address: String) -> Bool {
+        guard address.hasPrefix("/controls/") else { return false }
+        if address.hasSuffix("/label") || address.hasSuffix("/numoptions") {
+            return false
+        }
+        return true
+    }
+
+    private static func controlScope(for address: String) -> String? {
+        let parts = address.split(separator: "/")
+        guard parts.count >= 3, parts[0] == "controls" else { return nil }
+        return String(parts[1])
+    }
 }
 
 // MARK: - Config to Runtime Conversion

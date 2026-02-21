@@ -81,6 +81,140 @@ final class LaunchpadFSMTests: XCTestCase {
         ])
     }
 
+    func testColorCyclePressCyclesForwardAndBackward() {
+        var state = ControllerState()
+        let padId = ButtonId(x: 3, y: 0)
+        let behavior = PadBehavior(
+            padId: padId,
+            mode: .colorCycle,
+            idleColor: LP.white,
+            activeColor: LP.white,
+            label: "Color 1",
+            colorCycleAddresses: [
+                "/controls/pop/color1/r",
+                "/controls/pop/color1/g",
+                "/controls/pop/color1/b",
+            ],
+            colorCyclePalette: [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            colorCycleLedColors: [LP.red, LP.green, LP.blue],
+            colorCycleIndex: 0
+        )
+        state.pads[padId] = behavior
+        state.padRuntime[padId] = PadRuntimeState(isActive: true, currentColor: LP.red, currentValue: 0)
+
+        let forward = handlePadPress(state, padId: padId)
+        XCTAssertEqual(forward.state.padRuntime[padId]?.currentValue, 1)
+        assertEffectsContain(forward.effects, [
+            .sendOsc(address: "/controls/pop/color1/r", args: [.float(0.0)]),
+            .sendOsc(address: "/controls/pop/color1/g", args: [.float(1.0)]),
+            .sendOsc(address: "/controls/pop/color1/b", args: [.float(0.0)]),
+            .setLed(padId: padId, color: LP.green, blink: false),
+        ])
+
+        var shiftedState = forward.state
+        shiftedState.isShiftHeld = true
+        let backward = handlePadPress(shiftedState, padId: padId)
+        XCTAssertEqual(backward.state.padRuntime[padId]?.currentValue, 0)
+        assertEffectsContain(backward.effects, [
+            .sendOsc(address: "/controls/pop/color1/r", args: [.float(1.0)]),
+            .sendOsc(address: "/controls/pop/color1/g", args: [.float(0.0)]),
+            .sendOsc(address: "/controls/pop/color1/b", args: [.float(0.0)]),
+            .setLed(padId: padId, color: LP.red, blink: false),
+        ])
+    }
+
+    func testEnumIncrementCyclesForwardAndShiftBackwardWithWrap() {
+        var state = ControllerState()
+        let padId = ButtonId(x: 4, y: 0)
+        let behavior = PadBehavior(
+            padId: padId,
+            mode: .increment,
+            idleColor: LP.purpleDim,
+            activeColor: LP.purple,
+            label: "palette",
+            oscAction: OscCommand(address: "/controls/platonicsolids/palette", args: [.float(1.0)]),
+            step: 1.0 / 9.0,
+            minValue: 0.0,
+            maxValue: 1.0,
+            enumOptionCount: 10
+        )
+        state.pads[padId] = behavior
+        state.padRuntime[padId] = PadRuntimeState(currentColor: behavior.idleColor, currentValue: 1.0)
+
+        let forwardWrap = handlePadPress(state, padId: padId)
+        XCTAssertEqual(forwardWrap.state.padRuntime[padId]?.currentValue ?? -1.0, 0.0, accuracy: 0.0001)
+        assertEffectsContain(forwardWrap.effects, [
+            .sendOsc(address: "/controls/platonicsolids/palette", args: [.float(0.0)]),
+            .setLed(padId: padId, color: LP.purple, blink: false),
+        ])
+
+        var shiftedState = forwardWrap.state
+        shiftedState.isShiftHeld = true
+        let backwardWrap = handlePadPress(shiftedState, padId: padId)
+        XCTAssertEqual(backwardWrap.state.padRuntime[padId]?.currentValue ?? -1.0, 1.0, accuracy: 0.0001)
+        assertEffectsContain(backwardWrap.effects, [
+            .sendOsc(address: "/controls/platonicsolids/palette", args: [.float(1.0)]),
+            .setLed(padId: padId, color: LP.purple, blink: false),
+        ])
+    }
+
+    func testVector2PadUsesSideButtonsForNudgesAndSecondPressResets() {
+        var state = ControllerState()
+        let padId = ButtonId(x: 5, y: 0)
+        let behavior = PadBehavior(
+            padId: padId,
+            mode: .vector2,
+            idleColor: LP.cyanDim,
+            activeColor: LP.cyan,
+            label: "camxy",
+            step: 0.1,
+            minValue: 0.0,
+            maxValue: 1.0,
+            vector2Addresses: [
+                "/controls/platonicsolids/camxy/x",
+                "/controls/platonicsolids/camxy/y",
+            ],
+            vector2Current: [0.5, 0.5],
+            vector2Default: [0.5, 0.5]
+        )
+        state.pads[padId] = behavior
+        state.padRuntime[padId] = PadRuntimeState(
+            currentColor: behavior.idleColor,
+            currentValue: 0.5,
+            secondaryValue: 0.5
+        )
+
+        let selected = handlePadPress(state, padId: padId)
+        XCTAssertEqual(selected.state.activeVectorPad, padId)
+        assertEffectsContain(selected.effects, [
+            .setLed(padId: padId, color: LP.cyan, blink: false),
+        ])
+
+        var steppedState = selected.state
+        for _ in 0..<5 {
+            steppedState = handlePadPress(steppedState, padId: ButtonId(x: 8, y: 3)).state
+        }
+        XCTAssertEqual(steppedState.padRuntime[padId]?.currentValue ?? -1.0, 1.0, accuracy: 0.0001)
+
+        let up = handlePadPress(steppedState, padId: ButtonId(x: 8, y: 4))
+        XCTAssertEqual(up.state.padRuntime[padId]?.secondaryValue ?? -1.0, 0.6, accuracy: 0.0001)
+        assertEffectsContain(up.effects, [
+            .sendOsc(address: "/controls/platonicsolids/camxy/y", args: [.float(0.6)]),
+        ])
+
+        let reset = handlePadPress(up.state, padId: padId)
+        XCTAssertEqual(reset.state.padRuntime[padId]?.currentValue ?? -1.0, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(reset.state.padRuntime[padId]?.secondaryValue ?? -1.0, 0.5, accuracy: 0.0001)
+        assertEffectsContain(reset.effects, [
+            .sendOsc(address: "/controls/platonicsolids/camxy/x", args: [.float(0.5)]),
+            .sendOsc(address: "/controls/platonicsolids/camxy/y", args: [.float(0.5)]),
+        ])
+    }
+
     func testBankSwitchAndPageAdvance() {
         var state = ControllerState()
         state.activeBank = 0
@@ -143,6 +277,108 @@ final class LaunchpadFSMTests: XCTestCase {
             .saveConfig,
             .logContains("Saved pad")
         ])
+    }
+
+    func testCaptureOscEventIgnoredOutsideConfigPhase() {
+        let event = OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)])
+
+        let idleState = ControllerState()
+        let idleResult = captureOscEvent(idleState, event: event)
+        XCTAssertEqual(idleResult.state.learnState.phase, .idle)
+        XCTAssertTrue(idleResult.state.learnState.capturedOsc.isEmpty)
+
+        let waitPadState = enterLearnMode(ControllerState()).state
+        let waitPadResult = captureOscEvent(waitPadState, event: event)
+        XCTAssertEqual(waitPadResult.state.learnState.phase, .waitPad)
+        XCTAssertTrue(waitPadResult.state.learnState.capturedOsc.isEmpty)
+    }
+
+    func testLearnModeCaptureAndSaveLedFXCommand() {
+        let state = ControllerState()
+
+        let enterResult = handlePadPress(state, padId: LaunchpadButton.learn)
+        let selectedPad = ButtonId(x: 1, y: 1)
+        let selectResult = handlePadPress(enterResult.state, padId: selectedPad)
+
+        let ledfxEvent = OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)])
+        let captureResult = captureOscEvent(selectResult.state, event: ledfxEvent)
+        XCTAssertEqual(captureResult.state.learnState.capturedOsc.count, 1)
+
+        let saveResult = handlePadPress(captureResult.state, padId: LaunchpadButton.save)
+        XCTAssertEqual(saveResult.state.learnState.phase, .idle)
+        XCTAssertEqual(saveResult.state.pads[selectedPad]?.oscAction?.address, "/ledfx/scene/strobe/0")
+        assertEffectsContain(saveResult.effects, [
+            .saveConfig
+        ])
+    }
+
+    func testLearnModeSaveKeepsLedFXAsAdditionalCommand() {
+        let state = ControllerState()
+
+        let enterResult = handlePadPress(state, padId: LaunchpadButton.learn)
+        let selectedPad = ButtonId(x: 2, y: 1)
+        let selectResult = handlePadPress(enterResult.state, padId: selectedPad)
+
+        let sceneCapture = captureOscEvent(
+            selectResult.state,
+            event: OscEvent(address: "/scenes/Example", args: [.string("Example")])
+        )
+        let mixedCapture = captureOscEvent(
+            sceneCapture.state,
+            event: OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)])
+        )
+
+        let saveResult = handlePadPress(mixedCapture.state, padId: LaunchpadButton.save)
+        let behavior = saveResult.state.pads[selectedPad]
+
+        XCTAssertEqual(behavior?.oscAction?.address, "/scenes/Example")
+        XCTAssertEqual(behavior?.additionalOsc.map(\.address), ["/ledfx/scene/strobe/0"])
+    }
+
+    func testStressInterleavedCaptureDeterministicOrderAndBankIsolation() {
+        var state = ControllerState()
+        let selectedPad = ButtonId(x: 0, y: 2)
+        var expectedSceneAddress = "/scenes/scene-0"
+
+        state = handlePadPress(state, padId: LaunchpadButton.learn).state
+        state = handlePadPress(state, padId: selectedPad).state
+        XCTAssertEqual(state.learnState.phase, .config)
+
+        let iterations = 1_000
+        for idx in 0..<iterations {
+            state = handlePadPress(state, padId: LaunchpadButton.bank(idx % BankConfig.count)).state
+            expectedSceneAddress = "/scenes/scene-\(idx)"
+            state = captureOscEvent(
+                state,
+                event: OscEvent(address: expectedSceneAddress, args: [.string("scene-\(idx)")])
+            ).state
+            state = captureOscEvent(
+                state,
+                event: OscEvent(address: "/controls/meta/alpha", args: [.float(Float(idx % 2))])
+            ).state
+            state = captureOscEvent(
+                state,
+                event: OscEvent(
+                    address: "/ledfx/param/global_brightness/0",
+                    args: [.float(Float(idx) / Float(iterations))]
+                )
+            ).state
+        }
+
+        let finalBank = state.activeBank
+        let saveResult = handlePadPress(state, padId: LaunchpadButton.save)
+        let finalState = saveResult.state
+        let savedBehavior = finalState.bankPads[finalBank]?[selectedPad]
+
+        XCTAssertEqual(savedBehavior?.oscAction?.address, expectedSceneAddress)
+        XCTAssertEqual(savedBehavior?.additionalOsc.map(\.address), [
+            "/controls/meta/alpha",
+            "/ledfx/param/global_brightness/0"
+        ])
+
+        for bank in 0..<BankConfig.count where bank != finalBank {
+            XCTAssertNil(finalState.bankPads[bank]?[selectedPad], "Expected no saved pad in bank \(bank)")
+        }
     }
 
     func testShiftPressAndRelease() {
