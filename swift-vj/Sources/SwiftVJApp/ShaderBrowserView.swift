@@ -5,6 +5,7 @@ import SwiftUI
 import SwiftVJCore
 import Metal
 import AppKit
+import SyphonKit
 
 // Use SwiftVJCore.ShaderInfo to avoid conflict with Rendering/RenderingTypes.swift
 typealias CoreShaderInfo = SwiftVJCore.ShaderInfo
@@ -1237,6 +1238,17 @@ struct ShaderBrowserView: View {
                 appState.finishAnalysis()
                 return
             }
+            let shaderOutputWasEnabled = appState.isRenderOutputEnabled(.shader)
+            if !shaderOutputWasEnabled {
+                appState.log("ℹ️ Enabling Shader output for analysis capture", level: .info)
+                appState.setRenderOutputEnabled(.shader, enabled: true)
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+            defer {
+                if !shaderOutputWasEnabled {
+                    appState.setRenderOutputEnabled(.shader, enabled: false)
+                }
+            }
             
             // Create utilities
             let logger: @Sendable (String, LogLevel) -> Void = { [weak appState = self.appState] message, level in
@@ -1479,28 +1491,78 @@ struct ShaderBrowserView: View {
             return .failure
         }
         
-        guard let headlessRenderer = renderEngine.headlessRenderer else {
+        guard renderEngine.headlessRenderer != nil else {
             appState.log("    ✗ Headless renderer not available", level: .error)
             return .failure
         }
-        
-        guard let shaderTexture = headlessRenderer.shaderRenderer.texture else {
-            appState.log("    ✗ Shader texture not available", level: .error)
+
+        guard let receiver = makeAnalysisSyphonReceiver() else {
+            appState.log("    ✗ Syphon Shader receiver unavailable", level: .error)
             return .failure
         }
+        defer { receiver.disconnect() }
         
-        // Capture texture and get black/monochrome detection result
-        let (success, isBlack, isMonochrome) = await screenshotCapture.captureTextureWithBlackCheck(
-            shaderTexture,
-            outputPath: screenshotPath,
-            shaderName: shader.name
-        )
-        
-        if success {
-            return .success(isBlack: isBlack, isMonochrome: isMonochrome)
-        } else {
-            return .failure
+        var lastBlackResult: (isBlack: Bool, isMonochrome: Bool)?
+        for sampleIndex in 1...3 {
+            guard let shaderTexture = await waitForSyphonFrame(receiver: receiver) else {
+                appState.log("    ✗ No Syphon frame available from Shader server", level: .error)
+                if sampleIndex == 3 {
+                    return .failure
+                }
+                try? await Task.sleep(for: .milliseconds(137))
+                continue
+            }
+            let (success, isBlack, isMonochrome) = await screenshotCapture.captureTextureWithBlackCheck(
+                shaderTexture,
+                outputPath: screenshotPath,
+                shaderName: shader.name
+            )
+            
+            if !success {
+                if sampleIndex == 3 {
+                    return .failure
+                }
+                try? await Task.sleep(for: .milliseconds(137))
+                continue
+            }
+            
+            if !isBlack {
+                return .success(isBlack: false, isMonochrome: isMonochrome)
+            }
+            
+            lastBlackResult = (isBlack: isBlack, isMonochrome: isMonochrome)
+            if sampleIndex < 3 {
+                try? await Task.sleep(for: .milliseconds(137))
+            }
         }
+        
+        if let lastBlackResult {
+            return .success(isBlack: lastBlackResult.isBlack, isMonochrome: lastBlackResult.isMonochrome)
+        }
+        
+        return .failure
+    }
+
+    @MainActor
+    private func makeAnalysisSyphonReceiver() -> SyphonReceiver? {
+        guard let device = MTLCreateSystemDefaultDevice() else { return nil }
+        let receiver = SyphonReceiver(device: device)
+        guard receiver.connect(appName: nil, serverName: TileConfig.shader.syphonName) else {
+            receiver.disconnect()
+            return nil
+        }
+        return receiver
+    }
+
+    @MainActor
+    private func waitForSyphonFrame(receiver: SyphonReceiver) async -> MTLTexture? {
+        for _ in 0..<15 {
+            if let texture = receiver.currentFrame() {
+                return texture
+            }
+            try? await Task.sleep(for: .milliseconds(33))
+        }
+        return nil
     }
     
     /// Save analysis JSON marking shader as black

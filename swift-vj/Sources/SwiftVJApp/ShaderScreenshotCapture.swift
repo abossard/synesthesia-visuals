@@ -129,9 +129,10 @@ final class ShaderScreenshotCapture {
         // Create color space
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         
-        // BGRA8Unorm format: byte order is little endian, alpha first
+        // Shader outputs are straight BGRA and some shaders leave alpha at 0.
+        // Use noneSkipFirst so RGB stays visible regardless of alpha channel content.
         let bitmapInfo = CGBitmapInfo(rawValue:
-            CGImageAlphaInfo.premultipliedFirst.rawValue |
+            CGImageAlphaInfo.noneSkipFirst.rawValue |
             CGBitmapInfo.byteOrder32Little.rawValue
         )
         
@@ -179,7 +180,7 @@ final class ShaderScreenshotCapture {
         
         // Create bitmap context for pixel sampling
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        let bitmapInfo = CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         
         guard let context = CGContext(
             data: nil,

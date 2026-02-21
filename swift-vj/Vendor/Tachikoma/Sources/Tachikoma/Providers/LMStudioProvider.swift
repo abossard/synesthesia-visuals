@@ -285,8 +285,7 @@ public actor LMStudioProvider: ModelProvider {
                 [
                     "type": "image_url",
                     "image_url": [
-                        "mime_type": image.mimeType,
-                        "data": image.data,
+                        "url": "data:\(image.mimeType);base64,\(image.data)",
                     ],
                 ]
             default:

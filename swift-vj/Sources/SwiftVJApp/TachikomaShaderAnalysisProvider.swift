@@ -37,9 +37,11 @@ actor TachikomaShaderAnalysisProvider: ShaderAnalysisProvider {
     ) async -> ShaderAnalysisResult? {
         let screenshotData: Data?
         if let screenshotPath {
-            screenshotData = try? Data(contentsOf: screenshotPath)
-            if screenshotData == nil {
-                logger("  ⚠️ Could not read screenshot for \(shaderName)", .warning)
+            if let data = try? Data(contentsOf: screenshotPath), !data.isEmpty {
+                screenshotData = data
+            } else {
+                screenshotData = nil
+                logger("  ⚠️ Could not read screenshot for \(shaderName) (missing or empty file)", .warning)
             }
         } else {
             screenshotData = nil

@@ -1,6 +1,8 @@
 import XCTest
 import ViewInspector
 @testable import SwiftVJApp
+import Metal
+import SyphonKit
 import class SwiftVJCore.EffectEnvironment
 import protocol SwiftVJCore.LaunchpadEffectHandling
 import enum SwiftVJCore.OscArg
@@ -118,6 +120,75 @@ final class SwiftVJAppUITests: XCTestCase {
         }
         XCTAssertTrue(buttonIds.contains(A11yID.masterLaunchAllButton))
         XCTAssertTrue(buttonIds.contains(A11yID.masterAddCommandButton))
+    }
+
+    func testTilePreviewViewUsesSyphonMTKView() async throws {
+        let renderEngine = await RenderEngine.create()
+        let view = TilePreviewView(tileName: "shader", renderEngine: renderEngine)
+        let inspector = try view.inspect()
+
+        _ = try inspector.find(ViewType.View<SyphonMTKView>.self)
+    }
+
+    func testSyphonThumbnailViewUsesSyphonMTKView() throws {
+        let view = SyphonThumbnailView(serverName: "Shader")
+        let inspector = try view.inspect()
+
+        _ = try inspector.find(ViewType.View<SyphonMTKView>.self)
+    }
+
+    func testBrightquadsCaptureCreatesFreshPNG() async throws {
+        let renderEngine = await RenderEngine.create()
+        try await renderEngine.start()
+        defer { Task { await renderEngine.stop() } }
+
+        renderEngine.setOutputEnabled(.shader, enabled: true)
+        renderEngine.shaderSelection.selectMain(name: "brightquads")
+        try? await Task.sleep(for: .milliseconds(900))
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw XCTSkip("Metal device unavailable")
+        }
+
+        let receiver = SyphonReceiver(device: device)
+        defer { receiver.disconnect() }
+
+        var connected = false
+        for _ in 0..<20 where !connected {
+            connected = receiver.connect(appName: nil, serverName: TileConfig.shader.syphonName)
+            if !connected {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        guard connected else {
+            throw XCTSkip("Could not connect to Syphon Shader server")
+        }
+
+        var frame: MTLTexture?
+        for _ in 0..<120 where frame == nil {
+            frame = receiver.currentFrame()
+            if frame == nil {
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+        }
+
+        guard let frame else {
+            XCTFail("No Syphon frame received for Shader output")
+            return
+        }
+
+        let outputPath = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Shaders/glsl/brightquads.png")
+        let capture = ShaderScreenshotCapture(logger: { _, _ in })
+        let result = await capture.captureTextureWithBlackCheck(
+            frame,
+            outputPath: outputPath,
+            shaderName: "brightquads"
+        )
+
+        XCTAssertTrue(result.success)
+        XCTAssertFalse(result.isBlack, "Brightquads capture should not be black")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputPath.path))
     }
 
     func testSongDetailViewDemoPlayButtonIdentifier() throws {

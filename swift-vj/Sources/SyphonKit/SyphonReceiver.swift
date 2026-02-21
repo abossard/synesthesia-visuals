@@ -82,9 +82,14 @@ public final class SyphonReceiver {
     
     /// Disconnects from the current server
     public func disconnect() {
-        client?.stop()
+        let activeClient = client
         client = nil
         serverDescription = nil
+        
+        guard let activeClient else { return }
+        if Thread.isMainThread {
+            activeClient.stop()
+        }
     }
     
     /// Gets the latest frame texture
