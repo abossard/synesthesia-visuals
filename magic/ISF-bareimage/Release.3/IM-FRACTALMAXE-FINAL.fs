@@ -141,9 +141,9 @@
 #define DETAIL_CONST .00005
 #define PI 3.14159265359
 
-// Scene constants
-const vec3 LIGHT_DIR_CONST = normalize(vec3(0.5,-0.3,-1.));
-const vec3 AMBIENT_DIR_CONST = normalize(vec3(0.,0.,1.));
+// Scene constants (precomputed normalize() for GLSL 1.20 compatibility)
+const vec3 LIGHT_DIR_CONST = vec3(0.43193421, -0.25916053, -0.86386843); // normalize(vec3(0.5,-0.3,-1.))
+const vec3 AMBIENT_DIR_CONST = vec3(0.0, 0.0, 1.0); // normalize(vec3(0.,0.,1.))
 const vec3 ORIGIN_CONST = vec3(0.,3.11,0.);
 
 
@@ -382,8 +382,8 @@ RaymarchResult raymarchScene(vec3 initialRayOrigin, vec3 initialRayDir,
                 float distToEnergyBand2 = abs(3.35 - hitP_scene.y + energyGlowCycle);
                 float glow_y = min(distToEnergyBand1, distToEnergyBand2); 
                 accumulatedEnergyGlow += max(0., .03 - de_res.x) / .03 *
-                                         (pow(max(0., .05 - glow_y) / .05, 2.0f) +         
-                                          pow(max(0., .15 - abs(3.35 - hitP_scene.y)) / .15, 3.0f)) * 1.5; 
+                                         (pow(max(0., .05 - glow_y) / .05, 2.0) +         
+                                          pow(max(0., .15 - abs(3.35 - hitP_scene.y)) / .15, 3.0)) * 1.5; 
             }
         } else {
             break;
@@ -422,7 +422,7 @@ RaymarchResult raymarchScene(vec3 initialRayOrigin, vec3 initialRayDir,
         vec3 sphereHitSurfacePoint = initialRayOrigin + sphereHitDistance * initialRayDir;
         vec3 energyAtSphereSurface = currentEnergyBaseColor * (1.5 + sin(currentTime_param * 20. + sphereHitSurfacePoint.z * 10.)) * .25; 
         float sphereRaymarchDet = DETAIL_CONST * (1. + sphereHitDistance * 60.);
-        vec3 sphereLighting = calculateLighting(sphereHitSurfacePoint, initialRayDir, sphereNormal, 2.0f, 
+        vec3 sphereLighting = calculateLighting(sphereHitSurfacePoint, initialRayDir, sphereNormal, 2.0, 
                                                 sphereRaymarchDet, sphere_effective_center, current_vibration_amplitude,
                                                 energyAtSphereSurface, currentEnableHardShadows, currentLightColor, currentAmbientColor, currentFloorColor);
         finalColor_val = mix(finalColor_val * .3 + sphereLighting * .7, backgroundColor, 1.0 - exp(-1. * pow(sphereHitDistance, 1.5)));

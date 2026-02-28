@@ -252,7 +252,7 @@ void main() {
     float prevAudioLevel = prevAudioData.r;
     float prevMod = prevAudioData.g;
     
-    float currentAudioLevel = texture(audio, vec2(0.1, 0.5)).r;
+    float currentAudioLevel = texture2D(audio, vec2(0.1, 0.5)).r;
     float smoothedAudio;
     float smoothedMod;
 

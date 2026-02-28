@@ -86,8 +86,8 @@ void main() {
         // Normalized coordinates for sampling centers of a 2x1 texture:
         // Pixel 0: (0.5 / 2.0, 0.5 / 1.0) = (0.25, 0.5)
         // Pixel 1: (1.5 / 2.0, 0.5 / 1.0) = (0.75, 0.5)
-        vec4 prev_px0_val = texture(stateBuffer, vec2(0.25, 0.5)); // Changed texture2D to texture
-        vec4 prev_px1_val = texture(stateBuffer, vec2(0.75, 0.5)); // Changed texture2D to texture
+        vec4 prev_px0_val = texture2D(stateBuffer, vec2(0.25, 0.5)); // Changed texture2D to texture
+        vec4 prev_px1_val = texture2D(stateBuffer, vec2(0.75, 0.5)); // Changed texture2D to texture
 
         // Unpack previous values
         float prev_accumTime_fractal      = prev_px0_val.r;
@@ -131,8 +131,8 @@ void main() {
     // This pass uses the values from the updated stateBuffer.
     if (PASSINDEX == 1) {
         // Read all smoothed/accumulated values from the current frame's stateBuffer
-        vec4 px0_val = texture(stateBuffer, vec2(0.25, 0.5)); // Changed texture2D to texture
-        vec4 px1_val = texture(stateBuffer, vec2(0.75, 0.5)); // Changed texture2D to texture
+        vec4 px0_val = texture2D(stateBuffer, vec2(0.25, 0.5)); // Changed texture2D to texture
+        vec4 px1_val = texture2D(stateBuffer, vec2(0.75, 0.5)); // Changed texture2D to texture
 
         float currentFractalTime          = px0_val.r; // Used for blob/scale dynamics
         // float currentSmoothedAnimSpeed = px0_val.g; // Available if needed
@@ -168,7 +168,7 @@ void main() {
             // Rotate point p around the axis by the accumulated rotation angle
             p.xyz = ROT(p.xyz, rotAxis, currentAccumulatedRotationAngle); 
             
-            vec4 id = round(p / 4.0); // Cell ID for color variation based on spatial location
+            vec4 id = floor(p / 4.0 + 0.5); // Cell ID for color variation based on spatial location
             
             // Fractal iteration
             for(float j = 0.0; j < 7.0; j++) {
@@ -206,7 +206,7 @@ void main() {
     // This pass reads from fractalBuffer and uses blurStrength from stateBuffer.
     if (PASSINDEX == 2) {
         // Read currentBlurStrength from stateBuffer
-        vec4 px1_val = texture(stateBuffer, vec2(0.75, 0.5)); // .r component of second pixel. Changed texture2D to texture
+        vec4 px1_val = texture2D(stateBuffer, vec2(0.75, 0.5)); // .r component of second pixel. Changed texture2D to texture
         float currentBlurStrength = px1_val.r;
         
         vec2 uv = isf_FragNormCoord.xy; // Normalized coordinates for the final output
@@ -222,15 +222,16 @@ void main() {
         gk1s[20] = 0.003765; gk1s[21] = 0.015019; gk1s[22] = 0.023792; gk1s[23] = 0.015019; gk1s[24] = 0.003765;
         
         if (currentBlurStrength <= 0.001) { // If blur is negligible, just output the fractalBuffer content
-            O = texture(fractalBuffer, uv); // Changed texture2D to texture
+            O = texture2D(fractalBuffer, uv); // Changed texture2D to texture
         } else { // Apply Gaussian blur
             for (int k = 0; k < 25; k++) {
                 // Calculate offset for each sample in the kernel
                 // Offset is scaled by blurStrength and pixel size (1.0 / RENDERSIZE)
                 // RENDERSIZE here refers to the dimensions of finalOutput.
                 // Assuming fractalBuffer has the same dimensions.
-                vec2 offset = (vec2(float(k % 5), float(k / 5)) - 2.0) * (1.0 / RENDERSIZE) * currentBlurStrength;
-                O += gk1s[k] * texture(fractalBuffer, uv + offset); // Changed texture2D to texture
+                // GLSL 1.20: % not available for int; use mod() on float
+                vec2 offset = (vec2(mod(float(k), 5.0), floor(float(k) / 5.0)) - 2.0) * (1.0 / RENDERSIZE) * currentBlurStrength;
+                O += gk1s[k] * texture2D(fractalBuffer, uv + offset); // Changed texture2D to texture
             }
         }
         

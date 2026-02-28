@@ -67,12 +67,13 @@
 
 // --- Global Constants ---
 #define PI 3.141592653589793
-const mat2 MAT2_ROT_03 = mat2(cos(0.3), sin(0.3), -sin(0.3), cos(0.3));
+// Precomputed: cos(0.3), sin(0.3) for GLSL 1.20 (no function calls in const initializers)
+const mat2 MAT2_ROT_03 = mat2(0.955336489125606, 0.295520206661340, -0.295520206661340, 0.955336489125606);
 const mat2 MAT2_ROT_PI_4 = mat2(0.70710678118, 0.70710678118, -0.70710678118, 0.70710678118);
 const mat2 MAT2_ROT_PI_2 = mat2(0.0, 1.0, -1.0, 0.0);
-const float RKT_ANGLE_CONST = 0.5 * PI + 1.05;
-const float COS_RKT_CONST = cos(RKT_ANGLE_CONST);
-const float SIN_RKT_CONST = sin(RKT_ANGLE_CONST);
+const float RKT_ANGLE_CONST = 2.620796326794896; // 0.5 * PI + 1.05
+const float COS_RKT_CONST = -0.867423225594017; // cos(RKT_ANGLE_CONST)
+const float SIN_RKT_CONST = 0.497571047891727; // sin(RKT_ANGLE_CONST)
 
 // --- Utility Functions ---
 vec2 pmod(vec2 p, float n) {

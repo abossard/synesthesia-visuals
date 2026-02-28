@@ -131,10 +131,10 @@ vec4 tonemapColor(vec4 raw_color, vec2 uv, float tint) {
     vec4 arg_to_tanh = tinted / (10000.0 * divisor);
 
     // Clamp the RGB components of the argument to tanh_custom to prevent "overblown" highlights.
-    const float CLAMP_MAX_RGB_ARG = 3.0f; 
-    arg_to_tanh.r = clamp(arg_to_tanh.r, 0.0f, CLAMP_MAX_RGB_ARG);
-    arg_to_tanh.g = clamp(arg_to_tanh.g, 0.0f, CLAMP_MAX_RGB_ARG);
-    arg_to_tanh.b = clamp(arg_to_tanh.b, 0.0f, CLAMP_MAX_RGB_ARG);
+    const float CLAMP_MAX_RGB_ARG = 3.0; 
+    arg_to_tanh.r = clamp(arg_to_tanh.r, 0.0, CLAMP_MAX_RGB_ARG);
+    arg_to_tanh.g = clamp(arg_to_tanh.g, 0.0, CLAMP_MAX_RGB_ARG);
+    arg_to_tanh.b = clamp(arg_to_tanh.b, 0.0, CLAMP_MAX_RGB_ARG);
     
     return tanh_custom(arg_to_tanh);
 }

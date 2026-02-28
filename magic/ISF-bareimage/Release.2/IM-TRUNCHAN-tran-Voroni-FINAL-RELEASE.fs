@@ -272,8 +272,9 @@ vec2 Reflection(in vec2 Coord, in vec2 Position, in float Size, in float NormalZ
 
 // Pattern generation functions
 vec2 cell_df(float r, vec2 np, vec2 mp, vec2 off, float time) {
-    const vec2 n0 = normalize(vec2(1.0, 1.0));
-    const vec2 n1 = normalize(vec2(1.0, -1.0));
+    // GLSL 1.20: const cannot use function calls
+    vec2 n0 = normalize(vec2(1.0, 1.0));
+    vec2 n1 = normalize(vec2(1.0, -1.0));
     
     np += off;
     mp -= off;
@@ -474,8 +475,8 @@ vec3 color(vec3 ww, vec3 uu, vec3 vv, vec3 ro, vec2 p, float time, float kaleido
     
     const float planeDist = 1.0-0.25;
     const int furthest = 6;
-    const int fadeFrom = max(furthest-5, 0);
-    const float fadeDist = planeDist*float(furthest - fadeFrom);
+    int fadeFrom = int(max(float(furthest)-5.0, 0.0));
+    float fadeDist = planeDist*float(furthest - fadeFrom);
     
     float nz = floor(ro.z / planeDist);
     

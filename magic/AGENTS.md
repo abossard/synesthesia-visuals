@@ -17,9 +17,15 @@ Magic Music Visuals compiles ISF shaders against a **GLSL 1.20-era profile**. Ma
 | `tanh()` | Not a GLSL 1.20 built-in | Add polyfill (see §2) |
 | `uint`, `uvec2`, `uvec3`, `uvec4` | Unsigned types not available | Use `int`, `ivec*`, or `float` |
 | `&`, `\|`, `^`, `<<`, `>>` (bitwise) | Not available | Use `fract(sin(dot(...)))` for hashing |
+| `round()` | Not a GLSL 1.20 built-in | Use `floor(x + 0.5)` |
+| `%` (integer modulo) | Not available in some GLSL 1.20 runtimes | Use `mod(float(a), float(b))` |
+| `2.0f`, `1.5f` (C-style float suffix) | Not valid GLSL syntax | Remove `f`: `2.0` |
 | `precision highp float;` | Desktop GLSL, not needed | Remove entirely |
 | `#version` directive | ISF host manages this | Remove entirely |
 | `texture()` | GLSL 1.30+ | Use `texture2D()` or ISF macros |
+| `isnan()`, `isinf()` | Not in GLSL 1.20 | `(x != x)` for NaN, `(abs(x) > 1e37)` for Inf |
+| `ivec2` in ISF macros | `IMG_PIXEL` expects `vec2` | Use `vec2(0.0)` not `ivec2(0)` |
+| `int < float` in for-loops | Type mismatch | Cast float to int: `int(floatVar)` |
 | `#ifdef GL_ES` blocks | Desktop-only host | Remove |
 
 ### Required Patterns
@@ -130,13 +136,20 @@ if (PASSINDEX == 0) {
 
 | Error Message | Cause | Fix |
 |---|---|---|
+| "'f' : syntax error" | C-style `f` suffix on float literals (`2.0f`) | Remove `f`: `2.0f` → `2.0` |
 | "'precision' : syntax error: syntax error" | Desktop GLSL has no precision qualifiers | Remove/comment out `precision highp float;` |
-| "Initializer not allowed" | `const` with function calls (e.g. `cos()`) | Use `#define` instead of `const mat2 = mat2(cos(...))` |
+| \"Initializer not allowed\" | `const` with function calls (e.g. `cos()`, `normalize()`) | Use `#define`, precompute literal values, or remove `const` |
 | "Invalid call of undeclared identifier 'texture'" | `texture()` is GLSL 1.30+ | Use `texture2D()` |
+| "Invalid call of undeclared identifier 'round'" | `round()` not in GLSL 1.20 | Use `floor(x + 0.5)` |
+| "'%' does not operate on 'int' and 'int'" | Integer modulo not available | Use `mod(float(a), float(b))` |
 | "No matching function for call to max(int, int)" | Integer overload | Cast to float |
 | "Invalid call of undeclared identifier 'tanh'" | GLSL 1.20 missing tanh | Add `_tanh` polyfill |
 | "Use of undeclared identifier 'X'" | Cascading from earlier error OR redeclared uniform | Fix earlier error first; remove `uniform` declarations for ISF-managed vars |
 | "No matching function for call to clamp(int, int, int)" | Integer overload | Cast to float |
+| "Invalid call of undeclared identifier 'isnan'" / 'isinf' | Not in GLSL 1.20 | `(x != x)` for NaN, `(abs(x) > 1e37)` for Inf |
+| "'/' does not operate on 'ivec2' and 'vec2'" | `IMG_PIXEL` expects vec2, not ivec2 | Use `vec2(0.0)` instead of `ivec2(0)` |
+| "'<' does not operate on 'int' and 'float'" | int loop counter vs float uniform | Cast: `int(floatUniform)` |
+| "Regular non-array variable 'X' may not be redeclared" | Buffer name in both IMPORTED and PASSES TARGET | Remove the `IMPORTED` block from JSON header |
 | Black screen | Alpha = 0 or gated by dead uniforms | Set `gl_FragColor.a = 1.0`; add `max(value, 0.05)` floors |
 
 ## 9) Testing Workflow

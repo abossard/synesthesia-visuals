@@ -4,20 +4,6 @@
     ],
     "CREDIT": "Original by ShaderToy, ISF Version @dot2dot",
     "DESCRIPTION": "Abstract Iterative Fractal Explorer with Dampened Controls, Optimized Ray Calculation, Reduced Buffer Complexity, and Multiple Colors.",
-    "IMPORTED": {
-        "fractalParamsBuffer": {
-            "PASSINDEX": 1
-        },
-        "primaryColorBuffer": {
-            "PASSINDEX": 2
-        },
-        "secondaryColorBuffer": {
-            "PASSINDEX": 3
-        },
-        "timeAndDetailBuffer": {
-            "PASSINDEX": 0
-        }
-    },
     "INPUTS": [
         {
             "DEFAULT": 0.2,
@@ -226,7 +212,7 @@ vec3 accumulateColor(vec2 fragCoord_pixel, float currentTime, vec2 currentRender
         z_depth += ray_step_dist;
         intensity_accumulator += (z_depth / ray_step_dist) / colorAccumDivisor;
 
-        if (z_depth > 10000.0 || isnan(z_depth) || isinf(z_depth) || isnan(intensity_accumulator) || isinf(intensity_accumulator)) {
+        if (z_depth > 10000.0 || (z_depth != z_depth) || (abs(z_depth) > 1e37) || (intensity_accumulator != intensity_accumulator) || (abs(intensity_accumulator) > 1e37)) {
             break;
         }
     }

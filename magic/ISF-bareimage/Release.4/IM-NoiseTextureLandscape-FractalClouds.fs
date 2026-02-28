@@ -209,7 +209,7 @@ void main() {
       currentSmoothedMouse = mouse_control;
     } else {
       // Read previous frame's data and smooth towards new values
-      vec4 prevData = IMG_PIXEL(paramBufferA, ivec2(0));
+      vec4 prevData = IMG_PIXEL(paramBufferA, vec2(0.0));
       float prevTime = prevData.r;
       float prevSpeed = prevData.g;
       vec2 prevMouse = prevData.ba;
@@ -234,7 +234,7 @@ void main() {
       smoothedAltitude = cloudAltitudeOffset;
     } else {
       // Read previous frame's data and smooth towards new values
-      vec4 prevData = IMG_PIXEL(paramBufferB, ivec2(0));
+      vec4 prevData = IMG_PIXEL(paramBufferB, vec2(0.0));
       smoothedElevation = mix(prevData.r, elevationAmplitude, min(1.0, TIMEDELTA * transitionSpeed));
       smoothedDetail = mix(prevData.g, terrainDetailFactor, min(1.0, TIMEDELTA * transitionSpeed));
       smoothedDensity = mix(prevData.b, cloudDensity, min(1.0, TIMEDELTA * transitionSpeed));

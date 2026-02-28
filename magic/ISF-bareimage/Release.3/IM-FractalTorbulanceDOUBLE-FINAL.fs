@@ -232,30 +232,30 @@ void main() {
             d += s_dist_step;
             
             // Accumulate color. Add a small epsilon to s_dist_step in denominator to prevent division by zero if it gets extremely small.
-            o += (1.0 / max(s_dist_step, 0.0001f)); 
+            o += (1.0 / max(s_dist_step, 0.0001)); 
 
             // Optional: Break if step is too small or d is too large (far clip)
-            if (s_dist_step < 0.0001f || d > 200.0f) break; // Increased far clip slightly
+            if (s_dist_step < 0.0001 || d > 200.0) break; // Increased far clip slightly
         }
         
         // Apply tonemapping with color intensity control
         float sunAtten = length(u - vec2(0.1));
         // MODIFICATION: Prevent sunAtten from being too small to avoid excessive brightness / division by zero.
-        // Adjust 0.02f as needed: smaller values = sharper/brighter sun, larger = softer/dimmer.
-        sunAtten = max(sunAtten, 0.02f); 
+        // Adjust 0.02 as needed: smaller values = sharper/brighter sun, larger = softer/dimmer.
+        sunAtten = max(sunAtten, 0.02); 
 
         // Calculate base color before channel-specific multipliers and tanh
-        // The division by 4000.0f is a scaling factor from the original.
-        vec4 tonemapBase = o * (effectiveColorIntensity / 4000.0f) / sunAtten;
+        // The division by 4000.0 is a scaling factor from the original.
+        vec4 tonemapBase = o * (effectiveColorIntensity / 4000.0) / sunAtten;
         
         // Input to tanh function, with channel-specific multipliers
-        vec4 inputToTanh = vec4(4.0f, 2.0f, 1.0f, 1.0f) * tonemapBase;
+        vec4 inputToTanh = vec4(4.0, 2.0, 1.0, 1.0) * tonemapBase;
 
         // MODIFICATION: CRITICAL FIX - Clamp the input to tanh_custom.
         // This prevents exp(2*x) in tanh_custom from receiving excessively large values,
         // which would cause it to return INF, leading to NaN in the division.
         // Max value for x in exp(2*x) before float overflow is approx 43-44. So clamp input to e.g. 40.
-        const float TANH_INPUT_CLAMP_LIMIT = 40.0f;
+        const float TANH_INPUT_CLAMP_LIMIT = 40.0;
         inputToTanh = clamp(inputToTanh, -TANH_INPUT_CLAMP_LIMIT, TANH_INPUT_CLAMP_LIMIT);
         
         o = tanh_custom(inputToTanh);

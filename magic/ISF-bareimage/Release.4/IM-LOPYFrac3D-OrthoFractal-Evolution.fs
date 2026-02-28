@@ -249,7 +249,7 @@ void main() {
         float manualTime = evolutionLocation;
         
         // Main rendering loop
-        for (int step = 0; step < raymarchSteps; step++) {
+        for (int step = 0; step < int(raymarchSteps); step++) {
             i = float(step + 1);
             
             screenPos = (gl_FragCoord.xy - 0.5 * RENDERSIZE) / RENDERSIZE.x;
@@ -262,7 +262,7 @@ void main() {
             s = 1.0;
             
             // Inner fractal loop
-            for (int fractal_step = 0; fractal_step < fractalIterations; fractal_step++) {
+            for (int fractal_step = 0; fractal_step < int(fractalIterations); fractal_step++) {
                 distanceSquared = dot(p, p);
                 distanceSquared = max(distanceSquared, 0.0001);
                 e = max(1.0, 11.0 / distanceSquared);

@@ -203,7 +203,7 @@ void main() {
             ) + 0.5;
             
             for(int j = 0; j < 12; j++) {
-                p -= round(p);
+                p -= floor(p + 0.5);
                 a = dot(p, p) + 0.26;
                 R *= a;
                 p /= a;
