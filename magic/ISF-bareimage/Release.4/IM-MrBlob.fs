@@ -1,4 +1,5 @@
 /*{
+
     "DESCRIPTION": "Volumetric Fluorescent Effect with smoothed speed, movement, pattern focus, and color control.",
     "CREDIT": "Based on ideas described in 'Fluorescent' by @XorDev, @dot2dot. ISF Version @dot2dot (bareimage). Enhanced by @dot2dot",
     "ISFVSN": "2.0",
@@ -136,6 +137,15 @@
 // liability for damages resulting from its use to the fullest extent possible
 
 // --- Global Constants ---
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec4 _tanh(vec4 v) {
+    return vec4(_tanh(v.x), _tanh(v.y), _tanh(v.z), _tanh(v.w));
+}
+
 const mat2 ROTATION_MATRIX = 0.1 * mat2(8.0, -6.0, 6.0, 8.0); // Pre-scaled rotation matrix
 
 // --- Forward declarations for helper functions used by multiple passes if needed ---
@@ -176,7 +186,7 @@ float calculateVolumetricPattern(vec3 p_in_scene_space, float time, float l_incr
 
 vec4 calculateColorContribution(float l_incremented_dist_in_scene, float pattern_b, float ray_depth_from_camera, vec4 tintColor) {
     vec4 color_wave_arg_offset = vec4(2.0, 3.0, 4.0, 0.0);
-    float tanh_arg = tanh(l_incremented_dist_in_scene - 6.0) * 6.0;
+    float tanh_arg = _tanh(l_incremented_dist_in_scene - 6.0) * 6.0;
     vec4 raw_color_wave = 1.0 + cos(tanh_arg - color_wave_arg_offset);
     vec4 tinted_color_wave = raw_color_wave * tintColor; // Apply colorControl tint
 
@@ -190,7 +200,7 @@ vec4 calculateColorContribution(float l_incremented_dist_in_scene, float pattern
 }
 
 vec4 applyTonemapping(vec4 accumulatedColor) {
-    return tanh(accumulatedColor / 2.0);
+    return _tanh(accumulatedColor / 2.0);
 }
 
 // --- Main Shader Logic ---
@@ -215,7 +225,6 @@ void main() {
     float current_ray_depth_val; // Renamed
     vec3 rayDirection_val; // Renamed
     float timeVal;
-
 
     if (PASSINDEX == 0) { // Time Buffer Update
         prevTimeData = IMG_NORM_PIXEL(timeBuffer, vec2(0.5, 0.5));

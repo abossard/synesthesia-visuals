@@ -1,4 +1,5 @@
 /*{
+
   "DESCRIPTION": "ISF implementation of the 'Volt' algorithm. Features perspective-like projection with Y-symmetry fix for spherical appearance, time accumulation, X, Y, Z rotation controls, zoom, internal swirling, and a vignette effect.",
   "CREDIT": "Volt Algorithm: By @XorDev, ISF Version by @dot2dot (bareimage)",
   "ISFVSN": "2.0",
@@ -21,7 +22,16 @@
   ]
 }*/
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec4 _tanh(vec4 v) {
+    return vec4(_tanh(v.x), _tanh(v.y), _tanh(v.z), _tanh(v.w));
+}
+
 const float pi = 3.14159265359;
 
 // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
@@ -180,7 +190,7 @@ void main() {
             if(z_volt > 100.0 || d_volt < 0.001) break;
         }
 
-        o = tanh(o / 3000.0);
+        o = _tanh(o / 3000.0);
         vec3 finalVoltColor = o.rgb;
 
         vec2 uv_vignette = isf_FragNormCoord.xy;

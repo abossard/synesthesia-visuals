@@ -127,7 +127,7 @@
 // or implied. The licensor makes no warranties regarding this work and disclaims 
 // liability for damages resulting from its use to the fullest extent possible
 
-precision mediump float; // Use lower precision for performance
+// REMOVED for GLSL 1.20 (Magic): precision mediump float; // Use lower precision for performance
 
 // Simplified hash function using the noiseSeed uniform
 float hash_2d_to_1d(vec2 p) {

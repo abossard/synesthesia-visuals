@@ -26,7 +26,7 @@
   ]
 }*/
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
 //
@@ -225,7 +225,8 @@ void st_bufferA_mainImage(out vec4 fragColor, vec2 fragCoord_normalized_uv) {
 
 // --- Depth of Field (Image shader logic) ---
 const float st_GA = 2.399;
-const mat2 st_rot = mat2(cos(st_GA), sin(st_GA), -sin(st_GA), cos(st_GA));
+// GLSL 1.20: const initializer cannot use function calls — use #define
+#define st_rot mat2(cos(st_GA), sin(st_GA), -sin(st_GA), cos(st_GA))
 const int DOF_SAMPLES = 80; // Kept original sample count
 
 vec3 st_dof(sampler2D tex, vec2 uv, float alpha_depth_info) {
@@ -243,7 +244,7 @@ vec3 st_dof(sampler2D tex, vec2 uv, float alpha_depth_info) {
     rad_spiral += 1.0 / rad_spiral; // Spiral outwards
     angle *= st_rot; // Rotate sample vector
     vec2 sample_uv = uv + pixel * (rad_spiral - 1.0) * angle;
-    vec4 col = texture(tex, clamp(sample_uv, 0.0, 1.0));
+    vec4 col = texture2D(tex, clamp(sample_uv, 0.0, 1.0));
     acc += col.rgb;
   }
   return acc / float(DOF_SAMPLES);
@@ -251,7 +252,7 @@ vec3 st_dof(sampler2D tex, vec2 uv, float alpha_depth_info) {
 
 void st_image_mainImage(out vec4 fragColor, vec2 fragCoord_normalized_uv, sampler2D channel0_sampler) {
   vec2 uv = fragCoord_normalized_uv;
-  float scene_alpha = texture(channel0_sampler, uv).w; // Depth info from sceneBuffer's alpha
+  float scene_alpha = texture2D(channel0_sampler, uv).w; // Depth info from sceneBuffer's alpha
   vec3 dof_result = st_dof(channel0_sampler, uv, scene_alpha);
   fragColor = vec4(dof_result, 1.0);
 }

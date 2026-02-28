@@ -1,4 +1,5 @@
 /*{
+
    "DESCRIPTION": "Refactored Shadertoy shader with additional smoothed controls (zoom, distortion, roll) and unified speed/parameter smoothing.",
    "CREDIT": "Original by ShaderToy author @diatribes, ISF Version by d@ot2dot (bareimage)",
    "ISFVSN": "2.0",
@@ -92,13 +93,19 @@
 
 // --- Helper Functions (some modified for new params) ---
 
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+
 mat2 quirkyRotate(float angle) {
     return mat2(cos(angle + vec4(0,33,11,0)));
 }
 
 vec3 getCameraPathPoint(float z_coord) {
-    return vec3(tanh(cos(z_coord * 0.2) * 0.3) * 16.0,
-                tanh(cos(z_coord * 0.3) * 0.4) * 16.0,
+    return vec3(_tanh(cos(z_coord * 0.2) * 0.3) * 16.0,
+                _tanh(cos(z_coord * 0.3) * 0.4) * 16.0,
                 z_coord);
 }
 

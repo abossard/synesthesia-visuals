@@ -66,7 +66,7 @@
 // glslsandbox.com/e#21344.0
 
 #ifdef GL_ES
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 #endif
 
 vec2 distort(vec2 p)

@@ -1,4 +1,5 @@
 /*{
+
    "DESCRIPTION": "Refactored Shadertoy shader with additional smoothed controls (zoom, distortion, roll) and unified speed/parameter smoothing. OPTIMIZED VERSION.",
    "CREDIT": "Original by ShaderToy author @diatribes, ISF Version by d@ot2dot (bareimage)",
    "ISFVSN": "2.0",
@@ -92,6 +93,12 @@
 
 // --- Helper Functions (some modified for new params) ---
 
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+
 mat2 quirkyRotate(float angle) {
     // This creates mat2(cos(angle), cos(angle+33), cos(angle+11), cos(angle))
     // It's intentionally "quirky", not a standard rotation.
@@ -99,8 +106,8 @@ mat2 quirkyRotate(float angle) {
 }
 
 vec3 getCameraPathPoint(float z_coord) {
-    return vec3(tanh(cos(z_coord * 0.2) * 0.3) * 16.0,
-                tanh(cos(z_coord * 0.3) * 0.4) * 16.0,
+    return vec3(_tanh(cos(z_coord * 0.2) * 0.3) * 16.0,
+                _tanh(cos(z_coord * 0.3) * 0.4) * 16.0,
                 z_coord);
 }
 
@@ -235,7 +242,6 @@ void main() {
         vec3 X_cam = normalize(cross(upApprox, Z_cam)); // Ensure X is perpendicular to Z and roughly horizontal
         vec3 Y_cam = cross(Z_cam, X_cam); // Y will be orthogonal to Z and X
 
-
         vec2 screen_pos_centered_normalized = (u - r.xy * 0.5) / r.y;
 
         float rollAngle = sin(ro.z * 0.2) * sRoll;
@@ -255,7 +261,6 @@ void main() {
         // Let's stick closer to original ray construction logic if it was intentional for a specific effect:
         vec3 ray_camera_space = vec3(rolled_screen_pos, sZoom); // sZoom modifies the "depth" component in camera space
         D_ray = normalize(mat3(X_cam, Y_cam, Z_cam) * ray_camera_space); // Transform camera space ray to world space
-
 
         float total_distance_marched = 0.0;
 

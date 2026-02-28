@@ -45,7 +45,7 @@
 // or implied. The licensor makes no warranties regarding this work and disclaims 
 // liability for damages resulting from its use to the fullest extent possible
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 // Built-in variables provided by ISF host:
 // uniform float TIME; // Time in seconds since composition started

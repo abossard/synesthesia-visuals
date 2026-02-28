@@ -73,7 +73,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 #define PI 3.14159265359
 
 void main() {

@@ -1,4 +1,5 @@
 /*{
+
     "DESCRIPTION": "Corridor Raymarcher - ISF port with smoothed controls. Based on XorDev's Shadertoy original.",
     "CREDIT": "Original by @XorDev, ISF conversion and modifications by @dot2dot - (bareimage)",
     "ISFVSN": "2.0",
@@ -28,8 +29,17 @@
     ]
 }*/
 
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec4 _tanh(vec4 v) {
+    return vec4(_tanh(v.x), _tanh(v.y), _tanh(v.z), _tanh(v.w));
+}
+
 #define PI 3.14159265359
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
 //
@@ -118,7 +128,7 @@ vec4 renderCorridorEffect(
     }
 
     // Tonemapping
-    O = tanh(O / currentToneExposure);
+    O = _tanh(O / currentToneExposure);
     return vec4(O.rgb, 1.0); // Ensure alpha is 1.0
 }
 

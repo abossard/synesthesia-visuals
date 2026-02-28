@@ -45,7 +45,7 @@
 // or implied. The licensor makes no warranties regarding this work and disclaims
 // liability for damages resulting from its use to the fullest extent possible
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 const float pi = 3.14159265359;
 

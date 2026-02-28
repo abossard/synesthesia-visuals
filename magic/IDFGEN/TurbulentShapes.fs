@@ -94,7 +94,7 @@
 
 
 #ifdef GL_ES
-precision mediump float;
+// REMOVED for GLSL 1.20 (Magic): precision mediump float;
 #endif
 
 

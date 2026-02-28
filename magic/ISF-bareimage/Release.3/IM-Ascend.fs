@@ -1,4 +1,5 @@
 /*{
+
   "DESCRIPTION": "Ascend algorithm by @XorDev, with time accumulation and horizontal offset control. Based on a ISF Conversion Method by @dot2dot.",
   "CREDIT": "Ascend Algorithm: @XorDev. ISF Version by @dot2dot (bareimage).",
   "ISFVSN": "2.0",
@@ -15,7 +16,7 @@
   ]
 }*/
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
 //
@@ -42,6 +43,15 @@ precision highp float;
 // DISCLAIMER: This work is provided "AS IS" without warranty of any kind, express 
 // or implied. The licensor makes no warranties regarding this work and disclaims 
 // liability for damages resulting from its use to the fullest extent possible
+
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec3 _tanh(vec3 v) {
+    return vec3(_tanh(v.x), _tanh(v.y), _tanh(v.z));
+}
 
 void main() {
     // Pass 0: Time and main speed smoothing
@@ -93,7 +103,6 @@ void main() {
             vec3 p_eval = p_current;
             p_eval.x -= currentHorizontalOffset;
 
-
             vec3 c_val = abs(s_rayDir);
             float c_val_y = c_val.y;
             if (abs(c_val_y) < 0.0001) {
@@ -130,7 +139,7 @@ void main() {
             if(z_dist_marched > 100.0 || d_sdf_dist < 0.001) break;
         }
 
-        finalAscendColor = tanh(finalAscendColor / 50.0);
+        finalAscendColor = _tanh(finalAscendColor / 50.0);
 
         vec2 uv = isf_FragNormCoord.xy;
         float vignette = 1.0 - smoothstep(0.5, 1.5, length(uv - 0.5) * 1.5);

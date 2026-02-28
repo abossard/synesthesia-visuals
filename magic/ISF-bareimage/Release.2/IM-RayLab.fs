@@ -153,7 +153,7 @@ const float epsilon = 0.02;
 const float pi = 3.14159265359;
 const vec3 wallsColor = vec3(0.05, 0.025, 0.025);
 const vec3 fogColor = vec3(0.05, 0.05, 0.2);
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 
 //Distance Field functions by iq

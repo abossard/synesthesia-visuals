@@ -171,6 +171,13 @@
 
 // Helper function for fractal transformation
 // Accepts currentDetailEpsilon to use the smoothed value
+
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+
 float fractalTransform(inout vec3 p_inout, float currentDetailEpsilon) {
     p_inout = abs(sin(p_inout)) - 1.0;
     // Using a configurable epsilon (currentDetailEpsilon)
@@ -224,7 +231,7 @@ vec3 accumulateColor(vec2 fragCoord_pixel, float currentTime, vec2 currentRender
         }
     }
     // Apply tanh to compress intensity range for mixing
-    float mix_factor = tanh(intensity_accumulator);
+    float mix_factor = _tanh(intensity_accumulator);
     // Ensure mix_factor is in [0,1] if tanh output is [-1,1]
     // mix_factor = (mix_factor + 1.0) * 0.5; // If primary is background and secondary is foreground
     // Or, if tanh_accumulator is mostly positive, simple clamp might be okay, or just use it.

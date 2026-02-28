@@ -143,6 +143,16 @@
 // SOFTWARE.
 
 // Helper noise functions (unchanged)
+
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec4 _tanh(vec4 v) {
+    return vec4(_tanh(v.x), _tanh(v.y), _tanh(v.z), _tanh(v.w));
+}
+
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
@@ -205,9 +215,8 @@ vec4 render(in vec2 pixelCoord, in float t, in vec2 R, in float shape, in float 
          (base_brightness / (1.0 + exp(min(p.z * 80.0, 20.0)))) * _base * 0.1;
   }
 
-  return tanh(o);
+  return _tanh(o);
 }
-
 
 void main() {
   if (PASSINDEX == 0) {

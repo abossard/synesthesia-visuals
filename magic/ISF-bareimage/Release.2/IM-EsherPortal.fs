@@ -39,7 +39,7 @@
 #define NV_PLANE_N vec3(0.0, 1.0, 0.0)
 #define TWIST_EXPONENT 1.0
 
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 
 // Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported License
 //

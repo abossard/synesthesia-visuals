@@ -1,4 +1,5 @@
 /*{
+
   "DESCRIPTION": "Converted Shadertoy shader featuring abstract fractal patterns with smoothed speed, rotation, and parameter transitions. Original Shadertoy by unknown author, optimized by FabriceNeyret2. Includes brightness protection and twist perturbation.",
   "CREDIT": "Based on code @diatribes (https://www.shadertoy.com/view/tfc3DX), ISF 2.0 Version by @dot2dot (bareimage)",
   "ISFVSN": "2.0",
@@ -106,6 +107,15 @@
 // or implied. The licensor makes no warranties regarding this work and disclaims 
 // liability for damages resulting from its use to the fullest extent possible
 
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec4 _tanh(vec4 v) {
+    return vec4(_tanh(v.x), _tanh(v.y), _tanh(v.z), _tanh(v.w));
+}
+
 void main() {
   // Declare variables for use in all passes
   vec4 prevParamData, prevRotData;
@@ -120,7 +130,6 @@ void main() {
   vec4 o_st;  // For Shadertoy o (output color)
   vec3 p_st;
   float t_st, i_st, d_st, s_st, w_st, l_st;
-
 
   if (PASSINDEX == 0) {
     // First pass: Update accumulated time and other smoothed parameters
@@ -219,7 +228,7 @@ void main() {
     }
     
     float scale_factor = brightness * (1.0 / 200000.0); 
-    o_st = tanh(o_st * scale_factor * exp(-d_st / 8.0));
+    o_st = _tanh(o_st * scale_factor * exp(-d_st / 8.0));
     // ---- Shadertoy mainImage logic END ----
 
     gl_FragColor = o_st * colorControl; 

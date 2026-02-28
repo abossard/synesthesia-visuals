@@ -121,7 +121,7 @@
 
 
 // --- Constants ---
-precision highp float;
+// REMOVED for GLSL 1.20 (Magic): precision highp float;
 const float PI = 3.14159265359;
 const float EPS = 1e-4;
 const int ITR = 64;

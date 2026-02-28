@@ -1,4 +1,5 @@
 /*{
+
     "DESCRIPTION": "A user-controllable fractal shader featuring manual evolution control to isolate specific visual states. Includes volumetric depth and smoothed parameters. This is very fun shader, I encoroge you to play arround with it",
     "CREDIT": "Original algorith @YoheiNishitsuji (https://twigl.app/?ol=true&ss=-ORucwaeIgR3O6O9Rg5e). Re-architected with manual evolution control by @dot2dot. ISF 2.0 Version @dot2dot",
     "ISFVSN": "2.0",
@@ -163,6 +164,15 @@
 // SOFTWARE.
 
 // Define mathematical constants
+// _tanh polyfill for GLSL 1.20 (no built-in tanh)
+float _tanh(float x) {
+    float e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+vec3 _tanh(vec3 v) {
+    return vec3(_tanh(v.x), _tanh(v.y), _tanh(v.z));
+}
+
 #define PI 3.14159265359
 #define TWO_PI 6.28318530718
 
@@ -191,7 +201,6 @@ mat3 rotationZ(float angle) {
     float c = cos(angle);
     return mat3(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
 }
-
 
 void main() {
     // Variable declarations for all passes
@@ -273,6 +282,6 @@ void main() {
             gl_FragColor.rgb += hsv(hue, 0.8, value);
         }
         
-        gl_FragColor.rgb = tanh(gl_FragColor.rgb);
+        gl_FragColor.rgb = _tanh(gl_FragColor.rgb);
     }
 }

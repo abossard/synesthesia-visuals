@@ -130,6 +130,9 @@ if (PASSINDEX == 0) {
 
 | Error Message | Cause | Fix |
 |---|---|---|
+| "'precision' : syntax error: syntax error" | Desktop GLSL has no precision qualifiers | Remove/comment out `precision highp float;` |
+| "Initializer not allowed" | `const` with function calls (e.g. `cos()`) | Use `#define` instead of `const mat2 = mat2(cos(...))` |
+| "Invalid call of undeclared identifier 'texture'" | `texture()` is GLSL 1.30+ | Use `texture2D()` |
 | "No matching function for call to max(int, int)" | Integer overload | Cast to float |
 | "Invalid call of undeclared identifier 'tanh'" | GLSL 1.20 missing tanh | Add `_tanh` polyfill |
 | "Use of undeclared identifier 'X'" | Cascading from earlier error OR redeclared uniform | Fix earlier error first; remove `uniform` declarations for ISF-managed vars |
