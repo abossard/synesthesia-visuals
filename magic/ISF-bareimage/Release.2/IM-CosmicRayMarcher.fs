@@ -121,6 +121,12 @@
 // or implied. The licensor makes no warranties regarding this work and disclaims 
 // liability for damages resulting from its use to the fullest extent possible
 
+// tanh polyfill for GLSL 1.20 (not built-in before GLSL 1.30)
+vec4 tanh_safe(vec4 x) {
+    vec4 e2x = exp(2.0 * clamp(x, -20.0, 20.0));
+    return (e2x - 1.0) / (e2x + 1.0);
+}
+
 void main() {
     // Declare variables at the top level for use in all passes
     vec4 prevTimeData, prevParamData, prevRotData;
@@ -248,7 +254,7 @@ void main() {
             o += (sin(p.x + t + vec4(0.0, 2.0, 3.0, 0.0)) + 1.0) / d;
         }
         
-        o = tanh(o / 5000.0);
+        o = tanh_safe(o / 5000.0);
         
         // Apply color mix
         o.rgb *= colorMix.rgb;

@@ -134,7 +134,7 @@ float calculateAO_image(vec3 p, vec3 n, sampler2D heightMapTex, int numSamples, 
     float w = 1.0;
     for (int i = 1; i <= 10; i++) { // keep a fixed upper bound for GLSL compilers
         if (i > numSamples) break;
-        float d0 = float(i) / float(max(numSamples, 1));
+        float d0 = float(i) / max(float(numSamples), 1.0);
         r += w * (map_image(p + n * d0, heightMapTex) - d0);
         w *= 0.5 * intensity;
     }
@@ -192,8 +192,7 @@ void image_main(out vec4 fragColor, vec2 fragCoord_norm, sampler2D heightMapTex)
 
     float crv = curve_image(sp, heightMapTex, currentCurveAmp, currentCurveAmpInit);
 
-    int final_ao_samples = int(floor(currentAOSamples_float + 0.5));
-    final_ao_samples = clamp(final_ao_samples, 1, 10);
+    int final_ao_samples = int(clamp(floor(currentAOSamples_float + 0.5), 1.0, 10.0));
     float ao = calculateAO_image(sp, sn, heightMapTex, final_ao_samples, currentAOIntensity);
 
     vec3 col = (oC * (diff + 0.25 + vec3(0.5, 0.7, 1.0) * spec * fre2 * 4.0 + vec3(1.0, 0.1, 0.2) * fre * 8.0));
