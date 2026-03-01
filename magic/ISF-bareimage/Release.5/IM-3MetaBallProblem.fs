@@ -125,7 +125,7 @@
 const float PI = 3.14159265359;
 const float EPS = 1e-4;
 const int ITR = 64;
-const vec3 sunDir = normalize(vec3(0.0, 1.0, 5.0));
+const vec3 sunDir = vec3(0.0, 0.196116135138184, 0.980580675690920); // precomputed normalize(vec3(0.0, 1.0, 5.0))
 
 // --- Forward Declarations ---
 float map(vec3 p);

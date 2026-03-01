@@ -26,6 +26,7 @@ Magic Music Visuals compiles ISF shaders against a **GLSL 1.20-era profile**. Ma
 | `isnan()`, `isinf()` | Not in GLSL 1.20 | `(x != x)` for NaN, `(abs(x) > 1e37)` for Inf |
 | `ivec2` in ISF macros | `IMG_PIXEL` expects `vec2` | Use `vec2(0.0)` not `ivec2(0)` |
 | `int < float` in for-loops | Type mismatch | Cast float to int: `int(floatVar)` |
+| `float[N](...)` array constructor | GLSL 1.30+ syntax | Use init-in-function pattern; see `_fix_arrays.py` |
 | `#ifdef GL_ES` blocks | Desktop-only host | Remove |
 
 ### Required Patterns
@@ -149,6 +150,7 @@ if (PASSINDEX == 0) {
 | "Invalid call of undeclared identifier 'isnan'" / 'isinf' | Not in GLSL 1.20 | `(x != x)` for NaN, `(abs(x) > 1e37)` for Inf |
 | "'/' does not operate on 'ivec2' and 'vec2'" | `IMG_PIXEL` expects vec2, not ivec2 | Use `vec2(0.0)` instead of `ivec2(0)` |
 | "'<' does not operate on 'int' and 'float'" | int loop counter vs float uniform | Cast: `int(floatUniform)` |
+| "Array size must appear after variable name" | `float[N](...)` array constructor (GLSL 1.30+) | Use init-in-function; run `_fix_arrays.py` |
 | "Regular non-array variable 'X' may not be redeclared" | Buffer name in both IMPORTED and PASSES TARGET | Remove the `IMPORTED` block from JSON header |
 | Black screen | Alpha = 0 or gated by dead uniforms | Set `gl_FragColor.a = 1.0`; add `max(value, 0.05)` floors |
 

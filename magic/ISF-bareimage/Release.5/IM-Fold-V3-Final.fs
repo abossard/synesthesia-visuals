@@ -378,7 +378,7 @@ void main() {
         vec4 controls = IMG_NORM_PIXEL(controlsBuffer, vec2(0.5));
         float effectiveBrightness = controls.y;
         
-        float tempIteration = round(iterations);
+        float tempIteration = floor(iterations + 0.5);
         float local_iterations = tempIteration + haloStrength;
 
         vec4 rotationData = IMG_NORM_PIXEL(rotationBuffer, vec2(0.5));
