@@ -90,8 +90,8 @@ private actor LaunchpadGateway: LaunchpadEffectHandling {
     }
 
     func rainbowPattern() async {
-        let colors = [LP.red, LP.orange, LP.yellow, LP.green, LP.cyan, LP.blue, LP.purple, LP.pink]
-        var updates: [(ButtonId, Int)] = []
+        let colors: [LaunchpadColor] = [.red, .orange, .yellow, .green, .cyan, .blue, .purple, .magenta]
+        var updates: [(ButtonId, LaunchpadColor)] = []
         for y in 0..<8 {
             for x in 0..<8 {
                 updates.append((ButtonId(x: x, y: y), colors[(x + y) % colors.count]))
@@ -102,7 +102,7 @@ private actor LaunchpadGateway: LaunchpadEffectHandling {
 
     func clearAll() async {
         let allPads = allPadIds()
-        module.setLeds(allPads.map { ($0, LP.off) })
+        module.setLeds(allPads.map { ($0, LaunchpadColor.off) })
     }
 
     func receiveOscEvent(_ event: OscEvent) async {

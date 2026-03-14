@@ -37,14 +37,14 @@ final class LaunchpadYAMLConfigTests: XCTestCase {
     func test_colorResolution() throws {
         let config = try LaunchpadConfigLoader.loadBundled()
         
-        // Known colors should resolve
-        XCTAssertEqual(config.color("red"), 5)
-        XCTAssertEqual(config.color("green"), 21)
-        XCTAssertEqual(config.color("blue"), 45)
-        XCTAssertEqual(config.color("off"), 0)
+        // Known colors should resolve to LaunchpadColor cases
+        XCTAssertEqual(config.color("red"), .red)
+        XCTAssertEqual(config.color("green"), .green)
+        XCTAssertEqual(config.color("blue"), .blue)
+        XCTAssertEqual(config.color("off"), .off)
         
-        // Unknown color returns 0
-        XCTAssertEqual(config.color("nonexistent"), 0)
+        // Unknown color returns .off
+        XCTAssertEqual(config.color("nonexistent"), .off)
     }
     
     // MARK: - Group Tests

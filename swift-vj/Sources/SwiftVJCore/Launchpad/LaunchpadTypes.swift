@@ -66,49 +66,62 @@ extension ButtonId: CustomStringConvertible {
 
 // MARK: - LED Colors
 
-/// Base colors with 3 brightness levels: [DIM, NORMAL, BRIGHT]
-/// Extended color palette for Launchpad Mini Mk3
-/// 32 colors arranged in 4 rows x 8 columns
-public enum LaunchpadColor: Int, CaseIterable, Sendable {
-    // Row 1: Warm colors
+/// Launchpad Mini MK3 LED color palette
+///
+/// Each case maps to a MIDI velocity value (0–127) sent via SysEx for LED control.
+/// Covers all colors used by LP shortcuts, YAML config, and the learn-mode color picker.
+public enum LaunchpadColor: Int, CaseIterable, Sendable, Codable, Hashable {
+    case off = 0
+    case redDim = 1
+    case whiteDim = 2
+    case white = 3
+    case coral = 4
     case red = 5
     case redBright = 6
+    case orangeDim = 7
+    case peach = 8
     case orange = 9
     case orangeBright = 10
-    case amber = 96
+    case yellowDim = 11
+    case gold = 12
     case yellow = 13
     case yellowBright = 14
+    case spring = 16
     case lime = 17
-    
-    // Row 2: Cool greens
+    case greenDim = 19
     case green = 21
     case greenBright = 22
     case mint = 29
     case teal = 33
+    case cyanDim = 35
+    case aqua = 36
     case cyan = 37
     case cyanBright = 38
     case sky = 40
+    case blueDim = 41
     case azure = 44
-    
-    // Row 3: Blues and purples
     case blue = 45
     case blueBright = 46
+    case violet = 48
     case indigo = 50
+    case purpleDim = 51
+    case lavender = 52
     case purple = 53
     case purpleBright = 54
-    case violet = 48
+    case pinkDim = 55
+    case hotPink = 56
     case magenta = 57
     case pink = 58
-    
-    // Row 4: Special colors
-    case hotPink = 56
-    case coral = 4
-    case peach = 8
-    case gold = 12
-    case spring = 16
-    case aqua = 36
-    case lavender = 52
-    case white = 3
+    case magentaBright = 61
+    case amber = 96
+
+    /// The 32 colors displayed in the learn-mode color picker (4 rows × 8 columns)
+    public static let pickerColors: [LaunchpadColor] = [
+        .red, .redBright, .orange, .orangeBright, .amber, .yellow, .yellowBright, .lime,
+        .green, .greenBright, .mint, .teal, .cyan, .cyanBright, .sky, .azure,
+        .blue, .blueBright, .indigo, .purple, .purpleBright, .violet, .magenta, .pink,
+        .hotPink, .coral, .peach, .gold, .spring, .aqua, .lavender, .white,
+    ]
 }
 
 /// LED display mode
@@ -118,27 +131,29 @@ public enum LedMode: Sendable {
     case flash
 }
 
-// Common color shortcuts
+/// Backward-compatible color shortcuts mapping to ``LaunchpadColor`` cases.
+///
+/// All MIDI velocity values are preserved — no protocol-level changes.
 public enum LP {
-    public static let off = 0
-    public static let red = 5
-    public static let redDim = 1
-    public static let orange = 9
-    public static let orangeDim = 10
-    public static let yellow = 13
-    public static let yellowDim = 14
-    public static let green = 21
-    public static let greenDim = 19
-    public static let cyan = 37
-    public static let cyanDim = 35
-    public static let blue = 45
-    public static let blueDim = 41
-    public static let purple = 53
-    public static let purpleDim = 51
-    public static let pink = 57
-    public static let pinkDim = 55
-    public static let white = 3
-    public static let whiteDim = 2
+    public static let off: LaunchpadColor = .off
+    public static let red: LaunchpadColor = .red
+    public static let redDim: LaunchpadColor = .redDim
+    public static let orange: LaunchpadColor = .orange
+    public static let orangeDim: LaunchpadColor = .orangeBright   // velocity 10
+    public static let yellow: LaunchpadColor = .yellow
+    public static let yellowDim: LaunchpadColor = .yellowBright   // velocity 14
+    public static let green: LaunchpadColor = .green
+    public static let greenDim: LaunchpadColor = .greenDim
+    public static let cyan: LaunchpadColor = .cyan
+    public static let cyanDim: LaunchpadColor = .cyanDim
+    public static let blue: LaunchpadColor = .blue
+    public static let blueDim: LaunchpadColor = .blueDim
+    public static let purple: LaunchpadColor = .purple
+    public static let purpleDim: LaunchpadColor = .purpleDim
+    public static let pink: LaunchpadColor = .magenta             // velocity 57
+    public static let pinkDim: LaunchpadColor = .pinkDim
+    public static let white: LaunchpadColor = .white
+    public static let whiteDim: LaunchpadColor = .whiteDim
 }
 
 // MARK: - Pad Mode
@@ -290,8 +305,8 @@ public struct PadBehavior: Codable, Sendable {
     public let padId: ButtonId
     public let mode: PadMode
     public let group: ButtonGroupType?
-    public let idleColor: Int
-    public let activeColor: Int
+    public let idleColor: LaunchpadColor
+    public let activeColor: LaunchpadColor
     public let label: String
     
     // Toggle-specific
@@ -313,7 +328,7 @@ public struct PadBehavior: Codable, Sendable {
     // Color cycle mode data (RGB palette + channel addresses)
     public let colorCycleAddresses: [String]
     public let colorCyclePalette: [[Float]]
-    public let colorCycleLedColors: [Int]
+    public let colorCycleLedColors: [LaunchpadColor]
     public let colorCycleIndex: Int
 
     // Vector2 mode data (paired X/Y channels)
@@ -331,8 +346,8 @@ public struct PadBehavior: Codable, Sendable {
         padId: ButtonId,
         mode: PadMode,
         group: ButtonGroupType? = nil,
-        idleColor: Int = LP.off,
-        activeColor: Int = LP.green,
+        idleColor: LaunchpadColor = .off,
+        activeColor: LaunchpadColor = .green,
         label: String = "",
         oscOn: OscCommand? = nil,
         oscOff: OscCommand? = nil,
@@ -344,7 +359,7 @@ public struct PadBehavior: Codable, Sendable {
         enumOptionCount: Int? = nil,
         colorCycleAddresses: [String] = [],
         colorCyclePalette: [[Float]] = [],
-        colorCycleLedColors: [Int] = [],
+        colorCycleLedColors: [LaunchpadColor] = [],
         colorCycleIndex: Int = 0,
         vector2Addresses: [String] = [],
         vector2Current: [Float] = [],
@@ -378,8 +393,10 @@ public struct PadBehavior: Codable, Sendable {
         padId = try container.decode(ButtonId.self, forKey: .padId)
         mode = try container.decode(PadMode.self, forKey: .mode)
         group = try container.decodeIfPresent(ButtonGroupType.self, forKey: .group)
-        idleColor = try container.decodeIfPresent(Int.self, forKey: .idleColor) ?? LP.off
-        activeColor = try container.decodeIfPresent(Int.self, forKey: .activeColor) ?? LP.green
+        let idleRaw = try container.decodeIfPresent(Int.self, forKey: .idleColor) ?? LaunchpadColor.off.rawValue
+        idleColor = LaunchpadColor(rawValue: idleRaw) ?? .off
+        let activeRaw = try container.decodeIfPresent(Int.self, forKey: .activeColor) ?? LaunchpadColor.green.rawValue
+        activeColor = LaunchpadColor(rawValue: activeRaw) ?? .green
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         oscOn = try container.decodeIfPresent(OscCommand.self, forKey: .oscOn)
         oscOff = try container.decodeIfPresent(OscCommand.self, forKey: .oscOff)
@@ -391,7 +408,8 @@ public struct PadBehavior: Codable, Sendable {
         enumOptionCount = try container.decodeIfPresent(Int.self, forKey: .enumOptionCount)
         colorCycleAddresses = try container.decodeIfPresent([String].self, forKey: .colorCycleAddresses) ?? []
         colorCyclePalette = try container.decodeIfPresent([[Float]].self, forKey: .colorCyclePalette) ?? []
-        colorCycleLedColors = try container.decodeIfPresent([Int].self, forKey: .colorCycleLedColors) ?? []
+        let ledColorRaws = try container.decodeIfPresent([Int].self, forKey: .colorCycleLedColors) ?? []
+        colorCycleLedColors = ledColorRaws.compactMap { LaunchpadColor(rawValue: $0) }
         colorCycleIndex = try container.decodeIfPresent(Int.self, forKey: .colorCycleIndex) ?? 0
         vector2Addresses = try container.decodeIfPresent([String].self, forKey: .vector2Addresses) ?? []
         vector2Current = try container.decodeIfPresent([Float].self, forKey: .vector2Current) ?? []
@@ -403,8 +421,8 @@ public struct PadBehavior: Codable, Sendable {
         try container.encode(padId, forKey: .padId)
         try container.encode(mode, forKey: .mode)
         try container.encodeIfPresent(group, forKey: .group)
-        try container.encode(idleColor, forKey: .idleColor)
-        try container.encode(activeColor, forKey: .activeColor)
+        try container.encode(idleColor.rawValue, forKey: .idleColor)
+        try container.encode(activeColor.rawValue, forKey: .activeColor)
         try container.encode(label, forKey: .label)
         try container.encodeIfPresent(oscOn, forKey: .oscOn)
         try container.encodeIfPresent(oscOff, forKey: .oscOff)
@@ -416,7 +434,7 @@ public struct PadBehavior: Codable, Sendable {
         try container.encodeIfPresent(enumOptionCount, forKey: .enumOptionCount)
         if !colorCycleAddresses.isEmpty { try container.encode(colorCycleAddresses, forKey: .colorCycleAddresses) }
         if !colorCyclePalette.isEmpty { try container.encode(colorCyclePalette, forKey: .colorCyclePalette) }
-        if !colorCycleLedColors.isEmpty { try container.encode(colorCycleLedColors, forKey: .colorCycleLedColors) }
+        if !colorCycleLedColors.isEmpty { try container.encode(colorCycleLedColors.map(\.rawValue), forKey: .colorCycleLedColors) }
         if colorCycleIndex != 0 { try container.encode(colorCycleIndex, forKey: .colorCycleIndex) }
         if !vector2Addresses.isEmpty { try container.encode(vector2Addresses, forKey: .vector2Addresses) }
         if !vector2Current.isEmpty { try container.encode(vector2Current, forKey: .vector2Current) }
@@ -430,7 +448,7 @@ public struct PadBehavior: Codable, Sendable {
 public struct PadRuntimeState: Sendable {
     public var isActive: Bool
     public var isOn: Bool
-    public var currentColor: Int
+    public var currentColor: LaunchpadColor
     public var blinkEnabled: Bool
     public var ledMode: LedMode
     /// Current value for increment/decrement controls (0.0-1.0)
@@ -441,7 +459,7 @@ public struct PadRuntimeState: Sendable {
     public init(
         isActive: Bool = false,
         isOn: Bool = false,
-        currentColor: Int = LP.off,
+        currentColor: LaunchpadColor = .off,
         blinkEnabled: Bool = false,
         ledMode: LedMode = .static,
         currentValue: Float = 0.5,
@@ -527,7 +545,7 @@ public struct LearnState: Sendable {
     public var activeRegister: LearnRegister
     public var selectedMode: PadMode?
     public var selectedGroup: ButtonGroupType?
-    public var selectedColor: Int  // Single color - blinks on active/pressed=white
+    public var selectedColor: LaunchpadColor
     public var oscPage: Int
     
     public init() {
@@ -537,7 +555,7 @@ public struct LearnState: Sendable {
         self.activeRegister = .oscSelect
         self.selectedMode = nil
         self.selectedGroup = nil
-        self.selectedColor = LP.green
+        self.selectedColor = .green
         self.oscPage = 0
     }
     
@@ -562,34 +580,31 @@ public struct BankConfig: Sendable {
     public static let count = 8
     
     /// Colors for each bank (top row buttons)
-    public static let colors: [Int] = [
-        LP.red,      // Bank 0
-        LP.orange,   // Bank 1
-        LP.yellow,   // Bank 2
-        LP.green,    // Bank 3
-        LP.cyan,     // Bank 4
-        LP.blue,     // Bank 5
-        LP.purple,   // Bank 6
-        LP.pink      // Bank 7
+    public static let colors: [LaunchpadColor] = [
+        .red,      // Bank 0
+        .orange,   // Bank 1
+        .yellow,   // Bank 2
+        .green,    // Bank 3
+        .cyan,     // Bank 4
+        .blue,     // Bank 5
+        .purple,   // Bank 6
+        .magenta   // Bank 7
     ]
     
     /// Get color for bank index
-    public static func color(for bank: Int) -> Int {
-        guard bank >= 0 && bank < colors.count else { return LP.white }
+    public static func color(for bank: Int) -> LaunchpadColor {
+        guard bank >= 0 && bank < colors.count else { return .white }
         return colors[bank]
     }
     
     /// Dim version of bank color (for inactive banks)
-    public static func dimColor(for bank: Int) -> Int {
-        // Return a dimmer version - use offset in Launchpad palette
+    public static func dimColor(for bank: Int) -> LaunchpadColor {
         let baseColor = color(for: bank)
-        // Launchpad colors: bright versions are typically +2 from dim
-        // We'll use a simple mapping for common colors
         switch baseColor {
-        case LP.red: return LP.redDim
-        case LP.green: return LP.greenDim
-        case LP.blue: return LP.blueDim
-        default: return baseColor  // No dim version, use same
+        case .red: return .redDim
+        case .green: return .greenDim
+        case .blue: return .blueDim
+        default: return baseColor
         }
     }
 }
@@ -708,7 +723,7 @@ public enum LaunchpadEffect: Sendable {
     /// Send an OSC command
     case sendOsc(OscCommand)
     /// Set a Launchpad LED
-    case setLed(padId: ButtonId, color: Int, blink: Bool)
+    case setLed(padId: ButtonId, color: LaunchpadColor, blink: Bool)
     /// Save configuration to disk
     case saveConfig
     /// Log a message

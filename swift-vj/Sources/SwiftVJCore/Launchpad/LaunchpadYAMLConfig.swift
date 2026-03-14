@@ -39,9 +39,13 @@ public struct LaunchpadYAMLConfig: Codable, Sendable {
         }
     }
     
-    /// Resolve a color name to its index (0 if not found)
-    public func color(_ name: String) -> Int {
-        colors[name] ?? 0
+    /// Resolve a color name to a ``LaunchpadColor`` (`.off` if not found)
+    public func color(_ name: String) -> LaunchpadColor {
+        guard let velocity = colors[name],
+              let color = LaunchpadColor(rawValue: velocity) else {
+            return .off
+        }
+        return color
     }
     
     /// Get items for a group (resolves static items, dynamic from cache)

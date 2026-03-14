@@ -268,7 +268,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         for (index, (name, color)) in colors.enumerated() {
             let row = index % 8
             for col in 0..<8 {
-                midi.setLed(padId: ButtonId(x: col, y: row), color: color)
+                midi.setLed(padId: ButtonId(x: col, y: row), color: color.rawValue)
             }
             io.print("    Row \(row): \(name)")
             try? await Task.sleep(for: .milliseconds(150))
@@ -279,7 +279,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Clear
         for y in 0..<8 {
             for x in 0..<8 {
-                midi.setLed(padId: ButtonId(x: x, y: y), color: LP.off)
+                midi.setLed(padId: ButtonId(x: x, y: y), color: LP.off.rawValue)
             }
         }
         
@@ -299,7 +299,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Light top grid row for reference
         for col in 0..<8 {
-            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.cyan)
+            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.cyan.rawValue)
         }
         io.print("  Cyan row 7 lit for reference - press buttons ABOVE it")
         io.print("")
@@ -331,7 +331,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Clear reference LEDs
         for col in 0..<8 {
-            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.off)
+            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.off.rawValue)
         }
         
         if detected.count >= needed {
@@ -348,7 +348,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Light rightmost grid column for reference
         for row in 0..<8 {
-            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.orange)
+            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.orange.rawValue)
         }
         io.print("  Orange column 7 lit - press buttons to the RIGHT of it")
         io.print("")
@@ -379,7 +379,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Clear
         for row in 0..<8 {
-            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.off)
+            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.off.rawValue)
         }
         
         if detected.count >= needed {
@@ -505,8 +505,8 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 10)
         
         // Clean up
-        midi.setLed(padId: pad1, color: LP.off)
-        midi.setLed(padId: pad2, color: LP.off)
+        midi.setLed(padId: pad1, color: LP.off.rawValue)
+        midi.setLed(padId: pad2, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         if newOscMessages > 0 && oscLog.contains(where: { $0.contains("/scenes/") }) {
@@ -540,7 +540,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let initialOscCount = oscLog.count
         Thread.sleep(forTimeInterval: 10)
         
-        midi.setLed(padId: pad, color: LP.off)
+        midi.setLed(padId: pad, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         let toggleMessages = oscLog.filter { $0.contains("/controls/meta/toggle") }.count
@@ -560,7 +560,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let pad = ButtonId(x: 5, y: 2)
         let behavior = PadBehavior(
             padId: pad, mode: .push,
-            idleColor: LP.purple, activeColor: 54,  // bright purple
+            idleColor: LP.purple, activeColor: .purpleBright,  // bright purple
             label: "Push",
             oscAction: OscCommand(address: "/controls/momentary")
         )
@@ -575,7 +575,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let initialOscCount = oscLog.count
         Thread.sleep(forTimeInterval: 10)
         
-        midi.setLed(padId: pad, color: LP.off)
+        midi.setLed(padId: pad, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         let momentaryMessages = oscLog.filter { $0.contains("/controls/momentary") }.count

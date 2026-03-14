@@ -644,16 +644,16 @@ public final class MIDIManager: @unchecked Sendable {
         // Grid 8x8
         for y in 0..<8 {
             for x in 0..<8 {
-                updates.append((ButtonId(x: x, y: y), LP.off, .solid))
+                updates.append((ButtonId(x: x, y: y), LP.off.rawValue, .solid))
             }
         }
         // Top row
         for x in 0..<8 {
-            updates.append((ButtonId(x: x, y: -1), LP.off, .solid))
+            updates.append((ButtonId(x: x, y: -1), LP.off.rawValue, .solid))
         }
         // Scene buttons
         for y in 0..<8 {
-            updates.append((ButtonId(x: 8, y: y), LP.off, .solid))
+            updates.append((ButtonId(x: 8, y: y), LP.off.rawValue, .solid))
         }
         
         setLeds(updates)

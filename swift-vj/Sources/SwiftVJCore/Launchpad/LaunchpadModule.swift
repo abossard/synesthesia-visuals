@@ -497,7 +497,7 @@ public final class LaunchpadModule: @unchecked Sendable {
 
     private func generateSceneBehaviors(scenes: [String], page: Int) -> [ButtonId: PadBehavior] {
         var result: [ButtonId: PadBehavior] = [:]
-        let palette = LaunchpadColor.allCases.map { $0.rawValue }
+        let palette = LaunchpadColor.pickerColors
         let pageSize = 64
         let start = page * pageSize
         let end = min(start + pageSize, scenes.count)
@@ -557,7 +557,7 @@ public final class LaunchpadModule: @unchecked Sendable {
 
     private struct DynamicColorPaletteEntry: Sendable {
         let rgb: [Float]
-        let ledColor: Int
+        let ledColor: LaunchpadColor
     }
 
     private func generateParamBehaviors(targets: [DynamicControlTarget]) async -> [ButtonId: PadBehavior] {
@@ -1189,13 +1189,13 @@ public final class LaunchpadModule: @unchecked Sendable {
     // MARK: - Direct LED Access
     
     /// Set LED directly (requires device connected)
-    public func setLed(_ padId: ButtonId, color: Int) {
+    public func setLed(_ padId: ButtonId, color: LaunchpadColor) {
         guard withStateSync({ isEnabled }) else { return }
-        midi.setLed(padId: padId, color: color)
+        midi.setLed(padId: padId, color: color.rawValue)
     }
     
     /// Set multiple LEDs (requires device connected)
-    public func setLeds(_ updates: [(ButtonId, Int)]) {
+    public func setLeds(_ updates: [(ButtonId, LaunchpadColor)]) {
         guard withStateSync({ isEnabled }) else {
             if Self.verboseRuntimeLogs {
                 print("[Launchpad] setLeds ignored - module disabled")
@@ -1206,7 +1206,7 @@ public final class LaunchpadModule: @unchecked Sendable {
             print("[Launchpad] setLeds: updating \(updates.count) pads")
         }
         for (padId, color) in updates {
-            midi.setLed(padId: padId, color: color)
+            midi.setLed(padId: padId, color: color.rawValue)
         }
     }
     

@@ -5,7 +5,7 @@ import XCTest
 
 enum LaunchpadEffectMatch {
     case sendOsc(address: String, args: [OscArg]?)
-    case setLed(padId: ButtonId, color: Int, blink: Bool?)
+    case setLed(padId: ButtonId, color: LaunchpadColor, blink: Bool?)
     case saveConfig
     case logContains(String)
 }
