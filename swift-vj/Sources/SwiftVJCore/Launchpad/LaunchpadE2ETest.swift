@@ -50,6 +50,18 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private var oscLog: [String] = []
     private let lock = NSLock()
     private let semaphore = DispatchSemaphore(value: 0)
+
+    @discardableResult
+    private func blockingAwait<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
+        let sem = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: T!
+        Task {
+            result = await work()
+            sem.signal()
+        }
+        sem.wait()
+        return result
+    }
     
     // MARK: - Colors
     
@@ -133,7 +145,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     
     private func cleanup() {
         midi.clearAllLeds()
-        module?.stop()
+        if let module { blockingAwait { await module.stop() } }
         midi.disableAutoReconnect()
         midi.disconnect()
     }
@@ -402,7 +414,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             }
         )
         
-        _ = module?.start()
+        if let module { blockingAwait { await module.start() } }
         Thread.sleep(forTimeInterval: 0.3)
         
         print()
@@ -411,7 +423,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Poll module status instead of waiting for raw MIDI (module now owns callbacks)
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
-            if let status = module?.getStatus(), status.isLearnMode {
+            if let module, blockingAwait({ await module.getStatus() }).isLearnMode {
                 return (true, "Learn mode entered via Scene[0]")
             }
             Thread.sleep(forTimeInterval: 0.1)
@@ -430,7 +442,8 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 10)
         
         // Check if still in learn mode (pad selection moves to recording phase)
-        if let status = module?.getStatus() {
+        if let module {
+            let status = blockingAwait { await module.getStatus() }
             if status.isLearnMode {
                 return (true, "Pad selected, in recording/config phase")
             } else {
@@ -461,7 +474,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Poll until learn mode exits
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
-            if let status = module?.getStatus(), !status.isLearnMode {
+            if let module, !blockingAwait({ await module.getStatus() }).isLearnMode {
                 return (true, "Config saved/cancelled, exited learn mode")
             }
             Thread.sleep(forTimeInterval: 0.2)
@@ -494,8 +507,10 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             oscAction: OscCommand(address: "/scenes/2/load")
         )
         
-        module?.configurePad(pad1, behavior: behavior1)
-        module?.configurePad(pad2, behavior: behavior2)
+        if let module {
+            blockingAwait { await module.configurePad(pad1, behavior: behavior1) }
+            blockingAwait { await module.configurePad(pad2, behavior: behavior2) }
+        }
         
         io.print("  Two selector pads configured at (0,2) and (1,2)")
         io.print("  Press each pad - only one should be active at a time")
@@ -531,7 +546,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             oscOff: OscCommand(address: "/controls/meta/toggle", args: [.float(0.0)])
         )
         
-        module?.configurePad(pad, behavior: behavior)
+        if let module { blockingAwait { await module.configurePad(pad, behavior: behavior) } }
         
         io.print("  Toggle pad at (3,2)")
         io.print("  Press it twice to see ON → OFF")
@@ -565,7 +580,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             oscAction: OscCommand(address: "/controls/momentary")
         )
         
-        module?.configurePad(pad, behavior: behavior)
+        if let module { blockingAwait { await module.configurePad(pad, behavior: behavior) } }
         
         io.print("  Push pad at (5,2) - purple")
         io.print("  HOLD it - should be bright while held, dim on release")
@@ -591,14 +606,14 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private func testConfigPersistence() -> (Bool, String) {
         io.print("  Testing config persistence...")
         
-        let status = module?.getStatus()
+        let status: LaunchpadStatus? = module.map { m in blockingAwait { await m.getStatus() } }
         let padCount = status?.configuredPadCount ?? 0
         
         io.print("  Currently \(padCount) pads configured")
         
         // Stop and restart module
         io.print("  Stopping module...")
-        module?.stop()
+        if let module { blockingAwait { await module.stop() } }
         Thread.sleep(forTimeInterval: 0.3)
         
         io.print("  Restarting module...")
@@ -608,10 +623,10 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
                 self?.io.print("    [OSC] → \(command.address)")
             }
         )
-        _ = module?.start()
+        if let module { blockingAwait { await module.start() } }
         Thread.sleep(forTimeInterval: 0.3)
         
-        let newStatus = module?.getStatus()
+        let newStatus: LaunchpadStatus? = module.map { m in blockingAwait { await m.getStatus() } }
         let newPadCount = newStatus?.configuredPadCount ?? 0
         
         io.print("  After restart: \(newPadCount) pads configured")

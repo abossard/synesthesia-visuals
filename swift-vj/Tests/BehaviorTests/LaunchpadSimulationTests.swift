@@ -39,14 +39,14 @@ final class LaunchpadSimulationTests: XCTestCase {
     private func eventually(
         timeoutMs: Int = 2000,
         stepMs: Int = 20,
-        _ predicate: () -> Bool
+        _ predicate: () async -> Bool
     ) async -> Bool {
         let iterations = max(1, timeoutMs / stepMs)
         for _ in 0..<iterations {
-            if predicate() { return true }
+            if await predicate() { return true }
             try? await Task.sleep(for: .milliseconds(stepMs))
         }
-        return predicate()
+        return await predicate()
     }
 
     private func makeTempConfigPath() throws -> (directory: URL, path: URL) {
@@ -55,8 +55,8 @@ final class LaunchpadSimulationTests: XCTestCase {
         return (dir, dir.appendingPathComponent("launchpad-config.json"))
     }
 
-    private func dynamicAddresses(module: LaunchpadModule, bank: Int) -> Set<String> {
-        let pads = module.getFullState().bankPads[bank] ?? [:]
+    private func dynamicAddresses(module: LaunchpadModule, bank: Int) async -> Set<String> {
+        let pads = await module.getFullState().bankPads[bank] ?? [:]
         return Set(pads.values.compactMap { behavior in
             behavior.oscAction?.address ?? behavior.oscOn?.address ?? behavior.oscOff?.address
         })
@@ -77,41 +77,41 @@ final class LaunchpadSimulationTests: XCTestCase {
         module.dispatch = { action in
             actionRecorder.append(action)
         }
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(7))
-        let switchedToBank7 = await eventually { module.getFullState().activeBank == 7 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(7))
+        let switchedToBank7 = await eventually { await module.getFullState().activeBank == 7 }
         XCTAssertTrue(switchedToBank7)
 
-        module.handleVirtualPadPress(LaunchpadButton.learn)
+        await module.handleVirtualPadPress(LaunchpadButton.learn)
         let targetPad = ButtonId(x: 1, y: 1)
-        module.handleVirtualPadPress(targetPad)
+        await module.handleVirtualPadPress(targetPad)
         let enteredConfig = await eventually {
-            let state = module.getFullState()
+            let state = await module.getFullState()
             return state.learnState.phase == .config && state.learnState.selectedPad == targetPad
         }
         XCTAssertTrue(enteredConfig)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/Example", args: [.string("Example")]))
-        module.receiveOscEvent(OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)]))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/Example", args: [.string("Example")]))
+        await module.receiveOscEvent(OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)]))
         let capturedOSC = await eventually {
-            module.getFullState().learnState.capturedOsc.count >= 2
+            await module.getFullState().learnState.capturedOsc.count >= 2
         }
         XCTAssertTrue(capturedOSC)
 
-        module.handleVirtualPadPress(LaunchpadButton.save)
+        await module.handleVirtualPadPress(LaunchpadButton.save)
         let savedConfig = await eventually {
-            let state = module.getFullState()
+            let state = await module.getFullState()
             return state.learnState.phase == .idle && state.bankPads[7]?[targetPad] != nil
         }
         XCTAssertTrue(savedConfig)
 
-        let saved = module.getFullState().bankPads[7]?[targetPad]
+        let saved = await module.getFullState().bankPads[7]?[targetPad]
         XCTAssertEqual(saved?.oscAction?.address, "/scenes/Example")
         XCTAssertEqual(saved?.additionalOsc.map(\.address), ["/ledfx/scene/strobe/0"])
 
-        module.handleVirtualPadPress(targetPad)
+        await module.handleVirtualPadPress(targetPad)
         let replaySentExpectedOSC = await eventually {
             let addresses = commandRecorder.snapshot().map(\.address)
             return addresses.contains("/scenes/Example") && addresses.contains("/ledfx/scene/strobe/0")
@@ -130,20 +130,20 @@ final class LaunchpadSimulationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: paths.directory) }
 
         let module = LaunchpadModule(configPath: paths.path)
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(7))
-        let switchedToBank7 = await eventually { module.getFullState().activeBank == 7 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(7))
+        let switchedToBank7 = await eventually { await module.getFullState().activeBank == 7 }
         XCTAssertTrue(switchedToBank7)
 
         let targetPad = ButtonId(x: 2, y: 1)
-        module.receiveOscEvent(OscEvent(address: "/scenes/Example", args: [.string("Example")]))
-        module.receiveOscEvent(OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)]))
-        module.handleVirtualPadPress(targetPad)
+        await module.receiveOscEvent(OscEvent(address: "/scenes/Example", args: [.string("Example")]))
+        await module.receiveOscEvent(OscEvent(address: "/ledfx/scene/strobe/0", args: [.float(1.0)]))
+        await module.handleVirtualPadPress(targetPad)
 
         let remainedIdleWithoutRecording = await eventually {
-            let state = module.getFullState()
+            let state = await module.getFullState()
             return state.learnState.phase == .idle && state.bankPads[7]?[targetPad] == nil
         }
         XCTAssertTrue(remainedIdleWithoutRecording)
@@ -154,11 +154,11 @@ final class LaunchpadSimulationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: paths.directory) }
 
         let module = LaunchpadModule(configPath: paths.path)
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
         let hasTwinStatus = await eventually {
-            let status = module.getStatus()
+            let status = await module.getStatus()
             return status.isConnected && status.deviceName != nil
         }
         XCTAssertTrue(hasTwinStatus)
@@ -170,21 +170,21 @@ final class LaunchpadSimulationTests: XCTestCase {
         await DynamicControlStore.shared.clear()
 
         let module = LaunchpadModule(configPath: paths.path)
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(6))
-        let switchedToBank6 = await eventually { module.getFullState().activeBank == 6 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(6))
+        let switchedToBank6 = await eventually { await module.getFullState().activeBank == 6 }
         XCTAssertTrue(switchedToBank6)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/first"))
-        module.receiveOscEvent(OscEvent(address: "/controls/first/radiusring", args: [.float(0.42)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/brightness", args: [.float(0.5)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/other/should_not_bind", args: [.float(0.9)]))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/first"))
+        await module.receiveOscEvent(OscEvent(address: "/controls/first/radiusring", args: [.float(0.42)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/brightness", args: [.float(0.5)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/other/should_not_bind", args: [.float(0.9)]))
 
         let firstSceneLoaded = await eventually {
-            let sceneAddresses = self.dynamicAddresses(module: module, bank: 6)
-            let metaAddresses = self.dynamicAddresses(module: module, bank: 5)
+            let sceneAddresses = await self.dynamicAddresses(module: module, bank: 6)
+            let metaAddresses = await self.dynamicAddresses(module: module, bank: 5)
             return sceneAddresses.contains("/controls/first/radiusring")
                 && !sceneAddresses.contains("/controls/meta/brightness")
                 && !sceneAddresses.contains("/controls/other/should_not_bind")
@@ -192,17 +192,17 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
         XCTAssertTrue(firstSceneLoaded)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/second"))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/second"))
         let firstSceneCleared = await eventually {
-            let addresses = self.dynamicAddresses(module: module, bank: 6)
+            let addresses = await self.dynamicAddresses(module: module, bank: 6)
             return !addresses.contains("/controls/first/radiusring")
         }
         XCTAssertTrue(firstSceneCleared)
 
-        module.receiveOscEvent(OscEvent(address: "/controls/second/aberration", args: [.float(0.7)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/second/aberration", args: [.float(0.7)]))
         let secondSceneLoaded = await eventually {
-            let sceneAddresses = self.dynamicAddresses(module: module, bank: 6)
-            let metaAddresses = self.dynamicAddresses(module: module, bank: 5)
+            let sceneAddresses = await self.dynamicAddresses(module: module, bank: 6)
+            let metaAddresses = await self.dynamicAddresses(module: module, bank: 5)
             return sceneAddresses.contains("/controls/second/aberration")
                 && !sceneAddresses.contains("/controls/first/radiusring")
                 && metaAddresses.contains("/controls/meta/brightness")
@@ -216,22 +216,22 @@ final class LaunchpadSimulationTests: XCTestCase {
         await DynamicControlStore.shared.clear()
 
         let module = LaunchpadModule(configPath: paths.path)
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(6))
-        let switchedToBank6 = await eventually { module.getFullState().activeBank == 6 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(6))
+        let switchedToBank6 = await eventually { await module.getFullState().activeBank == 6 }
         XCTAssertTrue(switchedToBank6)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/compoundiris"))
-        module.receiveOscEvent(OscEvent(address: "/controls/compoundiris/invert", args: [.float(0.0)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode", args: [.float(1.0)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/label", args: [.string("shuffle")]))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/compoundiris"))
+        await module.receiveOscEvent(OscEvent(address: "/controls/compoundiris/invert", args: [.float(0.0)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode", args: [.float(1.0)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/label", args: [.string("shuffle")]))
 
         let inferred = await eventually {
-            let scenePads = module.getFullState().bankPads[6] ?? [:]
-            let metaPads = module.getFullState().bankPads[5] ?? [:]
+            let scenePads = await module.getFullState().bankPads[6] ?? [:]
+            let metaPads = await module.getFullState().bankPads[5] ?? [:]
             let invert = scenePads.values.first { behavior in
                 behavior.oscOn?.address == "/controls/compoundiris/invert"
             }
@@ -259,23 +259,23 @@ final class LaunchpadSimulationTests: XCTestCase {
             },
             configPath: paths.path
         )
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(5))
-        let switchedToBank5 = await eventually { module.getFullState().activeBank == 5 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(5))
+        let switchedToBank5 = await eventually { await module.getFullState().activeBank == 5 }
         XCTAssertTrue(switchedToBank5)
 
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode", args: [.float(0.0)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode", args: [.float(0.0)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/meta/playbackmode/numoptions", args: [.int(4)]))
 
         let hasPlaybackPad = await eventually {
-            let metaPads = module.getFullState().bankPads[5] ?? [:]
+            let metaPads = await module.getFullState().bankPads[5] ?? [:]
             return metaPads.values.contains { $0.oscAction?.address == "/controls/meta/playbackmode" }
         }
         XCTAssertTrue(hasPlaybackPad)
 
-        guard let playbackPad = module.getFullState().bankPads[5]?.first(where: { _, behavior in
+        guard let playbackPad = await module.getFullState().bankPads[5]?.first(where: { _, behavior in
             behavior.oscAction?.address == "/controls/meta/playbackmode"
         })?.key else {
             XCTFail("Expected dynamic playbackmode pad in meta bank")
@@ -283,7 +283,7 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
 
         let countBeforeForward = commandRecorder.snapshot().count
-        module.handleVirtualPadPress(playbackPad)
+        await module.handleVirtualPadPress(playbackPad)
         let sentForward = await eventually {
             let commands = commandRecorder.snapshot()
             guard commands.count > countBeforeForward,
@@ -295,10 +295,10 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
         XCTAssertTrue(sentForward)
 
-        module.handleVirtualPadPress(LaunchpadButton.shift)
+        await module.handleVirtualPadPress(LaunchpadButton.shift)
         let countBeforeBackward = commandRecorder.snapshot().count
-        module.handleVirtualPadPress(playbackPad)
-        module.handleVirtualPadRelease(LaunchpadButton.shift)
+        await module.handleVirtualPadPress(playbackPad)
+        await module.handleVirtualPadRelease(LaunchpadButton.shift)
         let sentBackward = await eventually {
             let commands = commandRecorder.snapshot()
             guard commands.count > countBeforeBackward,
@@ -323,19 +323,19 @@ final class LaunchpadSimulationTests: XCTestCase {
             },
             configPath: paths.path
         )
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(6))
-        let switchedToBank6 = await eventually { module.getFullState().activeBank == 6 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(6))
+        let switchedToBank6 = await eventually { await module.getFullState().activeBank == 6 }
         XCTAssertTrue(switchedToBank6)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/platonicsolids"))
-        module.receiveOscEvent(OscEvent(address: "/controls/platonicsolids/camxy/x", args: [.float(0.5)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/platonicsolids/camxy/y", args: [.float(0.5)]))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/platonicsolids"))
+        await module.receiveOscEvent(OscEvent(address: "/controls/platonicsolids/camxy/x", args: [.float(0.5)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/platonicsolids/camxy/y", args: [.float(0.5)]))
 
         let foundVectorPad = await eventually {
-            let pads = module.getFullState().bankPads[6] ?? [:]
+            let pads = await module.getFullState().bankPads[6] ?? [:]
             return pads.values.contains { behavior in
                 behavior.mode == .vector2 &&
                     behavior.vector2Addresses == [
@@ -346,7 +346,7 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
         XCTAssertTrue(foundVectorPad)
 
-        guard let vectorPad = module.getFullState().bankPads[6]?.first(where: { _, behavior in
+        guard let vectorPad = await module.getFullState().bankPads[6]?.first(where: { _, behavior in
             behavior.mode == .vector2 &&
                 behavior.vector2Addresses == [
                     "/controls/platonicsolids/camxy/x",
@@ -357,9 +357,9 @@ final class LaunchpadSimulationTests: XCTestCase {
             return
         }
 
-        module.handleVirtualPadPress(vectorPad)
+        await module.handleVirtualPadPress(vectorPad)
         let beforeNudge = commandRecorder.snapshot().count
-        module.handleVirtualPadPress(ButtonId(x: 8, y: 3)) // right
+        await module.handleVirtualPadPress(ButtonId(x: 8, y: 3)) // right
 
         let sentXNudge = await eventually {
             let commands = commandRecorder.snapshot()
@@ -385,20 +385,20 @@ final class LaunchpadSimulationTests: XCTestCase {
             },
             configPath: paths.path
         )
-        _ = module.start()
-        defer { module.stop() }
+        _ = await module.start()
+        defer { Task { await module.stop() } }
 
-        module.handleVirtualPadPress(LaunchpadButton.bank(6))
-        let switchedToBank6 = await eventually { module.getFullState().activeBank == 6 }
+        await module.handleVirtualPadPress(LaunchpadButton.bank(6))
+        let switchedToBank6 = await eventually { await module.getFullState().activeBank == 6 }
         XCTAssertTrue(switchedToBank6)
 
-        module.receiveOscEvent(OscEvent(address: "/scenes/pop"))
-        module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/r", args: [.float(0.3)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/g", args: [.float(0.6)]))
-        module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/b", args: [.float(0.8)]))
+        await module.receiveOscEvent(OscEvent(address: "/scenes/pop"))
+        await module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/r", args: [.float(0.3)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/g", args: [.float(0.6)]))
+        await module.receiveOscEvent(OscEvent(address: "/controls/pop/color1/b", args: [.float(0.8)]))
 
         let foundColorPad = await eventually {
-            let pads = module.getFullState().bankPads[6] ?? [:]
+            let pads = await module.getFullState().bankPads[6] ?? [:]
             return pads.values.contains { behavior in
                 behavior.mode == .colorCycle &&
                     behavior.colorCycleAddresses == [
@@ -410,7 +410,7 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
         XCTAssertTrue(foundColorPad)
 
-        guard let colorPad = module.getFullState().bankPads[6]?.first(where: { _, behavior in
+        guard let colorPad = await module.getFullState().bankPads[6]?.first(where: { _, behavior in
             behavior.mode == .colorCycle &&
                 behavior.colorCycleAddresses == [
                     "/controls/pop/color1/r",
@@ -423,7 +423,7 @@ final class LaunchpadSimulationTests: XCTestCase {
         }
 
         let preCount = commandRecorder.snapshot().count
-        module.handleVirtualPadPress(colorPad)
+        await module.handleVirtualPadPress(colorPad)
         let sentRGBCommands = await eventually {
             let commands = commandRecorder.snapshot()
             guard commands.count >= preCount + 3 else { return false }

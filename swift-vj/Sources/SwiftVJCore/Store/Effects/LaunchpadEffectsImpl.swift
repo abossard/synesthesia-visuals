@@ -26,10 +26,10 @@ public enum LaunchpadEffectsImpl {
             launchpadModule.dispatch = dispatch
 
             // Start the module
-            launchpadModule.start()
+            await launchpadModule.start()
 
             // Get initial status
-            let status = launchpadModule.getStatus()
+            let status = await launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
 
             // Keep effect alive
@@ -44,7 +44,7 @@ public enum LaunchpadEffectsImpl {
         launchpadModule: LaunchpadModule
     ) -> Effect<LaunchpadAction> {
         .fireAndForget {
-            launchpadModule.stop()
+            await launchpadModule.stop()
         }
     }
 
@@ -58,7 +58,7 @@ public enum LaunchpadEffectsImpl {
         // Button presses are handled internally by LaunchpadModule via MIDI callbacks
         // This effect just gets the updated status after
         .run { send in
-            let status = launchpadModule.getStatus()
+            let status = await launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
         }
     }
@@ -71,7 +71,7 @@ public enum LaunchpadEffectsImpl {
     ) -> Effect<LaunchpadAction> {
         // Button releases are handled internally by LaunchpadModule via MIDI callbacks
         .run { send in
-            let status = launchpadModule.getStatus()
+            let status = await launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
         }
     }
@@ -86,7 +86,7 @@ public enum LaunchpadEffectsImpl {
             // This effect is for programmatic bank changes
             await send(.bankChanged(bank))
 
-            let status = launchpadModule.getStatus()
+            let status = await launchpadModule.getStatus()
             await send(.statusUpdated(LaunchpadStatusSnapshot(from: status)))
         }
     }

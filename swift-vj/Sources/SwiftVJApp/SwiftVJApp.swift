@@ -55,38 +55,38 @@ private actor LaunchpadGateway: LaunchpadEffectHandling {
     }
 
     func start() async {
-        _ = module.start()
+        _ = await module.start()
     }
 
     func stop() async {
-        module.stop()
+        await module.stop()
     }
 
     func buttonPressed(x: Int, y: Int) async {
-        module.handleVirtualPadPress(ButtonId(x: x, y: y))
+        await module.handleVirtualPadPress(ButtonId(x: x, y: y))
     }
 
     func buttonReleased(x: Int, y: Int) async {
-        module.handleVirtualPadRelease(ButtonId(x: x, y: y))
+        await module.handleVirtualPadRelease(ButtonId(x: x, y: y))
     }
 
     func enterLearnMode() async {
-        module.startLearnMode()
+        await module.startLearnMode()
     }
 
     func exitLearnMode() async {
-        module.stopLearnMode()
+        await module.stopLearnMode()
     }
 
     func forceProgrammerMode() async {
-        module.forceProgrammerMode()
+        await module.forceProgrammerMode()
     }
 
     func flashAll() async {
         let allPads = allPadIds()
-        module.setLeds(allPads.map { ($0, LP.red) })
+        await module.setLeds(allPads.map { ($0, LP.red) })
         try? await Task.sleep(for: .milliseconds(500))
-        module.setLeds(allPads.map { ($0, LP.off) })
+        await module.setLeds(allPads.map { ($0, LP.off) })
     }
 
     func rainbowPattern() async {
@@ -97,16 +97,16 @@ private actor LaunchpadGateway: LaunchpadEffectHandling {
                 updates.append((ButtonId(x: x, y: y), colors[(x + y) % colors.count]))
             }
         }
-        module.setLeds(updates)
+        await module.setLeds(updates)
     }
 
     func clearAll() async {
         let allPads = allPadIds()
-        module.setLeds(allPads.map { ($0, LaunchpadColor.off) })
+        await module.setLeds(allPads.map { ($0, LaunchpadColor.off) })
     }
 
     func receiveOscEvent(_ event: OscEvent) async {
-        module.receiveOscEvent(event)
+        await module.receiveOscEvent(event)
     }
 
     private func allPadIds() -> [ButtonId] {
@@ -1297,9 +1297,11 @@ public final class AppState: ObservableObject {
             }
         )
         launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
-        launchpadConfig = launchpadModule?.yamlConfig
         if let launchpadModule {
             launchpadGateway = LaunchpadGateway(module: launchpadModule)
+            Task { @MainActor [weak self] in
+                self?.launchpadConfig = await launchpadModule.yamlConfig
+            }
         }
         launcherGateway = AppLauncherGateway()
 

@@ -31,7 +31,7 @@ public struct LaunchpadStatus: Sendable, Equatable {
 }
 
 /// Launchpad controller module with shared state/effect path for hardware + UI simulation
-public final class LaunchpadModule: @unchecked Sendable {
+public actor LaunchpadModule {
     
     // MARK: - Components
     
@@ -41,8 +41,6 @@ public final class LaunchpadModule: @unchecked Sendable {
     private var rolesByBank: [Int: BankRole] = [:]
     private var dynamicRefreshEpochByBank: [Int: Int] = [:]
     private var activeDynamicSceneName: String?
-    private let stateQueue = DispatchQueue(label: "swiftvj.launchpad.state", qos: .userInitiated)
-    private let stateQueueKey = DispatchSpecificKey<UInt8>()
     
     // MARK: - State
 
@@ -53,7 +51,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     // MARK: - Action Dispatcher (Unidirectional Data Flow)
 
     /// Action dispatcher - set this to integrate with Store
-    public var dispatch: ((AppAction) -> Void)?
+    nonisolated(unsafe) public var dispatch: ((AppAction) -> Void)?
     
     private static let verboseRuntimeLogs = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_LAUNCHPAD"] == "1"
     
@@ -61,7 +59,7 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     public init(
         midi: MIDIManager? = nil,
-        oscSender: ((OscCommand) -> Void)? = nil,
+        oscSender: sending ((OscCommand) -> Void)? = nil,
         configPath: URL? = nil
     ) {
         self.midi = midi ?? MIDIManager()
@@ -71,7 +69,6 @@ public final class LaunchpadModule: @unchecked Sendable {
             configPath: configPath
         )
         self.state = ControllerState()
-        self.stateQueue.setSpecific(key: stateQueueKey, value: 1)
         print("[Launchpad] Module initialized - waiting for device")
     }
     
@@ -81,51 +78,52 @@ public final class LaunchpadModule: @unchecked Sendable {
     /// Returns true if device was immediately connected
     @discardableResult
     public func start() -> Bool {
-        let (currentState, connected): (ControllerState, Bool) = withStateSync {
-            simulationTwinActive = true
-            activeDynamicSceneName = nil
+        simulationTwinActive = true
+        activeDynamicSceneName = nil
 
-            // Load saved config (ready for when device connects)
-            executor.loadConfig()
+        // Load saved config (ready for when device connects)
+        executor.loadConfig()
 
-            // Roles from YAML config
-            if let yaml = executor.yamlConfig {
-                for bank in 0..<8 {
-                    rolesByBank[bank] = yaml.bankRole(bank)
-                    state.bankLayout[bank] = yaml.bankLayoutPolicy(bank)
-                }
-                // Prefill state with YAML fixed pads
-                for bank in 0..<8 {
-                    let behaviors = yaml.bankBehaviors(bank)
-                    if !behaviors.isEmpty {
-                        state.bankPads[bank] = behaviors
-                        state.bankPadRuntime[bank] = behaviors.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
-                    }
+        // Roles from YAML config
+        if let yaml = executor.yamlConfig {
+            for bank in 0..<8 {
+                rolesByBank[bank] = yaml.bankRole(bank)
+                state.bankLayout[bank] = yaml.bankLayoutPolicy(bank)
+            }
+            // Prefill state with YAML fixed pads
+            for bank in 0..<8 {
+                let behaviors = yaml.bankBehaviors(bank)
+                if !behaviors.isEmpty {
+                    state.bankPads[bank] = behaviors
+                    state.bankPadRuntime[bank] = behaviors.mapValues { PadRuntimeState(currentColor: $0.idleColor) }
                 }
             }
-
-            // Apply saved configs to state
-            for (padId, behavior) in executor.allConfigs {
-                state.pads[padId] = behavior
-                state.padRuntime[padId] = PadRuntimeState(currentColor: behavior.idleColor)
-            }
-
-            // Prime runtime colors for UI twin (top row + scene buttons).
-            let initialEffects = renderState(state)
-            applyLedEffectsToRuntime(initialEffects, state: &state)
-
-            // Enable auto-reconnect - will connect if device present, or wait for it
-            midi.enableAutoReconnect(
-                messageCallback: { [weak self] message in
-                    self?.handleMIDIMessage(message)
-                },
-                connectionCallback: { [weak self] connected, deviceName in
-                    self?.handleConnectionChange(connected: connected, deviceName: deviceName)
-                }
-            )
-
-            return (state, midi.isConnected)
         }
+
+        // Apply saved configs to state
+        for (padId, behavior) in executor.allConfigs {
+            state.pads[padId] = behavior
+            state.padRuntime[padId] = PadRuntimeState(currentColor: behavior.idleColor)
+        }
+
+        // Prime runtime colors for UI twin (top row + scene buttons).
+        let initialEffects = renderState(state)
+        applyLedEffectsToRuntime(initialEffects, state: &state)
+
+        // Enable auto-reconnect - will connect if device present, or wait for it
+        midi.enableAutoReconnect(
+            messageCallback: { [weak self] message in
+                guard let self else { return }
+                Task { await self.handleMIDIMessage(message) }
+            },
+            connectionCallback: { [weak self] connected, deviceName in
+                guard let self else { return }
+                Task { await self.handleConnectionChange(connected: connected, deviceName: deviceName) }
+            }
+        )
+
+        let currentState = state
+        let connected = midi.isConnected
 
         // Publish initial state/status so UI can act as a twin even without hardware.
         publishState(currentState, includeStatus: true)
@@ -135,79 +133,73 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Stop the Launchpad module - disconnect and disable auto-reconnect
     public func stop() {
-        withStateSync {
-            simulationTwinActive = false
-            activeDynamicSceneName = nil
-            midi.disableAutoReconnect()
-            if isEnabled {
-                midi.clearAllLeds()
-            }
-            midi.disconnect()
-            isEnabled = false
-            print("[Launchpad] Stopped")
+        simulationTwinActive = false
+        activeDynamicSceneName = nil
+        midi.disableAutoReconnect()
+        if isEnabled {
+            midi.clearAllLeds()
         }
+        midi.disconnect()
+        isEnabled = false
+        print("[Launchpad] Stopped")
     }
     
     /// Get current status
     public func getStatus() -> LaunchpadStatus {
-        withStateSync {
-            let connection = effectiveConnectionStatus()
-            return LaunchpadStatus(
-                isEnabled: isEnabled,
-                isConnected: connection.isConnected,
-                deviceName: connection.deviceName,
-                isLearnMode: state.learnState.phase != .idle,
-                configuredPadCount: state.pads.count
-            )
-        }
+        let connection = effectiveConnectionStatus()
+        return LaunchpadStatus(
+            isEnabled: isEnabled,
+            isConnected: connection.isConnected,
+            deviceName: connection.deviceName,
+            isLearnMode: state.learnState.phase != .idle,
+            configuredPadCount: state.pads.count
+        )
     }
 
     /// Get full controller state (for views that need detailed pad info)
     public func getFullState() -> ControllerState {
-        withStateSync { state }
+        state
     }
     
     // MARK: - Connection Handling
     
     private func handleConnectionChange(connected: Bool, deviceName: String?) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
+        if connected {
+            isEnabled = true
+            print("[Launchpad] ✓ Enabled - connected to \(deviceName ?? "device")")
 
-            if connected {
-                self.isEnabled = true
-                print("[Launchpad] ✓ Enabled - connected to \(deviceName ?? "device")")
+            // Force Programmer Mode immediately
+            forceProgrammerMode()
 
-                // Force Programmer Mode immediately
-                self.forceProgrammerMode()
+            // Refresh LEDs now that we're connected
+            refreshLeds()
 
-                // Refresh LEDs now that we're connected
-                self.refreshLeds()
+            // Refresh dynamic banks (scenes/params)
+            refreshDynamicBanks()
 
-                // Refresh dynamic banks (scenes/params)
-                self.refreshDynamicBanks()
+            // Dispatch connection and initial state
+            let currentState = state
+            let statusSnapshot = makeStatusSnapshot(from: currentState)
+            let dispatch = self.dispatch
+            DispatchQueue.main.async {
+                dispatch?(.launchpad(.connected(deviceName ?? "Launchpad")))
+                dispatch?(.launchpad(.stateUpdated(currentState)))
+                dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
+            }
+        } else {
+            isEnabled = false
+            print("[Launchpad] ○ Disabled - device disconnected")
 
-                // Dispatch connection and initial state
-                let currentState = self.state
-                let statusSnapshot = self.makeStatusSnapshot(from: currentState)
-                DispatchQueue.main.async { [weak self] in
-                    self?.dispatch?(.launchpad(.connected(deviceName ?? "Launchpad")))
-                    self?.dispatch?(.launchpad(.stateUpdated(currentState)))
-                    self?.dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
+            // Dispatch disconnection
+            let currentState = state
+            let statusSnapshot = makeStatusSnapshot(from: currentState)
+            let shouldEmitDisconnected = !simulationTwinActive
+            let dispatch = self.dispatch
+            DispatchQueue.main.async {
+                if shouldEmitDisconnected {
+                    dispatch?(.launchpad(.disconnected))
                 }
-            } else {
-                self.isEnabled = false
-                print("[Launchpad] ○ Disabled - device disconnected")
-
-                // Dispatch disconnection
-                let currentState = self.state
-                let statusSnapshot = self.makeStatusSnapshot(from: currentState)
-                let shouldEmitDisconnected = !self.simulationTwinActive
-                DispatchQueue.main.async { [weak self] in
-                    if shouldEmitDisconnected {
-                        self?.dispatch?(.launchpad(.disconnected))
-                    }
-                    self?.dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
-                }
+                dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
             }
         }
     }
@@ -235,57 +227,54 @@ public final class LaunchpadModule: @unchecked Sendable {
     }
 
     private func handlePadInput(padId: ButtonId, isPress: Bool, allowWhenDisabled: Bool) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            if !allowWhenDisabled && !self.isEnabled { return }  // Hardware input only when enabled
+        if !allowWhenDisabled && !isEnabled { return }  // Hardware input only when enabled
 
-            let oldBank = self.state.activeBank
-            let oldPage = self.state.currentPage
-            let result: FSMResult
-            if isPress {
-                result = handlePadPress(self.state, padId: padId)
-            } else {
-                result = handlePadRelease(self.state, padId: padId)
+        let oldBank = state.activeBank
+        let oldPage = state.currentPage
+        let result: FSMResult
+        if isPress {
+            result = handlePadPress(state, padId: padId)
+        } else {
+            result = handlePadRelease(state, padId: padId)
+        }
+
+        // Update state
+        state = result.state
+        let activeBank = state.activeBank
+        let activePage = state.currentPage
+        if oldBank != activeBank {
+            executor.setActiveBank(activeBank)
+        }
+
+        // Update executor configs if save happened
+        let needsSave = result.effects.contains { effect in
+            if case .saveConfig = effect { return true }
+            return false
+        }
+        if needsSave {
+            for (padId, behavior) in state.pads {
+                executor.updateConfig(padId: padId, behavior: behavior)
             }
+        }
 
-            // Update state
-            self.state = result.state
-            let activeBank = self.state.activeBank
-            let activePage = self.state.currentPage
-            if oldBank != activeBank {
-                self.executor.setActiveBank(activeBank)
-            }
+        // Unidirectional render: LEDs are always derived from current state.
+        let effectsToExecute = mergedEffectsWithRender(from: result.effects)
+        let currentState = state
+        let activeRole = rolesByBank[activeBank]
 
-            // Update executor configs if save happened
-            let needsSave = result.effects.contains { effect in
-                if case .saveConfig = effect { return true }
-                return false
-            }
-            if needsSave {
-                for (padId, behavior) in self.state.pads {
-                    self.executor.updateConfig(padId: padId, behavior: behavior)
-                }
-            }
+        // Publish snapshot + execute effects
+        publishState(currentState, includeStatus: true)
+        executor.executeAll(effectsToExecute)
 
-            // Unidirectional render: LEDs are always derived from current state.
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
-            let currentState = self.state
-            let activeRole = self.rolesByBank[activeBank]
-
-            // Publish snapshot + execute effects
-            self.publishState(currentState, includeStatus: true)
-            self.executor.executeAll(effectsToExecute)
-
-            // If bank/page changed and role is dynamic, refresh that bank
-            if oldBank != activeBank,
-               let role = activeRole,
-               self.isDynamicRole(role) {
-                self.refreshDynamicBanks(for: [activeBank])
-            } else if oldPage != activePage,
-                      let role = activeRole,
-                      self.isDynamicRole(role) {
-                self.refreshDynamicBanks(for: [activeBank])
-            }
+        // If bank/page changed and role is dynamic, refresh that bank
+        if oldBank != activeBank,
+           let role = activeRole,
+           isDynamicRole(role) {
+            refreshDynamicBanks(for: [activeBank])
+        } else if oldPage != activePage,
+                  let role = activeRole,
+                  isDynamicRole(role) {
+            refreshDynamicBanks(for: [activeBank])
         }
     }
 
@@ -310,31 +299,13 @@ public final class LaunchpadModule: @unchecked Sendable {
         return nonLedEffects + renderEffects
     }
 
-    private func isOnStateQueue() -> Bool {
-        DispatchQueue.getSpecific(key: stateQueueKey) != nil
-    }
-
-    private func onStateQueue(_ body: @escaping @Sendable () -> Void) {
-        if isOnStateQueue() {
-            body()
-        } else {
-            stateQueue.async(execute: body)
-        }
-    }
-
-    private func withStateSync<T>(_ body: () -> T) -> T {
-        if isOnStateQueue() {
-            return body()
-        }
-        return stateQueue.sync(execute: body)
-    }
-
     private func publishState(_ snapshot: ControllerState, includeStatus: Bool) {
-        let statusSnapshot = includeStatus ? withStateSync { makeStatusSnapshot(from: snapshot) } : nil
-        DispatchQueue.main.async { [weak self] in
-            self?.dispatch?(.launchpad(.stateUpdated(snapshot)))
+        let statusSnapshot = includeStatus ? makeStatusSnapshot(from: snapshot) : nil
+        let dispatch = self.dispatch
+        DispatchQueue.main.async {
+            dispatch?(.launchpad(.stateUpdated(snapshot)))
             guard let statusSnapshot else { return }
-            self?.dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
+            dispatch?(.launchpad(.statusUpdated(statusSnapshot)))
         }
     }
 
@@ -368,19 +339,16 @@ public final class LaunchpadModule: @unchecked Sendable {
 
     private func refreshDynamicBanks(for banks: [Int]? = nil) {
         // Dynamic bank materialization feeds the shared state path for hardware + UI twin.
-        guard withStateSync({ isEnabled || simulationTwinActive }) else { return }
+        guard isEnabled || simulationTwinActive else { return }
 
-        let refreshRequests: [Int: (epoch: Int, page: Int, role: BankRole)] = withStateSync {
-            let banksToRefresh = banks ?? Array(rolesByBank.keys)
-            var requests: [Int: (epoch: Int, page: Int, role: BankRole)] = [:]
-            for bank in banksToRefresh {
-                guard let role = rolesByBank[bank], isDynamicRole(role) else { continue }
-                let nextEpoch = (dynamicRefreshEpochByBank[bank] ?? 0) + 1
-                dynamicRefreshEpochByBank[bank] = nextEpoch
-                let currentPage = state.bankCurrentPage[bank] ?? 0
-                requests[bank] = (nextEpoch, currentPage, role)
-            }
-            return requests
+        let banksToRefresh = banks ?? Array(rolesByBank.keys)
+        var refreshRequests: [Int: (epoch: Int, page: Int, role: BankRole)] = [:]
+        for bank in banksToRefresh {
+            guard let role = rolesByBank[bank], isDynamicRole(role) else { continue }
+            let nextEpoch = (dynamicRefreshEpochByBank[bank] ?? 0) + 1
+            dynamicRefreshEpochByBank[bank] = nextEpoch
+            let currentPage = state.bankCurrentPage[bank] ?? 0
+            refreshRequests[bank] = (nextEpoch, currentPage, role)
         }
         guard !refreshRequests.isEmpty else { return }
 
@@ -390,11 +358,11 @@ public final class LaunchpadModule: @unchecked Sendable {
             let scenes = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
             let controls = await DynamicControlStore.shared.items()
             let presets = await DynamicGroupStore.shared.items(for: "$synesthesia/presets")
-            let activeScene = self.withStateSync { self.activeDynamicSceneName }
-            let sceneControls = self.sceneScopedControlAddresses(controls, activeScene: activeScene).sorted()
-            let metaControls = self.metaControlAddresses(controls).sorted()
-            let sceneTargets = self.collapseColorControls(in: sceneControls)
-            let metaTargets = self.collapseColorControls(in: metaControls)
+            let activeScene = await self.activeDynamicSceneName
+            let sceneControls = await self.sceneScopedControlAddresses(controls, activeScene: activeScene).sorted()
+            let metaControls = await self.metaControlAddresses(controls).sorted()
+            let sceneTargets = await self.collapseColorControls(in: sceneControls)
+            let metaTargets = await self.collapseColorControls(in: metaControls)
 
             // Build behaviors per bank
             var updates: [Int: [ButtonId: PadBehavior]] = [:]
@@ -409,21 +377,21 @@ public final class LaunchpadModule: @unchecked Sendable {
                     let totalPages = max(1, Int(ceil(Double(scenes.count) / Double(pageSize))))
                     pageCounts[bank] = totalPages
                     let currentPage = min(request.page, totalPages - 1)
-                    let dynamicPads = generateSceneBehaviors(scenes: scenes, page: currentPage)
+                    let dynamicPads = await self.generateSceneBehaviors(scenes: scenes, page: currentPage)
                     updates[bank] = dynamicPads
                 case .scenes2:
                     let pageSize = 64
                     let totalPages = max(1, Int(ceil(Double(scenes.count) / Double(pageSize))))
                     pageCounts[bank] = totalPages
                     let currentPage = min(request.page + 1, totalPages - 1)
-                    let dynamicPads = generateSceneBehaviors(scenes: scenes, page: currentPage)
+                    let dynamicPads = await self.generateSceneBehaviors(scenes: scenes, page: currentPage)
                     updates[bank] = dynamicPads
                 case .presets:
                     let pageSize = 64
                     let totalPages = max(1, Int(ceil(Double(presets.count) / Double(pageSize))))
                     pageCounts[bank] = totalPages
                     let currentPage = min(request.page, totalPages - 1)
-                    let dynamicPads = generatePresetBehaviors(presets: presets, page: currentPage)
+                    let dynamicPads = await self.generatePresetBehaviors(presets: presets, page: currentPage)
                     updates[bank] = dynamicPads
                 case .params:
                     let pageSize = 64
@@ -452,46 +420,60 @@ public final class LaunchpadModule: @unchecked Sendable {
 
             let finalUpdates = updates
             let finalPageCounts = pageCounts
-            self.onStateQueue {
-                guard self.isEnabled || self.simulationTwinActive else { return }
-                var appliedBanks: [Int] = []
-                for (bank, request) in refreshRequests {
-                    guard self.dynamicRefreshEpochByBank[bank] == request.epoch else {
-                        continue  // stale refresh
-                    }
+            await self.applyDynamicRefresh(
+                refreshRequests: refreshRequests,
+                finalUpdates: finalUpdates,
+                finalPageCounts: finalPageCounts,
+                scenesCount: scenes.count,
+                controlsCount: controls.count
+            )
+        }
+    }
 
-                    if let pages = finalPageCounts[bank] {
-                        self.state.bankPageCount[bank] = pages
-                        let currentPage = min(self.state.bankCurrentPage[bank] ?? 0, max(0, pages - 1))
-                        self.state.bankCurrentPage[bank] = currentPage
-                    }
-
-                    let pads = finalUpdates[bank] ?? [:]
-                    // Always apply, even if empty, to avoid stale pads from older refreshes.
-                    self.state.bankPads[bank] = pads
-                    self.state.bankPadRuntime[bank] = pads.mapValues { self.initialRuntimeState(for: $0) }
-                    if let activeVectorPad = self.state.bankActiveVectorPad[bank] ?? nil,
-                       let activeBehavior = pads[activeVectorPad],
-                       activeBehavior.mode == .vector2 {
-                        var runtime = self.state.bankPadRuntime[bank]?[activeVectorPad] ?? self.initialRuntimeState(for: activeBehavior)
-                        runtime.isActive = true
-                        runtime.currentColor = activeBehavior.activeColor
-                        self.state.bankPadRuntime[bank]?[activeVectorPad] = runtime
-                    } else {
-                        self.state.bankActiveVectorPad[bank] = nil
-                    }
-                    appliedBanks.append(bank)
-                }
-
-                let effectsToExecute = self.mergedEffectsWithRender(from: [])
-                let currentState = self.state
-                self.executor.executeAll(effectsToExecute)
-                self.publishState(currentState, includeStatus: false)
-
-                if Self.verboseRuntimeLogs && !appliedBanks.isEmpty {
-                    print("[Dynamic] Refreshed banks \(appliedBanks.sorted()) scenes=\(scenes.count) controls=\(controls.count)")
-                }
+    private func applyDynamicRefresh(
+        refreshRequests: [Int: (epoch: Int, page: Int, role: BankRole)],
+        finalUpdates: [Int: [ButtonId: PadBehavior]],
+        finalPageCounts: [Int: Int],
+        scenesCount: Int,
+        controlsCount: Int
+    ) {
+        guard isEnabled || simulationTwinActive else { return }
+        var appliedBanks: [Int] = []
+        for (bank, request) in refreshRequests {
+            guard dynamicRefreshEpochByBank[bank] == request.epoch else {
+                continue  // stale refresh
             }
+
+            if let pages = finalPageCounts[bank] {
+                state.bankPageCount[bank] = pages
+                let currentPage = min(state.bankCurrentPage[bank] ?? 0, max(0, pages - 1))
+                state.bankCurrentPage[bank] = currentPage
+            }
+
+            let pads = finalUpdates[bank] ?? [:]
+            // Always apply, even if empty, to avoid stale pads from older refreshes.
+            state.bankPads[bank] = pads
+            state.bankPadRuntime[bank] = pads.mapValues { initialRuntimeState(for: $0) }
+            if let activeVectorPad = state.bankActiveVectorPad[bank] ?? nil,
+               let activeBehavior = pads[activeVectorPad],
+               activeBehavior.mode == .vector2 {
+                var runtime = state.bankPadRuntime[bank]?[activeVectorPad] ?? initialRuntimeState(for: activeBehavior)
+                runtime.isActive = true
+                runtime.currentColor = activeBehavior.activeColor
+                state.bankPadRuntime[bank]?[activeVectorPad] = runtime
+            } else {
+                state.bankActiveVectorPad[bank] = nil
+            }
+            appliedBanks.append(bank)
+        }
+
+        let effectsToExecute = mergedEffectsWithRender(from: [])
+        let currentState = state
+        executor.executeAll(effectsToExecute)
+        publishState(currentState, includeStatus: false)
+
+        if Self.verboseRuntimeLogs && !appliedBanks.isEmpty {
+            print("[Dynamic] Refreshed banks \(appliedBanks.sorted()) scenes=\(scenesCount) controls=\(controlsCount)")
         }
     }
 
@@ -1056,95 +1038,85 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Enter learn mode (available for hardware and UI simulation twin)
     public func startLearnMode() {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            let result = enterLearnMode(self.state)
-            self.state = result.state
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
-            let currentState = self.state
-            self.publishState(currentState, includeStatus: true)
-            self.executor.executeAll(effectsToExecute)
-        }
+        let result = enterLearnMode(state)
+        state = result.state
+        let effectsToExecute = mergedEffectsWithRender(from: result.effects)
+        let currentState = state
+        publishState(currentState, includeStatus: true)
+        executor.executeAll(effectsToExecute)
     }
     
     /// Exit learn mode
     public func stopLearnMode() {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            let result = exitLearnMode(self.state)
-            self.state = result.state
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
-            let currentState = self.state
-            self.publishState(currentState, includeStatus: true)
-            self.executor.executeAll(effectsToExecute)
-        }
+        let result = exitLearnMode(state)
+        state = result.state
+        let effectsToExecute = mergedEffectsWithRender(from: result.effects)
+        let currentState = state
+        publishState(currentState, includeStatus: true)
+        executor.executeAll(effectsToExecute)
     }
     
     /// Handle incoming OSC event for recording
     public func receiveOscEvent(_ event: OscEvent) {
         // Capture dynamic scenes/controls
         if event.address.hasPrefix("/controls/") {
-            let shouldTrack = withStateSync { shouldTrackDynamicControl(address: event.address) }
+            let shouldTrack = shouldTrackDynamicControl(address: event.address)
             if shouldTrack {
                 Task { [weak self] in
                     await DynamicControlStore.shared.update(address: event.address, args: event.args)
                     guard let self else { return }
-                    let controlBanks = self.withStateSync {
-                        self.rolesByBank.filter { $0.value == .params || $0.value == .meta }.map { $0.key }
-                    }
-                    if !controlBanks.isEmpty { self.refreshDynamicBanks(for: controlBanks) }
+                    let controlBanks = await self.rolesByBank.filter { $0.value == .params || $0.value == .meta }.map { $0.key }
+                    if !controlBanks.isEmpty { await self.refreshDynamicBanks(for: controlBanks) }
                 }
             }
         }
         if event.address.hasPrefix("/scenes/"), let name = sceneName(from: event), !name.isEmpty {
-            withStateSync { activeDynamicSceneName = name }
+            activeDynamicSceneName = name
             Task { [weak self] in
                 guard let self else { return }
                 await DynamicControlStore.shared.clearSceneScopedControls()
-                let paramsBanks = self.withStateSync { self.rolesByBank.filter { $0.value == .params }.map { $0.key } }
-                if !paramsBanks.isEmpty { self.refreshDynamicBanks(for: paramsBanks) }
+                let paramsBanks = await self.rolesByBank.filter { $0.value == .params }.map { $0.key }
+                if !paramsBanks.isEmpty { await self.refreshDynamicBanks(for: paramsBanks) }
 
-                    var items = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
-                    if !items.contains(name) { items.append(name) }
-                    await DynamicGroupStore.shared.update(source: "$synesthesia/scenes", items: items)
-                    let sceneBanks = self.withStateSync { self.rolesByBank.filter { $0.value == .scenes || $0.value == .scenes2 }.map { $0.key } }
-                    if !sceneBanks.isEmpty { self.refreshDynamicBanks(for: sceneBanks) }
+                var items = await DynamicGroupStore.shared.items(for: "$synesthesia/scenes")
+                if !items.contains(name) { items.append(name) }
+                await DynamicGroupStore.shared.update(source: "$synesthesia/scenes", items: items)
+                let sceneBanks = await self.rolesByBank.filter { $0.value == .scenes || $0.value == .scenes2 }.map { $0.key }
+                if !sceneBanks.isEmpty { await self.refreshDynamicBanks(for: sceneBanks) }
             }
         }
         if event.address.hasPrefix("/presets/") {
             let name = event.address.components(separatedBy: "/").last ?? ""
             if !name.isEmpty {
-                Task {
+                Task { [weak self] in
+                    guard let self else { return }
                     var items = await DynamicGroupStore.shared.items(for: "$synesthesia/presets")
                     if !items.contains(name) { items.append(name) }
                     await DynamicGroupStore.shared.update(source: "$synesthesia/presets", items: items)
-                    let presetBanks = self.withStateSync { self.rolesByBank.filter { $0.value == .presets }.map { $0.key } }
-                    if !presetBanks.isEmpty { refreshDynamicBanks(for: presetBanks) }
+                    let presetBanks = await self.rolesByBank.filter { $0.value == .presets }.map { $0.key }
+                    if !presetBanks.isEmpty { await self.refreshDynamicBanks(for: presetBanks) }
                 }
             }
         }
 
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            var workingState = self.state
-            var combinedEffects: [LaunchpadEffect] = []
+        var workingState = state
+        var combinedEffects: [LaunchpadEffect] = []
 
-            if workingState.learnState.phase == .config {
-                let captureResult = captureOscEvent(workingState, event: event)
-                workingState = captureResult.state
-                combinedEffects.append(contentsOf: captureResult.effects)
-            }
-
-            let syncResult = handleOscEvent(workingState, event: event)
-            workingState = syncResult.state
-            combinedEffects.append(contentsOf: syncResult.effects)
-
-            self.state = workingState
-            let effectsToExecute = self.mergedEffectsWithRender(from: combinedEffects)
-            let currentState = self.state
-            self.publishState(currentState, includeStatus: false)
-            self.executor.executeAll(effectsToExecute)
+        if workingState.learnState.phase == .config {
+            let captureResult = captureOscEvent(workingState, event: event)
+            workingState = captureResult.state
+            combinedEffects.append(contentsOf: captureResult.effects)
         }
+
+        let syncResult = handleOscEvent(workingState, event: event)
+        workingState = syncResult.state
+        combinedEffects.append(contentsOf: syncResult.effects)
+
+        state = workingState
+        let effectsToExecute = mergedEffectsWithRender(from: combinedEffects)
+        let currentState = state
+        publishState(currentState, includeStatus: false)
+        executor.executeAll(effectsToExecute)
     }
 
     
@@ -1152,36 +1124,30 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Manually configure a pad (requires device connected for LED update)
     public func configurePad(_ padId: ButtonId, behavior: PadBehavior) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            let result = addPadBehavior(self.state, behavior: behavior)
-            self.state = result.state
-            self.executor.updateConfig(padId: padId, behavior: behavior)
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
-            let currentState = self.state
-            self.publishState(currentState, includeStatus: false)
-            self.executor.executeAll(effectsToExecute)
-        }
+        let result = addPadBehavior(state, behavior: behavior)
+        state = result.state
+        executor.updateConfig(padId: padId, behavior: behavior)
+        let effectsToExecute = mergedEffectsWithRender(from: result.effects)
+        let currentState = state
+        publishState(currentState, includeStatus: false)
+        executor.executeAll(effectsToExecute)
     }
     
     /// Clear a pad's configuration
     public func clearPad(_ padId: ButtonId) {
-        onStateQueue { [weak self] in
-            guard let self else { return }
-            let result = removePad(self.state, padId: padId)
-            self.state = result.state
-            self.executor.removeConfig(padId: padId)
-            let effectsToExecute = self.mergedEffectsWithRender(from: result.effects)
-            let currentState = self.state
-            self.publishState(currentState, includeStatus: false)
-            self.executor.executeAll(effectsToExecute)
-        }
+        let result = removePad(state, padId: padId)
+        state = result.state
+        executor.removeConfig(padId: padId)
+        let effectsToExecute = mergedEffectsWithRender(from: result.effects)
+        let currentState = state
+        publishState(currentState, includeStatus: false)
+        executor.executeAll(effectsToExecute)
     }
     
     // MARK: - LED Control
     
     private func refreshLeds() {
-        let effectsToExecute = withStateSync { mergedEffectsWithRender(from: []) }
+        let effectsToExecute = mergedEffectsWithRender(from: [])
         guard isEnabled else { return }
         executor.executeAll(effectsToExecute)
     }
@@ -1190,13 +1156,13 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Set LED directly (requires device connected)
     public func setLed(_ padId: ButtonId, color: LaunchpadColor) {
-        guard withStateSync({ isEnabled }) else { return }
+        guard isEnabled else { return }
         midi.setLed(padId: padId, color: color.rawValue)
     }
     
     /// Set multiple LEDs (requires device connected)
     public func setLeds(_ updates: [(ButtonId, LaunchpadColor)]) {
-        guard withStateSync({ isEnabled }) else {
+        guard isEnabled else {
             if Self.verboseRuntimeLogs {
                 print("[Launchpad] setLeds ignored - module disabled")
             }
@@ -1224,10 +1190,15 @@ public final class LaunchpadModule: @unchecked Sendable {
     
     /// Force Programmer Mode (send SysEx sequence)
     public func forceProgrammerMode() {
-        guard withStateSync({ isEnabled }) else { return }
+        guard isEnabled else { return }
         midi.sendDAWModeSysEx()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.midi.sendProgrammerModeSysEx()
+            guard let self else { return }
+            Task { await self.sendProgrammerModeSysExOnActor() }
         }
+    }
+
+    private func sendProgrammerModeSysExOnActor() {
+        midi.sendProgrammerModeSysEx()
     }
 }
