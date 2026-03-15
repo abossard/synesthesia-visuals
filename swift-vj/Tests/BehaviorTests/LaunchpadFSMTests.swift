@@ -381,6 +381,33 @@ final class LaunchpadFSMTests: XCTestCase {
         }
     }
 
+    func testCaptureOscEvictsOldestWhenOverLimit() {
+        var state = ControllerState()
+        state = handlePadPress(state, padId: LaunchpadButton.learn).state
+        state = handlePadPress(state, padId: ButtonId(x: 0, y: 0)).state
+        XCTAssertEqual(state.learnState.phase, .config)
+
+        // Capture MAX + 5 distinct control addresses
+        let total = MAX_CAPTURED_OSC + 5
+        for i in 0..<total {
+            state = captureOscEvent(
+                state,
+                event: OscEvent(address: "/controls/param\(i)", args: [.float(Float(i))])
+            ).state
+        }
+
+        // Should be capped at MAX_CAPTURED_OSC
+        XCTAssertEqual(state.learnState.capturedOsc.count, MAX_CAPTURED_OSC)
+        // Oldest entries evicted — only the last MAX addresses remain
+        let addresses = state.learnState.capturedOsc.map(\.command.address)
+        for i in 0..<MAX_CAPTURED_OSC {
+            let expected = "/controls/param\(total - MAX_CAPTURED_OSC + i)"
+            XCTAssertTrue(addresses.contains(expected), "Expected \(expected) in captures")
+        }
+        // First entries should be gone
+        XCTAssertFalse(addresses.contains("/controls/param0"))
+    }
+
     func testShiftPressAndRelease() {
         let state = ControllerState()
 

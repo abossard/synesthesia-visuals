@@ -155,6 +155,7 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
             isEnabled: true
         )
         newState.learnState.capturedOsc.append(captured)
+        evictOldestIfOverLimit(&newState.learnState.capturedOsc)
         
         // Auto-suggest selector mode for scenes
         if newState.learnState.selectedMode == nil {
@@ -184,6 +185,7 @@ public func captureOscEvent(_ state: ControllerState, event: OscEvent) -> FSMRes
                 isEnabled: true
             )
             newState.learnState.capturedOsc.append(captured)
+            evictOldestIfOverLimit(&newState.learnState.capturedOsc)
         }
 
         let category = isLedFX ? "LedFX" : "Control"
@@ -1140,6 +1142,21 @@ public let PRIORITY_SCENE = 1       // Scenes - highest priority, stops recordin
 public let PRIORITY_PRESET = 2      // Presets - high priority
 public let PRIORITY_CONTROL = 3     // Toggle/Push controls
 public let PRIORITY_NOISE = 99      // Ignore completely (audio levels, etc.)
+
+/// Maximum number of captured OSC messages retained during learn mode.
+/// When exceeded, the oldest non-scene capture is evicted.
+public let MAX_CAPTURED_OSC = 10
+
+/// Evict the oldest non-scene capture when the list exceeds `MAX_CAPTURED_OSC`.
+private func evictOldestIfOverLimit(_ captures: inout [CapturedOsc]) {
+    while captures.count > MAX_CAPTURED_OSC {
+        if let oldest = captures.firstIndex(where: { $0.priority != PRIORITY_SCENE }) {
+            captures.remove(at: oldest)
+        } else {
+            captures.removeFirst()
+        }
+    }
+}
 
 /// Categorize an OSC address to determine suggested mode, group, and priority
 /// Matches Python synesthesia_config.py categorize_osc()
