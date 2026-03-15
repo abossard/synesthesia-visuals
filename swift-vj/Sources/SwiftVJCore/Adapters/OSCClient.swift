@@ -93,10 +93,9 @@ public final class OSCHub: @unchecked Sendable {
 
     // Subscriptions using PrefixTrie for O(n) pattern matching
     private let lock = NSLock()
-    private var subscriptions: [String: [OSCMessageHandler]] = [:]
-    private var anyHandlers: [OSCMessageHandler] = []      // "*" or "/" patterns
-    private var exactHandlers: [String: [OSCMessageHandler]] = [:]  // exact matches
-    private let prefixTrie = PrefixTrie<[OSCMessageHandler]>()  // prefix matches
+    private var anyHandlers: [OSCMessageHandler] = []
+    private var exactHandlers: [String: [OSCMessageHandler]] = [:]
+    private let prefixTrie = PrefixTrie<[OSCMessageHandler]>()
     private var subscriptionOrder: Int = 0
 
     // Stats (atomic via lock)
@@ -252,12 +251,6 @@ public final class OSCHub: @unchecked Sendable {
     /// - Uses PrefixTrie for O(n) prefix matching
     public func subscribe(pattern: String, handler: @escaping OSCMessageHandler) {
         lock.withLock {
-            // Store in legacy subscriptions for backwards compat
-            var handlers = subscriptions[pattern] ?? []
-            handlers.append(handler)
-            subscriptions[pattern] = handlers
-            
-            // Also store in optimized structures
             let classification = classifyPattern(pattern)
             switch classification {
             case .any:
@@ -284,8 +277,6 @@ public final class OSCHub: @unchecked Sendable {
     /// Unsubscribe all handlers for a pattern
     public func unsubscribe(pattern: String) {
         lock.withLock {
-            _ = subscriptions.removeValue(forKey: pattern)
-            
             let classification = classifyPattern(pattern)
             switch classification {
             case .any:
@@ -302,7 +293,6 @@ public final class OSCHub: @unchecked Sendable {
     /// Clear all subscriptions
     public func clearSubscriptions() {
         lock.withLock {
-            subscriptions.removeAll()
             anyHandlers.removeAll()
             exactHandlers.removeAll()
             prefixTrie.clear()
@@ -390,38 +380,6 @@ public final class OSCHub: @unchecked Sendable {
         }
     }
 
-    private func dispatchMessage(_ message: OSCMessage) {
-        let address = message.addressPattern.stringValue
-        let values = message.values
-
-        let currentSubscriptions = lock.withLock { subscriptions }
-
-        for (pattern, handlers) in currentSubscriptions {
-            if matches(address: address, pattern: pattern) {
-                for handler in handlers {
-                    handler(address, values)
-                }
-            }
-        }
-    }
-
-    /// Check if an address matches a subscription pattern
-    private func matches(address: String, pattern: String) -> Bool {
-        // "*" or "/" matches everything
-        if pattern == "*" || pattern == "/" || pattern.isEmpty {
-            return true
-        }
-
-        // Prefix match with wildcard
-        if pattern.hasSuffix("*") {
-            let prefix = String(pattern.dropLast())
-            return address.hasPrefix(prefix)
-        }
-
-        // Exact match
-        return address == pattern
-    }
-
     // MARK: - Latency Monitoring
     
     /// Enable or disable latency monitoring
@@ -469,7 +427,7 @@ public final class OSCHub: @unchecked Sendable {
                 "messagesSent": messagesSent,
                 "messagesReceived": messagesReceived,
                 "messagesForwarded": messagesForwarded,
-                "subscriptionCount": subscriptions.count
+                "subscriptionCount": anyHandlers.count + exactHandlers.count + prefixTrie.count
             ]
             
             // Include latency stats if enabled
