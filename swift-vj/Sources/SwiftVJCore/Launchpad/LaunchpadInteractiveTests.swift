@@ -537,16 +537,15 @@ public final class LaunchpadInteractiveTests {
         Thread.sleep(forTimeInterval: 0.3)
         
         // Create module with OSC logging
-        var oscLog: [String] = []
-        let module = LaunchpadModule(
-            oscSender: { command in
-                oscLog.append("OSC → \(command.address) \(command.args)")
-                print("  📤 OSC: \(command.address) \(command.args)")
-            }
-        )
+        nonisolated(unsafe) var oscLog: [String] = []
+        let oscSender: @Sendable (OscCommand) -> Void = { command in
+            oscLog.append("OSC → \(command.address) \(command.args)")
+            print("  📤 OSC: \(command.address) \(command.args)")
+        }
+        let module = LaunchpadModule(oscSender: oscSender)
         
         print("Starting LaunchpadModule...")
-        let connected = module.start()
+        let connected = blockingAwait { await module.start() }
         
         if !connected {
             print("❌ LaunchpadModule failed to connect")
@@ -554,7 +553,7 @@ public final class LaunchpadInteractiveTests {
             Thread.sleep(forTimeInterval: 2)
         }
         
-        let status = module.getStatus()
+        let status = blockingAwait { await module.getStatus() }
         print("Status: enabled=\(status.isEnabled), device=\(status.deviceName ?? "none")")
         print()
         
@@ -569,21 +568,21 @@ public final class LaunchpadInteractiveTests {
                 padId: ButtonId(x: 0, y: 0),
                 mode: .selector,
                 group: .scenes,
-                idleColor: LaunchpadColor.red.rawValue,
-                activeColor: LaunchpadColor.red.rawValue,
+                idleColor: .red,
+                activeColor: .red,
                 oscAction: OscCommand(address: "/test/selector", args: [.float(1.0)])
             )
-            module.configurePad(ButtonId(x: 0, y: 0), behavior: behavior1)
+            blockingAwait { await module.configurePad(ButtonId(x: 0, y: 0), behavior: behavior1) }
             
             let behavior2 = PadBehavior(
                 padId: ButtonId(x: 1, y: 0),
                 mode: .toggle,
-                idleColor: LaunchpadColor.green.rawValue,
-                activeColor: LaunchpadColor.green.rawValue,
+                idleColor: .green,
+                activeColor: .green,
                 oscOn: OscCommand(address: "/test/toggle", args: [.float(1.0)]),
                 oscOff: OscCommand(address: "/test/toggle", args: [.float(0.0)])
             )
-            module.configurePad(ButtonId(x: 1, y: 0), behavior: behavior2)
+            blockingAwait { await module.configurePad(ButtonId(x: 1, y: 0), behavior: behavior2) }
             
             print("Pads configured! Press them to see OSC output.")
             print("Press any other pad to continue to learn mode test...")
@@ -593,12 +592,12 @@ public final class LaunchpadInteractiveTests {
             
             print()
             print("Testing learn mode...")
-            module.startLearnMode()
+            blockingAwait { await module.startLearnMode() }
             print("Learn mode started - FSM should be in .waitingForPad state")
             
             Thread.sleep(forTimeInterval: 3)
             
-            module.stopLearnMode()
+            blockingAwait { await module.stopLearnMode() }
             print("Learn mode stopped")
         }
         
@@ -608,12 +607,24 @@ public final class LaunchpadInteractiveTests {
             print("  \(msg)")
         }
         
-        module.stop()
+        blockingAwait { await module.stop() }
         print()
         print("✅ Full FSM test complete!")
         
         // Reconnect for any remaining tests
         Thread.sleep(forTimeInterval: 0.3)
+    }
+
+    @discardableResult
+    private func blockingAwait<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: T!
+        Task {
+            result = await work()
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return result
     }
 }
 

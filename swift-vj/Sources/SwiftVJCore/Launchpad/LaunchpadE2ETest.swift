@@ -50,6 +50,18 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private var oscLog: [String] = []
     private let lock = NSLock()
     private let semaphore = DispatchSemaphore(value: 0)
+
+    @discardableResult
+    private func blockingAwait<T: Sendable>(_ work: @escaping @Sendable () async -> T) -> T {
+        let sem = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result: T!
+        Task {
+            result = await work()
+            sem.signal()
+        }
+        sem.wait()
+        return result
+    }
     
     // MARK: - Colors
     
@@ -133,7 +145,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     
     private func cleanup() {
         midi.clearAllLeds()
-        module?.stop()
+        if let module { blockingAwait { await module.stop() } }
         midi.disableAutoReconnect()
         midi.disconnect()
     }
@@ -268,7 +280,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         for (index, (name, color)) in colors.enumerated() {
             let row = index % 8
             for col in 0..<8 {
-                midi.setLed(padId: ButtonId(x: col, y: row), color: color)
+                midi.setLed(padId: ButtonId(x: col, y: row), color: color.rawValue)
             }
             io.print("    Row \(row): \(name)")
             try? await Task.sleep(for: .milliseconds(150))
@@ -279,7 +291,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Clear
         for y in 0..<8 {
             for x in 0..<8 {
-                midi.setLed(padId: ButtonId(x: x, y: y), color: LP.off)
+                midi.setLed(padId: ButtonId(x: x, y: y), color: LP.off.rawValue)
             }
         }
         
@@ -299,7 +311,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Light top grid row for reference
         for col in 0..<8 {
-            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.cyan)
+            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.cyan.rawValue)
         }
         io.print("  Cyan row 7 lit for reference - press buttons ABOVE it")
         io.print("")
@@ -331,7 +343,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Clear reference LEDs
         for col in 0..<8 {
-            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.off)
+            midi.setLed(padId: ButtonId(x: col, y: 7), color: LP.off.rawValue)
         }
         
         if detected.count >= needed {
@@ -348,7 +360,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Light rightmost grid column for reference
         for row in 0..<8 {
-            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.orange)
+            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.orange.rawValue)
         }
         io.print("  Orange column 7 lit - press buttons to the RIGHT of it")
         io.print("")
@@ -379,7 +391,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         
         // Clear
         for row in 0..<8 {
-            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.off)
+            midi.setLed(padId: ButtonId(x: 7, y: row), color: LP.off.rawValue)
         }
         
         if detected.count >= needed {
@@ -402,7 +414,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             }
         )
         
-        _ = module?.start()
+        if let module { blockingAwait { await module.start() } }
         Thread.sleep(forTimeInterval: 0.3)
         
         print()
@@ -411,7 +423,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Poll module status instead of waiting for raw MIDI (module now owns callbacks)
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
-            if let status = module?.getStatus(), status.isLearnMode {
+            if let module, blockingAwait({ await module.getStatus() }).isLearnMode {
                 return (true, "Learn mode entered via Scene[0]")
             }
             Thread.sleep(forTimeInterval: 0.1)
@@ -430,7 +442,8 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 10)
         
         // Check if still in learn mode (pad selection moves to recording phase)
-        if let status = module?.getStatus() {
+        if let module {
+            let status = blockingAwait { await module.getStatus() }
             if status.isLearnMode {
                 return (true, "Pad selected, in recording/config phase")
             } else {
@@ -461,7 +474,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         // Poll until learn mode exits
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
-            if let status = module?.getStatus(), !status.isLearnMode {
+            if let module, !blockingAwait({ await module.getStatus() }).isLearnMode {
                 return (true, "Config saved/cancelled, exited learn mode")
             }
             Thread.sleep(forTimeInterval: 0.2)
@@ -494,8 +507,10 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             oscAction: OscCommand(address: "/scenes/2/load")
         )
         
-        module?.configurePad(pad1, behavior: behavior1)
-        module?.configurePad(pad2, behavior: behavior2)
+        if let module {
+            blockingAwait { await module.configurePad(pad1, behavior: behavior1) }
+            blockingAwait { await module.configurePad(pad2, behavior: behavior2) }
+        }
         
         io.print("  Two selector pads configured at (0,2) and (1,2)")
         io.print("  Press each pad - only one should be active at a time")
@@ -505,8 +520,8 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 10)
         
         // Clean up
-        midi.setLed(padId: pad1, color: LP.off)
-        midi.setLed(padId: pad2, color: LP.off)
+        midi.setLed(padId: pad1, color: LP.off.rawValue)
+        midi.setLed(padId: pad2, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         if newOscMessages > 0 && oscLog.contains(where: { $0.contains("/scenes/") }) {
@@ -531,7 +546,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
             oscOff: OscCommand(address: "/controls/meta/toggle", args: [.float(0.0)])
         )
         
-        module?.configurePad(pad, behavior: behavior)
+        if let module { blockingAwait { await module.configurePad(pad, behavior: behavior) } }
         
         io.print("  Toggle pad at (3,2)")
         io.print("  Press it twice to see ON → OFF")
@@ -540,7 +555,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let initialOscCount = oscLog.count
         Thread.sleep(forTimeInterval: 10)
         
-        midi.setLed(padId: pad, color: LP.off)
+        midi.setLed(padId: pad, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         let toggleMessages = oscLog.filter { $0.contains("/controls/meta/toggle") }.count
@@ -560,12 +575,12 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let pad = ButtonId(x: 5, y: 2)
         let behavior = PadBehavior(
             padId: pad, mode: .push,
-            idleColor: LP.purple, activeColor: 54,  // bright purple
+            idleColor: LP.purple, activeColor: .purpleBright,  // bright purple
             label: "Push",
             oscAction: OscCommand(address: "/controls/momentary")
         )
         
-        module?.configurePad(pad, behavior: behavior)
+        if let module { blockingAwait { await module.configurePad(pad, behavior: behavior) } }
         
         io.print("  Push pad at (5,2) - purple")
         io.print("  HOLD it - should be bright while held, dim on release")
@@ -575,7 +590,7 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
         let initialOscCount = oscLog.count
         Thread.sleep(forTimeInterval: 10)
         
-        midi.setLed(padId: pad, color: LP.off)
+        midi.setLed(padId: pad, color: LP.off.rawValue)
         
         let newOscMessages = oscLog.count - initialOscCount
         let momentaryMessages = oscLog.filter { $0.contains("/controls/momentary") }.count
@@ -591,14 +606,14 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
     private func testConfigPersistence() -> (Bool, String) {
         io.print("  Testing config persistence...")
         
-        let status = module?.getStatus()
+        let status: LaunchpadStatus? = module.map { m in blockingAwait { await m.getStatus() } }
         let padCount = status?.configuredPadCount ?? 0
         
         io.print("  Currently \(padCount) pads configured")
         
         // Stop and restart module
         io.print("  Stopping module...")
-        module?.stop()
+        if let module { blockingAwait { await module.stop() } }
         Thread.sleep(forTimeInterval: 0.3)
         
         io.print("  Restarting module...")
@@ -608,10 +623,10 @@ public final class LaunchpadE2ETest: @unchecked Sendable {
                 self?.io.print("    [OSC] → \(command.address)")
             }
         )
-        _ = module?.start()
+        if let module { blockingAwait { await module.start() } }
         Thread.sleep(forTimeInterval: 0.3)
         
-        let newStatus = module?.getStatus()
+        let newStatus: LaunchpadStatus? = module.map { m in blockingAwait { await m.getStatus() } }
         let newPadCount = newStatus?.configuredPadCount ?? 0
         
         io.print("  After restart: \(newPadCount) pads configured")

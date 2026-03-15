@@ -226,7 +226,7 @@ private func renderOscSelect(_ learn: LearnState) -> [LaunchpadEffect] {
         let row = 5 - (i / 8)  // rows 5, 4, 3, 2 (first item at top)
         
         // Priority-based color when disabled
-        let priorityColor: Int
+        let priorityColor: LaunchpadColor
         switch osc.priority {
         case 1: priorityColor = LP.greenDim    // Scene
         case 2: priorityColor = LP.cyanDim     // Preset  
@@ -273,7 +273,7 @@ private func renderModeSelect(_ learn: LearnState) -> [LaunchpadEffect] {
     // push: like toggle (2s/2s)
     let now = Date().timeIntervalSinceReferenceDate
     
-    let modes: [(PadMode, Int, Int, Int)] = [
+    let modes: [(PadMode, Int, LaunchpadColor, LaunchpadColor)] = [
         // (mode, x position, bright color, dim color)
         (.toggle, 0, LP.purple, LP.purpleDim),
         (.push, 1, LP.cyan, LP.cyanDim),
@@ -286,12 +286,12 @@ private func renderModeSelect(_ learn: LearnState) -> [LaunchpadEffect] {
         
         // If selected, always white
         if isSelected {
-            effects.append(.setLed(padId: ButtonId(x: x, y: 3), color: LP.white, blink: false))
+            effects.append(.setLed(padId: ButtonId(x: x, y: 3), color: .white, blink: false))
             continue
         }
         
         // Time-based pulse pattern to preview the mode behavior
-        let color: Int
+        let color: LaunchpadColor
         switch mode {
         case .selector:
             // Always on (steady)
@@ -347,15 +347,14 @@ private func renderVectorNudgeIndicators(_ state: ControllerState) -> [Launchpad
 /// Simple single color selection - selected shown with white, others show their color
 private func renderColorSelect(_ learn: LearnState) -> [LaunchpadEffect] {
     var effects: [LaunchpadEffect] = []
-    let colors = LaunchpadColor.allCases
+    let colors = LaunchpadColor.pickerColors
     
     // 32 colors in 4 rows (rows 0-3) x 8 columns
     for (i, color) in colors.prefix(32).enumerated() {
         let x = i % 8
         let y = i / 8  // rows 0, 1, 2, 3
-        let colorVel = color.rawValue
-        let isSelected = colorVel == learn.selectedColor
-        effects.append(.setLed(padId: ButtonId(x: x, y: y), color: isSelected ? LP.white : colorVel, blink: false))
+        let isSelected = color == learn.selectedColor
+        effects.append(.setLed(padId: ButtonId(x: x, y: y), color: isSelected ? .white : color, blink: false))
     }
     
     return effects

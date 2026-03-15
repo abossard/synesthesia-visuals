@@ -894,13 +894,13 @@ private func handleModeSelectInput(_ state: ControllerState, padId: ButtonId) ->
 
 private func handleColorSelectInput(_ state: ControllerState, padId: ButtonId) -> FSMResult {
     var newState = state
-    let colors = LaunchpadColor.allCases
+    let colors = LaunchpadColor.pickerColors
     
     // Color grid: rows 0-3, cols 0-7 (32 colors)
     if padId.y >= 0 && padId.y <= 3 && padId.x >= 0 && padId.x <= 7 {
         let idx = padId.y * 8 + padId.x
         if idx < colors.count {
-            newState.learnState.selectedColor = colors[idx].rawValue
+            newState.learnState.selectedColor = colors[idx]
             return FSMResult(state: newState)
         }
     }
@@ -994,8 +994,8 @@ private func createPadBehavior(
     padId: ButtonId,
     mode: PadMode,
     oscCommand: OscCommand,
-    idleColor: Int,
-    activeColor: Int,
+    idleColor: LaunchpadColor,
+    activeColor: LaunchpadColor,
     label: String,
     group: ButtonGroupType?,
     additionalOsc: [OscCommand] = []
@@ -1218,26 +1218,26 @@ public func isNoisyAudio(_ address: String) -> Bool {
 }
 
 /// Get suggested LED colors for an OSC address category
-public func suggestedColors(for address: String) -> (idle: Int, active: Int) {
+public func suggestedColors(for address: String) -> (idle: LaunchpadColor, active: LaunchpadColor) {
     if address.hasPrefix("/scenes/") {
-        return (LP.greenDim, LP.red)        // Green dim -> Red
+        return (.greenDim, .red)
     }
     if address.hasPrefix("/presets/") {
-        return (LP.blue, LP.green)          // Blue -> Green
+        return (.blue, .green)
     }
     if address.hasPrefix("/favslots/") {
-        return (LP.cyan, LP.green)          // Cyan -> Green
+        return (.cyan, .green)
     }
     if address.hasPrefix("/playlist/") {
-        return (LP.orange, LP.yellow)       // Orange -> Yellow
+        return (.orange, .yellow)
     }
     if address.hasPrefix("/controls/meta/") {
-        return (LP.purple, LP.pink)         // Purple -> Pink
+        return (.purple, LP.pink)
     }
     if address.hasPrefix("/controls/global/") {
-        return (LP.yellow, LP.red)          // Yellow -> Red
+        return (.yellow, .red)
     }
-    return (LP.off, LP.red)                 // Default: off -> red
+    return (.off, .red)
 }
 
 /// Generate effects to refresh all LEDs

@@ -126,13 +126,13 @@ public final class EffectExecutor {
         oscSender?(command)
     }
     
-    private func executeLed(padId: ButtonId, color: Int, blink: Bool) {
+    private func executeLed(padId: ButtonId, color: LaunchpadColor, blink: Bool) {
         guard midi.isConnected else { return }
         // Use native Launchpad pulsing for blink mode
         if blink {
-            midi.setLed(padId: padId, color: color, mode: .pulse)
+            midi.setLed(padId: padId, color: color.rawValue, mode: .pulse)
         } else {
-            midi.setLed(padId: padId, color: color, mode: .solid)
+            midi.setLed(padId: padId, color: color.rawValue, mode: .solid)
         }
     }
     

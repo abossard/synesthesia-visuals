@@ -49,11 +49,11 @@ let package = Package(
     ],
     dependencies: [
         // OSC communication
-        .package(url: "https://github.com/orchetect/OSCKit", from: "0.6.0"),
+        .package(url: "https://github.com/orchetect/OSCKit", from: "2.0.0"),
         // Command-line argument parsing
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
         // YAML parsing for config files
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.0.0"),
         // SwiftUI view inspection for tests
         .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.10"),
         // Multi-provider LLM abstraction

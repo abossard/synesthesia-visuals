@@ -208,7 +208,7 @@ struct LaunchpadView: View {
                                     Text("Color:")
                                         .foregroundColor(.secondary)
                                     Circle()
-                                        .fill(launchpadColorToSwiftUI(state.learnState.selectedColor))
+                                        .fill(state.learnState.selectedColor.swiftUIColor)
                                         .frame(width: 12, height: 12)
                                 }
                                 .font(.caption)
@@ -284,8 +284,8 @@ struct PadView: View {
     var body: some View {
         let runtime = appState.launchpadState?.padRuntime[id]
         let behavior = appState.launchpadState?.pads[id]
-        let colorInt = runtime?.currentColor ?? LP.off
-        let color = launchpadColorToSwiftUI(colorInt)
+        let lpColor = runtime?.currentColor ?? .off
+        let color = lpColor.swiftUIColor
         
         // Determine shape
         let isRound = id.isTopRow || id.isSceneButton
@@ -356,20 +356,9 @@ struct PadView: View {
     }
     
     // Helper to convert Launchpad color index to SwiftUI Color
-    func launchpadColorToSwiftUI(_ lpColor: Int) -> Color {
-        switch lpColor {
-        case LP.off: return Color(white: 0.2)
-        case LP.red, LP.redDim: return .red
-        case LP.orange: return .orange
-        case LP.yellow: return .yellow
-        case LP.green, LP.greenDim: return .green
-        case LP.cyan: return .cyan
-        case LP.blue, LP.blueDim: return .blue
-        case LP.purple: return .purple
-        case LP.pink: return .pink
-        case LP.white: return .white
-        default: return Color(white: 0.2)
-        }
+    // (kept as thin wrapper; prefer using .swiftUIColor directly)
+    func launchpadColorToSwiftUI(_ lpColor: LaunchpadColor) -> Color {
+        lpColor.swiftUIColor
     }
 }
 
@@ -414,21 +403,29 @@ func modeDisplayName(_ mode: PadMode?) -> String {
     }
 }
 
-/// Helper to convert Launchpad color index to SwiftUI Color (standalone version)
-func launchpadColorToSwiftUI(_ lpColor: Int) -> Color {
-    switch lpColor {
-    case LP.off: return Color(white: 0.2)
-    case LP.red, LP.redDim: return .red
-    case LP.orange: return .orange
-    case LP.yellow: return .yellow
-    case LP.green, LP.greenDim: return .green
-    case LP.cyan: return .cyan
-    case LP.blue, LP.blueDim: return .blue
-    case LP.purple: return .purple
-    case LP.pink: return .pink
-    case LP.white: return .white
-    default: return Color(white: 0.3)
+// MARK: - LaunchpadColor SwiftUI Extension
+
+extension LaunchpadColor {
+    /// Convert this Launchpad MIDI color to an approximate SwiftUI display color.
+    public var swiftUIColor: Color {
+        switch self {
+        case .off:                              return Color(white: 0.2)
+        case .red, .redDim, .redBright, .coral: return .red
+        case .orange, .orangeDim, .orangeBright, .peach: return .orange
+        case .yellow, .yellowDim, .yellowBright, .gold, .amber: return .yellow
+        case .green, .greenDim, .greenBright, .lime, .spring: return .green
+        case .cyan, .cyanDim, .cyanBright, .teal, .mint, .aqua: return .cyan
+        case .blue, .blueDim, .blueBright, .sky, .azure: return .blue
+        case .purple, .purpleDim, .purpleBright, .indigo, .violet, .lavender: return .purple
+        case .magenta, .magentaBright, .pink, .pinkDim, .hotPink: return .pink
+        case .white, .whiteDim:                 return .white
+        }
     }
+}
+
+/// Helper to convert Launchpad color to SwiftUI Color (standalone version for non-member contexts)
+func launchpadColorToSwiftUI(_ lpColor: LaunchpadColor) -> Color {
+    lpColor.swiftUIColor
 }
 
 /// Bank index to SwiftUI Color (uses YAML config if available)
@@ -438,7 +435,7 @@ func bankColor(_ index: Int, isActive: Bool, yamlConfig: LaunchpadYAMLConfig?) -
        let bankButton = yaml.global.bankButtons.first(where: { $0.bank == index }) {
         let colorName = isActive ? bankButton.activeColor : bankButton.idleColor
         let lpColor = yaml.color(colorName)
-        return launchpadColorToSwiftUI(lpColor)
+        return lpColor.swiftUIColor
     }
     
     // Fallback to hardcoded colors
