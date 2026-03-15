@@ -86,9 +86,9 @@ public final class OSCHub: @unchecked Sendable {
 
     // Client bound to port 9999 so VDJ responses come back to us
     // (VDJ responds to the source port of subscribe requests)
-    private var client: OSCClient?
-    private var server: OSCServer?         // Port 9999 for Synesthesia
-    private var vdjServer: OSCServer?      // Port 9010 for VDJ responses
+    private var client: OSCUDPClient?
+    private var server: OSCUDPServer?         // Port 9999 for Synesthesia
+    private var vdjServer: OSCUDPServer?      // Port 9010 for VDJ responses
     private var isStarted = false
 
     // Subscriptions using PrefixTrie for O(n) pattern matching
@@ -132,10 +132,9 @@ public final class OSCHub: @unchecked Sendable {
         guard !isStarted else { return }
 
         // Start server on port 9999 for Synesthesia audio
-        let oscServer = OSCServer(port: receivePort) { [weak self] message, timeTag in
-            await self?.handleMessage(message, timeTag: timeTag)
+        let oscServer = OSCUDPServer(port: receivePort) { [weak self] message, timeTag, _, _ in
+            Task { await self?.handleMessage(message, timeTag: timeTag) }
         }
-        oscServer.isPortReuseEnabled = true
 
         do {
             try oscServer.start()
@@ -145,10 +144,9 @@ public final class OSCHub: @unchecked Sendable {
         }
 
         // Start VDJ server on port 9010 for VDJ responses
-        let vdjOscServer = OSCServer(port: vdjReceivePort) { [weak self] message, timeTag in
-            await self?.handleMessage(message, timeTag: timeTag)
+        let vdjOscServer = OSCUDPServer(port: vdjReceivePort) { [weak self] message, timeTag, _, _ in
+            Task { await self?.handleMessage(message, timeTag: timeTag) }
         }
-        vdjOscServer.isPortReuseEnabled = true
 
         do {
             try vdjOscServer.start()
@@ -159,7 +157,7 @@ public final class OSCHub: @unchecked Sendable {
         }
 
         // Start client for sending (no port binding needed)
-        let oscClient = OSCClient()
+        let oscClient = OSCUDPClient()
         do {
             try oscClient.start()
             self.client = oscClient

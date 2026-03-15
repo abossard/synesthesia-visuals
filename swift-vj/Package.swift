@@ -49,7 +49,7 @@ let package = Package(
     ],
     dependencies: [
         // OSC communication
-        .package(url: "https://github.com/orchetect/OSCKit", from: "0.6.0"),
+        .package(url: "https://github.com/orchetect/OSCKit", from: "2.0.0"),
         // Command-line argument parsing
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
         // YAML parsing for config files
