@@ -6,6 +6,7 @@ using the GitHub Copilot SDK, with screenshot feedback for iterative refinement.
 """
 
 import asyncio
+import json
 import math
 import os
 import threading
@@ -26,6 +27,65 @@ try:
     HAS_COPILOT = True
 except ImportError:
     HAS_COPILOT = False
+
+
+# ── Error Journal — persistent log of all AI errors and fixes ──
+
+ERROR_JOURNAL_PATH = os.path.expanduser("~/.termvj_error_journal.jsonl")
+
+
+class ErrorJournal:
+    """Append-only JSONL log of every AI generation attempt.
+
+    Each entry records the prompt, generated code, error (if any),
+    whether the fix succeeded, and the attempt number. This log is
+    used to identify recurring failure patterns and improve the
+    system prompt over time.
+    """
+
+    def __init__(self, path: str = ERROR_JOURNAL_PATH):
+        self.path = path
+
+    def log(self, *, prompt: str, code: str, error: str | None,
+            attempt: int, fixed: bool, fix_code: str | None = None):
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "prompt": prompt[:200],
+            "code_len": len(code) if code else 0,
+            "code_head": (code or "")[:500],
+            "error": error,
+            "attempt": attempt,
+            "fixed": fixed,
+        }
+        if fix_code:
+            entry["fix_head"] = fix_code[:500]
+        try:
+            with open(self.path, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except OSError:
+            pass
+
+    def read_recent(self, n: int = 20) -> list[dict]:
+        """Read the last N journal entries."""
+        try:
+            with open(self.path) as f:
+                lines = f.readlines()
+            return [json.loads(l) for l in lines[-n:]]
+        except (OSError, json.JSONDecodeError):
+            return []
+
+    def common_errors(self, n: int = 10) -> str:
+        """Summarize recurring error patterns for prompt improvement."""
+        entries = self.read_recent(100)
+        errors = [e["error"] for e in entries if e.get("error")]
+        if not errors:
+            return ""
+        # Count error prefixes (first 60 chars) to find patterns
+        from collections import Counter
+        counts = Counter(e[:60] for e in errors)
+        top = counts.most_common(n)
+        lines = [f"- {err} (×{count})" for err, count in top]
+        return "Common errors from past generations:\n" + "\n".join(lines)
 
 
 # ── Safe namespace for exec()'d code ────────────────────────
@@ -307,6 +367,8 @@ class AIVizManager:
         self.last_code = ""
         self.last_prompt = ""
         self.on_new_version = None  # callback(code, prompt, screenshot_path, description)
+        self._cancelled = False
+        self._journal = ErrorJournal()
         self._loop = None
         self._thread = None
 
@@ -360,8 +422,14 @@ class AIVizManager:
             return extract_code(response_parts[-1])
         return None
 
-    async def _generate(self, prompt, screenshot_path=None, max_retries=3):
+    async def _generate(self, prompt, screenshot_path=None):
+        """Generate a visualization, retrying until success or cancellation.
+
+        Every attempt is logged to ~/.termvj_error_journal.jsonl.
+        Past common errors are injected into the initial prompt.
+        """
         self.generating = True
+        self._cancelled = False
         self.error_msg = ""
         try:
             await self._start_client()
@@ -377,27 +445,38 @@ class AIVizManager:
 
             self.debug.log(f"Prompt: {prompt[:50]}...", (100, 200, 255))
 
-            code = await self._send_and_get_code(prompt, screenshot_path)
+            # Inject common past errors so the AI avoids them
+            common = self._journal.common_errors(5)
+            initial_prompt = prompt
+            if common:
+                initial_prompt += (
+                    f"\n\n## Avoid these known pitfalls:\n{common}\n"
+                    f"Make sure your code does NOT repeat these mistakes."
+                )
+
+            code = await self._send_and_get_code(initial_prompt, screenshot_path)
             if not code:
                 self.debug.log("No response received", (255, 100, 100))
                 return
 
-            # Try loading, auto-fix on errors up to max_retries
-            for attempt in range(max_retries + 1):
+            error_history = []
+            attempt = 0
+            while not self._cancelled:
                 fn, err = load_render_fn(code)
                 if fn:
-                    # Test-run with a small framebuffer to catch runtime errors
                     runtime_err = self._test_run(fn)
                     if runtime_err is None:
                         self.render_fn = fn
                         self.last_code = code
                         self.last_prompt = prompt
                         self.iteration += 1
-                        self.debug.log(
-                            f"✅ Loaded render_ai v{self.iteration}"
-                            + (f" (after {attempt} fix{'es' if attempt != 1 else ''})" if attempt else ""),
-                            (100, 255, 100))
-                        # Notify version store callback
+                        msg = f"✅ v{self.iteration}"
+                        if attempt > 0:
+                            msg += f" (fixed after {attempt})"
+                        self.debug.log(msg, (100, 255, 100))
+                        self._journal.log(
+                            prompt=prompt, code=code, error=None,
+                            attempt=attempt, fixed=True)
                         if self.on_new_version:
                             desc = prompt[:60] if prompt else f"iteration {self.iteration}"
                             self.on_new_version(code, prompt, screenshot_path, desc)
@@ -405,24 +484,48 @@ class AIVizManager:
                     else:
                         err = f"runtime error: {runtime_err}"
 
-                if attempt < max_retries:
-                    self.debug.log(f"🔧 Fix attempt {attempt+1}/{max_retries}: {err[:45]}", (255, 200, 100))
-                    fix_prompt = (
-                        f"The code you generated has an error:\n\n"
-                        f"```\n{err}\n```\n\n"
-                        f"Here is the broken code:\n\n"
-                        f"```python\n{code}\n```\n\n"
-                        f"Fix the error and return the complete corrected function. "
-                        f"Remember: use ONLY numpy (np) and math, no imports, "
-                        f"no pixel loops, function must be named render_ai."
+                attempt += 1
+                error_history.append(f"Attempt {attempt}: {err}")
+                self._journal.log(
+                    prompt=prompt, code=code, error=err,
+                    attempt=attempt, fixed=False)
+                self.debug.log(
+                    f"🔧 Fix {attempt}: {err[:50]}",
+                    (255, 200, 100))
+
+                history_block = "\n".join(error_history[-5:])
+                fix_prompt = (
+                    f"The code has an error. Error history:\n\n"
+                    f"```\n{history_block}\n```\n\n"
+                    f"Latest error:\n```\n{err}\n```\n\n"
+                    f"Broken code:\n```python\n{code}\n```\n\n"
+                    f"Fix it. Return the COMPLETE corrected function.\n"
+                    f"Rules: named `render_ai`, only `np`+`math`, "
+                    f"no pixel loops, guard state init, write to fb directly."
+                )
+                if attempt > 3:
+                    fix_prompt += (
+                        f"\n{attempt} failures. SIMPLIFY. Start with a basic "
+                        f"sine plasma that works, then add features."
                     )
-                    code = await self._send_and_get_code(fix_prompt)
+
+                code = await self._send_and_get_code(fix_prompt)
+                if not code:
+                    self.debug.log("No fix, fresh start...", (255, 150, 50))
+                    await asyncio.sleep(1)
+                    code = await self._send_and_get_code(
+                        f"All {attempt} attempts failed. Start completely fresh.\n\n"
+                        f"Original request: {prompt}\n\n"
+                        f"Generate a SIMPLE, WORKING render_ai() function. "
+                        f"Minimal — just make it compile and run.",
+                        screenshot_path
+                    )
                     if not code:
-                        self.debug.log("No fix received", (255, 100, 100))
+                        self.debug.log("No response, giving up", (255, 100, 100))
                         return
-                else:
-                    self.debug.log(f"❌ Failed after {max_retries} retries: {err[:45]}", (255, 100, 100))
-                    self.error_msg = err[:50]
+
+            if self._cancelled:
+                self.debug.log("Cancelled by user", (255, 200, 100))
 
         except asyncio.TimeoutError:
             self.debug.log("Timeout waiting for Copilot", (255, 100, 100))
@@ -473,19 +576,38 @@ class AIVizManager:
         self._run_async(self._auto_fix_runtime(error_str))
 
     async def _auto_fix_runtime(self, error_str):
-        """Send the runtime error back to Copilot for auto-fix."""
+        """Send the runtime error back to Copilot for auto-fix, retrying until success."""
         if self.session is None or self.generating:
             return
         self.generating = True
+        self._cancelled = False
+        error_history = [f"Runtime crash: {error_str}"]
+        attempt = 0
         try:
-            fix_prompt = (
-                f"The render_ai function crashed at runtime with this error:\n\n"
-                f"```\n{error_str}\n```\n\n"
-                f"Fix the code and return the complete corrected render_ai function."
-            )
-            self.debug.log("Auto-fixing runtime error...", (255, 200, 100))
-            code = await self._send_and_get_code(fix_prompt)
-            if code:
+            while not self._cancelled:
+                attempt += 1
+                self.debug.log(f"Auto-fixing (attempt {attempt})...", (255, 200, 100))
+
+                history_block = "\n".join(error_history[-5:])
+                fix_prompt = (
+                    f"The render_ai function crashed at runtime.\n\n"
+                    f"Error history:\n```\n{history_block}\n```\n\n"
+                )
+                if self.last_code:
+                    fix_prompt += f"Current code:\n```python\n{self.last_code}\n```\n\n"
+                fix_prompt += (
+                    f"Fix the code and return the COMPLETE corrected render_ai function. "
+                    f"Use ONLY np and math. No pixel loops. Guard all state init."
+                )
+                if attempt > 3:
+                    fix_prompt += " Simplify your approach — make it basic but working."
+
+                code = await self._send_and_get_code(fix_prompt)
+                if not code:
+                    self.debug.log("No response, retrying...", (255, 150, 50))
+                    await asyncio.sleep(1)
+                    continue
+
                 fn, err = load_render_fn(code)
                 if fn:
                     runtime_err = self._test_run(fn)
@@ -495,12 +617,21 @@ class AIVizManager:
                         self.last_prompt = "auto-fix"
                         self.iteration += 1
                         self.debug.log(f"✅ Auto-fixed → v{self.iteration}", (100, 255, 100))
+                        self._journal.log(
+                            prompt="auto-fix", code=code, error=None,
+                            attempt=attempt, fixed=True, fix_code=code)
                         if self.on_new_version:
                             self.on_new_version(code, "auto-fix", None, "auto-fix")
+                        return
                     else:
-                        self.debug.log(f"⚠ Fix still crashes: {runtime_err[:40]}", (255, 100, 100))
-                else:
-                    self.debug.log(f"⚠ Fix didn't load: {err[:40]}", (255, 100, 100))
+                        err = f"runtime error: {runtime_err}"
+
+                error_history.append(f"Attempt {attempt}: {err}")
+                self._journal.log(
+                    prompt="auto-fix", code=code, error=err,
+                    attempt=attempt, fixed=False)
+                self.debug.log(f"⚠ Fix failed: {err[:40]}", (255, 100, 100))
+
         except Exception as e:
             self.debug.log(f"Auto-fix error: {e}", (255, 100, 100))
         finally:
@@ -508,7 +639,13 @@ class AIVizManager:
 
     def generate(self, prompt, screenshot_path=None):
         """Start generation in background (non-blocking)."""
+        self._cancelled = False
         self._run_async(self._generate(prompt, screenshot_path))
+
+    def cancel(self):
+        """Cancel the current generation/fix loop."""
+        self._cancelled = True
+        self.debug.log("Cancelling...", (255, 200, 100))
 
     def screenshot(self, fb):
         """Save framebuffer as PNG, return path."""

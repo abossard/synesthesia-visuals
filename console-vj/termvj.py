@@ -1981,7 +1981,13 @@ def main():
                     # Inline prompt gets first crack at keys
                     if inline_prompt.handle_key(key, term):
                         pass  # consumed by prompt
-                    elif key.lower() == 'q' or key.code == term.KEY_ESCAPE:
+                    elif key.code == term.KEY_ESCAPE:
+                        # ESC cancels AI generation if active, otherwise quits
+                        if ai_manager and ai_manager.generating:
+                            ai_manager.cancel()
+                        else:
+                            break
+                    elif key.lower() == 'q':
                         break
                     elif key.code == term.KEY_UP:
                         cycle_mode(-1)
