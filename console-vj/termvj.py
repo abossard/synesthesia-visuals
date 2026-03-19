@@ -129,6 +129,36 @@ class AudioFeatures:
     # Levels
     rms: float = 0.0          # normalized loudness
     is_quiet: bool = True
+    # ── Algorithm 1: Perceptual Energy Bands ──
+    band_sub_bass: float = 0.0   # 20–60 Hz  (808 rumble)
+    band_kick: float = 0.0       # 60–250 Hz (kick body)
+    band_snare: float = 0.0      # 250–500 Hz (snare body)
+    band_mid: float = 0.0        # 500–2k Hz (vocals, melody)
+    band_presence: float = 0.0   # 2k–4k Hz (attack, presence)
+    band_high: float = 0.0       # 4k–12k Hz (hats, air)
+    band_air: float = 0.0        # 12k–20k Hz (shimmer)
+    # ── Algorithm 2: Onset-Classified Pulses ──
+    kick_pulse: float = 0.0      # Exponential envelope, slow decay
+    snare_pulse: float = 0.0     # Exponential envelope, medium decay
+    hat_pulse: float = 0.0       # Exponential envelope, fast decay
+    beat_phase: float = 0.0      # 0–1 cycling every beat, phase-locked
+    # ── Algorithm 3: Spectral Centroid Chaser ──
+    centroid_velocity: float = 0.0  # Rate of centroid change (signed)
+    # ── Algorithm 4: Spectral Flux Anticipation ──
+    low_flux: float = 0.0        # Flux in bottom 20% of spectrum
+    high_flux: float = 0.0       # Flux in top 80% of spectrum
+    tension: float = 0.0         # Accumulated flux (builds during calm)
+    # ── Algorithm 5: MFCC Timbral Navigator ──
+    mfcc_distance: float = 0.0   # Euclidean distance from running avg
+    timbre_hue: float = 0.0      # MFCC[1] normalized — hue rotation
+    timbre_scale: float = 0.0    # MFCC[2] normalized — element scale
+    timbre_bright: float = 0.0   # MFCC[3] normalized — brightness
+    # ── Algorithm 6: Phase-Locked Oscillator Bank ──
+    osc_half: float = 0.0        # Half-time oscillator value (-1..1)
+    osc_beat: float = 0.0        # Beat-rate oscillator
+    osc_double: float = 0.0      # Double-time oscillator
+    osc_triplet: float = 0.0     # Triplet oscillator
+    osc_sixteenth: float = 0.0   # Sixteenth-note oscillator
 
 
 def cosine_palette(t, a, b, c, d):
@@ -269,6 +299,43 @@ class AudioEngine:
         self.pitch_o.set_unit("Hz")
         self.pitch_o.set_tolerance(0.8)
         
+        # ── Algorithm 1: Perceptual band edges (Hz → FFT bin) ──
+        band_hz = [20, 60, 250, 500, 2000, 4000, 12000, 20000]
+        self._band_edges = [int(hz * WIN_S / RATE) for hz in band_hz]
+        self.agc_bands = FeatureAGC(7, attack=0.12, release=0.01, smooth=0.35)
+        
+        # ── Algorithm 2: Onset-classified pulse state ──
+        self._kick_pulse = 0.0
+        self._snare_pulse = 0.0
+        self._hat_pulse = 0.0
+        self._beat_phase = 0.0
+        # Frequency-filtered onset detectors
+        self._onset_kick = aubio.onset("energy", WIN_S, HOP_S, RATE)
+        self._onset_kick.set_threshold(1.5)
+        self._onset_snare = aubio.onset("complex", WIN_S, HOP_S, RATE)
+        self._onset_snare.set_threshold(1.2)
+        self._onset_hat = aubio.onset("hfc", WIN_S, HOP_S, RATE)
+        self._onset_hat.set_threshold(1.0)
+        
+        # ── Algorithm 3: Centroid velocity state ──
+        self._prev_centroid = 0.0
+        
+        # ── Algorithm 4: Spectral flux accumulation ──
+        self._prev_fft = np.zeros(WIN_S // 2 + 1)
+        self._flux_avg = 0.01
+        self._tension = 0.0
+        self.agc_flux_bands = FeatureAGC(2, attack=0.15, release=0.01, smooth=0.3)
+        
+        # ── Algorithm 5: MFCC timbral navigator ──
+        self._mfcc_avg = np.zeros(MFCC_COEFFS)
+        self._mfcc_frame_count = 0
+        self.agc_mfcc_vis = FeatureAGC(3, attack=0.05, release=0.01, smooth=0.6)
+        
+        # ── Algorithm 6: Phase-locked oscillator bank ──
+        self._osc_phases = np.zeros(5)
+        self._osc_multipliers = np.array([0.5, 1.0, 2.0, 1.5, 4.0])
+        self._osc_corrections = np.array([0.1, 0.3, 0.08, 0.05, 0.03])
+        
         self.p = None
         self.stream = None
         
@@ -354,7 +421,7 @@ class AudioEngine:
         # RMS
         rms_raw = np.sqrt(np.mean(samples**2))
         
-        # Normalize features
+        # Normalize existing features
         spectrum_norm = self.agc_spectrum.normalize(spectrum_raw)
         mel_norm = self.agc_mel.normalize(mel_bands)
         specdesc_raw = np.array([centroid, spread, rolloff, flatness, flux, slope, kurtosis])
@@ -363,6 +430,106 @@ class AudioEngine:
         
         # Pitch to MIDI
         pitch_midi = 69 + 12 * np.log2(max(pitch_hz, 1) / 440.0) if pitch_hz > 0 else 0
+        
+        # ── Algorithm 1: Perceptual Energy Band Decomposition ──
+        fft_full = np.array(fft_mag, dtype=np.float64)
+        band_energies_raw = np.zeros(7)
+        for i in range(7):
+            lo = self._band_edges[i]
+            hi = min(self._band_edges[i + 1], len(fft_full))
+            if hi > lo:
+                band_energies_raw[i] = np.sqrt(np.mean(fft_full[lo:hi] ** 2))
+        band_energies = self.agc_bands.normalize(band_energies_raw)
+        
+        # ── Algorithm 2: Onset-Classified Beat Pulse ──
+        # Run frequency-band onset detectors on the raw samples
+        # (aubio onset objects work on time-domain fvec)
+        kick_onset = bool(self._onset_kick(samples)[0])
+        snare_onset = bool(self._onset_snare(samples)[0])
+        hat_onset = bool(self._onset_hat(samples)[0])
+        
+        # Filter by band energy to classify (kick needs low energy, hat needs high)
+        if kick_onset and band_energies[1] < 0.15:
+            kick_onset = False
+        if hat_onset and band_energies[5] < 0.1:
+            hat_onset = False
+        
+        # Update pulse envelopes (jump to 1, exponential decay)
+        if kick_onset:
+            self._kick_pulse = 1.0
+        if snare_onset:
+            self._snare_pulse = 1.0
+        if hat_onset:
+            self._hat_pulse = 1.0
+        self._kick_pulse *= 0.88    # Slow decay — heavy punch
+        self._snare_pulse *= 0.92   # Medium decay
+        self._hat_pulse *= 0.96     # Fast decay — sharp flicker
+        
+        # Beat phase accumulator (free-running + soft correction)
+        dt = HOP_S / RATE
+        if bpm > 0:
+            self._beat_phase += bpm / 60.0 * dt
+            self._beat_phase %= 1.0
+        if beat:
+            phase_error = -self._beat_phase
+            if phase_error > 0.5:
+                phase_error -= 1.0
+            if phase_error < -0.5:
+                phase_error += 1.0
+            self._beat_phase += phase_error * 0.3
+            self._beat_phase %= 1.0
+        
+        # ── Algorithm 3: Spectral Centroid Velocity ──
+        centroid_norm = specdesc_norm[0]
+        centroid_vel = centroid_norm - self._prev_centroid
+        self._prev_centroid = centroid_norm
+        
+        # ── Algorithm 4: Spectral Flux Anticipation ──
+        curr_fft = np.array(fft_mag, dtype=np.float64)
+        positive_diff = np.maximum(curr_fft - self._prev_fft, 0)
+        n_low = len(curr_fft) // 5  # Bottom 20%
+        low_flux_raw = float(np.sum(positive_diff[:n_low]))
+        high_flux_raw = float(np.sum(positive_diff[n_low:]))
+        flux_bands_norm = self.agc_flux_bands.normalize([low_flux_raw, high_flux_raw])
+        total_flux = float(np.sum(positive_diff))
+        self._flux_avg = self._flux_avg * 0.99 + total_flux * 0.01
+        flux_novelty = total_flux / max(self._flux_avg, 1e-10)
+        
+        # Tension accumulator: charges during calm, discharges on events
+        if flux_novelty < 1.0:
+            self._tension += (1.0 - flux_novelty) * 0.005
+        if flux_novelty > 2.0:
+            self._tension *= 0.3  # Dump on big events
+        self._tension *= 0.998  # Slow natural decay
+        self._tension = min(self._tension, 1.0)
+        
+        self._prev_fft = curr_fft
+        
+        # ── Algorithm 5: MFCC Timbral Navigator ──
+        mfcc_arr = np.array(mfcc_out, dtype=np.float64)
+        self._mfcc_frame_count += 1
+        alpha = 0.01 if self._mfcc_frame_count > 30 else 0.1
+        self._mfcc_avg = self._mfcc_avg * (1 - alpha) + mfcc_arr * alpha
+        mfcc_dist = float(np.sqrt(np.sum((mfcc_arr[1:] - self._mfcc_avg[1:]) ** 2)))
+        # Normalize MFCCs 1-3 for direct visual mapping
+        mfcc_vis_raw = np.abs(mfcc_arr[1:4])
+        mfcc_vis = self.agc_mfcc_vis.normalize(mfcc_vis_raw)
+        
+        # ── Algorithm 6: Phase-Locked Oscillator Bank ──
+        if bpm > 0:
+            beat_freq = bpm / 60.0
+            self._osc_phases += beat_freq * self._osc_multipliers * dt
+            self._osc_phases %= 1.0
+        if beat:
+            for i in range(5):
+                error = -self._osc_phases[i]
+                if error > 0.5:
+                    error -= 1.0
+                if error < -0.5:
+                    error += 1.0
+                self._osc_phases[i] += error * self._osc_corrections[i]
+                self._osc_phases[i] %= 1.0
+        osc_values = np.sin(self._osc_phases * 2 * np.pi)
         
         # Update shared state
         with self.lock:
@@ -386,7 +553,37 @@ class AudioEngine:
                 onset_strength=scalar_norm[1],
                 bpm=bpm,
                 rms=scalar_norm[0],
-                is_quiet=rms_raw < 0.001
+                is_quiet=rms_raw < 0.001,
+                # Algorithm 1
+                band_sub_bass=band_energies[0],
+                band_kick=band_energies[1],
+                band_snare=band_energies[2],
+                band_mid=band_energies[3],
+                band_presence=band_energies[4],
+                band_high=band_energies[5],
+                band_air=band_energies[6],
+                # Algorithm 2
+                kick_pulse=self._kick_pulse,
+                snare_pulse=self._snare_pulse,
+                hat_pulse=self._hat_pulse,
+                beat_phase=self._beat_phase,
+                # Algorithm 3
+                centroid_velocity=centroid_vel,
+                # Algorithm 4
+                low_flux=flux_bands_norm[0],
+                high_flux=flux_bands_norm[1],
+                tension=self._tension,
+                # Algorithm 5
+                mfcc_distance=mfcc_dist,
+                timbre_hue=mfcc_vis[0],
+                timbre_scale=mfcc_vis[1],
+                timbre_bright=mfcc_vis[2],
+                # Algorithm 6
+                osc_half=float(osc_values[0]),
+                osc_beat=float(osc_values[1]),
+                osc_double=float(osc_values[2]),
+                osc_triplet=float(osc_values[3]),
+                osc_sixteenth=float(osc_values[4]),
             )
         
         return (None, pyaudio.paContinue)
@@ -547,31 +744,35 @@ def render_diagnostics(fb, audio, frame, lut, state):
 
 
 def render_plasma(fb, audio, frame, lut, state):
-    """Mode 1: Classic demoscene plasma with irrational frequencies."""
+    """Mode 1: Classic demoscene plasma with irrational frequencies.
+    
+    Uses: osc_beat (breathing), centroid_velocity (color drift),
+    kick_pulse (phase jump), tension (complexity), band_sub_bass (freq mod).
+    """
     h, w, _ = fb.shape
     
-    # Initialize state
     if "phase" not in state:
         state["phase"] = 0.0
         state["centers"] = np.random.rand(6, 2) * 2 - 1
         state["drift_vel"] = np.random.randn(6, 2) * 0.001
     
-    # Beat triggers phase jump
-    if audio.beat:
-        state["phase"] += 0.3
+    # Kick pulse drives phase jumps (heavier than generic beat)
+    state["phase"] += audio.kick_pulse * 0.2
+    # Base motion + osc_beat breathing + RMS energy
+    state["phase"] += 0.01 + audio.rms * 0.03 + (1 + audio.osc_beat) * 0.01
     
-    state["phase"] += 0.01 + audio.rms * 0.05
+    # Centroid velocity drifts centers (opening filter = spread out)
     state["centers"] += state["drift_vel"]
+    state["centers"] += audio.centroid_velocity * 0.02
     state["centers"] = np.clip(state["centers"], -1.5, 1.5)
     
-    # Grid coordinates
     y_coords = np.linspace(-1, 1, h)
     x_coords = np.linspace(-1, 1, w)
     xx, yy = np.meshgrid(x_coords, y_coords)
     
-    # Irrational frequency ratios
     freqs = np.array([1.0, 1.618, 3.14159, 2.71828, 1.41421, 2.236])
-    bass_mod = 1.0 + audio.mel_bands[:6].mean() * 2
+    # Sub-bass drives frequency modulation, tension adds complexity
+    bass_mod = 1.0 + audio.band_sub_bass * 2 + audio.tension * 1.5
     
     plasma = np.zeros((h, w))
     for i, (cx, cy) in enumerate(state["centers"]):
@@ -581,7 +782,8 @@ def render_plasma(fb, audio, frame, lut, state):
         plasma += np.sin(dist * freqs[i] * bass_mod + state["phase"] + i)
     
     plasma = (plasma - plasma.min()) / (plasma.max() - plasma.min() + 1e-6)
-    plasma = (plasma + audio.centroid * 0.5) % 1.0
+    # Centroid for global color + timbre_hue for timbral shifts
+    plasma = (plasma + audio.centroid * 0.3 + audio.timbre_hue * 0.2) % 1.0
     
     indices = (plasma * 255).astype(int)
     fb[:] = lut[indices]
@@ -590,7 +792,11 @@ def render_plasma(fb, audio, frame, lut, state):
 
 
 def render_fire(fb, audio, frame, lut, state):
-    """Mode 2: Cellular automata fire with mel-band injection."""
+    """Mode 2: Cellular automata fire with mel-band injection.
+    
+    Uses: kick_pulse (flare-ups), low_flux (turbulence), band_kick (heat base),
+    centroid_velocity (wind direction), osc_beat (breathing).
+    """
     h, w, _ = fb.shape
     
     if "heat" not in state:
@@ -603,14 +809,20 @@ def render_fire(fb, audio, frame, lut, state):
         x = int(i * w / MEL_BANDS)
         heat[-1, x] = audio.mel_bands[i]
     
-    # Propagate and cool
-    cooling = 0.05 + audio.flux * 0.05
+    # Kick pulse creates burst of heat across bottom
+    if audio.kick_pulse > 0.5:
+        heat[-2:, :] = np.maximum(heat[-2:, :], audio.kick_pulse * 0.8)
+    
+    # Cooling rate: base + flux drives spectral change cooling
+    cooling = 0.04 + audio.low_flux * 0.04 + (1 + audio.osc_beat) * 0.005
     heat[:-1, :] = heat[1:, :] * (1 - cooling)
     
-    # Wind/turbulence
-    if audio.flux > 0.5:
-        shift = np.random.randint(-2, 3)
-        heat[:] = np.roll(heat, shift, axis=1)
+    # Wind driven by centroid velocity (positive = right, negative = left)
+    wind = int(np.clip(audio.centroid_velocity * 20, -3, 3))
+    if audio.low_flux > 0.4 or abs(wind) > 0:
+        shift = wind + (np.random.randint(-1, 2) if audio.low_flux > 0.4 else 0)
+        if shift != 0:
+            heat[:] = np.roll(heat, shift, axis=1)
     
     # Smooth
     heat[1:-1, 1:-1] = (heat[1:-1, 1:-1] * 2 + 
@@ -686,7 +898,11 @@ def render_spectrum(fb, audio, frame, lut, state):
 
 
 def render_particles(fb, audio, frame, lut, state):
-    """Mode 4: Beat-triggered particle system."""
+    """Mode 4: Beat-triggered particle system with classified onsets.
+    
+    Uses: kick_pulse (heavy burst), snare_pulse (accent), hat_pulse (sparkle),
+    band_high (turbulence), tension (stored energy release), osc_double (emission rate).
+    """
     h, w, _ = fb.shape
     
     if "particles" not in state:
@@ -695,35 +911,67 @@ def render_particles(fb, audio, frame, lut, state):
     # Decay background
     fb[:] = (fb * 0.88).astype(np.uint8)
     
-    # Spawn particles on onset/beat
-    if audio.onset:
-        n = int(audio.onset_strength * 50) + 10
+    # Kick: heavy radial burst from center
+    if audio.kick_pulse > 0.8:
+        n = int(audio.kick_pulse * 40) + 5
         for _ in range(n):
-            state["particles"].append({
-                "x": w / 2,
-                "y": h / 2,
-                "vx": np.random.randn() * 5,
-                "vy": np.random.randn() * 5,
-                "life": 1.0,
-                "color_t": audio.centroid
-            })
-    
-    if audio.beat:
-        for _ in range(30):
             angle = np.random.rand() * 2 * np.pi
-            speed = 5 + np.random.rand() * 5
+            speed = 4 + audio.band_kick * 6
             state["particles"].append({
-                "x": w / 2,
-                "y": h / 2,
+                "x": w / 2, "y": h / 2,
                 "vx": np.cos(angle) * speed,
                 "vy": np.sin(angle) * speed,
-                "life": 1.0,
-                "color_t": audio.centroid
+                "life": 1.0, "color_t": 0.1  # Warm (bass color)
             })
     
+    # Snare: scattered mid-energy burst
+    if audio.snare_pulse > 0.7:
+        n = int(audio.snare_pulse * 25) + 5
+        for _ in range(n):
+            state["particles"].append({
+                "x": np.random.rand() * w, "y": np.random.rand() * h,
+                "vx": np.random.randn() * 3,
+                "vy": np.random.randn() * 3,
+                "life": 0.8, "color_t": audio.centroid
+            })
+    
+    # Hi-hat: small fast sparkles from top
+    if audio.hat_pulse > 0.6:
+        n = int(audio.hat_pulse * 12)
+        for _ in range(n):
+            state["particles"].append({
+                "x": np.random.rand() * w, "y": 0,
+                "vx": np.random.randn() * 1.5,
+                "vy": np.random.rand() * 3,
+                "life": 0.5, "color_t": 0.8  # Cool (treble color)
+            })
+    
+    # Tension release: massive dump on drop
+    if audio.tension > 0.6 and audio.kick_pulse > 0.5:
+        n = int(audio.tension * 60)
+        for _ in range(n):
+            angle = np.random.rand() * 2 * np.pi
+            speed = 3 + audio.tension * 8
+            state["particles"].append({
+                "x": w / 2, "y": h / 2,
+                "vx": np.cos(angle) * speed,
+                "vy": np.sin(angle) * speed,
+                "life": 1.0, "color_t": np.random.rand()
+            })
+    
+    # Continuous emission driven by osc_double (eighth-note rate)
+    if audio.osc_double > 0.7 and audio.rms > 0.1:
+        state["particles"].append({
+            "x": w / 2 + audio.osc_triplet * w * 0.3,
+            "y": h / 2,
+            "vx": np.random.randn() * 2,
+            "vy": -2 - np.random.rand() * 2,
+            "life": 0.6, "color_t": audio.centroid
+        })
+    
     # Update and draw
-    gravity = 0.1
-    turbulence = audio.flux * 2
+    gravity = 0.08 + audio.band_sub_bass * 0.1
+    turbulence = audio.high_flux * 2 + audio.band_high * 1
     
     alive = []
     for p in state["particles"]:
@@ -736,7 +984,7 @@ def render_particles(fb, audio, frame, lut, state):
         
         if p["life"] > 0.01 and 0 <= p["x"] < w and 0 <= p["y"] < h:
             x, y = int(p["x"]), int(p["y"])
-            color = lut[int(p["color_t"] * 255)]
+            color = lut[int(np.clip(p["color_t"], 0, 1) * 255)]
             brightness = int(p["life"] * 255)
             fb[y, x] = (color * brightness // 255).astype(np.uint8)
             alive.append(p)
@@ -746,11 +994,14 @@ def render_particles(fb, audio, frame, lut, state):
 
 
 def render_tunnel(fb, audio, frame, lut, state):
-    """Mode 5: Perspective tunnel with BPM-synced zoom."""
+    """Mode 5: Perspective tunnel with beat-phase-locked zoom.
+    
+    Uses: beat_phase (zoom pulse), osc_half (slow sway), band_presence (distortion),
+    centroid (color), timbre_hue (pattern variation).
+    """
     h, w, _ = fb.shape
     
     if "polar" not in state:
-        # Pre-compute polar coordinates
         y_coords = np.arange(h) - h / 2
         x_coords = np.arange(w) - w / 2
         xx, yy = np.meshgrid(x_coords, y_coords)
@@ -761,22 +1012,23 @@ def render_tunnel(fb, audio, frame, lut, state):
     
     angle, dist = state["polar"]
     
-    # BPM-synced zoom
+    # Beat-phase-locked zoom (smooth sine pump on every beat)
     zoom_speed = 0.02 * (audio.bpm / 120.0) if audio.bpm > 0 else 0.02
-    if audio.beat:
-        zoom_speed *= 2
+    zoom_speed += audio.kick_pulse * 0.03
     state["zoom"] += zoom_speed
     
-    # Tunnel pattern
-    u = angle / np.pi  # -1 to 1
-    v = state["zoom"] / dist
+    # Tunnel pattern with beat_phase breathing
+    u = angle / np.pi
+    beat_breathe = np.sin(audio.beat_phase * 2 * np.pi) * 0.3
+    v = (state["zoom"] + beat_breathe) / dist
     
-    # Distortion from spread
-    v += np.sin(angle * 4 + state["zoom"]) * audio.spread * 0.1
+    # Distortion from presence band + slow osc_half sway
+    v += np.sin(angle * 4 + state["zoom"]) * audio.band_presence * 0.15
+    v += np.sin(angle * 2) * audio.osc_half * 0.05
     
-    # Color from centroid
-    pattern = (u * 5 + v * 10) % 1.0
-    pattern = (pattern + audio.centroid) % 1.0
+    # Color from centroid + timbral variation
+    pattern = (u * (5 + audio.timbre_scale * 3) + v * 10) % 1.0
+    pattern = (pattern + audio.centroid * 0.5 + audio.timbre_hue * 0.2) % 1.0
     
     indices = (pattern * 255).astype(int)
     fb[:] = lut[indices]

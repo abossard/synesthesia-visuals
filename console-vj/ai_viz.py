@@ -83,6 +83,38 @@ def render_ai(fb, audio, frame, lut, state):
   .pitch_hz   — float, detected fundamental frequency
   .pitch_confidence — float, 0-1 how reliable the pitch is
   .waveform   — np.ndarray[512] raw audio samples (-1 to 1)
+  ## EDM-optimized features (use these for best results!):
+  # Perceptual energy bands (7 bands, all 0-1):
+  .band_sub_bass — 20-60Hz (808 rumble, sub drops)
+  .band_kick     — 60-250Hz (kick drum body)
+  .band_snare    — 250-500Hz (snare body, bass guitar)
+  .band_mid      — 500-2kHz (vocals, melody, leads)
+  .band_presence — 2-4kHz (attack transients, presence)
+  .band_high     — 4-12kHz (hi-hats, cymbals, air)
+  .band_air      — 12-20kHz (brilliance, shimmer)
+  # Classified onset pulses (0-1, exponential decay envelopes):
+  .kick_pulse    — fires on kick, decays slowly (heavy impact)
+  .snare_pulse   — fires on snare, decays medium (accent)
+  .hat_pulse     — fires on hi-hat, decays fast (sparkle)
+  # Beat phase (0-1 cycling every beat, phase-locked to BPM):
+  .beat_phase    — use for all periodic motion: sin(beat_phase * 2π)
+  # Centroid dynamics:
+  .centroid_velocity — rate of brightness change (+ = opening, - = dropping)
+  # Spectral flux (split by frequency):
+  .low_flux      — bass flux (kicks re-entering, drops)
+  .high_flux     — treble flux (cymbals, filter sweeps)
+  .tension       — 0-1, builds during calm sections, dumps on drops
+  # Timbral features (MFCC-derived, 0-1):
+  .mfcc_distance — how different current timbre is from average
+  .timbre_hue    — spectral balance (use for color rotation speed)
+  .timbre_scale  — spectral shape (use for element size)
+  .timbre_bright — spectral detail (use for background brightness)
+  # Phase-locked oscillators (sine waves at BPM harmonics, -1 to 1):
+  .osc_half      — half-time (slow sway, color cycle)
+  .osc_beat      — beat rate (global pulse, breathing)
+  .osc_double    — eighth notes (rapid flicker)
+  .osc_triplet   — triplet feel (polyrhythmic drift)
+  .osc_sixteenth — sixteenth notes (texture scroll, shimmer)
 
 **frame** — int, frame counter (increments each frame, ~30/sec)
 **lut** — np.ndarray (256, 3) uint8, color palette. Use: `fb[:] = lut[indices]`
@@ -417,6 +449,15 @@ class AIVizManager:
                 onset_strength = bpm = rms = 0.0
                 pitch_hz = pitch_confidence = 0.0
                 waveform = np.zeros(512)
+                # New algorithm features
+                band_sub_bass = band_kick = band_snare = 0.0
+                band_mid = band_presence = band_high = band_air = 0.0
+                kick_pulse = snare_pulse = hat_pulse = 0.0
+                beat_phase = 0.0
+                centroid_velocity = 0.0
+                low_flux = high_flux = tension = 0.0
+                mfcc_distance = timbre_hue = timbre_scale = timbre_bright = 0.0
+                osc_half = osc_beat = osc_double = osc_triplet = osc_sixteenth = 0.0
 
             state = {}
             for frame in range(3):
