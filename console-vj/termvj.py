@@ -1124,42 +1124,64 @@ VIZ_MODES = [
 AI_MODE = -1  # special mode index for AI visualization
 
 
-def read_prompt(term):
-    """Read a text prompt from the user at the bottom of the screen."""
-    prompt_y = term.height - 3
-    sys.stdout.write(
-        f"\x1b[{prompt_y};1H"
-        f"\x1b[38;2;0;255;100m\x1b[48;2;10;10;30m"
-        f"{'AI Prompt: ' + '─' * (term.width - 12)}"
-        f"\x1b[{prompt_y+1};1H"
-        f"\x1b[38;2;255;255;255m\x1b[48;2;20;20;40m"
-        f"{'> ' + ' ' * (term.width - 4)}"
-        f"\x1b[{prompt_y+1};3H"
-    )
-    sys.stdout.flush()
-    text = []
-    while True:
-        key = term.inkey(timeout=None)
+class InlinePrompt:
+    """Non-blocking text prompt that renders as an overlay while animation continues."""
+
+    def __init__(self):
+        self.active = False
+        self.text: list[str] = []
+        self.callback = None  # called with (str) on submit, None on cancel
+        self.label = "AI Prompt"
+
+    def open(self, label: str, callback):
+        """Start capturing input. callback(text_or_None) on finish."""
+        self.active = True
+        self.text = []
+        self.label = label
+        self.callback = callback
+
+    def handle_key(self, key, term) -> bool:
+        """Process a keypress while prompt is active. Returns True if consumed."""
+        if not self.active:
+            return False
         if key.code == term.KEY_ENTER or key in ("\n", "\r"):
-            break
+            result = "".join(self.text).strip() or None
+            self.active = False
+            if self.callback:
+                self.callback(result)
+            return True
         elif key.code == term.KEY_ESCAPE:
-            return None
+            self.active = False
+            if self.callback:
+                self.callback(None)
+            return True
         elif key.code == term.KEY_BACKSPACE or key == "\x7f":
-            if text:
-                text.pop()
+            if self.text:
+                self.text.pop()
+            return True
         elif key.is_sequence:
-            continue
+            return True  # swallow arrow keys etc. while typing
         else:
-            text.append(str(key))
-        display = "".join(text)[:term.width - 6]
-        sys.stdout.write(
-            f"\x1b[{prompt_y+1};3H"
+            self.text.append(str(key))
+            return True
+
+    def render(self, term_width, term_height) -> str:
+        """Return ANSI string for the prompt overlay (2 lines near bottom)."""
+        if not self.active:
+            return ""
+        prompt_y = term_height - 3
+        display = "".join(self.text)[:term_width - 6]
+        bar = "─" * max(0, term_width - len(self.label) - 4)
+        return (
+            f"\x1b[{prompt_y};1H"
+            f"\x1b[38;2;0;255;100m\x1b[48;2;10;10;30m"
+            f" {self.label}: {bar}"
+            f"\x1b[{prompt_y+1};1H"
             f"\x1b[38;2;255;255;255m\x1b[48;2;20;20;40m"
-            f"{display + ' ' * (term.width - len(display) - 4)}"
+            f"> {display}{' ' * max(0, term_width - len(display) - 4)}"
             f"\x1b[{prompt_y+1};{3 + len(display)}H"
+            f"\x1b[?25h"  # show cursor while typing
         )
-        sys.stdout.flush()
-    return "".join(text).strip() if text else None
 
 
 # ============================================================================
@@ -1391,6 +1413,9 @@ def main():
     if ai_manager:
         ai_manager.on_new_version = store_ai_version
 
+    inline_prompt = InlinePrompt()
+    _pending_screenshot = [None]  # mutable container for closure access
+
     try:
         with term.hidden_cursor(), term.cbreak(), term.fullscreen():
             try:
@@ -1404,7 +1429,10 @@ def main():
                 # Handle keyboard
                 key = term.inkey(timeout=0)
                 if key:
-                    if key.lower() == 'q' or key.code == term.KEY_ESCAPE:
+                    # Inline prompt gets first crack at keys
+                    if inline_prompt.handle_key(key, term):
+                        pass  # consumed by prompt
+                    elif key.lower() == 'q' or key.code == term.KEY_ESCAPE:
                         break
                     elif key.code == term.KEY_UP:
                         cycle_mode(-1)
@@ -1438,26 +1466,26 @@ def main():
                         paused = not paused
                     elif key.lower() == 'a' and ai_manager:
                         show_help = False
-                        prompt = read_prompt(term)
-                        if prompt:
-                            debug_panel.log(f"Generating: {prompt[:40]}", (100, 200, 255))
-                            # Hook to capture code after generation
-                            original_render_fn = ai_manager.render_fn
-                            ai_manager.generate(prompt)
-                            mode = AI_MODE
-                            viz_state.clear()
-                            save_persisted_state(mode, palette_idx)
+                        def _on_ai_prompt(text):
+                            nonlocal mode, viz_state
+                            if text:
+                                debug_panel.log(f"Generating: {text[:40]}", (100, 200, 255))
+                                ai_manager.generate(text)
+                                mode = AI_MODE
+                                viz_state.clear()
+                                save_persisted_state(mode, palette_idx)
+                        inline_prompt.open("AI Prompt", _on_ai_prompt)
                     elif key.lower() == 'f' and ai_manager and mode == AI_MODE:
                         show_help = False
-                        screenshot_path = None
+                        _pending_screenshot[0] = None
                         if HAS_PIL and 'last_fb' in viz_state:
-                            screenshot_path = ai_manager.screenshot(viz_state['last_fb'])
-                        feedback = read_prompt(term)
-                        if feedback:
-                            debug_panel.log(f"Refining: {feedback[:40]}", (100, 200, 255))
-                            ai_manager.generate(feedback, screenshot_path)
+                            _pending_screenshot[0] = ai_manager.screenshot(viz_state['last_fb'])
+                        def _on_refine(text):
+                            if text:
+                                debug_panel.log(f"Refining: {text[:40]}", (100, 200, 255))
+                                ai_manager.generate(text, _pending_screenshot[0])
+                        inline_prompt.open("Refine", _on_refine)
                     elif key.lower() == 'i' and ai_manager and mode == AI_MODE:
-                        # Self-improvement: screenshot + ask AI to analyze and improve
                         show_help = False
                         if HAS_PIL and 'last_fb' in viz_state:
                             screenshot_path = ai_manager.screenshot(viz_state['last_fb'])
@@ -1603,6 +1631,15 @@ def main():
                                 )
                     
                     sys.stdout.write(term.move_xy(0, term.height - 1) + hud_str)
+
+                    # Inline prompt overlay (rendered last so it's on top)
+                    prompt_str = inline_prompt.render(term.width, term.height)
+                    if prompt_str:
+                        sys.stdout.write(prompt_str)
+                    elif not inline_prompt.active:
+                        # Hide cursor when prompt is not active
+                        sys.stdout.write("\x1b[?25l")
+
                     sys.stdout.flush()
                     
                     frame_count += 1
