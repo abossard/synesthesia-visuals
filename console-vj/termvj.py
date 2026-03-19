@@ -2086,11 +2086,20 @@ def main():
                     if mode == AI_MODE and ai_manager and ai_manager.render_fn:
                         try:
                             ai_manager.render_fn(fb, audio, frame_count, lut, viz_state)
+                            viz_state.pop('_crash_err', None)  # Clear on success
                         except Exception as e:
                             err_str = str(e)
-                            debug_panel.log(f"💥 {err_str[:45]}", (255, 100, 100))
+                            # Only log + auto-fix if this is a NEW error (not same crash every frame)
+                            prev_err = viz_state.get('_crash_err')
+                            if prev_err != err_str:
+                                debug_panel.log(f"💥 {err_str[:45]}", (255, 100, 100))
+                                viz_state['_crash_err'] = err_str
+                                viz_state['_crash_time'] = time.monotonic()
                             fb[fb.shape[0]//2-2:fb.shape[0]//2+2, :] = (80, 0, 0)
-                            if not ai_manager.generating:
+                            # Auto-fix with cooldown: wait 3s between attempts
+                            since_crash = time.monotonic() - viz_state.get('_crash_time', 0)
+                            if not ai_manager.generating and since_crash > 3.0:
+                                viz_state['_crash_time'] = time.monotonic()
                                 ai_manager.report_runtime_error(err_str)
                     elif mode == AI_MODE:
                         h, w = fb.shape[:2]
