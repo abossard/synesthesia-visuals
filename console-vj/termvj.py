@@ -45,7 +45,8 @@ MFCC_COEFFS = 13
 # Visualization mode names
 MODE_NAMES = [
     "DIAG", "PLASMA", "FIRE", "SPEC", "PARTS", 
-    "TUNNEL", "WAVES", "VORONOI", "SCOPE", "KALEID", "FRACTAL"
+    "TUNNEL", "WAVES", "VORONOI", "SCOPE", "KALEID", "FRACTAL",
+    "BANDS", "OSCS", "TENSION"
 ]
 
 # State persistence path
@@ -1358,6 +1359,299 @@ def render_fractal(fb, audio, frame, lut, state):
     fb[:] = lut[indices]
 
     return fb
+
+
+def render_band_pulses(fb, audio, frame, lut, state):
+    """Mode 11: Perceptual Energy Bands + Classified Onset Pulses.
+
+    Left half: 7 horizontal bars showing EDM energy bands.
+    Right half: 3 pulse envelopes (kick/snare/hat) as decaying circles.
+    Bottom strip: beat_phase as a cycling marker.
+    """
+    h, w, _ = fb.shape
+    fb.fill(0)
+    state['overlays'] = []
+
+    def label(py, px, text, fg=(200, 200, 200)):
+        state['overlays'].append((py // 2, px, text, fg))
+
+    # ── Left: 7 perceptual bands as horizontal bars ──
+    bands = [
+        ("SUB BASS", audio.band_sub_bass, (180, 40, 40)),
+        ("KICK",     audio.band_kick,     (220, 100, 30)),
+        ("SNARE",    audio.band_snare,    (220, 180, 40)),
+        ("MID",      audio.band_mid,      (80, 220, 80)),
+        ("PRESENCE", audio.band_presence, (40, 180, 220)),
+        ("HIGH",     audio.band_high,     (100, 100, 255)),
+        ("AIR",      audio.band_air,      (200, 150, 255)),
+    ]
+    half_w = w // 2 - 4
+    bar_h = max(2, (h - 20) // 7 - 2)
+    label(0, 1, "PERCEPTUAL BANDS (Algo 1)", (150, 255, 150))
+
+    for i, (name, val, color) in enumerate(bands):
+        y0 = 4 + i * (bar_h + 2)
+        if y0 + bar_h >= h - 14:
+            break
+        bar_len = int(np.clip(val, 0, 1) * half_w)
+        label(y0, 1, f"{name:9s}", color)
+        if bar_len > 0:
+            ci = int(np.clip(val * 255, 0, 255))
+            fb[y0:y0 + bar_h, 12:12 + bar_len] = lut[ci]
+        label(y0, 12 + half_w + 1, f"{val:.2f}", (150, 150, 150))
+
+    # ── Right: Classified onset pulse circles ──
+    right_x0 = w // 2 + 2
+    label(0, right_x0, "ONSET PULSES (Algo 2)", (255, 200, 150))
+
+    pulses = [
+        ("KICK",  audio.kick_pulse,  (255, 60, 60),  0.88),
+        ("SNARE", audio.snare_pulse, (255, 200, 60), 0.92),
+        ("HAT",   audio.hat_pulse,   (100, 200, 255), 0.96),
+    ]
+    circle_area_h = (h - 20) // 2
+    circle_r_max = min(circle_area_h // 2, (w // 2 - 10) // 6)
+    right_w = w - right_x0
+
+    for i, (name, pulse, color, decay) in enumerate(pulses):
+        cx = right_x0 + (i * 2 + 1) * right_w // 6
+        cy = 4 + circle_area_h // 2
+        r = int(pulse * circle_r_max)
+        label(cy - circle_r_max - 2, max(0, cx - 3), name, color)
+        label(cy + circle_r_max + 1, max(0, cx - 2), f"{pulse:.2f}", (150, 150, 150))
+        label(cy + circle_r_max + 3, max(0, cx - 4), f"decay {decay}", (100, 100, 100))
+        if r > 0:
+            yy, xx = np.ogrid[0:h, 0:w]
+            mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
+            brightness = int(pulse * 255)
+            fb[mask] = np.array([min(c * brightness // 255, 255) for c in color], dtype=np.uint8)
+
+    # ── Bottom: beat phase indicator ──
+    phase_y = h - 10
+    label(phase_y - 2, 1, f"BEAT PHASE: {audio.beat_phase:.2f}  BPM: {audio.bpm:.0f}", (255, 255, 150))
+    marker_x = int(audio.beat_phase * (w - 4)) + 2
+    fb[phase_y:phase_y + 3, 2:w - 2] = (30, 30, 50)
+    # Phase position marker
+    mx0 = max(2, marker_x - 2)
+    mx1 = min(w - 2, marker_x + 3)
+    fb[phase_y:phase_y + 3, mx0:mx1] = (255, 255, 100)
+    # Beat flash on downbeat region
+    beat_region = int(0.05 * (w - 4))
+    if audio.beat_phase < 0.05 or audio.beat_phase > 0.95:
+        fb[phase_y:phase_y + 3, 2:2 + beat_region] = (255, 100, 100)
+
+    return fb
+
+
+def render_oscillators(fb, audio, frame, lut, state):
+    """Mode 12: Phase-Locked Oscillator Bank + Centroid.
+
+    5 oscillator waveforms stacked vertically, each showing current value
+    and phase history. Right column shows centroid + velocity gauge.
+    """
+    h, w, _ = fb.shape
+    fb.fill(0)
+    state['overlays'] = []
+
+    def label(py, px, text, fg=(200, 200, 200)):
+        state['overlays'].append((py // 2, px, text, fg))
+
+    # Initialize history buffers
+    if 'osc_history' not in state or state.get('_w') != w:
+        state['osc_history'] = np.zeros((5, w), dtype=np.float64)
+        state['centroid_hist'] = np.zeros(w, dtype=np.float64)
+        state['_w'] = w
+
+    # Shift history left, append new values
+    state['osc_history'][:, :-1] = state['osc_history'][:, 1:]
+    state['osc_history'][0, -1] = audio.osc_half
+    state['osc_history'][1, -1] = audio.osc_beat
+    state['osc_history'][2, -1] = audio.osc_double
+    state['osc_history'][3, -1] = audio.osc_triplet
+    state['osc_history'][4, -1] = audio.osc_sixteenth
+    state['centroid_hist'][:-1] = state['centroid_hist'][1:]
+    state['centroid_hist'][-1] = audio.centroid
+
+    osc_names = [
+        ("HALF (½×)",     (200, 100, 255)),
+        ("BEAT (1×)",     (255, 100, 100)),
+        ("DOUBLE (2×)",   (255, 200, 60)),
+        ("TRIPLET (1.5×)",(60, 255, 150)),
+        ("16TH (4×)",     (100, 180, 255)),
+    ]
+
+    label(0, 1, "PHASE-LOCKED OSCILLATORS (Algo 6)", (150, 255, 150))
+
+    osc_area_w = w * 3 // 4
+    lane_h = max(6, (h - 22) // 6)
+
+    for i, (name, color) in enumerate(osc_names):
+        y0 = 4 + i * (lane_h + 1)
+        if y0 + lane_h >= h - 16:
+            break
+        cy = y0 + lane_h // 2
+        val = state['osc_history'][i, -1]
+        label(y0, 1, f"{name} {val:+.2f}", color)
+
+        # Draw waveform history
+        history = state['osc_history'][i]
+        for x in range(1, osc_area_w):
+            v = history[w - osc_area_w + x]
+            py = cy - int(v * (lane_h // 2 - 1))
+            py = max(y0, min(py, y0 + lane_h - 1))
+            fb[py, x + 12] = color
+            # Dim fill between center and value
+            lo, hi = min(py, cy), max(py, cy)
+            fb[lo:hi + 1, x + 12] = tuple(c // 3 for c in color)
+
+        # Current value dot (bright)
+        dot_y = cy - int(val * (lane_h // 2 - 1))
+        dot_y = max(y0, min(dot_y, y0 + lane_h - 1))
+        dx0 = max(0, osc_area_w + 11)
+        dx1 = min(w, osc_area_w + 15)
+        fb[max(0, dot_y - 1):min(h, dot_y + 2), dx0:dx1] = color
+
+    # ── Right column: Centroid + Velocity gauge ──
+    right_x = osc_area_w + 20
+    gauge_h = h - 20
+    if right_x + 20 < w:
+        label(0, right_x, "CENTROID (Algo 3)", (255, 200, 100))
+        # Centroid vertical bar
+        bar_top = 4
+        bar_bot = 4 + gauge_h
+        fb[bar_top:bar_bot, right_x:right_x + 4] = (30, 30, 50)
+        marker_y = bar_bot - int(audio.centroid * gauge_h)
+        marker_y = max(bar_top, min(marker_y, bar_bot - 2))
+        fb[marker_y:marker_y + 2, right_x:right_x + 4] = (255, 200, 100)
+        label(marker_y, right_x + 6, f"{audio.centroid:.2f}", (255, 200, 100))
+
+        # Centroid velocity arrow
+        vel_x = right_x + 14
+        if vel_x + 6 < w:
+            label(bar_top, vel_x, "VEL", (200, 200, 200))
+            vel_y = bar_top + gauge_h // 2
+            arrow_len = int(np.clip(audio.centroid_velocity * 200, -gauge_h // 3, gauge_h // 3))
+            if arrow_len > 0:
+                fb[vel_y - arrow_len:vel_y, vel_x:vel_x + 3] = (100, 255, 100)
+                label(vel_y - arrow_len - 1, vel_x, "▲", (100, 255, 100))
+            elif arrow_len < 0:
+                fb[vel_y:vel_y - arrow_len, vel_x:vel_x + 3] = (255, 100, 100)
+                label(vel_y - arrow_len + 1, vel_x, "▼", (255, 100, 100))
+            label(vel_y, vel_x + 4, f"{audio.centroid_velocity:+.3f}", (180, 180, 180))
+
+    return fb
+
+
+def render_tension_timbre(fb, audio, frame, lut, state):
+    """Mode 13: Tension/Release + MFCC Timbral Space.
+
+    Top: tension accumulator as a filling/draining bar.
+    Middle: low_flux vs high_flux split meter.
+    Bottom: MFCC timbral navigator — distance gauge + 3 timbral params.
+    """
+    h, w, _ = fb.shape
+    fb.fill(0)
+    state['overlays'] = []
+
+    def label(py, px, text, fg=(200, 200, 200)):
+        state['overlays'].append((py // 2, px, text, fg))
+
+    # Initialize history
+    if 'tension_hist' not in state or state.get('_w2') != w:
+        state['tension_hist'] = np.zeros(w, dtype=np.float64)
+        state['mfcc_dist_hist'] = np.zeros(w, dtype=np.float64)
+        state['_w2'] = w
+
+    state['tension_hist'][:-1] = state['tension_hist'][1:]
+    state['tension_hist'][-1] = audio.tension
+    state['mfcc_dist_hist'][:-1] = state['mfcc_dist_hist'][1:]
+    state['mfcc_dist_hist'][-1] = min(audio.mfcc_distance * 0.1, 1.0)
+
+    bar_max = w - 20
+
+    # ── Section 1: Tension/Release (Algo 4) ──
+    label(0, 1, "TENSION / RELEASE (Algo 4)", (255, 150, 100))
+    tension_bar = int(audio.tension * bar_max)
+    # Color gradient: green (low tension) → yellow → red (high tension)
+    for x in range(tension_bar):
+        t = x / max(bar_max, 1)
+        r = int(min(t * 2, 1) * 255)
+        g = int(max(1 - t * 1.5, 0) * 255)
+        fb[4:10, 2 + x] = (r, g, 40)
+    fb[4:10, 2:2 + bar_max] = np.maximum(fb[4:10, 2:2 + bar_max], 15)
+    label(4, bar_max + 4, f"{audio.tension:.3f}", (255, 200, 100))
+
+    # Tension history line
+    hist_h = min(20, max(1, h - 22))
+    for x in range(w - 4):
+        v = state['tension_hist'][x]
+        py = 16 + hist_h - int(v * hist_h)
+        py = max(16, min(py, min(16 + hist_h - 1, h - 1)))
+        fb[py, 2 + x] = (255, 150, 100)
+    label(14, 1, "history", (120, 120, 120))
+
+    # ── Section 2: Low/High Flux Split ──
+    y2 = 42
+    label(y2, 1, "SPECTRAL FLUX (low vs high)", (100, 200, 255))
+    y2 += 4
+    # Low flux bar (left, warm)
+    lf_len = int(audio.low_flux * bar_max // 2)
+    mid_x = w // 2
+    if lf_len > 0:
+        fb[y2:y2 + 4, mid_x - lf_len:mid_x] = (220, 80, 40)
+    # High flux bar (right, cool)
+    hf_len = int(audio.high_flux * bar_max // 2)
+    if hf_len > 0:
+        fb[y2:y2 + 4, mid_x:mid_x + hf_len] = (40, 120, 220)
+    label(y2, 1, f"LOW {audio.low_flux:.2f}", (220, 100, 50))
+    label(y2, mid_x + bar_max // 2 - 10, f"HIGH {audio.high_flux:.2f}", (50, 130, 220))
+    # Center divider
+    fb[y2:y2 + 4, mid_x - 1:mid_x + 1] = (200, 200, 200)
+
+    # ── Section 3: MFCC Timbral Navigator (Algo 5) ──
+    y3 = y2 + 14
+    label(y3, 1, "MFCC TIMBRAL SPACE (Algo 5)", (200, 150, 255))
+    y3 += 4
+
+    # Timbral distance gauge
+    dist_val = min(audio.mfcc_distance * 0.1, 1.0)
+    dist_len = int(dist_val * bar_max)
+    for x in range(dist_len):
+        t = x / max(bar_max, 1)
+        fb[y3:y3 + 3, 2 + x] = (int(t * 200) + 55, 50, int((1 - t) * 200) + 55)
+    label(y3, 1, "DIST", (200, 150, 255))
+    label(y3, bar_max + 4, f"{audio.mfcc_distance:.1f}", (180, 180, 180))
+    y3 += 6
+
+    # MFCC distance history
+    hist2_h = min(16, max(1, h - y3 - 25))
+    if hist2_h > 2:
+        for x in range(w - 4):
+            v = state['mfcc_dist_hist'][x]
+            py = y3 + hist2_h - int(v * hist2_h)
+            py = max(y3, min(py, min(y3 + hist2_h - 1, h - 1)))
+            fb[py, 2 + x] = (200, 150, 255)
+    y3 += hist2_h + 4
+
+    # 3 timbral parameters as colored bars
+    timbral = [
+        ("HUE SPEED ",  audio.timbre_hue,    (255, 100, 100)),
+        ("ELEM SCALE",  audio.timbre_scale,   (100, 255, 100)),
+        ("BG BRIGHT ",  audio.timbre_bright,  (100, 100, 255)),
+    ]
+    for name, val, color in timbral:
+        if y3 + 4 >= h - 4:
+            break
+        blen = int(np.clip(val, 0, 1) * bar_max * 0.6)
+        if blen > 0:
+            fb[y3:y3 + 3, 14:14 + blen] = color
+        label(y3, 1, name, color)
+        label(y3, 14 + int(bar_max * 0.6) + 2, f"{val:.2f}", (150, 150, 150))
+        y3 += 5
+
+    return fb
+
+
 VIZ_MODES = [
     render_diagnostics,
     render_plasma,
@@ -1369,7 +1663,10 @@ VIZ_MODES = [
     render_voronoi,
     render_scope,
     render_kaleidoscope,
-    render_fractal
+    render_fractal,
+    render_band_pulses,
+    render_oscillators,
+    render_tension_timbre,
 ]
 
 
@@ -1865,7 +2162,7 @@ def main():
                             "│  Modes cycle: DIAG → PLASMA → FIRE →   │",
                             "│  SPEC → PARTS → TUNNEL → WAVES →       │",
                             "│  VORONOI → SCOPE → KALEID → FRACTAL →  │",
-                            "│  AI → (wrap around)                     │",
+                            "│  BANDS → OSCS → TENSION → AI           │",
                             "│                                         │",
                             "└─────────────────────────────────────────┘",
                         ]

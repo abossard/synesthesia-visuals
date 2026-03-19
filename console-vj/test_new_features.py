@@ -163,6 +163,17 @@ class TestFractalShader:
             is_quiet = False
             mfcc = np.zeros(13)
             pitch_midi = 69.0
+            # Algorithm features
+            band_sub_bass = band_kick = band_snare = 0.2
+            band_mid = band_presence = band_high = band_air = 0.2
+            kick_pulse = snare_pulse = hat_pulse = 0.0
+            beat_phase = 0.0
+            centroid_velocity = 0.0
+            low_flux = high_flux = 0.1
+            tension = 0.0
+            mfcc_distance = 0.5
+            timbre_hue = timbre_scale = timbre_bright = 0.3
+            osc_half = osc_beat = osc_double = osc_triplet = osc_sixteenth = 0.0
         return MockAudio()
 
     def test_fractal_runs_without_crash(self, audio):
@@ -211,6 +222,122 @@ class TestFractalShader:
         fb2 = np.zeros((30, 60, 3), dtype=np.uint8)
         render_fractal(fb2, audio, 1, lut, state)
         assert fb2.sum() > 0
+
+
+# ── Algorithm Visualization Modes ────────────────────────────
+
+class TestAlgorithmVisualizations:
+    """Test the 3 new diagnostic visualization modes."""
+
+    @pytest.fixture
+    def audio(self):
+        class MockAudio:
+            mel_bands = np.zeros(40)
+            spectrum = np.zeros(256)
+            centroid = 0.5
+            spread = 0.3
+            flux = 0.1
+            flatness = 0.2
+            rolloff = 0.6
+            slope = 0.1
+            kurtosis = 0.3
+            beat = False
+            onset = False
+            onset_strength = 0.0
+            bpm = 120.0
+            rms = 0.3
+            pitch_hz = 440.0
+            pitch_confidence = 0.8
+            waveform = np.zeros(512)
+            is_quiet = False
+            mfcc = np.zeros(13)
+            pitch_midi = 69.0
+            band_sub_bass = 0.6
+            band_kick = 0.8
+            band_snare = 0.3
+            band_mid = 0.5
+            band_presence = 0.4
+            band_high = 0.7
+            band_air = 0.2
+            kick_pulse = 0.9
+            snare_pulse = 0.4
+            hat_pulse = 0.6
+            beat_phase = 0.25
+            centroid_velocity = 0.05
+            low_flux = 0.3
+            high_flux = 0.5
+            tension = 0.4
+            mfcc_distance = 2.5
+            timbre_hue = 0.6
+            timbre_scale = 0.4
+            timbre_bright = 0.5
+            osc_half = 0.7
+            osc_beat = -0.3
+            osc_double = 0.9
+            osc_triplet = -0.5
+            osc_sixteenth = 0.1
+        return MockAudio()
+
+    @pytest.fixture
+    def lut(self):
+        lut = np.zeros((256, 3), dtype=np.uint8)
+        for i in range(256):
+            lut[i] = [i, 255 - i, (i * 3) % 256]
+        return lut
+
+    def test_band_pulses_runs(self, audio, lut):
+        from termvj import render_band_pulses
+        fb = np.zeros((60, 120, 3), dtype=np.uint8)
+        state = {}
+        render_band_pulses(fb, audio, 0, lut, state)
+        assert fb.sum() > 0
+        assert 'overlays' in state
+        assert len(state['overlays']) > 5
+
+    def test_band_pulses_shows_kick(self, audio, lut):
+        from termvj import render_band_pulses
+        fb = np.zeros((60, 120, 3), dtype=np.uint8)
+        state = {}
+        audio.kick_pulse = 1.0
+        render_band_pulses(fb, audio, 0, lut, state)
+        # Should have red-ish pixels from kick circle
+        assert fb[:, :, 0].max() > 200
+
+    def test_oscillators_runs(self, audio, lut):
+        from termvj import render_oscillators
+        fb = np.zeros((60, 120, 3), dtype=np.uint8)
+        state = {}
+        for frame in range(3):
+            render_oscillators(fb, audio, frame, lut, state)
+        assert fb.sum() > 0
+        assert 'osc_history' in state
+        assert state['osc_history'].shape == (5, 120)
+
+    def test_oscillators_history_shifts(self, audio, lut):
+        from termvj import render_oscillators
+        fb = np.zeros((60, 120, 3), dtype=np.uint8)
+        state = {}
+        audio.osc_beat = 0.8
+        render_oscillators(fb, audio, 0, lut, state)
+        assert state['osc_history'][1, -1] == 0.8
+
+    def test_tension_timbre_runs(self, audio, lut):
+        from termvj import render_tension_timbre
+        fb = np.zeros((80, 120, 3), dtype=np.uint8)
+        state = {}
+        for frame in range(3):
+            render_tension_timbre(fb, audio, frame, lut, state)
+        assert fb.sum() > 0
+        assert 'tension_hist' in state
+
+    def test_tension_timbre_shows_tension(self, audio, lut):
+        from termvj import render_tension_timbre
+        fb = np.zeros((80, 120, 3), dtype=np.uint8)
+        state = {}
+        audio.tension = 0.9
+        render_tension_timbre(fb, audio, 0, lut, state)
+        # High tension should produce warm-colored bar pixels
+        assert fb[:, :, 0].max() > 150
 
 
 # ── ISF Converter (parsing only, no SDK) ─────────────────────
