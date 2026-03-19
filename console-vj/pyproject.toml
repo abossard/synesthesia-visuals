@@ -1,0 +1,18 @@
+[project]
+name = "termvj"
+version = "2.0.0"
+description = "Truecolor Terminal Audio-Reactive Visualizer"
+requires-python = ">=3.10"
+dependencies = [
+    "pyaudio",
+    "numpy",
+    "blessed",
+    "aubio @ git+https://github.com/aubio/aubio.git@e559ff17f20b0edfae1b9a4ea84a29fc207aa2e4",
+    "github-copilot-sdk",
+    "Pillow",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
