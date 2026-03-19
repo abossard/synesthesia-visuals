@@ -759,11 +759,12 @@ def render_plasma(fb, audio, frame, lut, state):
     
     # Kick pulse drives phase jumps (heavier than generic beat)
     state["phase"] += audio.kick_pulse * 0.2
-    # Base motion + osc_beat breathing + RMS energy
-    state["phase"] += 0.01 + audio.rms * 0.03 + (1 + audio.osc_beat) * 0.01
+    # Nearly frozen when quiet, alive with music
+    activity = max(audio.rms, 0.02)
+    state["phase"] += activity * 0.04 + (1 + audio.osc_beat) * 0.01 * activity
     
     # Centroid velocity drifts centers (opening filter = spread out)
-    state["centers"] += state["drift_vel"]
+    state["centers"] += state["drift_vel"] * activity
     state["centers"] += audio.centroid_velocity * 0.02
     state["centers"] = np.clip(state["centers"], -1.5, 1.5)
     
@@ -1013,8 +1014,9 @@ def render_tunnel(fb, audio, frame, lut, state):
     
     angle, dist = state["polar"]
     
-    # Beat-phase-locked zoom (smooth sine pump on every beat)
-    zoom_speed = 0.02 * (audio.bpm / 120.0) if audio.bpm > 0 else 0.02
+    # Beat-phase-locked zoom — nearly frozen when quiet
+    activity = max(audio.rms, 0.02)
+    zoom_speed = 0.02 * (audio.bpm / 120.0) * activity if audio.bpm > 0 else 0.02 * activity
     zoom_speed += audio.kick_pulse * 0.03
     state["zoom"] += zoom_speed
     
@@ -1106,8 +1108,9 @@ def render_voronoi(fb, audio, frame, lut, state):
         state["cell_vel"] = np.random.randn(n_cells, 2) * 0.002
         state["cell_colors"] = np.random.rand(n_cells)
     
-    # Update cells
-    state["cells"] += state["cell_vel"]
+    # Update cells — drift scales with audio activity
+    activity = max(audio.rms, 0.02)
+    state["cells"] += state["cell_vel"] * activity
     
     # Bass pushes from center
     bass = audio.mel_bands[:8].mean()
@@ -1209,8 +1212,9 @@ def render_kaleidoscope(fb, audio, frame, lut, state):
     if audio.beat:
         state["segments"] = np.random.randint(4, 13)
     
-    # BPM-synced rotation
-    rot_speed = 0.02 * (audio.bpm / 120.0) if audio.bpm > 0 else 0.02
+    # BPM-synced rotation — nearly frozen when quiet
+    activity = max(audio.rms, 0.02)
+    rot_speed = 0.02 * (audio.bpm / 120.0) * activity if audio.bpm > 0 else 0.02 * activity
     state["rotation"] += rot_speed
     
     # Generate base pattern (mini plasma)
@@ -1278,9 +1282,10 @@ def render_fractal(fb, audio, frame, lut, state):
         state["julia_mode"] = not state["julia_mode"]
         state["zoom_vel"] += 0.02
 
-    # Zoom in continuously, bass accelerates
+    # Zoom in continuously, bass accelerates — frozen when quiet
+    activity = max(audio.rms, 0.02)
     state["zoom_vel"] = state["zoom_vel"] * 0.95 + bass * 0.005
-    state["zoom"] *= (1.0 - state["zoom_vel"] * 0.3)
+    state["zoom"] *= (1.0 - state["zoom_vel"] * 0.3 * activity)
     state["zoom"] = max(state["zoom"], 1e-12)
 
     # Reset zoom if it gets too deep
@@ -1289,13 +1294,13 @@ def render_fractal(fb, audio, frame, lut, state):
         state["center_x"] = -0.5 + np.random.randn() * 0.3
         state["center_y"] = np.random.randn() * 0.3
 
-    # Julia c-parameter morphs with audio
-    t = frame * 0.01
+    # Julia c-parameter morphs with audio (frozen when quiet)
+    t = frame * 0.01 * activity
     state["julia_cx"] = -0.7 + np.sin(t * 1.618) * 0.15 + mid * 0.1
     state["julia_cy"] = 0.27015 + np.cos(t * 1.414) * 0.15 + high * 0.1
 
-    # Color shift from centroid
-    state["color_shift"] += 0.002 + audio.centroid * 0.01
+    # Color shift — barely drifts when quiet
+    state["color_shift"] += (0.002 + audio.centroid * 0.01) * activity
 
     # Build coordinate grid
     aspect = w / max(h, 1)

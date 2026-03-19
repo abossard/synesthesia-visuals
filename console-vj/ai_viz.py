@@ -257,6 +257,9 @@ state['trail'] = np.maximum(state['trail'], new_values)
 - Make it visually RICH — use the full palette range, not just one color
 - SMOOTH motion — use frame persistence, EMA smoothing, spring physics
 - REACT to music — every visual parameter should be driven by at least one audio feature
+- QUIET = STILL — when there's no music (audio.rms ≈ 0), the visualization should nearly freeze.
+  Use `activity = max(audio.rms, 0.02)` and multiply all autonomous motion by it.
+  Only a tiny drift should remain so it looks alive but sleeping.
 - NEVER BORING — use irrational frequency ratios (1.618, 3.14159, 2.71828)
 - BEAT AWARENESS — structural changes on beat, accent on onset, continuous motion between
 - Fill the screen — don't leave large black areas unless intentional"""
