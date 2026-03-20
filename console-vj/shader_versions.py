@@ -96,6 +96,17 @@ class ShaderVersionStore:
             return self.current
         return None
 
+    def delete_current(self) -> Optional[ShaderVersion]:
+        """Delete the version at cursor. Returns the new current, or None if empty."""
+        if not self._versions or self._cursor < 0:
+            return None
+        self._versions.pop(self._cursor)
+        if not self._versions:
+            self._cursor = -1
+            return None
+        self._cursor = min(self._cursor, len(self._versions) - 1)
+        return self.current
+
     def to_dict(self) -> dict:
         return {
             "versions": [asdict(v) for v in self._versions],

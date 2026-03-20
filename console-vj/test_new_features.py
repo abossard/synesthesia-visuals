@@ -136,6 +136,33 @@ class TestShaderVersionStore:
         assert restored.current.code == "x"
         assert restored.current.description == "z"
 
+    def test_delete_current(self):
+        store = ShaderVersionStore()
+        v1 = ShaderVersion.create(code="a", prompt="p1")
+        v2 = ShaderVersion.create(code="b", prompt="p2")
+        v3 = ShaderVersion.create(code="c", prompt="p3")
+        store.add(v1)
+        store.add(v2)
+        store.add(v3)
+        # Delete middle (cursor at end, go back to middle)
+        store.go_to(1)
+        result = store.delete_current()
+        assert store.count == 2
+        assert result.code == "c"  # Cursor moves to next
+        assert store.cursor == 1
+
+    def test_delete_last_remaining(self):
+        store = ShaderVersionStore()
+        store.add(ShaderVersion.create(code="x", prompt="p"))
+        result = store.delete_current()
+        assert result is None
+        assert store.count == 0
+        assert store.cursor == -1
+
+    def test_delete_empty(self):
+        store = ShaderVersionStore()
+        assert store.delete_current() is None
+
 
 # ── Fractal Shader ───────────────────────────────────────────
 

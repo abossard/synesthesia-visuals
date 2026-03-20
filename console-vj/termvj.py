@@ -2059,6 +2059,23 @@ def main():
                             )
                         else:
                             debug_panel.log("No screenshot available", (255, 100, 100))
+                    elif key.lower() == 'd' and mode == AI_MODE and version_store.count > 0:
+                        cur = version_store.current
+                        desc = cur.description[:30] if cur else "?"
+                        new_cur = version_store.delete_current()
+                        viz_state.clear()
+                        if new_cur and ai_manager:
+                            fn, err = load_render_fn(new_cur.code)
+                            if fn:
+                                ai_manager.render_fn = fn
+                            else:
+                                ai_manager.render_fn = None
+                        elif ai_manager:
+                            ai_manager.render_fn = None
+                        version_store.save(VERSIONS_FILE)
+                        debug_panel.log(
+                            f"Deleted '{desc}' ({version_store.count} left)",
+                            (255, 150, 100))
                     elif key in ('?', 'h', 'H'):
                         show_help = not show_help
                 
@@ -2176,6 +2193,7 @@ def main():
                             "│  a      AI mode — enter prompt           │",
                             "│  f      Refine AI viz (with screenshot)  │",
                             "│  i      AI self-improve (auto-iterate)   │",
+                            "│  d      Delete current AI version        │",
                             "│  ?/h    Toggle this help                 │",
                             "│  q/ESC  Quit                             │",
                             "│                                         │",
