@@ -125,56 +125,70 @@ def render_ai(fb, audio, frame, lut, state):
 **fb** — np.ndarray (h, w, 3) uint8, the pixel framebuffer. Write directly: `fb[:] = ...`
   - Typical size: ~100 tall × 200 wide (but varies with terminal size)
 
-**audio** — object with normalized 0-1 audio features:
+**audio** — SmoothedAudio object. ALL values are PRE-SMOOTHED by a deep
+  smoothing module. DO NOT add your own EMA, smoothing, or low-pass filters —
+  everything is already temporally filtered and ready to drive visuals directly.
+
+  ## Arrays (pre-smoothed, jitter-free):
   .mel_bands  — np.ndarray[40] perceptual frequency bands (0=sub-bass, 39=air)
-  .spectrum   — np.ndarray[256] log-spaced FFT magnitudes
-  .centroid   — float, spectral brightness (low=dark/bassy, high=bright/trebly)
-  .spread     — float, spectral width/complexity
-  .flux       — float, how fast the spectrum is changing (high on transients)
-  .flatness   — float, 0=tonal/melodic, 1=noisy/percussive
-  .rolloff    — float, frequency below which most energy sits
-  .slope      — float, spectral tilt
-  .kurtosis   — float, spectral peakedness
-  .beat       — bool, True on detected beat (one frame only)
+  .spectrum   — np.ndarray[64] log-spaced FFT magnitudes (smoothed, downsampled)
+  .waveform   — np.ndarray[128] audio shape (-1 to 1, smoothed + downsampled)
+
+  ## Spectral shape (all 0-1, smoothed):
+  .centroid   — brightness (low=dark/bassy, high=bright/trebly)
+  .spread     — spectral width/complexity
+  .flux       — rate of spectral change (high on transients)
+  .flatness   — 0=tonal/melodic, 1=noisy/percussive
+  .rolloff    — frequency below which most energy sits
+  .slope      — spectral tilt
+  .kurtosis   — spectral peakedness
+
+  ## Rhythm:
+  .beat       — bool, True on detected beat (use kick_pulse for motion!)
   .onset      — bool, True on detected onset/transient
-  .onset_strength — float, onset intensity 0-1
-  .bpm        — float, estimated tempo (e.g. 120.0)
-  .rms        — float, overall loudness 0-1
-  .pitch_hz   — float, detected fundamental frequency
-  .pitch_confidence — float, 0-1 how reliable the pitch is
-  .waveform   — np.ndarray[512] raw audio samples (-1 to 1)
-  ## EDM-optimized features (use these for best results!):
-  # Perceptual energy bands (7 bands, all 0-1):
+  .onset_strength — float 0-1 (smoothed)
+  .bpm        — float, estimated tempo
+
+  ## Energy (all 0-1, smoothed):
+  .rms        — overall loudness
   .band_sub_bass — 20-60Hz (808 rumble, sub drops)
-  .band_kick     — 60-250Hz (kick drum body)
-  .band_snare    — 250-500Hz (snare body, bass guitar)
-  .band_mid      — 500-2kHz (vocals, melody, leads)
-  .band_presence — 2-4kHz (attack transients, presence)
-  .band_high     — 4-12kHz (hi-hats, cymbals, air)
+  .band_kick     — 60-250Hz (kick drum body)  ← USE INSTEAD OF mel_bands[:8]
+  .band_snare    — 250-500Hz (snare body)
+  .band_mid      — 500-2kHz (vocals, melody)   ← USE INSTEAD OF mel_bands[15:25]
+  .band_presence — 2-4kHz (attack, presence)
+  .band_high     — 4-12kHz (hi-hats, cymbals)  ← USE INSTEAD OF mel_bands[30:]
   .band_air      — 12-20kHz (brilliance, shimmer)
-  # Classified onset pulses (0-1, exponential decay envelopes):
-  .kick_pulse    — fires on kick, decays slowly (heavy impact)
-  .snare_pulse   — fires on snare, decays medium (accent)
-  .hat_pulse     — fires on hi-hat, decays fast (sparkle)
-  # Beat phase (0-1 cycling every beat, phase-locked to BPM):
-  .beat_phase    — use for all periodic motion: sin(beat_phase * 2π)
-  # Centroid dynamics:
-  .centroid_velocity — rate of brightness change (+ = opening, - = dropping)
-  # Spectral flux (split by frequency):
-  .low_flux      — bass flux (kicks re-entering, drops)
-  .high_flux     — treble flux (cymbals, filter sweeps)
-  .tension       — 0-1, builds during calm sections, dumps on drops
-  # Timbral features (MFCC-derived, 0-1):
-  .mfcc_distance — how different current timbre is from average
+
+  ## Onset Pulse Envelopes (0-1, shaped attack+decay — THE primary beat-reactive tool):
+  .kick_pulse    — shaped envelope, slow decay (~300ms). Use for heavy impacts.
+  .snare_pulse   — shaped envelope, medium decay (~200ms). Use for accents.
+  .hat_pulse     — shaped envelope, fast decay (~100ms). Use for sparkle.
+  .beat_pulse    — shaped envelope peaking on every beat.
+
+  ## Beat phase (0-1 cycling every beat, phase-locked to BPM):
+  .beat_phase    — use for periodic motion: sin(beat_phase * 2π)
+
+  ## Motion (pre-smoothed):
+  .centroid_velocity — signed rate of brightness change (spring-smoothed)
+  .low_flux      — bass flux (kicks, drops) — smoothed
+  .high_flux     — treble flux (cymbals, filter sweeps) — smoothed
+  .tension       — 0-1, builds during calm, dumps on drops — smoothed
+
+  ## Timbre (all 0-1, smoothed):
   .timbre_hue    — spectral balance (use for color rotation speed)
   .timbre_scale  — spectral shape (use for element size)
   .timbre_bright — spectral detail (use for background brightness)
-  # Phase-locked oscillators (sine waves at BPM harmonics, -1 to 1):
+  .mfcc_distance — how different current timbre is from average
+
+  ## Phase-locked oscillators (-1 to 1, continuous sinusoids):
   .osc_half      — half-time (slow sway, color cycle)
   .osc_beat      — beat rate (global pulse, breathing)
   .osc_double    — eighth notes (rapid flicker)
   .osc_triplet   — triplet feel (polyrhythmic drift)
   .osc_sixteenth — sixteenth notes (texture scroll, shimmer)
+
+  ## Pitch:
+  .pitch_hz, .pitch_midi, .pitch_confidence
 
 **frame** — int, frame counter (increments each frame, ~30/sec)
 **lut** — np.ndarray (256, 3) uint8, color palette. Use: `fb[:] = lut[indices]`
@@ -221,11 +235,12 @@ dist = np.sqrt(xx**2 + yy**2)
 angle = np.arctan2(yy, xx)
 ```
 
-### Beat-triggered state changes
+### Beat-reactive motion (use pre-smoothed envelopes, NOT if audio.beat)
 ```python
-if audio.beat:
-    state['kick'] = 1.0
-state['kick'] = state.get('kick', 0) * 0.92  # decay smoothly
+# kick_pulse is already a shaped envelope (0-1) — use it directly:
+scale = 1.0 + audio.kick_pulse * 0.5   # grows on kick, decays smoothly
+color_shift = audio.centroid * 0.3      # already smoothed, no EMA needed
+phase = audio.beat_phase * 2 * 3.14159 # continuous sawtooth for periodic motion
 ```
 
 ### Persistent trail/glow (frame blending)
@@ -240,28 +255,34 @@ state['trail'] = np.maximum(state['trail'], new_values)
 
 | Audio Feature | Best Visual Use | How to Apply |
 |---|---|---|
-| mel_bands[:10] | Bass energy, kick pulse | Scale, brightness, heat injection |
-| mel_bands[15:25] | Mid/vocal energy | Shape complexity, mid-layer effects |
-| mel_bands[30:] | High freq, hi-hats | Sparkle, fine detail, shimmer speed |
+| band_kick | Bass energy | Scale, brightness, heat injection |
+| band_mid | Mid/vocal energy | Shape complexity, mid-layer effects |
+| band_high | High freq, hi-hats | Sparkle, fine detail, shimmer speed |
+| kick_pulse | Heavy beat impact | `1.0 + kick_pulse * 0.5` for smooth scaling on kicks |
+| snare_pulse | Accent impact | Color flash, ring burst on snare |
+| hat_pulse | Fast sparkle | Fine particle burst, shimmer intensity |
+| beat_phase | Periodic motion | `np.sin(beat_phase * 2π)` for beat-locked sway |
 | centroid | Color temperature | Shift palette index: `(field + centroid*0.3) % 1` |
 | spread | Visual complexity | Multiply spatial frequency or layer count |
 | flux | Animation speed | Scale time or trigger transitions |
 | flatness | Chaos vs order | Mix between smooth geometry and noise |
-| beat | Structural events | Phase jumps, bursts, flashes, spawns |
-| onset | Accent events | Smaller bursts, ripple spawns |
 | rms | Overall brightness | Multiply final output |
-| bpm | Animation tempo | `phase = frame * bpm / (60 * fps)` for beat-locked motion |
-| waveform | Oscilloscope shapes | Plot as line or use for displacement |
+| tension | Build-up energy | Gradually increase complexity, dump on drop |
+| waveform | Oscilloscope shapes | Plot as line or use for displacement (128 samples) |
 
 ## Style Guidelines
 - Make it visually RICH — use the full palette range, not just one color
-- SMOOTH motion — use frame persistence, EMA smoothing, spring physics
+- ALL audio values are PRE-SMOOTHED — do NOT add your own EMA or smoothing filters!
+  Just read audio.band_kick, audio.centroid, etc. directly. They are already smooth.
+- Use frame persistence (`state['trail'] *= 0.9`) for glow/trail effects
+- Prefer audio.band_kick over np.mean(audio.mel_bands[:8]) — named bands are smoother
+- Prefer audio.kick_pulse over `if audio.beat: state['x'] = 1.0` — envelopes are smoother
 - REACT to music — every visual parameter should be driven by at least one audio feature
 - QUIET = STILL — when there's no music (audio.rms ≈ 0), the visualization should nearly freeze.
   Use `activity = max(audio.rms, 0.02)` and multiply all autonomous motion by it.
   Only a tiny drift should remain so it looks alive but sleeping.
 - NEVER BORING — use irrational frequency ratios (1.618, 3.14159, 2.71828)
-- BEAT AWARENESS — structural changes on beat, accent on onset, continuous motion between
+- BEAT AWARENESS — use kick_pulse/snare_pulse/hat_pulse for impact, beat_phase for rhythm
 - Fill the screen — don't leave large black areas unless intentional"""
 
 

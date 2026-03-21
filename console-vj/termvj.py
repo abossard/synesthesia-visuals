@@ -30,6 +30,7 @@ from ai_viz import (
     HAS_COPILOT, HAS_PIL,
 )
 from shader_versions import ShaderVersion, ShaderVersionStore
+from audio_smoothing import AudioSmoother, SmoothedAudio
 
 # Constants
 RATE = 44100
@@ -55,7 +56,7 @@ VERSIONS_FILE = os.path.expanduser("~/.termvj_versions.json")
 
 
 def load_persisted_state() -> dict:
-    """Load last mode/palette from disk."""
+    """Load last mode/palette/device from disk."""
     try:
         with open(STATE_FILE) as f:
             return json.load(f)
@@ -63,11 +64,15 @@ def load_persisted_state() -> dict:
         return {}
 
 
-def save_persisted_state(mode: int, palette_idx: int) -> None:
-    """Persist current mode and palette to disk."""
+def save_persisted_state(mode: int, palette_idx: int, device_name: str = "") -> None:
+    """Persist current mode, palette, and audio device name to disk."""
     try:
+        existing = load_persisted_state()
+        existing.update({"mode": mode, "palette_idx": palette_idx})
+        if device_name:
+            existing["audio_device"] = device_name
         with open(STATE_FILE, "w") as f:
-            json.dump({"mode": mode, "palette_idx": palette_idx}, f)
+            json.dump(existing, f)
     except OSError:
         pass
 
@@ -1798,7 +1803,7 @@ def render_hud(term, mode_idx, palette_idx, bass_flash, gain, bpm, beat, fps, pa
     ver_str = f" │ {version_info}" if version_info else ""
 
     hud = (f"▲▼:mode ◄►:ver │ {mode_label} ({mode_idx+1 if mode_idx>=0 else 'AI'}/{n_modes}) │ "
-           f"c:pal b:flash a:AI f:refine ?:help │ "
+           f"c:pal b:flash a:AI A:dev ?:help │ "
            f"{int(bpm)}bpm {beat_dot} │ {int(fps)}fps{pause_status}{ver_str}")
 
     return term.move_x(0) + term.on_black + term.white + hud[:term.width] + term.normal
@@ -1808,40 +1813,76 @@ def render_hud(term, mode_idx, palette_idx, bass_flash, gain, bpm, beat, fps, pa
 # MAIN LOOP
 # ============================================================================
 
-def list_devices():
-    """List available audio input devices."""
-    p = pyaudio.PyAudio()
-    print("\nAvailable audio input devices:\n")
-    for i in range(p.get_device_count()):
-        info = p.get_device_info_by_index(i)
-        if info["maxInputChannels"] > 0:
-            print(f"  [{i}] {info['name']}")
-            print(f"      Channels: {info['maxInputChannels']}, "
-                  f"Rate: {int(info['defaultSampleRate'])} Hz")
-    print()
-    p.terminate()
-
-
-def select_device_interactive():
-    """Interactive device selection."""
+def get_input_devices() -> list[tuple[int, str]]:
+    """Return list of (index, name) for all audio input devices."""
     p = pyaudio.PyAudio()
     devices = []
-    
     for i in range(p.get_device_count()):
         info = p.get_device_info_by_index(i)
         if info["maxInputChannels"] > 0:
             devices.append((i, info["name"]))
-    
     p.terminate()
-    
+    return devices
+
+
+def find_device_by_name(name: str) -> int | None:
+    """Find a device index by name (exact match first, then substring)."""
+    devices = get_input_devices()
+    # Exact match
+    for idx, dev_name in devices:
+        if dev_name == name:
+            return idx
+    # Substring match (handles minor name changes across reboots)
+    for idx, dev_name in devices:
+        if name in dev_name or dev_name in name:
+            return idx
+    return None
+
+
+def get_device_name(device_index: int | None) -> str:
+    """Get the name of a device by index. Returns '' if not found."""
+    if device_index is None:
+        return ""
+    try:
+        p = pyaudio.PyAudio()
+        info = p.get_device_info_by_index(device_index)
+        p.terminate()
+        return info.get("name", "")
+    except Exception:
+        return ""
+
+
+def list_devices():
+    """List available audio input devices."""
+    devices = get_input_devices()
+    print("\nAvailable audio input devices:\n")
+    for dev_id, name in devices:
+        print(f"  [{dev_id}] {name}")
+    print()
+
+
+def select_device_interactive():
+    """Interactive device selection, with remembered device as default."""
+    saved = load_persisted_state()
+    saved_name = saved.get("audio_device", "")
+    devices = get_input_devices()
+
     if not devices:
         print("No input devices found!")
         return None
-    
+
+    # Try to auto-select remembered device
+    remembered_idx = None
+    if saved_name:
+        remembered_idx = find_device_by_name(saved_name)
+        if remembered_idx is not None:
+            print(f"\n  Using remembered device: {saved_name}")
+            return remembered_idx
+
     print("\nSelect audio input device:\n")
     for idx, (dev_id, name) in enumerate(devices):
         print(f"  {idx + 1}. {name}")
-    
+
     while True:
         try:
             choice = input("\nEnter device number (or press Enter for default): ").strip()
@@ -1874,6 +1915,14 @@ def main():
     # Start audio engine
     audio_engine = AudioEngine(device_index=device_index)
     audio_engine.start()
+
+    # Remember this device by name for next launch
+    current_device_name = get_device_name(device_index)
+    if current_device_name:
+        save_persisted_state(0, 0, current_device_name)
+
+    # Smoothing layer — sits between raw audio and all visualizations
+    smoother = AudioSmoother(fps=TARGET_FPS)
     
     # Restore persisted state
     saved = load_persisted_state()
@@ -2024,7 +2073,38 @@ def main():
                         gain = 1.0
                     elif key == ' ':
                         paused = not paused
-                    elif key.lower() == 'a' and ai_manager:
+                    elif key == 'A':
+                        # Uppercase A: switch audio device
+                        show_help = False
+                        devices = get_input_devices()
+                        device_list = [f"{i+1}:{n[:25]}" for i, (_, n) in enumerate(devices)]
+                        debug_panel.log("Devices: " + ", ".join(device_list)[:60], (200, 200, 100))
+                        def _on_device_pick(text):
+                            nonlocal audio_engine, smoother, current_device_name
+                            if not text:
+                                return
+                            try:
+                                pick = int(text.strip()) - 1
+                                devs = get_input_devices()
+                                if 0 <= pick < len(devs):
+                                    new_idx, new_name = devs[pick]
+                                    # Stop old engine
+                                    audio_engine.stop()
+                                    # Start new engine
+                                    audio_engine = AudioEngine(device_index=new_idx)
+                                    audio_engine.start()
+                                    # Reset smoother (fresh state for new device)
+                                    smoother = AudioSmoother(fps=TARGET_FPS)
+                                    # Remember the new device
+                                    current_device_name = new_name
+                                    save_persisted_state(mode, palette_idx, new_name)
+                                    debug_panel.log(f"🎤 {new_name[:40]}", (100, 255, 100))
+                                else:
+                                    debug_panel.log("Invalid device number", (255, 100, 100))
+                            except (ValueError, RuntimeError) as e:
+                                debug_panel.log(f"Device error: {str(e)[:40]}", (255, 100, 100))
+                        inline_prompt.open("Device #", _on_device_pick)
+                    elif key == 'a' and ai_manager:
                         show_help = False
                         def _on_ai_prompt(text):
                             nonlocal mode, viz_state
@@ -2080,13 +2160,14 @@ def main():
                         show_help = not show_help
                 
                 if not paused:
-                    # Get audio features
-                    audio = audio_engine.get_features()
-                    
-                    # Apply gain
-                    audio.spectrum *= gain
-                    audio.mel_bands *= gain
-                    audio.rms *= gain
+                    # Get raw audio features and apply gain
+                    raw_audio = audio_engine.get_features()
+                    raw_audio.spectrum *= gain
+                    raw_audio.mel_bands *= gain
+                    raw_audio.rms *= gain
+
+                    # Smooth all features through the deep module
+                    audio = smoother.update(raw_audio)
                     
                     # Create framebuffer
                     ph = (term.height - 1) * 2
@@ -2191,6 +2272,7 @@ def main():
                             "│  r      Reset gain to auto (1.0)         │",
                             "│  SPACE  Pause / resume                   │",
                             "│  a      AI mode — enter prompt           │",
+                            "│  A      Switch audio input device        │",
                             "│  f      Refine AI viz (with screenshot)  │",
                             "│  i      AI self-improve (auto-iterate)   │",
                             "│  d      Delete current AI version        │",
@@ -2240,7 +2322,7 @@ def main():
     
     finally:
         audio_engine.stop()
-        save_persisted_state(mode, palette_idx)
+        save_persisted_state(mode, palette_idx, current_device_name)
         version_store.save(VERSIONS_FILE)
         sys.stdout.write(term.clear + "\x1b[?25h")
         sys.stdout.flush()
