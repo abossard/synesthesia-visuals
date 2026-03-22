@@ -1,19 +1,26 @@
 #!/usr/bin/env node
 
 /**
- * ISF Shader Downloader + Categorizer + Catalog Generator
+ * ISF Shader Downloader
  *
- * Downloads all ISF shaders from editor.isf.video, categorizes them
- * using the GitHub Copilot SDK, takes screenshots with Playwright,
- * and generates a markdown catalog.
+ * Downloads ISF shaders from editor.isf.video, categorizes with Copilot SDK,
+ * downloads Cloudinary thumbnails, and generates a markdown catalog.
+ *
+ * Output:
+ *   magic2/Layers/*.fs        — generator shaders
+ *   magic2/Effects/*.fs       — filter/effect shaders
+ *   magic2/screenshots/*.jpg  — Cloudinary thumbnails
+ *   magic2/README.md          — catalog
  *
  * Usage:
- *   node download.mjs                     # Run all phases
- *   node download.mjs --phase download    # Run specific phase
- *   node download.mjs --username someone  # Different user
+ *   node download.mjs                        # Run all
+ *   node download.mjs --phase download       # Just fetch API + write .fs
+ *   node download.mjs --phase categorize     # Re-run AI categorization
+ *   node download.mjs --phase screenshots    # Re-download thumbnails
+ *   node download.mjs --phase catalog        # Re-generate README
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, cpSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -21,11 +28,11 @@ import { parseArgs } from "node:util";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(__dirname, ".state.json");
 const API_BASE = "https://editor.isf.video/api";
-const EDITOR_BASE = "https://editor.isf.video/shaders";
+const CLOUDINARY = "https://res.cloudinary.com/hrlz5rsqo/image/upload";
+const LAYERS_DIR = join(__dirname, "Layers");
+const EFFECTS_DIR = join(__dirname, "Effects");
+const SCREENSHOTS_DIR = join(__dirname, "screenshots");
 
-// ---------------------------------------------------------------------------
-// CLI args
-// ---------------------------------------------------------------------------
 const { values: args } = parseArgs({
   options: {
     username: { type: "string", default: "rhythmic-visions" },
@@ -35,73 +42,32 @@ const { values: args } = parseArgs({
 });
 
 if (args.help) {
-  console.log(`
-ISF Shader Downloader
-
-Usage: node download.mjs [options]
-
-Options:
-  --username <name>   ISF editor username (default: rhythmic-visions)
-  --phase <phase>     Run specific phase: download, categorize, organize, screenshots, catalog, all
-  --help              Show this help
-`);
+  console.log("Usage: node download.mjs [--username NAME] [--phase download|categorize|screenshots|catalog|all]");
   process.exit(0);
 }
 
-// ---------------------------------------------------------------------------
-// State management (resumability)
-// ---------------------------------------------------------------------------
+// -- State -------------------------------------------------------------------
 function loadState() {
-  if (existsSync(STATE_FILE)) {
-    return JSON.parse(readFileSync(STATE_FILE, "utf8"));
-  }
-  return { shaders: [], categorized: false, organized: false, screenshots: {}, catalogGenerated: false };
+  if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf8"));
+  return { shaders: [], categorized: false };
 }
+function saveState(s) { writeFileSync(STATE_FILE, JSON.stringify(s, null, 2)); }
 
-function saveState(state) {
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
-}
-
-// ---------------------------------------------------------------------------
-// Phase 1: Download shaders from API
-// ---------------------------------------------------------------------------
+// -- Phase 1: Download -------------------------------------------------------
 async function phaseDownload(state) {
   console.log("\n━━━ Phase 1: Download ━━━");
+  const res = await fetch(`${API_BASE}/${args.username}/profile`);
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  const { shaders } = await res.json();
+  console.log(`Fetched ${shaders.length} shaders`);
 
-  const url = `${API_BASE}/${args.username}/profile`;
-  console.log(`Fetching ${url} ...`);
+  // Deduplicate by title (keep last)
+  const byTitle = new Map();
+  for (const s of shaders) byTitle.set(s.title, s);
+  const unique = [...byTitle.values()];
+  console.log(`${unique.length} unique (${shaders.length - unique.length} duplicates)`);
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
-  const profile = await res.json();
-  const shaders = profile.shaders || [];
-  console.log(`Found ${shaders.length} shaders`);
-
-  const downloadDir = join(__dirname, "_download");
-  mkdirSync(downloadDir, { recursive: true });
-
-  let written = 0;
-  for (const shader of shaders) {
-    const title = shader.title || shader._id;
-    const dir = join(downloadDir, title);
-    mkdirSync(dir, { recursive: true });
-
-    // Write fragment shader
-    if (shader.rawFragmentSource) {
-      writeFileSync(join(dir, `${title}.fs`), shader.rawFragmentSource);
-    }
-
-    // Write vertex shader
-    if (shader.rawVertexSource) {
-      writeFileSync(join(dir, `${title}.vs`), shader.rawVertexSource);
-    }
-
-    written++;
-    if (written % 50 === 0) console.log(`  ... ${written}/${shaders.length}`);
-  }
-
-  // Save shader metadata into state
-  state.shaders = shaders.map((s) => ({
+  state.shaders = unique.map((s) => ({
     id: s._id || s.id,
     title: s.title,
     shaderType: s.shaderType || "unknown",
@@ -109,413 +75,211 @@ async function phaseDownload(state) {
     categories: s.publicCategories || [],
     username: s.username,
     forkedFrom: s.forkedFrom || null,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    // AI-generated fields (filled in Phase 2)
+    thumbnailId: s.thumbnailCloudinaryId || null,
+    rawFragmentSource: s.rawFragmentSource || "",
     aiCategory: null,
     aiDescription: null,
     aiAudioReactivity: null,
   }));
 
   saveState(state);
-  console.log(`✓ Downloaded ${written} shaders to _download/`);
+  console.log(`✓ ${unique.length} shaders ready`);
   return state;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 2: AI Categorization with Copilot SDK
-// ---------------------------------------------------------------------------
+// -- Phase 2: AI Categorization -----------------------------------------------
 async function phaseCategorize(state) {
   console.log("\n━━━ Phase 2: AI Categorization ━━━");
-
-  if (state.categorized) {
-    console.log("Already categorized (use --phase categorize to force re-run)");
-    if (args.phase === "categorize") state.categorized = false;
-    else return state;
+  if (state.categorized && args.phase !== "categorize") {
+    console.log("Already done, skipping");
+    return state;
   }
 
   const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
-
   const client = new CopilotClient();
   await client.start();
 
   try {
-    const downloadDir = join(__dirname, "_download");
-    const BATCH_SIZE = 8;
-    const shaderBatches = [];
+    const BATCH = 8;
+    const nBatches = Math.ceil(state.shaders.length / BATCH);
+    console.log(`${state.shaders.length} shaders in ${nBatches} batches...`);
 
-    // Group shaders into batches
-    for (let i = 0; i < state.shaders.length; i += BATCH_SIZE) {
-      shaderBatches.push(state.shaders.slice(i, i + BATCH_SIZE));
-    }
+    for (let bi = 0; bi < nBatches; bi++) {
+      const batch = state.shaders.slice(bi * BATCH, (bi + 1) * BATCH);
+      console.log(`  Batch ${bi + 1}/${nBatches}...`);
 
-    console.log(`Processing ${state.shaders.length} shaders in ${shaderBatches.length} batches...`);
-
-    // Helper: send one batch in a fresh session and return the response text
-    async function classifyBatch(client, batch, batchIdx) {
-      const shaderSummaries = batch.map((s, i) => {
-        const fsPath = join(downloadDir, s.title, `${s.title}.fs`);
-        let source = "";
-        if (existsSync(fsPath)) {
-          source = readFileSync(fsPath, "utf8");
-          if (source.length > 3000) {
-            source = source.slice(0, 3000) + "\n// ... (truncated)";
-          }
-        }
-        return `--- Shader ${i}: "${s.title}" (ISF type: ${s.shaderType}) ---\n${source}`;
+      const summaries = batch.map((s, i) => {
+        let src = s.rawFragmentSource;
+        if (src.length > 3000) src = src.slice(0, 3000) + "\n// ...truncated";
+        return `--- Shader ${i}: "${s.title}" (type: ${s.shaderType}) ---\n${src}`;
       });
 
-      const prompt = `Classify these ${batch.length} ISF shaders. Return a JSON array with ${batch.length} objects (one per shader, in order).
-Each object must have: "category" ("Layer" or "Effect"), "description" (1-2 sentences of what it looks like visually), "audioReactivity" (object mapping uniform names to audio bands: bass/mid/high/level/bassHits/highHits/beatPhase/bpm).
-Return ONLY a valid JSON array, no markdown fences, no explanation.
+      const prompt = `Classify these ${batch.length} ISF shaders. Return a JSON array of ${batch.length} objects (in order).
+Each: {"category":"Layer"|"Effect","description":"1-2 evocative sentences","audioReactivity":{"uniformName":"bass|mid|high|level|bassHits|highHits|beatPhase|bpm"}}
+ONLY valid JSON array, no markdown fences.
 
-${shaderSummaries.join("\n\n")}`;
-
-      // Each batch gets a fresh session to avoid event listener accumulation
-      const session = await client.createSession({
-        model: "claude-sonnet-4",
-        onPermissionRequest: approveAll,
-        systemMessage: {
-          mode: "replace",
-          content: `You are a shader classification expert. You analyze ISF (Interactive Shader Format) GLSL shaders and return structured JSON.
-For each shader you receive, return a JSON object with:
-- "category": "Layer" (generates visuals from math/noise) or "Effect" (modifies/filters an input image)
-- "description": 1-2 sentences describing what the shader looks like visually. Be specific and evocative.
-- "audioReactivity": object mapping uniform names to suggested audio bands (bass/mid/high/level/bassHits/highHits/beatPhase/bpm)
-Return ONLY a valid JSON array with no extra text.`,
-        },
-      });
-
-      let responseText = "";
-      const done = new Promise((resolve) => {
-        session.on("assistant.message", (event) => {
-          responseText += event.data.content;
-        });
-        session.on("session.idle", () => resolve());
-      });
-
-      await session.send({ prompt });
-      await done;
-      await session.disconnect();
-
-      return responseText;
-    }
-
-    for (let batchIdx = 0; batchIdx < shaderBatches.length; batchIdx++) {
-      const batch = shaderBatches[batchIdx];
-      console.log(`  Batch ${batchIdx + 1}/${shaderBatches.length} (${batch.length} shaders)...`);
+${summaries.join("\n\n")}`;
 
       try {
-        const responseText = await classifyBatch(client, batch, batchIdx);
+        const session = await client.createSession({
+          model: "claude-sonnet-4",
+          onPermissionRequest: approveAll,
+          systemMessage: { mode: "replace", content: "You classify ISF GLSL shaders. Return only valid JSON arrays." },
+        });
+        let text = "";
+        const done = new Promise((r) => {
+          session.on("assistant.message", (e) => { text += e.data.content; });
+          session.on("session.idle", () => r());
+        });
+        await session.send({ prompt });
+        await done;
+        await session.disconnect();
 
-        // Strip markdown fences if present
-        let cleaned = responseText.trim();
-        if (cleaned.startsWith("```")) {
-          cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-        }
+        let cleaned = text.trim();
+        if (cleaned.startsWith("```")) cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
         const results = JSON.parse(cleaned);
-
-        if (Array.isArray(results)) {
-          for (let i = 0; i < batch.length && i < results.length; i++) {
-            const r = results[i];
-            const shaderIdx = batchIdx * BATCH_SIZE + i;
-            state.shaders[shaderIdx].aiCategory = r.category || (batch[i].shaderType === "filter" ? "Effect" : "Layer");
-            state.shaders[shaderIdx].aiDescription = r.description || "";
-            state.shaders[shaderIdx].aiAudioReactivity = r.audioReactivity || {};
-          }
+        for (let i = 0; i < batch.length && i < results.length; i++) {
+          const idx = bi * BATCH + i;
+          state.shaders[idx].aiCategory = results[i].category === "Effect" ? "Effect" : "Layer";
+          state.shaders[idx].aiDescription = results[i].description || "";
+          state.shaders[idx].aiAudioReactivity = results[i].audioReactivity || {};
         }
       } catch (err) {
-        console.warn(`  ⚠ Batch ${batchIdx + 1} failed (${err.message}), using fallback`);
+        console.warn(`  ⚠ Batch ${bi + 1} failed: ${err.message}, fallback`);
         for (let i = 0; i < batch.length; i++) {
-          const shaderIdx = batchIdx * BATCH_SIZE + i;
-          const s = state.shaders[shaderIdx];
-          const fsPath = join(downloadDir, s.title, `${s.title}.fs`);
-          const src = existsSync(fsPath) ? readFileSync(fsPath, "utf8") : "";
-          const hasInput = src.includes('"inputImage"') || src.includes("'inputImage'");
+          const idx = bi * BATCH + i;
+          const s = state.shaders[idx];
+          const hasInput = s.rawFragmentSource.includes('"inputImage"');
           s.aiCategory = hasInput ? "Effect" : "Layer";
           s.aiDescription = s.description || `${s.shaderType} shader`;
           s.aiAudioReactivity = {};
         }
       }
-
-      // Save state after each batch for resumability
       saveState(state);
-
-      // Small delay between batches
-      if (batchIdx < shaderBatches.length - 1) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      if (bi < nBatches - 1) await new Promise((r) => setTimeout(r, 500));
     }
 
     state.categorized = true;
     saveState(state);
-    
-    const layers = state.shaders.filter((s) => s.aiCategory === "Layer").length;
-    const effects = state.shaders.filter((s) => s.aiCategory === "Effect").length;
-    console.log(`✓ Categorized: ${layers} Layers, ${effects} Effects`);
+
+    // Write .fs files
+    mkdirSync(LAYERS_DIR, { recursive: true });
+    mkdirSync(EFFECTS_DIR, { recursive: true });
+    for (const s of state.shaders) {
+      if (!s.rawFragmentSource) continue;
+      const dir = s.aiCategory === "Effect" ? EFFECTS_DIR : LAYERS_DIR;
+      writeFileSync(join(dir, `${s.title}.fs`), s.rawFragmentSource);
+    }
+
+    const nL = state.shaders.filter((s) => s.aiCategory !== "Effect").length;
+    const nE = state.shaders.filter((s) => s.aiCategory === "Effect").length;
+    console.log(`✓ ${nL} Layers, ${nE} Effects — .fs files written`);
   } finally {
     await client.stop();
   }
-
   return state;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 3: Organize into Layers/ and Effects/
-// ---------------------------------------------------------------------------
-async function phaseOrganize(state) {
-  console.log("\n━━━ Phase 3: Organize ━━━");
-
-  const downloadDir = join(__dirname, "_download");
-  const layersDir = join(__dirname, "Layers");
-  const effectsDir = join(__dirname, "Effects");
-  mkdirSync(layersDir, { recursive: true });
-  mkdirSync(effectsDir, { recursive: true });
-
-  let moved = { Layer: 0, Effect: 0 };
-
-  for (const shader of state.shaders) {
-    const srcDir = join(downloadDir, shader.title);
-    if (!existsSync(srcDir)) continue;
-
-    const category = shader.aiCategory || "Layer";
-    const destDir = join(__dirname, category === "Effect" ? "Effects" : "Layers", shader.title);
-
-    if (existsSync(destDir)) {
-      // Already organized
-      moved[category]++;
-      continue;
-    }
-
-    mkdirSync(dirname(destDir), { recursive: true });
-    cpSync(srcDir, destDir, { recursive: true });
-    moved[category]++;
-  }
-
-  state.organized = true;
-  saveState(state);
-  console.log(`✓ Organized: ${moved.Layer} → Layers/, ${moved.Effect} → Effects/`);
-  return state;
-}
-
-// ---------------------------------------------------------------------------
-// Phase 4: Screenshots with Playwright
-// ---------------------------------------------------------------------------
+// -- Phase 3: Download Cloudinary thumbnails (parallel) -----------------------
 async function phaseScreenshots(state) {
-  console.log("\n━━━ Phase 4: Screenshots ━━━");
+  console.log("\n━━━ Phase 3: Download Thumbnails ━━━");
+  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
-  const { chromium } = await import("playwright");
+  const toDownload = state.shaders.filter((s) => s.thumbnailId && !existsSync(join(SCREENSHOTS_DIR, `${s.title}.jpg`)));
+  console.log(`${toDownload.length} thumbnails to download (${state.shaders.length - toDownload.length} already exist)`);
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 800, height: 600 } });
+  const CONCURRENCY = 20;
+  let done = 0, failed = 0;
 
-  let captured = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (let i = 0; i < state.shaders.length; i++) {
-    const shader = state.shaders[i];
-    const category = shader.aiCategory === "Effect" ? "Effects" : "Layers";
-    const shaderDir = join(__dirname, category, shader.title);
-    const screenshotPath = join(shaderDir, "screenshot.jpg");
-
-    if (state.screenshots[shader.id]) {
-      skipped++;
-      continue;
-    }
-
-    if (!existsSync(shaderDir)) {
-      console.warn(`  ⚠ Directory not found: ${shaderDir}`);
-      failed++;
-      continue;
-    }
-
-    const url = `${EDITOR_BASE}/${shader.id}`;
-    console.log(`  [${i + 1}/${state.shaders.length}] ${shader.title}...`);
-
+  async function download(shader) {
+    const url = `${CLOUDINARY}/${shader.thumbnailId}.jpg`;
+    const path = join(SCREENSHOTS_DIR, `${shader.title}.jpg`);
     try {
-      const page = await context.newPage();
-      await page.goto(url, { waitUntil: "networkidle", timeout: 15000 });
-
-      // Wait for the WebGL canvas to render
-      await page.waitForTimeout(2500);
-
-      // Try to find and screenshot the canvas element
-      const canvas = await page.$("canvas");
-      if (canvas) {
-        await canvas.screenshot({ path: screenshotPath, type: "jpeg", quality: 85 });
-      } else {
-        // Fallback: screenshot the main content area
-        await page.screenshot({ path: screenshotPath, type: "jpeg", quality: 85, clip: { x: 0, y: 0, width: 800, height: 600 } });
-      }
-
-      await page.close();
-      state.screenshots[shader.id] = true;
-      captured++;
-
-      // Save state periodically
-      if (captured % 10 === 0) {
-        saveState(state);
-        console.log(`    ... saved checkpoint (${captured} captured)`);
-      }
-
-      // Rate limiting
-      await new Promise((r) => setTimeout(r, 500));
-    } catch (err) {
-      console.warn(`  ⚠ Failed: ${shader.title} — ${err.message}`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      writeFileSync(path, buf);
+      done++;
+    } catch {
       failed++;
     }
   }
 
-  await browser.close();
-  saveState(state);
-  console.log(`✓ Screenshots: ${captured} captured, ${skipped} skipped, ${failed} failed`);
+  // Process in parallel batches
+  for (let i = 0; i < toDownload.length; i += CONCURRENCY) {
+    const batch = toDownload.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(download));
+    if (done % 50 === 0 && done > 0) console.log(`  ... ${done} downloaded`);
+  }
+
+  console.log(`✓ ${done} thumbnails downloaded, ${failed} failed`);
   return state;
 }
 
-// ---------------------------------------------------------------------------
-// Phase 5: Generate Markdown Catalog
-// ---------------------------------------------------------------------------
+// -- Phase 4: Generate README.md catalog --------------------------------------
 async function phaseCatalog(state) {
-  console.log("\n━━━ Phase 5: Catalog ━━━");
+  console.log("\n━━━ Phase 4: Catalog ━━━");
 
   const layers = state.shaders.filter((s) => s.aiCategory !== "Effect");
   const effects = state.shaders.filter((s) => s.aiCategory === "Effect");
 
   let md = `# ISF Shader Collection — ${args.username}\n\n`;
   md += `> **${state.shaders.length} shaders** | ${layers.length} Layers | ${effects.length} Effects\n`;
-  md += `>\n> Downloaded from [editor.isf.video/u/${args.username}](https://editor.isf.video/u/${args.username})\n\n`;
+  md += `> Downloaded from [editor.isf.video/u/${args.username}](https://editor.isf.video/u/${args.username})\n\n`;
+  md += `## Table of Contents\n\n- [Layers (${layers.length})](#layers)\n- [Effects (${effects.length})](#effects)\n\n`;
 
-  md += `## Table of Contents\n\n`;
-  md += `- [Layers (${layers.length})](#layers)\n`;
-  md += `- [Effects (${effects.length})](#effects)\n\n`;
+  function entry(s) {
+    const hasImg = existsSync(join(SCREENSHOTS_DIR, `${s.title}.jpg`));
+    const imgPath = `screenshots/${encodeURIComponent(s.title)}.jpg`;
+    let o = `### ${s.title}\n\n`;
+    if (hasImg) o += `![${s.title}](${imgPath})\n\n`;
+    if (s.aiDescription) o += `**Description:** ${s.aiDescription}\n\n`;
 
-  // Helper to render a shader entry
-  function renderShader(shader, categoryDir) {
-    const screenshotRel = `${categoryDir}/${shader.title}/screenshot.jpg`;
-    const screenshotExists = existsSync(join(__dirname, categoryDir, shader.title, "screenshot.jpg"));
-
-    let entry = `### ${shader.title}\n\n`;
-
-    if (screenshotExists) {
-      entry += `![${shader.title}](${screenshotRel})\n\n`;
+    const inputs = parseISFInputs(s.rawFragmentSource);
+    if (inputs.length) {
+      o += `**Inputs:** ${inputs.map((i) => {
+        let d = `\`${i.NAME}\` (${i.TYPE})`;
+        if (i.MIN !== undefined && i.MAX !== undefined) d += ` [${i.MIN}–${i.MAX}]`;
+        return d;
+      }).join(", ")}\n\n`;
     }
 
-    if (shader.aiDescription) {
-      entry += `**Description:** ${shader.aiDescription}\n\n`;
+    if (s.aiAudioReactivity && Object.keys(s.aiAudioReactivity).length) {
+      o += `**🎵 Audio:** ${Object.entries(s.aiAudioReactivity).map(([u, b]) => `\`${u}\`→${b}`).join(", ")}\n\n`;
     }
 
-    // Parse ISF inputs from the .fs file
-    const fsPath = join(__dirname, categoryDir, shader.title, `${shader.title}.fs`);
-    if (existsSync(fsPath)) {
-      const src = readFileSync(fsPath, "utf8");
-      const inputs = parseISFInputs(src);
-      if (inputs.length > 0) {
-        const inputStr = inputs
-          .map((inp) => {
-            let desc = `\`${inp.NAME}\` (${inp.TYPE})`;
-            if (inp.MIN !== undefined && inp.MAX !== undefined) {
-              desc += ` [${inp.MIN}–${inp.MAX}]`;
-            }
-            if (inp.DEFAULT !== undefined) {
-              const def = Array.isArray(inp.DEFAULT) ? `[${inp.DEFAULT.join(", ")}]` : inp.DEFAULT;
-              desc += ` default: ${def}`;
-            }
-            return desc;
-          })
-          .join(", ");
-        entry += `**Inputs:** ${inputStr}\n\n`;
-      }
-    }
-
-    // Audio reactivity suggestions
-    if (shader.aiAudioReactivity && Object.keys(shader.aiAudioReactivity).length > 0) {
-      const mappings = Object.entries(shader.aiAudioReactivity)
-        .map(([uniform, band]) => `\`${uniform}\` → ${band}`)
-        .join(", ");
-      entry += `**🎵 Audio Reactivity:** ${mappings}\n\n`;
-    }
-
-    // Metadata line
-    const meta = [];
-    if (shader.categories?.length) meta.push(`Categories: ${shader.categories.join(", ")}`);
-    if (shader.username && shader.username !== args.username) meta.push(`by ${shader.username}`);
-    if (shader.forkedFrom) meta.push(`forked`);
-    if (meta.length) entry += `*${meta.join(" | ")}*\n\n`;
-
-    entry += `---\n\n`;
-    return entry;
+    return o + `---\n\n`;
   }
 
-  // Layers section
-  md += `## Layers\n\n`;
-  md += `*Generators — produce visuals from math, noise, and algorithms*\n\n`;
-  for (const shader of layers.sort((a, b) => a.title.localeCompare(b.title))) {
-    md += renderShader(shader, "Layers");
-  }
+  md += `## Layers\n\n*Generators — produce visuals from math, noise, and algorithms*\n\n`;
+  for (const s of layers.sort((a, b) => a.title.localeCompare(b.title))) md += entry(s);
 
-  // Effects section
-  md += `## Effects\n\n`;
-  md += `*Filters — modify and transform input images*\n\n`;
-  for (const shader of effects.sort((a, b) => a.title.localeCompare(b.title))) {
-    md += renderShader(shader, "Effects");
-  }
+  md += `## Effects\n\n*Filters — modify and transform input images*\n\n`;
+  for (const s of effects.sort((a, b) => a.title.localeCompare(b.title))) md += entry(s);
 
-  const readmePath = join(__dirname, "README.md");
-  writeFileSync(readmePath, md);
-  state.catalogGenerated = true;
-  saveState(state);
-  console.log(`✓ Catalog written to README.md (${(md.length / 1024).toFixed(1)} KB)`);
+  writeFileSync(join(__dirname, "README.md"), md);
+  console.log(`✓ README.md (${(md.length / 1024).toFixed(1)} KB)`);
   return state;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function parseISFInputs(source) {
-  const match = source.match(/\/\*\s*(\{[\s\S]*?\})\s*\*\//);
-  if (!match) return [];
-  try {
-    const json = JSON.parse(match[1]);
-    return (json.INPUTS || []).filter((i) => i.NAME !== "inputImage");
-  } catch {
-    return [];
-  }
+// -- Helpers ------------------------------------------------------------------
+function parseISFInputs(src) {
+  const m = (src || "").match(/\/\*\s*(\{[\s\S]*?\})\s*\*\//);
+  if (!m) return [];
+  try { return (JSON.parse(m[1]).INPUTS || []).filter((i) => i.NAME !== "inputImage"); } catch { return []; }
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-async function main() {
-  console.log(`\n🎨 ISF Shader Downloader — ${args.username}`);
-  console.log(`   Phase: ${args.phase}\n`);
+// -- Main ---------------------------------------------------------------------
+const phases = { download: phaseDownload, categorize: phaseCategorize, screenshots: phaseScreenshots, catalog: phaseCatalog };
+let state = loadState();
+console.log(`\n🎨 ISF Shader Downloader — ${args.username} (phase: ${args.phase})\n`);
 
-  let state = loadState();
-
-  const phases = {
-    download: phaseDownload,
-    categorize: phaseCategorize,
-    organize: phaseOrganize,
-    screenshots: phaseScreenshots,
-    catalog: phaseCatalog,
-  };
-
-  if (args.phase === "all") {
-    for (const [name, fn] of Object.entries(phases)) {
-      state = await fn(state);
-    }
-  } else if (phases[args.phase]) {
-    state = await phases[args.phase](state);
-  } else {
-    console.error(`Unknown phase: ${args.phase}`);
-    console.error(`Valid phases: ${Object.keys(phases).join(", ")}, all`);
-    process.exit(1);
-  }
-
-  console.log("\n✅ Done!\n");
-}
-
-main().catch((err) => {
-  console.error("Fatal error:", err);
+if (args.phase === "all") {
+  for (const fn of Object.values(phases)) state = await fn(state);
+} else if (phases[args.phase]) {
+  state = await phases[args.phase](state);
+} else {
+  console.error(`Unknown phase. Valid: ${Object.keys(phases).join(", ")}, all`);
   process.exit(1);
-});
+}
+console.log("\n✅ Done!\n");

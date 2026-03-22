@@ -1,7 +1,9 @@
 # swift-vj Makefile
 # Build targets for shader compilation and app
 
-.PHONY: all build run clean compile-shaders compile-flat-shaders shaders help
+.PHONY: all build run clean compile-shaders compile-flat-shaders shaders help \
+       profile-build profile-hud profile-metal profile-cpu profile-alloc \
+       profile-leaks profile-vmmap profile-gpu-power profiling-dir
 
 # Directories
 BUILD_DIR := Build
@@ -21,6 +23,15 @@ help:
 	@echo "  shaders              - Compile GLSL shaders using ShaderRepository module (recommended)"
 	@echo "  compile-flat-shaders - Legacy: Compile using shell script"
 	@echo "  clean                - Clean build artifacts"
+	@echo ""
+	@echo "Profiling (results saved to profiling/):"
+	@echo "  profile-hud          - Run with Metal HUD overlay (live GPU stats)"
+	@echo "  profile-metal        - Metal System Trace (GPU util, per-pass time)"
+	@echo "  profile-cpu          - Time Profiler (CPU hotspots per thread)"
+	@echo "  profile-alloc        - Allocations (Metal resource sizes, growth)"
+	@echo "  profile-leaks        - Leaks (resource leaks after shader switches)"
+	@echo "  profile-vmmap        - Memory snapshot (attach to running app)"
+	@echo "  profile-gpu-power    - GPU power/utilization (60 sec capture)"
 	@echo ""
 	@echo "Shader compilation:"
 	@echo "  Input:  $(SHADERS_DIR)/glsl/*.txt, $(SHADERS_DIR)/masks/*.txt"
@@ -90,3 +101,46 @@ test:
 
 lint:
 	swiftlint lint --quiet
+
+# ─── Profiling Targets ───────────────────────────────────────────────
+# No source code changes. All traces saved to profiling/ directory.
+# See docs/profiling-guide.md for interpretation.
+
+profiling-dir:
+	@mkdir -p profiling
+
+profile-build:
+	$(SWIFT) build -c release -Xswiftc -g
+
+profile-hud: profile-build
+	MTL_HUD_ENABLED=1 .build/release/SwiftVJApp
+
+profile-metal: profile-build profiling-dir
+	$(XCRUN) xctrace record --template "Metal System Trace" \
+	  --output profiling/metal-trace-$$(date +%Y%m%d-%H%M%S).trace \
+	  --launch .build/release/SwiftVJApp
+
+profile-cpu: profile-build profiling-dir
+	$(XCRUN) xctrace record --template "Time Profiler" \
+	  --output profiling/cpu-trace-$$(date +%Y%m%d-%H%M%S).trace \
+	  --launch .build/release/SwiftVJApp
+
+profile-alloc: profile-build profiling-dir
+	$(XCRUN) xctrace record --template "Allocations" \
+	  --output profiling/alloc-trace-$$(date +%Y%m%d-%H%M%S).trace \
+	  --launch .build/release/SwiftVJApp
+
+profile-leaks: profile-build profiling-dir
+	$(XCRUN) xctrace record --template "Leaks" \
+	  --output profiling/leaks-trace-$$(date +%Y%m%d-%H%M%S).trace \
+	  --launch .build/release/SwiftVJApp
+
+profile-vmmap: profiling-dir
+	@PID=$$(pgrep -x SwiftVJApp) && \
+	  vmmap --summary $$PID > profiling/vmmap-$$(date +%Y%m%d-%H%M%S).txt && \
+	  echo "Saved vmmap to profiling/" || \
+	  echo "SwiftVJApp not running. Start it first."
+
+profile-gpu-power: profiling-dir
+	sudo powermetrics --samplers gpu_power -i 1000 -n 60 \
+	  > profiling/gpu-power-$$(date +%Y%m%d-%H%M%S).txt
