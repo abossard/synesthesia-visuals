@@ -2,6 +2,7 @@
 // Provides access to app-layer services without coupling to concrete implementations
 
 import Foundation
+import SongRepository
 
 public protocol LaunchpadEffectHandling: Sendable {
     func start() async
@@ -123,6 +124,47 @@ public final class EffectEnvironment {
     /// App/command launcher handler (implemented in app layer, actor-isolated)
     public var launcherHandler: (any LauncherEffectHandling)?
 
+    // MARK: - Moodboard Effects
+
+    /// Result type for moodboard loading
+    public struct MoodboardLoadResult: Sendable {
+        public let nodes: [MoodboardNode]
+        public let edges: [MoodboardEdge]
+        public let connections: [SongConnection]
+        public let phaseEdges: [PhaseFlowEdge]
+        public let positions: [CanvasPositionEntry]
+
+        public init(
+            nodes: [MoodboardNode], edges: [MoodboardEdge],
+            connections: [SongConnection], phaseEdges: [PhaseFlowEdge],
+            positions: [CanvasPositionEntry]
+        ) {
+            self.nodes = nodes
+            self.edges = edges
+            self.connections = connections
+            self.phaseEdges = phaseEdges
+            self.positions = positions
+        }
+    }
+
+    /// Load moodboard graph from song data
+    public var loadMoodboardFromSongs: (@Sendable () async -> MoodboardLoadResult)?
+
+    /// Save an explicit song connection
+    public var saveSongConnection: (@Sendable (SongConnection) async -> Void)?
+
+    /// Remove an explicit song connection
+    public var removeSongConnection: (@Sendable (SongID, SongID) async -> Void)?
+
+    /// Save canvas node positions
+    public var saveCanvasPositions: (@Sendable ([CanvasPositionEntry]) async -> Void)?
+
+    /// Save phase flow edges
+    public var savePhaseEdges: (@Sendable ([PhaseFlowEdge]) async -> Void)?
+
+    /// Update a song tag (add = true, remove = false)
+    public var updateSongTag: (@Sendable (SongID, String, TagCategory, Bool) async -> Void)?
+
     // MARK: - Reset (for testing)
 
     /// Reset all callbacks to nil (useful for testing)
@@ -145,5 +187,11 @@ public final class EffectEnvironment {
         ledfxActionHandler = nil
         launchpadHandler = nil
         launcherHandler = nil
+        loadMoodboardFromSongs = nil
+        saveSongConnection = nil
+        removeSongConnection = nil
+        saveCanvasPositions = nil
+        savePhaseEdges = nil
+        updateSongTag = nil
     }
 }

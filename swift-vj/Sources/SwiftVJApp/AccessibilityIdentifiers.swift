@@ -33,4 +33,9 @@ enum A11yID {
     static let masterAddCommandButton = "swiftvj.master.addCommand"
 
     static let songDemoPlayButton = "swiftvj.song.demoPlay"
+
+    static let moodboardCanvas = "swiftvj.moodboard.canvas"
+    static let moodboardPhaseBar = "swiftvj.moodboard.phasebar"
+    static let moodboardLibrary = "swiftvj.moodboard.library"
+    static let moodboardDetail = "swiftvj.moodboard.detail"
 }

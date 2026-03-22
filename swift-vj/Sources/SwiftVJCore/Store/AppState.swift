@@ -41,6 +41,9 @@ public struct AppState: Equatable, Sendable {
     /// Song timecoded automation state
     public var automation: AutomationSubState
 
+    /// Moodboard state (visual song graph canvas)
+    public var moodboard: MoodboardSubState
+
     /// Whether the system is running
     public var isRunning: Bool
 
@@ -65,6 +68,7 @@ public struct AppState: Equatable, Sendable {
         ledfx: LedFXSubState = LedFXSubState(),
         songs: SongsSubState = SongsSubState(),
         automation: AutomationSubState = AutomationSubState(),
+        moodboard: MoodboardSubState = MoodboardSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
     ) {
@@ -78,6 +82,7 @@ public struct AppState: Equatable, Sendable {
         self.ledfx = ledfx
         self.songs = songs
         self.automation = automation
+        self.moodboard = moodboard
         self.isRunning = isRunning
         self.modules = modules
     }
@@ -94,6 +99,7 @@ public struct AppState: Equatable, Sendable {
         lhs.ledfx == rhs.ledfx &&
         lhs.songs == rhs.songs &&
         lhs.automation == rhs.automation &&
+        lhs.moodboard == rhs.moodboard &&
         lhs.isRunning == rhs.isRunning
     }
 }
@@ -1328,6 +1334,94 @@ public struct AutomationSubState: Equatable, Sendable {
         guard let songId else { return nil }
         return timelineBySongId[songId.rawValue]
     }
+}
+
+// MARK: - Moodboard Sub-State
+
+import SongRepository
+
+/// State for the moodboard visual song graph canvas.
+public struct MoodboardSubState: Equatable, Sendable {
+    /// Song nodes on the canvas
+    public var nodes: [MoodboardNode]
+
+    /// Edges between nodes (implicit from tags + explicit connections)
+    public var edges: [MoodboardEdge]
+
+    /// Canvas viewport (offset + zoom)
+    public var viewport: ViewportState
+
+    /// Currently selected node IDs
+    public var selectedNodeIds: Set<String>
+
+    /// Currently selected edge IDs
+    public var selectedEdgeIds: Set<String>
+
+    /// Phase flow DAG edges
+    public var phaseFlowEdges: [PhaseFlowEdge]
+
+    /// Computed phase order (from topological sort)
+    public var phaseOrder: [String]
+
+    /// Song counts per phase
+    public var phaseCounts: [String: Int]
+
+    /// Active phase filter (nil = show all)
+    public var activePhaseFilter: String?
+
+    /// Explicit song connections (user-created)
+    public var connections: [SongConnection]
+
+    /// Whether the moodboard is loading data
+    public var isLoading: Bool
+
+    /// Whether the library panel is open
+    public var libraryPanelOpen: Bool
+
+    /// Song shown in the detail panel
+    public var detailPanelSongId: SongID?
+
+    /// Canvas save status
+    public var saveStatus: MoodboardSaveStatus
+
+    public init(
+        nodes: [MoodboardNode] = [],
+        edges: [MoodboardEdge] = [],
+        viewport: ViewportState = .default,
+        selectedNodeIds: Set<String> = [],
+        selectedEdgeIds: Set<String> = [],
+        phaseFlowEdges: [PhaseFlowEdge] = [],
+        phaseOrder: [String] = [],
+        phaseCounts: [String: Int] = [:],
+        activePhaseFilter: String? = nil,
+        connections: [SongConnection] = [],
+        isLoading: Bool = false,
+        libraryPanelOpen: Bool = true,
+        detailPanelSongId: SongID? = nil,
+        saveStatus: MoodboardSaveStatus = .idle
+    ) {
+        self.nodes = nodes
+        self.edges = edges
+        self.viewport = viewport
+        self.selectedNodeIds = selectedNodeIds
+        self.selectedEdgeIds = selectedEdgeIds
+        self.phaseFlowEdges = phaseFlowEdges
+        self.phaseOrder = phaseOrder
+        self.phaseCounts = phaseCounts
+        self.activePhaseFilter = activePhaseFilter
+        self.connections = connections
+        self.isLoading = isLoading
+        self.libraryPanelOpen = libraryPanelOpen
+        self.detailPanelSongId = detailPanelSongId
+        self.saveStatus = saveStatus
+    }
+}
+
+/// Save status for the moodboard canvas
+public enum MoodboardSaveStatus: String, Equatable, Sendable {
+    case idle
+    case saving
+    case saved
 }
 
 // MARK: - Module References

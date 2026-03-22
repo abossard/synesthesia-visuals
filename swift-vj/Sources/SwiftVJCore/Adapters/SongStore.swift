@@ -360,4 +360,88 @@ public actor SongStore {
             }
         }
     }
+
+    // MARK: - Moodboard Data (connections, positions, phase edges)
+
+    private var moodboardDataURL: URL {
+        databaseURL.deletingLastPathComponent().appendingPathComponent("moodboard_data.json")
+    }
+
+    /// Persisted moodboard data (separate from songs to avoid coupling)
+    private struct MoodboardData: Codable {
+        var connections: [SongConnection]
+        var canvasPositions: [CanvasPositionEntry]
+        var phaseEdges: [PhaseFlowEdge]
+
+        static let empty = MoodboardData(connections: [], canvasPositions: [], phaseEdges: [])
+    }
+
+    /// Load moodboard connections, positions, and phase edges
+    public func loadMoodboardData() -> (connections: [SongConnection], positions: [CanvasPositionEntry], phaseEdges: [PhaseFlowEdge]) {
+        guard FileManager.default.fileExists(atPath: moodboardDataURL.path) else {
+            return ([], [], [])
+        }
+        do {
+            let data = try Data(contentsOf: moodboardDataURL)
+            let decoded = try JSONDecoder().decode(MoodboardData.self, from: data)
+            return (decoded.connections, decoded.canvasPositions, decoded.phaseEdges)
+        } catch {
+            print("[SongStore] Failed to load moodboard data: \(error)")
+            return ([], [], [])
+        }
+    }
+
+    /// Save a song connection
+    public func saveSongConnection(_ connection: SongConnection) {
+        var moodboard = loadMoodboardDataInternal()
+        moodboard.connections.removeAll {
+            $0.sourceSongId == connection.sourceSongId && $0.targetSongId == connection.targetSongId
+        }
+        moodboard.connections.append(connection)
+        saveMoodboardDataInternal(moodboard)
+    }
+
+    /// Remove a song connection
+    public func removeSongConnection(source: SongID, target: SongID) {
+        var moodboard = loadMoodboardDataInternal()
+        moodboard.connections.removeAll {
+            $0.sourceSongId == source && $0.targetSongId == target
+        }
+        saveMoodboardDataInternal(moodboard)
+    }
+
+    /// Save canvas positions
+    public func saveCanvasPositions(_ positions: [CanvasPositionEntry]) {
+        var moodboard = loadMoodboardDataInternal()
+        moodboard.canvasPositions = positions
+        saveMoodboardDataInternal(moodboard)
+    }
+
+    /// Save phase flow edges
+    public func savePhaseEdges(_ edges: [PhaseFlowEdge]) {
+        var moodboard = loadMoodboardDataInternal()
+        moodboard.phaseEdges = edges
+        saveMoodboardDataInternal(moodboard)
+    }
+
+    private func loadMoodboardDataInternal() -> MoodboardData {
+        guard FileManager.default.fileExists(atPath: moodboardDataURL.path) else {
+            return .empty
+        }
+        do {
+            let data = try Data(contentsOf: moodboardDataURL)
+            return try JSONDecoder().decode(MoodboardData.self, from: data)
+        } catch {
+            return .empty
+        }
+    }
+
+    private func saveMoodboardDataInternal(_ moodboard: MoodboardData) {
+        do {
+            let data = try JSONEncoder().encode(moodboard)
+            try data.write(to: moodboardDataURL, options: .atomic)
+        } catch {
+            print("[SongStore] Failed to save moodboard data: \(error)")
+        }
+    }
 }

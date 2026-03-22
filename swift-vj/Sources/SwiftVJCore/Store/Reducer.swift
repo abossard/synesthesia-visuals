@@ -106,6 +106,12 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         state.automation = automationState
         return effect
 
+    case .moodboard(let moodboardAction):
+        var moodboardState = state.moodboard
+        let effect = moodboardReducer(state: &moodboardState, action: moodboardAction)
+        state.moodboard = moodboardState
+        return effect.map { AppAction.moodboard($0) }
+
     // MARK: Persistence
     case .loadPersistedState:
         return PersistenceEffects.loadState()
@@ -2470,4 +2476,250 @@ public enum SongsEffects {
             )
         }
     }
+}
+
+// MARK: - Moodboard Reducer
+
+/// Reducer for moodboard-related actions.
+/// Pure state mutations + effects for persistence and graph operations.
+public func moodboardReducer(
+    state: inout MoodboardSubState,
+    action: MoodboardAction
+) -> Effect<MoodboardAction> {
+    switch action {
+    // MARK: Canvas Lifecycle
+    case .loadFromSongs:
+        state.isLoading = true
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            guard let loadFn = await env.loadMoodboardFromSongs else { return }
+            let result = await loadFn()
+            await send(.canvasLoaded(
+                nodes: result.nodes,
+                edges: result.edges,
+                connections: result.connections,
+                phaseEdges: result.phaseEdges,
+                positions: result.positions
+            ))
+        }
+
+    case .canvasLoaded(let nodes, let edges, let connections, let phaseEdges, let positions):
+        // Apply persisted positions to nodes
+        let positionMap = Dictionary(uniqueKeysWithValues: positions.map { ($0.nodeId, CGPoint(x: $0.x, y: $0.y)) })
+        state.nodes = nodes.map { node in
+            if let pos = positionMap[node.id] {
+                return node.withPosition(pos)
+            }
+            return node
+        }
+        state.edges = edges
+        state.connections = connections
+        state.phaseFlowEdges = phaseEdges
+        state.phaseOrder = PhaseGraph.order(edges: phaseEdges)
+        state.phaseCounts = computePhaseCounts(nodes: state.nodes)
+        state.isLoading = false
+        return .none
+
+    // MARK: Node Operations
+    case .addSongNode(let songId, let position):
+        let node = MoodboardNode.songNode(for: songId, at: position)
+        guard !state.nodes.contains(where: { $0.id == node.id }) else { return .none }
+        state.nodes.append(node)
+        return .send(.saveCanvasPositions)
+
+    case .removeNode(let nodeId):
+        state.nodes.removeAll { $0.id == nodeId }
+        state.edges.removeAll { $0.sourceId == nodeId || $0.targetId == nodeId }
+        state.selectedNodeIds.remove(nodeId)
+        return .send(.saveCanvasPositions)
+
+    case .moveNode(let nodeId, let position):
+        if let idx = state.nodes.firstIndex(where: { $0.id == nodeId }) {
+            state.nodes[idx] = state.nodes[idx].withPosition(position)
+        }
+        return .send(.saveCanvasPositions)
+
+    case .moveNodes(let moves):
+        for (nodeId, position) in moves {
+            if let idx = state.nodes.firstIndex(where: { $0.id == nodeId }) {
+                state.nodes[idx] = state.nodes[idx].withPosition(position)
+            }
+        }
+        return .send(.saveCanvasPositions)
+
+    // MARK: Edge Operations
+    case .connectNodes(let sourceId, let targetId, let edgeType, let weight):
+        let edgeId = "\(sourceId)::\(targetId)::\(edgeType.rawValue)"
+        guard !state.edges.contains(where: { $0.id == edgeId }) else { return .none }
+        let edge = MoodboardEdge(
+            id: edgeId, sourceId: sourceId, targetId: targetId,
+            edgeType: edgeType, weight: weight, isDirected: false
+        )
+        state.edges.append(edge)
+        // Persist if it's an explicit song connection
+        if let sourceSong = state.nodes.first(where: { $0.id == sourceId })?.songId,
+           let targetSong = state.nodes.first(where: { $0.id == targetId })?.songId {
+            let connection = SongConnection(
+                sourceSongId: sourceSong, targetSongId: targetSong,
+                connectionType: edgeType, weight: weight
+            )
+            state.connections.append(connection)
+            return .run { _ in
+                let env = await EffectEnvironment.shared
+                await env.saveSongConnection?(connection)
+            }
+        }
+        return .none
+
+    case .removeEdge(let edgeId):
+        if let edge = state.edges.first(where: { $0.id == edgeId }) {
+            state.edges.removeAll { $0.id == edgeId }
+            state.selectedEdgeIds.remove(edgeId)
+            // Remove persisted connection if applicable
+            if let sourceSong = state.nodes.first(where: { $0.id == edge.sourceId })?.songId,
+               let targetSong = state.nodes.first(where: { $0.id == edge.targetId })?.songId {
+                state.connections.removeAll {
+                    $0.sourceSongId == sourceSong && $0.targetSongId == targetSong
+                }
+                return .run { _ in
+                    let env = await EffectEnvironment.shared
+                    await env.removeSongConnection?(sourceSong, targetSong)
+                }
+            }
+        }
+        return .none
+
+    case .updateEdgeWeight(let edgeId, let weight):
+        if let idx = state.edges.firstIndex(where: { $0.id == edgeId }) {
+            state.edges[idx] = state.edges[idx].withWeight(weight)
+        }
+        return .none
+
+    // MARK: Phase Flow
+    case .addPhaseEdge(let from, let to, let weight):
+        guard !PhaseGraph.wouldCreateCycle(edges: state.phaseFlowEdges, from: from, to: to) else {
+            return .none
+        }
+        let edge = PhaseFlowEdge(fromPhase: from, toPhase: to, weight: weight)
+        state.phaseFlowEdges.append(edge)
+        state.phaseOrder = PhaseGraph.order(edges: state.phaseFlowEdges)
+        return .run { [edges = state.phaseFlowEdges] _ in
+            let env = await EffectEnvironment.shared
+            await env.savePhaseEdges?(edges)
+        }
+
+    case .removePhaseEdge(let from, let to):
+        state.phaseFlowEdges.removeAll { $0.fromPhase == from && $0.toPhase == to }
+        state.phaseOrder = PhaseGraph.order(edges: state.phaseFlowEdges)
+        return .run { [edges = state.phaseFlowEdges] _ in
+            let env = await EffectEnvironment.shared
+            await env.savePhaseEdges?(edges)
+        }
+
+    case .suggestPhaseFlow:
+        let phases = Array(Set(state.nodes.compactMap { node -> String? in
+            guard let songId = node.songId else { return nil }
+            // Extract phase from node ID pattern
+            return nil
+        }))
+        let allPhases = Array(Set(state.phaseCounts.keys))
+        let suggested = PhaseGraph.suggestDefaultFlow(phases: allPhases)
+        state.phaseFlowEdges = suggested
+        state.phaseOrder = PhaseGraph.order(edges: suggested)
+        return .run { [edges = state.phaseFlowEdges] _ in
+            let env = await EffectEnvironment.shared
+            await env.savePhaseEdges?(edges)
+        }
+
+    case .phaseFlowUpdated(let edges, let order):
+        state.phaseFlowEdges = edges
+        state.phaseOrder = order
+        return .none
+
+    case .filterByPhase(let phase):
+        state.activePhaseFilter = phase
+        return .none
+
+    // MARK: Tag Operations
+    case .addTagToSong(let songId, let label, let category):
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            await env.updateSongTag?(songId, label, category, true)
+            // Trigger graph rebuild after tag change
+            guard let loadFn = await env.loadMoodboardFromSongs else { return }
+            let result = await loadFn()
+            await send(.graphRebuilt(nodes: result.nodes, edges: result.edges))
+        }
+
+    case .removeTagFromSong(let songId, let label, let category):
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            await env.updateSongTag?(songId, label, category, false)
+            guard let loadFn = await env.loadMoodboardFromSongs else { return }
+            let result = await loadFn()
+            await send(.graphRebuilt(nodes: result.nodes, edges: result.edges))
+        }
+
+    case .graphRebuilt(let nodes, let edges):
+        // Preserve existing positions when rebuilding graph
+        let positionMap = Dictionary(uniqueKeysWithValues: state.nodes.map { ($0.id, $0.position) })
+        state.nodes = nodes.map { node in
+            if let pos = positionMap[node.id] {
+                return node.withPosition(pos)
+            }
+            return node
+        }
+        state.edges = edges
+        state.phaseCounts = computePhaseCounts(nodes: state.nodes)
+        return .none
+
+    // MARK: Viewport
+    case .viewportChanged(let viewport):
+        state.viewport = viewport
+        return .none
+
+    case .saveCanvasPositions:
+        state.saveStatus = .saving
+        let positions = state.nodes.map {
+            CanvasPositionEntry(nodeId: $0.id, x: $0.position.x, y: $0.position.y)
+        }
+        return .run(cancellationId: EffectCancellationId.custom("moodboard-save")) { send in
+            // Debounce: wait 2 seconds before saving
+            try? await Task.sleep(for: .seconds(2))
+            let env = await EffectEnvironment.shared
+            await env.saveCanvasPositions?(positions)
+            await send(.canvasPositionsSaved)
+        }
+
+    case .canvasPositionsSaved:
+        state.saveStatus = .saved
+        return .none
+
+    // MARK: Selection
+    case .selectNodes(let ids):
+        state.selectedNodeIds = ids
+        return .none
+
+    case .selectEdges(let ids):
+        state.selectedEdgeIds = ids
+        return .none
+
+    // MARK: UI Panels
+    case .toggleLibraryPanel:
+        state.libraryPanelOpen.toggle()
+        return .none
+
+    case .showSongDetail(let songId):
+        state.detailPanelSongId = songId
+        return .none
+    }
+}
+
+// MARK: - Moodboard Helpers
+
+/// Compute song counts per phase from node list
+private func computePhaseCounts(nodes: [MoodboardNode]) -> [String: Int] {
+    // Phase counts will be populated by the graph loading effect
+    // which has access to the actual Song data
+    [:]
 }

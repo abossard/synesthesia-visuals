@@ -1,0 +1,262 @@
+// MoodboardTypes.swift - Immutable domain types for the Moodboard feature
+// Following Grokking Simplicity: pure data with no behavior
+
+import Foundation
+import CoreGraphics
+import SongRepository
+
+// MARK: - Node Types
+
+/// The kind of node on the moodboard canvas
+public enum MoodboardNodeKind: String, Codable, Sendable, CaseIterable {
+    case song
+    case tag
+    case container
+}
+
+/// Tag categories for organizing songs
+public enum TagCategory: String, Codable, Sendable, CaseIterable {
+    case genre
+    case phase
+    case mood
+    case topic
+    case custom
+}
+
+/// Types of edges between nodes
+public enum EdgeType: String, Codable, Sendable, CaseIterable {
+    case similarity
+    case transition
+    case remix
+    case custom
+    case tagMembership
+}
+
+// MARK: - Moodboard Node
+
+/// A node on the moodboard canvas. Immutable value type.
+public struct MoodboardNode: Identifiable, Equatable, Sendable, Codable {
+    public let id: String
+    public let kind: MoodboardNodeKind
+    public var position: CGPoint
+
+    // Song-specific (nil for tag/container nodes)
+    public let songId: SongID?
+
+    // Tag-specific (nil for song/container nodes)
+    public let tagLabel: String?
+    public let tagCategory: TagCategory?
+
+    public init(
+        id: String,
+        kind: MoodboardNodeKind,
+        position: CGPoint = .zero,
+        songId: SongID? = nil,
+        tagLabel: String? = nil,
+        tagCategory: TagCategory? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.position = position
+        self.songId = songId
+        self.tagLabel = tagLabel
+        self.tagCategory = tagCategory
+    }
+
+    /// Create a song node from a SongID
+    public static func songNode(for songId: SongID, at position: CGPoint = .zero) -> MoodboardNode {
+        MoodboardNode(
+            id: "song:\(songId.rawValue)",
+            kind: .song,
+            position: position,
+            songId: songId
+        )
+    }
+
+    /// Create a tag node
+    public static func tagNode(label: String, category: TagCategory, at position: CGPoint = .zero) -> MoodboardNode {
+        MoodboardNode(
+            id: "tag:\(category.rawValue):\(label)",
+            kind: .tag,
+            position: position,
+            tagLabel: label,
+            tagCategory: category
+        )
+    }
+
+    /// Copy with updated position
+    public func withPosition(_ pos: CGPoint) -> MoodboardNode {
+        MoodboardNode(
+            id: id, kind: kind, position: pos,
+            songId: songId, tagLabel: tagLabel, tagCategory: tagCategory
+        )
+    }
+}
+
+// MARK: - Moodboard Edge
+
+/// A weighted, typed edge between two nodes. Immutable value type.
+public struct MoodboardEdge: Identifiable, Equatable, Sendable, Codable {
+    public let id: String
+    public let sourceId: String
+    public let targetId: String
+    public let edgeType: EdgeType
+    public var weight: Double
+    public let isDirected: Bool
+
+    public init(
+        id: String,
+        sourceId: String,
+        targetId: String,
+        edgeType: EdgeType,
+        weight: Double = 1.0,
+        isDirected: Bool = false
+    ) {
+        self.id = id
+        self.sourceId = sourceId
+        self.targetId = targetId
+        self.edgeType = edgeType
+        self.weight = weight
+        self.isDirected = isDirected
+    }
+
+    /// Copy with updated weight
+    public func withWeight(_ w: Double) -> MoodboardEdge {
+        MoodboardEdge(
+            id: id, sourceId: sourceId, targetId: targetId,
+            edgeType: edgeType, weight: w, isDirected: isDirected
+        )
+    }
+}
+
+// MARK: - Song Connection (Persisted)
+
+/// An explicit, user-created connection between two songs.
+/// Persisted in SongStore alongside song data.
+public struct SongConnection: Equatable, Sendable, Codable, Identifiable {
+    public var id: String { "\(sourceSongId.rawValue)::\(targetSongId.rawValue)::\(connectionType.rawValue)" }
+    public let sourceSongId: SongID
+    public let targetSongId: SongID
+    public let connectionType: EdgeType
+    public var weight: Double
+
+    public init(
+        sourceSongId: SongID,
+        targetSongId: SongID,
+        connectionType: EdgeType = .custom,
+        weight: Double = 1.0
+    ) {
+        self.sourceSongId = sourceSongId
+        self.targetSongId = targetSongId
+        self.connectionType = connectionType
+        self.weight = weight
+    }
+
+    /// Copy with updated weight
+    public func withWeight(_ w: Double) -> SongConnection {
+        SongConnection(
+            sourceSongId: sourceSongId, targetSongId: targetSongId,
+            connectionType: connectionType, weight: w
+        )
+    }
+}
+
+// MARK: - Phase Flow
+
+/// A weighted edge in the phase flow DAG.
+public struct PhaseFlowEdge: Equatable, Sendable, Codable, Identifiable {
+    public var id: String { "\(fromPhase)::\(toPhase)" }
+    public let fromPhase: String
+    public let toPhase: String
+    public var weight: Double
+
+    public init(fromPhase: String, toPhase: String, weight: Double = 1.0) {
+        self.fromPhase = fromPhase
+        self.toPhase = toPhase
+        self.weight = weight
+    }
+
+    /// Copy with updated weight
+    public func withWeight(_ w: Double) -> PhaseFlowEdge {
+        PhaseFlowEdge(fromPhase: fromPhase, toPhase: toPhase, weight: w)
+    }
+}
+
+// MARK: - Canvas / Viewport State
+
+/// Viewport state for the moodboard canvas.
+public struct ViewportState: Equatable, Sendable, Codable {
+    public var offset: CGPoint
+    public var zoom: Double
+
+    public init(offset: CGPoint = .zero, zoom: Double = 1.0) {
+        self.offset = offset
+        self.zoom = zoom
+    }
+
+    public static let `default` = ViewportState()
+}
+
+/// A persisted canvas position entry for a node.
+public struct CanvasPositionEntry: Equatable, Sendable, Codable, Identifiable {
+    public var id: String { nodeId }
+    public let nodeId: String
+    public let x: Double
+    public let y: Double
+
+    public init(nodeId: String, x: Double, y: Double) {
+        self.nodeId = nodeId
+        self.x = x
+        self.y = y
+    }
+}
+
+// MARK: - Song Graph Data
+
+/// Internal graph representation built from songs.
+/// Produced by `SongGraph.build()`, consumed by all graph query functions.
+public struct SongGraphData: Sendable {
+    /// All song nodes indexed by SongID
+    public let nodes: [SongID: SongGraphNode]
+    /// All edges (implicit from tags + explicit connections)
+    public let edges: [SongGraphEdge]
+    /// Adjacency list for fast neighbor lookup
+    public let adjacency: [SongID: [SongGraphEdge]]
+
+    public init(
+        nodes: [SongID: SongGraphNode],
+        edges: [SongGraphEdge],
+        adjacency: [SongID: [SongGraphEdge]]
+    ) {
+        self.nodes = nodes
+        self.edges = edges
+        self.adjacency = adjacency
+    }
+}
+
+/// A node in the song graph carrying tag information extracted from Song.
+public struct SongGraphNode: Sendable, Equatable {
+    public let id: SongID
+    public let tags: Set<String>
+
+    public init(id: SongID, tags: Set<String>) {
+        self.id = id
+        self.tags = tags
+    }
+}
+
+/// An edge in the song graph.
+public struct SongGraphEdge: Sendable, Equatable, Identifiable {
+    public var id: String { "\(sourceId.rawValue)::\(targetId.rawValue)" }
+    public let sourceId: SongID
+    public let targetId: SongID
+    public let edgeType: EdgeType
+    public let weight: Double
+
+    public init(sourceId: SongID, targetId: SongID, edgeType: EdgeType, weight: Double) {
+        self.sourceId = sourceId
+        self.targetId = targetId
+        self.edgeType = edgeType
+        self.weight = weight
+    }
+}
