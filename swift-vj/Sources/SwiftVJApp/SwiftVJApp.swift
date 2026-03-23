@@ -233,6 +233,7 @@ public final class AppState: ObservableObject {
     
     private var lyricsFetcher: LyricsFetcher?
     private var llmClient: LLMClient?
+    private let audioPreviewAdapter = AudioPreviewAdapter()
 
     // MARK: - Render Engine
 
@@ -273,6 +274,7 @@ public final class AppState: ObservableObject {
     @Published public private(set) var automationState: AutomationSubState = AutomationSubState()
     @Published public private(set) var shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
     @Published public private(set) var moodboardState: MoodboardSubState = MoodboardSubState()
+    @Published public private(set) var previewState: PreviewSubState = PreviewSubState()
 
     // MARK: - UI State (private(set) enforces unidirectional flow)
     
@@ -1336,6 +1338,23 @@ public final class AppState: ObservableObject {
         )
 
         songsModule = SongsModule()
+
+        // Wire preview adapter callbacks
+        let previewAdapter = audioPreviewAdapter
+        Task {
+            await previewAdapter.setCallbacks(
+                onPosition: { [weak self] position, duration in
+                    Task { @MainActor in
+                        self?.send(.preview(.positionUpdated(position: position, duration: duration)))
+                    }
+                },
+                onFinished: { [weak self] in
+                    Task { @MainActor in
+                        self?.send(.preview(.playbackFinished))
+                    }
+                }
+            )
+        }
     }
 
     private func wireModuleDispatchers() async {
@@ -1501,6 +1520,28 @@ public final class AppState: ObservableObject {
 
         EffectEnvironment.shared.launchpadHandler = launchpadGateway
         EffectEnvironment.shared.launcherHandler = launcherGateway
+
+        // Preview playback
+        EffectEnvironment.shared.playPreview = { [weak self] url, startPos in
+            guard let self else { return }
+            await self.audioPreviewAdapter.play(url: url, startPosition: startPos)
+        }
+        EffectEnvironment.shared.pausePreview = { [weak self] in
+            guard let self else { return }
+            await self.audioPreviewAdapter.pause()
+        }
+        EffectEnvironment.shared.resumePreview = { [weak self] in
+            guard let self else { return }
+            await self.audioPreviewAdapter.resume()
+        }
+        EffectEnvironment.shared.stopPreview = { [weak self] in
+            guard let self else { return }
+            await self.audioPreviewAdapter.stop()
+        }
+        EffectEnvironment.shared.seekPreview = { [weak self] seconds in
+            guard let self else { return }
+            await self.audioPreviewAdapter.seek(to: seconds)
+        }
     }
 
     private func reloadLLMConfiguration() async {
@@ -1639,6 +1680,7 @@ public final class AppState: ObservableObject {
                 if self.automationState != newState.automation { self.automationState = newState.automation }
                 if self.shaderCatalog != newState.ui.shaderCatalog { self.shaderCatalog = newState.ui.shaderCatalog }
                 if self.moodboardState != newState.moodboard { self.moodboardState = newState.moodboard }
+                if self.previewState != newState.preview { self.previewState = newState.preview }
 
                 // UI state (logs + OSC)
                 if self.oscFilter != newState.ui.oscFilter { self.oscFilter = newState.ui.oscFilter }

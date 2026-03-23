@@ -1,5 +1,6 @@
 // MoodboardCanvasView - Interactive canvas for song node graph
 
+import AppKit
 import SwiftUI
 import SwiftVJCore
 import SongRepository
@@ -68,18 +69,38 @@ struct MoodboardCanvasView: View {
     @ViewBuilder
     private func nodesLayer(in geometry: GeometryProxy) -> some View {
         let visibleRect = visibleRect(in: geometry.size)
+        let previewingSongId = appState.previewState.currentSongId
+        let previewPlaying = appState.previewState.isPlaying
         ForEach(filteredNodes) { node in
             let pos = effectivePosition(for: node)
             if visibleRect.contains(pos) {
                 let screenPos = canvasToScreen(pos)
                 let isSelected = moodboard.selectedNodeIds.contains(node.id)
                 let song = lookupSong(for: node)
+                let isPreviewingThis = song.map { previewingSongId == $0.id } ?? false
 
-                SongNodeView(node: node, song: song, isSelected: isSelected)
+                SongNodeView(
+                    node: node,
+                    song: song,
+                    isSelected: isSelected,
+                    isPreviewingThis: isPreviewingThis,
+                    isPreviewPlaying: previewPlaying,
+                    onPlay: {
+                        if let songId = song?.id {
+                            appState.send(.preview(.play(songId)))
+                        }
+                    },
+                    onPause: {
+                        appState.send(.preview(.pause))
+                    }
+                )
                     .position(screenPos)
                     .gesture(nodeDragGesture(for: node))
                     .onTapGesture {
                         appState.send(.moodboard(.selectNodes([node.id])))
+                    }
+                    .onHover { hovering in
+                        handleShiftHover(hovering: hovering, song: song)
                     }
             }
         }
@@ -175,6 +196,18 @@ struct MoodboardCanvasView: View {
     }
 
     // MARK: - Helpers
+
+    /// Handle shift+hover preview: start playing when hovering with shift held
+    private func handleShiftHover(hovering: Bool, song: Song?) {
+        guard let song, song.audioFilePath != nil else { return }
+        if hovering && NSEvent.modifierFlags.contains(.shift) {
+            appState.send(.preview(.play(song.id)))
+        } else if !hovering && appState.previewState.currentSongId == song.id {
+            if NSEvent.modifierFlags.contains(.shift) {
+                appState.send(.preview(.stop))
+            }
+        }
+    }
 
     /// O(1) song lookup dictionary (built once per render)
     private var songLookup: [SongID: Song] {

@@ -29,6 +29,7 @@ public enum AppAction: Sendable {
     case songs(SongsAction)
     case automation(AutomationAction)
     case moodboard(MoodboardAction)
+    case preview(PreviewAction)
 
     // MARK: - Persistence
     case loadPersistedState
@@ -632,7 +633,7 @@ public enum SongsAction: Sendable {
     case scanProgress(current: Int, found: Int)
 
     /// Song discovered during scan (add if not duplicate)
-    case songDiscovered(artist: String, title: String)
+    case songDiscovered(artist: String, title: String, audioFilePath: String? = nil)
 
     /// Scan completed
     case scanCompleted
@@ -732,6 +733,7 @@ extension AppAction: CustomStringConvertible {
         case .songs(let action): return "songs.\(action)"
         case .automation(let action): return "automation.\(action)"
         case .moodboard(let action): return "moodboard.\(action)"
+        case .preview(let action): return "preview.\(action)"
         case .loadPersistedState: return "loadPersistedState"
         case .persistedStateLoaded: return "persistedStateLoaded"
         case .persistState: return "persistState"
@@ -936,7 +938,7 @@ extension SongsAction: CustomStringConvertible {
         case .scanFolderRequested(let url): return "scanFolderRequested(\(url.lastPathComponent))"
         case .scanStarted(let total, let name): return "scanStarted(\(total) files in \(name))"
         case .scanProgress(let current, let found): return "scanProgress(\(current), found: \(found))"
-        case .songDiscovered(let artist, let title): return "songDiscovered(\(artist) - \(title))"
+        case .songDiscovered(let artist, let title, _): return "songDiscovered(\(artist) - \(title))"
         case .scanCompleted: return "scanCompleted"
         case .cancelScanRequested: return "cancelScanRequested"
         case .scanCancelled: return "scanCancelled"
@@ -1045,4 +1047,26 @@ public enum MoodboardAction: Sendable {
     case toggleLibraryPanel
     /// Show song detail for a song (nil = hide)
     case showSongDetail(SongID?)
+}
+
+// MARK: - Preview Actions
+
+/// Actions for song preview playback
+public enum PreviewAction: Sendable {
+    /// Start playing a song preview
+    case play(SongID)
+    /// Pause current preview
+    case pause
+    /// Resume paused preview
+    case resume
+    /// Stop preview and reset state
+    case stop
+    /// Seek to absolute position in seconds
+    case seekTo(Double)
+    /// Set the normalized start offset (0.0-1.0) for previews
+    case setPreviewStart(Double)
+    /// Position update from audio adapter (position in seconds, total duration)
+    case positionUpdated(position: Double, duration: Double)
+    /// Playback reached end of track
+    case playbackFinished
 }

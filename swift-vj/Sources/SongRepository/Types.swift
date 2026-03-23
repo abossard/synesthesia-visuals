@@ -135,6 +135,9 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
     public let lyricsLineCount: Int
     public let refrainCount: Int
 
+    // Audio file
+    public let audioFilePath: String?
+
     // Timestamps
     public let createdAt: Date
     public let lastPlayedAt: Date?
@@ -158,6 +161,7 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
         lyricsText: String? = nil,
         lyricsLineCount: Int = 0,
         refrainCount: Int = 0,
+        audioFilePath: String? = nil,
         createdAt: Date = Date(),
         lastPlayedAt: Date? = nil,
         lastAnalyzedAt: Date? = nil,
@@ -179,6 +183,7 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
         self.lyricsText = lyricsText
         self.lyricsLineCount = lyricsLineCount
         self.refrainCount = refrainCount
+        self.audioFilePath = audioFilePath
         self.createdAt = createdAt
         self.lastPlayedAt = lastPlayedAt
         self.lastAnalyzedAt = lastAnalyzedAt
@@ -248,6 +253,7 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath,
             createdAt: createdAt,
             lastPlayedAt: lastPlayedAt,
             lastAnalyzedAt: Date(),
@@ -274,6 +280,7 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath,
             createdAt: createdAt,
             lastPlayedAt: lastPlayedAt,
             lastAnalyzedAt: lastAnalyzedAt,
@@ -300,6 +307,7 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath,
             createdAt: createdAt,
             lastPlayedAt: Date(),
             lastAnalyzedAt: lastAnalyzedAt,
@@ -326,6 +334,34 @@ public struct Song: Sendable, Equatable, Identifiable, Hashable, Codable {
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath,
+            createdAt: createdAt,
+            lastPlayedAt: lastPlayedAt,
+            lastAnalyzedAt: lastAnalyzedAt,
+            playCount: playCount
+        )
+    }
+
+    /// Create a new song with updated audio file path
+    public func withAudioFilePath(_ path: String) -> Song {
+        Song(
+            id: id,
+            artist: artist,
+            title: title,
+            album: album,
+            duration: duration,
+            bpm: bpm,
+            musicalKey: musicalKey,
+            analysis: analysis,
+            status: status,
+            selectedShader: selectedShader,
+            imagesFolderPath: imagesFolderPath,
+            imagesCount: imagesCount,
+            hasLyrics: hasLyrics,
+            lyricsText: lyricsText,
+            lyricsLineCount: lyricsLineCount,
+            refrainCount: refrainCount,
+            audioFilePath: path,
             createdAt: createdAt,
             lastPlayedAt: lastPlayedAt,
             lastAnalyzedAt: lastAnalyzedAt,

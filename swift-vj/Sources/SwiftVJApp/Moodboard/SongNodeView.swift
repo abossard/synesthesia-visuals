@@ -8,6 +8,10 @@ struct SongNodeView: View {
     let node: MoodboardNode
     let song: Song?
     let isSelected: Bool
+    let isPreviewingThis: Bool
+    let isPreviewPlaying: Bool
+    var onPlay: (() -> Void)?
+    var onPause: (() -> Void)?
 
     @State private var isHovered = false
 
@@ -16,23 +20,25 @@ struct SongNodeView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                // Artwork placeholder
                 artworkView
 
-                // Phase badge
                 if let phase = song?.phase {
                     phaseBadge(phase)
                 }
+
+                // Play/pause button (bottom-right, visible on hover)
+                if isHovered, song?.audioFilePath != nil {
+                    playButton
+                }
             }
 
-            // Title + artist overlay
             titleOverlay
         }
         .frame(width: nodeSize, height: nodeSize)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.purple : Color.clear, lineWidth: 3)
+                .stroke(strokeColor, lineWidth: 3)
         )
         .shadow(color: isHovered ? .white.opacity(0.3) : .black.opacity(0.4), radius: isHovered ? 8 : 4)
         .scaleEffect(isHovered ? 1.05 : 1.0)
@@ -42,7 +48,39 @@ struct SongNodeView: View {
         }
     }
 
+    private var strokeColor: Color {
+        if isPreviewingThis && isPreviewPlaying {
+            return .green
+        }
+        return isSelected ? .purple : .clear
+    }
+
     // MARK: - Subviews
+
+    @ViewBuilder
+    private var playButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    if isPreviewingThis && isPreviewPlaying {
+                        onPause?()
+                    } else {
+                        onPlay?()
+                    }
+                } label: {
+                    Image(systemName: isPreviewingThis && isPreviewPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(.black.opacity(0.6)))
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+            }
+        }
+    }
 
     @ViewBuilder
     private var artworkView: some View {
@@ -96,7 +134,7 @@ struct SongNodeView: View {
             return [.gray.opacity(0.6), .gray.opacity(0.3)]
         }
         let energy = song.energyScore
-        let hue = 0.7 - (energy * 0.5) // blue→red as energy increases
+        let hue = 0.7 - (energy * 0.5)
         return [
             Color(hue: hue, saturation: 0.6, brightness: 0.5),
             Color(hue: hue + 0.1, saturation: 0.4, brightness: 0.3)

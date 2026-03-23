@@ -112,6 +112,9 @@ public func appReducer(state: inout AppState, action: AppAction) -> Effect<AppAc
         state.moodboard = moodboardState
         return effect.map { AppAction.moodboard($0) }
 
+    case .preview(let previewAction):
+        return previewReducer(state: &state.preview, action: previewAction, songs: state.songs)
+
     // MARK: Persistence
     case .loadPersistedState:
         return PersistenceEffects.loadState()
@@ -1298,7 +1301,7 @@ public func songsReducer(
         state.scanProgress?.foundCount = found
         return .none
 
-    case .songDiscovered(let artist, let title):
+    case .songDiscovered(let artist, let title, let audioFilePath):
         let songId = SongID(artist: artist, title: title)
 
         // Check for duplicate in existing displayed songs
@@ -1306,7 +1309,7 @@ public func songsReducer(
 
         if !alreadyExists {
             // Create minimal song entry and add to store
-            return SongsEffects.addDiscoveredSong(artist: artist, title: title)
+            return SongsEffects.addDiscoveredSong(artist: artist, title: title, audioFilePath: audioFilePath)
         }
         return .none
 
@@ -2421,7 +2424,7 @@ public enum SongsEffects {
                     if !existingIds.contains(songId) {
                         existingIds.insert(songId)
                         foundCount += 1
-                        await send(.songs(.songDiscovered(artist: metadata.artist, title: metadata.title)))
+                        await send(.songs(.songDiscovered(artist: metadata.artist, title: metadata.title, audioFilePath: fileURL.path)))
                     }
                 }
 
@@ -2445,7 +2448,7 @@ public enum SongsEffects {
     }
 
     /// Add a discovered song to the database
-    public static func addDiscoveredSong(artist: String, title: String) -> Effect<AppAction> {
+    public static func addDiscoveredSong(artist: String, title: String, audioFilePath: String? = nil) -> Effect<AppAction> {
         .fireAndForget {
             guard let module = await EffectEnvironment.shared.songsModule else { return }
 
@@ -2472,6 +2475,7 @@ public enum SongsEffects {
                 lyricsText: "",
                 lyricsLineCount: 0,
                 refrainCount: 0,
+                audioFilePath: audioFilePath,
                 incrementPlayCount: false
             )
         }
@@ -2722,4 +2726,78 @@ private func computePhaseCounts(nodes: [MoodboardNode]) -> [String: Int] {
     // Phase counts will be populated by the graph loading effect
     // which has access to the actual Song data
     [:]
+}
+
+// MARK: - Preview Reducer
+
+/// Reducer for song preview playback.
+/// Pure state mutations + effects for audio playback.
+public func previewReducer(
+    state: inout PreviewSubState,
+    action: PreviewAction,
+    songs: SongsSubState
+) -> Effect<AppAction> {
+    switch action {
+    case .play(let songId):
+        // Look up the song to find its audio file
+        guard let song = songs.displayedSongs.first(where: { $0.id == songId }),
+              let filePath = song.audioFilePath else {
+            return .none
+        }
+
+        let fileURL = URL(fileURLWithPath: filePath)
+        let startOffset = state.previewStartOffset
+        let startSeconds = song.duration > 0 ? startOffset * song.duration : 0
+
+        state.currentSongId = songId
+        state.isPlaying = true
+        state.currentPosition = startSeconds
+        state.duration = song.duration
+        state.audioFilePath = filePath
+
+        return .fireAndForget {
+            await EffectEnvironment.shared.playPreview?(fileURL, startSeconds)
+        }
+
+    case .pause:
+        state.isPlaying = false
+        return .fireAndForget {
+            await EffectEnvironment.shared.pausePreview?()
+        }
+
+    case .resume:
+        state.isPlaying = true
+        return .fireAndForget {
+            await EffectEnvironment.shared.resumePreview?()
+        }
+
+    case .stop:
+        state.currentSongId = nil
+        state.isPlaying = false
+        state.currentPosition = 0
+        state.duration = 0
+        state.audioFilePath = nil
+        return .fireAndForget {
+            await EffectEnvironment.shared.stopPreview?()
+        }
+
+    case .seekTo(let position):
+        state.currentPosition = position
+        return .fireAndForget {
+            await EffectEnvironment.shared.seekPreview?(position)
+        }
+
+    case .setPreviewStart(let offset):
+        state.previewStartOffset = max(0, min(1, offset))
+        return .none
+
+    case .positionUpdated(let position, let duration):
+        state.currentPosition = position
+        state.duration = duration
+        return .none
+
+    case .playbackFinished:
+        state.isPlaying = false
+        return .none
+    }
 }

@@ -62,3 +62,4 @@ data/song_images/**/*.jpg
 data/song_images/**/*.json
 perf-traces/
 profiling/
+*.png

@@ -165,6 +165,23 @@ public final class EffectEnvironment {
     /// Update a song tag (add = true, remove = false)
     public var updateSongTag: (@Sendable (SongID, String, TagCategory, Bool) async -> Void)?
 
+    // MARK: - Preview Playback Effects
+
+    /// Start playing a preview (fileURL, startPositionSeconds)
+    public var playPreview: (@Sendable (URL, Double) async -> Void)?
+
+    /// Pause the current preview
+    public var pausePreview: (@Sendable () async -> Void)?
+
+    /// Resume a paused preview
+    public var resumePreview: (@Sendable () async -> Void)?
+
+    /// Stop and reset preview playback
+    public var stopPreview: (@Sendable () async -> Void)?
+
+    /// Seek to a position in seconds
+    public var seekPreview: (@Sendable (Double) async -> Void)?
+
     // MARK: - Reset (for testing)
 
     /// Reset all callbacks to nil (useful for testing)
@@ -193,5 +210,10 @@ public final class EffectEnvironment {
         saveCanvasPositions = nil
         savePhaseEdges = nil
         updateSongTag = nil
+        playPreview = nil
+        pausePreview = nil
+        resumePreview = nil
+        stopPreview = nil
+        seekPreview = nil
     }
 }

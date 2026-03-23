@@ -10,6 +10,11 @@ struct MoodboardView: View {
         VStack(spacing: 0) {
             PhaseFlowBarView()
 
+            // Preview bar (visible when previewing a song)
+            if appState.previewState.currentSongId != nil {
+                PreviewBarView()
+            }
+
             HSplitView {
                 // Left: Library panel
                 if appState.moodboardState.libraryPanelOpen {

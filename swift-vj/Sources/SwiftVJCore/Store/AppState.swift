@@ -44,6 +44,9 @@ public struct AppState: Equatable, Sendable {
     /// Moodboard state (visual song graph canvas)
     public var moodboard: MoodboardSubState
 
+    /// Song preview playback state
+    public var preview: PreviewSubState
+
     /// Whether the system is running
     public var isRunning: Bool
 
@@ -69,6 +72,7 @@ public struct AppState: Equatable, Sendable {
         songs: SongsSubState = SongsSubState(),
         automation: AutomationSubState = AutomationSubState(),
         moodboard: MoodboardSubState = MoodboardSubState(),
+        preview: PreviewSubState = PreviewSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
     ) {
@@ -83,6 +87,7 @@ public struct AppState: Equatable, Sendable {
         self.songs = songs
         self.automation = automation
         self.moodboard = moodboard
+        self.preview = preview
         self.isRunning = isRunning
         self.modules = modules
     }
@@ -100,6 +105,7 @@ public struct AppState: Equatable, Sendable {
         lhs.songs == rhs.songs &&
         lhs.automation == rhs.automation &&
         lhs.moodboard == rhs.moodboard &&
+        lhs.preview == rhs.preview &&
         lhs.isRunning == rhs.isRunning
     }
 }
@@ -1422,6 +1428,45 @@ public enum MoodboardSaveStatus: String, Equatable, Sendable {
     case idle
     case saving
     case saved
+}
+
+// MARK: - Preview Sub-State
+
+/// State for song preview playback
+public struct PreviewSubState: Equatable, Sendable {
+    /// Currently previewing song (nil = no preview active)
+    public var currentSongId: SongID?
+
+    /// Whether audio is currently playing
+    public var isPlaying: Bool
+
+    /// Current playback position in seconds
+    public var currentPosition: Double
+
+    /// Total track duration in seconds
+    public var duration: Double
+
+    /// Normalized start offset for previews (0.0-1.0)
+    public var previewStartOffset: Double
+
+    /// Path to the audio file being played
+    public var audioFilePath: String?
+
+    public init(
+        currentSongId: SongID? = nil,
+        isPlaying: Bool = false,
+        currentPosition: Double = 0,
+        duration: Double = 0,
+        previewStartOffset: Double = 0,
+        audioFilePath: String? = nil
+    ) {
+        self.currentSongId = currentSongId
+        self.isPlaying = isPlaying
+        self.currentPosition = currentPosition
+        self.duration = duration
+        self.previewStartOffset = previewStartOffset
+        self.audioFilePath = audioFilePath
+    }
 }
 
 // MARK: - Module References

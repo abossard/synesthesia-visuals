@@ -3,7 +3,8 @@
 
 .PHONY: all build run clean compile-shaders compile-flat-shaders shaders help \
        profile-build profile-hud profile-metal profile-cpu profile-alloc \
-       profile-leaks profile-vmmap profile-gpu-power profiling-dir
+       profile-leaks profile-vmmap profile-gpu-power profile-session \
+       analyze-session profiling-dir
 
 # Directories
 BUILD_DIR := Build
@@ -32,6 +33,8 @@ help:
 	@echo "  profile-leaks        - Leaks (resource leaks after shader switches)"
 	@echo "  profile-vmmap        - Memory snapshot (attach to running app)"
 	@echo "  profile-gpu-power    - GPU power/utilization (60 sec capture)"
+	@echo "  profile-session      - Full session: CPU trace + vmmap + samples"
+	@echo "  analyze-session      - Analyze most recent profiling session"
 	@echo ""
 	@echo "Shader compilation:"
 	@echo "  Input:  $(SHADERS_DIR)/glsl/*.txt, $(SHADERS_DIR)/masks/*.txt"
@@ -144,3 +147,9 @@ profile-vmmap: profiling-dir
 profile-gpu-power: profiling-dir
 	sudo powermetrics --samplers gpu_power -i 1000 -n 60 \
 	  > profiling/gpu-power-$$(date +%Y%m%d-%H%M%S).txt
+
+profile-session: profile-build profiling-dir
+	./Scripts/profile-session.sh
+
+analyze-session:
+	./Scripts/analyze-profile.sh

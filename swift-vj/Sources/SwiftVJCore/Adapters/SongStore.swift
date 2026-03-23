@@ -149,6 +149,7 @@ public actor SongStore {
         lyricsText: String,
         lyricsLineCount: Int,
         refrainCount: Int,
+        audioFilePath: String? = nil,
         incrementPlayCount: Bool = true
     ) {
         let songId = SongID(artist: artist, title: title)
@@ -191,6 +192,7 @@ public actor SongStore {
             lyricsText: lyricsText.isEmpty ? nil : lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath ?? existing?.audioFilePath,
             createdAt: existing?.createdAt ?? Date(),
             lastPlayedAt: incrementPlayCount ? Date() : (existing?.lastPlayedAt ?? Date()),
             lastAnalyzedAt: Date(),

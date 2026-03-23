@@ -6,7 +6,7 @@
     "DESCRIPTION": "Rotating 3D Wireframe Cube with Glow and Customizable Appearance",
     "INPUTS": [
         {
-            "DEFAULT": 0,
+            "DEFAULT": 0,   
             "MAX": 1,
             "MIN": 0,
             "NAME": "rotX",

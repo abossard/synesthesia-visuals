@@ -1,5 +1,6 @@
 // MoodboardLibraryPanel - Song library browser for the moodboard canvas
 
+import AppKit
 import SwiftUI
 import SwiftVJCore
 import SongRepository
@@ -39,6 +40,9 @@ struct MoodboardLibraryPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if let progress = appState.songsState.scanProgress, progress.isScanning {
+                scanProgressView(progress)
+            }
             Divider()
             searchField
             phaseFilterBar
@@ -61,6 +65,14 @@ struct MoodboardLibraryPanel: View {
                 .font(.headline)
             Spacer()
             Button {
+                selectFolderToScan()
+            } label: {
+                Image(systemName: "folder.badge.plus")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Open music folder")
+            Button {
                 appState.send(.moodboard(.toggleLibraryPanel))
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -70,6 +82,19 @@ struct MoodboardLibraryPanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private func selectFolderToScan() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder containing music files"
+        panel.prompt = "Scan"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            appState.send(.songs(.scanFolderRequested(url)))
+        }
     }
 
     // MARK: - Search
@@ -161,7 +186,27 @@ struct MoodboardLibraryPanel: View {
 
     private func songRow(_ song: Song) -> some View {
         let isOnCanvas = nodeIdsOnCanvas.contains(song.id.rawValue)
+        let isPreviewingThis = appState.previewState.currentSongId == song.id
+        let isPlaying = appState.previewState.isPlaying
         return HStack(spacing: 8) {
+            // Play/pause button
+            if song.audioFilePath != nil {
+                Button {
+                    if isPreviewingThis && isPlaying {
+                        appState.send(.preview(.pause))
+                    } else {
+                        appState.send(.preview(.play(song.id)))
+                    }
+                } label: {
+                    Image(systemName: isPreviewingThis && isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isPreviewingThis ? Color.green : Color.accentColor)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help(isPreviewingThis && isPlaying ? "Pause preview" : "Preview song")
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(song.title)
                     .font(.system(size: 12, weight: .medium))
@@ -239,5 +284,23 @@ struct MoodboardLibraryPanel: View {
         case .release: return .blue
         case .feature: return .purple
         }
+    }
+
+    private func scanProgressView(_ progress: FolderScanProgress) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text("Scanning \(progress.folderName)…")
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+                Spacer()
+                Text("\(progress.foundCount) found")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.green)
+            }
+            ProgressView(value: progress.progress)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 }

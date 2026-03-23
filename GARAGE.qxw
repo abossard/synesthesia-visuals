@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Workspace>
+<Workspace xmlns="http://www.qlcplus.org/Workspace" CurrentWindow="FIXANDFUNC">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.2.1</Version>
+  <Author>Andre Bossard</Author>
+ </Creator>
+ <Engine>
+  <InputOutputMap>
+   <BeatGenerator BeatType="Internal" BPM="128"/>
+   <NetworkServer Type="Native" AutoStart="False" Name="QLC+_C0A8014A" Password=""/>
+   <Universe Name="Universe 1" ID="0"/>
+  </InputOutputMap>
+  <Fixture>
+   <Manufacturer>Varytec</Manufacturer>
+   <Model>Hero Spot Wash 140 2in1 RGBW+W</Model>
+   <Mode>23 Channel</Mode>
+   <ID>0</ID>
+   <Name>Hero Spot Wash 140 2in1 RGBW+W [1]</Name>
+   <Universe>0</Universe>
+   <Address>0</Address>
+   <Channels>23</Channels>
+  </Fixture>
+  <Fixture>
+   <Manufacturer>Stairville</Manufacturer>
+   <Model>Hz-200 DMX</Model>
+   <Mode>Default</Mode>
+   <ID>1</ID>
+   <Name>Hz-200 DMX [2]</Name>
+   <Universe>0</Universe>
+   <Address>24</Address>
+   <Channels>2</Channels>
+  </Fixture>
+  <Function ID="0" Type="Scene" Name="New Scene 0" Path="01">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <FixtureVal ID="0">0,0,1,0,2,0,3,0,7,114,8,60</FixtureVal>
+  </Function>
+  <Function ID="1" Type="Chaser" Name="New Chaser 1" Path="01">
+   <Speed FadeIn="0" FadeOut="0" Duration="1000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <SpeedModes FadeIn="Default" FadeOut="Default" Duration="Common"/>
+   <Step Number="0" FadeIn="0" Hold="1000" FadeOut="0">0</Step>
+  </Function>
+  <Function ID="2" Type="Chaser" Name="HALLO" Path="01">
+   <Speed FadeIn="0" FadeOut="0" Duration="1000"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <SpeedModes FadeIn="Default" FadeOut="Default" Duration="Common"/>
+   <Step Number="0" FadeIn="0" Hold="1000" FadeOut="0">1</Step>
+   <Step Number="1" FadeIn="0" Hold="1000" FadeOut="0">0</Step>
+  </Function>
+  <Function ID="3" Type="Scene" Name="New Scene" Hidden="True">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+  </Function>
+  <Function ID="4" Type="Sequence" Name="New Sequence 4" BoundScene="3">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <SpeedModes FadeIn="Default" FadeOut="Default" Duration="Common"/>
+   <Step Number="0" FadeIn="0" Hold="0" FadeOut="0" Values="0"/>
+  </Function>
+  <Monitor DisplayMode="0" ShowLabels="0">
+   <Font>Arial,12,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   <ChannelStyle>0</ChannelStyle>
+   <ValueStyle>0</ValueStyle>
+   <Grid Width="4" Height="3" Depth="8" Units="0" POV="1"/>
+   <StageItem>0</StageItem>
+   <FxItem ID="0" XPos="1743.7" YPos="-135.183" ZPos="1531.6"/>
+   <FxItem ID="1" XPos="574.839" YPos="0" ZPos="1676.83"/>
+  </Monitor>
+ </Engine>
+ <VirtualConsole>
+  <Frame Caption="Page 1" ID="0">
+   <Appearance>
+    <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   </Appearance>
+   <WindowState Visible="True" X="0" Y="0" Width="1920" Height="1080"/>
+   <AllowResize>False</AllowResize>
+   <ShowHeader>False</ShowHeader>
+   <ShowEnableButton>True</ShowEnableButton>
+   <Collapsed>False</Collapsed>
+   <Disabled>False</Disabled>
+  </Frame>
+  <Frame Caption="Page 2" ID="1">
+   <Appearance>
+    <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   </Appearance>
+   <WindowState Visible="True" X="0" Y="0" Width="1920" Height="1080"/>
+   <AllowResize>False</AllowResize>
+   <ShowHeader>False</ShowHeader>
+   <ShowEnableButton>True</ShowEnableButton>
+   <Collapsed>False</Collapsed>
+   <Disabled>False</Disabled>
+  </Frame>
+  <Frame Caption="Page 3" ID="2">
+   <Appearance>
+    <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   </Appearance>
+   <WindowState Visible="True" X="0" Y="0" Width="1920" Height="1080"/>
+   <AllowResize>False</AllowResize>
+   <ShowHeader>False</ShowHeader>
+   <ShowEnableButton>True</ShowEnableButton>
+   <Collapsed>False</Collapsed>
+   <Disabled>False</Disabled>
+  </Frame>
+  <Frame Caption="Page 4" ID="3">
+   <Appearance>
+    <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
+   </Appearance>
+   <WindowState Visible="True" X="0" Y="0" Width="1920" Height="1080"/>
+   <AllowResize>False</AllowResize>
+   <ShowHeader>False</ShowHeader>
+   <ShowEnableButton>True</ShowEnableButton>
+   <Collapsed>False</Collapsed>
+   <Disabled>False</Disabled>
+  </Frame>
+ </VirtualConsole>
+</Workspace>

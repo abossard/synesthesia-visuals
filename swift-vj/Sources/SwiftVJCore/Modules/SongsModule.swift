@@ -88,6 +88,7 @@ public actor SongsModule: Module {
         lyricsText: String,
         lyricsLineCount: Int,
         refrainCount: Int,
+        audioFilePath: String? = nil,
         incrementPlayCount: Bool = true
     ) async {
         await store.upsertFromPipeline(
@@ -112,6 +113,7 @@ public actor SongsModule: Module {
             lyricsText: lyricsText,
             lyricsLineCount: lyricsLineCount,
             refrainCount: refrainCount,
+            audioFilePath: audioFilePath,
             incrementPlayCount: incrementPlayCount
         )
     }
