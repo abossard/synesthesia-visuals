@@ -704,6 +704,9 @@ public struct UISubState: Equatable, Sendable {
 
     /// Maximum log entries to keep
     public static let maxLogEntries = 500
+    
+    /// Maximum OSC debug messages to keep
+    public static let maxOSCMessages = 200
 
     public init(
         logEntries: [LogEntryState] = [],
@@ -740,6 +743,10 @@ public struct UISubState: Equatable, Sendable {
         let entry = OSCLogEntryState(address: address, args: args, timestamp: Date())
         oscMessages[address] = entry
         oscMessageCount += 1
+        if oscMessages.count > Self.maxOSCMessages {
+            let oldest = oscMessages.min { $0.value.timestamp < $1.value.timestamp }
+            if let key = oldest?.key { oscMessages.removeValue(forKey: key) }
+        }
     }
 }
 

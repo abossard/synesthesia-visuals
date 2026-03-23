@@ -382,8 +382,8 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
         let outputs = outputState.withLock { $0 }
         
-        // Update renderer state
-        if outputs.image {
+        // Update renderer state (equality check avoids redundant loads)
+        if outputs.image && renderer.imageRenderer.imageState != context.imageState {
             renderer.imageRenderer.imageState = context.imageState
         }
         
@@ -505,66 +505,59 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private static func buildKaraokeContentHash(
         displayState: KaraokeDisplayState,
         configuration: KaraokeConfiguration
-    ) -> String {
-        let progressBucket = Int(displayState.transitionProgress * 60)
-        let configSignature = karaokeConfigSignature(configuration)
-        return "karaoke-\(displayState.currentLine ?? "")-\(displayState.nextLine ?? "")-\(displayState.activeIndex)-\(progressBucket)-\(configSignature)"
-    }
-
-    private static func karaokeConfigSignature(_ config: KaraokeConfiguration) -> String {
-        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
-        func bucket(_ value: Double) -> Int { Int(value * 100) }
-
-        return [
-            bucket(config.prevLineY),
-            bucket(config.currentLineY),
-            bucket(config.nextLineY),
-            bucket(config.newNextEntryY),
-            bucket(config.currentFontSize),
-            bucket(config.nextFontSize),
-            bucket(config.prevFontSize),
-            bucket(config.currentLineOpacity),
-            bucket(config.nextLineOpacity),
-            bucket(config.prevLineOpacity),
-            bucket(config.transitionDuration),
-            bucket(config.prerollTime),
-            bucket(config.textShadowRadius),
-            bucket(config.textShadowOpacity),
-            bucket(config.maxLineWidthRatio),
-            config.easing.rawValue.hashValue,
-            String(describing: config.fontWeight).hashValue,
-            String(describing: config.fontDesign).hashValue,
-            config.animationMode.rawValue.hashValue,
-            bucket(config.canvasWidth),
-            bucket(config.canvasHeight)
-        ].map(String.init).joined(separator: "-")
+    ) -> Int {
+        var hasher = Hasher()
+        hasher.combine(displayState.currentLine)
+        hasher.combine(displayState.nextLine)
+        hasher.combine(displayState.activeIndex)
+        hasher.combine(Int(displayState.transitionProgress * 60))
+        hasher.combine(Int(configuration.prevLineY * 100))
+        hasher.combine(Int(configuration.currentLineY * 100))
+        hasher.combine(Int(configuration.nextLineY * 100))
+        hasher.combine(Int(configuration.newNextEntryY * 100))
+        hasher.combine(Int(configuration.currentFontSize * 100))
+        hasher.combine(Int(configuration.nextFontSize * 100))
+        hasher.combine(Int(configuration.prevFontSize * 100))
+        hasher.combine(Int(configuration.currentLineOpacity * 100))
+        hasher.combine(Int(configuration.nextLineOpacity * 100))
+        hasher.combine(Int(configuration.prevLineOpacity * 100))
+        hasher.combine(Int(configuration.transitionDuration * 100))
+        hasher.combine(Int(configuration.prerollTime * 100))
+        hasher.combine(Int(configuration.textShadowRadius * 100))
+        hasher.combine(Int(configuration.textShadowOpacity * 100))
+        hasher.combine(Int(configuration.maxLineWidthRatio * 100))
+        hasher.combine(configuration.easing.rawValue)
+        hasher.combine(String(describing: configuration.fontWeight))
+        hasher.combine(String(describing: configuration.fontDesign))
+        hasher.combine(configuration.animationMode.rawValue)
+        hasher.combine(Int(configuration.canvasWidth * 100))
+        hasher.combine(Int(configuration.canvasHeight * 100))
+        return hasher.finalize()
     }
 
     private static func buildSongInfoContentHash(
         displayState: SongInfoDisplayState,
         configuration: SongInfoConfiguration
-    ) -> String {
-        func bucket(_ value: CGFloat) -> Int { Int(value * 100) }
-        func bucket(_ value: Double) -> Int { Int(value * 100) }
-
-        let configSignature = [
-            bucket(configuration.artistY),
-            bucket(configuration.titleY),
-            bucket(configuration.artistFontSize),
-            bucket(configuration.titleFontSize),
-            bucket(configuration.transitionDuration),
-            bucket(configuration.textShadowRadius),
-            bucket(configuration.textShadowOpacity),
-            bucket(configuration.maxLineWidthRatio),
-            configuration.animationMode.rawValue.hashValue,
-            String(describing: configuration.fontWeight).hashValue,
-            String(describing: configuration.fontDesign).hashValue,
-            bucket(configuration.canvasWidth),
-            bucket(configuration.canvasHeight)
-        ].map(String.init).joined(separator: "-")
-
-        let progressBucket = Int(displayState.transitionProgress * 60)
-        return "songinfo-\(displayState.artist)-\(displayState.title)-\(displayState.isVisible)-\(progressBucket)-\(configSignature)"
+    ) -> Int {
+        var hasher = Hasher()
+        hasher.combine(displayState.artist)
+        hasher.combine(displayState.title)
+        hasher.combine(displayState.isVisible)
+        hasher.combine(Int(displayState.transitionProgress * 60))
+        hasher.combine(Int(configuration.artistY * 100))
+        hasher.combine(Int(configuration.titleY * 100))
+        hasher.combine(Int(configuration.artistFontSize * 100))
+        hasher.combine(Int(configuration.titleFontSize * 100))
+        hasher.combine(Int(configuration.transitionDuration * 100))
+        hasher.combine(Int(configuration.textShadowRadius * 100))
+        hasher.combine(Int(configuration.textShadowOpacity * 100))
+        hasher.combine(Int(configuration.maxLineWidthRatio * 100))
+        hasher.combine(configuration.animationMode.rawValue)
+        hasher.combine(String(describing: configuration.fontWeight))
+        hasher.combine(String(describing: configuration.fontDesign))
+        hasher.combine(Int(configuration.canvasWidth * 100))
+        hasher.combine(Int(configuration.canvasHeight * 100))
+        return hasher.finalize()
     }
 
     private static func resolveRefrainLines(

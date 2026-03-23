@@ -422,7 +422,9 @@ final class SwiftUITextTileRenderer: TileRenderer {
     private let height: Int
 
     private var currentView: AnyView?
-    private var lastRenderedContent: String = ""
+    private var lastRenderedContent: Int = 0
+    private let colorSpace = CGColorSpaceCreateDeviceRGB()
+    private var cachedImageRenderer: SwiftUI.ImageRenderer<AnyView>?
 
     init(name: String, device: MTLDevice, width: Int = 1280, height: Int = 720) {
         self.name = name
@@ -527,7 +529,7 @@ final class SwiftUITextTileRenderer: TileRenderer {
 
     // MARK: - Content Update
 
-    func update(contentHash: String, viewBuilder: () -> AnyView) {
+    func update(contentHash: Int, viewBuilder: () -> AnyView) {
         guard contentHash != lastRenderedContent else { return }
         currentView = viewBuilder()
         captureSwiftUIView()
@@ -547,9 +549,15 @@ final class SwiftUITextTileRenderer: TileRenderer {
 
     private func captureView() -> CGImage? {
         guard let view = currentView else { return nil }
-        let renderer = SwiftUI.ImageRenderer(content: view)
-        renderer.scale = 2.0
-        return renderer.cgImage
+        if let renderer = cachedImageRenderer {
+            renderer.content = view
+        } else {
+            let renderer = SwiftUI.ImageRenderer(content: view)
+            renderer.scale = 2.0
+            renderer.proposedSize = .init(width: CGFloat(width) / 2.0, height: CGFloat(height) / 2.0)
+            cachedImageRenderer = renderer
+        }
+        return cachedImageRenderer?.cgImage
     }
 
     private func uploadCGImage(_ cgImage: CGImage, to texture: MTLTexture) {
@@ -561,7 +569,7 @@ final class SwiftUITextTileRenderer: TileRenderer {
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return }
 
@@ -617,19 +625,22 @@ final class ImageRenderer: TileRenderer {
     private let width: Int = 1280
     private let height: Int = 720
     
-    // Image textures
-    private var currentImageTexture: MTLTexture?
-    private var nextImageTexture: MTLTexture?
-    
     // Crossfade pipeline
     private var blendPipelineState: MTLRenderPipelineState?
     private var vertexBuffer: MTLBuffer?
     private var samplerState: MTLSamplerState?
     private var uniformBuffer: MTLBuffer?
     
+    // Async texture loading
+    let textureCache: TextureCache
+    
     // State
     var imageState: ImageDisplayState = .empty {
-        didSet { updateImageTextures() }
+        didSet {
+            guard imageState != oldValue else { return }
+            let urls = [imageState.currentImageURL, imageState.nextImageURL].compactMap { $0 }
+            textureCache.requestLoad(urls: urls)
+        }
     }
     
     private var lastBeatCount: Int = 0
@@ -645,8 +656,9 @@ final class ImageRenderer: TileRenderer {
     // Track first successful render
     private var hasRenderedFirstFrame: Bool = false
     
-    init(device: MTLDevice) {
+    init(device: MTLDevice, textureCache: TextureCache) {
         self.device = device
+        self.textureCache = textureCache
         setupTexture()
         setupBlendPipeline()
         setupBuffers()
@@ -773,53 +785,8 @@ final class ImageRenderer: TileRenderer {
         }
     }
     
-    private func updateImageTextures() {
-        // Load current image
-        if let url = imageState.currentImageURL {
-            let filename = url.lastPathComponent
-            logger?("[ImageRenderer] Loading current: \(filename)")
-            logger?("[ImageRenderer]   Path: \(url.path)")
-            currentImageTexture = loadImageTexture(from: url)
-            if currentImageTexture != nil {
-                logger?("[ImageRenderer] ✓ Current image loaded")
-            } else {
-                logger?("[ImageRenderer] ❌ Failed to load current image")
-            }
-        }
-        
-        // Load next image for crossfade
-        if let url = imageState.nextImageURL {
-            let filename = url.lastPathComponent
-            logger?("[ImageRenderer] Loading next: \(filename)")
-            nextImageTexture = loadImageTexture(from: url)
-            if nextImageTexture != nil {
-                logger?("[ImageRenderer] ✓ Next image loaded")
-            }
-        }
-    }
-    
-    private func loadImageTexture(from url: URL) -> MTLTexture? {
-        guard let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            logger?("[ImageRenderer] ❌ Failed to create NSImage from: \(url.lastPathComponent)")
-            return nil
-        }
-        
-        let textureLoader = MTKTextureLoader(device: device)
-        do {
-            // Use .origin: .bottomLeft to load image with correct orientation for Metal
-            // This ensures the texture matches expected UV coordinate system
-            let texture = try textureLoader.newTexture(cgImage: cgImage, options: [
-                .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
-                .SRGB: false,
-                .origin: MTKTextureLoader.Origin.bottomLeft
-            ])
-            return texture
-        } catch {
-            logger?("[ImageRenderer] ❌ Texture load error: \(error)")
-            return nil
-        }
-    }
+    // Image loading is handled asynchronously by TextureCache.
+    // Textures are read from cache in render() — never blocks the render thread.
     
     func handleBeat(beat4: Int) {
         guard imageState.beatsPerChange > 0 else { return }
@@ -891,6 +858,10 @@ final class ImageRenderer: TileRenderer {
               let pipelineState = blendPipelineState else {
             return
         }
+        
+        // Read textures from cache (non-blocking)
+        let currentImageTexture = imageState.currentImageURL.flatMap { textureCache.texture(for: $0) }
+        let nextImageTexture = imageState.nextImageURL.flatMap { textureCache.texture(for: $0) }
         
         // If no image texture, clear to transparent black
         guard let current = currentImageTexture else {
@@ -999,15 +970,21 @@ final class HeadlessRenderer {
     private var lastFrameTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     private(set) var frameCount: Int = 0
     
+    // Shared texture cache for async image loading
+    let textureCache: TextureCache
+    
     // MARK: - Init
     
     init(device: MTLDevice, logger: ((String) -> Void)? = nil) {
         self.device = device
         self.commandQueue = device.makeCommandQueue()!
         
+        textureCache = TextureCache(device: device)
+        textureCache.logger = logger
+        
         shaderRenderer = ShaderRenderer(name: "shader", device: device)
         maskRenderer = ShaderRenderer(name: "mask", device: device)
-        imageRenderer = ImageRenderer(device: device)
+        imageRenderer = ImageRenderer(device: device, textureCache: textureCache)
         
         // Wire up logger to imageRenderer
         imageRenderer.logger = logger
