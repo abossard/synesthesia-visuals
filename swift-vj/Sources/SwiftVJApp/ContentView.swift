@@ -1,4 +1,4 @@
-// ContentView - Main window with sidebar navigation
+// ContentView - Main window with top bar navigation
 // Phase 4: SwiftUI Shell + Phase 6: Rendering Integration
 
 import SwiftUI
@@ -41,93 +41,107 @@ struct ContentView: View {
             }
         }
     }
+
+    private var orderedTabs: [SidebarTab] {
+        SidebarTab.allCases
+    }
+
+    private var tabIndexByTab: [SidebarTab: Int] {
+        Dictionary(uniqueKeysWithValues: orderedTabs.enumerated().map { ($1, $0 + 1) })
+    }
     
     var body: some View {
-        NavigationSplitView {
-            // Sidebar
+        NavigationStack {
             VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(SidebarTab.allCases, id: \.self) { tab in
-                            let isSelected = selectedTab == tab
-                            let traits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : .isButton
-                            Button {
-                                selectedTab = tab
-                            } label: {
-                                    Label(tab.rawValue, systemImage: tab.icon)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.vertical, 6)
-                                        .padding(.horizontal, 8)
-                                        .contentShape(Rectangle())
+                HStack(spacing: 12) {
+                    Label("SwiftVJ", systemImage: "waveform.path.ecg")
+                        .font(.headline)
+
+                    Circle()
+                        .fill(appState.isRunning ? .green : .red)
+                        .frame(width: 8, height: 8)
+                    Text(appState.isRunning ? "Running" : "Stopped")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Divider()
+                        .frame(height: 20)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(orderedTabs, id: \.self) { tab in
+                                let isSelected = selectedTab == tab
+                                let traits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : .isButton
+                                Button {
+                                    selectedTab = tab
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        if let index = tabIndexByTab[tab], index <= 9 {
+                                            Text("\(index)")
+                                                .font(.caption2.monospacedDigit())
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Label(tab.rawValue, systemImage: tab.icon)
+                                    }
+                                    .padding(.vertical, 6)
+                                    .padding(.horizontal, 10)
                                 }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
-                            .cornerRadius(6)
-                            .contentShape(Rectangle())
-                            .accessibilityIdentifier(A11yID.sidebarTab(tab.rawValue))
-                            .accessibilityLabel(tab.rawValue)
-                            .accessibilityAddTraits(traits)
+                                .buttonStyle(.plain)
+                                .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                                .cornerRadius(6)
+                                .contentShape(Rectangle())
+                                .accessibilityIdentifier(A11yID.sidebarTab(tab.rawValue))
+                                .accessibilityLabel(tab.rawValue)
+                                .accessibilityAddTraits(traits)
+                                .keyboardShortcut(Self.shortcutKey(for: tab), modifiers: .command)
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(6)
-                }
-                .navigationSplitViewColumnWidth(min: 150, ideal: 180)
-                .accessibilityIdentifier(A11yID.sidebarList)
-                .accessibilityLabel("Sidebar")
-                .accessibilityElement(children: .contain)
 
-                // Status footer in sidebar
-                VStack(spacing: 8) {
-                    Divider()
-                    HStack {
-                        Circle()
-                            .fill(appState.isRunning ? .green : .red)
-                            .frame(width: 8, height: 8)
-                        Text(appState.isRunning ? "Running" : "Stopped")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.thinMaterial)
+                .overlay(alignment: .bottom) {
+                    Divider()
+                }
+                .accessibilityIdentifier(A11yID.sidebarList)
+                .accessibilityLabel("Top Navigation")
+
+                Group {
+                    switch selectedTab {
+                    case .master:
+                        MasterControlView()
+                    case .rendering:
+                        RenderingView()
+                    case .pipeline:
+                        PerformanceView()
+                    case .shaders:
+                        ShaderBrowserView()
+                    case .songs:
+                        SongBrowserView()
+                    case .moodboard:
+                        MoodboardView()
+                    case .automation:
+                        AutomationTimelineView()
+                    case .osc:
+                        OSCContainerView()
+                    case .ledfx:
+                        LedFXConfigView()
+                    case .launchpad:
+                        LaunchpadView()
+                    case .logs:
+                        LogViewerView()
+                    case .settings:
+                        SettingsView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier(A11yID.detailSection)
+                .accessibilityElement(children: .contain)
             }
             .accessibilityIdentifier(A11yID.sidebarSection)
-            .accessibilityElement(children: .contain)
-        } detail: {
-            // Main content
-            Group {
-                switch selectedTab {
-                case .master:
-                    MasterControlView()
-                case .rendering:
-                    RenderingView()
-                case .pipeline:
-                    PerformanceView()
-                case .shaders:
-                    ShaderBrowserView()
-                case .songs:
-                    SongBrowserView()
-                case .moodboard:
-                    MoodboardView()
-                case .automation:
-                    AutomationTimelineView()
-                case .osc:
-                    OSCContainerView()
-                case .ledfx:
-                    LedFXConfigView()
-                case .launchpad:
-                    LaunchpadView()
-                case .logs:
-                    LogViewerView()
-                case .settings:
-                    SettingsView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityIdentifier(A11yID.detailSection)
             .accessibilityElement(children: .contain)
         }
         .navigationTitle("SwiftVJ")
@@ -145,6 +159,23 @@ struct ContentView: View {
         }
         .accessibilityIdentifier(A11yID.mainWindow)
         .accessibilityElement(children: .contain)
+    }
+
+    private static func shortcutKey(for tab: SidebarTab) -> KeyEquivalent {
+        switch tab {
+        case .master: return "1"
+        case .rendering: return "2"
+        case .pipeline: return "3"
+        case .shaders: return "4"
+        case .songs: return "5"
+        case .moodboard: return "6"
+        case .automation: return "7"
+        case .osc: return "8"
+        case .ledfx: return "9"
+        case .launchpad: return "0"
+        case .logs: return "-"
+        case .settings: return "="
+        }
     }
 }
 

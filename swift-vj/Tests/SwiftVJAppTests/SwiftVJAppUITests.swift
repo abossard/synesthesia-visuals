@@ -42,7 +42,7 @@ final class SwiftVJAppUITests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(20))
     }
 
-    func testContentViewHasSidebarAndPhaseIdentifiers() throws {
+    func testContentViewHasTopNavAndPhaseIdentifiers() throws {
         let appState = makeTestAppState()
         let view = ContentView().environmentObject(appState)
         let inspector = try view.inspect()
