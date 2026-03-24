@@ -1099,6 +1099,10 @@ public enum MoodboardAction: Sendable {
     // MARK: Layout
     /// Apply an auto-layout algorithm to all nodes
     case applyLayout(LayoutMode)
+    /// Fit viewport to show all nodes
+    case fitViewport
+    /// Remove all selected nodes and edges
+    case removeSelected
 }
 
 // MARK: - Preview Actions

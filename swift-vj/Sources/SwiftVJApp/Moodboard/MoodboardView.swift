@@ -1,6 +1,5 @@
 // MoodboardView - Container view for the moodboard canvas and panels
 
-import AppKit
 import SwiftUI
 import SwiftVJCore
 
@@ -31,129 +30,10 @@ struct MoodboardView: View {
                 }
             }
         }
-        .background(MoodboardKeyHandler())
         .onAppear {
             appState.send(.moodboard(.loadFromSongs))
             appState.send(.moodboard(.loadBoardList))
         }
-    }
-}
-
-// MARK: - Keyboard Handler
-
-/// NSViewRepresentable that monitors key events for preview playback controls.
-/// Space = play/pause, Shift+Space = stop, Shift+Arrow = seek ±15s
-private struct MoodboardKeyHandler: NSViewRepresentable {
-    @EnvironmentObject var appState: AppState
-
-    func makeNSView(context: Context) -> MoodboardKeyView {
-        let view = MoodboardKeyView()
-        view.onKeyDown = { [weak appState] event in
-            guard let appState else { return false }
-            return Self.handleKey(event: event, appState: appState)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: MoodboardKeyView, context: Context) {
-        nsView.onKeyDown = { [weak appState] event in
-            guard let appState else { return false }
-            return Self.handleKey(event: event, appState: appState)
-        }
-    }
-
-    static func handleKey(event: NSEvent, appState: AppState) -> Bool {
-        let hasShift = event.modifierFlags.contains(.shift)
-        let hasCmd = event.modifierFlags.contains(.command)
-
-        switch event.keyCode {
-        case 0 where hasCmd: // Cmd-A → select all nodes
-            let allIds = Set(appState.moodboardState.nodes.map(\.id))
-            appState.send(.moodboard(.selectNodes(allIds)))
-            return true
-
-        case 49: // Space
-            if hasShift {
-                // Shift+Space → stop
-                appState.send(.preview(.stop))
-            } else {
-                handleSpaceBar(appState: appState)
-            }
-            return true
-
-        case 123 where hasShift: // Shift+Left arrow → seek -15s with wraparound
-            seekRelative(seconds: -15, appState: appState)
-            return true
-
-        case 124 where hasShift: // Shift+Right arrow → seek +15s with wraparound
-            seekRelative(seconds: 15, appState: appState)
-            return true
-
-        default:
-            return false
-        }
-    }
-
-    private static func handleSpaceBar(appState: AppState) {
-        let preview = appState.previewState
-        let selectedIds = appState.moodboardState.selectedNodeIds
-
-        if selectedIds.isEmpty {
-            // No selection → stop playback
-            if preview.currentSongId != nil {
-                appState.send(.preview(.stop))
-            }
-            return
-        }
-
-        // Find the selected song node's SongID
-        let selectedSongId = appState.moodboardState.nodes
-            .first(where: { selectedIds.contains($0.id) && $0.songId != nil })?.songId
-
-        guard let songId = selectedSongId else {
-            // Selected node isn't a song → stop
-            if preview.currentSongId != nil {
-                appState.send(.preview(.stop))
-            }
-            return
-        }
-
-        if preview.currentSongId == songId {
-            // Same song selected → toggle play/pause
-            if preview.isPlaying {
-                appState.send(.preview(.pause))
-            } else {
-                appState.send(.preview(.resume))
-            }
-        } else {
-            // Different song selected → play it
-            appState.send(.preview(.play(songId)))
-        }
-    }
-
-    private static func seekRelative(seconds: Double, appState: AppState) {
-        let preview = appState.previewState
-        guard preview.currentSongId != nil, preview.duration > 0 else { return }
-        var newPos = preview.currentPosition + seconds
-        // Wraparound
-        if newPos < 0 { newPos += preview.duration }
-        if newPos >= preview.duration { newPos -= preview.duration }
-        newPos = max(0, min(newPos, preview.duration))
-        appState.send(.preview(.seekTo(newPos)))
-    }
-}
-
-/// NSView subclass that accepts first responder and forwards key events
-private final class MoodboardKeyView: NSView {
-    var onKeyDown: ((NSEvent) -> Bool)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        if onKeyDown?(event) == true {
-            return // consumed
-        }
-        super.keyDown(with: event)
     }
 }
 

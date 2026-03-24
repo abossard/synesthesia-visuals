@@ -2986,6 +2986,22 @@ public func moodboardReducer(
         // Fit viewport to show all nodes
         state.viewport = computeViewportToFit(nodes: state.nodes)
         return .send(.saveCanvasPositions)
+
+    case .fitViewport:
+        state.viewport = computeViewportToFit(nodes: state.nodes)
+        return .none
+
+    case .removeSelected:
+        for nodeId in state.selectedNodeIds {
+            state.nodes.removeAll { $0.id == nodeId }
+            state.edges.removeAll { $0.sourceId == nodeId || $0.targetId == nodeId }
+        }
+        for edgeId in state.selectedEdgeIds {
+            state.edges.removeAll { $0.id == edgeId }
+        }
+        state.selectedNodeIds = []
+        state.selectedEdgeIds = []
+        return .send(.saveCanvasPositions)
     }
 }
 

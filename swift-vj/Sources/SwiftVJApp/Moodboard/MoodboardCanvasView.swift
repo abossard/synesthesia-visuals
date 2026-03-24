@@ -15,9 +15,6 @@ struct MoodboardCanvasView: View {
 
     @State private var draggedNodeId: String?
     @State private var dragOffset: CGSize = .zero
-    // Live pan: offset applied during gesture, committed to store on end
-    @State private var livePanOffset: CGSize = .zero
-    @State private var panAnchor: CGPoint = .zero
     // Live zoom: multiplier applied during gesture
     @State private var liveZoomScale: CGFloat = 1.0
     @State private var zoomAnchor: Double = 1.0
@@ -25,6 +22,9 @@ struct MoodboardCanvasView: View {
     @State private var drawingEndScreen: CGPoint?
     @State private var edgeDropTargetId: String?
     @State private var canvasFrame: CGRect = .zero
+    // Marquee (rubber-band) selection
+    @State private var marqueeStart: CGPoint? = nil
+    @State private var marqueeEnd: CGPoint? = nil
 
     private var moodboard: MoodboardSubState { appState.moodboardState }
     private var storeViewport: ViewportState { moodboard.viewport }
@@ -32,10 +32,7 @@ struct MoodboardCanvasView: View {
     /// Effective viewport combining store state with live gesture deltas
     private var viewport: ViewportState {
         ViewportState(
-            offset: CGPoint(
-                x: storeViewport.offset.x + livePanOffset.width / effectiveZoom,
-                y: storeViewport.offset.y + livePanOffset.height / effectiveZoom
-            ),
+            offset: storeViewport.offset,
             zoom: effectiveZoom
         )
     }
@@ -54,6 +51,9 @@ struct MoodboardCanvasView: View {
                 edgesLayer(in: geometry)
                     .drawingGroup()
 
+                // Marquee selection overlay
+                marqueeOverlay
+
                 // Drawing edge preview
                 drawingEdgeLayer
 
@@ -61,7 +61,8 @@ struct MoodboardCanvasView: View {
                 nodesLayer(in: geometry)
             }
             .clipped()
-            .gesture(panGesture)
+            .overlay(canvasEventOverlay)
+            .gesture(marqueeGesture)
             .gesture(zoomGesture)
             .onDrop(of: [UTType.plainText], delegate: CanvasDropDelegate(
                 appState: appState,
@@ -163,9 +164,9 @@ struct MoodboardCanvasView: View {
 
                     // Arrow head for directed edges
                     if edge.isDirected {
-                        ArrowHead(from: fromScreen, to: toScreen, offset: offset)
+                        ArrowHead(from: fromScreen, to: toScreen, offset: offset, size: 12)
                             .fill(edgeColor(for: edge))
-                            .opacity(isSelected ? 1.0 : 0.5)
+                            .opacity(isSelected ? 1.0 : 0.7)
                     }
 
                     // Selection glow
@@ -220,7 +221,7 @@ struct MoodboardCanvasView: View {
 
                 nodeView(for: node, isSelected: isSelected, previewingSongId: previewingSongId, previewPlaying: previewPlaying)
                     .shadow(color: isDropTarget ? Color.accentColor : .clear, radius: isDropTarget ? 12 : 0)
-                    .scaleEffect(isDropTarget ? 1.08 : 1.0)
+                    .scaleEffect((isDropTarget ? 1.08 : 1.0) * viewport.zoom)
                     .overlay(
                         NodeHandleView(
                             nodeId: node.id,
@@ -250,7 +251,7 @@ struct MoodboardCanvasView: View {
                                 edgeDropTargetId = nil
                             }
                         )
-                        .opacity(isSelected || moodboard.isDrawingEdge ? 1.0 : 0.0)
+                        .opacity(isSelected || moodboard.isDrawingEdge ? 1.0 : 0.3)
                     )
                     .position(screenPos)
                     .gesture(nodeDragGesture(for: node))
@@ -318,24 +319,157 @@ struct MoodboardCanvasView: View {
         }
     }
 
-    // MARK: - Gestures (live feedback via @State)
+    // MARK: - Canvas Event Overlay (scroll pan + click deselect + keyboard)
 
-    private var panGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                livePanOffset = value.translation
-            }
-            .onEnded { value in
+    private var canvasEventOverlay: some View {
+        CanvasEventView(callbacks: CanvasEventCallbacks(
+            onScroll: { dx, dy in
                 let newOffset = CGPoint(
-                    x: storeViewport.offset.x + value.translation.width / effectiveZoom,
-                    y: storeViewport.offset.y + value.translation.height / effectiveZoom
+                    x: storeViewport.offset.x + dx / effectiveZoom,
+                    y: storeViewport.offset.y + dy / effectiveZoom
                 )
-                livePanOffset = .zero
                 appState.send(.moodboard(.viewportChanged(
                     ViewportState(offset: newOffset, zoom: storeViewport.zoom)
                 )))
+            },
+            onBackgroundClick: {
+                if moodboard.isDrawingEdge {
+                    appState.send(.moodboard(.cancelDrawingEdge))
+                } else {
+                    appState.send(.moodboard(.selectNodes([])))
+                    appState.send(.moodboard(.selectEdges([])))
+                }
+            },
+            onKeyDown: { event in
+                Self.handleKey(event: event, appState: appState)
+            }
+        ))
+        .allowsHitTesting(true)
+    }
+
+    // MARK: - Keyboard Handling
+
+    private static func handleKey(event: NSEvent, appState: AppState) -> Bool {
+        let hasShift = event.modifierFlags.contains(.shift)
+        let hasCmd = event.modifierFlags.contains(.command)
+
+        switch event.keyCode {
+        case 0 where hasCmd: // Cmd-A → select all nodes
+            let allIds = Set(appState.moodboardState.nodes.map(\.id))
+            appState.send(.moodboard(.selectNodes(allIds)))
+            return true
+
+        case 29 where hasCmd: // Cmd-0 → fit viewport to content
+            appState.send(.moodboard(.fitViewport))
+            return true
+
+        case 49: // Space
+            if hasShift {
+                appState.send(.preview(.stop))
+            } else {
+                handleSpaceBar(appState: appState)
+            }
+            return true
+
+        case 51, 117: // Backspace / Forward Delete → remove selected
+            appState.send(.moodboard(.removeSelected))
+            return true
+
+        case 123 where hasShift: // Shift+Left arrow → seek -15s
+            seekRelative(seconds: -15, appState: appState)
+            return true
+
+        case 124 where hasShift: // Shift+Right arrow → seek +15s
+            seekRelative(seconds: 15, appState: appState)
+            return true
+
+        default:
+            return false
+        }
+    }
+
+    private static func handleSpaceBar(appState: AppState) {
+        let preview = appState.previewState
+        let selectedIds = appState.moodboardState.selectedNodeIds
+
+        if selectedIds.isEmpty {
+            if preview.currentSongId != nil { appState.send(.preview(.stop)) }
+            return
+        }
+
+        let selectedSongId = appState.moodboardState.nodes
+            .first(where: { selectedIds.contains($0.id) && $0.songId != nil })?.songId
+
+        guard let songId = selectedSongId else {
+            if preview.currentSongId != nil { appState.send(.preview(.stop)) }
+            return
+        }
+
+        if preview.currentSongId == songId {
+            appState.send(preview.isPlaying ? .preview(.pause) : .preview(.resume))
+        } else {
+            appState.send(.preview(.play(songId)))
+        }
+    }
+
+    private static func seekRelative(seconds: Double, appState: AppState) {
+        let preview = appState.previewState
+        guard preview.currentSongId != nil, preview.duration > 0 else { return }
+        var newPos = preview.currentPosition + seconds
+        if newPos < 0 { newPos += preview.duration }
+        if newPos >= preview.duration { newPos -= preview.duration }
+        newPos = max(0, min(newPos, preview.duration))
+        appState.send(.preview(.seekTo(newPos)))
+    }
+
+    // MARK: - Marquee Selection
+
+    @ViewBuilder
+    private var marqueeOverlay: some View {
+        if let start = marqueeStart, let end = marqueeEnd {
+            let rect = normalizedRect(start, end)
+            Rectangle()
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .background(Color.accentColor.opacity(0.05))
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+        }
+    }
+
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                if marqueeStart == nil {
+                    marqueeStart = value.startLocation
+                }
+                marqueeEnd = value.location
+            }
+            .onEnded { value in
+                guard let start = marqueeStart, let end = marqueeEnd else {
+                    marqueeStart = nil
+                    marqueeEnd = nil
+                    return
+                }
+                let canvasStart = screenToCanvas(start)
+                let canvasEnd = screenToCanvas(end)
+                let rect = normalizedRect(canvasStart, canvasEnd)
+                let hitIds = Set(moodboard.nodes.filter { rect.contains($0.position) }.map(\.id))
+                let addToSelection = NSEvent.modifierFlags.contains(.shift)
+                let newSelection = addToSelection ? moodboard.selectedNodeIds.union(hitIds) : hitIds
+                appState.send(.moodboard(.selectNodes(newSelection)))
+                marqueeStart = nil
+                marqueeEnd = nil
             }
     }
+
+    private func normalizedRect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+        CGRect(
+            x: min(a.x, b.x), y: min(a.y, b.y),
+            width: abs(b.x - a.x), height: abs(b.y - a.y)
+        )
+    }
+
+    // MARK: - Gestures (live feedback via @State)
 
     private var zoomGesture: some Gesture {
         MagnifyGesture()
@@ -358,11 +492,17 @@ struct MoodboardCanvasView: View {
                 dragOffset = value.translation
             }
             .onEnded { value in
-                let newPosition = CGPoint(
-                    x: node.position.x + value.translation.width / viewport.zoom,
-                    y: node.position.y + value.translation.height / viewport.zoom
-                )
-                appState.send(.moodboard(.moveNode(node.id, to: newPosition)))
+                let dx = value.translation.width / viewport.zoom
+                let dy = value.translation.height / viewport.zoom
+                if moodboard.selectedNodeIds.contains(node.id) && moodboard.selectedNodeIds.count > 1 {
+                    let moves = moodboard.nodes
+                        .filter { moodboard.selectedNodeIds.contains($0.id) }
+                        .map { ($0.id, CGPoint(x: $0.position.x + dx, y: $0.position.y + dy)) }
+                    appState.send(.moodboard(.moveNodes(moves)))
+                } else {
+                    let newPosition = CGPoint(x: node.position.x + dx, y: node.position.y + dy)
+                    appState.send(.moodboard(.moveNode(node.id, to: newPosition)))
+                }
                 draggedNodeId = nil
                 dragOffset = .zero
             }
@@ -385,6 +525,15 @@ struct MoodboardCanvasView: View {
     }
 
     private func effectivePosition(for node: MoodboardNode) -> CGPoint {
+        if let dragged = draggedNodeId,
+           moodboard.selectedNodeIds.contains(dragged),
+           moodboard.selectedNodeIds.count > 1,
+           moodboard.selectedNodeIds.contains(node.id) {
+            return CGPoint(
+                x: node.position.x + dragOffset.width / viewport.zoom,
+                y: node.position.y + dragOffset.height / viewport.zoom
+            )
+        }
         if draggedNodeId == node.id {
             return CGPoint(
                 x: node.position.x + dragOffset.width / viewport.zoom,

@@ -92,6 +92,14 @@ struct SongNodeView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(.white.opacity(0.4))
         }
+        .overlay(alignment: .bottomLeading) {
+            if song?.audioFilePath == nil {
+                Image(systemName: "speaker.slash.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(6)
+            }
+        }
     }
 
     private func phaseBadge(_ phase: Phase) -> some View {

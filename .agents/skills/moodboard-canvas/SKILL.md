@@ -117,3 +117,49 @@ Reducer applies via `applyLayout(LayoutMode)` + `computeViewportToFit()`.
 - Layout algorithms tested for: returns all positions, snap-to-grid, correct ordering
 - Test pattern: create state → apply action → assert state changes
 - No mocking needed — reducer is pure
+
+## UX Interaction Model (target behavior)
+
+### Navigation
+- **Pan**: Two-finger trackpad scroll via NSView `scrollWheel(with:)` — NOT DragGesture
+- **Zoom**: MagnifyGesture (pinch) — scales nodes, edges, and grid proportionally
+- **Fit all**: Cmd-0 — calls `computeViewportToFit(nodes:)` and dispatches `viewportChanged`
+
+### Selection
+- **Click node/edge**: Select it, deselect all others
+- **Cmd-Click**: Toggle node/edge in multi-selection
+- **Drag on empty canvas**: Marquee rectangle — selects all nodes inside on release
+- **Shift+Marquee**: Add to existing selection
+- **Click background**: Deselect all (must not conflict with pan)
+- **Cmd-A**: Select all nodes
+- **Delete/Backspace**: Remove selected nodes and edges
+
+### Node Interaction
+- **Drag node**: Move it (if selected, move ALL selected)
+- **Handles**: Always visible at 30% opacity; 100% on hover/selected
+- **Drag from handle to node**: Draw edge (only way to create edges)
+- **Right-click node**: Context menu (Delete, Play, Focus, Select Connected)
+
+### Keyboard (via NSView first responder)
+- Space: play/pause selected song
+- Shift+Space: stop
+- Shift+Left/Right: seek ±15s
+- Cmd-A: select all
+- Delete/Backspace: remove selected
+- Cmd-0: fit all
+
+### NSView Integration Pattern
+For trackpad scroll and keyboard, use `NSViewRepresentable` with an NSView subclass:
+```swift
+class CanvasNSView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+    override func scrollWheel(with event: NSEvent) { /* pan */ }
+    override func magnify(with event: NSEvent) { /* zoom */ }
+    override func keyDown(with event: NSEvent) { /* keys */ }
+}
+```
+This single NSView handles pan, zoom, AND keyboard — no gesture conflicts.
