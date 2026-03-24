@@ -1305,13 +1305,23 @@ public func songsReducer(
         let songId = SongID(artist: artist, title: title)
 
         // Check for duplicate in existing displayed songs
-        let alreadyExists = state.displayedSongs.contains { $0.id == songId }
+        let existingSong = state.displayedSongs.first { $0.id == songId }
 
-        if !alreadyExists {
+        if let existing = existingSong {
+            // Song exists but may lack audioFilePath — update it if we found the file
+            let hasNoAudio = existing.audioFilePath == nil || existing.audioFilePath?.isEmpty == true
+            if hasNoAudio, let path = audioFilePath {
+                // Also update the in-memory displayed song immediately
+                if let idx = state.displayedSongs.firstIndex(where: { $0.id == songId }) {
+                    state.displayedSongs[idx] = existing.withAudioFilePath(path)
+                }
+                return SongsEffects.setAudioFilePath(songId: songId, path: path)
+            }
+            return .none
+        } else {
             // Create minimal song entry and add to store
             return SongsEffects.addDiscoveredSong(artist: artist, title: title, audioFilePath: audioFilePath)
         }
-        return .none
 
     case .scanCompleted:
         let foundCount = state.scanProgress?.foundCount ?? 0
@@ -2418,14 +2428,8 @@ public enum SongsEffects {
 
                 // Extract metadata
                 if let metadata = await AudioMetadata.extractMetadata(from: fileURL) {
-                    let songId = SongID(artist: metadata.artist, title: metadata.title)
-
-                    // Skip if already exists
-                    if !existingIds.contains(songId) {
-                        existingIds.insert(songId)
-                        foundCount += 1
-                        await send(.songs(.songDiscovered(artist: metadata.artist, title: metadata.title, audioFilePath: fileURL.path)))
-                    }
+                    foundCount += 1
+                    await send(.songs(.songDiscovered(artist: metadata.artist, title: metadata.title, audioFilePath: fileURL.path)))
                 }
 
                 // Update progress every 10 files or on last file
@@ -2480,6 +2484,15 @@ public enum SongsEffects {
             )
         }
     }
+
+    /// Update audio file path on an existing song
+    public static func setAudioFilePath(songId: SongID, path: String) -> Effect<AppAction> {
+        .run { send in
+            guard let module = await EffectEnvironment.shared.songsModule else { return }
+            await module.setAudioFilePath(path, for: songId)
+            await send(.songs(.refreshList))
+        }
+    }
 }
 
 // MARK: - Moodboard Reducer
@@ -2525,8 +2538,8 @@ public func moodboardReducer(
         return .none
 
     // MARK: Node Operations
-    case .addSongNode(let songId, let position):
-        let node = MoodboardNode.songNode(for: songId, at: snapToGrid(position))
+    case .addSongNode(let songId, let position, let audioFilePath):
+        let node = MoodboardNode.songNode(for: songId, at: snapToGrid(position), audioFilePath: audioFilePath)
         guard !state.nodes.contains(where: { $0.id == node.id }) else { return .none }
         state.nodes.append(node)
         return .send(.saveCanvasPositions)
@@ -3067,20 +3080,27 @@ public func previewReducer(
     songs: SongsSubState
 ) -> Effect<AppAction> {
     switch action {
-    case .play(let songId):
-        // Look up the song to find its audio file
-        guard let song = songs.displayedSongs.first(where: { $0.id == songId }),
-              let filePath = song.audioFilePath else {
+    case .play(let songId, let overrideAudioPath):
+        // Resolve audio file path: override > Song lookup
+        let song = songs.displayedSongs.first(where: { $0.id == songId })
+        let filePath = overrideAudioPath ?? song?.audioFilePath
+        guard let filePath, !filePath.isEmpty else {
+            print("[Preview] No audio file for: \(song?.title ?? songId.rawValue) by \(song?.artist ?? "?")")
             return .none
         }
 
         let fileURL = URL(fileURLWithPath: filePath)
-        let startSeconds = min(Double(state.previewStartSeconds), max(0, song.duration - 1))
+        let duration = song?.duration ?? 0
+        // When duration is unknown (0), let the player start at previewStartSeconds anyway;
+        // it will clamp internally. When known, cap to duration-1.
+        let startSeconds = duration > 1
+            ? min(Double(state.previewStartSeconds), duration - 1)
+            : Double(state.previewStartSeconds)
 
         state.currentSongId = songId
         state.isPlaying = true
         state.currentPosition = startSeconds
-        state.duration = song.duration
+        state.duration = duration
         state.audioFilePath = filePath
 
         return .fireAndForget {

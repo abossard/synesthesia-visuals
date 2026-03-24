@@ -224,6 +224,13 @@ public actor SongStore {
         markDirty()
     }
 
+    /// Update audio file path for song
+    public func setAudioFilePath(_ path: String, for id: SongID) {
+        guard let song = songs[id] else { return }
+        songs[id] = song.withAudioFilePath(path)
+        markDirty()
+    }
+
     /// Update image metadata for a song
     @discardableResult
     public func updateImages(for id: SongID, folderPath: String?, count: Int) -> Song? {

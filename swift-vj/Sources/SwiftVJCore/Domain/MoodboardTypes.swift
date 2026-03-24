@@ -83,6 +83,9 @@ public struct MoodboardNode: Identifiable, Equatable, Sendable, Codable {
     // Song-specific (nil for tag/container nodes)
     public let songId: SongID?
 
+    // Audio file path (stored on the node, persisted with the board)
+    public let audioFilePath: String?
+
     // Tag-specific (nil for song/container nodes)
     public let tagLabel: String?
     public let tagCategory: TagCategory?
@@ -92,6 +95,7 @@ public struct MoodboardNode: Identifiable, Equatable, Sendable, Codable {
         kind: MoodboardNodeKind,
         position: CGPoint = .zero,
         songId: SongID? = nil,
+        audioFilePath: String? = nil,
         tagLabel: String? = nil,
         tagCategory: TagCategory? = nil
     ) {
@@ -99,17 +103,19 @@ public struct MoodboardNode: Identifiable, Equatable, Sendable, Codable {
         self.kind = kind
         self.position = position
         self.songId = songId
+        self.audioFilePath = audioFilePath
         self.tagLabel = tagLabel
         self.tagCategory = tagCategory
     }
 
     /// Create a song node from a SongID
-    public static func songNode(for songId: SongID, at position: CGPoint = .zero) -> MoodboardNode {
+    public static func songNode(for songId: SongID, at position: CGPoint = .zero, audioFilePath: String? = nil) -> MoodboardNode {
         MoodboardNode(
             id: "song:\(songId.rawValue)",
             kind: .song,
             position: position,
-            songId: songId
+            songId: songId,
+            audioFilePath: audioFilePath
         )
     }
 
@@ -128,7 +134,17 @@ public struct MoodboardNode: Identifiable, Equatable, Sendable, Codable {
     public func withPosition(_ pos: CGPoint) -> MoodboardNode {
         MoodboardNode(
             id: id, kind: kind, position: pos,
-            songId: songId, tagLabel: tagLabel, tagCategory: tagCategory
+            songId: songId, audioFilePath: audioFilePath,
+            tagLabel: tagLabel, tagCategory: tagCategory
+        )
+    }
+
+    /// Copy with updated audio file path
+    public func withAudioFilePath(_ path: String?) -> MoodboardNode {
+        MoodboardNode(
+            id: id, kind: kind, position: position,
+            songId: songId, audioFilePath: path,
+            tagLabel: tagLabel, tagCategory: tagCategory
         )
     }
 }

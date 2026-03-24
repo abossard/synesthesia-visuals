@@ -56,6 +56,9 @@ struct MoodboardLibraryPanel: View {
         .frame(maxHeight: .infinity)
         .background(.ultraThinMaterial)
         .accessibilityIdentifier(A11yID.moodboardLibrary)
+        .onAppear {
+            rescanLastFolderIfNeeded()
+        }
     }
 
     // MARK: - Header
@@ -85,6 +88,8 @@ struct MoodboardLibraryPanel: View {
         .padding(.vertical, 8)
     }
 
+    private static let lastFolderKey = "moodboard.lastMusicFolder"
+
     private func selectFolderToScan() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -93,9 +98,24 @@ struct MoodboardLibraryPanel: View {
         panel.message = "Select a folder containing music files"
         panel.prompt = "Scan"
 
+        // Start from last-used folder if available
+        if let lastPath = UserDefaults.standard.string(forKey: Self.lastFolderKey) {
+            panel.directoryURL = URL(fileURLWithPath: lastPath)
+        }
+
         if panel.runModal() == .OK, let url = panel.url {
+            UserDefaults.standard.set(url.path, forKey: Self.lastFolderKey)
             appState.send(.songs(.scanFolderRequested(url)))
         }
+    }
+
+    /// Re-scan the last-used music folder (called on appear)
+    private func rescanLastFolderIfNeeded() {
+        guard appState.songsState.displayedSongs.isEmpty,
+              let lastPath = UserDefaults.standard.string(forKey: Self.lastFolderKey) else { return }
+        let url = URL(fileURLWithPath: lastPath)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        appState.send(.songs(.scanFolderRequested(url)))
     }
 
     // MARK: - Search
@@ -166,7 +186,8 @@ struct MoodboardLibraryPanel: View {
             ForEach(filteredSongs) { song in
                 songRow(song)
                     .onDrag {
-                        NSItemProvider(object: "moodboard-song:\(song.id.rawValue)" as NSString)
+                        let payload = "moodboard-song:\(song.id.rawValue)\t\(song.audioFilePath ?? "")"
+                        return NSItemProvider(object: payload as NSString)
                     }
                     .onTapGesture {
                         appState.send(.moodboard(.showSongDetail(song.id)))
@@ -277,7 +298,7 @@ struct MoodboardLibraryPanel: View {
     private func addSongToCanvas(_ song: Song) {
         let x = CGFloat.random(in: 100...600)
         let y = CGFloat.random(in: 100...400)
-        appState.send(.moodboard(.addSongNode(song.id, position: CGPoint(x: x, y: y))))
+        appState.send(.moodboard(.addSongNode(song.id, position: CGPoint(x: x, y: y), audioFilePath: song.audioFilePath)))
     }
 
     private func phaseColor(_ phase: Phase) -> Color {

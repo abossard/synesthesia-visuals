@@ -200,6 +200,11 @@ public actor SongsModule: Module {
         await store.setShader(shader, for: id)
     }
 
+    /// Update audio file path for song
+    public func setAudioFilePath(_ path: String, for id: SongID) async {
+        await store.setAudioFilePath(path, for: id)
+    }
+
     /// Delete an image and update the song's image metadata.
     /// - Returns: Updated song (if it exists)
     public func deleteImage(id: SongID, imageURL: URL) async throws -> Song? {

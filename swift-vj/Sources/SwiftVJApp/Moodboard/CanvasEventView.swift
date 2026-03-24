@@ -1,15 +1,13 @@
-// CanvasEventView — NSViewRepresentable bridging macOS scroll-wheel panning,
-// click-to-deselect, and keyboard shortcuts into the moodboard canvas.
+// CanvasEventView — NSViewRepresentable that captures scroll-wheel and keyboard
+// WITHOUT intercepting mouse clicks/drags (so SwiftUI gestures work on nodes).
 
 import AppKit
 import SwiftUI
 
-/// Callbacks the hosting SwiftUI view supplies to the underlying NSView.
+/// Callbacks the hosting SwiftUI view supplies.
 struct CanvasEventCallbacks {
-    /// Scroll delta in points (already inverted for natural scrolling by AppKit).
-    var onScroll: (CGFloat, CGFloat) -> Void = { _, _ in }
-    /// Mouse-down on background (not on a node). View should deselect all.
-    var onBackgroundClick: () -> Void = {}
+    /// Scroll delta in points + whether scrolling has ended (for commit).
+    var onScroll: (_ dx: CGFloat, _ dy: CGFloat, _ isEnded: Bool) -> Void = { _, _, _ in }
     /// Key event. Return true if consumed.
     var onKeyDown: (NSEvent) -> Bool = { _ in false }
 }
@@ -28,30 +26,50 @@ struct CanvasEventView: NSViewRepresentable {
     }
 }
 
-/// NSView subclass that captures scroll-wheel, mouseDown, and keyDown.
+/// NSView that captures keyboard via first responder and scroll via local event monitor.
+/// Returns nil from hitTest so it NEVER intercepts mouse clicks/drags — SwiftUI gestures work.
 final class CanvasNSView: NSView {
     var callbacks = CanvasEventCallbacks()
+    private var scrollMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
+        installMonitors()
     }
 
-    override func scrollWheel(with event: NSEvent) {
-        // scrollingDeltaX/Y are already sign-corrected for natural scroll direction.
-        callbacks.onScroll(event.scrollingDeltaX, event.scrollingDeltaY)
+    override func removeFromSuperview() {
+        removeMonitors()
+        super.removeFromSuperview()
     }
 
-    override func mouseDown(with event: NSEvent) {
-        // Become first responder on any click so keyboard events route here.
-        window?.makeFirstResponder(self)
-        callbacks.onBackgroundClick()
-    }
+    // Don't intercept mouse events — let SwiftUI handle clicks/drags on nodes
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func keyDown(with event: NSEvent) {
         if callbacks.onKeyDown(event) { return }
         super.keyDown(with: event)
+    }
+
+    private func installMonitors() {
+        removeMonitors()
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let window = self.window, event.window === window else { return event }
+            let loc = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(loc) else { return event }
+            let isEnded = event.phase == .ended || event.phase == .cancelled
+                || (event.phase == [] && event.momentumPhase == .ended)
+            self.callbacks.onScroll(event.scrollingDeltaX, event.scrollingDeltaY, isEnded)
+            return nil
+        }
+    }
+
+    private func removeMonitors() {
+        if let m = scrollMonitor { NSEvent.removeMonitor(m); scrollMonitor = nil }
     }
 }

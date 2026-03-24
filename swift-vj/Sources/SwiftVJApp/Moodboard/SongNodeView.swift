@@ -27,7 +27,7 @@ struct SongNodeView: View {
                 }
 
                 // Play/pause button (bottom-right, visible on hover)
-                if isHovered, song?.audioFilePath != nil {
+                if isHovered, hasAudioFile {
                     playButton
                 }
             }
@@ -44,6 +44,11 @@ struct SongNodeView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+
+    /// Whether this node has an audio file (from node or song)
+    private var hasAudioFile: Bool {
+        node.audioFilePath != nil || song?.audioFilePath != nil
     }
 
     private var strokeColor: Color {
@@ -93,7 +98,7 @@ struct SongNodeView: View {
                 .foregroundStyle(.white.opacity(0.4))
         }
         .overlay(alignment: .bottomLeading) {
-            if song?.audioFilePath == nil {
+            if !hasAudioFile {
                 Image(systemName: "speaker.slash.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(.white.opacity(0.5))

@@ -991,8 +991,8 @@ public enum MoodboardAction: Sendable {
     case canvasLoaded(nodes: [MoodboardNode], edges: [MoodboardEdge], connections: [SongConnection], phaseEdges: [PhaseFlowEdge], positions: [CanvasPositionEntry])
 
     // MARK: Node Operations
-    /// Add a song to the canvas at a position
-    case addSongNode(SongID, position: CGPoint)
+    /// Add a song to the canvas at a position (with optional audio file path)
+    case addSongNode(SongID, position: CGPoint, audioFilePath: String? = nil)
     /// Remove a node from the canvas
     case removeNode(String)
     /// Move a single node to a new position
@@ -1109,8 +1109,8 @@ public enum MoodboardAction: Sendable {
 
 /// Actions for song preview playback
 public enum PreviewAction: Sendable {
-    /// Start playing a song preview
-    case play(SongID)
+    /// Start playing a song preview (audioFilePath overrides Song lookup)
+    case play(SongID, audioFilePath: String? = nil)
     /// Pause current preview
     case pause
     /// Resume paused preview
