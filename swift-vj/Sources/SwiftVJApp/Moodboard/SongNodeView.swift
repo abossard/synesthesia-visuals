@@ -41,8 +41,6 @@ struct SongNodeView: View {
                 .stroke(strokeColor, lineWidth: 3)
         )
         .shadow(color: isHovered ? .white.opacity(0.3) : .black.opacity(0.4), radius: isHovered ? 8 : 4)
-        .scaleEffect(isHovered ? 1.05 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }

@@ -270,4 +270,26 @@ public actor SongsModule: Module {
     public func saveNow() async {
         await store.forceSave()
     }
+
+    // MARK: - Public API - Moodboard Boards
+
+    /// Save a named moodboard board
+    public func saveMoodboardBoard(_ board: MoodboardBoard) async {
+        await store.saveMoodboardBoard(board)
+    }
+
+    /// Load a named moodboard board by ID
+    public func loadMoodboardBoard(id: String) async -> MoodboardBoard? {
+        await store.loadMoodboardBoard(id: id)
+    }
+
+    /// Delete a saved moodboard board
+    public func deleteMoodboardBoard(id: String) async {
+        await store.deleteMoodboardBoard(id: id)
+    }
+
+    /// List all saved moodboard board summaries
+    public func listMoodboardBoards() async -> [MoodboardBoardSummary] {
+        await store.listMoodboardBoards()
+    }
 }

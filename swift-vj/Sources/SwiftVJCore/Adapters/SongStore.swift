@@ -446,4 +446,67 @@ public actor SongStore {
             print("[SongStore] Failed to save moodboard data: \(error)")
         }
     }
+
+    // MARK: - Named Board Persistence
+
+    private var boardsDirectoryURL: URL {
+        let dir = databaseURL.deletingLastPathComponent().appendingPathComponent("moodboard_boards")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func boardURL(id: String) -> URL {
+        boardsDirectoryURL.appendingPathComponent("\(id).json")
+    }
+
+    /// Save a named board
+    public func saveMoodboardBoard(_ board: MoodboardBoard) {
+        do {
+            let data = try JSONEncoder().encode(board)
+            try data.write(to: boardURL(id: board.id), options: .atomic)
+        } catch {
+            print("[SongStore] Failed to save board '\(board.name)': \(error)")
+        }
+    }
+
+    /// Load a named board by ID
+    public func loadMoodboardBoard(id: String) -> MoodboardBoard? {
+        let url = boardURL(id: id)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: url)
+            return try JSONDecoder().decode(MoodboardBoard.self, from: data)
+        } catch {
+            print("[SongStore] Failed to load board '\(id)': \(error)")
+            return nil
+        }
+    }
+
+    /// Delete a saved board
+    public func deleteMoodboardBoard(id: String) {
+        let url = boardURL(id: id)
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// List all saved board summaries
+    public func listMoodboardBoards() -> [MoodboardBoardSummary] {
+        let fm = FileManager.default
+        let dir = boardsDirectoryURL
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { url -> MoodboardBoardSummary? in
+                guard let data = try? Data(contentsOf: url),
+                      let board = try? JSONDecoder().decode(MoodboardBoard.self, from: data) else {
+                    return nil
+                }
+                return MoodboardBoardSummary(
+                    id: board.id, name: board.name,
+                    updatedAt: board.updatedAt, nodeCount: board.nodes.count
+                )
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
 }

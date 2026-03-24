@@ -1521,6 +1521,24 @@ public final class AppState: ObservableObject {
         EffectEnvironment.shared.launchpadHandler = launchpadGateway
         EffectEnvironment.shared.launcherHandler = launcherGateway
 
+        // Moodboard board persistence
+        EffectEnvironment.shared.saveMoodboardBoard = { [weak self] board in
+            guard let self else { return }
+            await self.songsModule?.saveMoodboardBoard(board)
+        }
+        EffectEnvironment.shared.loadMoodboardBoard = { [weak self] boardId in
+            guard let self else { return nil }
+            return await self.songsModule?.loadMoodboardBoard(id: boardId)
+        }
+        EffectEnvironment.shared.deleteMoodboardBoard = { [weak self] boardId in
+            guard let self else { return }
+            await self.songsModule?.deleteMoodboardBoard(id: boardId)
+        }
+        EffectEnvironment.shared.listMoodboardBoards = { [weak self] in
+            guard let self else { return [] }
+            return await self.songsModule?.listMoodboardBoards() ?? []
+        }
+
         // Preview playback
         EffectEnvironment.shared.playPreview = { [weak self] url, startPos in
             guard let self else { return }

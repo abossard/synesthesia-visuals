@@ -35,7 +35,7 @@ final class PreviewReducerTests: XCTestCase {
 
     func testPlaySetsSongStateAndReturnsEffect() {
         let song = makeSong("TestSong", duration: 200)
-        var state = PreviewSubState()
+        var state = PreviewSubState(previewStartSeconds: 0)
         let songs = makeSongsState([song])
 
         let effect = apply(.play(song.id), to: &state, songs: songs)
@@ -70,9 +70,9 @@ final class PreviewReducerTests: XCTestCase {
         }
     }
 
-    func testPlayWithPreviewStartOffsetSetsCurrentPosition() {
+    func testPlayWithPreviewStartSecondsSetsCurrentPosition() {
         let song = makeSong("OffsetSong", duration: 100)
-        var state = PreviewSubState(previewStartOffset: 0.25)
+        var state = PreviewSubState(previewStartSeconds: 25)
         let songs = makeSongsState([song])
 
         let effect = apply(.play(song.id), to: &state, songs: songs)
@@ -93,6 +93,7 @@ final class PreviewReducerTests: XCTestCase {
             isPlaying: true,
             currentPosition: 60,
             duration: 120,
+            previewStartSeconds: 0,
             audioFilePath: "/audio/SongA.mp3"
         )
         let songs = makeSongsState([songA, songB])
@@ -159,7 +160,7 @@ final class PreviewReducerTests: XCTestCase {
             isPlaying: true,
             currentPosition: 90,
             duration: 180,
-            previewStartOffset: 0.5,
+            previewStartSeconds: 30,
             audioFilePath: "/audio/Song.mp3"
         )
 
@@ -169,7 +170,7 @@ final class PreviewReducerTests: XCTestCase {
         XCTAssertFalse(state.isPlaying)
         XCTAssertEqual(state.currentPosition, 0)
         XCTAssertEqual(state.duration, 0)
-        XCTAssertEqual(state.previewStartOffset, 0.5, "previewStartOffset should be preserved")
+        XCTAssertEqual(state.previewStartSeconds, 30, "previewStartSeconds should be preserved")
         XCTAssertNil(state.audioFilePath)
 
         if case .none = effect.operation {
@@ -199,28 +200,25 @@ final class PreviewReducerTests: XCTestCase {
 
     // MARK: - setPreviewStart
 
-    func testSetPreviewStartUpdatesOffset() {
+    func testSetPreviewStartSecondsUpdatesValue() {
         var state = PreviewSubState()
 
-        let effect = apply(.setPreviewStart(0.4), to: &state)
+        let effect = apply(.setPreviewStartSeconds(40), to: &state)
 
-        XCTAssertEqual(state.previewStartOffset, 0.4, accuracy: 0.001)
+        XCTAssertEqual(state.previewStartSeconds, 40)
 
         if case .none = effect.operation {
             // expected
         } else {
-            XCTFail("Expected .none effect for setPreviewStart")
+            XCTFail("Expected .none effect for setPreviewStartSeconds")
         }
     }
 
-    func testSetPreviewStartClampsToZeroOne() {
+    func testSetPreviewStartSecondsClampsToZero() {
         var state = PreviewSubState()
 
-        _ = apply(.setPreviewStart(-0.5), to: &state)
-        XCTAssertEqual(state.previewStartOffset, 0.0)
-
-        _ = apply(.setPreviewStart(1.5), to: &state)
-        XCTAssertEqual(state.previewStartOffset, 1.0)
+        _ = apply(.setPreviewStartSeconds(-5), to: &state)
+        XCTAssertEqual(state.previewStartSeconds, 0)
     }
 
     // MARK: - positionUpdated

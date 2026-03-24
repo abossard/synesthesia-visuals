@@ -82,3 +82,12 @@ This file defines mandatory architecture and workflow rules for all AI coding ag
 - Use `single-source-of-truth-audit` when state appears duplicated or stale.
 - Use `launchpad-flow-regression-check` for Launchpad UI/store/module changes.
 - Use `stress-test-generator` when adding coverage for high-rate event paths.
+
+### 8) Moodboard Canvas Rules
+- Node positions must snap to the 20pt grid via `snapToGrid()` in the reducer.
+- Never place `.animation()` on views that use `.position()` — causes layout jitter.
+- Pan/zoom gestures must update `@State` on `.onChanged` and dispatch to store only on `.onEnded`.
+- Edges layer must use `effectivePositionMap()` so edges follow dragged nodes in real-time.
+- Edges layer uses `.drawingGroup()` for Metal rasterization.
+- Edge creation is drag-from-handle only — no click-to-complete edges.
+- Use `moodboard-canvas` skill when modifying any moodboard view, action, reducer, or type.

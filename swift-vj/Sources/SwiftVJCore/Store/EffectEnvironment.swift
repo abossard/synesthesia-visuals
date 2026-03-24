@@ -165,6 +165,20 @@ public final class EffectEnvironment {
     /// Update a song tag (add = true, remove = false)
     public var updateSongTag: (@Sendable (SongID, String, TagCategory, Bool) async -> Void)?
 
+    // MARK: - Board Persistence Effects
+
+    /// Save a named board snapshot
+    public var saveMoodboardBoard: (@Sendable (MoodboardBoard) async -> Void)?
+
+    /// Load a named board by ID
+    public var loadMoodboardBoard: (@Sendable (String) async -> MoodboardBoard?)?
+
+    /// Delete a saved board by ID
+    public var deleteMoodboardBoard: (@Sendable (String) async -> Void)?
+
+    /// List all saved board summaries
+    public var listMoodboardBoards: (@Sendable () async -> [MoodboardBoardSummary])?
+
     // MARK: - Preview Playback Effects
 
     /// Start playing a preview (fileURL, startPositionSeconds)
@@ -210,6 +224,10 @@ public final class EffectEnvironment {
         saveCanvasPositions = nil
         savePhaseEdges = nil
         updateSongTag = nil
+        saveMoodboardBoard = nil
+        loadMoodboardBoard = nil
+        deleteMoodboardBoard = nil
+        listMoodboardBoards = nil
         playPreview = nil
         pausePreview = nil
         resumePreview = nil

@@ -5,6 +5,46 @@ import Foundation
 import CoreGraphics
 import SongRepository
 
+// MARK: - Grid Constants
+
+/// Canvas grid size for snap-to-grid positioning
+public let moodboardGridSize: CGFloat = 20
+
+/// Snap a point to the nearest grid intersection
+public func snapToGrid(_ point: CGPoint, gridSize: CGFloat = moodboardGridSize) -> CGPoint {
+    CGPoint(
+        x: (point.x / gridSize).rounded() * gridSize,
+        y: (point.y / gridSize).rounded() * gridSize
+    )
+}
+
+// MARK: - Layout Mode
+
+/// Available auto-layout algorithms for the moodboard canvas
+public enum LayoutMode: String, Codable, Sendable, CaseIterable {
+    /// Force-directed spring-electric layout (organic clustering)
+    case auto
+    /// Hierarchical left-to-right (for directed song succession)
+    case flow
+    /// Tags in columns on left, songs on right grouped by connection
+    case grouped
+}
+
+// MARK: - Edge Directionality
+
+/// Determine whether an edge between two node kinds should be directed.
+/// - song → song: directed (succession)
+/// - tag → tag: directed (relationship)
+/// - song ↔ tag: undirected (membership)
+public func edgeIsDirected(sourceKind: MoodboardNodeKind, targetKind: MoodboardNodeKind) -> Bool {
+    switch (sourceKind, targetKind) {
+    case (.song, .song): return true
+    case (.tag, .tag): return true
+    case (.song, .tag), (.tag, .song): return false
+    default: return false
+    }
+}
+
 // MARK: - Node Types
 
 /// The kind of node on the moodboard canvas
@@ -208,6 +248,58 @@ public struct CanvasPositionEntry: Equatable, Sendable, Codable, Identifiable {
         self.nodeId = nodeId
         self.x = x
         self.y = y
+    }
+}
+
+// MARK: - Named Board (Save/Load)
+
+/// A named moodboard snapshot that can be saved and loaded.
+public struct MoodboardBoard: Identifiable, Equatable, Sendable, Codable {
+    public let id: String
+    public var name: String
+    public let createdAt: Date
+    public var updatedAt: Date
+    public var nodes: [MoodboardNode]
+    public var edges: [MoodboardEdge]
+    public var connections: [SongConnection]
+    public var phaseFlowEdges: [PhaseFlowEdge]
+    public var viewport: ViewportState
+
+    public init(
+        id: String = UUID().uuidString,
+        name: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
+        nodes: [MoodboardNode] = [],
+        edges: [MoodboardEdge] = [],
+        connections: [SongConnection] = [],
+        phaseFlowEdges: [PhaseFlowEdge] = [],
+        viewport: ViewportState = .default
+    ) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.nodes = nodes
+        self.edges = edges
+        self.connections = connections
+        self.phaseFlowEdges = phaseFlowEdges
+        self.viewport = viewport
+    }
+}
+
+/// Lightweight reference to a saved board (for listing).
+public struct MoodboardBoardSummary: Identifiable, Equatable, Sendable, Codable {
+    public let id: String
+    public let name: String
+    public let updatedAt: Date
+    public let nodeCount: Int
+
+    public init(id: String, name: String, updatedAt: Date, nodeCount: Int) {
+        self.id = id
+        self.name = name
+        self.updatedAt = updatedAt
+        self.nodeCount = nodeCount
     }
 }
 

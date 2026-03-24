@@ -1047,6 +1047,58 @@ public enum MoodboardAction: Sendable {
     case toggleLibraryPanel
     /// Show song detail for a song (nil = hide)
     case showSongDetail(SongID?)
+
+    // MARK: Board Management
+    /// Save the current board with a name
+    case saveBoard(name: String)
+    /// Board was saved successfully
+    case boardSaved(MoodboardBoardSummary)
+    /// Load a saved board by ID
+    case loadBoard(id: String)
+    /// Board was loaded successfully
+    case boardLoaded(MoodboardBoard)
+    /// Delete a saved board by ID
+    case deleteBoard(id: String)
+    /// Board was deleted
+    case boardDeleted(id: String)
+    /// Load the list of saved boards
+    case loadBoardList
+    /// Board list was loaded
+    case boardListLoaded([MoodboardBoardSummary])
+    /// Create a new empty board
+    case newBoard
+
+    // MARK: Tag Node Operations
+    /// Add a standalone tag node to the canvas (genre, mood, or phase)
+    case addTagNode(label: String, category: TagCategory, position: CGPoint)
+    /// Remove a tag node from the canvas
+    case removeTagNode(String)
+
+    // MARK: Edge Drawing
+    /// Start drawing an edge from a node's handle
+    case startDrawingEdge(sourceId: String)
+    /// Update the drawing endpoint as mouse moves
+    case updateDrawingEdge(endPoint: CGPoint)
+    /// Complete edge drawing by dropping on a target node
+    case finishDrawingEdge(targetId: String)
+    /// Cancel edge drawing
+    case cancelDrawingEdge
+
+    // MARK: Tag Manager
+    /// Toggle the tag manager panel
+    case toggleTagManagerPanel
+    /// Merge sourceTagId into targetTagId: re-point all edges, remove source
+    case mergeTags(sourceTagId: String, targetTagId: String)
+    /// Select all song nodes connected to a tag node
+    case selectSongsForTag(tagNodeId: String)
+    /// Move viewport to center on a tag and its connected songs
+    case focusOnTag(tagNodeId: String)
+    /// Rename a tag node
+    case renameTag(tagNodeId: String, newLabel: String)
+
+    // MARK: Layout
+    /// Apply an auto-layout algorithm to all nodes
+    case applyLayout(LayoutMode)
 }
 
 // MARK: - Preview Actions
@@ -1063,8 +1115,8 @@ public enum PreviewAction: Sendable {
     case stop
     /// Seek to absolute position in seconds
     case seekTo(Double)
-    /// Set the normalized start offset (0.0-1.0) for previews
-    case setPreviewStart(Double)
+    /// Set the start offset for previews in seconds
+    case setPreviewStartSeconds(Int)
     /// Position update from audio adapter (position in seconds, total duration)
     case positionUpdated(position: Double, duration: Double)
     /// Playback reached end of track

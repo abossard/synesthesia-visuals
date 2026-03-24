@@ -2526,7 +2526,7 @@ public func moodboardReducer(
 
     // MARK: Node Operations
     case .addSongNode(let songId, let position):
-        let node = MoodboardNode.songNode(for: songId, at: position)
+        let node = MoodboardNode.songNode(for: songId, at: snapToGrid(position))
         guard !state.nodes.contains(where: { $0.id == node.id }) else { return .none }
         state.nodes.append(node)
         return .send(.saveCanvasPositions)
@@ -2538,15 +2538,17 @@ public func moodboardReducer(
         return .send(.saveCanvasPositions)
 
     case .moveNode(let nodeId, let position):
+        let snapped = snapToGrid(position)
         if let idx = state.nodes.firstIndex(where: { $0.id == nodeId }) {
-            state.nodes[idx] = state.nodes[idx].withPosition(position)
+            state.nodes[idx] = state.nodes[idx].withPosition(snapped)
         }
         return .send(.saveCanvasPositions)
 
     case .moveNodes(let moves):
         for (nodeId, position) in moves {
+            let snapped = snapToGrid(position)
             if let idx = state.nodes.firstIndex(where: { $0.id == nodeId }) {
-                state.nodes[idx] = state.nodes[idx].withPosition(position)
+                state.nodes[idx] = state.nodes[idx].withPosition(snapped)
             }
         }
         return .send(.saveCanvasPositions)
@@ -2555,9 +2557,12 @@ public func moodboardReducer(
     case .connectNodes(let sourceId, let targetId, let edgeType, let weight):
         let edgeId = "\(sourceId)::\(targetId)::\(edgeType.rawValue)"
         guard !state.edges.contains(where: { $0.id == edgeId }) else { return .none }
+        let sourceKind = state.nodes.first(where: { $0.id == sourceId })?.kind ?? .song
+        let targetKind = state.nodes.first(where: { $0.id == targetId })?.kind ?? .song
+        let directed = edgeIsDirected(sourceKind: sourceKind, targetKind: targetKind)
         let edge = MoodboardEdge(
             id: edgeId, sourceId: sourceId, targetId: targetId,
-            edgeType: edgeType, weight: weight, isDirected: false
+            edgeType: edgeType, weight: weight, isDirected: directed
         )
         state.edges.append(edge)
         // Persist if it's an explicit song connection
@@ -2716,10 +2721,318 @@ public func moodboardReducer(
     case .showSongDetail(let songId):
         state.detailPanelSongId = songId
         return .none
+
+    // MARK: Board Management
+    case .saveBoard(let name):
+        state.saveStatus = .saving
+        let board = MoodboardBoard(
+            id: state.currentBoardId ?? UUID().uuidString,
+            name: name,
+            createdAt: Date(),
+            updatedAt: Date(),
+            nodes: state.nodes,
+            edges: state.edges,
+            connections: state.connections,
+            phaseFlowEdges: state.phaseFlowEdges,
+            viewport: state.viewport
+        )
+        state.currentBoardName = name
+        state.currentBoardId = board.id
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            await env.saveMoodboardBoard?(board)
+            let summary = MoodboardBoardSummary(
+                id: board.id, name: board.name,
+                updatedAt: board.updatedAt, nodeCount: board.nodes.count
+            )
+            await send(.boardSaved(summary))
+        }
+
+    case .boardSaved(let summary):
+        state.saveStatus = .saved
+        if let idx = state.savedBoards.firstIndex(where: { $0.id == summary.id }) {
+            state.savedBoards[idx] = summary
+        } else {
+            state.savedBoards.append(summary)
+        }
+        return .none
+
+    case .loadBoard(let boardId):
+        state.isLoading = true
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            guard let board = await env.loadMoodboardBoard?(boardId) else { return }
+            await send(.boardLoaded(board))
+        }
+
+    case .boardLoaded(let board):
+        state.nodes = board.nodes
+        state.edges = board.edges
+        state.connections = board.connections
+        state.phaseFlowEdges = board.phaseFlowEdges
+        state.viewport = board.viewport
+        state.currentBoardName = board.name
+        state.currentBoardId = board.id
+        state.phaseOrder = PhaseGraph.order(edges: board.phaseFlowEdges)
+        state.phaseCounts = computePhaseCounts(nodes: state.nodes)
+        state.selectedNodeIds = []
+        state.selectedEdgeIds = []
+        state.isLoading = false
+        return .none
+
+    case .deleteBoard(let boardId):
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            await env.deleteMoodboardBoard?(boardId)
+            await send(.boardDeleted(id: boardId))
+        }
+
+    case .boardDeleted(let boardId):
+        state.savedBoards.removeAll { $0.id == boardId }
+        if state.currentBoardId == boardId {
+            state.currentBoardId = nil
+            state.currentBoardName = nil
+        }
+        return .none
+
+    case .loadBoardList:
+        return .run { send in
+            let env = await EffectEnvironment.shared
+            let boards = await env.listMoodboardBoards?() ?? []
+            await send(.boardListLoaded(boards))
+        }
+
+    case .boardListLoaded(let boards):
+        state.savedBoards = boards
+        return .none
+
+    case .newBoard:
+        state.nodes = []
+        state.edges = []
+        state.connections = []
+        state.phaseFlowEdges = []
+        state.viewport = .default
+        state.currentBoardName = nil
+        state.currentBoardId = nil
+        state.selectedNodeIds = []
+        state.selectedEdgeIds = []
+        state.phaseOrder = []
+        state.phaseCounts = [:]
+        state.isDrawingEdge = false
+        state.drawingEdgeSourceId = nil
+        state.drawingEdgeEndPoint = nil
+        return .none
+
+    // MARK: Tag Node Operations
+    case .addTagNode(let label, let category, let position):
+        let node = MoodboardNode.tagNode(label: label, category: category, at: snapToGrid(position))
+        guard !state.nodes.contains(where: { $0.id == node.id }) else { return .none }
+        state.nodes.append(node)
+        return .send(.saveCanvasPositions)
+
+    case .removeTagNode(let nodeId):
+        state.nodes.removeAll { $0.id == nodeId }
+        state.edges.removeAll { $0.sourceId == nodeId || $0.targetId == nodeId }
+        state.selectedNodeIds.remove(nodeId)
+        return .send(.saveCanvasPositions)
+
+    // MARK: Edge Drawing
+    case .startDrawingEdge(let sourceId):
+        state.isDrawingEdge = true
+        state.drawingEdgeSourceId = sourceId
+        state.drawingEdgeEndPoint = nil
+        return .none
+
+    case .updateDrawingEdge(let endPoint):
+        state.drawingEdgeEndPoint = endPoint
+        return .none
+
+    case .finishDrawingEdge(let targetId):
+        guard let sourceId = state.drawingEdgeSourceId, sourceId != targetId else {
+            state.isDrawingEdge = false
+            state.drawingEdgeSourceId = nil
+            state.drawingEdgeEndPoint = nil
+            return .none
+        }
+        state.isDrawingEdge = false
+        state.drawingEdgeSourceId = nil
+        state.drawingEdgeEndPoint = nil
+        // Determine edge type based on node kinds
+        let sourceNode = state.nodes.first(where: { $0.id == sourceId })
+        let targetNode = state.nodes.first(where: { $0.id == targetId })
+        let edgeType: EdgeType = (sourceNode?.kind == .tag || targetNode?.kind == .tag)
+            ? .tagMembership : .custom
+        let directed = edgeIsDirected(
+            sourceKind: sourceNode?.kind ?? .song,
+            targetKind: targetNode?.kind ?? .song
+        )
+        let edgeId = "\(sourceId)::\(targetId)::\(edgeType.rawValue)"
+        guard !state.edges.contains(where: { $0.id == edgeId }) else { return .none }
+        let edge = MoodboardEdge(
+            id: edgeId, sourceId: sourceId, targetId: targetId,
+            edgeType: edgeType, weight: 1.0, isDirected: directed
+        )
+        state.edges.append(edge)
+        return .send(.saveCanvasPositions)
+
+    case .cancelDrawingEdge:
+        state.isDrawingEdge = false
+        state.drawingEdgeSourceId = nil
+        state.drawingEdgeEndPoint = nil
+        return .none
+
+    // MARK: Tag Manager
+    case .toggleTagManagerPanel:
+        state.tagManagerPanelOpen.toggle()
+        return .none
+
+    case .mergeTags(let sourceTagId, let targetTagId):
+        guard sourceTagId != targetTagId,
+              state.nodes.contains(where: { $0.id == sourceTagId && $0.kind == .tag }),
+              state.nodes.contains(where: { $0.id == targetTagId && $0.kind == .tag }) else {
+            return .none
+        }
+        // Re-point all edges from source tag to target tag
+        state.edges = state.edges.compactMap { edge in
+            var src = edge.sourceId
+            var tgt = edge.targetId
+            if src == sourceTagId { src = targetTagId }
+            if tgt == sourceTagId { tgt = targetTagId }
+            // Skip self-loops and duplicates
+            if src == tgt { return nil }
+            let newId = "\(src)::\(tgt)::\(edge.edgeType.rawValue)"
+            // Skip if this exact edge already exists
+            if state.edges.contains(where: { $0.id == newId && $0.id != edge.id }) { return nil }
+            return MoodboardEdge(
+                id: newId, sourceId: src, targetId: tgt,
+                edgeType: edge.edgeType, weight: edge.weight, isDirected: edge.isDirected
+            )
+        }
+        // Remove duplicate edges (keep unique by id)
+        var seenIds = Set<String>()
+        state.edges = state.edges.filter { seenIds.insert($0.id).inserted }
+        // Remove the source tag node
+        state.nodes.removeAll { $0.id == sourceTagId }
+        state.selectedNodeIds.remove(sourceTagId)
+        return .send(.saveCanvasPositions)
+
+    case .selectSongsForTag(let tagNodeId):
+        let connectedSongIds = connectedSongNodeIds(tagNodeId: tagNodeId, nodes: state.nodes, edges: state.edges)
+        state.selectedNodeIds = connectedSongIds
+        state.selectedEdgeIds = []
+        return .none
+
+    case .focusOnTag(let tagNodeId):
+        let connectedIds = connectedSongNodeIds(tagNodeId: tagNodeId, nodes: state.nodes, edges: state.edges)
+        var focusIds = connectedIds
+        focusIds.insert(tagNodeId)
+        let focusNodes = state.nodes.filter { focusIds.contains($0.id) }
+        guard !focusNodes.isEmpty else { return .none }
+        let viewport = computeViewportToFit(nodes: focusNodes)
+        state.viewport = viewport
+        state.selectedNodeIds = connectedIds
+        state.selectedEdgeIds = []
+        return .none
+
+    case .renameTag(let tagNodeId, let newLabel):
+        guard let idx = state.nodes.firstIndex(where: { $0.id == tagNodeId && $0.kind == .tag }),
+              !newLabel.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return .none
+        }
+        let old = state.nodes[idx]
+        let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
+        let newId = "tag:\(old.tagCategory?.rawValue ?? "custom"):\(trimmed)"
+        // Don't create duplicate
+        guard !state.nodes.contains(where: { $0.id == newId }) else { return .none }
+        let newNode = MoodboardNode(
+            id: newId, kind: .tag, position: old.position,
+            tagLabel: trimmed, tagCategory: old.tagCategory
+        )
+        state.nodes[idx] = newNode
+        // Update edges referencing old id
+        state.edges = state.edges.map { edge in
+            var src = edge.sourceId == tagNodeId ? newId : edge.sourceId
+            var tgt = edge.targetId == tagNodeId ? newId : edge.targetId
+            if src == edge.sourceId && tgt == edge.targetId { return edge }
+            let edgeId = "\(src)::\(tgt)::\(edge.edgeType.rawValue)"
+            return MoodboardEdge(
+                id: edgeId, sourceId: src, targetId: tgt,
+                edgeType: edge.edgeType, weight: edge.weight, isDirected: edge.isDirected
+            )
+        }
+        // Update selection
+        if state.selectedNodeIds.contains(tagNodeId) {
+            state.selectedNodeIds.remove(tagNodeId)
+            state.selectedNodeIds.insert(newId)
+        }
+        return .send(.saveCanvasPositions)
+
+    // MARK: Layout
+    case .applyLayout(let mode):
+        let newPositions: [String: CGPoint]
+        switch mode {
+        case .auto:
+            newPositions = forceDirectedLayout(nodes: state.nodes, edges: state.edges)
+        case .flow:
+            newPositions = hierarchicalLayout(nodes: state.nodes, edges: state.edges)
+        case .grouped:
+            newPositions = groupedLayout(nodes: state.nodes, edges: state.edges)
+        }
+        for (nodeId, position) in newPositions {
+            if let idx = state.nodes.firstIndex(where: { $0.id == nodeId }) {
+                state.nodes[idx] = state.nodes[idx].withPosition(position)
+            }
+        }
+        // Fit viewport to show all nodes
+        state.viewport = computeViewportToFit(nodes: state.nodes)
+        return .send(.saveCanvasPositions)
     }
 }
 
-// MARK: - Moodboard Helpers
+/// Get song node IDs connected to a tag node via edges
+public func connectedSongNodeIds(tagNodeId: String, nodes: [MoodboardNode], edges: [MoodboardEdge]) -> Set<String> {
+    let songNodeIds = Set(nodes.filter { $0.kind == .song }.map(\.id))
+    var result = Set<String>()
+    for edge in edges {
+        if edge.sourceId == tagNodeId && songNodeIds.contains(edge.targetId) {
+            result.insert(edge.targetId)
+        }
+        if edge.targetId == tagNodeId && songNodeIds.contains(edge.sourceId) {
+            result.insert(edge.sourceId)
+        }
+    }
+    return result
+}
+
+/// Compute a viewport that centers and fits a set of nodes
+public func computeViewportToFit(nodes: [MoodboardNode], padding: CGFloat = 80) -> ViewportState {
+    guard !nodes.isEmpty else { return .default }
+    let xs = nodes.map(\.position.x)
+    let ys = nodes.map(\.position.y)
+    let minX = xs.min()!, maxX = xs.max()!
+    let minY = ys.min()!, maxY = ys.max()!
+    let centerX = (minX + maxX) / 2
+    let centerY = (minY + maxY) / 2
+    let spanX = maxX - minX + padding * 2
+    let spanY = maxY - minY + padding * 2
+    // Assume a reasonable canvas size of ~800x600 for zoom calculation
+    let zoomX = spanX > 0 ? 800 / spanX : 1.0
+    let zoomY = spanY > 0 ? 600 / spanY : 1.0
+    let zoom = max(0.3, min(2.0, min(zoomX, zoomY)))
+    let offset = CGPoint(x: -centerX + 400 / zoom, y: -centerY + 300 / zoom)
+    return ViewportState(offset: offset, zoom: zoom)
+}
+
+/// Collect all unique tag entries from tag nodes on the canvas
+public func collectTagEntries(from nodes: [MoodboardNode]) -> [(id: String, label: String, category: TagCategory)] {
+    nodes
+        .filter { $0.kind == .tag }
+        .compactMap { node in
+            guard let label = node.tagLabel, let category = node.tagCategory else { return nil }
+            return (id: node.id, label: label, category: category)
+        }
+        .sorted { $0.category.rawValue < $1.category.rawValue || ($0.category == $1.category && $0.label < $1.label) }
+}
 
 /// Compute song counts per phase from node list
 private func computePhaseCounts(nodes: [MoodboardNode]) -> [String: Int] {
@@ -2746,8 +3059,7 @@ public func previewReducer(
         }
 
         let fileURL = URL(fileURLWithPath: filePath)
-        let startOffset = state.previewStartOffset
-        let startSeconds = song.duration > 0 ? startOffset * song.duration : 0
+        let startSeconds = min(Double(state.previewStartSeconds), max(0, song.duration - 1))
 
         state.currentSongId = songId
         state.isPlaying = true
@@ -2787,8 +3099,8 @@ public func previewReducer(
             await EffectEnvironment.shared.seekPreview?(position)
         }
 
-    case .setPreviewStart(let offset):
-        state.previewStartOffset = max(0, min(1, offset))
+    case .setPreviewStartSeconds(let seconds):
+        state.previewStartSeconds = max(0, seconds)
         return .none
 
     case .positionUpdated(let position, let duration):

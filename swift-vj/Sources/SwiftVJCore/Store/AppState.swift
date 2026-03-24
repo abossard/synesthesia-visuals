@@ -1397,6 +1397,27 @@ public struct MoodboardSubState: Equatable, Sendable {
     /// Canvas save status
     public var saveStatus: MoodboardSaveStatus
 
+    /// Current board name (nil = untitled)
+    public var currentBoardName: String?
+
+    /// Current board ID (nil = not saved yet)
+    public var currentBoardId: String?
+
+    /// Available saved boards (summaries for the picker)
+    public var savedBoards: [MoodboardBoardSummary]
+
+    /// Whether edge drawing mode is active
+    public var isDrawingEdge: Bool
+
+    /// Source node ID for edge being drawn
+    public var drawingEdgeSourceId: String?
+
+    /// Current mouse position during edge drawing (canvas coords)
+    public var drawingEdgeEndPoint: CGPoint?
+
+    /// Whether the tag manager panel is open
+    public var tagManagerPanelOpen: Bool
+
     public init(
         nodes: [MoodboardNode] = [],
         edges: [MoodboardEdge] = [],
@@ -1411,7 +1432,14 @@ public struct MoodboardSubState: Equatable, Sendable {
         isLoading: Bool = false,
         libraryPanelOpen: Bool = true,
         detailPanelSongId: SongID? = nil,
-        saveStatus: MoodboardSaveStatus = .idle
+        saveStatus: MoodboardSaveStatus = .idle,
+        currentBoardName: String? = nil,
+        currentBoardId: String? = nil,
+        savedBoards: [MoodboardBoardSummary] = [],
+        isDrawingEdge: Bool = false,
+        drawingEdgeSourceId: String? = nil,
+        drawingEdgeEndPoint: CGPoint? = nil,
+        tagManagerPanelOpen: Bool = false
     ) {
         self.nodes = nodes
         self.edges = edges
@@ -1427,6 +1455,13 @@ public struct MoodboardSubState: Equatable, Sendable {
         self.libraryPanelOpen = libraryPanelOpen
         self.detailPanelSongId = detailPanelSongId
         self.saveStatus = saveStatus
+        self.currentBoardName = currentBoardName
+        self.currentBoardId = currentBoardId
+        self.savedBoards = savedBoards
+        self.isDrawingEdge = isDrawingEdge
+        self.drawingEdgeSourceId = drawingEdgeSourceId
+        self.drawingEdgeEndPoint = drawingEdgeEndPoint
+        self.tagManagerPanelOpen = tagManagerPanelOpen
     }
 }
 
@@ -1453,8 +1488,8 @@ public struct PreviewSubState: Equatable, Sendable {
     /// Total track duration in seconds
     public var duration: Double
 
-    /// Normalized start offset for previews (0.0-1.0)
-    public var previewStartOffset: Double
+    /// Start offset for previews in seconds (default 20s)
+    public var previewStartSeconds: Int
 
     /// Path to the audio file being played
     public var audioFilePath: String?
@@ -1464,14 +1499,14 @@ public struct PreviewSubState: Equatable, Sendable {
         isPlaying: Bool = false,
         currentPosition: Double = 0,
         duration: Double = 0,
-        previewStartOffset: Double = 0,
+        previewStartSeconds: Int = 20,
         audioFilePath: String? = nil
     ) {
         self.currentSongId = currentSongId
         self.isPlaying = isPlaying
         self.currentPosition = currentPosition
         self.duration = duration
-        self.previewStartOffset = previewStartOffset
+        self.previewStartSeconds = previewStartSeconds
         self.audioFilePath = audioFilePath
     }
 }

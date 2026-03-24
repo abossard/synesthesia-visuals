@@ -5,6 +5,7 @@ import SwiftUI
 import SwiftVJCore
 import SongRepository
 import ShaderRepository
+import UniformTypeIdentifiers
 
 struct MoodboardLibraryPanel: View {
     @EnvironmentObject var appState: AppState
@@ -164,6 +165,9 @@ struct MoodboardLibraryPanel: View {
         List {
             ForEach(filteredSongs) { song in
                 songRow(song)
+                    .onDrag {
+                        NSItemProvider(object: "moodboard-song:\(song.id.rawValue)" as NSString)
+                    }
                     .onTapGesture {
                         appState.send(.moodboard(.showSongDetail(song.id)))
                     }
