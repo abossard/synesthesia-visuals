@@ -150,7 +150,7 @@ struct AutomationTimelineView: View {
                         Text("OSC").tag(AutomationCueActionType.osc)
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 150)
+                    .frame(minWidth: 100, maxWidth: 150)
 
                     if cueActionType == .osc {
                         Picker("Target", selection: $cueTarget) {
@@ -159,7 +159,7 @@ struct AutomationTimelineView: View {
                             Text("VDJ").tag(AutomationOSCTarget.vdj)
                         }
                         .pickerStyle(.menu)
-                        .frame(width: 140)
+                        .frame(minWidth: 100, maxWidth: 140)
                     }
 
                     TextField(
@@ -242,11 +242,11 @@ struct AutomationTimelineView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 220)
+                    .frame(minWidth: 160, maxWidth: 220)
 
                     TextField("New virtual id", text: $newLaneVirtualID)
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 180)
+                        .frame(minWidth: 120, maxWidth: 180)
 
                     Button("Add Lane") {
                         addLane(songID: songID)

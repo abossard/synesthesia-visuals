@@ -302,5 +302,5 @@ struct PipelineStepRow: View {
 #Preview {
     PipelineStatusView()
         .environmentObject(AppState())
-        .frame(width: 600, height: 500)
+        .frame(minWidth: 400, maxWidth: .infinity, minHeight: 350, maxHeight: .infinity)
 }

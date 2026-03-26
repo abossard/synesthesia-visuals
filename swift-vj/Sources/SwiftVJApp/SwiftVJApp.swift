@@ -126,7 +126,7 @@ struct SwiftVJApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appState)
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 800, minHeight: 600)
         }
         .windowStyle(.titleBar)
         .commands {

@@ -1258,7 +1258,7 @@ struct SongDetailView: View {
                                 Image(nsImage: img)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(maxWidth: .infinity, minHeight: 140, maxHeight: 140)
+                                    .frame(maxWidth: .infinity, minHeight: 80)
                                     .clipped()
 
                                 Button {
@@ -1271,7 +1271,7 @@ struct SongDetailView: View {
                                 .buttonStyle(.plain)
                                 .padding(4)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 140)
+                            .frame(maxWidth: .infinity, minHeight: 80)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1280,7 +1280,7 @@ struct SongDetailView: View {
                         } else {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color(.textBackgroundColor))
-                                .frame(maxWidth: .infinity, minHeight: 140)
+                                .frame(maxWidth: .infinity, minHeight: 80)
                                 .overlay(ProgressView())
                         }
                     }

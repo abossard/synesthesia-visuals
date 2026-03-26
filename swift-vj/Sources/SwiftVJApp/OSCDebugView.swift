@@ -212,7 +212,7 @@ struct OSCDebugView: View {
                 Spacer()
             }
             .padding()
-            .frame(minWidth: 280, maxWidth: 320)
+            .frame(minWidth: 220, maxWidth: 320)
         }
         .onAppear {
             appState.setOscDebugEnabled(true)
@@ -328,5 +328,5 @@ struct StatusRow: View {
 #Preview {
     OSCDebugView()
         .environmentObject(AppState())
-        .frame(width: 900, height: 600)
+        .frame(minWidth: 600, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
 }

@@ -69,5 +69,5 @@ struct OSCContainerView: View {
 #Preview {
     OSCContainerView()
         .environmentObject(AppState())
-        .frame(width: 900, height: 600)
+        .frame(minWidth: 600, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
 }

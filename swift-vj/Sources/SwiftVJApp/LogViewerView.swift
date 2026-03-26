@@ -165,5 +165,5 @@ struct LogRow: View {
             state.log("Tachikoma backend connection failed", level: .error)
             return state
         }())
-        .frame(width: 800, height: 500)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 350, maxHeight: .infinity)
 }

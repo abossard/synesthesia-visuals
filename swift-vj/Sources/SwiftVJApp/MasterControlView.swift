@@ -112,7 +112,7 @@ struct MasterControlView: View {
                                     Text(source == "vdj" ? "VirtualDJ" : "Spotify")
                                         .font(.caption)
                                 }
-                                .frame(width: 100, height: 70)
+                                .frame(minWidth: 60, maxWidth: 100, minHeight: 50, maxHeight: 70)
                             }
                             .buttonStyle(.bordered)
                             .tint(appState.playbackSource == source ? .blue : .gray)
@@ -417,5 +417,5 @@ struct StatCard: View {
 #Preview {
     MasterControlView()
         .environmentObject(AppState())
-        .frame(width: 700, height: 600)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
 }

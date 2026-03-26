@@ -146,7 +146,7 @@ struct StoreLogView_Previews: PreviewProvider {
     static var previews: some View {
         let logger = StoreLogger<SwiftVJCore.AppState, AppAction>()
         StoreLogView(logger: logger)
-            .frame(width: 600, height: 400)
+            .frame(minWidth: 400, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
     }
 }
 #endif

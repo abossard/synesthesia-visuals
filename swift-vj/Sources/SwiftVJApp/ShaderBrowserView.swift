@@ -2398,7 +2398,7 @@ struct ShaderAnalysisModal: View {
                 .padding()
             }
         }
-        .frame(width: 700, height: 600)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
     }
 }
 
@@ -2553,7 +2553,7 @@ struct ShaderPreviewModalContent: View {
                     )
             }
         }
-        .frame(width: 800, height: 500)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 350, maxHeight: .infinity)
         .onAppear {
             appState.log("[Preview] Modal appeared for: \(shaderName)", level: .debug)
             // Delay Syphon view creation to let sheet animate in
@@ -2568,5 +2568,5 @@ struct ShaderPreviewModalContent: View {
 #Preview {
     ShaderBrowserView()
         .environmentObject(AppState())
-        .frame(width: 800, height: 600)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
 }

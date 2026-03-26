@@ -1632,5 +1632,5 @@ struct ShaderChip: View {
 #Preview {
     RenderingView()
         .environmentObject(AppState())
-        .frame(width: 800, height: 900)
+        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
 }
