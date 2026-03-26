@@ -10,7 +10,6 @@ final class InfrastructureTests: XCTestCase {
 
     func test_config_oscPortsAreDefined() {
         // OSC port constants should have sensible values
-        XCTAssertEqual(Config.oscReceivePort, 9999)
         XCTAssertEqual(Config.oscVJUniversePort, 10000)
         XCTAssertEqual(Config.oscMagicPort, 11111)
         XCTAssertEqual(Config.oscVDJPort, 9009)

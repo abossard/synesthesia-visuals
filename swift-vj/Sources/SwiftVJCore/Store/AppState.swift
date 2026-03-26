@@ -842,6 +842,7 @@ public struct LauncherSubState: Equatable, Sendable {
     public var lastError: String?
     public var lastLaunchSummary: String?
     public var revision: UInt64
+    public var rigPreset: LaunchPreset
 
     public init(
         targets: [LaunchTarget] = [],
@@ -849,7 +850,8 @@ public struct LauncherSubState: Equatable, Sendable {
         isLaunchingAll: Bool = false,
         lastError: String? = nil,
         lastLaunchSummary: String? = nil,
-        revision: UInt64 = 0
+        revision: UInt64 = 0,
+        rigPreset: LaunchPreset = .defaultDJRig
     ) {
         self.targets = targets
         self.runningTargetIDs = runningTargetIDs
@@ -857,6 +859,7 @@ public struct LauncherSubState: Equatable, Sendable {
         self.lastError = lastError
         self.lastLaunchSummary = lastLaunchSummary
         self.revision = revision
+        self.rigPreset = rigPreset
     }
 }
 
@@ -1412,6 +1415,7 @@ public struct PersistedState: Codable, Sendable {
     public var currentPhase: String?
     public var playbackSource: String
     public var launcherTargets: [LaunchTarget]
+    public var rigPreset: LaunchPreset
     public var automationEnabled: Bool
     public var automationAutoRecordEnabled: Bool
     public var automationAutoRecordPrefixes: [String]
@@ -1432,6 +1436,7 @@ public struct PersistedState: Codable, Sendable {
         currentPhase: String? = nil,
         playbackSource: String = "vdj",
         launcherTargets: [LaunchTarget] = [],
+        rigPreset: LaunchPreset = .defaultDJRig,
         automationEnabled: Bool = true,
         automationAutoRecordEnabled: Bool = false,
         automationAutoRecordPrefixes: [String] = AutomationSubState().autoRecordPrefixes,
@@ -1451,6 +1456,7 @@ public struct PersistedState: Codable, Sendable {
         self.currentPhase = currentPhase
         self.playbackSource = playbackSource
         self.launcherTargets = launcherTargets
+        self.rigPreset = rigPreset
         self.automationEnabled = automationEnabled
         self.automationAutoRecordEnabled = automationAutoRecordEnabled
         self.automationAutoRecordPrefixes = automationAutoRecordPrefixes
@@ -1473,6 +1479,7 @@ public struct PersistedState: Codable, Sendable {
         self.currentPhase = state.render.currentPhase?.rawValue
         self.playbackSource = state.playback.source
         self.launcherTargets = state.launcher.targets
+        self.rigPreset = state.launcher.rigPreset
         self.automationEnabled = state.automation.isEnabled
         self.automationAutoRecordEnabled = state.automation.autoRecordEnabled
         self.automationAutoRecordPrefixes = state.automation.autoRecordPrefixes
@@ -1497,6 +1504,7 @@ public struct PersistedState: Codable, Sendable {
         }
         state.playback.source = playbackSource
         state.launcher.targets = launcherTargets
+        state.launcher.rigPreset = rigPreset
         state.launcher.revision &+= 1
         state.automation.isEnabled = automationEnabled
         state.automation.autoRecordEnabled = automationAutoRecordEnabled
@@ -1506,5 +1514,29 @@ public struct PersistedState: Codable, Sendable {
         state.automation.firedCueIdsBySongId = [:]
         state.automation.lastLaneValueBySongId = [:]
         state.automation.lastRecordedOSCBySongId = [:]
+    }
+
+    // Backward-compatible decoding: rigPreset defaults when missing from older JSON.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        renderEnabled = try container.decode(Bool.self, forKey: .renderEnabled)
+        renderOutputs = try container.decodeIfPresent(RenderOutputsState.self, forKey: .renderOutputs) ?? RenderOutputsState()
+        shaderControlsByShader = try container.decodeIfPresent([String: ShaderWorkspaceControls].self, forKey: .shaderControlsByShader) ?? [:]
+        shaderPlaylistByPhase = try container.decodeIfPresent([String: [String]].self, forKey: .shaderPlaylistByPhase) ?? [:]
+        maskPlaylistByPhase = try container.decodeIfPresent([String: [String]].self, forKey: .maskPlaylistByPhase) ?? [:]
+        shaderPlaylistIndexByPhase = try container.decodeIfPresent([String: Int].self, forKey: .shaderPlaylistIndexByPhase) ?? [:]
+        maskPlaylistIndexByPhase = try container.decodeIfPresent([String: Int].self, forKey: .maskPlaylistIndexByPhase) ?? [:]
+        shaderAutoAdvanceOnSongChange = try container.decodeIfPresent(Bool.self, forKey: .shaderAutoAdvanceOnSongChange) ?? false
+        maskAutoAdvanceOnSongChange = try container.decodeIfPresent(Bool.self, forKey: .maskAutoAdvanceOnSongChange) ?? false
+        selectedShader = try container.decodeIfPresent(String.self, forKey: .selectedShader)
+        selectedMaskShader = try container.decodeIfPresent(String.self, forKey: .selectedMaskShader)
+        currentPhase = try container.decodeIfPresent(String.self, forKey: .currentPhase)
+        playbackSource = try container.decode(String.self, forKey: .playbackSource)
+        launcherTargets = try container.decodeIfPresent([LaunchTarget].self, forKey: .launcherTargets) ?? []
+        rigPreset = try container.decodeIfPresent(LaunchPreset.self, forKey: .rigPreset) ?? .defaultDJRig
+        automationEnabled = try container.decodeIfPresent(Bool.self, forKey: .automationEnabled) ?? true
+        automationAutoRecordEnabled = try container.decodeIfPresent(Bool.self, forKey: .automationAutoRecordEnabled) ?? false
+        automationAutoRecordPrefixes = try container.decodeIfPresent([String].self, forKey: .automationAutoRecordPrefixes) ?? AutomationSubState().autoRecordPrefixes
+        automationTimelinesBySongId = try container.decodeIfPresent([String: SongAutomationTimeline].self, forKey: .automationTimelinesBySongId) ?? [:]
     }
 }

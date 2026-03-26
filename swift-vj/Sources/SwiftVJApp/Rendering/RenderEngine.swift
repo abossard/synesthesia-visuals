@@ -53,9 +53,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     var shaderManager: ShaderSelectionManager { shaderSelection }
     var maskManager: ShaderSelectionManager { shaderSelection }
 
-    // Audio Processor (actor isolated, not MainActor)
-    private var synesthesiaAudio: SynesthesiaAudioProcessor?
-    
     // Logger closure for UI logging
     var logger: ((String) -> Void)?
 
@@ -86,7 +83,7 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
 
     // MARK: - Init
 
-    static func create(synesthesiaAudio: SynesthesiaAudioProcessor? = nil) async -> RenderEngine {
+    static func create() async -> RenderEngine {
         let audioManager = await MainActor.run { AudioStateManager() }
         let imageManager = await MainActor.run { ImageStateManager() }
         let karaokeEngine = await MainActor.run { KaraokeEngine() }
@@ -99,7 +96,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         await MainActor.run { shaderSelection.configure(repository: shaderRepository) }
 
         return RenderEngine(
-            synesthesiaAudio: synesthesiaAudio,
             audioManager: audioManager,
             imageManager: imageManager,
             karaokeEngine: karaokeEngine,
@@ -111,7 +107,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     }
 
     private init(
-        synesthesiaAudio: SynesthesiaAudioProcessor?,
         audioManager: AudioStateManager,
         imageManager: ImageStateManager,
         karaokeEngine: KaraokeEngine,
@@ -120,7 +115,6 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         shaderRepository: ObservableShaderRepository,
         shaderSelection: ShaderSelectionManager
     ) {
-        self.synesthesiaAudio = synesthesiaAudio
         self.audioManager = audioManager
         self.imageManager = imageManager
         self.karaokeEngine = karaokeEngine
@@ -254,13 +248,9 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     
     /// Gather state from MainActor managers and cache for render thread
     private func updateCachedState() async {
-        // Get audio from processor (actor, not MainActor)
-        var audioLevels: OSCAudioLevels?
-        var audioStats: (messageCount: Int, lastMessage: Date, isActive: Bool, messageRate: Int)?
-        if let processor = synesthesiaAudio {
-            audioLevels = await processor.getLevels()
-            audioStats = await processor.stats
-        }
+        // No audio input — audio state comes from render engine's own decay/state
+        let audioLevels: OSCAudioLevels? = nil
+        let audioStats: (messageCount: Int, lastMessage: Date, isActive: Bool, messageRate: Int)? = nil
 
         // Process audio off MainActor
         var processedAudioState: AudioState?

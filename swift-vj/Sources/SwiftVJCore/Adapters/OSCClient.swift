@@ -39,8 +39,7 @@ public struct OSCLatencyStats: Sendable {
 /// Central OSC hub managing send and receive
 ///
 /// Architecture:
-/// - Receive ports: 9999 (Synesthesia), 9010 (VDJ responses)
-/// - Forwards received messages to: Magic (11111)
+/// - Receive port: 9010 (VDJ responses)
 /// - Send channels: VDJ (9009), Synesthesia (7777), Magic (11111)
 /// - Uses PrefixTrie for O(n) pattern matching
 /// - Tracks latency for monitoring
@@ -51,14 +50,12 @@ public final class OSCHub: @unchecked Sendable {
     // MARK: - Configuration
 
     /// Default ports from Config
-    public static let defaultReceivePort: UInt16 = Config.oscReceivePort        // Synesthesia audio
     public static let defaultVdjReceivePort: UInt16 = 9010    // VDJ responses
     public static let defaultVdjPort: UInt16 = Config.oscVDJPort           // Send to VDJ
     public static let defaultSynesthesiaPort: UInt16 = Config.oscSynesthesiaPort
     public static let defaultMagicPort: UInt16 = Config.oscMagicPort
 
     public enum PortKeys {
-        public static let receivePort = "osc_receive_port"
         public static let vdjPort = "osc_vdj_port"
         public static let synesthesiaPort = "osc_synesthesia_port"
         public static let magicPort = "osc_magic_port"
@@ -76,7 +73,6 @@ public final class OSCHub: @unchecked Sendable {
 
     // MARK: - Ports (configured at init)
 
-    public let receivePort: UInt16
     public let vdjReceivePort: UInt16
     public let vdjPort: UInt16
     public let synesthesiaPort: UInt16
@@ -84,10 +80,7 @@ public final class OSCHub: @unchecked Sendable {
 
     // MARK: - State
 
-    // Client bound to port 9999 so VDJ responses come back to us
-    // (VDJ responds to the source port of subscribe requests)
     private var client: OSCUDPClient?
-    private var server: OSCUDPServer?         // Port 9999 for Synesthesia
     private var vdjServer: OSCUDPServer?      // Port 9010 for VDJ responses
     private var isStarted = false
 
@@ -116,7 +109,6 @@ public final class OSCHub: @unchecked Sendable {
 
     public init() {
         let defaults = UserDefaults.standard
-        self.receivePort = Self.loadPort(from: defaults, key: PortKeys.receivePort, fallback: Self.defaultReceivePort)
         self.vdjPort = Self.loadPort(from: defaults, key: PortKeys.vdjPort, fallback: Self.defaultVdjPort)
         self.synesthesiaPort = Self.loadPort(from: defaults, key: PortKeys.synesthesiaPort, fallback: Self.defaultSynesthesiaPort)
         self.magicPort = Self.loadPort(from: defaults, key: PortKeys.magicPort, fallback: Self.defaultMagicPort)
@@ -130,18 +122,6 @@ public final class OSCHub: @unchecked Sendable {
     public func start() throws {
         guard !isStarted else { return }
 
-        // Start server on port 9999 for Synesthesia audio
-        let oscServer = OSCUDPServer(port: receivePort) { [weak self] message, timeTag, _, _ in
-            Task { await self?.handleMessage(message, timeTag: timeTag) }
-        }
-
-        do {
-            try oscServer.start()
-            self.server = oscServer
-        } catch {
-            throw OSCHubError.serverFailed("Server start failed on port \(receivePort): \(error.localizedDescription)")
-        }
-
         // Start VDJ server on port 9010 for VDJ responses
         let vdjOscServer = OSCUDPServer(port: vdjReceivePort) { [weak self] message, timeTag, _, _ in
             Task { await self?.handleMessage(message, timeTag: timeTag) }
@@ -151,7 +131,6 @@ public final class OSCHub: @unchecked Sendable {
             try vdjOscServer.start()
             self.vdjServer = vdjOscServer
         } catch {
-            oscServer.stop()
             throw OSCHubError.serverFailed("VDJ Server start failed on port \(vdjReceivePort): \(error.localizedDescription)")
         }
 
@@ -161,7 +140,6 @@ public final class OSCHub: @unchecked Sendable {
             try oscClient.start()
             self.client = oscClient
         } catch {
-            oscServer.stop()
             vdjOscServer.stop()
             throw OSCHubError.sendFailed("Client start failed: \(error.localizedDescription)")
         }
@@ -175,8 +153,6 @@ public final class OSCHub: @unchecked Sendable {
 
         client?.stop()
         client = nil
-        server?.stop()
-        server = nil
         vdjServer?.stop()
         vdjServer = nil
         isStarted = false
@@ -422,7 +398,6 @@ public final class OSCHub: @unchecked Sendable {
         lock.withLock {
             var result: [String: Any] = [
                 "running": isStarted,
-                "receivePort": receivePort,
                 "vdjReceivePort": vdjReceivePort,
                 "messagesSent": messagesSent,
                 "messagesReceived": messagesReceived,

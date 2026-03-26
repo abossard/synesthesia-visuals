@@ -385,11 +385,21 @@ public struct LauncherTerminateReport: Sendable, Equatable {
 }
 
 /// Well-known app targets that can be added with a single action.
-public enum KnownAppTarget: String, Sendable, CaseIterable {
+public enum KnownAppTarget: String, Codable, Sendable, CaseIterable {
+    case virtualDJ
     case qlcPlus5
+    case magicMusicVisuals
+    case ledFX
 
     public var launchTarget: LaunchTarget {
         switch self {
+        case .virtualDJ:
+            return LaunchTarget.appTarget(
+                id: "app.bundle.com.atomixproductions.virtualdj",
+                displayName: "VirtualDJ",
+                bundleIdentifier: "com.atomixproductions.virtualdj",
+                appPath: "/Applications/VirtualDJ.app"
+            )
         case .qlcPlus5:
             return LaunchTarget.appTarget(
                 id: "app.path./applications/qlc+5.app",
@@ -397,8 +407,39 @@ public enum KnownAppTarget: String, Sendable, CaseIterable {
                 bundleIdentifier: nil,
                 appPath: "/Applications/QLC+5.app"
             )
+        case .magicMusicVisuals:
+            return LaunchTarget.appTarget(
+                id: "app.bundle.com.color-and-music.magic",
+                displayName: "Magic Music Visuals",
+                bundleIdentifier: "com.color-and-music.magic",
+                appPath: "/Applications/Magic.app"
+            )
+        case .ledFX:
+            return LaunchTarget.commandTarget(
+                id: "cmd:ledfx",
+                displayName: "LedFX",
+                commandLine: "uv run ledfx",
+                workingDirectory: nil
+            )
         }
     }
+
+    public var displayName: String {
+        launchTarget.displayName
+    }
+}
+
+/// A named launch preset defining which known apps form a rig.
+public struct LaunchPreset: Codable, Equatable, Sendable {
+    public var name: String
+    public var targets: [KnownAppTarget]
+
+    public init(name: String = "DJ Rig", targets: [KnownAppTarget] = [.virtualDJ, .qlcPlus5, .magicMusicVisuals]) {
+        self.name = name
+        self.targets = targets
+    }
+
+    public static let defaultDJRig = LaunchPreset()
 }
 
 /// Actions related to controlled app/command launching.
@@ -450,6 +491,15 @@ public enum LauncherAction: Sendable {
 
     /// Add a known app target by preset identifier.
     case addKnownTarget(KnownAppTarget)
+
+    /// Update the rig preset configuration (which known targets are included).
+    case setRigPreset(LaunchPreset)
+
+    /// Launch all rig preset targets, adding any missing ones first.
+    case startRig
+
+    /// Terminate all rig preset targets that are currently running.
+    case stopRig
 }
 
 // MARK: - LedFX Actions
@@ -963,6 +1013,9 @@ extension LauncherAction: CustomStringConvertible {
         case .terminateAllCompleted(let report):
             return "terminateAllCompleted(terminated: \(report.terminatedTargetIDs.count), failed: \(report.failedTargetErrors.count))"
         case .addKnownTarget(let known): return "addKnownTarget(\(known.rawValue))"
+        case .setRigPreset(let preset): return "setRigPreset(\(preset.name), \(preset.targets.count) targets)"
+        case .startRig: return "startRig"
+        case .stopRig: return "stopRig"
         }
     }
 }

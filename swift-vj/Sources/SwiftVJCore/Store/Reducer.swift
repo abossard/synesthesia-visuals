@@ -1070,6 +1070,55 @@ public func launcherReducer(
         state.revision &+= 1
         appState.ui.addLog("Launcher: added \(target.displayName)", level: .info)
         return .send(.persistState)
+
+    case .setRigPreset(let preset):
+        state.rigPreset = preset
+        state.revision &+= 1
+        return .send(.persistState)
+
+    case .startRig:
+        var added = 0
+        for known in state.rigPreset.targets {
+            let target = known.launchTarget
+            if !state.targets.contains(where: { $0.normalizedIdentity == target.normalizedIdentity }) {
+                state.targets.append(target)
+                added += 1
+            }
+        }
+
+        let rigIdentities = Set(state.rigPreset.targets.map { $0.launchTarget.normalizedIdentity })
+        let rigTargets = state.targets.filter { rigIdentities.contains($0.normalizedIdentity) }
+
+        guard !rigTargets.isEmpty else {
+            state.lastError = "No targets configured in rig preset."
+            state.revision &+= 1
+            return .none
+        }
+
+        state.isLaunchingAll = true
+        state.lastError = nil
+        state.revision &+= 1
+        if added > 0 {
+            appState.ui.addLog("Launcher: added \(added) rig target(s)", level: .info)
+        }
+        appState.ui.addLog("Launcher: starting \(state.rigPreset.name) (\(rigTargets.count) targets)", level: .info)
+        return .merge([
+            added > 0 ? .send(.persistState) : .none,
+            LauncherEffects.launchTargetsIfNeeded(rigTargets)
+                .map { AppAction.launcher($0) }
+        ])
+
+    case .stopRig:
+        let rigIdentities = Set(state.rigPreset.targets.map { $0.launchTarget.normalizedIdentity })
+        let rigTargets = state.targets.filter {
+            $0.kind == .app && rigIdentities.contains($0.normalizedIdentity)
+        }
+        guard !rigTargets.isEmpty else { return .none }
+        state.lastError = nil
+        state.revision &+= 1
+        appState.ui.addLog("Launcher: stopping \(state.rigPreset.name)", level: .info)
+        return LauncherEffects.terminateAll(rigTargets)
+            .map { AppAction.launcher($0) }
     }
 }
 

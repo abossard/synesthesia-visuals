@@ -39,7 +39,7 @@ public enum LedFXBridgeConfigGenerator {
         }
     }
 
-    public static func generate(input: Input, oscListenPort: UInt16 = OSCHub.defaultReceivePort) throws -> BridgeConfig {
+    public static func generate(input: Input, oscListenPort: UInt16 = 9999) throws -> BridgeConfig {
         guard !input.virtuals.isEmpty else { throw GeneratorError.noVirtuals }
 
         let slots = buildSlots(from: input.virtuals)
@@ -73,7 +73,7 @@ public enum LedFXBridgeConfigGenerator {
     public static func generateFallback(
         baseURL: String,
         virtualIds: [String],
-        oscListenPort: UInt16 = OSCHub.defaultReceivePort
+        oscListenPort: UInt16 = 9999
     ) -> BridgeConfig {
         let normalizedIds = virtualIds.isEmpty ? ["virtual-1"] : virtualIds
         let slots = buildSlotsFromVirtualIds(normalizedIds)

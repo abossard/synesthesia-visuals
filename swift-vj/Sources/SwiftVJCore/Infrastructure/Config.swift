@@ -9,7 +9,6 @@ import Foundation
 public struct Config {
     // OSC defaults
     public static let defaultOSCHost = "127.0.0.1"
-    public static let oscReceivePort: UInt16 = 9999
     public static let oscVJUniversePort: UInt16 = 10000
     public static let oscMagicPort: UInt16 = 11111
     public static let oscVDJPort: UInt16 = 9009

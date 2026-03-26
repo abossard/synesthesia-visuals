@@ -9,6 +9,7 @@ struct MasterControlView: View {
     @State private var commandLineDraft: String = ""
     @State private var workingDirectoryDraft: String = ""
     @State private var launcherSectionWidth: CGFloat = 0
+    @State private var showRigConfig: Bool = false
     
     var body: some View {
         ScrollView {
@@ -186,6 +187,89 @@ struct MasterControlView: View {
                                         .labelsHidden()
                                 }
                             }
+                        }
+                    }
+                    .padding()
+                }
+
+                GroupBox("DJ Rig") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 12) {
+                            Button {
+                                appState.send(.launcher(.startRig))
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.title2)
+                                    Text(appState.launcherIsLaunchingAll ? "Starting..." : "Start DJ Rig")
+                                        .fontWeight(.bold)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                            .controlSize(.large)
+                            .disabled(appState.launcherIsLaunchingAll || appState.launcherRigPreset.targets.isEmpty)
+
+                            Button(role: .destructive) {
+                                appState.send(.launcher(.stopRig))
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "stop.circle.fill")
+                                        .font(.title2)
+                                    Text("Stop DJ Rig")
+                                        .fontWeight(.bold)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                            .disabled(appState.launcherIsLaunchingAll)
+                        }
+
+                        HStack(spacing: 8) {
+                            Text("Rig:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(appState.launcherRigPreset.targets.map(\.displayName).joined(separator: " → "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                showRigConfig.toggle()
+                            } label: {
+                                Image(systemName: "gear")
+                                Text("Configure")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+
+                        if showRigConfig {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Select apps for the DJ Rig preset:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                ForEach(KnownAppTarget.allCases, id: \.rawValue) { known in
+                                    let isInRig = appState.launcherRigPreset.targets.contains(known)
+                                    Toggle(known.displayName, isOn: Binding(
+                                        get: { isInRig },
+                                        set: { enabled in
+                                            var updated = appState.launcherRigPreset
+                                            if enabled {
+                                                if !updated.targets.contains(known) {
+                                                    updated.targets.append(known)
+                                                }
+                                            } else {
+                                                updated.targets.removeAll { $0 == known }
+                                            }
+                                            appState.send(.launcher(.setRigPreset(updated)))
+                                        }
+                                    ))
+                                    .toggleStyle(.switch)
+                                }
+                            }
+                            .padding(.vertical, 4)
                         }
                     }
                     .padding()

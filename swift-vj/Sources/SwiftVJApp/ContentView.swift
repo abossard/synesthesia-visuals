@@ -16,6 +16,7 @@ struct ContentView: View {
         case songs = "Songs"
         case automation = "Automation"
         case osc = "OSC"
+        case bridge = "Bridge"
         case ledfx = "LedFX"
         case launchpad = "Launchpad"
         case logs = "Logs"
@@ -32,6 +33,7 @@ struct ContentView: View {
             case .songs: return "music.note.list"
             case .automation: return "timeline.selection"
             case .osc: return "antenna.radiowaves.left.and.right"
+            case .bridge: return "arrow.triangle.swap"
             case .ledfx: return "lightbulb.led"
             case .launchpad: return "square.grid.3x3.fill"
             case .logs: return "doc.text"
@@ -123,6 +125,8 @@ struct ContentView: View {
                         AutomationTimelineView()
                     case .osc:
                         OSCContainerView()
+                    case .bridge:
+                        BridgeStatusView()
                     case .ledfx:
                         LedFXConfigView()
                     case .launchpad:
@@ -166,10 +170,11 @@ struct ContentView: View {
         case .songs: return "5"
         case .automation: return "6"
         case .osc: return "7"
-        case .ledfx: return "8"
-        case .launchpad: return "9"
-        case .logs: return "0"
-        case .settings: return "-"
+        case .bridge: return "8"
+        case .ledfx: return "9"
+        case .launchpad: return "0"
+        case .logs: return "-"
+        case .settings: return "="
         }
     }
 }

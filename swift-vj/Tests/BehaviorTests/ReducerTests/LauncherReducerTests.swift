@@ -35,6 +35,14 @@ final class LauncherReducerTests: XCTestCase {
         func launchTargetsIfNeeded(_ targets: [LaunchTarget]) async -> LauncherLaunchReport {
             launchReport
         }
+
+        func terminateTarget(_ target: LaunchTarget) async -> (terminated: Bool, error: String?) {
+            (true, nil)
+        }
+
+        func terminateAll(_ targets: [LaunchTarget]) async -> LauncherTerminateReport {
+            LauncherTerminateReport()
+        }
     }
 
     private func applyLauncherReducer(_ action: LauncherAction, to appState: inout AppState) -> Effect<AppAction> {
@@ -196,5 +204,148 @@ final class LauncherReducerTests: XCTestCase {
 
         XCTAssertEqual(appState.launcher.targets.count, 48)
         XCTAssertEqual(Set(appState.launcher.targets.map(\.id)).count, 48)
+    }
+
+    // MARK: - DJ Rig Preset Tests
+
+    func testStartRigAddsMissingTargetsAndLaunches() async {
+        let report = LauncherLaunchReport(
+            launchedTargetIDs: ["app.bundle.com.atomixproductions.virtualdj"],
+            alreadyRunningTargetIDs: [],
+            failedTargetErrors: [:],
+            runningTargetIDs: ["app.bundle.com.atomixproductions.virtualdj"]
+        )
+        EffectEnvironment.shared.launcherHandler = MockLauncherHandler(launchReport: report)
+        defer { EffectEnvironment.shared.reset() }
+
+        var appState = AppState()
+        appState.launcher.rigPreset = LaunchPreset(
+            name: "Test Rig",
+            targets: [.virtualDJ, .qlcPlus5]
+        )
+
+        XCTAssertTrue(appState.launcher.targets.isEmpty)
+        let effect = applyLauncherReducer(.startRig, to: &appState)
+
+        // Rig targets should be added to the target list
+        XCTAssertEqual(appState.launcher.targets.count, 2)
+        XCTAssertTrue(appState.launcher.isLaunchingAll)
+
+        let actions = await collectActions(from: effect)
+        // Should include persistState (for added targets) and launchAllCompleted
+        XCTAssertTrue(actions.contains { action in
+            if case .persistState = action { return true }
+            return false
+        })
+        XCTAssertTrue(actions.contains { action in
+            if case .launcher(.launchAllCompleted) = action { return true }
+            return false
+        })
+    }
+
+    func testStartRigSkipsAlreadyConfiguredTargets() async {
+        let report = LauncherLaunchReport()
+        EffectEnvironment.shared.launcherHandler = MockLauncherHandler(launchReport: report)
+        defer { EffectEnvironment.shared.reset() }
+
+        var appState = AppState()
+        appState.launcher.rigPreset = LaunchPreset(name: "Test", targets: [.virtualDJ])
+        // Pre-add VirtualDJ target
+        appState.launcher.targets = [KnownAppTarget.virtualDJ.launchTarget]
+
+        let initialCount = appState.launcher.targets.count
+        _ = applyLauncherReducer(.startRig, to: &appState)
+
+        XCTAssertEqual(appState.launcher.targets.count, initialCount)
+        XCTAssertTrue(appState.launcher.isLaunchingAll)
+    }
+
+    func testStartRigWithEmptyPresetSetsError() {
+        var appState = AppState()
+        appState.launcher.rigPreset = LaunchPreset(name: "Empty", targets: [])
+
+        let effect = applyLauncherReducer(.startRig, to: &appState)
+        XCTAssertEqual(appState.launcher.lastError, "No targets configured in rig preset.")
+        XCTAssertFalse(appState.launcher.isLaunchingAll)
+
+        switch effect.operation {
+        case .none: break
+        default: XCTFail("Expected no effect for empty rig")
+        }
+    }
+
+    func testStopRigTerminatesRigTargets() async {
+        EffectEnvironment.shared.launcherHandler = MockLauncherHandler()
+        defer { EffectEnvironment.shared.reset() }
+
+        var appState = AppState()
+        appState.launcher.rigPreset = LaunchPreset(name: "Test", targets: [.virtualDJ, .qlcPlus5])
+        appState.launcher.targets = [
+            KnownAppTarget.virtualDJ.launchTarget,
+            KnownAppTarget.qlcPlus5.launchTarget,
+            // Non-rig target should not be terminated
+            LaunchTarget.appTarget(
+                id: "app.bundle.com.spotify.client",
+                displayName: "Spotify",
+                bundleIdentifier: "com.spotify.client",
+                appPath: "/Applications/Spotify.app"
+            ),
+        ]
+
+        let effect = applyLauncherReducer(.stopRig, to: &appState)
+        let actions = await collectActions(from: effect)
+
+        // Should dispatch terminateAllCompleted (which only covers rig targets)
+        XCTAssertTrue(actions.contains { action in
+            if case .launcher(.terminateAllCompleted) = action { return true }
+            return false
+        })
+    }
+
+    func testSetRigPresetPersists() async {
+        var appState = AppState()
+        let newPreset = LaunchPreset(name: "Custom Rig", targets: [.magicMusicVisuals, .ledFX])
+        let effect = applyLauncherReducer(.setRigPreset(newPreset), to: &appState)
+
+        XCTAssertEqual(appState.launcher.rigPreset, newPreset)
+
+        let actions = await collectActions(from: effect)
+        XCTAssertTrue(actions.contains { action in
+            if case .persistState = action { return true }
+            return false
+        })
+    }
+
+    func testDefaultRigPresetContainsExpectedTargets() {
+        let preset = LaunchPreset.defaultDJRig
+        XCTAssertEqual(preset.name, "DJ Rig")
+        XCTAssertEqual(preset.targets, [.virtualDJ, .qlcPlus5, .magicMusicVisuals])
+    }
+
+    func testKnownAppTargetAllCasesIncludesNewTargets() {
+        let allCases = KnownAppTarget.allCases
+        XCTAssertTrue(allCases.contains(.virtualDJ))
+        XCTAssertTrue(allCases.contains(.qlcPlus5))
+        XCTAssertTrue(allCases.contains(.magicMusicVisuals))
+        XCTAssertTrue(allCases.contains(.ledFX))
+    }
+
+    func testRigPresetCodableRoundTrip() throws {
+        let preset = LaunchPreset(name: "My Rig", targets: [.virtualDJ, .ledFX])
+        let data = try JSONEncoder().encode(preset)
+        let decoded = try JSONDecoder().decode(LaunchPreset.self, from: data)
+        XCTAssertEqual(decoded, preset)
+    }
+
+    func testPersistedStateDecodesWithoutRigPreset() throws {
+        // Simulate old persisted JSON without rigPreset field
+        let oldJSON: [String: Any] = [
+            "renderEnabled": true,
+            "playbackSource": "vdj",
+            "launcherTargets": [] as [Any],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: oldJSON)
+        let decoded = try JSONDecoder().decode(PersistedState.self, from: data)
+        XCTAssertEqual(decoded.rigPreset, .defaultDJRig)
     }
 }

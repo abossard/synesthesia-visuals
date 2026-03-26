@@ -226,7 +226,6 @@ public final class AppState: ObservableObject {
     private var launchpadGateway: LaunchpadGateway?
     private var launcherGateway: AppLauncherGateway?
     public var songsModule: SongsModule?
-    public let synesthesiaAudio = SynesthesiaAudioProcessor()
     private let ledfxFeature: LedFXFeature
 
     // MARK: - Cache Adapters (for clearing)
@@ -284,11 +283,8 @@ public final class AppState: ObservableObject {
     @Published public private(set) var oscDebugEnabled: Bool = false {
         didSet { _oscDebugEnabledUnsafe = oscDebugEnabled }
     }
-    @Published public private(set) var oscAudioMessagesEnabled: Bool = false {
-        didSet { _oscAudioMessagesEnabledUnsafe = oscAudioMessagesEnabled }
-    }
+    @Published public private(set) var oscAudioMessagesEnabled: Bool = false
     nonisolated(unsafe) private var _oscDebugEnabledUnsafe: Bool = false
-    nonisolated(unsafe) private var _oscAudioMessagesEnabledUnsafe: Bool = false
 
     // MARK: - LedFX UI State
 
@@ -320,6 +316,7 @@ public final class AppState: ObservableObject {
     @Published public private(set) var launcherIsLaunchingAll: Bool = false
     @Published public private(set) var launcherLastError: String?
     @Published public private(set) var launcherLastLaunchSummary: String?
+    @Published public private(set) var launcherRigPreset: LaunchPreset = .defaultDJRig
 
     public var oscRestBridge: OscRestBridgeService? {
         ledfxFeature.bridgeService
@@ -1377,7 +1374,7 @@ public final class AppState: ObservableObject {
     private func setupRenderEngine() {
         Task { [weak self] in
             guard let self = self else { return }
-            let engine = await RenderEngine.create(synesthesiaAudio: self.synesthesiaAudio)
+            let engine = await RenderEngine.create()
             await MainActor.run {
                 self.renderEngine = engine
                 if let shadersDir = ShaderDirectoryLocator.resolve(
@@ -1561,11 +1558,10 @@ public final class AppState: ObservableObject {
     private func startOSCHub() {
         do {
             try oscHub.start()
-            log("OSC hub started on port \(oscHub.receivePort)", level: .info)
+            log("OSC hub started on VDJ port \(oscHub.vdjReceivePort)", level: .info)
 
             oscHub.subscribe(pattern: "*") { [weak self] address, values in
                 guard let self = self, self._oscDebugEnabledUnsafe else { return }
-                guard self._oscAudioMessagesEnabledUnsafe || !address.hasPrefix("/audio/") else { return }
                 let argsStr = values.map { "\($0)" }.joined(separator: ", ")
                 Task { @MainActor in self.recordOSCMessage(address, args: [argsStr]) }
             }
@@ -1577,10 +1573,6 @@ public final class AppState: ObservableObject {
                         Task { await self.playbackModule?.handleVDJOSC(address: address, values: values) }
                     }
                 }
-            }
-
-            oscHub.subscribe(pattern: "/audio/*") { [weak self] address, values in
-                self?.synesthesiaAudio.handleOSCFast(address, values)
             }
 
             oscHub.subscribe(pattern: "/image/folder") { [weak self] _, values in
@@ -1736,6 +1728,9 @@ public final class AppState: ObservableObject {
                     if self.launcherLastError != launcher.lastError { self.launcherLastError = launcher.lastError }
                     if self.launcherLastLaunchSummary != launcher.lastLaunchSummary {
                         self.launcherLastLaunchSummary = launcher.lastLaunchSummary
+                    }
+                    if self.launcherRigPreset != launcher.rigPreset {
+                        self.launcherRigPreset = launcher.rigPreset
                     }
                 }
 

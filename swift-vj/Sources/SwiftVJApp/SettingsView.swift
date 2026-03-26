@@ -20,7 +20,6 @@ struct SettingsView: View {
     @State private var songImagesDir = ""
     @State private var tachikomaConfigPath = ""
     @State private var ledfxBaseURL = "http://127.0.0.1:8888"
-    @State private var oscReceivePort = ""
     @State private var oscVDJPort = ""
     @State private var oscSynesthesiaPort = ""
     @State private var oscMagicPort = ""
@@ -28,8 +27,6 @@ struct SettingsView: View {
     @State private var showRestartNotice = false
     @State private var showSaveError = false
     @State private var saveErrorMessage = ""
-    @State private var receivePortStatus: PortStatus = .unknown
-    @State private var receivePortCheckTask: Task<Void, Never>?
     
     // Default paths cached to avoid repeated file system checks
     private struct DefaultPaths {
@@ -259,8 +256,6 @@ struct SettingsView: View {
                     
                     GroupBox("OSC Ports") {
                         VStack(alignment: .leading, spacing: 8) {
-                            portField(label: "Receive Port", value: $oscReceivePort, defaultValue: "\(Config.oscReceivePort)")
-                            receivePortStatusView
                             portField(label: "VirtualDJ", value: $oscVDJPort, defaultValue: "\(Config.oscVDJPort)")
                             portField(label: "Synesthesia", value: $oscSynesthesiaPort, defaultValue: "\(Config.oscSynesthesiaPort)")
                             portField(label: "Magic", value: $oscMagicPort, defaultValue: "\(Config.oscMagicPort)")
@@ -321,9 +316,6 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear(perform: loadSettings)
-        .onChange(of: oscReceivePort) { _, _ in
-            scheduleReceivePortCheck()
-        }
         .alert("Restart Required", isPresented: $showRestartNotice) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -411,11 +403,6 @@ struct SettingsView: View {
         tachikomaConfigPath = defaults.string(forKey: LLMClient.configPathDefaultsKey) ?? ""
         ledfxBaseURL = defaults.string(forKey: "ledfx_baseURL") ?? "http://127.0.0.1:8888"
 
-        oscReceivePort = loadPortString(
-            defaults,
-            key: OSCHub.PortKeys.receivePort,
-            fallback: Config.oscReceivePort
-        )
         oscVDJPort = loadPortString(
             defaults,
             key: OSCHub.PortKeys.vdjPort,
@@ -436,13 +423,10 @@ struct SettingsView: View {
             key: OSCHub.PortKeys.vdjReceivePort,
             fallback: OSCHub.defaultVdjReceivePort
         )
-
-        scheduleReceivePortCheck()
     }
 
     private func saveSettings() {
-        guard let receivePortValue = parsePort(oscReceivePort),
-              let vdjPortValue = parsePort(oscVDJPort),
+        guard let vdjPortValue = parsePort(oscVDJPort),
               let synesthesiaPortValue = parsePort(oscSynesthesiaPort),
               let magicPortValue = parsePort(oscMagicPort),
               let vdjReceiveValue = parsePort(oscVDJReceivePort) else {
@@ -475,7 +459,6 @@ struct SettingsView: View {
         tachikomaConfigPath = trimmedTachikomaPath
         defaults.set(ledfxBaseURL, forKey: "ledfx_baseURL")
 
-        defaults.set(Int(receivePortValue), forKey: OSCHub.PortKeys.receivePort)
         defaults.set(Int(vdjPortValue), forKey: OSCHub.PortKeys.vdjPort)
         defaults.set(Int(synesthesiaPortValue), forKey: OSCHub.PortKeys.synesthesiaPort)
         defaults.set(Int(magicPortValue), forKey: OSCHub.PortKeys.magicPort)
@@ -512,70 +495,6 @@ struct SettingsView: View {
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-    }
-
-    private var receivePortStatusView: some View {
-        switch receivePortStatus {
-        case .unknown:
-            return AnyView(EmptyView())
-        case .checking:
-            return AnyView(Text("Checking receive port availability…")
-                .font(.caption)
-                .foregroundColor(.secondary))
-        case .invalid:
-            return AnyView(Text("Receive port is invalid. Use 1–65535.")
-                .font(.caption)
-                .foregroundColor(.red))
-        case .active:
-            return AnyView(Text("Receive port is currently in use by this app.")
-                .font(.caption)
-                .foregroundColor(.secondary))
-        case .available:
-            return AnyView(Text("Receive port is available.")
-                .font(.caption)
-                .foregroundColor(.secondary))
-        case .unavailable:
-            return AnyView(Text("Warning: receive port is in use and cannot be bound.")
-                .font(.caption)
-                .foregroundColor(.orange))
-        }
-    }
-
-    private func scheduleReceivePortCheck() {
-        receivePortCheckTask?.cancel()
-        receivePortStatus = .checking
-        receivePortCheckTask = Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            await checkReceivePortAvailability()
-        }
-    }
-
-    @MainActor
-    private func checkReceivePortAvailability() async {
-        guard let port = parsePort(oscReceivePort) else {
-            receivePortStatus = .invalid
-            return
-        }
-
-        if port == appState.oscHub.receivePort {
-            receivePortStatus = .active
-            return
-        }
-
-        let available = await Task.detached(priority: .utility) {
-            canBindUDP(port: port)
-        }.value
-
-        receivePortStatus = available ? .available : .unavailable
-    }
-
-    private enum PortStatus {
-        case unknown
-        case checking
-        case invalid
-        case active
-        case available
-        case unavailable
     }
 
 }

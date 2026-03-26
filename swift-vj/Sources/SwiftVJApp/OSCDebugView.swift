@@ -126,7 +126,7 @@ struct OSCDebugView: View {
                     
                     Image(systemName: running ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
                         .foregroundColor(running ? .green : .red)
-                    Text(":\(appState.oscHub.receivePort)")
+                    Text("VDJ:\(appState.oscHub.vdjReceivePort)")
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
                     
@@ -201,10 +201,10 @@ struct OSCDebugView: View {
                 
                 GroupBox("Connection Status") {
                     VStack(alignment: .leading, spacing: 8) {
-                        StatusRow(label: "Receive Port", value: "9999", isActive: true)
+                        StatusRow(label: "VDJ Receive", value: "\(appState.oscHub.vdjReceivePort)", isActive: true)
                         StatusRow(label: "Forward: Magic", value: "11111", isActive: true)
                         StatusRow(label: "VirtualDJ", value: "9009", isActive: true)
-                        StatusRow(label: "Synesthesia", value: "7777", isActive: true)
+                        StatusRow(label: "Synesthesia (legacy)", value: "7777", isActive: true)
                     }
                     .padding()
                 }

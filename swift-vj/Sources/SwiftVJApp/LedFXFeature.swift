@@ -15,6 +15,9 @@ final class LedFXFeature {
     private let log: (String, LogLevel) -> Void
     private let isTestMode: Bool
 
+    /// Port for the OscRestBridge's own OSC listener (separate from OSCHub)
+    private static let oscRestBridgeListenPort: UInt16 = 9999
+
     private var oscRestBridge: OscRestBridgeService?
     private var ledfxModule: LedFXModule?
     private var bridgeEventsTask: Task<Void, Never>?
@@ -202,7 +205,7 @@ final class LedFXFeature {
         ledfxModule = module
 
         let bridge = ensureOscRestBridge()
-        let oscListenPort = oscHub.receivePort
+        let oscListenPort = Self.oscRestBridgeListenPort
 
         let result = await Task.detached(priority: .userInitiated) { () -> LedFXBootstrapPayload in
             do {
@@ -385,7 +388,7 @@ final class LedFXFeature {
 
     private func generateLedFXBridgeConfig() async {
         let currentBaseURL = store.state.ledfx.baseURL
-        let oscListenPort = oscHub.receivePort
+        let oscListenPort = Self.oscRestBridgeListenPort
 
         let result = await Task.detached(priority: .userInitiated) { () -> Result<LedFXGeneratedConfigPayload, Error> in
             do {
@@ -522,7 +525,7 @@ final class LedFXFeature {
 
     private func sendLedFXOSC(path: String) async {
         let hub = oscHub
-        let targetPort = oscHub.receivePort
+        let targetPort = Self.oscRestBridgeListenPort
         let result = await Task.detached(priority: .userInitiated) { () -> Result<Void, Error> in
             do {
                 let values: [any OSCValue] = [Float32(1.0)]
