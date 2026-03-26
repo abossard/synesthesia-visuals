@@ -273,7 +273,6 @@ public final class AppState: ObservableObject {
     @Published public private(set) var songsState: SongsSubState = SongsSubState()
     @Published public private(set) var automationState: AutomationSubState = AutomationSubState()
     @Published public private(set) var shaderCatalog: ShaderCatalogSubState = ShaderCatalogSubState()
-    @Published public private(set) var moodboardState: MoodboardSubState = MoodboardSubState()
     @Published public private(set) var previewState: PreviewSubState = PreviewSubState()
 
     // MARK: - UI State (private(set) enforces unidirectional flow)
@@ -1521,24 +1520,6 @@ public final class AppState: ObservableObject {
         EffectEnvironment.shared.launchpadHandler = launchpadGateway
         EffectEnvironment.shared.launcherHandler = launcherGateway
 
-        // Moodboard board persistence
-        EffectEnvironment.shared.saveMoodboardBoard = { [weak self] board in
-            guard let self else { return }
-            await self.songsModule?.saveMoodboardBoard(board)
-        }
-        EffectEnvironment.shared.loadMoodboardBoard = { [weak self] boardId in
-            guard let self else { return nil }
-            return await self.songsModule?.loadMoodboardBoard(id: boardId)
-        }
-        EffectEnvironment.shared.deleteMoodboardBoard = { [weak self] boardId in
-            guard let self else { return }
-            await self.songsModule?.deleteMoodboardBoard(id: boardId)
-        }
-        EffectEnvironment.shared.listMoodboardBoards = { [weak self] in
-            guard let self else { return [] }
-            return await self.songsModule?.listMoodboardBoards() ?? []
-        }
-
         // Preview playback
         EffectEnvironment.shared.playPreview = { [weak self] url, startPos in
             guard let self else { return }
@@ -1697,7 +1678,6 @@ public final class AppState: ObservableObject {
                 if self.songsState != newState.songs { self.songsState = newState.songs }
                 if self.automationState != newState.automation { self.automationState = newState.automation }
                 if self.shaderCatalog != newState.ui.shaderCatalog { self.shaderCatalog = newState.ui.shaderCatalog }
-                if self.moodboardState != newState.moodboard { self.moodboardState = newState.moodboard }
                 if self.previewState != newState.preview { self.previewState = newState.preview }
 
                 // UI state (logs + OSC)

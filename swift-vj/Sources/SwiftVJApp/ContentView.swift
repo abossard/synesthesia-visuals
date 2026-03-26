@@ -14,7 +14,6 @@ struct ContentView: View {
         case pipeline = "Performance"
         case shaders = "Shaders"
         case songs = "Songs"
-        case moodboard = "Moodboard"
         case automation = "Automation"
         case osc = "OSC"
         case ledfx = "LedFX"
@@ -31,7 +30,6 @@ struct ContentView: View {
             case .pipeline: return "arrow.triangle.branch"
             case .shaders: return "sparkles"
             case .songs: return "music.note.list"
-            case .moodboard: return "rectangle.3.group"
             case .automation: return "timeline.selection"
             case .osc: return "antenna.radiowaves.left.and.right"
             case .ledfx: return "lightbulb.led"
@@ -121,8 +119,6 @@ struct ContentView: View {
                         ShaderBrowserView()
                     case .songs:
                         SongBrowserView()
-                    case .moodboard:
-                        MoodboardView()
                     case .automation:
                         AutomationTimelineView()
                     case .osc:
@@ -168,13 +164,12 @@ struct ContentView: View {
         case .pipeline: return "3"
         case .shaders: return "4"
         case .songs: return "5"
-        case .moodboard: return "6"
-        case .automation: return "7"
-        case .osc: return "8"
-        case .ledfx: return "9"
-        case .launchpad: return "0"
-        case .logs: return "-"
-        case .settings: return "="
+        case .automation: return "6"
+        case .osc: return "7"
+        case .ledfx: return "8"
+        case .launchpad: return "9"
+        case .logs: return "0"
+        case .settings: return "-"
         }
     }
 }

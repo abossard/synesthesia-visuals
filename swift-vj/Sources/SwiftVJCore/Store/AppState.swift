@@ -41,9 +41,6 @@ public struct AppState: Equatable, Sendable {
     /// Song timecoded automation state
     public var automation: AutomationSubState
 
-    /// Moodboard state (visual song graph canvas)
-    public var moodboard: MoodboardSubState
-
     /// Song preview playback state
     public var preview: PreviewSubState
 
@@ -71,7 +68,6 @@ public struct AppState: Equatable, Sendable {
         ledfx: LedFXSubState = LedFXSubState(),
         songs: SongsSubState = SongsSubState(),
         automation: AutomationSubState = AutomationSubState(),
-        moodboard: MoodboardSubState = MoodboardSubState(),
         preview: PreviewSubState = PreviewSubState(),
         isRunning: Bool = false,
         modules: ModuleReferences = ModuleReferences()
@@ -86,7 +82,6 @@ public struct AppState: Equatable, Sendable {
         self.ledfx = ledfx
         self.songs = songs
         self.automation = automation
-        self.moodboard = moodboard
         self.preview = preview
         self.isRunning = isRunning
         self.modules = modules
@@ -104,7 +99,6 @@ public struct AppState: Equatable, Sendable {
         lhs.ledfx == rhs.ledfx &&
         lhs.songs == rhs.songs &&
         lhs.automation == rhs.automation &&
-        lhs.moodboard == rhs.moodboard &&
         lhs.preview == rhs.preview &&
         lhs.isRunning == rhs.isRunning
     }
@@ -1347,129 +1341,6 @@ public struct AutomationSubState: Equatable, Sendable {
         guard let songId else { return nil }
         return timelineBySongId[songId.rawValue]
     }
-}
-
-// MARK: - Moodboard Sub-State
-
-import SongRepository
-
-/// State for the moodboard visual song graph canvas.
-public struct MoodboardSubState: Equatable, Sendable {
-    /// Song nodes on the canvas
-    public var nodes: [MoodboardNode]
-
-    /// Edges between nodes (implicit from tags + explicit connections)
-    public var edges: [MoodboardEdge]
-
-    /// Canvas viewport (offset + zoom)
-    public var viewport: ViewportState
-
-    /// Currently selected node IDs
-    public var selectedNodeIds: Set<String>
-
-    /// Currently selected edge IDs
-    public var selectedEdgeIds: Set<String>
-
-    /// Phase flow DAG edges
-    public var phaseFlowEdges: [PhaseFlowEdge]
-
-    /// Computed phase order (from topological sort)
-    public var phaseOrder: [String]
-
-    /// Song counts per phase
-    public var phaseCounts: [String: Int]
-
-    /// Active phase filter (nil = show all)
-    public var activePhaseFilter: String?
-
-    /// Explicit song connections (user-created)
-    public var connections: [SongConnection]
-
-    /// Whether the moodboard is loading data
-    public var isLoading: Bool
-
-    /// Whether the library panel is open
-    public var libraryPanelOpen: Bool
-
-    /// Song shown in the detail panel
-    public var detailPanelSongId: SongID?
-
-    /// Canvas save status
-    public var saveStatus: MoodboardSaveStatus
-
-    /// Current board name (nil = untitled)
-    public var currentBoardName: String?
-
-    /// Current board ID (nil = not saved yet)
-    public var currentBoardId: String?
-
-    /// Available saved boards (summaries for the picker)
-    public var savedBoards: [MoodboardBoardSummary]
-
-    /// Whether edge drawing mode is active
-    public var isDrawingEdge: Bool
-
-    /// Source node ID for edge being drawn
-    public var drawingEdgeSourceId: String?
-
-    /// Current mouse position during edge drawing (canvas coords)
-    public var drawingEdgeEndPoint: CGPoint?
-
-    /// Whether the tag manager panel is open
-    public var tagManagerPanelOpen: Bool
-
-    public init(
-        nodes: [MoodboardNode] = [],
-        edges: [MoodboardEdge] = [],
-        viewport: ViewportState = .default,
-        selectedNodeIds: Set<String> = [],
-        selectedEdgeIds: Set<String> = [],
-        phaseFlowEdges: [PhaseFlowEdge] = [],
-        phaseOrder: [String] = [],
-        phaseCounts: [String: Int] = [:],
-        activePhaseFilter: String? = nil,
-        connections: [SongConnection] = [],
-        isLoading: Bool = false,
-        libraryPanelOpen: Bool = true,
-        detailPanelSongId: SongID? = nil,
-        saveStatus: MoodboardSaveStatus = .idle,
-        currentBoardName: String? = nil,
-        currentBoardId: String? = nil,
-        savedBoards: [MoodboardBoardSummary] = [],
-        isDrawingEdge: Bool = false,
-        drawingEdgeSourceId: String? = nil,
-        drawingEdgeEndPoint: CGPoint? = nil,
-        tagManagerPanelOpen: Bool = false
-    ) {
-        self.nodes = nodes
-        self.edges = edges
-        self.viewport = viewport
-        self.selectedNodeIds = selectedNodeIds
-        self.selectedEdgeIds = selectedEdgeIds
-        self.phaseFlowEdges = phaseFlowEdges
-        self.phaseOrder = phaseOrder
-        self.phaseCounts = phaseCounts
-        self.activePhaseFilter = activePhaseFilter
-        self.connections = connections
-        self.isLoading = isLoading
-        self.libraryPanelOpen = libraryPanelOpen
-        self.detailPanelSongId = detailPanelSongId
-        self.saveStatus = saveStatus
-        self.currentBoardName = currentBoardName
-        self.currentBoardId = currentBoardId
-        self.savedBoards = savedBoards
-        self.isDrawingEdge = isDrawingEdge
-        self.drawingEdgeSourceId = drawingEdgeSourceId
-        self.drawingEdgeEndPoint = drawingEdgeEndPoint
-        self.tagManagerPanelOpen = tagManagerPanelOpen
-    }
-}
-
-/// Save status for the moodboard canvas
-public enum MoodboardSaveStatus: String, Equatable, Sendable {
-    case idle
-    case saving
-    case saved
 }
 
 // MARK: - Preview Sub-State

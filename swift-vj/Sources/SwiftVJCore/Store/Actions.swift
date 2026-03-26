@@ -28,7 +28,6 @@ public enum AppAction: Sendable {
     case ledfx(LedFXAction)
     case songs(SongsAction)
     case automation(AutomationAction)
-    case moodboard(MoodboardAction)
     case preview(PreviewAction)
 
     // MARK: - Persistence
@@ -732,7 +731,6 @@ extension AppAction: CustomStringConvertible {
         case .ledfx(let action): return "ledfx.\(action)"
         case .songs(let action): return "songs.\(action)"
         case .automation(let action): return "automation.\(action)"
-        case .moodboard(let action): return "moodboard.\(action)"
         case .preview(let action): return "preview.\(action)"
         case .loadPersistedState: return "loadPersistedState"
         case .persistedStateLoaded: return "persistedStateLoaded"
@@ -976,133 +974,6 @@ extension AutomationAction: CustomStringConvertible {
             return "recordOSC(\(songID.rawValue), t:\(String(format: "%.2f", position)), \(target.rawValue), \(address), src: \(source ?? "-"))"
         }
     }
-}
-
-// MARK: - Moodboard Actions
-
-import SongRepository
-
-/// Actions for the moodboard visual song graph canvas.
-public enum MoodboardAction: Sendable {
-    // MARK: Canvas Lifecycle
-    /// Load the moodboard graph from song data
-    case loadFromSongs
-    /// Canvas data loaded from songs and connections
-    case canvasLoaded(nodes: [MoodboardNode], edges: [MoodboardEdge], connections: [SongConnection], phaseEdges: [PhaseFlowEdge], positions: [CanvasPositionEntry])
-
-    // MARK: Node Operations
-    /// Add a song to the canvas at a position (with optional audio file path)
-    case addSongNode(SongID, position: CGPoint, audioFilePath: String? = nil)
-    /// Remove a node from the canvas
-    case removeNode(String)
-    /// Move a single node to a new position
-    case moveNode(String, to: CGPoint)
-    /// Batch move multiple nodes (drag selection)
-    case moveNodes([(String, CGPoint)])
-
-    // MARK: Edge Operations
-    /// Create an explicit connection between two songs
-    case connectNodes(sourceId: String, targetId: String, edgeType: EdgeType, weight: Double)
-    /// Remove an edge
-    case removeEdge(String)
-    /// Update an edge's weight
-    case updateEdgeWeight(String, weight: Double)
-
-    // MARK: Phase Flow
-    /// Add a phase flow edge
-    case addPhaseEdge(from: String, to: String, weight: Double)
-    /// Remove a phase flow edge
-    case removePhaseEdge(from: String, to: String)
-    /// Auto-suggest phase flow from existing phases
-    case suggestPhaseFlow
-    /// Phase flow was updated (from effect)
-    case phaseFlowUpdated([PhaseFlowEdge], order: [String])
-    /// Filter canvas to show only songs in a phase (nil = show all)
-    case filterByPhase(String?)
-
-    // MARK: Tag Operations
-    /// Add a tag to a song (triggers graph rebuild)
-    case addTagToSong(SongID, label: String, category: TagCategory)
-    /// Remove a tag from a song (triggers graph rebuild)
-    case removeTagFromSong(SongID, label: String, category: TagCategory)
-    /// Graph was rebuilt after tag/connection change
-    case graphRebuilt(nodes: [MoodboardNode], edges: [MoodboardEdge])
-
-    // MARK: Viewport
-    /// Viewport changed (pan/zoom)
-    case viewportChanged(ViewportState)
-    /// Save canvas positions (debounced)
-    case saveCanvasPositions
-    /// Canvas positions saved
-    case canvasPositionsSaved
-
-    // MARK: Selection
-    /// Select nodes (replaces selection)
-    case selectNodes(Set<String>)
-    /// Select edges (replaces selection)
-    case selectEdges(Set<String>)
-
-    // MARK: UI Panels
-    /// Toggle the library panel
-    case toggleLibraryPanel
-    /// Show song detail for a song (nil = hide)
-    case showSongDetail(SongID?)
-
-    // MARK: Board Management
-    /// Save the current board with a name
-    case saveBoard(name: String)
-    /// Board was saved successfully
-    case boardSaved(MoodboardBoardSummary)
-    /// Load a saved board by ID
-    case loadBoard(id: String)
-    /// Board was loaded successfully
-    case boardLoaded(MoodboardBoard)
-    /// Delete a saved board by ID
-    case deleteBoard(id: String)
-    /// Board was deleted
-    case boardDeleted(id: String)
-    /// Load the list of saved boards
-    case loadBoardList
-    /// Board list was loaded
-    case boardListLoaded([MoodboardBoardSummary])
-    /// Create a new empty board
-    case newBoard
-
-    // MARK: Tag Node Operations
-    /// Add a standalone tag node to the canvas (genre, mood, or phase)
-    case addTagNode(label: String, category: TagCategory, position: CGPoint)
-    /// Remove a tag node from the canvas
-    case removeTagNode(String)
-
-    // MARK: Edge Drawing
-    /// Start drawing an edge from a node's handle
-    case startDrawingEdge(sourceId: String)
-    /// Update the drawing endpoint as mouse moves
-    case updateDrawingEdge(endPoint: CGPoint)
-    /// Complete edge drawing by dropping on a target node
-    case finishDrawingEdge(targetId: String)
-    /// Cancel edge drawing
-    case cancelDrawingEdge
-
-    // MARK: Tag Manager
-    /// Toggle the tag manager panel
-    case toggleTagManagerPanel
-    /// Merge sourceTagId into targetTagId: re-point all edges, remove source
-    case mergeTags(sourceTagId: String, targetTagId: String)
-    /// Select all song nodes connected to a tag node
-    case selectSongsForTag(tagNodeId: String)
-    /// Move viewport to center on a tag and its connected songs
-    case focusOnTag(tagNodeId: String)
-    /// Rename a tag node
-    case renameTag(tagNodeId: String, newLabel: String)
-
-    // MARK: Layout
-    /// Apply an auto-layout algorithm to all nodes
-    case applyLayout(LayoutMode)
-    /// Fit viewport to show all nodes
-    case fitViewport
-    /// Remove all selected nodes and edges
-    case removeSelected
 }
 
 // MARK: - Preview Actions

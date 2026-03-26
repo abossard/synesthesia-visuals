@@ -8,92 +8,145 @@ struct LaunchpadView: View {
     @EnvironmentObject var appState: AppState
     @State private var showTestSheet = false
     
-    // Grid layout constants
     private let gridSize = 8
-    private let spacing: CGFloat = 4
+    private let minPadSize: CGFloat = 30
+    private let maxPadSize: CGFloat = 80
+    private let inspectorMinWidth: CGFloat = 200
+    private let inspectorMaxWidth: CGFloat = 350
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Header / Status
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Launchpad Mini MK3")
-                        .font(.title2)
-                        .bold()
-                    
-                    if let status = appState.launchpadStatus {
-                        HStack {
-                            Circle()
-                                .fill(status.isConnected ? Color.green : Color.red)
-                                .frame(width: 8, height: 8)
-                            Text(status.isConnected ? "Connected" : "Disconnected")
-                                .foregroundColor(.secondary)
-                            
-                            if let name = status.deviceName {
-                                Text("(\(name))")
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                            }
-                        }
-                        .accessibilityIdentifier(A11yID.launchpadStatus)
-                    } else {
-                        Text("Module not initialized")
-                            .foregroundColor(.red)
-                            .accessibilityIdentifier(A11yID.launchpadStatus)
-                    }
-                }
-                
-                Spacer()
-                
-                // Learn Mode Toggle
-                if let status = appState.launchpadStatus {
-                    Button(action: {
-                        appState.send(.launchpad(status.isLearnMode ? .exitLearnMode : .enterLearnMode))
-                    }) {
-                        Label(status.isLearnMode ? "Stop Learn Mode" : "Start Learn Mode",
-                              systemImage: status.isLearnMode ? "recordingtape" : "graduationcap")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(status.isLearnMode ? .red : .blue)
-                    .accessibilityIdentifier(A11yID.launchpadLearnButton)
-                }
-            }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            .cornerRadius(8)
+        GeometryReader { geometry in
+            let layout = computeLayout(for: geometry.size)
             
-            // Main Grid Visualization
-            HStack(alignment: .top, spacing: 20) {
-                // 8x8 Grid + Top Row + Right Column
-                VStack(spacing: spacing) {
-                    // Top Row (CC 91-98)
-                    HStack(spacing: spacing) {
-                        ForEach(0..<8) { x in
-                            PadView(id: ButtonId(x: x, y: -1))
+            VStack(spacing: layout.sectionSpacing) {
+                // Header / Status
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Launchpad Mini MK3")
+                            .font(.title2)
+                            .bold()
+                        
+                        if let status = appState.launchpadStatus {
+                            HStack {
+                                Circle()
+                                    .fill(status.isConnected ? Color.green : Color.red)
+                                    .frame(width: 8, height: 8)
+                                Text(status.isConnected ? "Connected" : "Disconnected")
+                                    .foregroundColor(.secondary)
+                                
+                                if let name = status.deviceName {
+                                    Text("(\(name))")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                            }
+                            .accessibilityIdentifier(A11yID.launchpadStatus)
+                        } else {
+                            Text("Module not initialized")
+                                .foregroundColor(.red)
+                                .accessibilityIdentifier(A11yID.launchpadStatus)
                         }
-                        // Empty space for corner
-                        Color.clear.frame(width: 30, height: 30)
                     }
                     
-                    // Main Grid Rows (row 7 at top, row 0 at bottom - matches physical Launchpad)
-                    ForEach((0..<8).reversed(), id: \.self) { y in
-                        HStack(spacing: spacing) {
-                            // Grid Pads (0-7)
-                            ForEach(0..<8) { x in
-                                PadView(id: ButtonId(x: x, y: y))
-                            }
-                            
-                            // Scene Launch Button (Right Column, x=8)
-                            PadView(id: ButtonId(x: 8, y: y))
+                    Spacer()
+                    
+                    // Learn Mode Toggle
+                    if let status = appState.launchpadStatus {
+                        Button(action: {
+                            appState.send(.launchpad(status.isLearnMode ? .exitLearnMode : .enterLearnMode))
+                        }) {
+                            Label(status.isLearnMode ? "Stop Learn Mode" : "Start Learn Mode",
+                                  systemImage: status.isLearnMode ? "recordingtape" : "graduationcap")
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(status.isLearnMode ? .red : .blue)
+                        .accessibilityIdentifier(A11yID.launchpadLearnButton)
                     }
                 }
                 .padding()
-                .background(Color.black.opacity(0.2))
-                .cornerRadius(12)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(8)
                 
-                // Inspector / Details Panel
-                VStack(alignment: .leading, spacing: 16) {
+                // Main Grid + Inspector
+                HStack(alignment: .top, spacing: layout.sectionSpacing) {
+                    // 9-column grid (8 pads + 1 scene button per row, 9 rows including top)
+                    launchpadGrid(padSize: layout.padSize, spacing: layout.gridSpacing)
+                        .frame(maxWidth: .infinity)
+                    
+                    // Inspector / Details Panel
+                    inspectorPanel()
+                        .frame(width: layout.inspectorWidth)
+                }
+            }
+            .padding(layout.outerPadding)
+        }
+    }
+    
+    private struct LayoutMetrics {
+        let padSize: CGFloat
+        let gridSpacing: CGFloat
+        let sectionSpacing: CGFloat
+        let outerPadding: CGFloat
+        let inspectorWidth: CGFloat
+    }
+    
+    private func computeLayout(for size: CGSize) -> LayoutMetrics {
+        let outerPadding: CGFloat = 16
+        let sectionSpacing: CGFloat = 16
+        let gridPadding: CGFloat = 16
+        
+        // Available width = total - outer padding - section gap - inspector - grid internal padding
+        let inspectorWidth = min(inspectorMaxWidth, max(inspectorMinWidth, size.width * 0.2))
+        let availableForGrid = size.width - outerPadding * 2 - sectionSpacing - inspectorWidth - gridPadding * 2
+        
+        // 9 columns (8 pads + 1 scene button), 8 gaps between them
+        let columns: CGFloat = 9
+        let gaps = columns - 1
+        // Solve: columns * padSize + gaps * spacing = availableForGrid
+        // With spacing = max(2, padSize / 8): columns * padSize + gaps * (padSize / 8) = available
+        // padSize * (columns + gaps/8) = available
+        let rawPadSize = availableForGrid / (columns + gaps / 8)
+        let padSize = min(maxPadSize, max(minPadSize, rawPadSize))
+        let gridSpacing = max(2, padSize / 8)
+        
+        return LayoutMetrics(
+            padSize: padSize,
+            gridSpacing: gridSpacing,
+            sectionSpacing: sectionSpacing,
+            outerPadding: outerPadding,
+            inspectorWidth: inspectorWidth
+        )
+    }
+    
+    @ViewBuilder
+    private func launchpadGrid(padSize: CGFloat, spacing: CGFloat) -> some View {
+        VStack(spacing: spacing) {
+            // Top Row (CC 91-98)
+            HStack(spacing: spacing) {
+                ForEach(0..<8) { x in
+                    PadView(id: ButtonId(x: x, y: -1), padSize: padSize)
+                }
+                Color.clear.frame(width: padSize, height: padSize)
+            }
+            
+            // Main Grid Rows (row 7 at top, row 0 at bottom - matches physical Launchpad)
+            ForEach((0..<8).reversed(), id: \.self) { y in
+                HStack(spacing: spacing) {
+                    ForEach(0..<8) { x in
+                        PadView(id: ButtonId(x: x, y: y), padSize: padSize)
+                    }
+                    PadView(id: ButtonId(x: 8, y: y), padSize: padSize)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.2))
+        .cornerRadius(12)
+    }
+    
+    @ViewBuilder
+    private func inspectorPanel() -> some View {
+        VStack(alignment: .leading, spacing: 16) {
                     Text("Controller State")
                         .font(.headline)
                     
@@ -266,18 +319,15 @@ struct LaunchpadView: View {
                     
                     Spacer()
                 }
-                .frame(width: 250)
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(8)
-            }
-        }
-        .padding()
     }
 }
 
 struct PadView: View {
     let id: ButtonId
+    let padSize: CGFloat
     @EnvironmentObject var appState: AppState
     @State private var isPressed = false
     
@@ -313,8 +363,8 @@ struct PadView: View {
             
             // Label (if configured)
             if let label = behavior?.label, !label.isEmpty {
-                Text(label.prefix(1))
-                    .font(.caption2)
+                Text(label.prefix(padSize > 50 ? 3 : 1))
+                    .font(.system(size: max(8, padSize / 4)))
                     .foregroundColor(.black)
             }
         }
@@ -341,11 +391,11 @@ struct PadView: View {
         if isRound {
             Circle()
                 .fill(color.opacity(opacity))
-                .frame(width: 30, height: 30)
+                .frame(width: padSize, height: padSize)
         } else {
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: max(2, padSize / 8))
                 .fill(color.opacity(opacity))
-                .frame(width: 30, height: 30)
+                .frame(width: padSize, height: padSize)
         }
     }
 
