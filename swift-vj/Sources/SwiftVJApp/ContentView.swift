@@ -15,8 +15,7 @@ struct ContentView: View {
         case shaders = "Shaders"
         case songs = "Songs"
         case automation = "Automation"
-        case osc = "OSC"
-        case bridge = "Bridge"
+        case hub = "Hub"
         case ledfx = "LedFX"
         case launchpad = "Launchpad"
         case logs = "Logs"
@@ -32,8 +31,7 @@ struct ContentView: View {
             case .shaders: return "sparkles"
             case .songs: return "music.note.list"
             case .automation: return "timeline.selection"
-            case .osc: return "antenna.radiowaves.left.and.right"
-            case .bridge: return "arrow.triangle.swap"
+            case .hub: return "network"
             case .ledfx: return "lightbulb.led"
             case .launchpad: return "square.grid.3x3.fill"
             case .logs: return "doc.text"
@@ -123,10 +121,8 @@ struct ContentView: View {
                         SongBrowserView()
                     case .automation:
                         AutomationTimelineView()
-                    case .osc:
-                        OSCContainerView()
-                    case .bridge:
-                        BridgeStatusView()
+                    case .hub:
+                        HubDashboardView()
                     case .ledfx:
                         LedFXConfigView()
                     case .launchpad:
@@ -169,12 +165,11 @@ struct ContentView: View {
         case .shaders: return "4"
         case .songs: return "5"
         case .automation: return "6"
-        case .osc: return "7"
-        case .bridge: return "8"
-        case .ledfx: return "9"
-        case .launchpad: return "0"
-        case .logs: return "-"
-        case .settings: return "="
+        case .hub: return "7"
+        case .ledfx: return "8"
+        case .launchpad: return "9"
+        case .logs: return "0"
+        case .settings: return "-"
         }
     }
 }

@@ -21,17 +21,24 @@ public struct LedFXMapping: Sendable, Equatable {
 
 public actor OS2LToLedFXBridge {
     private let client: LedFXClient
+    private var hubLog: HubMessageLog?
     private var mappings: [LedFXMapping] = [
         LedFXMapping(os2lButtonName: "blackout", playlistName: "off", isScene: true),
         LedFXMapping(os2lButtonName: "*", playlistName: "$1"),
     ]
 
-    public init(ledFXBaseURL: String = "http://127.0.0.1:8888") {
+    public init(ledFXBaseURL: String = "http://127.0.0.1:8888", hubLog: HubMessageLog? = nil) {
         self.client = LedFXClient(baseURL: ledFXBaseURL)
+        self.hubLog = hubLog
     }
 
-    public init(client: LedFXClient) {
+    public init(client: LedFXClient, hubLog: HubMessageLog? = nil) {
         self.client = client
+        self.hubLog = hubLog
+    }
+
+    public func setHubLog(_ log: HubMessageLog) {
+        self.hubLog = log
     }
 
     public func setMappings(_ mappings: [LedFXMapping]) {
@@ -44,14 +51,27 @@ public actor OS2LToLedFXBridge {
 
         guard let resolved = resolveMapping(buttonName: name) else { return }
 
+        let endpoint = resolved.isScene ? "scenes/\(resolved.targetName)" : "playlists/\(resolved.targetName)"
+
         do {
             if resolved.isScene {
                 try await client.activateScene(id: resolved.targetName)
             } else {
                 try await client.startPlaylist(id: resolved.targetName)
             }
+            await hubLog?.record(HubMessage(
+                source: .rest,
+                title: "PUT \(endpoint)",
+                detail: "activated \(resolved.isScene ? "scene" : "playlist") '\(resolved.targetName)'",
+                isIncoming: false
+            ))
         } catch {
-            // Log and swallow — bridge is fire-and-forget during live performance
+            await hubLog?.record(HubMessage(
+                source: .rest,
+                title: "PUT \(endpoint) FAILED",
+                detail: error.localizedDescription,
+                isIncoming: false
+            ))
             print("[OS2LToLedFXBridge] Failed to activate \(resolved.isScene ? "scene" : "playlist") '\(resolved.targetName)': \(error.localizedDescription)")
         }
     }

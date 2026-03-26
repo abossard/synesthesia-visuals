@@ -71,6 +71,19 @@ public func parseOS2LEvent(from jsonString: String) -> OS2LEvent {
     }
 }
 
+// MARK: - Display Title (for Hub Dashboard)
+
+extension OS2LEvent {
+    public var displayTitle: String {
+        switch self {
+        case .button(let name, let state): return "btn \"\(name)\" \(state.rawValue)"
+        case .command(let id, let param): return "cmd id:\(id) param:\(param)"
+        case .beat: return "beat"
+        case .unknown(let raw): return "unknown: \(String(raw.prefix(30)))"
+        }
+    }
+}
+
 /// Extract complete newline-delimited JSON lines from a buffer.
 /// Returns (parsed lines, remaining partial data).
 /// Pure function — no side effects.

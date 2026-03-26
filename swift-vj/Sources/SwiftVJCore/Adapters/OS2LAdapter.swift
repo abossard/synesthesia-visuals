@@ -32,6 +32,11 @@ public actor OS2LAdapter {
     private var lastEventTime: Date?
     private var forwardConnected: Bool = false
 
+    // MARK: - Hub Logging
+
+    /// Optional hub log for unified protocol traffic display.
+    public var hubLog: HubMessageLog?
+
     // MARK: - Callback
 
     /// Called on every parsed event. Set before calling `start()`.
@@ -42,11 +47,13 @@ public actor OS2LAdapter {
     public init(
         listenPort: UInt16 = 9997,
         forwardHost: String = "127.0.0.1",
-        forwardPort: UInt16 = 9996
+        forwardPort: UInt16 = 9996,
+        hubLog: HubMessageLog? = nil
     ) {
         self.listenPort = listenPort
         self.forwardHost = forwardHost
         self.forwardPort = forwardPort
+        self.hubLog = hubLog
     }
 
     // MARK: - Public API
@@ -180,7 +187,7 @@ public actor OS2LAdapter {
         }
     }
 
-    private func processChunk(_ chunk: String, from connection: NWConnection) {
+    private func processChunk(_ chunk: String, from connection: NWConnection) async {
         guard incomingConnection === connection else { return }
 
         receiveBuffer.append(chunk)
@@ -194,6 +201,10 @@ public actor OS2LAdapter {
 
             let event = parseOS2LEvent(from: line)
             onEvent?(event)
+
+            if let log = hubLog {
+                await log.record(HubMessage(source: .os2l, title: event.displayTitle, detail: line))
+            }
 
             forwardRawLine(line)
         }

@@ -215,6 +215,7 @@ public final class AppState: ObservableObject {
     // MARK: - Modules
 
     public let oscHub = OSCHub()
+    public let hubLog = HubMessageLog()
     public let settings = Settings()
     public var playbackModule: PlaybackModule?
     public var lyricsModule: LyricsModule?
@@ -1564,6 +1565,13 @@ public final class AppState: ObservableObject {
                 guard let self = self, self._oscDebugEnabledUnsafe else { return }
                 let argsStr = values.map { "\($0)" }.joined(separator: ", ")
                 Task { @MainActor in self.recordOSCMessage(address, args: [argsStr]) }
+
+                let hubLog = self.hubLog
+                Task {
+                    await hubLog.record(HubMessage(
+                        source: .osc, title: address, detail: argsStr
+                    ))
+                }
             }
 
             for pattern in ["/deck/*", "/vdj/*", "/crossfader"] {
