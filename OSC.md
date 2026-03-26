@@ -2,227 +2,130 @@
 
 ## Overview
 
-This VJ system uses OSC (Open Sound Control) over UDP for real-time communication between audio sources, playback monitors, a central Python hub, and visual applications.
+This VJ system uses OSC (Open Sound Control) over UDP for real-time communication between audio analysis, lighting control, and VJ control applications — all running on a single macOS machine.
 
-**Design Principle:** Central hub pattern — the python-vj `osc_hub.py` binds to receive ports (9008, 9999) to listen for incoming OSC from VDJ and Synesthesia, then routes and forwards messages. The hub also sends control messages to external applications on their respective ports (9009 for VDJ, 7777 for Synesthesia, 9000 for Processing/MMV).
+**Current Stack:**
+
+| Component | Role |
+|-----------|------|
+| **Magic Music Visuals** | Audio analysis via Globals (Custom Freq. + Peak/Smooth modifiers), visual rendering, OSC output via OSCSender modules |
+| **QLC+** | Receives OSC from Magic on port 7700, controls DMX lighting fixtures |
+| **Swift-VJ** | macOS VJ control app — karaoke, shader management, playback monitoring (separate OSC on port 9999) |
 
 ---
 
 ## Architecture Diagram
 
 ```mermaid
-flowchart TB
-    subgraph Sources["🎵 Playback Sources"]
-        SPOT[Spotify<br/>AppleScript]
+flowchart LR
+    subgraph Audio["🎵 Audio Input"]
+        MIC[Audio Source<br/>Line-in / BlackHole]
     end
-    
-    subgraph PyHub["🐍 Python OSC Hub (osc_hub.py)<br/>Central Listener & Router"]
+
+    subgraph Magic["🎨 Magic Music Visuals"]
         direction TB
-        HUB_CORE[OSCHub<br/>Receives & Routes All OSC]
-        CH_VDJ[Channel: vdj<br/>send 9009 / recv 9008]
-        CH_SYN[Channel: synesthesia<br/>send 7777 / recv 9999]
-        CH_KAR[Channel: karaoke<br/>send 9000 / recv —]
-        HUB_CORE --> CH_VDJ
-        HUB_CORE --> CH_SYN
-        HUB_CORE --> CH_KAR
+        GLOBALS[Globals<br/>Dual Envelope Analysis<br/>Custom Freq. + Peak/Smooth]
+        ISF[ISF Shaders<br/>Visual Output]
+        OSC_OUT[OSCSender × 6<br/>port 7700]
+        GLOBALS --> ISF
+        GLOBALS --> OSC_OUT
     end
-    
-    subgraph External["🎨 External Applications"]
-        VDJ_APP[VirtualDJ<br/>Sends OSC to 9008<br/>Receives on 9009]
-        PROC[Processing/VJUniverse<br/>Receives on 9000]
-        SYN[Synesthesia<br/>Sends OSC to 9999<br/>Receives on 7777]
-        MMV[Magic Music Visuals<br/>Receives on 9000+]
+
+    subgraph QLC["💡 QLC+"]
+        QLC_IN[OSC Input Plugin<br/>port 7700]
+        DMX[DMX Fixtures]
+        QLC_IN --> DMX
     end
-    
-    %% Source connections
-    SPOT -->|track info| HUB_CORE
-    
-    %% External apps SEND to Hub (Hub listens)
-    VDJ_APP -->|OSC responses<br/>port 9008| CH_VDJ
-    SYN -->|audio uniforms<br/>callbacks<br/>port 9999| CH_SYN
-    
-    %% Hub SENDS to External apps
-    CH_VDJ -->|/deck/*<br/>/browser/*<br/>port 9009| VDJ_APP
-    CH_SYN -->|/scene/*<br/>/param/*<br/>port 7777| SYN
-    CH_KAR -->|/karaoke/*<br/>/shader/*<br/>/audio/*<br/>port 9000| PROC
-    CH_KAR -->|forward<br/>port 9000+| MMV
-    
-    %% Syphon video (not OSC but completes picture)
-    PROC -.->|Syphon| MMV
-    SYN -.->|Syphon| MMV
+
+    subgraph SwiftVJ["🖥️ Swift-VJ"]
+        SWJ[macOS VJ Control<br/>port 9999]
+    end
+
+    MIC --> GLOBALS
+    OSC_OUT -->|"/audio/..." float 0–1| QLC_IN
+    SWJ -.->|independent OSC| Magic
 ```
 
 ---
 
 ## Port Allocation
 
-| Port | Direction | Who Listens | Purpose |
-|------|-----------|-------------|---------|
-| **7777** | Python Hub → Synesthesia | Synesthesia | Scene/param control commands |
-| **9999** | Synesthesia → Python Hub | **Python Hub** | Audio uniforms, callbacks, events |
-| **9008** | VirtualDJ → Python Hub | **Python Hub** | VDJ OSC responses, status |
-| **9009** | Python Hub → VirtualDJ | VirtualDJ | VDJ OSC commands (PRO license) |
-| **9000** | Python Hub → Processing/MMV | Processing/MMV | Karaoke, audio, shaders |
-
-> **Why a central hub?** The Python Hub is the **single listener** on ports 9999 and 9008, receiving OSC from Synesthesia and VirtualDJ. This centralizes all incoming data, allows processing/routing/forwarding, and avoids port conflicts. The hub then sends control messages and forwards data to other applications.
+| Port | Sender | Receiver | Purpose |
+|------|--------|----------|---------|
+| **7700** | Magic (OSCSender) | QLC+ (OSC Input Plugin) | Audio envelope → DMX control |
+| **9999** | Swift-VJ | Swift-VJ (internal) | Karaoke, shader, playback OSC |
 
 ---
 
-## Channel Architecture
+## Magic → QLC+ (Audio Envelope Control)
 
-The Python hub (`osc_hub.py`) manages three typed channels:
+### Message Format
 
-```python
-VDJ         = ChannelConfig("vdj",         "127.0.0.1", send=9009, recv=9008)
-SYNESTHESIA = ChannelConfig("synesthesia", "127.0.0.1", send=7777, recv=9999)
-KARAOKE     = ChannelConfig("karaoke",     "127.0.0.1", send=9000, recv=None)
+```
+/audio/<band>/<type>  [float 0.0–1.0]
 ```
 
-### Usage Pattern
+- Magic sends **descriptive OSC paths** — any valid OSC address works
+- **Value** — float 0.0–1.0, mapped by QLC+ to DMX 0–255
+- QLC+ accepts **any arbitrary OSC path** as input and internally hashes it to a 16-bit channel number
+- The `/universe/dmx/channel` format is **only** for QLC+ OSC *output* (sending DMX values out), not input
+- Use the **Input Profile Editor wizard** (auto-detect) or **Channel Calculator** to map paths to QLC+ channels
 
-```python
-from osc_hub import osc
+### The 6 Envelope Values
 
-osc.start()
+Magic's dual-envelope audio analysis produces 6 output Globals, each sent via a dedicated OSCSender module:
 
-# Send to different targets
-osc.vdj.send("/deck/1/play")
-osc.synesthesia.send("/scene/load", "my_scene")
-osc.karaoke.send("/karaoke/track", 1, "spotify", "Artist", "Title", "Album", 200.0, 1)
+| Global | Description | OSC Address |
+|--------|-------------|-------------|
+| **LowPeak** | Low band peak-hold (fast attack, slow decay) | `/audio/low/peak` |
+| **LowAvg** | Low band smoothed average (EMA) | `/audio/low/avg` |
+| **LowRaw** | Low band raw value (unprocessed) | `/audio/low/raw` |
+| **HighPeak** | High band peak-hold | `/audio/high/peak` |
+| **HighAvg** | High band smoothed average | `/audio/high/avg` |
+| **HighRaw** | High band raw value | `/audio/high/raw` |
 
-# Query with response
-result = osc.vdj.query("/deck/1/get_time", timeout=1.0)
-```
+For full details on the dual-envelope system (frequency cutoffs, modifiers, Globals wiring), see [docs/reference/magic-dual-envelope-audio-analysis.md](docs/reference/magic-dual-envelope-audio-analysis.md).
 
----
-
-## Message Namespaces
-
-| Prefix | Direction | Purpose |
-|--------|-----------|---------|
-| `/karaoke/*` | Hub → Consumers | Track info, lyrics, position |
-| `/shader/*` | Hub → Consumers | Shader load commands, bindings |
-| `/audio/*` | Hub → Consumers | Real-time audio analysis |
-| `/vdj/*` | Bidirectional | VirtualDJ OSC control & status |
-| `/scene/*` | Hub → Synesthesia | Scene loading |
-| `/param/*` | Hub → Synesthesia | Parameter control |
-| `/pipeline/*` | Hub → Consumers | Processing step status |
-
----
-
-## Data Flow Scenarios
-
-### Scenario 1: Track Change (Spotify → Processing)
+### Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant SP as Spotify
-    participant PY as Python Hub
-    participant PR as Processing
-    
-    SP->>PY: AppleScript poll → track info
-    PY->>PY: Detect track change
-    PY->>PR: /karaoke/track [1, "spotify", "Artist", "Title", ...]
-    PY->>PR: /karaoke/lyrics/reset
-    loop Each lyric line
-        PY->>PR: /karaoke/lyrics/line [i, time, text]
-    end
-```
+    participant Audio as Audio Source
+    participant Magic as Magic Globals
+    participant OSC as OSCSender ×6
+    participant QLC as QLC+ (port 7700)
+    participant DMX as DMX Fixtures
 
-### Scenario 2: Audio Analysis → Visuals
-
-```mermaid
-sequenceDiagram
-    participant AA as Audio Analyzer
-    participant PY as Python Hub
-    participant PR as Processing
-    participant SYN as Synesthesia
-    
-    AA->>PY: /audio/levels [sub, bass, mid, ...]
-    AA->>PY: /audio/beat [1, 0.8]
-    PY->>PR: /audio/levels [...]
-    PY->>PR: /audio/beat [1, 0.8]
-    Note over SYN: Uses internal syn_BassLevel, etc.
+    Audio->>Magic: Audio stream
+    Magic->>Magic: Custom Freq. analysis<br/>(Low: 20–200 Hz, High: 6k–20k Hz)
+    Magic->>Magic: Peak / Smooth / Raw modifiers
+    Magic->>OSC: 6 Global values (0–1)
+    OSC->>QLC: /audio/low/peak..high/raw [float]
+    QLC->>DMX: DMX channels 0–255
 ```
 
 ---
 
-## Message Reference
+## Swift-VJ OSC
 
-### Karaoke Messages
+Swift-VJ operates independently from the Magic → QLC+ pipeline. It communicates on its own ports:
 
-| Address | Args | Description |
-|---------|------|-------------|
-| `/karaoke/track` | `[active, source, artist, title, album, duration, has_lyrics]` | Track info (0/1, string×4, float, 0/1) |
-| `/karaoke/pos` | `[position_sec, is_playing]` | Playback position |
-| `/karaoke/lyrics/reset` | — | Clear lyrics buffer |
-| `/karaoke/lyrics/line` | `[index, time_sec, text]` | Single lyric line |
-| `/karaoke/line/active` | `[index]` | Currently active line (-1 if none) |
-| `/karaoke/refrain/reset` | — | Clear refrain buffer |
-| `/karaoke/refrain/line` | `[index, time_sec, text]` | Refrain line |
-| `/karaoke/refrain/active` | `[index, text]` | Active refrain |
+| Port | Direction | Purpose |
+|------|-----------|---------|
+| **9999** | Inbound to Swift-VJ | Audio data, callbacks |
+| **9009** | Swift-VJ → VirtualDJ | VDJ commands (send) |
+| **9010** | VirtualDJ → Swift-VJ | VDJ responses (receive) |
 
-### Shader Messages
+### Message Namespaces
 
-| Address | Args | Description |
-|---------|------|-------------|
-| `/shader/load` | `[name, energy, valence]` | Load shader (string, 0-1, -1 to 1) |
-| `/shader/audio_binding` | `[uniform, source, mod, mult, smooth, base, min, max]` | Audio binding config |
+| Prefix | Purpose |
+|--------|---------|
+| `/karaoke/*` | Track info, lyrics, position |
+| `/shader/*` | Shader load commands |
+| `/audio/*` | Audio analysis data |
+| `/textler/*` | Text overlay control |
 
-### Audio Messages
-
-| Address | Args | Description |
-|---------|------|-------------|
-| `/audio/levels` | `[sub, bass, low_mid, mid, high_mid, presence, air, rms]` | 8 frequency bands |
-| `/audio/beat` | `[is_onset, flux]` | Beat detection |
-| `/audio/bpm` | `[tempo, confidence]` | Tempo estimate |
-| `/audio/structure` | `[buildup, drop, trend, brightness]` | Song structure |
-
----
-
-## Network Topology
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         macOS Machine                               │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   ┌──────────────┐     ┌──────────────────────────────────────┐    │
-│   │ Spotify      │────▶│ Python VJ Console (osc_hub.py)       │    │
-│   │ (AppleScript)│     │ CENTRAL OSC HUB & ROUTER             │    │
-│   └──────────────┘     │                                      │    │
-│                        │  Listening on (receives):            │    │
-│   ┌──────────────┐     │  • port 9999 ← Synesthesia          │    │
-│   │ VirtualDJ    │────▶│  • port 9008 ← VirtualDJ            │    │
-│   │ Sends to 9008│     │                                      │    │
-│   │ Listens 9009 │◀────│  Sending to (transmits):            │    │
-│   └──────────────┘     │  • port 9009 → VirtualDJ            │    │
-│                        │  • port 7777 → Synesthesia          │    │
-│   ┌──────────────┐     │  • port 9000 → Processing/MMV       │    │
-│   │ Synesthesia  │────▶│                                      │    │
-│   │ Sends to 9999│     └──────────────┬───────────────────────┘    │
-│   │ Listens 7777 │◀───────────────────┘                           │
-│   └──────┬───────┘                                                 │
-│          │                    ┌──────────────┐                     │
-│          │                    │ Processing   │                     │
-│          │                    │ Listens 9000 │◀────────────────────┤
-│          │                    └──────┬───────┘                     │
-│          │                           │                             │
-│          │           ┌───────────────┴──────────────┐              │
-│          │           │         Syphon                │              │
-│          │           │    (frame sharing)            │              │
-│          └───────────┴────────────┬──────────────────┘              │
-│                                   ▼                                 │
-│                          ┌──────────────────┐                       │
-│                          │ Magic Music      │                       │
-│                          │ Visuals          │                       │
-│                          │ Listens 9000+    │                       │
-│                          │ (Syphon mixer)   │                       │
-│                          └────────┬─────────┘                       │
-│                                   ▼                                 │
-│                              Projector                              │
-└─────────────────────────────────────────────────────────────────────┘
-```
+All messages use **flat arrays** — primitives only (`int`, `float`, `string`), no nested structures.
 
 ---
 
@@ -230,31 +133,17 @@ sequenceDiagram
 
 ### Message Format
 
-All OSC messages use **flat arrays** (no nested structures):
-
 ```text
 /category/subcategory/event [arg1, arg2, arg3, ...]
 ```
 
-Arguments are primitives only: `int`, `float`, `string`.
-
-### Rate Limiting
+### Rate Expectations
 
 | Message Type | Rate |
 |--------------|------|
-| Position updates | 1 Hz |
-| Audio levels | 60 Hz |
+| Audio envelopes (Magic → QLC+) | 60 Hz (every frame) |
 | Track info | On change only |
 | Beat detection | On beat only |
-
-### Namespace Separation
-
-Keep namespaces distinct to avoid collisions:
-- `/syn/*` — Synesthesia-specific
-- `/song/*` — Song metadata
-- `/karaoke/*` — Karaoke system
-- `/vdj/*` — VirtualDJ
-- `/audio/*` — Audio analysis
 
 ---
 
@@ -262,27 +151,21 @@ Keep namespaces distinct to avoid collisions:
 
 | Issue | Check |
 |-------|-------|
-| No OSC received | Is hub running? Check port bindings. |
-| Port conflict | Only one process can bind to each port. |
-| Messages not forwarded | Verify channel is started in hub. |
-| VDJ not responding | Requires VirtualDJ PRO license for OSC. |
+| QLC+ not receiving OSC | Is port 7700 configured in QLC+ OSC Input Plugin? |
+| No audio response in Magic | Check Globals panel — are output Globals linked to Audio Source? |
+| Port conflict | Only one process can bind to each port |
+| OSC paths not mapped | Use Input Profile Editor wizard (auto-detect) or Channel Calculator to map OSC paths to QLC+ channels |
 
-### Debug Commands
+### Debug: Monitor OSC Traffic
 
 ```bash
-# Monitor OSC traffic on port 9000
-python -c "
-import pyliblo3 as liblo
-s = liblo.ServerThread(9000)
-s.add_method(None, None, lambda p, a, t, s: print(f'{p} {a}'))
-s.start()
-import time; time.sleep(3600)
-"
-
-# Test send to Processing
-python -c "
-import pyliblo3 as liblo
-liblo.send(liblo.Address('127.0.0.1', 9000), '/test', 1, 2, 3)
+# Listen on port 7700 (what QLC+ receives)
+python3 -c "
+from pythonosc.dispatcher import Dispatcher
+from pythonosc.osc_server import ThreadingOSCUDPServer
+d = Dispatcher()
+d.set_default_handler(lambda addr, *args: print(f'{addr} {args}'))
+ThreadingOSCUDPServer(('127.0.0.1', 7700), d).serve_forever()
 "
 ```
 
@@ -290,8 +173,10 @@ liblo.send(liblo.Address('127.0.0.1', 9000), '/test', 1, 2, 3)
 
 ## Related Documentation
 
-- **[OSC_FUTURE_PLAN.md](OSC_FUTURE_PLAN.md)** — 🚀 **Future Architecture Plan** (VDJ queries, message forwarding, Launchpad banks)
-- [vj-console-spec/03-osc-protocol.md](vj-console-spec/03-osc-protocol.md) — Full message specification
-- [vj-console-spec/07-launchpad-osc-lib.md](vj-console-spec/07-launchpad-osc-lib.md) — Launchpad controller integration
-- [python-vj/docs/guides/osc-visual-mapping.md](python-vj/docs/guides/osc-visual-mapping.md) — VJ software mapping guide
-- [docs/setup/live-vj-setup-guide.md](docs/setup/live-vj-setup-guide.md) — Full Syphon/Magic pipeline setup
+- [docs/reference/magic-dual-envelope-audio-analysis.md](docs/reference/magic-dual-envelope-audio-analysis.md) — Full dual-envelope system design (Globals, modifiers, wiring)
+- [docs/setup/live-vj-setup-guide.md](docs/setup/live-vj-setup-guide.md) — Live VJ rig setup
+- [swift-vj/README.md](swift-vj/README.md) — Swift-VJ documentation
+
+### Archived (Legacy)
+
+The previous architecture used a Python OSC hub (`osc_hub.py`) to route messages between Synesthesia, VirtualDJ, Processing/VJUniverse, and Magic. That system has been replaced by the direct Magic → QLC+ pipeline above. Legacy docs are preserved in `archive/` and `docs/_archive/`.
