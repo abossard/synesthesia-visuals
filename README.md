@@ -17,11 +17,26 @@ A toolkit for VJ performances combining Synesthesia shaders, Swift-VJ control ap
 │   │       └── Launchpad/  # MIDI controller support
 │   └── Tests/              # 197 tests (TDD from day one)
 ├── magic/                  # Magic Music Visuals integration
+├── lpsyn.noisette          # Chataigne configuration (Launchpad + Synesthesia control)
 ├── archive/                # Deprecated components (python-vj, processing-vj, ISF shaders)
 └── docs/                   # Documentation and guides
 ```
 
 ## Quick Start
+
+### NEW: Chataigne + Magic Music Visuals VJ Rig
+**Recommended for live performance with 400+ shaders**
+
+The new recommended architecture uses **Chataigne** (visual programming control hub) + **Magic Music Visuals** (main VJ tool) + **Synesthesia** (audio-reactive shader engine), replacing the all-in-one SwiftVJApp with specialized tools:
+
+- **[Chataigne Quick Start](docs/setup/CHATAIGNE_QUICK_START.md)** - Get a 400-shader rig running in 30 minutes
+- **[Chataigne + SwiftVJApp Replacement Guide](docs/setup/chataigne-swiftvjapp-replacement-guide.md)** - Complete migration guide with architecture diagrams
+
+**Key Benefits**:
+- ✅ 400+ shaders organized in 8 Launchpad banks (64 scenes × 8 = 512 slots)
+- ✅ Magic Music Visuals as main VJ tool (better performance, shader masks, advanced compositing)
+- ✅ Visual programming in Chataigne (no code for MIDI mappings)
+- ✅ Keep SwiftVJApp for lyrics + AI analysis (runs in background)
 
 ### Synesthesia Shaders
 The `synesthesia-shaders/` folder contains `.synScene` directories with GLSL shaders for use with [Synesthesia](https://synesthesia.live/).
@@ -30,6 +45,8 @@ The `synesthesia-shaders/` folder contains `.synScene` directories with GLSL sha
 
 ### Swift-VJ Control Application
 The `swift-vj/` folder contains a native macOS application for VJ control and visual rendering.
+
+**Note**: For live performance, consider using the Chataigne-based workflow (see above) which offers better flexibility and performance for large shader libraries.
 
 **Features:**
 - **Playback Monitoring** - VirtualDJ (OSC) and Spotify (AppleScript) support
@@ -94,6 +111,8 @@ Swift-VJ includes full Launchpad support via CoreMIDI with:
 ### Quick Links by Purpose
 
 **🚀 Setup & Installation**
+- **[NEW: Chataigne Quick Start](docs/setup/CHATAIGNE_QUICK_START.md)** - 400-shader VJ rig in 30 minutes
+- **[NEW: Chataigne + SwiftVJApp Replacement Guide](docs/setup/chataigne-swiftvjapp-replacement-guide.md)** - Complete migration guide
 - [Quick Start: OSC Pipeline](docs/setup/QUICK_START_OSC_PIPELINE.md) - Get running in 5 minutes
 - [Live VJ Setup Guide](docs/setup/live-vj-setup-guide.md) - Complete live rig setup
 - [MIDI Controller Setup](docs/setup/midi-controller-setup.md) - Configure hardware
