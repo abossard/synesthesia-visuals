@@ -30,14 +30,12 @@ Technical references, guides, and API documentation for the VJ toolkit component
 
 > **⚠️ ARCHIVED:** Processing guides have been archived as of 2026-01-05. See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md).
 
-### Comprehensive Guide Series (Archived)
-- **[Processing VJ Guides](processing-guides/README.md)** - Complete series for creating interactive, audio-reactive simulations
-  - Preserved for reference in `archive/processing-vj/`
-  - Replaced by Swift-VJ Metal rendering
+## Magic Music Visuals Reference
 
-### Advanced Examples (Archived)
-- **[Processing Levels](processing-levels/README.md)** - 14 detailed visual concept implementations
-  - Archived - use Swift-VJ shader tiles instead
+- **[Magic Dual Envelope Audio Analysis](magic-dual-envelope-audio-analysis.md)** - Dual envelope audio analysis system
+  - DualEnvelopeSpectrum and DualEnvelopeMeters shaders
+  - Attack/release envelope design
+  - Audio-reactive parameter mapping
 
 ## Shader References
 

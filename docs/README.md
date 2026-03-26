@@ -6,8 +6,8 @@ Documentation for the VJ/visual performance toolkit, organized by purpose.
 
 ### 🚀 [Setup](setup/)
 **Installation and configuration guides**
+- Quick Start: Magic → QLC+ pipeline
 - Quick Start: OSC Pipeline
-- Live VJ Setup Guide  
 - MIDI Controller Setup
 
 Start here if you're setting up the system for the first time.
@@ -17,7 +17,6 @@ Start here if you're setting up the system for the first time.
 - Swift-VJ Application Guide
 - Magic Music Visuals Guide
 - MMV Master Pipeline Guide
-- ⚠️ Processing Games Guide (archived)
 
 Your guide for live VJ work and creative sessions.
 
@@ -25,8 +24,8 @@ Your guide for live VJ work and creative sessions.
 **Technical documentation and APIs**
 - Swift-VJ Architecture and Modules
 - ISF to Synesthesia Migration
+- Magic Dual Envelope Audio Analysis
 - Audio analysis via Synesthesia
-- ⚠️ Processing VJ Guides (archived)
 
 Deep technical details and API references.
 
@@ -36,28 +35,23 @@ Deep technical details and API references.
 - **Shader Generation Implementation Plan** ⭐ NEW
 - Shader Orchestrator Plan
 - Pipeline Planner Improvements
-- ⚠️ Python VJ Refactor Plan (archived)
-- ⚠️ Processing Implementation Plan (archived)
 
 Active development roadmaps and architecture improvements.
 
-### 📦 [Archive](archive/)
+### 📦 [Archive](_archive/)
 **Historical documentation**
-- Python-VJ and Processing-VJ implementations
-- Completed investigations
-- Superseded content
-
-Preserved for reference but not actively maintained.
+- Archived docs from Python-VJ, Processing-VJ, and other superseded content
+- Preserved for reference but not actively maintained
 
 ## Quick Navigation
 
 ### I want to...
 
 **Get started quickly**
-→ [Setup: Quick Start OSC Pipeline](setup/QUICK_START_OSC_PIPELINE.md)
+→ [Setup: Quick Start Magic → QLC+](setup/quickstart-magic-to-qlcplus.md)
 
 **Set up for a live show**
-→ [Setup: Live VJ Setup Guide](setup/live-vj-setup-guide.md)
+→ [Setup: Quick Start OSC Pipeline](setup/QUICK_START_OSC_PIPELINE.md)
 
 **Learn about Swift-VJ architecture**
 → [Swift-VJ: Rewrite Plan](../swift-vj/REWRITE_PLAN.md)
@@ -80,18 +74,6 @@ Preserved for reference but not actively maintained.
 **Migrate from Python-VJ or Processing-VJ**
 → [Migration Guide](../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md)
 
-## Component Documentation
-
-Beyond this docs folder:
-
-- **[Swift-VJ](../swift-vj/README.md)** - Native macOS VJ control application (current)
-- **[Migration Guide](../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md)** - Python-VJ/Processing-VJ to Swift-VJ
-- **[Synesthesia Shaders](../synesthesia-shaders/README.md)** - GLSL shader scenes
-
-### Archived Components
-- **[Python VJ Tools](../archive/python-vj/README.md)** - Legacy VJ Console, audio analyzer, MIDI router (archived 2026-01-05)
-- **[Processing Projects](../archive/processing-vj/README.md)** - Interactive visuals and games (archived 2026-01-05)
-
 ## Quick Reference
 
 ### Controllers
@@ -103,18 +85,18 @@ Beyond this docs folder:
 ### Technologies
 - **Swift 5.9+** for VJ control application (macOS 14.0+)
 - **Metal** for GPU-accelerated shader rendering
+- **Magic Music Visuals** for audio analysis and ISF shader playback
 - **Synesthesia** for GLSL shader playback and audio analysis
+- **QLC+** for DMX/lighting control
 - **Syphon** (macOS) for frame sharing to VJ software
 
 ### Key Conventions
 - Launchpad grid: notes 11-88 (8x8 pads)
 - MIDIMix faders: CC 20-27 (layers 1-8)
-- Processing resolution: 1920x1080 for VJ output
 - Synesthesia uniforms: `syn_*` prefix for audio reactivity
 
 ## Additional Resources
 
-- [PixelFlow](https://diwi.github.io/PixelFlow/) - GPU-accelerated Processing library
 - [Synesthesia](https://synesthesia.live/) - Live visual performance software
-- [Processing](https://processing.org/) - Creative coding platform
-- [Essentia](https://essentia.upf.edu/) - Audio analysis library
+- [Magic Music Visuals](https://magicmusicvisuals.com/) - Audio-reactive visual software
+- [QLC+](https://www.qlcplus.org/) - Open-source lighting control

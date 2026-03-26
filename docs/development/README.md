@@ -24,19 +24,7 @@ Implementation plans, future improvements, and development roadmaps for the VJ t
 
 ### Archived Development Plans
 
-> **⚠️ ARCHIVED:** The following plans are for archived Python-VJ and Processing-VJ systems.
-
-- **[Processing Implementation Plan](processing-implementation-plan.md)** - Archived plan for Processing VJ system
-  - System completed and archived 2026-01-05
-  - Replaced by Swift-VJ Metal rendering
-
-- **[Processing Syphon Idea Board](processing-syphon-idea-board.md)** - Archived visual concepts
-  - 14 modular level implementations preserved in archive
-  - Reference for Swift-VJ shader tile ideas
-
-- **[Python VJ Refactor Plan](python-vj-refactor-plan.md)** - Archived architecture improvements
-  - Completed and superseded by Swift-VJ rewrite
-  - Clean architecture principles carried forward to Swift-VJ
+> **⚠️ ARCHIVED:** The following plans are for archived systems. See `docs/_archive/` for preserved documentation.
 
 ### Shader Pipeline
 - **[Shader Orchestrator Implementation Plan](shader-orchestrator-implementation-plan.md)** - AI-powered shader selection

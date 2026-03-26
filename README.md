@@ -1,12 +1,11 @@
 # Synesthesia Visuals
 
-A toolkit for VJ performances combining Synesthesia shaders, Swift-VJ control application, and MIDI controller integration.
+A VJ performance toolkit built around **Magic Music Visuals** (audio analysis + visuals), **QLC+** (lighting/DMX), **Swift-VJ** (macOS VJ control app), and **Synesthesia shaders** (GLSL scenes). MIDI controllers (Launchpad, MIDImix) tie everything together for live performance.
 
 ## Repository Structure
 
 ```
-├── synesthesia-shaders/    # Synesthesia scene files and GLSL shaders
-├── swift-vj/               # Swift VJ control application (macOS native)
+├── swift-vj/               # macOS VJ control app (SwiftUI + Metal rendering)
 │   ├── Sources/
 │   │   ├── SwiftVJApp/     # SwiftUI application
 │   │   │   ├── Rendering/  # Metal-based shader/text/image rendering
@@ -15,13 +14,18 @@ A toolkit for VJ performances combining Synesthesia shaders, Swift-VJ control ap
 │   │       ├── Modules/    # Playback, Lyrics, AI, Shaders, Pipeline
 │   │       ├── Adapters/   # LyricsFetcher, OSCHub, VDJMonitor, etc.
 │   │       └── Launchpad/  # MIDI controller support
-│   └── Tests/              # 197 tests (TDD from day one)
-├── magic/                  # Magic Music Visuals integration
-├── archive/                # Deprecated components (python-vj, processing-vj, ISF shaders)
-└── docs/                   # Documentation and guides
+│   └── Tests/              # Behavior + E2E tests (TDD from day one)
+├── magic/                  # ISF shaders for Magic Music Visuals
+│   │                       #   (DualEnvelopeSpectrum.fs, DualEnvelopeMeters.fs, etc.)
+├── synesthesia-shaders/    # Synesthesia .synScene directories (GLSL + JSON + JS)
+├── docs/                   # Documentation (setup, operation, reference, development)
+│   └── _archive/           # Archived documentation
+└── archive/                # Deprecated code (Python-VJ, Processing-VJ, VDJStatus)
 ```
 
 ## Quick Start
+
+**→ [Quick Start: Magic Music Visuals + QLC+](docs/setup/quickstart-magic-to-qlcplus.md)** — Get the full audio-visual-lighting pipeline running.
 
 ### Synesthesia Shaders
 The `synesthesia-shaders/` folder contains `.synScene` directories with GLSL shaders for use with [Synesthesia](https://synesthesia.live/).
@@ -53,27 +57,21 @@ swift run swift-vj  # Launch application
 
 See [swift-vj/README.md](swift-vj/README.md) for detailed documentation.
 
-### Archived: Python-VJ and Processing-VJ
-**Note:** The Python and Processing-based systems have been archived and replaced by Swift-VJ. See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md) for feature parity and migration guide.
-
-The archived implementations are available in:
-- `archive/python-vj/` - Python VJ control system (Textual TUI)
-- `archive/processing-vj/` - Processing sketches and games (Java)
+### Archived Components
+Python-VJ, Processing-VJ, and VDJStatus CLI have been archived. Code lives in `archive/`. See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md) for the migration guide.
 
 ## Audio Analytics
 
-**Primary Engine**: [Synesthesia](https://synesthesia.live/) provides professional audio analysis with:
+**Primary Engine**: [Magic Music Visuals](https://magicmusicvisuals.com/) and [Synesthesia](https://synesthesia.live/) provide audio analysis with:
 - Per-band energy (bass, mid, high)
-- Beat detection and BPM estimation  
+- Beat detection and BPM estimation
 - Spectral features (centroid, flux)
 - Low-latency OSC output (~10-30ms)
 
-**Integration**: Swift-VJ receives audio data via OSC from Synesthesia and uses it for:
+**Integration**: Swift-VJ receives audio data via OSC and uses it for:
 - Audio-reactive shader parameters
 - Beat-synced animations
 - BPM-based LED blinking (Launchpad)
-
-**Note**: Python/Essentia-based audio analyzer has been removed. Use Synesthesia for all audio analysis needs.
 
 ### MIDI Controllers
 This project uses:
@@ -94,8 +92,8 @@ Swift-VJ includes full Launchpad support via CoreMIDI with:
 ### Quick Links by Purpose
 
 **🚀 Setup & Installation**
+- [Quick Start: Magic → QLC+](docs/setup/quickstart-magic-to-qlcplus.md) - Full pipeline setup
 - [Quick Start: OSC Pipeline](docs/setup/QUICK_START_OSC_PIPELINE.md) - Get running in 5 minutes
-- [Live VJ Setup Guide](docs/setup/live-vj-setup-guide.md) - Complete live rig setup
 - [MIDI Controller Setup](docs/setup/midi-controller-setup.md) - Configure hardware
 
 **🎮 Using the System**
@@ -106,8 +104,8 @@ Swift-VJ includes full Launchpad support via CoreMIDI with:
 
 **📚 Technical Reference**
 - [OSC Architecture](OSC.md) - Current OSC communication system
-- **[OSC Future Plan](OSC_FUTURE_PLAN.md)** - 🚀 Planned OSC evolution (VDJ queries, forwarding, Launchpad)
 - [ISF to Synesthesia Migration](docs/reference/isf-to-synesthesia-migration.md) - Manual shader conversion
+- [Magic Dual Envelope Audio](docs/reference/magic-dual-envelope-audio-analysis.md) - Audio analysis reference
 - [Shadertoy to Synesthesia Converter](.github/prompts/shadertoy-to-synesthesia-converter.prompt.md) - AI-powered conversion prompt
 
 **🔧 Development**
@@ -115,8 +113,8 @@ Swift-VJ includes full Launchpad support via CoreMIDI with:
 - [Swift-VJ Code Examples](swift-vj/CODE_EXAMPLES.md) - Design patterns and code samples
 
 **📦 Migration & Archive**
-- **[Python-VJ/Processing-VJ Migration Guide](PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md)** - Feature parity and migration checklist
-- [Archived Components](archive/README.md) - Legacy systems (python-vj, processing-vj)
+- [Archived Components](archive/README.md) - Legacy systems (Python-VJ, Processing-VJ, VDJStatus)
+- [Archived Documentation](docs/_archive/) - Old docs preserved for reference
 
 ## Controller Roles
 
@@ -132,7 +130,7 @@ Swift-VJ includes full Launchpad support via CoreMIDI with:
 - Beat-synced LED feedback
 - JSON config persistence
 
-See [OSC_FUTURE_PLAN.md](OSC_FUTURE_PLAN.md#step-04-launchpad-controller-architecture) for planned architecture.
+See [OSC.md](OSC.md) for the OSC architecture and message formats.
 
 ## License
 

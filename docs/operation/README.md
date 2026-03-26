@@ -30,11 +30,6 @@ Guides for using the VJ toolkit in live performances and creative sessions.
   - Precise MIDI mapping
   - Expression chains and effects
 
-### Archived Guides
-- **[Processing Games Guide](processing-games-guide.md)** - ⚠️ ARCHIVED: Create interactive VJ games with Processing and Launchpad
-  - Archived 2026-01-05, replaced by Swift-VJ rendering
-  - See [PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md](../../PYTHON_PROCESSING_TO_SWIFT_MIGRATION.md)
-
 ## Live Performance Workflow
 
 ### Pre-Show Setup

@@ -4,39 +4,39 @@ Complete guides for installing and configuring the VJ toolkit.
 
 ## Quick Start
 
-- **[Quick Start: OSC Pipeline](QUICK_START_OSC_PIPELINE.md)** - Get the Python → OSC → Processing visualization pipeline running in 5 minutes
-- **[Live VJ Setup Guide](live-vj-setup-guide.md)** - Complete live rig setup: Processing + Syphon + Synesthesia + Magic + BlackHole
+- **[Quick Start: Magic → QLC+](quickstart-magic-to-qlcplus.md)** - Full audio-visual-lighting pipeline with Magic Music Visuals and QLC+
+- **[Quick Start: OSC Pipeline](QUICK_START_OSC_PIPELINE.md)** - Get the OSC visualization pipeline running in 5 minutes
 - **[MIDI Controller Setup](midi-controller-setup.md)** - Configure Akai MIDImix and Launchpad Mini Mk3
 
 ## What You'll Need
 
 ### Software
-- **Processing 4.x** - For interactive visuals
-- **Python 3.8+** - For VJ console and audio analysis
-- **Synesthesia** (optional) - For shader visuals
-- **Magic Music Visuals** or **Resolume** (optional) - For VJ software integration
+- **Magic Music Visuals** - Audio-reactive visual engine
+- **QLC+** - DMX/lighting control
+- **Swift-VJ** - macOS VJ control app (Swift 5.9+, macOS 14.0+)
+- **Synesthesia** (optional) - For GLSL shader visuals
 
 ### Hardware
 - **Akai MIDImix** - VJ/lighting control (faders, knobs)
-- **Launchpad Mini Mk3** - Interactive games (pad grid)
+- **Launchpad Mini Mk3** - Interactive control (pad grid)
 - **Audio Interface** or **BlackHole** - For audio routing
 
 ## Setup Order
 
-1. **Start Here**: Follow the [Quick Start OSC Pipeline](QUICK_START_OSC_PIPELINE.md) to verify your basic setup
+1. **Start Here**: Follow [Quick Start: Magic → QLC+](quickstart-magic-to-qlcplus.md) for the full pipeline
 2. **MIDI Controllers**: Configure your controllers with [MIDI Controller Setup](midi-controller-setup.md)
-3. **Live Performance**: Set up the complete rig with [Live VJ Setup Guide](live-vj-setup-guide.md)
+3. **OSC Pipeline**: Set up Swift-VJ OSC integration with [Quick Start OSC Pipeline](QUICK_START_OSC_PIPELINE.md)
 
 ## Platform-Specific Notes
 
 ### macOS
 - Use **BlackHole** for audio loopback
-- **Syphon** available for frame sharing (requires Intel Processing on Apple Silicon)
+- **Syphon** available for frame sharing between apps
 - Create Multi-Output Device in Audio MIDI Setup
 
 ### Windows
 - Use **VB-Cable** or **VoiceMeeter** for audio loopback
-- **Spout** available instead of Syphon (requires Windows Processing build)
+- **Spout** available instead of Syphon
 
 ### Linux
 - Use **PulseAudio** or **JACK** for audio routing
