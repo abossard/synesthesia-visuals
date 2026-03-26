@@ -1009,10 +1009,69 @@ public func launcherReducer(
         state.lastError = nil
         state.revision &+= 1
         return .none
+
+    case .terminateTargetRequested(let id):
+        guard let target = state.targets.first(where: { $0.id == id }) else {
+            state.lastError = "Terminate target not found."
+            state.revision &+= 1
+            return .none
+        }
+        state.lastError = nil
+        state.revision &+= 1
+        return LauncherEffects.terminateTarget(target)
+            .map { AppAction.launcher($0) }
+
+    case .terminateAllRequested:
+        let appTargets = state.targets.filter { $0.kind == .app }
+        guard !appTargets.isEmpty else { return .none }
+        state.lastError = nil
+        state.revision &+= 1
+        return LauncherEffects.terminateAll(appTargets)
+            .map { AppAction.launcher($0) }
+
+    case .terminateTargetCompleted(let id, let terminated, let error):
+        if terminated {
+            state.runningTargetIDs.remove(id)
+            state.lastError = nil
+        }
+        if let error, !error.isEmpty {
+            state.lastError = error
+            appState.ui.addLog("Launcher: \(error)", level: .error)
+        } else if terminated {
+            appState.ui.addLog("Launcher: terminated target", level: .info)
+        }
+        state.revision &+= 1
+        return .none
+
+    case .terminateAllCompleted(let report):
+        state.runningTargetIDs = report.runningTargetIDs
+        if let firstError = report.failedTargetErrors.values.sorted().first {
+            state.lastError = firstError
+        } else {
+            state.lastError = nil
+        }
+        let terminated = report.terminatedTargetIDs.count
+        let notRunning = report.notRunningTargetIDs.count
+        let failed = report.failedTargetErrors.count
+        state.lastLaunchSummary = "Stopped \(terminated), not running \(notRunning), failed \(failed)"
+        appState.ui.addLog("Launcher: \(state.lastLaunchSummary ?? "terminate completed")", level: failed > 0 ? .warning : .info)
+        state.revision &+= 1
+        return .none
+
+    case .addKnownTarget(let knownTarget):
+        let target = knownTarget.launchTarget
+        if state.targets.contains(where: { $0.normalizedIdentity == target.normalizedIdentity }) {
+            state.lastError = "\(target.displayName) is already configured."
+            state.revision &+= 1
+            return .none
+        }
+        state.targets.append(target)
+        state.lastError = nil
+        state.revision &+= 1
+        appState.ui.addLog("Launcher: added \(target.displayName)", level: .info)
+        return .send(.persistState)
     }
 }
-
-// MARK: - LedFX Reducer
 
 /// Reducer for LedFX-related actions (effect-only)
 public func ledfxReducer(state: inout LedFXSubState, action: LedFXAction) -> Effect<AppAction> {
@@ -1931,6 +1990,33 @@ public enum LauncherEffects {
             }
             let report = await handler.launchTargetsIfNeeded(targets)
             await send(.launchAllCompleted(report))
+        }
+    }
+
+    public static func terminateTarget(_ target: LaunchTarget) -> Effect<LauncherAction> {
+        .run { send in
+            guard let handler = await EffectEnvironment.shared.launcherHandler else {
+                await send(.terminateTargetCompleted(id: target.id, terminated: false, error: "Launcher unavailable"))
+                return
+            }
+            let result = await handler.terminateTarget(target)
+            await send(.terminateTargetCompleted(id: target.id, terminated: result.terminated, error: result.error))
+        }
+    }
+
+    public static func terminateAll(_ targets: [LaunchTarget]) -> Effect<LauncherAction> {
+        .run { send in
+            guard let handler = await EffectEnvironment.shared.launcherHandler else {
+                await send(.terminateAllCompleted(
+                    LauncherTerminateReport(
+                        failedTargetErrors: ["launcher": "Launcher unavailable"],
+                        runningTargetIDs: []
+                    )
+                ))
+                return
+            }
+            let report = await handler.terminateAll(targets)
+            await send(.terminateAllCompleted(report))
         }
     }
 }

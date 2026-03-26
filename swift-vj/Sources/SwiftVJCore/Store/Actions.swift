@@ -364,6 +364,43 @@ public struct LauncherLaunchReport: Sendable, Equatable {
     }
 }
 
+/// Aggregate terminate results for batch stop operations.
+public struct LauncherTerminateReport: Sendable, Equatable {
+    public var terminatedTargetIDs: [String]
+    public var notRunningTargetIDs: [String]
+    public var failedTargetErrors: [String: String]
+    public var runningTargetIDs: Set<String>
+
+    public init(
+        terminatedTargetIDs: [String] = [],
+        notRunningTargetIDs: [String] = [],
+        failedTargetErrors: [String: String] = [:],
+        runningTargetIDs: Set<String> = []
+    ) {
+        self.terminatedTargetIDs = terminatedTargetIDs
+        self.notRunningTargetIDs = notRunningTargetIDs
+        self.failedTargetErrors = failedTargetErrors
+        self.runningTargetIDs = runningTargetIDs
+    }
+}
+
+/// Well-known app targets that can be added with a single action.
+public enum KnownAppTarget: String, Sendable, CaseIterable {
+    case qlcPlus5
+
+    public var launchTarget: LaunchTarget {
+        switch self {
+        case .qlcPlus5:
+            return LaunchTarget.appTarget(
+                id: "app.path./applications/qlc+5.app",
+                displayName: "Q Light Controller Plus",
+                bundleIdentifier: nil,
+                appPath: "/Applications/QLC+5.app"
+            )
+        }
+    }
+}
+
 /// Actions related to controlled app/command launching.
 public enum LauncherAction: Sendable {
     /// User dropped one or more file URLs to analyze as launch targets.
@@ -398,6 +435,21 @@ public enum LauncherAction: Sendable {
 
     /// Clear last launcher error.
     case clearError
+
+    /// Terminate (stop) a single running target.
+    case terminateTargetRequested(id: String)
+
+    /// Terminate all running targets.
+    case terminateAllRequested
+
+    /// Completion for single-target terminate request.
+    case terminateTargetCompleted(id: String, terminated: Bool, error: String?)
+
+    /// Completion for batch terminate request.
+    case terminateAllCompleted(LauncherTerminateReport)
+
+    /// Add a known app target by preset identifier.
+    case addKnownTarget(KnownAppTarget)
 }
 
 // MARK: - LedFX Actions
@@ -903,6 +955,14 @@ extension LauncherAction: CustomStringConvertible {
         case .launchAllCompleted(let report):
             return "launchAllCompleted(launched: \(report.launchedTargetIDs.count), failed: \(report.failedTargetErrors.count))"
         case .clearError: return "clearError"
+        case .terminateTargetRequested(let id): return "terminateTargetRequested(\(id))"
+        case .terminateAllRequested: return "terminateAllRequested"
+        case .terminateTargetCompleted(let id, let terminated, let error):
+            if let error { return "terminateTargetCompleted(\(id), terminated: \(terminated), error: \(error))" }
+            return "terminateTargetCompleted(\(id), terminated: \(terminated))"
+        case .terminateAllCompleted(let report):
+            return "terminateAllCompleted(terminated: \(report.terminatedTargetIDs.count), failed: \(report.failedTargetErrors.count))"
+        case .addKnownTarget(let known): return "addKnownTarget(\(known.rawValue))"
         }
     }
 }

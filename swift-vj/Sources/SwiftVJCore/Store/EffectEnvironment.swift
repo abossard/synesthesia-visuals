@@ -22,6 +22,8 @@ public protocol LauncherEffectHandling: Sendable {
     func analyzeDroppedItems(_ urls: [URL]) async -> [LaunchTarget]
     func launchTarget(_ target: LaunchTarget) async -> (launched: Bool, error: String?)
     func launchTargetsIfNeeded(_ targets: [LaunchTarget]) async -> LauncherLaunchReport
+    func terminateTarget(_ target: LaunchTarget) async -> (terminated: Bool, error: String?)
+    func terminateAll(_ targets: [LaunchTarget]) async -> LauncherTerminateReport
 }
 
 /// Environment for effect execution, providing dependency injection.

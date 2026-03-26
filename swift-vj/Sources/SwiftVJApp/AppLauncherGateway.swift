@@ -82,6 +82,64 @@ actor AppLauncherGateway: LauncherEffectHandling {
         )
     }
 
+    func terminateTarget(_ target: LaunchTarget) async -> (terminated: Bool, error: String?) {
+        guard target.kind == .app else {
+            return (false, "Cannot terminate command targets — close their terminal window manually.")
+        }
+
+        guard await isTargetRunning(target) else {
+            return (false, nil)
+        }
+
+        let apps = await MainActor.run {
+            runningApplications(bundleIdentifier: target.appBundleIdentifier, appPath: target.appPath)
+        }
+
+        guard !apps.isEmpty else {
+            return (false, nil)
+        }
+
+        var terminated = false
+        for app in apps {
+            if app.terminate() {
+                terminated = true
+            }
+        }
+
+        return (terminated, terminated ? nil : "Failed to terminate \(target.displayName).")
+    }
+
+    func terminateAll(_ targets: [LaunchTarget]) async -> LauncherTerminateReport {
+        var terminatedIDs: [String] = []
+        var notRunning: [String] = []
+        var failed: [String: String] = [:]
+
+        for target in targets where target.kind == .app {
+            if !(await isTargetRunning(target)) {
+                notRunning.append(target.id)
+                continue
+            }
+
+            let result = await terminateTarget(target)
+            if let error = result.error {
+                failed[target.id] = error
+            } else if result.terminated {
+                terminatedIDs.append(target.id)
+            } else {
+                notRunning.append(target.id)
+            }
+        }
+
+        try? await Task.sleep(for: .milliseconds(500))
+        let running = await collectRunningTargetIDs(for: targets)
+        return LauncherTerminateReport(
+            terminatedTargetIDs: terminatedIDs,
+            notRunningTargetIDs: notRunning,
+            failedTargetErrors: failed,
+            runningTargetIDs: running
+        )
+    }
+
     private func collectRunningTargetIDs(for targets: [LaunchTarget]) async -> Set<String> {
         var running = Set<String>()
         for target in targets {

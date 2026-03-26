@@ -193,20 +193,35 @@ struct MasterControlView: View {
 
                 GroupBox("Launch Control") {
                     VStack(alignment: .leading, spacing: 14) {
-                        Button {
-                            appState.send(.launcher(.launchMissingRequested))
-                        } label: {
-                            HStack {
-                                Image(systemName: "play.rectangle.fill")
-                                Text(appState.launcherIsLaunchingAll ? "Launching..." : "Launch Missing Controlled Apps")
-                                    .fontWeight(.semibold)
+                        HStack(spacing: 8) {
+                            Button {
+                                appState.send(.launcher(.launchMissingRequested))
+                            } label: {
+                                HStack {
+                                    Image(systemName: "play.rectangle.fill")
+                                    Text(appState.launcherIsLaunchingAll ? "Launching..." : "Launch Missing Controlled Apps")
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
                             }
-                            .frame(maxWidth: .infinity)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(appState.launcherIsLaunchingAll || appState.launcherTargets.isEmpty)
+                            .accessibilityIdentifier(A11yID.masterLaunchAllButton)
+
+                            Button(role: .destructive) {
+                                appState.send(.launcher(.terminateAllRequested))
+                            } label: {
+                                HStack {
+                                    Image(systemName: "stop.fill")
+                                    Text("Stop All")
+                                        .fontWeight(.semibold)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                            .disabled(appState.launcherIsLaunchingAll || appState.launcherRunningTargetIDs.isEmpty)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(appState.launcherIsLaunchingAll || appState.launcherTargets.isEmpty)
-                        .accessibilityIdentifier(A11yID.masterLaunchAllButton)
 
                         if let summary = appState.launcherLastLaunchSummary, !summary.isEmpty {
                             Text(summary)
@@ -276,6 +291,14 @@ struct MasterControlView: View {
                                                 .buttonStyle(.borderedProminent)
                                                 .disabled(appState.launcherIsLaunchingAll)
 
+                                                if target.kind == .app {
+                                                    Button("Stop") {
+                                                        appState.send(.launcher(.terminateTargetRequested(id: target.id)))
+                                                    }
+                                                    .buttonStyle(.bordered)
+                                                    .disabled(!isRunning || appState.launcherIsLaunchingAll)
+                                                }
+
                                                 Button(role: .destructive) {
                                                     appState.send(.launcher(.removeTarget(id: target.id)))
                                                 } label: {
@@ -332,6 +355,27 @@ struct MasterControlView: View {
                                     .buttonStyle(.bordered)
                                     .disabled(commandLineDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                                     .accessibilityIdentifier(A11yID.masterAddCommandButton)
+                                }
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Quick Add")
+                                        .font(.headline)
+
+                                    ForEach(KnownAppTarget.allCases, id: \.rawValue) { known in
+                                        let alreadyAdded = appState.launcherTargets.contains {
+                                            $0.normalizedIdentity == known.launchTarget.normalizedIdentity
+                                        }
+                                        Button {
+                                            appState.send(.launcher(.addKnownTarget(known)))
+                                        } label: {
+                                            HStack {
+                                                Image(systemName: "plus.circle")
+                                                Text(known.launchTarget.displayName)
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .disabled(alreadyAdded)
+                                    }
                                 }
                             }
                             .frame(width: controlsColumnWidth, alignment: .leading)
