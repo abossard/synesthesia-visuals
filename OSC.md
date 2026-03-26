@@ -26,7 +26,7 @@ flowchart LR
         direction TB
         GLOBALS[Globals<br/>Dual Envelope Analysis<br/>Custom Freq. + Peak/Smooth]
         ISF[ISF Shaders<br/>Visual Output]
-        OSC_OUT[OSCSender × 6<br/>port 7700]
+        OSC_OUT[OSCSender × 15<br/>port 7700]
         GLOBALS --> ISF
         GLOBALS --> OSC_OUT
     end
@@ -71,9 +71,11 @@ flowchart LR
 - The `/universe/dmx/channel` format is **only** for QLC+ OSC *output* (sending DMX values out), not input
 - Use the **Input Profile Editor wizard** (auto-detect) or **Channel Calculator** to map paths to QLC+ channels
 
-### The 6 Envelope Values
+### The 15 Audio Values
 
-Magic's dual-envelope audio analysis produces 6 output Globals, each sent via a dedicated OSCSender module:
+Magic's audio analysis produces up to 15 output Globals, each sent via a dedicated OSCSender module.
+
+**Low/High Envelope Values (6)**
 
 | Global | Description | OSC Address |
 |--------|-------------|-------------|
@@ -83,6 +85,20 @@ Magic's dual-envelope audio analysis produces 6 output Globals, each sent via a 
 | **HighPeak** | High band peak-hold | `/audio/high/peak` |
 | **HighAvg** | High band smoothed average | `/audio/high/avg` |
 | **HighRaw** | High band raw value | `/audio/high/raw` |
+
+**Extended Audio Features (9)**
+
+| Global | Description | OSC Address |
+|--------|-------------|-------------|
+| **EnergyRaw** | Full-spectrum energy, raw | `/audio/energy/raw` |
+| **EnergySmooth** | Full-spectrum energy, smoothed | `/audio/energy/smooth` |
+| **EnergyPeak** | Full-spectrum energy, peak-hold | `/audio/energy/peak` |
+| **ToneRaw** | Tonal/pitched content, raw | `/audio/tone/raw` |
+| **ToneSmooth** | Tonal/pitched content, smoothed | `/audio/tone/smooth` |
+| **MidRaw** | Mid band, raw | `/audio/mid/raw` |
+| **MidSmooth** | Mid band, smoothed | `/audio/mid/smooth` |
+| **MidPeak** | Mid band, peak-hold | `/audio/mid/peak` |
+| **KickOnset** | Kick drum onset detection | `/audio/kick/onset` |
 
 For full details on the dual-envelope system (frequency cutoffs, modifiers, Globals wiring), see [docs/reference/magic-dual-envelope-audio-analysis.md](docs/reference/magic-dual-envelope-audio-analysis.md).
 
@@ -99,8 +115,8 @@ sequenceDiagram
     Audio->>Magic: Audio stream
     Magic->>Magic: Custom Freq. analysis<br/>(Low: 20–200 Hz, High: 6k–20k Hz)
     Magic->>Magic: Peak / Smooth / Raw modifiers
-    Magic->>OSC: 6 Global values (0–1)
-    OSC->>QLC: /audio/low/peak..high/raw [float]
+    Magic->>OSC: 15 Global values (0–1)
+    OSC->>QLC: /audio/low/peak..kick/onset [float]
     QLC->>DMX: DMX channels 0–255
 ```
 

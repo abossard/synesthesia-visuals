@@ -1,6 +1,6 @@
 /*{
     "ISFVSN": "2.0",
-    "DESCRIPTION": "6 horizontal bar meters for dual envelope output values. Link each input to a Magic Global (LowRaw, LowPeak, LowAvg, HighRaw, HighPeak, HighAvg).",
+    "DESCRIPTION": "6 horizontal bar meters for dual envelope output values. Transparent background for overlay. Link each input to a Magic Global.",
     "CREDIT": "Dual Envelope Meters",
     "CATEGORIES": ["GENERATOR"],
     "INPUTS": [
@@ -15,16 +15,15 @@
 
 void main() {
     vec2 uv = isf_FragNormCoord;
-    vec3 col = vec3(0.04);
 
     float barH = 1.0 / 6.0;
     float gap = 0.008;
     float band = floor(uv.y / barH);
     float localY = mod(uv.y, barH);
 
-    // Gap between bars
+    // Gap between bars = transparent
     if (localY < gap) {
-        gl_FragColor = vec4(vec3(0.02), 1.0);
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
@@ -40,10 +39,13 @@ void main() {
     else                 { val = highPeak; barCol = vec3(1.0, 0.80, 0.30); }
 
     float fill = step(uv.x, val);
-    col = mix(col, barCol, fill * 0.85);
+    float alpha = fill * 0.85;
+    vec3 col = barCol * fill;
 
-    // Dim background tint
-    col = mix(col, barCol * 0.08, (1.0 - fill));
+    // Dim background tint for the bar area
+    float bgTint = (1.0 - fill) * 0.1;
+    col = mix(col, barCol * 0.15, bgTint);
+    alpha = max(alpha, bgTint);
 
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, alpha);
 }

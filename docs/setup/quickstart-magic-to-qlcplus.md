@@ -45,7 +45,7 @@ Link each to **Audio Source → Custom Freq.** with the ranges and modifiers sho
 | `HighPeak` | Audio Source | Custom Freq. (6000–20000 Hz)    | Peak (0.7)   |
 | `HighAvg`  | Audio Source | Custom Freq. (6000–20000 Hz)    | Smooth (0.5) |
 
-> **Tip:** Load `magic/DualEnvelopeSpectrum.fs` via an ISFShader module to visually find the best cutoff values for your music. Blue = low region, orange = high region. Drag the sliders while music plays.
+> **Tip:** Load `magic/DualEnvelopeSpectrum.fs` via an ISFShader module to visually find the best cutoff values for your music. Blue = low region, orange = high region. Drag the sliders while music plays. Use `magic/AudioFeaturesMeters.fs` to visualize the extended audio features (energy, tone, mid, kick).
 
 ---
 
@@ -76,6 +76,22 @@ Create six OSCSender modules:
 | 4      | `/audio/high/peak` | `HighPeak`  |
 | 5      | `/audio/high/avg`  | `HighAvg`   |
 | 6      | `/audio/high/raw`  | `HighRaw`   |
+
+### Extended setup — 15 channels (full audio feature set)
+
+For richer lighting control, add 9 more OSCSender modules covering energy, tone, mid-band, and kick detection:
+
+| Module | Message               | Global         |
+|--------|-----------------------|----------------|
+| 7      | `/audio/energy/raw`   | `EnergyRaw`    |
+| 8      | `/audio/energy/smooth` | `EnergySmooth` |
+| 9      | `/audio/energy/peak`  | `EnergyPeak`   |
+| 10     | `/audio/tone/raw`     | `ToneRaw`      |
+| 11     | `/audio/tone/smooth`  | `ToneSmooth`   |
+| 12     | `/audio/mid/raw`      | `MidRaw`       |
+| 13     | `/audio/mid/smooth`   | `MidSmooth`    |
+| 14     | `/audio/mid/peak`     | `MidPeak`      |
+| 15     | `/audio/kick/onset`   | `KickOnset`    |
 
 > **Note:** QLC+ OSC input accepts **any** OSC path — it does not require the `/universe/dmx/channel` format (that format is only used for QLC+ OSC *output*). Use descriptive paths like `/audio/low/peak` so your OSC traffic is self-documenting.
 
@@ -142,3 +158,4 @@ Create six OSCSender modules:
 - [Dual Envelope Audio Analysis](../reference/magic-dual-envelope-audio-analysis.md)
 - Spectrum analyzer shader: `magic/DualEnvelopeSpectrum.fs`
 - Envelope meters shader: `magic/DualEnvelopeMeters.fs`
+- Audio features meters shader: `magic/AudioFeaturesMeters.fs`

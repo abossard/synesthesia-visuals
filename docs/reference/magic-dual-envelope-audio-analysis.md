@@ -13,10 +13,11 @@ The dual-envelope system uses **Magic Globals as the single source of truth** fo
 1. [Magic Audio Feature System](#1-magic-audio-feature-system)
 2. [Modifier System — Peak, Average, Raw](#2-modifier-system--peak-average-raw)
 3. [Global Parameters Architecture](#3-global-parameters-architecture)
-4. [OSC Output via OSCSender](#4-osc-output-via-oscsender)
-5. [ISF Reference — Audio Input Types](#5-isf-reference--audio-input-types)
-6. [Complete Wiring Plan](#6-complete-wiring-plan)
-7. [Confidence Assessment](#7-confidence-assessment)
+4. [Additional Audio Features (Energy, Tone, Mid, Kick Onset)](#4-additional-audio-features-energy-tone-mid-kick-onset)
+5. [OSC Output via OSCSender](#5-osc-output-via-oscsender)
+6. [ISF Reference — Audio Input Types](#6-isf-reference--audio-input-types)
+7. [Complete Wiring Plan](#7-complete-wiring-plan)
+8. [Confidence Assessment](#8-confidence-assessment)
 
 ---
 
@@ -152,24 +153,101 @@ Alternatively, use a **Scale** modifier (param = 2000) + **Offset** modifier (pa
 
 **Tip:** Link both cutoffs to the same MIDI controller with inverted ranges for a single-knob "crossover frequency" control — turn right = Low goes up while High comes down.
 
-**Output Globals (computed by Magic from audio, used as inputs everywhere):**
+**Output Globals (15 total, computed by Magic from audio):**
 
-| Global Name | Source | Feature | Modifier | Description |
-|-------------|--------|---------|----------|-------------|
-| `LowPeak` | Audio | Custom Freq. (20 Hz – `LowFreq`) | **Peak** (param = `LowPeakRelease`) | Low band peak-hold |
-| `LowAvg` | Audio | Custom Freq. (20 Hz – `LowFreq`) | **Smooth** (param = `LowSmooth`) | Low band smoothed average |
-| `LowRaw` | Audio | Custom Freq. (20 Hz – `LowFreq`) | *(none)* | Low band raw value |
-| `HighPeak` | Audio | Custom Freq. (`HighFreq` – 20k Hz) | **Peak** (param = `HighPeakRelease`) | High band peak-hold |
-| `HighAvg` | Audio | Custom Freq. (`HighFreq` – 20k Hz) | **Smooth** (param = `HighSmooth`) | High band smoothed average |
-| `HighRaw` | Audio | Custom Freq. (`HighFreq` – 20k Hz) | *(none)* | High band raw value |
+| Global | Source | Feature | Modifier | Category |
+|--------|--------|---------|----------|----------|
+| `LowRaw` | Audio | Custom Freq. (20–LowFreq) | — | Low Envelope |
+| `LowPeak` | Audio | Custom Freq. (20–LowFreq) | Peak | Low Envelope |
+| `LowAvg` | Audio | Custom Freq. (20–LowFreq) | Smooth | Low Envelope |
+| `HighRaw` | Audio | Custom Freq. (HighFreq–20k) | — | High Envelope |
+| `HighPeak` | Audio | Custom Freq. (HighFreq–20k) | Peak | High Envelope |
+| `HighAvg` | Audio | Custom Freq. (HighFreq–20k) | Smooth | High Envelope |
+| `MidRaw` | Audio | Custom Freq. (200–6000) | — | Mid Presence |
+| `MidSmooth` | Audio | Custom Freq. (200–6000) | Smooth (0.5) | Mid Presence |
+| `MidPeak` | Audio | Custom Freq. (200–6000) | Peak (0.7) | Mid Presence |
+| `EnergyRaw` | Audio | Volume | — | Overall Energy |
+| `EnergySmooth` | Audio | Volume | Smooth (0.7) | Overall Energy |
+| `EnergyPeak` | Audio | Volume | Peak (0.8) | Overall Energy |
+| `ToneRaw` | Audio | Tone | — | Brightness |
+| `ToneSmooth` | Audio | Tone | Smooth (0.6) | Brightness |
+| `KickOnset` | Audio | Custom Freq. (20–150) | Peak (0.15) | Onset |
 
-**Total: 7 configuration globals + 6 output globals = 13 globals.**
+**Total: 8 configuration globals + 15 output globals = 23 globals.**
 
 Since `LowFreq` and `HighFreq` are independent, you can set `LowFreq` = 5000 and `HighFreq` = 3000 — the bands will overlap and that's fine.
 
 ---
 
-## 4. OSC Output via OSCSender
+## 4. Additional Audio Features (Energy, Tone, Mid, Kick Onset)
+
+Beyond the dual Low/High envelopes, Magic's audio features can extract additional signals that are invaluable for EDM-reactive visuals.
+
+### Feature 1: Overall Energy (Volume)
+
+Magic's **Volume** feature measures total amplitude across all frequencies, normalized 0–1. This is the most fundamental audio signal.
+
+**Why it matters for EDM:** Global intensity control, silence detection, build-up tracking. Combined with Tone: high Energy + low Tone = bass drop; high Energy + high Tone = bright build-up.
+
+**Magic Global Setup:**
+
+| Global | Source | Feature | Modifier | Param | Output |
+|--------|--------|---------|----------|-------|--------|
+| `EnergyRaw` | Audio Source | Volume | *(none)* | — | Raw amplitude 0–1 |
+| `EnergySmooth` | Audio Source | Volume | **Smooth** | 0.7 | Smoothed amplitude |
+| `EnergyPeak` | Audio Source | Volume | **Peak** | 0.8 | VU-meter style peak |
+
+### Feature 2: Tone / Spectral Brightness
+
+Magic's **Tone** feature measures high-frequency content, spanning 40 Hz – 20480 Hz (9 octaves, logarithmic). Functions as a spectral centroid proxy.
+
+- Low Tone → bass-heavy, dark → kick drums, filter closed
+- High Tone → bright, treble-heavy → hi-hats, build-ups, open filter
+
+**Why it matters for EDM:** Detects musical structure — build-ups (Tone rises as filter opens), drops (Tone plummets as bass hits), breakdowns (Tone stays low).
+
+**Magic Global Setup:**
+
+| Global | Source | Feature | Modifier | Param | Output |
+|--------|--------|---------|----------|-------|--------|
+| `ToneRaw` | Audio Source | Tone | *(none)* | — | Raw brightness 0–1 |
+| `ToneSmooth` | Audio Source | Tone | **Smooth** | 0.6 | Smoothed brightness |
+
+### Feature 3: Mid-Range Presence
+
+A third frequency band covering 200–6000 Hz, filling the gap between the Low envelope (20–200 Hz) and High envelope (6000–20000 Hz). Captures vocals, synth leads, pads, snare body.
+
+**Magic Global Setup:**
+
+| Global | Source | Feature | Modifier | Param | Output |
+|--------|--------|---------|----------|-------|--------|
+| `MidRaw` | Audio Source | Custom Freq. (200–6000 Hz) | *(none)* | — | Raw mid energy |
+| `MidSmooth` | Audio Source | Custom Freq. (200–6000 Hz) | **Smooth** | 0.5 | Smoothed mid |
+| `MidPeak` | Audio Source | Custom Freq. (200–6000 Hz) | **Peak** | 0.7 | Mid peak-hold |
+
+### Feature 4: Kick Onset (Transient Detection)
+
+Uses the **Peak** modifier with very low smoothing to create a sharp pulse on each kick drum hit.
+
+**How it works (from Magic User Guide):**
+The Peak modifier: "if the current input value is greater than the previous input value, it will simply pass through. If the current input value is less than the previous input value, it will be decreased by the smoothing factor." With smoothing = 0.15:
+- Kick hits → input rises above previous → **passes through instantly** (fast attack)
+- Kick decays → input drops below previous → decreased with only 15% smoothing = **fast decay** (low smoothing = less holding = quick drop)
+
+The result is a sharp spike on each kick that decays within a few frames — a natural onset pulse without needing Expression modifiers.
+
+**Magic Global Setup:**
+
+| Global | Source | Feature | Modifier | Param | Output |
+|--------|--------|---------|----------|-------|--------|
+| `KickOnset` | Audio Source | Custom Freq. (20–150 Hz) | **Peak** | 0.15 | Spike on kick, fast decay |
+
+**Why Custom Freq. 20–150 Hz (not 20–200 Hz like LowRaw)?**
+Narrower band isolates kicks better. The Low envelope (20–200 Hz) includes bass notes and sub-bass rumble. The 20–150 Hz range focuses on the kick drum fundamental (40–60 Hz) and its body (60–150 Hz), reducing false triggers from sustained bass lines.
+
+---
+
+## 5. OSC Output via OSCSender
 
 Magic sends values to other applications via the **OSCSender module**[^4]:
 
@@ -183,20 +261,29 @@ Magic sends values to other applications via the **OSCSender module**[^4]:
 ### OSC Address Layout
 
 ```
-/audio/gain         → Global Gain
-/audio/low/peak     → Global LowPeak
-/audio/low/avg      → Global LowAvg
-/audio/low/raw      → Global LowRaw
-/audio/high/peak    → Global HighPeak
-/audio/high/avg     → Global HighAvg
-/audio/high/raw     → Global HighRaw
+/audio/gain           → Global Gain
+/audio/low/peak       → Global LowPeak
+/audio/low/avg        → Global LowAvg
+/audio/low/raw        → Global LowRaw
+/audio/high/peak      → Global HighPeak
+/audio/high/avg       → Global HighAvg
+/audio/high/raw       → Global HighRaw
+/audio/energy/raw     → Global EnergyRaw
+/audio/energy/smooth  → Global EnergySmooth
+/audio/energy/peak    → Global EnergyPeak
+/audio/tone/raw       → Global ToneRaw
+/audio/tone/smooth    → Global ToneSmooth
+/audio/mid/raw        → Global MidRaw
+/audio/mid/smooth     → Global MidSmooth
+/audio/mid/peak       → Global MidPeak
+/audio/kick/onset     → Global KickOnset
 ```
 
-Create **6 OSCSender modules** (or more if you also want to send the config globals). Each module's **Value** parameter is linked to **Globals** source, selecting the corresponding global feature.
+Create **15 OSCSender modules** (or more if you also want to send the config globals). Each module's **Value** parameter is linked to **Globals** source, selecting the corresponding global feature.
 
 ---
 
-## 5. ISF Reference — Audio Input Types
+## 6. ISF Reference — Audio Input Types
 
 ISF provides two audio input types[^5][^6] for shaders that need direct FFT access (e.g., spectrum visualizers). For the dual-envelope system, the ISF shader does **not** need these — it receives pre-computed values from Globals instead.
 
@@ -208,7 +295,7 @@ ISF provides two audio input types[^5][^6] for shaders that need direct FFT acce
 
 ---
 
-## 6. Complete Wiring Plan
+## 7. Complete Wiring Plan
 
 ### Architecture
 
@@ -317,10 +404,13 @@ Create 6 OSCSender modules. Set IP/Port, then for each:
 |------|---------|--------|
 | `magic/DualEnvelopeSpectrum.fs` | FFT spectrum with cutoff lines — for finding good frequency values | `audioFFT` + `lowFreq` + `highFreq` |
 | `magic/DualEnvelopeMeters.fs` | 6 bar meters — for monitoring actual Global values | 6 floats linked to output Globals |
+| `magic/AudioFeaturesMeters.fs` | 9 bars for Energy/Tone/Mid/KickOnset | 9 floats linked to output Globals |
+
+Note: All 3 shaders use transparent backgrounds — overlay them in Magic for a complete dashboard.
 
 ---
 
-## 7. Confidence Assessment
+## 8. Confidence Assessment
 
 ### High Confidence ✅
 - Magic Audio Features (Volume, Freq. Range, Best Pitch, Tone) — documented in official User Guide[^1]

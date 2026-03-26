@@ -1,6 +1,6 @@
 /*{
     "ISFVSN": "2.0",
-    "DESCRIPTION": "FFT spectrum analyzer with adjustable Low/High frequency cutoff lines. Use to visually find good cutoff values, then apply them to your Magic Globals.",
+    "DESCRIPTION": "FFT spectrum analyzer with adjustable Low/High frequency cutoff lines. Transparent background for overlay. Use to visually find good cutoff values, then apply them to your Magic Globals.",
     "CREDIT": "Dual Envelope Spectrum Analyzer",
     "CATEGORIES": ["GENERATOR", "AUDIO-REACTIVE"],
     "INPUTS": [
@@ -29,7 +29,8 @@ float logUVtoLinearUV(float logUV) {
 
 void main() {
     vec2 uv = isf_FragNormCoord;
-    vec3 col = vec3(0.04);
+    vec3 col = vec3(0.0);
+    float alpha = 0.0;
 
     // Read FFT value at this x position (log-scaled frequency axis)
     float linearUV = logUVtoLinearUV(uv.x);
@@ -52,22 +53,29 @@ void main() {
     // Draw spectrum fill
     float barFill = step(uv.y, fftVal * 1.2);
     col = mix(col, specCol, barFill * 0.8);
+    alpha = max(alpha, barFill * 0.85);
 
     // Dim tint in the envelope regions even when no signal
     if (uv.x <= lowCutX) {
-        col = mix(col, vec3(0.1, 0.2, 0.5), (1.0 - barFill) * 0.08);
+        float tint = (1.0 - barFill) * 0.08;
+        col = mix(col, vec3(0.1, 0.2, 0.5), tint);
+        alpha = max(alpha, tint);
     }
     if (uv.x >= highCutX) {
-        col = mix(col, vec3(0.5, 0.25, 0.05), (1.0 - barFill) * 0.08);
+        float tint = (1.0 - barFill) * 0.08;
+        col = mix(col, vec3(0.5, 0.25, 0.05), tint);
+        alpha = max(alpha, tint);
     }
 
     // Draw cutoff lines (vertical, full height)
     float lineW = 2.0 / RENDERSIZE.x;
     if (abs(uv.x - lowCutX) < lineW) {
         col = vec3(0.3, 0.6, 1.0);
+        alpha = 1.0;
     }
     if (abs(uv.x - highCutX) < lineW) {
         col = vec3(1.0, 0.7, 0.2);
+        alpha = 1.0;
     }
 
     // Frequency axis tick marks at 100, 1k, 10k
@@ -78,8 +86,9 @@ void main() {
     if (uv.y < 0.02) {
         if (abs(uv.x - mark100) < tickW || abs(uv.x - mark1k) < tickW || abs(uv.x - mark10k) < tickW) {
             col = vec3(0.6);
+            alpha = 1.0;
         }
     }
 
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, alpha);
 }
