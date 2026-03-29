@@ -7,7 +7,7 @@ Magic Music Visuals analyzes live audio input, computes envelope values (peak, a
 ## Prerequisites
 
 - **Magic Music Visuals** (Performer edition — required for OSC output)
-- **QLC+ v5** installed ([qlcplus.org](https://www.qlcplus.org/))
+- **QLC+ v4 or v5** installed ([qlcplus.org](https://www.qlcplus.org/))
 - **Audio input** — mic, BlackHole loopback, or an audio file
 - *(Optional)* **Enttec USB Pro** or similar USB-DMX interface (you can test with QLC+'s virtual console without hardware)
 
@@ -99,7 +99,7 @@ For richer lighting control, add 9 more OSCSender modules covering energy, tone,
 
 ## Step 4: QLC+ OSC Input
 
-1. Open **QLC+ 5**
+1. Open **QLC+**
 2. Go to the **Inputs/Outputs** tab (bottom of the window)
 3. For **Universe 1**, check the **Input** box next to `OSC 127.0.0.1`
 4. The default input port is **7700** — this matches what Magic is sending to
@@ -153,8 +153,8 @@ For richer lighting control, add 9 more OSCSender modules covering energy, tone,
 ## Reference
 
 - [Magic User Guide](https://magicmusicvisuals.com/downloads/Magic_UsersGuide.html)
-- [QLC+ OSC Plugin Docs](https://docs.qlcplus.org/v4/plugins/osc)
-- [QLC+ v5 I/O Basics (video)](https://www.youtube.com/watch?v=nkPnY70_CEs)
+- [QLC+ OSC Plugin Docs (v4)](https://docs.qlcplus.org/v4/plugins/osc) · [v5](https://docs.qlcplus.org/v5/plugins/osc)
+- [QLC+ v4 I/O Basics (video)](https://www.youtube.com/watch?v=I9bccwcYQpM) · [v5 (video)](https://www.youtube.com/watch?v=nkPnY70_CEs)
 - [Dual Envelope Audio Analysis](../reference/magic-dual-envelope-audio-analysis.md)
 - Spectrum analyzer shader: `magic/DualEnvelopeSpectrum.fs`
 - Envelope meters shader: `magic/DualEnvelopeMeters.fs`

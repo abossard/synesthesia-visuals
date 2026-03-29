@@ -450,10 +450,10 @@ These should be decided before implementation starts:
 
 Official QLC+ and VirtualDJ references used for this plan:
 
-- [QLC+ Input Profiles](https://docs.qlcplus.org/v5/input-output/input-profiles)
-- [QLC+ OSC plugin](https://docs.qlcplus.org/v5/plugins/osc)
-- [QLC+ Button widget](https://docs.qlcplus.org/v5/virtual-console/button)
-- [QLC+ Script Editor](https://docs.qlcplus.org/v5/function-manager/script-editor)
+- [QLC+ Input Profiles (v4)](https://docs.qlcplus.org/v4/input-output/input-profiles) · [v5](https://docs.qlcplus.org/v5/input-output/input-profiles)
+- [QLC+ OSC plugin (v4)](https://docs.qlcplus.org/v4/plugins/osc) · [v5](https://docs.qlcplus.org/v5/plugins/osc)
+- [QLC+ Button widget (v4)](https://docs.qlcplus.org/v4/virtual-console/button) · [v5](https://docs.qlcplus.org/v5/virtual-console/button)
+- [QLC+ Script Editor (v4)](https://docs.qlcplus.org/v4/function-manager/script-editor) · [v5](https://docs.qlcplus.org/v5/function-manager/script-editor)
 - [QLC+ Loopback plugin](https://docs.qlcplus.org/v4/plugins/loopback)
 - [VirtualDJ OS2L Show Per Track](https://www.virtualdj.com/wiki/OS2L_ShowPerTrack.html)
 - [VirtualDJ QLC+ with OS2L](https://www.virtualdj.com/wiki/QLC%20with%20OS2L.html)

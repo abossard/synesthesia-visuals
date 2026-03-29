@@ -1,6 +1,6 @@
 # QLC+ Detailed Setup And Verification Guide
 
-This guide goes deeper than the main live-rig guide and focuses only on **QLC+ 5.2.1** in the MacBook Neo stack.
+This guide goes deeper than the main live-rig guide and focuses on **QLC+ 4 / 5** in the MacBook Neo stack.
 
 The target role for QLC+ is:
 
@@ -31,21 +31,21 @@ Think in layers:
 
 Official references:
 
-- [QLC+ Input/Output](https://docs.qlcplus.org/v5/input-output)
-- [QLC+ Input Profiles](https://docs.qlcplus.org/v5/input-output/input-profiles)
-- [QLC+ Scene Editor](https://docs.qlcplus.org/v5/function-manager/scene-editor)
-- [QLC+ Chaser Editor](https://docs.qlcplus.org/v5/function-manager/chaser-editor)
-- [QLC+ Collection Editor](https://docs.qlcplus.org/v5/function-manager/collection-editor)
-- [QLC+ Button widget](https://docs.qlcplus.org/v5/virtual-console/button)
-- [QLC+ Slider widget](https://docs.qlcplus.org/v5/virtual-console/slider)
-- [QLC+ Script Editor](https://docs.qlcplus.org/v5/function-manager/script-editor)
-- [QLC+ OSC plugin](https://docs.qlcplus.org/v5/plugins/osc)
-- [QLC+ OS2L plugin](https://docs.qlcplus.org/v5/plugins/os2l)
+- [QLC+ Input/Output (v4)](https://docs.qlcplus.org/v4/input-output) · [v5](https://docs.qlcplus.org/v5/input-output)
+- [QLC+ Input Profiles (v4)](https://docs.qlcplus.org/v4/input-output/input-profiles) · [v5](https://docs.qlcplus.org/v5/input-output/input-profiles)
+- [QLC+ Scene Editor (v4)](https://docs.qlcplus.org/v4/function-manager/scene-editor) · [v5](https://docs.qlcplus.org/v5/function-manager/scene-editor)
+- [QLC+ Chaser Editor (v4)](https://docs.qlcplus.org/v4/function-manager/chaser-editor) · [v5](https://docs.qlcplus.org/v5/function-manager/chaser-editor)
+- [QLC+ Collection Editor (v4)](https://docs.qlcplus.org/v4/function-manager/collection-editor) · [v5](https://docs.qlcplus.org/v5/function-manager/collection-editor)
+- [QLC+ Button widget (v4)](https://docs.qlcplus.org/v4/virtual-console/button) · [v5](https://docs.qlcplus.org/v5/virtual-console/button)
+- [QLC+ Slider widget (v4)](https://docs.qlcplus.org/v4/virtual-console/slider) · [v5](https://docs.qlcplus.org/v5/virtual-console/slider)
+- [QLC+ Script Editor (v4)](https://docs.qlcplus.org/v4/function-manager/script-editor) · [v5](https://docs.qlcplus.org/v5/function-manager/script-editor)
+- [QLC+ OSC plugin (v4)](https://docs.qlcplus.org/v4/plugins/osc) · [v5](https://docs.qlcplus.org/v5/plugins/osc)
+- [QLC+ OS2L plugin (v4)](https://docs.qlcplus.org/v4/plugins/os2l) · [v5](https://docs.qlcplus.org/v5/plugins/os2l)
 
 Verification basis for this guide:
 
-- QLC+ 5.2.1 desktop behavior
-- current QLC+ v5 documentation paths
+- QLC+ 4.14.x and 5.x desktop behavior
+- current QLC+ v4 and v5 documentation paths
 - direct verification of the behaviors those docs currently describe
 
 ---
