@@ -3,6 +3,15 @@ import AppKit
 import SwiftVJCore
 
 actor AppLauncherGateway: LauncherEffectHandling {
+    private let fileManager: FileManager
+    private let launcherLogDirectory: URL
+    private var runningCommandProcesses: [String: Process] = [:]
+
+    init(fileManager: FileManager = .default, launcherLogDirectory: URL? = nil) {
+        self.fileManager = fileManager
+        self.launcherLogDirectory = launcherLogDirectory ?? Self.defaultLauncherLogDirectory(fileManager: fileManager)
+    }
+
     func analyzeDroppedItems(_ urls: [URL]) async -> [LaunchTarget] {
         var results: [LaunchTarget] = []
         var seen = Set<String>()
@@ -43,13 +52,14 @@ actor AppLauncherGateway: LauncherEffectHandling {
             }
 
             do {
-                try await launchCommandInTerminal(
+                try launchCommandInBackground(
+                    target: target,
                     commandLine: commandLine,
                     workingDirectory: target.workingDirectory
                 )
                 return (true, nil)
             } catch {
-                return (false, "Failed to launch terminal command \(target.displayName): \(error.localizedDescription)")
+                return (false, "Failed to launch command \(target.displayName): \(error.localizedDescription)")
             }
         }
     }
@@ -83,30 +93,42 @@ actor AppLauncherGateway: LauncherEffectHandling {
     }
 
     func terminateTarget(_ target: LaunchTarget) async -> (terminated: Bool, error: String?) {
-        guard target.kind == .app else {
-            return (false, "Cannot terminate command targets — close their terminal window manually.")
-        }
-
-        guard await isTargetRunning(target) else {
-            return (false, nil)
-        }
-
-        let apps = await MainActor.run {
-            runningApplications(bundleIdentifier: target.appBundleIdentifier, appPath: target.appPath)
-        }
-
-        guard !apps.isEmpty else {
-            return (false, nil)
-        }
-
-        var terminated = false
-        for app in apps {
-            if app.terminate() {
-                terminated = true
+        switch target.kind {
+        case .app:
+            guard await isTargetRunning(target) else {
+                return (false, nil)
             }
-        }
 
-        return (terminated, terminated ? nil : "Failed to terminate \(target.displayName).")
+            let apps = await MainActor.run {
+                runningApplications(bundleIdentifier: target.appBundleIdentifier, appPath: target.appPath)
+            }
+
+            guard !apps.isEmpty else {
+                return (false, nil)
+            }
+
+            var terminated = false
+            for app in apps {
+                if app.terminate() {
+                    terminated = true
+                }
+            }
+
+            return (terminated, terminated ? nil : "Failed to terminate \(target.displayName).")
+
+        case .command:
+            guard let process = runningCommandProcesses[target.id] else {
+                return (false, nil)
+            }
+
+            if process.isRunning {
+                process.terminate()
+                return (true, nil)
+            }
+
+            runningCommandProcesses[target.id] = nil
+            return (false, nil)
+        }
     }
 
     func terminateAll(_ targets: [LaunchTarget]) async -> LauncherTerminateReport {
@@ -114,7 +136,7 @@ actor AppLauncherGateway: LauncherEffectHandling {
         var notRunning: [String] = []
         var failed: [String: String] = [:]
 
-        for target in targets where target.kind == .app {
+        for target in targets {
             if !(await isTargetRunning(target)) {
                 notRunning.append(target.id)
                 continue
@@ -194,7 +216,12 @@ actor AppLauncherGateway: LauncherEffectHandling {
         case .app:
             return await isAppRunning(bundleIdentifier: target.appBundleIdentifier, appPath: target.appPath)
         case .command:
-            // Command targets run in external terminal; no in-app runtime tracking.
+            if let process = runningCommandProcesses[target.id] {
+                if process.isRunning {
+                    return true
+                }
+                runningCommandProcesses[target.id] = nil
+            }
             return false
         }
     }
@@ -237,54 +264,133 @@ actor AppLauncherGateway: LauncherEffectHandling {
         }
     }
 
-    private func launchCommandInTerminal(commandLine: String, workingDirectory: String?) async throws {
-        let shellCommand = buildShellCommand(commandLine: commandLine, workingDirectory: workingDirectory)
-        let terminalScript = """
-        tell application "Terminal"
-            activate
-            if (count of windows) is 0 then
-                do script ""
-            end if
-            do script "\(appleScriptEscaped(shellCommand))" in front window
-        end tell
-        """
+    private func launchCommandInBackground(
+        target: LaunchTarget,
+        commandLine: String,
+        workingDirectory: String?
+    ) throws {
+        let resolvedWorkingDirectory = try resolvedWorkingDirectoryURL(workingDirectory)
+        let logFileURL = try makeLogFileURL(for: target)
+        try createLogDirectoryIfNeeded()
+        let logHandle = try createLogFileHandle(at: logFileURL)
+        defer { try? logHandle.close() }
+        try writeLogHeader(
+            to: logHandle,
+            target: target,
+            commandLine: commandLine,
+            workingDirectory: resolvedWorkingDirectory?.path
+        )
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", terminalScript]
-        let stderrPipe = Pipe()
-        process.standardError = stderrPipe
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", commandLine]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = logHandle
+        process.standardError = logHandle
+        if let workingDirectoryURL = resolvedWorkingDirectory {
+            process.currentDirectoryURL = workingDirectoryURL
+        }
 
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let description = (message?.isEmpty == false) ? (message ?? "osascript failed") : "osascript failed"
-            throw NSError(
-                domain: "AppLauncherGateway",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: description]
-            )
+        process.terminationHandler = { [weak self] _ in
+            Task { await self?.commandProcessDidTerminate(targetID: target.id) }
+        }
+
+        runningCommandProcesses[target.id] = process
+        do {
+            try process.run()
+        } catch {
+            runningCommandProcesses[target.id] = nil
+            throw error
         }
     }
 
-    private func buildShellCommand(commandLine: String, workingDirectory: String?) -> String {
-        guard let workingDirectory else { return commandLine }
+    private func commandProcessDidTerminate(targetID: String) {
+        runningCommandProcesses[targetID] = nil
+    }
+
+    private func createLogDirectoryIfNeeded() throws {
+        try fileManager.createDirectory(
+            at: launcherLogDirectory,
+            withIntermediateDirectories: true
+        )
+    }
+
+    private func createLogFileHandle(at url: URL) throws -> FileHandle {
+        if !fileManager.fileExists(atPath: url.path) {
+            fileManager.createFile(atPath: url.path, contents: nil)
+        }
+        return try FileHandle(forWritingTo: url)
+    }
+
+    private func writeLogHeader(
+        to handle: FileHandle,
+        target: LaunchTarget,
+        commandLine: String,
+        workingDirectory: String?
+    ) throws {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let workingDirectoryValue = (workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? workingDirectory!.trimmingCharacters(in: .whitespacesAndNewlines)
+            : "-"
+        let lines = [
+            "=== SwiftVJ launcher log ===",
+            "Target: \(target.displayName) (\(target.id))",
+            "Kind: \(target.kind.rawValue)",
+            "Started: \(formatter.string(from: Date()))",
+            "Working directory: \(workingDirectoryValue)",
+            "Command: \(commandLine)",
+            "---"
+        ]
+        let payload = lines.joined(separator: "\n") + "\n"
+        if let data = payload.data(using: .utf8) {
+            try handle.write(contentsOf: data)
+        }
+    }
+
+    private func makeLogFileURL(for target: LaunchTarget) throws -> URL {
+        let timestamp = Self.launchLogTimestampString(from: Date())
+        let name = sanitizeLogComponent(target.displayName.isEmpty ? target.id : target.displayName)
+        let id = sanitizeLogComponent(target.id)
+        return launcherLogDirectory.appendingPathComponent("\(name)-\(id)-\(timestamp).log")
+    }
+
+    private func resolvedWorkingDirectoryURL(_ workingDirectory: String?) throws -> URL? {
+        guard let workingDirectory else { return nil }
         let trimmed = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return commandLine }
+        guard !trimmed.isEmpty else { return nil }
+
         let expanded = (trimmed as NSString).expandingTildeInPath
-        return "cd \(shellSingleQuote(expanded)) && \(commandLine)"
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw NSError(
+                domain: "AppLauncherGateway",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Working directory does not exist: \(trimmed)"]
+            )
+        }
+        return URL(fileURLWithPath: expanded, isDirectory: true)
     }
 
-    private func shellSingleQuote(_ text: String) -> String {
-        "'\(text.replacingOccurrences(of: "'", with: "'\\''"))'"
+    private func sanitizeLogComponent(_ value: String) -> String {
+        let sanitized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
+        return sanitized.isEmpty ? "target" : sanitized
     }
 
-    private func appleScriptEscaped(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+    private static func launchLogTimestampString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return formatter.string(from: date)
+    }
+
+    private static func defaultLauncherLogDirectory(fileManager: FileManager) -> URL {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
+        return appSupport.appendingPathComponent("SwiftVJ/launcher-logs", isDirectory: true)
     }
 }

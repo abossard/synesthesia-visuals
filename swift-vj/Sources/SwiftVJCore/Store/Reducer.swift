@@ -974,7 +974,7 @@ public func launcherReducer(
                     state.lastError = nil
                 }
             case .command:
-                // Command targets always run in external terminal; we don't infer runtime state.
+                // Command targets are tracked by the app-layer process registry.
                 state.runningTargetIDs.remove(id)
                 if launched {
                     state.lastError = nil
@@ -1022,11 +1022,10 @@ public func launcherReducer(
             .map { AppAction.launcher($0) }
 
     case .terminateAllRequested:
-        let appTargets = state.targets.filter { $0.kind == .app }
-        guard !appTargets.isEmpty else { return .none }
+        guard !state.targets.isEmpty else { return .none }
         state.lastError = nil
         state.revision &+= 1
-        return LauncherEffects.terminateAll(appTargets)
+        return LauncherEffects.terminateAll(state.targets)
             .map { AppAction.launcher($0) }
 
     case .terminateTargetCompleted(let id, let terminated, let error):
@@ -1111,7 +1110,7 @@ public func launcherReducer(
     case .stopRig:
         let rigIdentities = Set(state.rigPreset.targets.map { $0.launchTarget.normalizedIdentity })
         let rigTargets = state.targets.filter {
-            $0.kind == .app && rigIdentities.contains($0.normalizedIdentity)
+            rigIdentities.contains($0.normalizedIdentity)
         }
         guard !rigTargets.isEmpty else { return .none }
         state.lastError = nil

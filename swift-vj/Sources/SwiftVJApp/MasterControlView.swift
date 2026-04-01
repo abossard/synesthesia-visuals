@@ -192,7 +192,7 @@ struct MasterControlView: View {
                     .padding()
                 }
 
-                GroupBox("DJ Rig") {
+                GroupBox("Launch Preset") {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 12) {
                             Button {
@@ -201,7 +201,7 @@ struct MasterControlView: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: "play.circle.fill")
                                         .font(.title2)
-                                    Text(appState.launcherIsLaunchingAll ? "Starting..." : "Start DJ Rig")
+                                    Text(appState.launcherIsLaunchingAll ? "Starting..." : "Start Preset")
                                         .fontWeight(.bold)
                                 }
                                 .frame(maxWidth: .infinity)
@@ -217,7 +217,7 @@ struct MasterControlView: View {
                                 HStack(spacing: 6) {
                                     Image(systemName: "stop.circle.fill")
                                         .font(.title2)
-                                    Text("Stop DJ Rig")
+                                    Text("Stop Preset")
                                         .fontWeight(.bold)
                                 }
                             }
@@ -227,7 +227,7 @@ struct MasterControlView: View {
                         }
 
                         HStack(spacing: 8) {
-                            Text("Rig:")
+                            Text("Preset:")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text(appState.launcherRigPreset.targets.map(\.displayName).joined(separator: " → "))
@@ -247,7 +247,7 @@ struct MasterControlView: View {
 
                         if showRigConfig {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Select apps for the DJ Rig preset:")
+                                Text("Select apps for the launch preset:")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 ForEach(KnownAppTarget.allCases, id: \.rawValue) { known in

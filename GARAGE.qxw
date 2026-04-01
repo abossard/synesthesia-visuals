@@ -6,11 +6,35 @@
   <Version>5.2.1</Version>
   <Author>Andre Bossard</Author>
  </Creator>
- <Engine>
+ <Engine Autostart="12">
   <InputOutputMap>
-   <BeatGenerator BeatType="Internal" BPM="128"/>
+   <BeatGenerator BeatType="Internal" BPM="120"/>
    <NetworkServer Type="Native" AutoStart="False" Name="QLC+_C0A8014A" Password=""/>
-   <Universe Name="Universe 1" ID="0"/>
+   <Universe Name="LIGHTS" ID="0"/>
+   <Universe Name="AUDIO" ID="1">
+    <Input Plugin="OSC" UID="127.0.0.1" Line="0"/>
+   </Universe>
+   <Universe Name="BEAT" ID="2">
+    <Input Plugin="OS2L" UID="OS2L line" Line="0">
+     <PluginParameters hostAddress="127.0.0.1" hostPort="9996"/>
+    </Input>
+   </Universe>
+   <Universe Name="FCOB1" ID="3">
+    <Output Plugin="E1.31" UID="192.168.1.74" Line="1">
+     <PluginParameters UniverseChannels="320"/>
+    </Output>
+   </Universe>
+   <Universe Name="FCOB2" ID="4">
+    <Output Plugin="E1.31" UID="192.168.1.74" Line="1">
+     <PluginParameters UniverseChannels="320"/>
+    </Output>
+   </Universe>
+   <Universe Name="FCOB3" ID="5">
+    <Output Plugin="E1.31" UID="192.168.1.74" Line="1">
+     <PluginParameters UniverseChannels="320"/>
+    </Output>
+   </Universe>
+   <Universe Name="Universe 7" ID="6"/>
   </InputOutputMap>
   <Fixture>
    <Manufacturer>Varytec</Manufacturer>
@@ -32,6 +56,34 @@
    <Address>24</Address>
    <Channels>2</Channels>
   </Fixture>
+  <Fixture>
+   <Manufacturer>Cameo</Manufacturer>
+   <Model>Thunderwash 600 UV</Model>
+   <Mode>4 Channel</Mode>
+   <ID>2</ID>
+   <Name>Thunderwash 600 UV [3]</Name>
+   <Universe>0</Universe>
+   <Address>26</Address>
+   <Channels>4</Channels>
+  </Fixture>
+  <FixtureGroup ID="0">
+   <Name>LED</Name>
+   <Size X="80" Y="4"/>
+  </FixtureGroup>
+  <FixtureGroup ID="2">
+   <Name>Generic RGB Panel</Name>
+   <Size X="10" Y="10"/>
+   <Head X="0" Y="0" Fixture="4294967295">0</Head>
+   <Head X="1" Y="0" Fixture="4294967295">1</Head>
+   <Head X="2" Y="0" Fixture="4294967295">2</Head>
+   <Head X="3" Y="0" Fixture="4294967295">3</Head>
+   <Head X="4" Y="0" Fixture="4294967295">4</Head>
+   <Head X="5" Y="0" Fixture="4294967295">5</Head>
+   <Head X="6" Y="0" Fixture="4294967295">6</Head>
+   <Head X="7" Y="0" Fixture="4294967295">7</Head>
+   <Head X="8" Y="0" Fixture="4294967295">8</Head>
+   <Head X="9" Y="0" Fixture="4294967295">9</Head>
+  </FixtureGroup>
   <Function ID="0" Type="Scene" Name="New Scene 0" Path="01">
    <Speed FadeIn="0" FadeOut="0" Duration="0"/>
    <FixtureVal ID="0">0,0,1,0,2,0,3,0,7,114,8,60</FixtureVal>
@@ -54,25 +106,64 @@
   <Function ID="3" Type="Scene" Name="New Scene" Hidden="True">
    <Speed FadeIn="0" FadeOut="0" Duration="0"/>
   </Function>
-  <Function ID="4" Type="Sequence" Name="New Sequence 4" BoundScene="3">
+  <Function ID="4" Type="RGBMatrix" Name="TEST">
+   <Speed FadeIn="0" FadeOut="0" Duration="500"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <Algorithm Type="Script">Stripes</Algorithm>
+   <Color Index="0">4294901760</Color>
+   <ControlMode>RGB</ControlMode>
+   <FixtureGroup>1</FixtureGroup>
+   <Property Name="orientation" Value="Horizontal"/>
+  </Function>
+  <Function ID="5" Type="RGBMatrix" Name="WHITE">
+   <Speed FadeIn="0" FadeOut="0" Duration="500"/>
+   <Direction>Forward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <Algorithm Type="Script">Sine Wave</Algorithm>
+   <Color Index="0">4294967295</Color>
+   <ControlMode>White</ControlMode>
+   <FixtureGroup>0</FixtureGroup>
+   <Property Name="orientation" Value="Horizontal"/>
+  </Function>
+  <Function ID="6" Type="Collection" Name="STARTER"/>
+  <Function ID="8" Type="Scene" Name="Generic RGB Panel [0]" Hidden="True">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+  </Function>
+  <Function ID="10" Type="Scene" Name="Generic RGB Panel [0]" Hidden="True">
+   <Speed FadeIn="0" FadeOut="0" Duration="0"/>
+  </Function>
+  <Function ID="11" Type="Sequence" Name="New RGB Matrix 7 Sequence" BoundScene="10">
    <Speed FadeIn="0" FadeOut="0" Duration="0"/>
    <Direction>Forward</Direction>
    <RunOrder>Loop</RunOrder>
-   <SpeedModes FadeIn="Default" FadeOut="Default" Duration="Common"/>
-   <Step Number="0" FadeIn="0" Hold="0" FadeOut="0" Values="0"/>
+   <SpeedModes FadeIn="Default" FadeOut="Default" Duration="PerStep"/>
+   <Step Number="0" FadeIn="0" Hold="1000" FadeOut="0" Values="960">4:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255:5:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255</Step>
+   <Step Number="1" FadeIn="0" Hold="1000" FadeOut="0" Values="960">3:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255:4:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255:5:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255:6:0,255,4,255,8,255,12,255,16,255,20,255,24,255,28,255,32,255,36,255,40,255,44,255,48,255,52,255,56,255,60,255,64,255,68,255,72,255,76,255,80,255,84,255,88,255,92,255,96,255,100,255,104,255,108,255,112,255,116,255,120,255,124,255,128,255,132,255,136,255,140,255,144,255,148,255,152,255,156,255,160,255,164,255,168,255,172,255,176,255,180,255,184,255,188,255,192,255,196,255,200,255,204,255,208,255,212,255,216,255,220,255,224,255,228,255,232,255,236,255,240,255,244,255,248,255,252,255,256,255,260,255,264,255,268,255,272,255,276,255,280,255,284,255,288,255,292,255,296,255,300,255,304,255,308,255,312,255,316,255</Step>
+  </Function>
+  <Function ID="12" Type="RGBMatrix" Name="SNOW">
+   <Speed FadeIn="0" FadeOut="0" Duration="100"/>
+   <Direction>Backward</Direction>
+   <RunOrder>Loop</RunOrder>
+   <Algorithm Type="Script">Sine Wave</Algorithm>
+   <Color Index="0">4292254207</Color>
+   <ControlMode>RGB</ControlMode>
+   <FixtureGroup>0</FixtureGroup>
   </Function>
   <Monitor DisplayMode="0" ShowLabels="0">
    <Font>Arial,12,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
    <ChannelStyle>0</ChannelStyle>
    <ValueStyle>0</ValueStyle>
-   <Grid Width="4" Height="3" Depth="8" Units="0" POV="1"/>
+   <Grid Width="4" Height="3" Depth="8" Units="0" POV="3"/>
    <StageItem>0</StageItem>
-   <FxItem ID="0" XPos="1743.7" YPos="-135.183" ZPos="1531.6"/>
-   <FxItem ID="1" XPos="574.839" YPos="0" ZPos="1676.83"/>
+   <FxItem ID="0" XPos="385" YPos="1000" ZPos="0"/>
+   <FxItem ID="1" XPos="574.839" YPos="629.293" ZPos="1701.21"/>
+   <FxItem ID="2" XPos="67.7359" YPos="2058.91" ZPos="325.473"/>
+   <FxItem ID="4294967295" XPos="0" YPos="0" ZPos="0" YRot="-90" ZRot="90"/>
   </Monitor>
  </Engine>
  <VirtualConsole>
-  <Frame Caption="Page 1" ID="0">
+  <Frame Caption="SET" ID="0">
    <Appearance>
     <Font>Roboto Condensed,16,-1,5,400,0,0,0,0,0,0,0,0,0,0,1</Font>
    </Appearance>
@@ -82,6 +173,37 @@
    <ShowEnableButton>True</ShowEnableButton>
    <Collapsed>False</Collapsed>
    <Disabled>False</Disabled>
+   <SoloFrame Caption="Solo Frame 1" ID="0">
+    <WindowState Visible="True" X="45" Y="60" Width="533" Height="228"/>
+    <AllowResize>True</AllowResize>
+    <ShowHeader>True</ShowHeader>
+    <ShowEnableButton>True</ShowEnableButton>
+    <Collapsed>False</Collapsed>
+    <Disabled>False</Disabled>
+    <Button Caption="TEST" ID="2">
+     <WindowState Visible="True" X="198" Y="121" Width="86" Height="86"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Function ID="4"/>
+     <Action>Toggle</Action>
+    </Button>
+    <Button Caption="STARTER" ID="1">
+     <WindowState Visible="True" X="30" Y="121" Width="137" Height="76"/>
+     <Appearance>
+      <BackgroundColor>4282664004</BackgroundColor>
+     </Appearance>
+     <Function ID="6"/>
+     <Action>Toggle</Action>
+    </Button>
+   </SoloFrame>
+   <SpeedDial Caption="Speed 4" ID="3">
+    <WindowState Visible="True" X="624" Y="45" Width="406" Height="253"/>
+    <Visibility>646</Visibility>
+    <Time>0</Time>
+    <AbsoluteValue Minimum="0" Maximum="10000"/>
+    <Function FadeIn="0" FadeOut="0" Duration="6">11</Function>
+   </SpeedDial>
   </Frame>
   <Frame Caption="Page 2" ID="1">
    <Appearance>
