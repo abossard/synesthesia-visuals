@@ -100,6 +100,61 @@ public actor Settings {
     }
 }
 
+// MARK: - Feature Flags
+
+/// User-toggleable feature switches persisted via UserDefaults.
+/// Features default to enabled; disabling hides the UI tab and
+/// skips the corresponding module startup work.
+public struct FeatureFlags: Equatable, Sendable {
+    public var renderingEnabled: Bool
+    public var performanceEnabled: Bool
+    public var shadersEnabled: Bool
+    public var launchpadEnabled: Bool
+    public var songsEnabled: Bool
+
+    public init(
+        renderingEnabled: Bool = true,
+        performanceEnabled: Bool = true,
+        shadersEnabled: Bool = true,
+        launchpadEnabled: Bool = true,
+        songsEnabled: Bool = true
+    ) {
+        self.renderingEnabled = renderingEnabled
+        self.performanceEnabled = performanceEnabled
+        self.shadersEnabled = shadersEnabled
+        self.launchpadEnabled = launchpadEnabled
+        self.songsEnabled = songsEnabled
+    }
+
+    public enum Keys {
+        public static let rendering = "featureFlag_rendering"
+        public static let performance = "featureFlag_performance"
+        public static let shaders = "featureFlag_shaders"
+        public static let launchpad = "featureFlag_launchpad"
+        public static let songs = "featureFlag_songs"
+    }
+
+    /// Load from UserDefaults (defaults to all enabled).
+    public static func load(from defaults: UserDefaults = .standard) -> FeatureFlags {
+        FeatureFlags(
+            renderingEnabled: defaults.object(forKey: Keys.rendering) as? Bool ?? true,
+            performanceEnabled: defaults.object(forKey: Keys.performance) as? Bool ?? true,
+            shadersEnabled: defaults.object(forKey: Keys.shaders) as? Bool ?? true,
+            launchpadEnabled: defaults.object(forKey: Keys.launchpad) as? Bool ?? true,
+            songsEnabled: defaults.object(forKey: Keys.songs) as? Bool ?? true
+        )
+    }
+
+    /// Save to UserDefaults.
+    public func save(to defaults: UserDefaults = .standard) {
+        defaults.set(renderingEnabled, forKey: Keys.rendering)
+        defaults.set(performanceEnabled, forKey: Keys.performance)
+        defaults.set(shadersEnabled, forKey: Keys.shaders)
+        defaults.set(launchpadEnabled, forKey: Keys.launchpad)
+        defaults.set(songsEnabled, forKey: Keys.songs)
+    }
+}
+
 // MARK: - Service Health
 
 /// Tracks service availability with reconnection management

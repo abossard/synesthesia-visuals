@@ -336,6 +336,10 @@ public final class AppState: ObservableObject {
     @Published public private(set) var analysisErrorCount: Int = 0
     @Published public private(set) var analysisCancelled: Bool = false
 
+    // MARK: - Feature Flags
+
+    @Published public private(set) var featureFlags: FeatureFlags = FeatureFlags()
+
     private var vdjQueryTask: Task<Void, Never>?
     private var lastLaunchpadRevision: UInt64 = 0
     private var lastLauncherRevision: UInt64 = 0
@@ -388,8 +392,11 @@ public final class AppState: ObservableObject {
         setupAutomationOSCAutoRecordBridge()
 
         if !testMode {
+            self.featureFlags = FeatureFlags.load()
             setupModules()
-            setupRenderEngine()
+            if featureFlags.renderingEnabled {
+                setupRenderEngine()
+            }
             setupEffectEnvironment()
             startOSCHub()
             setupMCPDataServerIfEnabled()
@@ -574,6 +581,13 @@ public final class AppState: ObservableObject {
             get: { self.renderEnabled },
             set: { enabled in self.setRenderEnabled(enabled) }
         )
+    }
+
+    /// Update feature flags and persist to UserDefaults.
+    /// Tab visibility updates immediately; module changes take effect on restart.
+    public func updateFeatureFlags(_ flags: FeatureFlags) {
+        flags.save()
+        self.featureFlags = flags
     }
 
     public func shaderWorkspaceControls(for shaderName: String?) -> ShaderWorkspaceControls {
@@ -1285,43 +1299,48 @@ public final class AppState: ObservableObject {
         playbackModule = PlaybackModule(oscHub: oscHub)
         lyricsModule = LyricsModule(fetcher: fetcher)
         aiModule = AIModule(llmClient: llm)
-        shadersModule = ShadersModule(matcher: shaderMatcher)
+        if featureFlags.shadersEnabled {
+            shadersModule = ShadersModule(matcher: shaderMatcher)
+        }
         imagesModule = ImagesModule(scraper: imageScraper)
 
-        let launchpadOscSender = makeLaunchpadOscSender(
-            oscHub: oscHub,
-            onError: { [weak self] message in
-                Task { @MainActor in
-                    self?.log(message, level: .error)
-                }
-            }
-        )
-        launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
-        if let launchpadModule {
-            launchpadGateway = LaunchpadGateway(module: launchpadModule)
-            Task { @MainActor [weak self] in
-                self?.launchpadConfig = await launchpadModule.yamlConfig
-            }
-        }
         launcherGateway = AppLauncherGateway()
 
-        // Module dispatch sink - always hop to main actor before touching Store
-        launchpadModule?.dispatch = makeLaunchpadDispatchSink { [weak self] action in
-            self?.store.send(action)
-        }
-
-        for pattern in ["/scenes/*", "/presets/*", "/favslots/*", "/playlist/*", "/controls/meta/*", "/controls/global/*", "/ledfx/*"] {
-            oscHub.subscribe(pattern: pattern) { [weak self] address, values in
-                let args: [OscArg] = values.compactMap { value in
-                    if let v = value as? Int32 { return .int(Int(v)) }
-                    if let v = value as? Float32 { return .float(Float(v)) }
-                    if let v = value as? String { return .string(v) }
-                    if let v = value as? Bool { return .bool(v) }
-                    return nil
+        if featureFlags.launchpadEnabled {
+            let launchpadOscSender = makeLaunchpadOscSender(
+                oscHub: oscHub,
+                onError: { [weak self] message in
+                    Task { @MainActor in
+                        self?.log(message, level: .error)
+                    }
                 }
-                let event = OscEvent(address: address, args: args)
-                Task { @MainActor in
-                    self?.store.send(.launchpad(.oscEventReceived(event)))
+            )
+            launchpadModule = LaunchpadModule(oscSender: launchpadOscSender)
+            if let launchpadModule {
+                launchpadGateway = LaunchpadGateway(module: launchpadModule)
+                Task { @MainActor [weak self] in
+                    self?.launchpadConfig = await launchpadModule.yamlConfig
+                }
+            }
+
+            // Module dispatch sink - always hop to main actor before touching Store
+            launchpadModule?.dispatch = makeLaunchpadDispatchSink { [weak self] action in
+                self?.store.send(action)
+            }
+
+            for pattern in ["/scenes/*", "/presets/*", "/favslots/*", "/playlist/*", "/controls/meta/*", "/controls/global/*", "/ledfx/*"] {
+                oscHub.subscribe(pattern: pattern) { [weak self] address, values in
+                    let args: [OscArg] = values.compactMap { value in
+                        if let v = value as? Int32 { return .int(Int(v)) }
+                        if let v = value as? Float32 { return .float(Float(v)) }
+                        if let v = value as? String { return .string(v) }
+                        if let v = value as? Bool { return .bool(v) }
+                        return nil
+                    }
+                    let event = OscEvent(address: address, args: args)
+                    Task { @MainActor in
+                        self?.store.send(.launchpad(.oscEventReceived(event)))
+                    }
                 }
             }
         }
@@ -1334,7 +1353,9 @@ public final class AppState: ObservableObject {
             oscHub: oscHub
         )
 
-        songsModule = SongsModule()
+        if featureFlags.songsEnabled {
+            songsModule = SongsModule()
+        }
 
         // Wire preview adapter callbacks
         let previewAdapter = audioPreviewAdapter

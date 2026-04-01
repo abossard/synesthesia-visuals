@@ -27,6 +27,11 @@ struct SettingsView: View {
     @State private var showRestartNotice = false
     @State private var showSaveError = false
     @State private var saveErrorMessage = ""
+    @State private var renderingEnabled = true
+    @State private var performanceEnabled = true
+    @State private var shadersEnabled = true
+    @State private var launchpadEnabled = true
+    @State private var songsEnabled = true
     
     // Default paths cached to avoid repeated file system checks
     private struct DefaultPaths {
@@ -80,6 +85,23 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                GroupBox("Feature Modules") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Disable modules you don't need. Tab visibility updates immediately; module startup changes take effect on restart.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 24) {
+                            Toggle("Rendering", isOn: $renderingEnabled)
+                            Toggle("Performance", isOn: $performanceEnabled)
+                            Toggle("Shaders", isOn: $shadersEnabled)
+                            Toggle("Launchpad", isOn: $launchpadEnabled)
+                            Toggle("Songs", isOn: $songsEnabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                }
+
                 LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 24) {
                     GroupBox("Playback") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -403,6 +425,13 @@ struct SettingsView: View {
         tachikomaConfigPath = defaults.string(forKey: LLMClient.configPathDefaultsKey) ?? ""
         ledfxBaseURL = defaults.string(forKey: "ledfx_baseURL") ?? "http://127.0.0.1:8888"
 
+        let flags = FeatureFlags.load(from: defaults)
+        renderingEnabled = flags.renderingEnabled
+        performanceEnabled = flags.performanceEnabled
+        shadersEnabled = flags.shadersEnabled
+        launchpadEnabled = flags.launchpadEnabled
+        songsEnabled = flags.songsEnabled
+
         oscVDJPort = loadPortString(
             defaults,
             key: OSCHub.PortKeys.vdjPort,
@@ -466,6 +495,15 @@ struct SettingsView: View {
 
         appState.send(.ui(.reloadTachikomaConfig))
         appState.send(.ledfx(.setBaseURL(ledfxBaseURL)))
+
+        let flags = FeatureFlags(
+            renderingEnabled: renderingEnabled,
+            performanceEnabled: performanceEnabled,
+            shadersEnabled: shadersEnabled,
+            launchpadEnabled: launchpadEnabled,
+            songsEnabled: songsEnabled
+        )
+        appState.updateFeatureFlags(flags)
 
         showRestartNotice = true
     }

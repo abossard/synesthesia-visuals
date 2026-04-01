@@ -41,7 +41,16 @@ struct ContentView: View {
     }
 
     private var orderedTabs: [SidebarTab] {
-        SidebarTab.allCases
+        SidebarTab.allCases.filter { tab in
+            switch tab {
+            case .rendering: return appState.featureFlags.renderingEnabled
+            case .pipeline: return appState.featureFlags.performanceEnabled
+            case .shaders: return appState.featureFlags.shadersEnabled
+            case .songs: return appState.featureFlags.songsEnabled
+            case .launchpad: return appState.featureFlags.launchpadEnabled
+            default: return true
+            }
+        }
     }
 
     private var tabIndexByTab: [SidebarTab: Int] {
