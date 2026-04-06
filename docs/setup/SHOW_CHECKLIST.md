@@ -117,14 +117,39 @@ npm run dev
 
 ---
 
-## 4. QLC+ Setup from Scratch
+## 4. LedFX Scenes & Devices
 
-### 4.1 Create Workspace
+> **Do this before QLC+ setup** — the sACN bridge and QLC+ scene values reference LedFX scenes by index, so they must exist first.
+
+### 4.1 Start LedFX
+
+```bash
+ledfx
+# Opens at http://127.0.0.1:8888
+```
+
+- [ ] Add WLED devices by IP address
+- [ ] Create virtuals for each strip
+
+### 4.2 Create Scenes & Playlists
+
+- [ ] Create scenes for each DJ phase (use naming like `p1-gentle-energy`, `p3-hard-reactor`)
+- [ ] Order scenes by phase (P1 first, then P2, P3, P4) — the sACN bridge maps DMX value 1→first scene, 2→second, etc.
+- [ ] Verify scenes activate correctly in LedFX UI
+- [ ] Note the total scene count — you'll use this range in QLC+ (step 5)
+
+> **Ref:** [docs/setup/sacn-ledfx-bridge-setup.md](sacn-ledfx-bridge-setup.md)
+
+---
+
+## 5. QLC+ Setup from Scratch
+
+### 5.1 Create Workspace
 
 - [ ] Open QLC+
 - [ ] Save immediately: `File → Save As → show_name.qxw`
 
-### 4.2 Configure Universes (Input/Output Manager)
+### 5.2 Configure Universes (Input/Output Manager)
 
 | Universe | Name | Type | Target |
 |----------|------|------|--------|
@@ -141,7 +166,7 @@ npm run dev
 - [ ] U5: Enable E1.31 output, unicast `127.0.0.1`, port `5568`
 - [ ] Save and reopen — verify all mappings persist
 
-### 4.3 Patch Fixtures (on Universe 1)
+### 5.3 Patch Fixtures (on Universe 1)
 
 | Fixture | DMX Address | Channels |
 |---------|------------|----------|
@@ -152,19 +177,19 @@ npm run dev
 - [ ] Fixture Manager → Add → search for each fixture definition
 - [ ] Set DMX addresses to match physical fixture DIP switches
 
-### 4.4 Patch LedFX Bridge Fixture (on Universe 5)
+### 5.4 Patch LedFX Bridge Fixture (on Universe 5)
 
 - [ ] Add **Generic Dimmer** on Universe 5, address 1
 - [ ] This single channel controls LedFX scene selection (value 1-N = scene N)
 
-### 4.5 Create Test Scenes
+### 5.5 Create Test Scenes
 
 - [ ] `TEST Hero Open White` — Hero Spot dimmer 100%, white, open gobo
 - [ ] `TEST Hazer Mid` — Hazer at 50%
 - [ ] `TEST UV Full` — Thunderwash dimmer 100%
 - [ ] `TEST LedFX Scene 1` — Generic Dimmer on U5 set to value 1
 
-### 4.6 Verify with DMX Monitor
+### 5.6 Verify with DMX Monitor
 
 - [ ] Tools → DMX Monitor → select Universe 1
 - [ ] Activate each test scene → only expected channels change
@@ -174,15 +199,15 @@ npm run dev
 
 ---
 
-## 5. Magic Music Visuals Setup
+## 6. Magic Music Visuals Setup
 
-### 5.1 Audio Input
+### 6.1 Audio Input
 
 - [ ] Open Magic Music Visuals
 - [ ] **Input Sources Window** → set Source 0 to **BlackHole 2ch**
 - [ ] Play music → verify the waveform responds
 
-### 5.2 Audio Analysis (Dual-Envelope Globals)
+### 6.2 Audio Analysis (Dual-Envelope Globals)
 
 Create 6 output Globals for audio-reactive control:
 
@@ -200,7 +225,7 @@ Create 6 output Globals for audio-reactive control:
 - [ ] Apply Peak/Smooth/Raw modifiers
 - [ ] Verify: play music → Globals respond to beats
 
-### 5.3 OSC Output to QLC+
+### 6.3 OSC Output to QLC+
 
 Add OSCSender modules to send audio data to QLC+:
 
@@ -216,13 +241,13 @@ Add OSCSender modules to send audio data to QLC+:
 | `/audio/high/avg` | HighSmooth |
 | `/audio/high/raw` | HighRaw |
 
-### 5.4 Verify Magic → QLC+ Connection
+### 6.4 Verify Magic → QLC+ Connection
 
 - [ ] In QLC+: Input/Output → U4 input → enable OSC on port `7700`
 - [ ] Create Input Profile: Wizard → play music → auto-detect OSC paths
 - [ ] Add a Virtual Console slider → map to `/audio/low/peak` → verify it moves with bass
 
-### 5.5 MIDImix Control (in Magic)
+### 6.5 MIDImix Control (in Magic)
 
 - [ ] Use **MIDI Learn** to map MIDImix faders/knobs to Magic parameters
 - [ ] Suggested: Faders → layer opacity, Knobs → effect parameters
@@ -231,21 +256,9 @@ Add OSCSender modules to send audio data to QLC+:
 
 ---
 
-## 6. LedFX + sACN Bridge
+## 7. sACN Bridge (QLC+ → LedFX)
 
-### 6.1 Start LedFX
-
-```bash
-ledfx
-# Opens at http://127.0.0.1:8888
-```
-
-- [ ] Add WLED devices by IP address
-- [ ] Create virtuals for each strip
-- [ ] Create scenes for each DJ phase (use naming like `p1-gentle-energy`, `p3-hard-reactor`)
-- [ ] Verify scenes activate correctly in LedFX UI
-
-### 6.2 Start sACN Bridge
+### 7.1 Start sACN Bridge
 
 ```bash
 # Install (first time)
@@ -260,7 +273,7 @@ sACN_ledfx_bridge
 - [ ] Reorder scenes by phase (P1 scenes first, then P2, P3, P4)
 - [ ] Save config (Ctrl+S in scene menu, then navigate to [Save])
 
-### 6.3 Verify QLC+ → Bridge → LedFX
+### 7.2 Verify QLC+ → Bridge → LedFX
 
 - [ ] In QLC+ Simple Desk: set U5/Ch1 to value `1` → bridge TUI shows scene name → LedFX activates
 - [ ] Set to `0` → scene deactivates
@@ -270,20 +283,20 @@ sACN_ledfx_bridge
 
 ---
 
-## 7. VirtualDJ Configuration
+## 8. VirtualDJ Configuration
 
-### 7.1 OS2L Setup
+### 8.1 OS2L Setup
 
 - [ ] VirtualDJ → Settings → OS2L → **Enable**
 - [ ] Set target IP: `127.0.0.1`
 - [ ] Port for QLC+: `9996`
 
-### 7.2 (Optional) OSC Output for SwiftVJApp
+### 8.2 (Optional) OSC Output for SwiftVJApp
 
 - [ ] Configure OSC output to port `9010` (SwiftVJApp receives track info)
 - [ ] Configure second OS2L target on port `9997` (SwiftVJApp receives beat/cues)
 
-### 7.3 Cue Point Actions
+### 8.3 Cue Point Actions
 
 Set up POI (Points of Interest) in your tracks:
 
@@ -294,7 +307,7 @@ Set up POI (Points of Interest) in your tracks:
 | Strobe trigger | `os2l_button "strobe"` |
 | Blackout | `os2l_button "blackout"` |
 
-### 7.4 Verify OS2L Connection
+### 8.4 Verify OS2L Connection
 
 - [ ] Play a track in VirtualDJ
 - [ ] QLC+ should show OS2L activity indicator (joystick icon) on Universe 2
@@ -302,11 +315,11 @@ Set up POI (Points of Interest) in your tracks:
 
 ---
 
-## 8. (Optional) SwiftVJApp
+## 9. (Optional) SwiftVJApp
 
 > Skip this section if running without SwiftVJApp. The core rig works fine with just VirtualDJ + QLC+ + Magic + LedFX.
 
-### 8.1 Build & Launch
+### 9.1 Build & Launch
 
 ```bash
 cd swift-vj
@@ -314,13 +327,13 @@ swift build
 swift run SwiftVJApp
 ```
 
-### 8.2 Configure
+### 9.2 Configure
 
 - [ ] Set shader directory path
 - [ ] Verify Syphon outputs appear (Shader, Mask, Lyrics, etc.)
 - [ ] Connect to Magic via Syphon for visual overlays
 
-### 8.3 Verify Connections
+### 9.3 Verify Connections
 
 - [ ] OS2L from VirtualDJ (port 9997) — track changes visible
 - [ ] Syphon to Magic — visual layers appear
@@ -328,40 +341,40 @@ swift run SwiftVJApp
 
 ---
 
-## 9. Integration Verification
+## 10. Integration Verification
 
 Run through each connection to confirm the full signal chain works.
 
-### 9.1 Audio Chain
+### 10.1 Audio Chain
 
 - [ ] Play music → hear through speakers
 - [ ] Magic shows audio waveform (BlackHole input)
 - [ ] QLC+ sliders respond to audio OSC from Magic
 - [ ] LedFX strips react to audio
 
-### 9.2 Beat/Cue Chain
+### 10.2 Beat/Cue Chain
 
 - [ ] VirtualDJ playing → QLC+ receives OS2L beat data
 - [ ] OS2L cue buttons trigger QLC+ actions
 
-### 9.3 Lighting Chain
+### 10.3 Lighting Chain
 
 - [ ] QLC+ scene → DMX fixtures respond (Hero Spot, Thunderwash, Hazer)
 - [ ] QLC+ U5/Ch1 value → sACN bridge → LedFX scene change → strips update
 
-### 9.4 MIDI Controllers
+### 10.4 MIDI Controllers
 
 - [ ] Launchpad pads trigger QLC+ buttons (in Programmer mode)
 - [ ] MIDImix faders control Magic parameters
 
-### 9.5 (Optional) SwiftVJApp Chain
+### 10.5 (Optional) SwiftVJApp Chain
 
 - [ ] VirtualDJ track change → SwiftVJApp shows track info
 - [ ] SwiftVJApp Syphon → Magic receives visual overlays
 
 ---
 
-## 10. Pre-Show Final Checks
+## 11. Pre-Show Final Checks
 
 ### Atmosphere
 
