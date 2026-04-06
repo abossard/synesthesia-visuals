@@ -42,8 +42,15 @@ jobs:
         working-directory: swift-vj
         run: |
           APP_DIR="SwiftVJApp.app/Contents/MacOS"
-          mkdir -p "$APP_DIR"
+          FW_DIR="SwiftVJApp.app/Contents/Frameworks"
+          mkdir -p "$APP_DIR" "$FW_DIR"
           cp .build/release/SwiftVJApp "$APP_DIR/"
+
+          # Bundle Syphon.framework (required dylib)
+          cp -R Frameworks/Syphon.xcframework/macos-arm64_x86_64/Syphon.framework "$FW_DIR/"
+
+          # Fix rpath so the binary finds Syphon in Contents/Frameworks
+          install_name_tool -add_rpath @executable_path/../Frameworks "$APP_DIR/SwiftVJApp" 2>/dev/null || true
 
           # Copy shader sources for runtime compilation
           if [ -d "Shaders" ]; then
