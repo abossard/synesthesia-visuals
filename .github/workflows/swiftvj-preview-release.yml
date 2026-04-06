@@ -1,0 +1,111 @@
+name: SwiftVJ Preview Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'swift-vj/**'
+      - '.github/workflows/swiftvj-preview-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Preview
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "No Xcode 16 found, using default"
+            xcodebuild -version
+          else
+            sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+            echo "Selected: $XCODE_PATH"
+            xcodebuild -version
+          fi
+          swift --version
+
+      - name: Build SwiftVJApp (Release)
+        working-directory: swift-vj
+        run: swift build -c release --product SwiftVJApp
+
+      - name: Package .app bundle
+        working-directory: swift-vj
+        run: |
+          APP_DIR="SwiftVJApp.app/Contents/MacOS"
+          mkdir -p "$APP_DIR"
+          cp .build/release/SwiftVJApp "$APP_DIR/"
+
+          # Copy shader sources for runtime compilation
+          if [ -d "Shaders" ]; then
+            cp -R Shaders "$APP_DIR/"
+          fi
+
+          # Copy metallib if it exists
+          if [ -f "Sources/SwiftVJApp/Resources/Shaders.metallib" ]; then
+            cp Sources/SwiftVJApp/Resources/Shaders.metallib "$APP_DIR/"
+          fi
+
+          # Create Info.plist
+          cat > SwiftVJApp.app/Contents/Info.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>SwiftVJApp</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.abossard.SwiftVJApp</string>
+            <key>CFBundleName</key>
+            <string>SwiftVJApp</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleVersion</key>
+            <string>1.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>15.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Zip the app
+          ditto -c -k --keepParent SwiftVJApp.app SwiftVJApp.zip
+          echo "Packaged: $(du -sh SwiftVJApp.zip | cut -f1)"
+
+      - name: Get short SHA and date
+        id: meta
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete preview --yes 2>/dev/null || true
+
+      - name: Delete preview tag
+        run: git push origin :refs/tags/preview 2>/dev/null || true
+
+      - name: Create preview release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create preview \
+            swift-vj/SwiftVJApp.zip \
+            --title "SwiftVJ Preview (${{ steps.meta.outputs.date }})" \
+            --notes "Automated preview build from \`${{ steps.meta.outputs.sha }}\` on ${{ steps.meta.outputs.date }}.
+
+          **⚠️ Not signed or notarized** — right-click → Open on first launch.
+
+          Requires macOS 15 (Sequoia). For runtime shader compilation, install: \`brew install glslang spirv-cross\`" \
+            --prerelease
