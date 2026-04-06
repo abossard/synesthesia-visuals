@@ -44,10 +44,13 @@ jobs:
           APP_DIR="SwiftVJApp.app/Contents/MacOS"
           FW_DIR="SwiftVJApp.app/Contents/Frameworks"
           mkdir -p "$APP_DIR" "$FW_DIR"
-          cp .build/release/SwiftVJApp "$APP_DIR/"
+          # Copy executable (SPM may use .build/release/ or .build/<triple>/release/)
+          EXEC=$(find .build -path "*/release/SwiftVJApp" -not -path "*.dSYM*" -type f | head -1)
+          cp "$EXEC" "$APP_DIR/"
 
           # Copy all resource bundles (SwiftVJCore, SwiftVJApp, OscRestBridge, etc.)
-          find .build/release -maxdepth 1 -name "*.bundle" -exec cp -R {} "$APP_DIR/" \;
+          # SPM puts bundles either in .build/release/ or .build/<triple>/release/
+          find .build -path "*/release/*.bundle" -maxdepth 3 -exec cp -R {} "$APP_DIR/" \;
 
           # Bundle Syphon.framework (required dylib)
           cp -R Frameworks/Syphon.xcframework/macos-arm64_x86_64/Syphon.framework "$FW_DIR/"
