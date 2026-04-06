@@ -3,7 +3,9 @@
 
 import ArgumentParser
 import SwiftVJCore
+import ShaderRepository
 import Foundation
+import Metal
 
 @main
 struct SwiftVJCLI: AsyncParsableCommand {
@@ -15,6 +17,7 @@ struct SwiftVJCLI: AsyncParsableCommand {
             LyricsCommand.self,
             LaunchpadTestCommand.self,
             LaunchpadE2ECommand.self,
+            RuntimeShaderCommand.self,
             // PipelineCommand.self,  // TODO: Implement
             // PlaybackCommand.self,  // TODO: Implement
             // ShadersCommand.self,   // TODO: Implement
@@ -142,5 +145,109 @@ struct LaunchpadE2ECommand: AsyncParsableCommand {
     
     func run() async throws {
         await runLaunchpadE2ETest()
+    }
+}
+
+// MARK: - Runtime Shader Command (PoC)
+
+struct RuntimeShaderCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "runtime-shader",
+        abstract: "Compile a GLSL shader at runtime (no Xcode/metallib needed)"
+    )
+
+    @Option(name: [.short, .long], help: "Path to GLSL shader file (.txt)")
+    var file: String
+
+    @Flag(name: .long, help: "Show generated MSL source")
+    var showMSL: Bool = false
+
+    func run() async throws {
+        print()
+        print("⚡ RUNTIME SHADER COMPILATION")
+        print(String(repeating: "=", count: 50))
+
+        // Step 1: Read GLSL source
+        let fileURL = URL(fileURLWithPath: file)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            print("❌ File not found: \(file)")
+            throw ExitCode.failure
+        }
+        let glslSource = try String(contentsOf: fileURL, encoding: .utf8)
+        let shaderName = fileURL.deletingPathExtension().lastPathComponent
+        print("📄 Shader: \(shaderName) (\(glslSource.count) chars)")
+
+        // Step 2: Check tools
+        let glslang = ShaderCompiler.findTool("glslangValidator")
+        let spirvCross = ShaderCompiler.findTool("spirv-cross")
+        print("🔧 glslangValidator: \(glslang)")
+        print("🔧 spirv-cross: \(spirvCross)")
+
+        // Step 3: GLSL → MSL
+        print()
+        print("Step 1: GLSL → SPIR-V → MSL...")
+        let result = try await ShaderCompiler.compileToMSL(
+            source: glslSource,
+            name: shaderName,
+            glslangPath: glslang,
+            spirvCrossPath: spirvCross
+        )
+
+        guard result.success else {
+            print("❌ Compilation failed:")
+            for error in result.errors {
+                print("  \(error)")
+            }
+            throw ExitCode.failure
+        }
+        print("✓ MSL generated (\(result.mslSource.count) chars, \(String(format: "%.0f", result.duration * 1000))ms)")
+        print("  Fragment function: \(result.fragmentFunctionName)")
+
+        if showMSL {
+            print()
+            print("--- Generated MSL ---")
+            print(result.mslSource)
+            print("--- End MSL ---")
+        }
+
+        // Step 4: Metal runtime compilation
+        print()
+        print("Step 2: MSL → Metal library (runtime)...")
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            print("❌ No Metal device available")
+            throw ExitCode.failure
+        }
+        print("  Device: \(device.name)")
+
+        let library = try await device.makeLibrary(source: result.mslSource, options: nil)
+        print("✓ Metal library compiled")
+        print("  Functions: \(library.functionNames)")
+
+        // Step 5: Create render pipeline state
+        print()
+        print("Step 3: Create render pipeline state...")
+        guard let fragmentFn = library.makeFunction(name: result.fragmentFunctionName) else {
+            print("❌ Fragment function '\(result.fragmentFunctionName)' not found")
+            throw ExitCode.failure
+        }
+        guard let vertexFn = library.makeFunction(name: "vertex_fullscreen") else {
+            print("❌ Vertex function 'vertex_fullscreen' not found")
+            throw ExitCode.failure
+        }
+
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = vertexFn
+        descriptor.fragmentFunction = fragmentFn
+        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+
+        let pipelineState = try await device.makeRenderPipelineState(descriptor: descriptor)
+
+        print("✓ Pipeline state created")
+        print()
+        print(String(repeating: "=", count: 50))
+        print("🎉 SUCCESS — Runtime compilation works!")
+        print("   No Xcode, no metallib, no pre-compile step.")
+        print("   Pipeline state: \(pipelineState)")
+        print()
     }
 }

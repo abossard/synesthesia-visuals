@@ -10,6 +10,7 @@ import AppKit
 import SwiftUI
 import SyphonKit
 import SwiftVJCore
+import ShaderRepository
 
 // MARK: - Tile Renderer Protocol
 
@@ -63,6 +64,9 @@ final class ShaderRenderer: TileRenderer {
     private var metallibLibrary: MTLLibrary?
     
     private(set) var currentShaderName: String = ""
+
+    /// Whether a pre-compiled metallib is available.
+    var hasMetallib: Bool { metallibLibrary != nil }
     
     init(name: String, device: MTLDevice, width: Int = 1280, height: Int = 720) {
         self.name = name
@@ -125,28 +129,15 @@ final class ShaderRenderer: TileRenderer {
         print("[ShaderRenderer:\(name)] Failed to load metallib")
     }
     
-    /// Load a shader by name. Returns true if successful, false if shader not found.
+    /// Load a shader by name from the pre-compiled metallib.
+    /// Used internally by ShaderPipelineProvider — prefer provider.pipeline(for:) instead.
     @discardableResult
     func loadShader(name shaderName: String) -> Bool {
-        guard let library = metallibLibrary else {
-            print("[ShaderRenderer:\(name)] ❌ FAILED: No metallib loaded")
-            return false
-        }
+        guard let library = metallibLibrary else { return false }
         
         let fragmentName = "fragment_\(shaderName)"
-        
-        guard let fragmentFunction = library.makeFunction(name: fragmentName) else {
-            print("[ShaderRenderer:\(name)] ❌ FAILED: Fragment function '\(fragmentName)' not found in metallib")
-            // List available functions for debugging
-            let available = library.functionNames.filter { $0.hasPrefix("fragment_") }.prefix(10)
-            print("[ShaderRenderer:\(name)] Available (first 10): \(available.joined(separator: ", "))")
-            return false
-        }
-        
-        guard let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else {
-            print("[ShaderRenderer:\(name)] ❌ FAILED: Vertex function 'vertex_fullscreen' not found")
-            return false
-        }
+        guard let fragmentFunction = library.makeFunction(name: fragmentName) else { return false }
+        guard let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else { return false }
         
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertexFunction
@@ -163,7 +154,53 @@ final class ShaderRenderer: TileRenderer {
             return false
         }
     }
+
+    /// Set a pre-compiled pipeline state. Can't fail — just swaps state.
+    /// Called from the render thread with pipeline states from ShaderPipelineProvider.
+    func setPipeline(_ pipeline: MTLRenderPipelineState, name shaderName: String) {
+        pipelineState = pipeline
+        currentShaderName = shaderName
+    }
     
+    /// Load a shader from GLSL source at runtime — no pre-compiled metallib needed.
+    /// Uses glslangValidator + spirv-cross (Homebrew) then Metal runtime compilation.
+    @discardableResult
+    func loadShaderFromSource(glslSource: String, shaderName: String = "runtime") async -> Bool {
+        do {
+            let result = try await ShaderCompiler.compileToMSL(source: glslSource, name: shaderName)
+            guard result.success else {
+                print("[ShaderRenderer:\(name)] ❌ GLSL→MSL failed: \(result.errors.joined(separator: "; "))")
+                return false
+            }
+
+            let library = try await device.makeLibrary(source: result.mslSource, options: nil)
+
+            guard let fragmentFunction = library.makeFunction(name: result.fragmentFunctionName) else {
+                print("[ShaderRenderer:\(name)] ❌ Fragment function '\(result.fragmentFunctionName)' not found in runtime library")
+                print("[ShaderRenderer:\(name)] Available: \(library.functionNames)")
+                return false
+            }
+
+            guard let vertexFunction = library.makeFunction(name: "vertex_fullscreen") else {
+                print("[ShaderRenderer:\(name)] ❌ Vertex function 'vertex_fullscreen' not found in runtime library")
+                return false
+            }
+
+            let descriptor = MTLRenderPipelineDescriptor()
+            descriptor.vertexFunction = vertexFunction
+            descriptor.fragmentFunction = fragmentFunction
+            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+
+            pipelineState = try await device.makeRenderPipelineState(descriptor: descriptor)
+            currentShaderName = shaderName
+            print("[ShaderRenderer:\(name)] ✓ Runtime compiled: \(result.fragmentFunctionName) (\(String(format: "%.0f", result.duration * 1000))ms)")
+            return true
+        } catch {
+            print("[ShaderRenderer:\(name)] ❌ Runtime compilation error: \(error)")
+            return false
+        }
+    }
+
     func render(commandBuffer: MTLCommandBuffer, uniforms: ShaderUniforms) {
         guard let texture = texture else {
             // print("[ShaderRenderer:\(name)] No texture")

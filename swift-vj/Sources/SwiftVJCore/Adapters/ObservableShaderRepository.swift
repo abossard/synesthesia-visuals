@@ -108,9 +108,17 @@ public final class ObservableShaderRepository: ObservableObject {
         allShaders.first { $0.name == name }
     }
     
-    /// Check if shader is renderable
+    /// Check if shader is renderable (via metallib OR GLSL source for runtime compilation)
     public func isRenderable(_ name: String) -> Bool {
-        metallibNames.contains(name)
+        if metallibNames.contains(name) { return true }
+        // Check if GLSL source exists for runtime compilation
+        if let dir = shadersDirectory {
+            let glslPath = dir.appendingPathComponent("glsl/\(name).txt")
+            if FileManager.default.fileExists(atPath: glslPath.path) { return true }
+            let maskPath = dir.appendingPathComponent("masks/\(name).txt")
+            if FileManager.default.fileExists(atPath: maskPath.path) { return true }
+        }
+        return false
     }
     
     /// Check if shader is a mask

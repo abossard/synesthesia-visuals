@@ -173,6 +173,12 @@ public enum RenderAction: Sendable {
     /// Set latest AI shader suggestion (optional if no match)
     case setAISuggestedShader(name: String?, phase: Phase?)
 
+    /// Shader runtime compilation started
+    case shaderCompilationStarted(String)
+
+    /// Shader runtime compilation completed
+    case shaderCompilationCompleted(String, success: Bool)
+
     /// Add shader to phase playlist (duplicates allowed)
     case addShaderToPhasePlaylist(phase: Phase, shaderName: String, activate: Bool)
 
@@ -901,6 +907,10 @@ extension RenderAction: CustomStringConvertible {
         case .setMaskAutoAdvanceOnSongChange(let enabled): return "setMaskAutoAdvanceOnSongChange(\(enabled))"
         case .setAISuggestedShader(let name, let phase):
             return "setAISuggestedShader(\(name ?? "nil"), phase: \(phase?.rawValue ?? "nil"))"
+        case .shaderCompilationStarted(let name):
+            return "shaderCompilationStarted(\(name))"
+        case .shaderCompilationCompleted(let name, let success):
+            return "shaderCompilationCompleted(\(name), success: \(success))"
         case .addShaderToPhasePlaylist(let phase, let shaderName, let activate):
             return "addShaderToPhasePlaylist(\(phase.rawValue), \(shaderName), activate: \(activate))"
         case .addMaskToPhasePlaylist(let phase, let maskName, let activate):

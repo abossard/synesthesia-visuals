@@ -378,6 +378,9 @@ public struct RenderSubState: Equatable, Sendable {
     /// Phase associated with the AI shader suggestion.
     public var aiSuggestedShaderPhase: Phase?
 
+    /// Shader currently being compiled at runtime (nil = idle).
+    public var compilingShaderName: String?
+
     /// Effective phase (manual or detected)
     public var effectivePhase: Phase? {
         currentPhase ?? detectedSongPhase

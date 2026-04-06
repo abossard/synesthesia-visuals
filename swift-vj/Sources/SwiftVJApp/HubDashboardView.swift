@@ -503,10 +503,3 @@ private struct HubMessageRow: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    HubDashboardView()
-        .environmentObject(AppState())
-        .frame(minWidth: 900, minHeight: 500)
-}

@@ -555,8 +555,3 @@ private func canBindUDP(port: UInt16) -> Bool {
     close(fd)
     return result == 0
 }
-
-#Preview {
-    SettingsView()
-        .environmentObject(AppState())
-}

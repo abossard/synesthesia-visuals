@@ -299,8 +299,3 @@ struct PipelineStepRow: View {
     }
 }
 
-#Preview {
-    PipelineStatusView()
-        .environmentObject(AppState())
-        .frame(minWidth: 400, maxWidth: .infinity, minHeight: 350, maxHeight: .infinity)
-}

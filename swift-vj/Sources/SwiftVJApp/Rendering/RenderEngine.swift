@@ -69,6 +69,8 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
     private let cachedContext = OSAllocatedUnfairLock<RenderFrameContext?>(initialState: nil)
     private let pendingShaderName = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let pendingMaskName = OSAllocatedUnfairLock<String?>(initialState: nil)
+    private let pendingShaderPipeline = OSAllocatedUnfairLock<(String, MTLRenderPipelineState)?>(initialState: nil)
+    private let pendingMaskPipeline = OSAllocatedUnfairLock<(String, MTLRenderPipelineState)?>(initialState: nil)
     private let outputState = OSAllocatedUnfairLock<RenderOutputsState>(initialState: RenderOutputsState())
     private let shaderControlsState = OSAllocatedUnfairLock<[String: ShaderWorkspaceControls]>(initialState: [:])
     
@@ -160,14 +162,12 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         let regularNames = shaderRepository.regularShaders.map(\.name)
         let maskNames = shaderRepository.masks.map(\.name)
 
+        // Initial shader selection — actual loading happens via EffectEnvironment → ShaderPipelineProvider
+        // when applyInitialRenderSelections() dispatches .selectShader/.selectMaskShader actions.
         let mainName = shaderSelection.mainShaderName ?? regularNames.first ?? "3isacrowd"
         let maskName = shaderSelection.maskShaderName ?? maskNames.first ?? "BWrevolvingswirl"
         shaderSelection.selectMain(name: mainName)
         shaderSelection.selectMask(name: maskName)
-
-        // Keep renderer shader state aligned with selection state.
-        renderer.shaderRenderer.loadShader(name: shaderSelection.mainShaderName ?? mainName)
-        renderer.maskRenderer.loadShader(name: shaderSelection.maskShaderName ?? maskName)
 
         // Create thread-safe Syphon manager and start servers
         self.syphonManager = SyphonOutputManager.shared
@@ -377,27 +377,23 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
             renderer.imageRenderer.imageState = context.imageState
         }
         
-        // Handle shader changes
+        // Handle shader changes — all loading via ShaderPipelineProvider (pendingShaderPipeline)
         let currentShaderName = renderer.shaderRenderer.currentShaderName
-        if let shaderName = pendingShaderName.withLock({ val -> String? in
-            let current = val
-            if current != currentShaderName {
-                return current
-            }
-            return nil
+        if let (name, pipeline) = pendingShaderPipeline.withLock({ val -> (String, MTLRenderPipelineState)? in
+            guard let pending = val, pending.0 != currentShaderName else { return nil }
+            val = nil
+            return pending
         }) {
-            renderer.shaderRenderer.loadShader(name: shaderName)
+            renderer.shaderRenderer.setPipeline(pipeline, name: name)
         }
         
         let currentMaskName = renderer.maskRenderer.currentShaderName
-        if let maskName = pendingMaskName.withLock({ val -> String? in
-            let current = val
-            if current != currentMaskName {
-                return current
-            }
-            return nil
+        if let (name, pipeline) = pendingMaskPipeline.withLock({ val -> (String, MTLRenderPipelineState)? in
+            guard let pending = val, pending.0 != currentMaskName else { return nil }
+            val = nil
+            return pending
         }) {
-            renderer.maskRenderer.loadShader(name: maskName)
+            renderer.maskRenderer.setPipeline(pipeline, name: name)
         }
         
         // Render all tiles + publish to Syphon (synchronous GPU work)
@@ -647,6 +643,17 @@ final class RenderEngine: ObservableObject, @unchecked Sendable {
         Task { @MainActor [shaderSelection] in
             shaderSelection.selectMain(name: name)
         }
+    }
+
+    /// Set a pre-compiled shader pipeline for the render thread.
+    /// Called from EffectEnvironment with pipeline states from ShaderPipelineProvider.
+    func setShaderPipeline(_ pipeline: MTLRenderPipelineState, name: String) {
+        pendingShaderPipeline.withLock { $0 = (name, pipeline) }
+    }
+
+    /// Set a pre-compiled mask pipeline for the render thread.
+    func setMaskPipeline(_ pipeline: MTLRenderPipelineState, name: String) {
+        pendingMaskPipeline.withLock { $0 = (name, pipeline) }
     }
 
     /// Called with audio update (from pipeline or OSC)

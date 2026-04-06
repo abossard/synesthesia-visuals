@@ -252,18 +252,3 @@ struct SyphonThumbnailView: View {
         }
     }
 }
-
-// MARK: - Preview
-
-#Preview {
-    VStack {
-        SyphonThumbnailView(serverName: "Shader")
-            .aspectRatio(16/9, contentMode: .fit)
-            .frame(height: 200)
-        
-        SyphonThumbnailView(serverName: "Lyrics")
-            .aspectRatio(16/9, contentMode: .fit)
-            .frame(height: 200)
-    }
-    .padding()
-}

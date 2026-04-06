@@ -464,6 +464,14 @@ public func renderReducer(
         state.aiSuggestedShaderPhase = phase
         return .none
 
+    case .shaderCompilationStarted(let name):
+        state.compilingShaderName = name
+        return .none
+
+    case .shaderCompilationCompleted(_, _):
+        state.compilingShaderName = nil
+        return .none
+
     case .addShaderToPhasePlaylist(let phase, let shaderName, let activate):
         let phaseKey = phase.rawValue
         var playlist = state.shaderPlaylistByPhase[phaseKey] ?? []

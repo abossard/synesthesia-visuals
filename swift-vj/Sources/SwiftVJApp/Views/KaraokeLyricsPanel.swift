@@ -360,26 +360,3 @@ struct KaraokeLyricsPanelWindow: View {
         .padding()
     }
 }
-
-// MARK: - Preview
-
-#Preview("Karaoke Lyrics Panel") {
-    let engine = KaraokeEngine()
-    engine.loadTestLyrics()
-
-    return KaraokeLyricsPanel(
-        karaokeEngine: engine,
-        playbackPosition: 12.5,
-        isPlaying: true
-    )
-    .frame(width: 500, height: 600)
-}
-
-#Preview("Empty State") {
-    KaraokeLyricsPanel(
-        karaokeEngine: KaraokeEngine(),
-        playbackPosition: 0,
-        isPlaying: false
-    )
-    .frame(width: 500, height: 600)
-}

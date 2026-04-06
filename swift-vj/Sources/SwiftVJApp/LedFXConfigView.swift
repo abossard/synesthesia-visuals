@@ -830,13 +830,6 @@ private struct SceneGeneratorSheet: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    LedFXConfigView()
-        .environmentObject(AppState())
-}
-
 private let gridColumns = [
     GridItem(.adaptive(minimum: 320), spacing: 16)
 ]

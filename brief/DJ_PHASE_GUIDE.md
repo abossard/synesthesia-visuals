@@ -234,22 +234,40 @@ This pattern should hold in all phases, with P3 biasing toward harder peak segme
 | Cameo Thunderwash 600 UV | 1 | UV Strobe/Wash | 4 | Dimmer, Strobe, Duration, Sound mode | UV wash, strobe accent, impact hits |
 | Stairville Hz-200 DMX | 2 | Hazer | 2 | Haze output, Fan speed | Atmosphere (always-on low during show) |
 
+### sACN → LedFX Bridge (Software)
+
+| Component | Detail |
+|---|---|
+| Tool | [sACN_ledfx_bridge](https://github.com/abossard/sACN_ledfx_bridge) (Go CLI) |
+| Protocol | sACN / E1.31 (from QLC+) → LedFX REST API |
+| Function | Maps a single DMX channel value to LedFX scene activation |
+| Channel mapping | Value 0 = OFF, value 1 = scene[0], value 2 = scene[1], ... |
+| Config | `config.json` — universe, channel, scene list (auto-fetch from LedFX API) |
+
+- Runs alongside LedFX on the same machine.
+- QLC+ sends E1.31 on a dedicated universe (Universe 5, channel 1).
+- Enables QLC+ chasers and collections to automate LedFX scene changes alongside DMX fixture cues.
+- See [sACN Bridge Setup Guide](../docs/setup/sacn-ledfx-bridge-setup.md) for installation and configuration.
+
 ---
 
 ## Layering Principle — Two-System Architecture
 
-The show runs on **two parallel systems** that together form the blender composition:
+The show runs on **two parallel systems** that together form the blender composition. QLC+ controls LedFX scene selection via the sACN bridge, enabling synchronized phase transitions across all fixtures.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   BLENDER MODEL                      │
-│                                                      │
-│  Background ──► LedFX strips (ambient wash/gradient) │
-│  Foreground ──► LedFX strips (audio-reactive effects)│
-│  Beam/Gobo  ──► Hero Spot Wash (movement, texture)   │
-│  Mask/Hit   ──► Thunderwash UV (strobe, UV punch)    │
-│  Atmosphere ──► Hz-200 Hazer (always-on haze bed)    │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      BLENDER MODEL                          │
+│                                                             │
+│  Background ──► LedFX strips (ambient wash/gradient)        │
+│  Foreground ──► LedFX strips (audio-reactive effects)       │
+│  Beam/Gobo  ──► Hero Spot Wash (movement, texture)          │
+│  Mask/Hit   ──► Thunderwash UV (strobe, UV punch)           │
+│  Atmosphere ──► Hz-200 Hazer (always-on haze bed)           │
+│                                                             │
+│  Scene Select ──► QLC+ ─── sACN (E1.31) ─── Bridge ─► LedFX│
+│                   (U5/Ch1 value selects LedFX scene)        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Layer Assignments
@@ -261,6 +279,7 @@ The show runs on **two parallel systems** that together form the blender composi
 | **Beam / texture** | QLC+ | Hero Spot Wash (ID 0) | Pan/tilt movement, gobo projection, prism, color wheel — directional accents |
 | **Impact / mask** | QLC+ | Thunderwash UV (ID 1) | Short UV/strobe bursts timed to drops and transitions — the punctuation layer |
 | **Atmosphere** | QLC+ | Hz-200 Hazer (ID 2) | Low continuous haze to catch beams; increase slightly before P3 peak |
+| **LedFX scene select** | QLC+ → sACN bridge | sACN_ledfx_bridge | DMX value on U5/Ch1 selects active LedFX scene. Use in QLC+ collections to synchronize LED strip scenes with DMX fixture cues. |
 
 ### Layer Interaction Rules
 
@@ -279,6 +298,7 @@ The show runs on **two parallel systems** that together form the blender composi
    - LedFX handles audio-reactivity for color/pattern — it's always listening.
    - QLC+ handles position, gobo, and timed accent hits — it's cue-driven or manually triggered.
    - Do not try to make QLC+ scenes audio-reactive for color; let LedFX do that job.
+6. **sACN bridge unifies phase transitions.** Use QLC+ collections that include both DMX fixture scenes AND a LedFX scene-select value on U5/Ch1. This way one button/cue fires both systems simultaneously — no separate LedFX manual switching during performance.
 
 ### Phase-Specific Fixture Usage
 
@@ -309,6 +329,34 @@ The show runs on **two parallel systems** that together form the blender composi
 - **Hero Spot:** Return to wash mode, slow sweep, cool white + blue. Remove gobo or use soft organic pattern.
 - **Thunderwash:** Off or very low UV glow only.
 - **Hazer:** Back to 30%.
+
+---
+
+## sACN Bridge — LedFX Scene Mapping
+
+Order LedFX scenes in the bridge `config.json` by phase. The DMX channel value on U5/Ch1 selects the scene by index.
+
+| DMX Value | Phase | LedFX Scene Purpose | Example Scene |
+|---|---|---|---|
+| 0 | — | OFF (deactivate current) | — |
+| 1 | P1 | Starter entry — gentle green/yellow | `p1-jungle-gentle-energy` |
+| 2 | P1 | Starter groove — rhythmic wavelength | `p1-wavelength-groove` |
+| 3 | P1 | Starter flow — organic motion | `p1-flow-mist` |
+| 4 | P2 | Buildup entry — blue/cyan ramp | `p2-blade-tension` |
+| 5 | P2 | Buildup scan — directional energy | `p2-scan-build` |
+| 6 | P2 | Buildup peak — purple reactive | `p2-power-lift` |
+| 7 | P3 | Peak impact — aggressive red/magenta | `p3-hard-reactor` |
+| 8 | P3 | Peak strobe — high contrast hits | `p3-strobe-power` |
+| 9 | P3 | Peak bullet — fast directional | `p3-bullet-tunnel` |
+| 10 | P4 | Release flow — aqua/lavender ease | `p4-energy2-flow` |
+| 11 | P4 | Release chill — gentle plasma | `p4-plasma-drift` |
+| 12 | P4 | Release exit — preparing next cycle | `p4-wavelength-soft` |
+
+**Notes:**
+- Scene names are examples — use your actual LedFX scene IDs.
+- Fetch scenes from LedFX API in the bridge TUI, then reorder to match this table.
+- In QLC+, create a Scene function per phase that sets U5/Ch1 to the appropriate value.
+- Use QLC+ Collections to fire DMX + LedFX scenes together for seamless phase transitions.
 
 ---
 

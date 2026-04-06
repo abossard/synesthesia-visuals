@@ -274,7 +274,7 @@ public enum ShaderCompiler {
             }
             
             // Step 3: Convert to Metal
-            let funcName = "fragment_" + sanitizeFunctionName(shaderName)
+            let funcName = "fragment_" + sanitize(shaderName)
             let metalPath = buildDirectory.appendingPathComponent("\(shaderName).metal")
             
             let spirvResult = try await runProcess(
@@ -587,7 +587,7 @@ public enum ShaderCompiler {
     }
     
     /// Sanitize shader name for use as Metal function name
-    private static func sanitizeFunctionName(_ name: String) -> String {
+    public static func sanitize(_ name: String) -> String {
         var result = ""
         for char in name {
             if char.isLetter || char.isNumber || char == "_" {
@@ -599,6 +599,128 @@ public enum ShaderCompiler {
         return result
     }
     
+    // MARK: - Runtime Compilation (GLSL → MSL, no Xcode needed)
+
+    /// Result of runtime GLSL → MSL compilation
+    public struct RuntimeCompilationResult: Sendable {
+        public let mslSource: String
+        public let fragmentFunctionName: String
+        public let success: Bool
+        public let errors: [String]
+        public let duration: TimeInterval
+    }
+
+    /// Compile GLSL source to Metal Shading Language at runtime.
+    /// Uses glslangValidator (GLSL → SPIR-V) and spirv-cross (SPIR-V → MSL).
+    /// Does NOT require Xcode — only Homebrew tools.
+    public static func compileToMSL(
+        source: String,
+        name: String = "runtime",
+        glslangPath: String? = nil,
+        spirvCrossPath: String? = nil
+    ) async throws -> RuntimeCompilationResult {
+        let startTime = Date()
+        let fm = FileManager.default
+
+        let glslang = glslangPath ?? findTool("glslangValidator")
+        let spirvCross = spirvCrossPath ?? findTool("spirv-cross")
+
+        // Create temp directory
+        let tempDir = fm.temporaryDirectory.appendingPathComponent("shader_runtime_\(UUID().uuidString)")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        // Step 1: Wrap GLSL
+        let wrappedSource = wrapGLSL(source: source)
+        let wrappedPath = tempDir.appendingPathComponent("wrapped.frag")
+        try wrappedSource.write(to: wrappedPath, atomically: true, encoding: .utf8)
+
+        // Step 2: GLSL → SPIR-V
+        let spvPath = tempDir.appendingPathComponent("shader.spv")
+        let glslResult = try await runProcess(
+            executable: glslang,
+            arguments: ["-V", "-S", "frag", wrappedPath.path, "-o", spvPath.path]
+        )
+
+        if glslResult.exitCode != 0 {
+            return RuntimeCompilationResult(
+                mslSource: "",
+                fragmentFunctionName: "",
+                success: false,
+                errors: parseErrors(glslResult.stderr + glslResult.stdout),
+                duration: Date().timeIntervalSince(startTime)
+            )
+        }
+
+        // Step 3: SPIR-V → MSL
+        let funcName = "fragment_" + sanitize(name)
+        let metalPath = tempDir.appendingPathComponent("shader.metal")
+        let spirvResult = try await runProcess(
+            executable: spirvCross,
+            arguments: [
+                "--msl", spvPath.path,
+                "--rename-entry-point", "main", funcName, "frag",
+                "--output", metalPath.path
+            ]
+        )
+
+        if spirvResult.exitCode != 0 {
+            return RuntimeCompilationResult(
+                mslSource: "",
+                fragmentFunctionName: "",
+                success: false,
+                errors: parseErrors(spirvResult.stderr),
+                duration: Date().timeIntervalSince(startTime)
+            )
+        }
+
+        // Step 4: Read MSL and append vertex shader
+        let fragmentMSL = try String(contentsOf: metalPath, encoding: .utf8)
+        let fullMSL = fragmentMSL + "\n" + vertexShaderMSL
+
+        return RuntimeCompilationResult(
+            mslSource: fullMSL,
+            fragmentFunctionName: funcName,
+            success: true,
+            errors: [],
+            duration: Date().timeIntervalSince(startTime)
+        )
+    }
+
+    /// Find a tool in common Homebrew paths
+    public static func findTool(_ name: String) -> String {
+        let paths = [
+            "/opt/homebrew/bin/\(name)",  // Apple Silicon
+            "/usr/local/bin/\(name)",     // Intel
+        ]
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+        return "/opt/homebrew/bin/\(name)"
+    }
+
+    /// Vertex shader MSL — appended to runtime-compiled fragment shaders
+    /// so device.makeLibrary(source:) has both vertex and fragment functions.
+    static let vertexShaderMSL = """
+
+    // Vertex shader for fullscreen quad
+    struct VertexOut {
+        float4 position [[position]];
+        float2 uv;
+    };
+
+    vertex VertexOut vertex_fullscreen(uint vertexID [[vertex_id]],
+                                       constant float4 *vertices [[buffer(0)]]) {
+        VertexOut out;
+        float4 v = vertices[vertexID];
+        out.position = float4(v.xy, 0.0, 1.0);
+        out.uv = v.zw;
+        return out;
+    }
+    """
+
     // MARK: - Process Execution
     
     private struct ProcessResult {

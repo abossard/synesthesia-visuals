@@ -86,7 +86,7 @@ public final class ShaderInstance: @unchecked Sendable {
 // MARK: - Shadertoy Renderer
 
 /// Main renderer for Shadertoy shaders with multi-pass support
-public final class ShadertoyRenderer: NSObject, MTKViewDelegate {
+public final class ShadertoyRenderer: NSObject, MTKViewDelegate, @unchecked Sendable {
 
     // MARK: - Properties
 

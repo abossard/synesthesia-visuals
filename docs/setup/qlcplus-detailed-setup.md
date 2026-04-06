@@ -62,8 +62,9 @@ Use this layout:
 | 2 | OS2L input from VirtualDJ | keeps beat data isolated from lighting values |
 | 3 | Launchpad input + feedback | controller traffic and RGB feedback stay together |
 | 4 | OSC output to Magic | dedicated control bus, no fixture confusion |
+| 5 | E1.31 sACN output to LedFX bridge | LedFX scene selection via sACN_ledfx_bridge |
 
-QLC+ ships with 4 universes by default, which is enough for this rig.
+QLC+ ships with 4 universes by default. Add a 5th for the sACN bridge.
 
 ---
 
@@ -169,6 +170,21 @@ That is what lets you make pad colors and pad states match your QLC+ widget logi
 
 The official OSC docs note that OSC output defaults to `9000 + universe index`, so Universe 4 defaults to `9003`.
 
+### 2.5 Universe 5 -> E1.31 sACN Output for LedFX Bridge
+
+1. Add a 5th universe if not already present.
+2. Rename it `U5 sACN LedFX`.
+3. Enable the **E1.31** output line.
+4. Configure:
+   - Multicast: **OFF** (unicast to localhost)
+   - IP address: `127.0.0.1`
+   - Port: `5568` (E1.31 default)
+   - E1.31 Universe: `1` (must match bridge `config.json`)
+   - Transmission Mode: Full
+   - Priority: 100 (default)
+
+This universe drives the [sACN_ledfx_bridge](https://github.com/abossard/sACN_ledfx_bridge), which converts DMX channel values to LedFX scene activations. See [sACN Bridge Setup](sacn-ledfx-bridge-setup.md) for bridge installation.
+
 ### Verification
 
 Pass if:
@@ -177,6 +193,7 @@ Pass if:
 - OS2L input is enabled on U2
 - Launchpad input and feedback are enabled on U3
 - OSC output is enabled on U4
+- E1.31 output is enabled on U5
 
 Deep verification:
 

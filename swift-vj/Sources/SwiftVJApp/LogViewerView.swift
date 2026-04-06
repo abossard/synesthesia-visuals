@@ -149,21 +149,3 @@ struct LogRow: View {
     }
 }
 
-#Preview {
-    LogViewerView()
-        .environmentObject({
-            let state = AppState()
-            state.log("Application started", level: .info)
-            state.log("Loading shaders...", level: .debug)
-            state.log("Found 45 shaders", level: .info)
-            state.log("OSC hub started on port 9999", level: .info)
-            state.log("VirtualDJ connected", level: .info)
-            state.log("Track changed: Queen - Bohemian Rhapsody", level: .info)
-            state.log("Fetching lyrics...", level: .debug)
-            state.log("Network timeout", level: .warning)
-            state.log("Retry successful", level: .info)
-            state.log("Tachikoma backend connection failed", level: .error)
-            return state
-        }())
-        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 350, maxHeight: .infinity)
-}

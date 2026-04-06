@@ -1626,11 +1626,3 @@ struct ShaderChip: View {
         .buttonStyle(.plain)
     }
 }
-
-// MARK: - Preview
-
-#Preview {
-    RenderingView()
-        .environmentObject(AppState())
-        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
-}

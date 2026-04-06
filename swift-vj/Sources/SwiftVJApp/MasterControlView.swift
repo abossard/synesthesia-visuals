@@ -542,8 +542,3 @@ struct StatCard: View {
     }
 }
 
-#Preview {
-    MasterControlView()
-        .environmentObject(AppState())
-        .frame(minWidth: 500, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
-}

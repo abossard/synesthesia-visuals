@@ -39,7 +39,7 @@ private func makeLaunchpadOscSender(
 
 private func makeLaunchpadDispatchSink(
     sendOnMain: @escaping @MainActor (AppAction) -> Void
-) -> (AppAction) -> Void {
+) -> @Sendable (AppAction) -> Void {
     { action in
         Task { @MainActor in
             sendOnMain(action)
@@ -238,6 +238,7 @@ public final class AppState: ObservableObject {
     // MARK: - Render Engine
 
     @Published var renderEngine: RenderEngine?
+    private var pipelineProvider: ShaderPipelineProvider?
 
     // MARK: - State (derived from Store)
 
@@ -1416,6 +1417,15 @@ public final class AppState: ObservableObject {
                 }
             }
 
+            // Create ShaderPipelineProvider with GLSL source dirs for runtime compilation
+            if let device = MTLCreateSystemDefaultDevice() {
+                let glslDirs = Self.resolveGLSLSourceDirs()
+                let provider = ShaderPipelineProvider(device: device, glslSourceDirs: glslDirs)
+                await MainActor.run {
+                    self.pipelineProvider = provider
+                }
+            }
+
             // Keep shader navigation/select effects operational even when renderer is disabled.
             _ = await engine.shaderRepository.reload()
             self.applyInitialRenderSelections(using: engine)
@@ -1427,10 +1437,43 @@ public final class AppState: ObservableObject {
         }
     }
 
+    /// Resolve shader source directories for runtime compilation (glsl + masks).
+    private static func resolveGLSLSourceDirs() -> [URL] {
+        let cwd = FileManager.default.currentDirectoryPath
+        let bases = [
+            "\(cwd)/Shaders",
+            "\(cwd)/swift-vj/Shaders",
+            NSString("~/Desktop/projects/synesthesia-visuals/swift-vj/Shaders").expandingTildeInPath,
+        ]
+        let subdirs = ["glsl", "masks"]
+        var result: [URL] = []
+        for base in bases {
+            for sub in subdirs {
+                let path = "\(base)/\(sub)"
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue {
+                    result.append(URL(fileURLWithPath: path))
+                }
+            }
+        }
+        return result
+    }
+
     private func setupEffectEnvironment() {
         // Wire effect environment callbacks for UDF-compliant side effects
         EffectEnvironment.shared.loadShader = { [weak self] name in
             guard let self = self else { return }
+
+            // Get provider and engine on MainActor
+            let (provider, engine) = await MainActor.run {
+                (self.pipelineProvider, self.renderEngine)
+            }
+
+            // Compile pipeline async (off main — actor-isolated provider handles thread safety)
+            if let provider, let pipeline = await provider.pipeline(for: name) {
+                engine?.setShaderPipeline(pipeline, name: name)
+            }
+
             await MainActor.run {
                 self.renderEngine?.shaderSelection.selectMain(name: name)
                 do {
@@ -1443,6 +1486,15 @@ public final class AppState: ObservableObject {
 
         EffectEnvironment.shared.loadMaskShader = { [weak self] name in
             guard let self = self else { return }
+
+            let (provider, engine) = await MainActor.run {
+                (self.pipelineProvider, self.renderEngine)
+            }
+
+            if let provider, let pipeline = await provider.pipeline(for: name) {
+                engine?.setMaskPipeline(pipeline, name: name)
+            }
+
             await MainActor.run {
                 self.renderEngine?.shaderSelection.selectMask(name: name)
             }

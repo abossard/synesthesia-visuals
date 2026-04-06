@@ -308,9 +308,3 @@ struct BridgeStatusView: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    BridgeStatusView()
-        .environmentObject(AppState())
-}

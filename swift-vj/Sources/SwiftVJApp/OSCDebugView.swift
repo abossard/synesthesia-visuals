@@ -325,8 +325,3 @@ struct StatusRow: View {
     }
 }
 
-#Preview {
-    OSCDebugView()
-        .environmentObject(AppState())
-        .frame(minWidth: 600, maxWidth: .infinity, minHeight: 400, maxHeight: .infinity)
-}

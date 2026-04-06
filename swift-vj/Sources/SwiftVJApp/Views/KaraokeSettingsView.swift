@@ -404,14 +404,3 @@ private struct PresetButton: View {
         }
     }
 }
-
-// MARK: - Preview
-
-#Preview("Karaoke Settings") {
-    KaraokeSettingsView(karaokeEngine: {
-        let engine = KaraokeEngine()
-        engine.loadTestLyrics()
-        return engine
-    }())
-    .frame(width: 500, height: 800)
-}

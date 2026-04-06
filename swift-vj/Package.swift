@@ -82,7 +82,11 @@ let package = Package(
             name: "SwiftVJ",
             dependencies: [
                 "SwiftVJCore",
+                "ShaderRepository",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
             ]),
 
         // SwiftUI macOS app

@@ -32,6 +32,7 @@ A VJ performance toolkit built around **VirtualDJ** (DJ + phrasing), **Magic Mus
 | Lyrics + song info overlay | SwiftVJApp | Magic | Syphon | — |
 | Audio levels (bass/mid/high) | Magic | QLC+5 | OSC (UDP) | configurable |
 | LedFX playlist triggers | SwiftVJApp | LedFX | HTTP REST | 8888 |
+| LedFX scene select | QLC+5 | sACN_ledfx_bridge → LedFX | sACN (E1.31) | 5568 |
 | DMX → fixtures | QLC+5 | lights/WLED | DMX/ArtNet | — |
 
 ### What Each App Does
@@ -41,8 +42,9 @@ A VJ performance toolkit built around **VirtualDJ** (DJ + phrasing), **Magic Mus
 | **VirtualDJ** | DJ + musical structure (phrasing, cue points) | — | OS2L (beat/cues), OSC (track info) |
 | **SwiftVJApp** | Central hub: lyrics, Syphon output, LedFX triggers | OS2L from VDJ, OSC from VDJ | Syphon to Magic, OSC to Magic, REST to LedFX |
 | **Magic** | Visuals + audio analysis | Syphon from SwiftVJApp, audio input | OSC to QLC+ (audio-reactive lighting) |
-| **QLC+5** | DMX lighting show control | OS2L from VDJ (beat), OSC from Magic (audio) | DMX/ArtNet to fixtures |
-| **LedFX** | LED strip effects | REST from SwiftVJApp | LED data to WLED |
+| **QLC+5** | DMX lighting show control | OS2L from VDJ (beat), OSC from Magic (audio) | DMX/ArtNet to fixtures, sACN to LedFX bridge |
+| **LedFX** | LED strip effects | REST from SwiftVJApp, REST from sACN bridge | LED data to WLED |
+| **sACN_ledfx_bridge** | QLC+ → LedFX scene bridge | sACN (E1.31) from QLC+ | REST to LedFX (scene activate/deactivate) |
 
 ## Setup Checklist
 
@@ -55,6 +57,7 @@ A VJ performance toolkit built around **VirtualDJ** (DJ + phrasing), **Magic Mus
 | **9010** | SwiftVJApp | SwiftVJApp → Settings | VDJ OSC receive port |
 | **11111** | Magic | Magic → OSC input module | Listen port for SwiftVJApp |
 | **8888** | LedFX | LedFX config | REST API port (default) |
+| **5568** | sACN_ledfx_bridge | Bridge config.json / TUI | E1.31 sACN port (default); bridge + QLC+ must match universe |
 | **OS2L target** | — | VirtualDJ → Settings → OS2L | Set to `127.0.0.1` (both 9996 for QLC+ and 9997 for SwiftVJApp) |
 
 ### Quick start checklist

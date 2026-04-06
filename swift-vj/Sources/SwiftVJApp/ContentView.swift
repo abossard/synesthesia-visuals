@@ -213,9 +213,3 @@ private struct PhaseToolbarControl: View {
     }
 }
 
-// MARK: - Preview
-
-#Preview {
-    ContentView()
-        .environmentObject(AppState())
-}

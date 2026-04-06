@@ -51,7 +51,7 @@ public actor LaunchpadModule {
     // MARK: - Action Dispatcher (Unidirectional Data Flow)
 
     /// Action dispatcher - set this to integrate with Store
-    nonisolated(unsafe) public var dispatch: ((AppAction) -> Void)?
+    nonisolated(unsafe) public var dispatch: (@Sendable (AppAction) -> Void)?
     
     private static let verboseRuntimeLogs = ProcessInfo.processInfo.environment["SWIFTVJ_VERBOSE_LAUNCHPAD"] == "1"
     
