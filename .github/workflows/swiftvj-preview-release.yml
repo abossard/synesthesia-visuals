@@ -46,6 +46,9 @@ jobs:
           mkdir -p "$APP_DIR" "$FW_DIR"
           cp .build/release/SwiftVJApp "$APP_DIR/"
 
+          # Copy all resource bundles (SwiftVJCore, SwiftVJApp, OscRestBridge, etc.)
+          find .build/release -maxdepth 1 -name "*.bundle" -exec cp -R {} "$APP_DIR/" \;
+
           # Bundle Syphon.framework (required dylib)
           cp -R Frameworks/Syphon.xcframework/macos-arm64_x86_64/Syphon.framework "$FW_DIR/"
 
@@ -55,11 +58,6 @@ jobs:
           # Copy shader sources for runtime compilation
           if [ -d "Shaders" ]; then
             cp -R Shaders "$APP_DIR/"
-          fi
-
-          # Copy metallib if it exists
-          if [ -f "Sources/SwiftVJApp/Resources/Shaders.metallib" ]; then
-            cp Sources/SwiftVJApp/Resources/Shaders.metallib "$APP_DIR/"
           fi
 
           # Create Info.plist
