@@ -1126,6 +1126,10 @@ public func launcherReducer(
         appState.ui.addLog("Launcher: stopping \(state.rigPreset.name)", level: .info)
         return LauncherEffects.terminateAll(rigTargets)
             .map { AppAction.launcher($0) }
+
+    case .showTerminal(let id):
+        return LauncherEffects.showTerminal(targetID: id)
+            .map { AppAction.launcher($0) }
     }
 }
 
@@ -2073,6 +2077,13 @@ public enum LauncherEffects {
             }
             let report = await handler.terminateAll(targets)
             await send(.terminateAllCompleted(report))
+        }
+    }
+
+    public static func showTerminal(targetID: String) -> Effect<LauncherAction> {
+        .fireAndForget {
+            guard let handler = await EffectEnvironment.shared.launcherHandler else { return }
+            await handler.showTerminal(targetID: targetID)
         }
     }
 }

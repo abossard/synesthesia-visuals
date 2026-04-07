@@ -43,6 +43,8 @@ final class LauncherReducerTests: XCTestCase {
         func terminateAll(_ targets: [LaunchTarget]) async -> LauncherTerminateReport {
             LauncherTerminateReport()
         }
+
+        func showTerminal(targetID: String) async {}
     }
 
     private func applyLauncherReducer(_ action: LauncherAction, to appState: inout AppState) -> Effect<AppAction> {

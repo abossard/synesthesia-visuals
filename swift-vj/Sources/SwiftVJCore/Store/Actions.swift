@@ -506,6 +506,9 @@ public enum LauncherAction: Sendable {
 
     /// Terminate all rig preset targets that are currently running.
     case stopRig
+
+    /// Show the interactive terminal window for a command target.
+    case showTerminal(id: String)
 }
 
 // MARK: - LedFX Actions
@@ -1026,6 +1029,7 @@ extension LauncherAction: CustomStringConvertible {
         case .setRigPreset(let preset): return "setRigPreset(\(preset.name), \(preset.targets.count) targets)"
         case .startRig: return "startRig"
         case .stopRig: return "stopRig"
+        case .showTerminal(let id): return "showTerminal(\(id))"
         }
     }
 }

@@ -58,6 +58,8 @@ let package = Package(
         .package(url: "https://github.com/nalexn/ViewInspector", from: "0.9.10"),
         // Multi-provider LLM abstraction
         .package(path: "Vendor/Tachikoma"),
+        // Terminal emulator (VT100/Xterm) for embedded terminal windows
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.0.0"),
     ],
     targets: [
         // Syphon binary framework (built from Syphon-Framework)
@@ -98,6 +100,7 @@ let package = Package(
                 "SongRepository",
                 "SyphonKit",
                 "OscRestBridge",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             resources: [
                 .copy("Resources/Shaders.metallib"),

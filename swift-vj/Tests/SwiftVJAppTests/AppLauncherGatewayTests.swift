@@ -4,10 +4,8 @@ import XCTest
 
 @MainActor
 final class AppLauncherGatewayTests: XCTestCase {
-    func testCommandLaunchWritesLogWithoutOpeningTerminal() async throws {
-        let logDirectory = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: logDirectory) }
-        let gateway = AppLauncherGateway(launcherLogDirectory: logDirectory)
+    func testCommandLaunchCreatesTerminalSession() async throws {
+        let gateway = AppLauncherGateway(terminalManager: TerminalWindowManager.shared)
         let target = LaunchTarget.commandTarget(
             id: "cmd:echo",
             displayName: "Echo",
@@ -19,16 +17,15 @@ final class AppLauncherGatewayTests: XCTestCase {
         XCTAssertTrue(result.launched)
         XCTAssertNil(result.error)
 
-        let logContents = try await waitForLogContents(in: logDirectory)
-        XCTAssertTrue(logContents.contains("hello from launcher"))
-        XCTAssertTrue(logContents.contains("Command: printf 'hello from launcher"))
-        XCTAssertTrue(logContents.contains("Kind: command"))
+        // Wait briefly for process
+        try await Task.sleep(for: .milliseconds(500))
+
+        // Clean up
+        _ = await gateway.terminateTarget(target)
     }
 
-    func testTerminateCommandTargetStopsBackgroundProcess() async throws {
-        let logDirectory = try makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: logDirectory) }
-        let gateway = AppLauncherGateway(launcherLogDirectory: logDirectory)
+    func testTerminateCommandTargetStopsTerminalProcess() async throws {
+        let gateway = AppLauncherGateway(terminalManager: TerminalWindowManager.shared)
         let target = LaunchTarget.commandTarget(
             id: "cmd:sleep",
             displayName: "Sleep",
@@ -48,33 +45,5 @@ final class AppLauncherGatewayTests: XCTestCase {
         let secondTerminate = await gateway.terminateTarget(target)
         XCTAssertFalse(secondTerminate.terminated)
         XCTAssertNil(secondTerminate.error)
-    }
-
-    private func makeTempDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SwiftVJAppLauncher-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    private func waitForLogContents(in directory: URL) async throws -> String {
-        let deadline = Date().addingTimeInterval(5)
-        repeat {
-            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            if let logURL = files.first(where: { $0.pathExtension == "log" }) {
-                let data = try Data(contentsOf: logURL)
-                let text = String(data: data, encoding: .utf8) ?? ""
-                if text.contains("hello from launcher") {
-                    return text
-                }
-            }
-            try await Task.sleep(for: .milliseconds(100))
-        } while Date() < deadline
-
-        throw NSError(
-            domain: "AppLauncherGatewayTests",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for launcher log output"]
-        )
     }
 }

@@ -5,11 +5,16 @@ import SwiftVJCore
 actor AppLauncherGateway: LauncherEffectHandling {
     private let fileManager: FileManager
     private let launcherLogDirectory: URL
-    private var runningCommandProcesses: [String: Process] = [:]
+    private let terminalManager: TerminalWindowManager
 
-    init(fileManager: FileManager = .default, launcherLogDirectory: URL? = nil) {
+    init(
+        fileManager: FileManager = .default,
+        launcherLogDirectory: URL? = nil,
+        terminalManager: TerminalWindowManager
+    ) {
         self.fileManager = fileManager
         self.launcherLogDirectory = launcherLogDirectory ?? Self.defaultLauncherLogDirectory(fileManager: fileManager)
+        self.terminalManager = terminalManager
     }
 
     func analyzeDroppedItems(_ urls: [URL]) async -> [LaunchTarget] {
@@ -51,16 +56,15 @@ actor AppLauncherGateway: LauncherEffectHandling {
                 return (false, "Missing command line for \(target.displayName).")
             }
 
-            do {
-                try launchCommandInBackground(
-                    target: target,
-                    commandLine: commandLine,
+            let launched = await MainActor.run {
+                terminalManager.createSession(
+                    targetID: target.id,
+                    displayName: target.displayName,
+                    command: commandLine,
                     workingDirectory: target.workingDirectory
                 )
-                return (true, nil)
-            } catch {
-                return (false, "Failed to launch command \(target.displayName): \(error.localizedDescription)")
             }
+            return (launched, launched ? nil : "Terminal session already exists for \(target.displayName).")
         }
     }
 
@@ -117,17 +121,13 @@ actor AppLauncherGateway: LauncherEffectHandling {
             return (terminated, terminated ? nil : "Failed to terminate \(target.displayName).")
 
         case .command:
-            guard let process = runningCommandProcesses[target.id] else {
+            let isRunning = await MainActor.run { terminalManager.isRunning(targetID: target.id) }
+            guard isRunning else {
                 return (false, nil)
             }
 
-            if process.isRunning {
-                process.terminate()
-                return (true, nil)
-            }
-
-            runningCommandProcesses[target.id] = nil
-            return (false, nil)
+            await MainActor.run { terminalManager.terminate(targetID: target.id) }
+            return (true, nil)
         }
     }
 
@@ -170,6 +170,12 @@ actor AppLauncherGateway: LauncherEffectHandling {
             }
         }
         return running
+    }
+
+    // MARK: - Terminal
+
+    func showTerminal(targetID: String) async {
+        await MainActor.run { terminalManager.showTerminal(targetID: targetID) }
     }
 
     // MARK: - Private
@@ -216,13 +222,7 @@ actor AppLauncherGateway: LauncherEffectHandling {
         case .app:
             return await isAppRunning(bundleIdentifier: target.appBundleIdentifier, appPath: target.appPath)
         case .command:
-            if let process = runningCommandProcesses[target.id] {
-                if process.isRunning {
-                    return true
-                }
-                runningCommandProcesses[target.id] = nil
-            }
-            return false
+            return await MainActor.run { terminalManager.isRunning(targetID: target.id) }
         }
     }
 
@@ -262,130 +262,6 @@ actor AppLauncherGateway: LauncherEffectHandling {
                 }
             }
         }
-    }
-
-    private func launchCommandInBackground(
-        target: LaunchTarget,
-        commandLine: String,
-        workingDirectory: String?
-    ) throws {
-        let resolvedWorkingDirectory = try resolvedWorkingDirectoryURL(workingDirectory)
-        let logFileURL = try makeLogFileURL(for: target)
-        try createLogDirectoryIfNeeded()
-        let logHandle = try createLogFileHandle(at: logFileURL)
-        defer { try? logHandle.close() }
-        try writeLogHeader(
-            to: logHandle,
-            target: target,
-            commandLine: commandLine,
-            workingDirectory: resolvedWorkingDirectory?.path
-        )
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", commandLine]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = logHandle
-        process.standardError = logHandle
-        if let workingDirectoryURL = resolvedWorkingDirectory {
-            process.currentDirectoryURL = workingDirectoryURL
-        }
-
-        process.terminationHandler = { [weak self] _ in
-            Task { await self?.commandProcessDidTerminate(targetID: target.id) }
-        }
-
-        runningCommandProcesses[target.id] = process
-        do {
-            try process.run()
-        } catch {
-            runningCommandProcesses[target.id] = nil
-            throw error
-        }
-    }
-
-    private func commandProcessDidTerminate(targetID: String) {
-        runningCommandProcesses[targetID] = nil
-    }
-
-    private func createLogDirectoryIfNeeded() throws {
-        try fileManager.createDirectory(
-            at: launcherLogDirectory,
-            withIntermediateDirectories: true
-        )
-    }
-
-    private func createLogFileHandle(at url: URL) throws -> FileHandle {
-        if !fileManager.fileExists(atPath: url.path) {
-            fileManager.createFile(atPath: url.path, contents: nil)
-        }
-        return try FileHandle(forWritingTo: url)
-    }
-
-    private func writeLogHeader(
-        to handle: FileHandle,
-        target: LaunchTarget,
-        commandLine: String,
-        workingDirectory: String?
-    ) throws {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let workingDirectoryValue = (workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-            ? workingDirectory!.trimmingCharacters(in: .whitespacesAndNewlines)
-            : "-"
-        let lines = [
-            "=== SwiftVJ launcher log ===",
-            "Target: \(target.displayName) (\(target.id))",
-            "Kind: \(target.kind.rawValue)",
-            "Started: \(formatter.string(from: Date()))",
-            "Working directory: \(workingDirectoryValue)",
-            "Command: \(commandLine)",
-            "---"
-        ]
-        let payload = lines.joined(separator: "\n") + "\n"
-        if let data = payload.data(using: .utf8) {
-            try handle.write(contentsOf: data)
-        }
-    }
-
-    private func makeLogFileURL(for target: LaunchTarget) throws -> URL {
-        let timestamp = Self.launchLogTimestampString(from: Date())
-        let name = sanitizeLogComponent(target.displayName.isEmpty ? target.id : target.displayName)
-        let id = sanitizeLogComponent(target.id)
-        return launcherLogDirectory.appendingPathComponent("\(name)-\(id)-\(timestamp).log")
-    }
-
-    private func resolvedWorkingDirectoryURL(_ workingDirectory: String?) throws -> URL? {
-        guard let workingDirectory else { return nil }
-        let trimmed = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let expanded = (trimmed as NSString).expandingTildeInPath
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw NSError(
-                domain: "AppLauncherGateway",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Working directory does not exist: \(trimmed)"]
-            )
-        }
-        return URL(fileURLWithPath: expanded, isDirectory: true)
-    }
-
-    private func sanitizeLogComponent(_ value: String) -> String {
-        let sanitized = value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-        return sanitized.isEmpty ? "target" : sanitized
-    }
-
-    private static func launchLogTimestampString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        return formatter.string(from: date)
     }
 
     private static func defaultLauncherLogDirectory(fileManager: FileManager) -> URL {
