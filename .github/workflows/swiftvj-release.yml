@@ -58,9 +58,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: swift-vj/.build
-          key: spm-${{ runner.os }}-${{ hashFiles('swift-vj/Package.resolved') }}
+          key: spm-v2-${{ runner.os }}-${{ hashFiles('swift-vj/Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
+            spm-v2-${{ runner.os }}-
 
       - name: Resolve dependencies
         working-directory: swift-vj
@@ -68,7 +68,7 @@ jobs:
 
       - name: Build release
         working-directory: swift-vj
-        run: swift build -c release --target SwiftVJApp
+        run: swift build -c release --product SwiftVJApp
 
       - name: Create app bundle
         working-directory: swift-vj
