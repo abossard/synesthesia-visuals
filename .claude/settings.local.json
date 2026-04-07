@@ -45,7 +45,12 @@
       "Bash(do echo \"=== Extracting $f ===\")",
       "Bash(for f in app.synesthesia.live_response_body{2,3,4,5,6,7,8,9,10,11,12})",
       "Bash(while read f)",
-      "Bash(swift build:*)"
+      "Bash(swift build:*)",
+      "Bash(./bundle-app.sh --version 1.0.0-test)",
+      "Bash(./create-dmg.sh --app-path \"Swift VJ.app\" --output \"SwiftVJ-test.dmg\")",
+      "Bash(hdiutil attach:*)",
+      "Read(//Volumes/**)",
+      "Bash(hdiutil detach:*)"
     ],
     "deny": [],
     "ask": []

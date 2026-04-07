@@ -2,9 +2,13 @@
 # Build targets for shader compilation and app
 
 .PHONY: all build run clean compile-shaders compile-flat-shaders shaders help \
+       release bundle bundle-release dmg \
        profile-build profile-hud profile-metal profile-cpu profile-alloc \
        profile-leaks profile-vmmap profile-gpu-power profile-session \
        analyze-session profiling-dir
+
+# Version (override with: make dmg VERSION=1.2.0)
+VERSION ?= dev
 
 # Directories
 BUILD_DIR := Build
@@ -23,6 +27,10 @@ help:
 	@echo "  run                  - Run the app"
 	@echo "  shaders              - Compile GLSL shaders using ShaderRepository module (recommended)"
 	@echo "  compile-flat-shaders - Legacy: Compile using shell script"
+	@echo "  release              - Release build"
+	@echo "  bundle               - Create .app bundle (debug)"
+	@echo "  bundle-release       - Create .app bundle (release)"
+	@echo "  dmg                  - Create distributable DMG (make dmg VERSION=1.0.0)"
 	@echo "  clean                - Clean build artifacts"
 	@echo ""
 	@echo "Profiling (results saved to profiling/):"
@@ -44,6 +52,9 @@ all: build shaders
 
 build:
 	$(SWIFT) build
+
+release:
+	$(SWIFT) build -c release --target SwiftVJApp
 
 run: build
 	$(SWIFT) run SwiftVJApp
@@ -91,6 +102,15 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)/air
 	mkdir -p $(BUILD_DIR)/Shaders
+
+bundle:
+	./bundle-app.sh
+
+bundle-release:
+	./bundle-app.sh --release --version "$(VERSION)"
+
+dmg: bundle-release
+	./create-dmg.sh --app-path "Swift VJ.app" --output "SwiftVJ-$(VERSION).dmg"
 
 clean:
 	rm -rf $(BUILD_DIR)

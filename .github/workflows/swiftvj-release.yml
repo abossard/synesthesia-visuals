@@ -1,0 +1,124 @@
+name: SwiftVJ Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'swift-vj/**'
+      - '.github/workflows/swiftvj-release.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'swift-vj/**'
+      - '.github/workflows/swiftvj-release.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.0.0)'
+        required: false
+        default: '0.0.0-dev'
+
+jobs:
+  build-and-release:
+    name: Build and Release SwiftVJ
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          # Find the latest Xcode 16.x for Swift 6.0+ support
+          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "No Xcode 16.x found, using default"
+            xcodebuild -version
+          else
+            sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+            echo "Selected: $XCODE_PATH"
+          fi
+          swift --version
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            # Strip 'v' prefix from tag
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # Branch push or PR: use short SHA
+            VERSION="0.0.0-${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Cache SPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: swift-vj/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('swift-vj/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Resolve dependencies
+        working-directory: swift-vj
+        run: swift package resolve
+
+      - name: Build release
+        working-directory: swift-vj
+        run: swift build -c release --target SwiftVJApp
+
+      - name: Create app bundle
+        working-directory: swift-vj
+        run: ./bundle-app.sh --release --version "${{ steps.version.outputs.version }}"
+
+      - name: Create DMG
+        working-directory: swift-vj
+        run: ./create-dmg.sh --app-path "Swift VJ.app" --output "SwiftVJ-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Verify build
+        working-directory: swift-vj
+        run: |
+          echo "=== App bundle ==="
+          ls -la "Swift VJ.app/Contents/MacOS/"
+          file "Swift VJ.app/Contents/MacOS/SwiftVJApp"
+
+          echo ""
+          echo "=== Code signature ==="
+          codesign -vv "Swift VJ.app" 2>&1 || true
+
+          echo ""
+          echo "=== DMG ==="
+          ls -lh "SwiftVJ-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftVJ-${{ steps.version.outputs.version }}
+          path: swift-vj/SwiftVJ-${{ steps.version.outputs.version }}.dmg
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: swift-vj/SwiftVJ-${{ steps.version.outputs.version }}.dmg
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+      - name: Build summary
+        run: |
+          echo "### SwiftVJ Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Configuration**: Release" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architecture**: arm64" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: SwiftVJ-${{ steps.version.outputs.version }}.dmg" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "- **Release**: Created from tag ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          fi
