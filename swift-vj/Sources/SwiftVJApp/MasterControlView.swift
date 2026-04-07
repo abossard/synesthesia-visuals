@@ -10,6 +10,7 @@ struct MasterControlView: View {
     @State private var workingDirectoryDraft: String = ""
     @State private var launcherSectionWidth: CGFloat = 0
     @State private var showRigConfig: Bool = false
+    @State private var showFolderPicker: Bool = false
     
     var body: some View {
         ScrollView {
@@ -129,22 +130,26 @@ struct MasterControlView: View {
                                     .frame(width: 10, height: 10)
                                 Text(appState.isRunning ? "Connected" : "Disconnected")
                             }
-                            HStack {
-                                Circle()
-                                    .fill(appState.ledfxIsRunning ? .green : .red)
-                                    .frame(width: 10, height: 10)
-                                if appState.ledfxIsRunning {
-                                    Text("LedFX Online \(appState.ledfxHealthSummary)")
-                                } else {
-                                    Text("LedFX Offline")
+                            if appState.featureFlags.ledfxEnabled {
+                                HStack {
+                                    Circle()
+                                        .fill(appState.ledfxIsRunning ? .green : .red)
+                                        .frame(width: 10, height: 10)
+                                    if appState.ledfxIsRunning {
+                                        Text("LedFX Online \(appState.ledfxHealthSummary)")
+                                    } else {
+                                        Text("LedFX Offline")
+                                    }
                                 }
                             }
                             Text("Source: \(appState.playbackSource.uppercased())")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("LedFX: \(appState.ledfxBaseURL)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                            if appState.featureFlags.ledfxEnabled {
+                                Text("LedFX: \(appState.ledfxBaseURL)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                     .padding()
@@ -375,13 +380,23 @@ struct MasterControlView: View {
                                                 .buttonStyle(.borderedProminent)
                                                 .disabled(appState.launcherIsLaunchingAll)
 
-                                                if target.kind == .app {
-                                                    Button("Stop") {
-                                                        appState.send(.launcher(.terminateTargetRequested(id: target.id)))
+                                                if target.kind == .command {
+                                                    Button {
+                                                        appState.send(.launcher(.showTerminal(id: target.id)))
+                                                    } label: {
+                                                        Image(systemName: "terminal.fill")
                                                     }
                                                     .buttonStyle(.bordered)
-                                                    .disabled(!isRunning || appState.launcherIsLaunchingAll)
+                                                    .tint(isRunning ? .green : .secondary)
+                                                    .disabled(!isRunning)
+                                                    .help("Show terminal output")
                                                 }
+
+                                                Button("Stop") {
+                                                    appState.send(.launcher(.terminateTargetRequested(id: target.id)))
+                                                }
+                                                .buttonStyle(.bordered)
+                                                .disabled(!isRunning || appState.launcherIsLaunchingAll)
 
                                                 Button(role: .destructive) {
                                                     appState.send(.launcher(.removeTarget(id: target.id)))
@@ -424,8 +439,40 @@ struct MasterControlView: View {
                                     TextField("Command line (example: uv run ledfx)", text: $commandLineDraft)
                                         .textFieldStyle(.roundedBorder)
 
-                                    TextField("Working directory (optional, example: ~/Desktop/projects/ledfx)", text: $workingDirectoryDraft)
-                                        .textFieldStyle(.roundedBorder)
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "folder")
+                                            .foregroundStyle(.secondary)
+                                        Text(workingDirectoryDraft.isEmpty ? "No working directory selected" : workingDirectoryDraft)
+                                            .font(.caption)
+                                            .foregroundStyle(workingDirectoryDraft.isEmpty ? .tertiary : .primary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Spacer()
+                                        Button("Browse…") {
+                                            showFolderPicker = true
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                        if !workingDirectoryDraft.isEmpty {
+                                            Button {
+                                                workingDirectoryDraft = ""
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                    .fileImporter(
+                                        isPresented: $showFolderPicker,
+                                        allowedContentTypes: [.folder],
+                                        allowsMultipleSelection: false
+                                    ) { result in
+                                        if case .success(let urls) = result, let url = urls.first {
+                                            workingDirectoryDraft = url.path
+                                        }
+                                    }
 
                                     Button("Add Command Target") {
                                         let cwd = workingDirectoryDraft.trimmingCharacters(in: .whitespacesAndNewlines)

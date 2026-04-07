@@ -111,19 +111,22 @@ public struct FeatureFlags: Equatable, Sendable {
     public var shadersEnabled: Bool
     public var launchpadEnabled: Bool
     public var songsEnabled: Bool
+    public var ledfxEnabled: Bool
 
     public init(
         renderingEnabled: Bool = true,
         performanceEnabled: Bool = true,
         shadersEnabled: Bool = true,
-        launchpadEnabled: Bool = true,
-        songsEnabled: Bool = true
+        launchpadEnabled: Bool = false,
+        songsEnabled: Bool = true,
+        ledfxEnabled: Bool = false
     ) {
         self.renderingEnabled = renderingEnabled
         self.performanceEnabled = performanceEnabled
         self.shadersEnabled = shadersEnabled
         self.launchpadEnabled = launchpadEnabled
         self.songsEnabled = songsEnabled
+        self.ledfxEnabled = ledfxEnabled
     }
 
     public enum Keys {
@@ -132,16 +135,18 @@ public struct FeatureFlags: Equatable, Sendable {
         public static let shaders = "featureFlag_shaders"
         public static let launchpad = "featureFlag_launchpad"
         public static let songs = "featureFlag_songs"
+        public static let ledfx = "featureFlag_ledfx"
     }
 
-    /// Load from UserDefaults (defaults to all enabled).
+    /// Load from UserDefaults (disabled features default to false).
     public static func load(from defaults: UserDefaults = .standard) -> FeatureFlags {
         FeatureFlags(
             renderingEnabled: defaults.object(forKey: Keys.rendering) as? Bool ?? true,
             performanceEnabled: defaults.object(forKey: Keys.performance) as? Bool ?? true,
             shadersEnabled: defaults.object(forKey: Keys.shaders) as? Bool ?? true,
-            launchpadEnabled: defaults.object(forKey: Keys.launchpad) as? Bool ?? true,
-            songsEnabled: defaults.object(forKey: Keys.songs) as? Bool ?? true
+            launchpadEnabled: defaults.object(forKey: Keys.launchpad) as? Bool ?? false,
+            songsEnabled: defaults.object(forKey: Keys.songs) as? Bool ?? true,
+            ledfxEnabled: defaults.object(forKey: Keys.ledfx) as? Bool ?? false
         )
     }
 
@@ -152,6 +157,7 @@ public struct FeatureFlags: Equatable, Sendable {
         defaults.set(shadersEnabled, forKey: Keys.shaders)
         defaults.set(launchpadEnabled, forKey: Keys.launchpad)
         defaults.set(songsEnabled, forKey: Keys.songs)
+        defaults.set(ledfxEnabled, forKey: Keys.ledfx)
     }
 }
 

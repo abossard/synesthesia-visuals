@@ -30,8 +30,9 @@ struct SettingsView: View {
     @State private var renderingEnabled = true
     @State private var performanceEnabled = true
     @State private var shadersEnabled = true
-    @State private var launchpadEnabled = true
+    @State private var launchpadEnabled = false
     @State private var songsEnabled = true
+    @State private var ledfxEnabled = false
     
     // Default paths cached to avoid repeated file system checks
     private struct DefaultPaths {
@@ -96,6 +97,7 @@ struct SettingsView: View {
                             Toggle("Shaders", isOn: $shadersEnabled)
                             Toggle("Launchpad", isOn: $launchpadEnabled)
                             Toggle("Songs", isOn: $songsEnabled)
+                            Toggle("LedFX", isOn: $ledfxEnabled)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -125,16 +127,18 @@ struct SettingsView: View {
                         .padding(12)
                     }
                     
-                    GroupBox("LedFX") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField("Base URL", text: $ledfxBaseURL)
-                                .textFieldStyle(.roundedBorder)
-                            Text("Default: http://127.0.0.1:8888")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                    if ledfxEnabled {
+                        GroupBox("LedFX") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField("Base URL", text: $ledfxBaseURL)
+                                    .textFieldStyle(.roundedBorder)
+                                Text("Default: http://127.0.0.1:8888")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
                     }
                     
                     GroupBox("Shader Directories") {
@@ -431,6 +435,7 @@ struct SettingsView: View {
         shadersEnabled = flags.shadersEnabled
         launchpadEnabled = flags.launchpadEnabled
         songsEnabled = flags.songsEnabled
+        ledfxEnabled = flags.ledfxEnabled
 
         oscVDJPort = loadPortString(
             defaults,
@@ -494,14 +499,17 @@ struct SettingsView: View {
         defaults.set(Int(vdjReceiveValue), forKey: OSCHub.PortKeys.vdjReceivePort)
 
         appState.send(.ui(.reloadTachikomaConfig))
-        appState.send(.ledfx(.setBaseURL(ledfxBaseURL)))
+        if ledfxEnabled {
+            appState.send(.ledfx(.setBaseURL(ledfxBaseURL)))
+        }
 
         let flags = FeatureFlags(
             renderingEnabled: renderingEnabled,
             performanceEnabled: performanceEnabled,
             shadersEnabled: shadersEnabled,
             launchpadEnabled: launchpadEnabled,
-            songsEnabled: songsEnabled
+            songsEnabled: songsEnabled,
+            ledfxEnabled: ledfxEnabled
         )
         appState.updateFeatureFlags(flags)
 

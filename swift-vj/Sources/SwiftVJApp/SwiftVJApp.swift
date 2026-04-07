@@ -405,7 +405,9 @@ public final class AppState: ObservableObject {
         setupStoreObservation()
         if !testMode {
             store.send(.loadPersistedState)
-            ledfxFeature.seedDefaultsInStore()
+            if featureFlags.ledfxEnabled {
+                ledfxFeature.seedDefaultsInStore()
+            }
         }
     }
 
@@ -462,8 +464,10 @@ public final class AppState: ObservableObject {
         try? await Task.sleep(for: .milliseconds(1000))
         await playbackModule?.poll()
 
-        // Always-on LedFX integration (OSC → REST bridge)
-        ledfxFeature.startIntegrationFromDefaults()
+        // LedFX integration (OSC → REST bridge) — only when enabled
+        if featureFlags.ledfxEnabled {
+            ledfxFeature.startIntegrationFromDefaults()
+        }
 
         // Process initial track if available
         if let track = await playbackModule?.currentTrack {
@@ -493,6 +497,7 @@ public final class AppState: ObservableObject {
         await playbackModule?.stop()
         await pipelineModule?.stop()
         await songsModule?.stop()
+        TerminalWindowManager.shared.terminateAll()
         store.send(.shutdown)
     }
 
@@ -1305,7 +1310,7 @@ public final class AppState: ObservableObject {
         }
         imagesModule = ImagesModule(scraper: imageScraper)
 
-        launcherGateway = AppLauncherGateway()
+        launcherGateway = AppLauncherGateway(terminalManager: TerminalWindowManager.shared)
 
         if featureFlags.launchpadEnabled {
             let launchpadOscSender = makeLaunchpadOscSender(
@@ -1583,12 +1588,16 @@ public final class AppState: ObservableObject {
             }
         }
 
-        EffectEnvironment.shared.ledfxActionHandler = { [weak self] action in
-            guard let self else { return }
-            await self.ledfxFeature.handle(action)
+        if featureFlags.ledfxEnabled {
+            EffectEnvironment.shared.ledfxActionHandler = { [weak self] action in
+                guard let self else { return }
+                await self.ledfxFeature.handle(action)
+            }
         }
 
-        EffectEnvironment.shared.launchpadHandler = launchpadGateway
+        if featureFlags.launchpadEnabled {
+            EffectEnvironment.shared.launchpadHandler = launchpadGateway
+        }
         EffectEnvironment.shared.launcherHandler = launcherGateway
 
         // Preview playback
@@ -1671,7 +1680,9 @@ public final class AppState: ObservableObject {
                 }
             }
             
-            ledfxFeature.registerOscSubscriptions()
+            if featureFlags.ledfxEnabled {
+                ledfxFeature.registerOscSubscriptions()
+            }
         } catch {
             log("Failed to start OSC hub: \(error)", level: .error)
         }

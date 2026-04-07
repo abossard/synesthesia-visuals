@@ -48,6 +48,7 @@ struct ContentView: View {
             case .shaders: return appState.featureFlags.shadersEnabled
             case .songs: return appState.featureFlags.songsEnabled
             case .launchpad: return appState.featureFlags.launchpadEnabled
+            case .ledfx: return appState.featureFlags.ledfxEnabled
             default: return true
             }
         }
