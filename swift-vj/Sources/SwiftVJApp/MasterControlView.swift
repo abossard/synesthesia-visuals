@@ -123,34 +123,7 @@ struct MasterControlView: View {
                         Spacer()
                         
                         // Status indicator
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HStack {
-                                Circle()
-                                    .fill(appState.isRunning ? .green : .red)
-                                    .frame(width: 10, height: 10)
-                                Text(appState.isRunning ? "Connected" : "Disconnected")
-                            }
-                            if appState.featureFlags.ledfxEnabled {
-                                HStack {
-                                    Circle()
-                                        .fill(appState.ledfxIsRunning ? .green : .red)
-                                        .frame(width: 10, height: 10)
-                                    if appState.ledfxIsRunning {
-                                        Text("LedFX Online \(appState.ledfxHealthSummary)")
-                                    } else {
-                                        Text("LedFX Offline")
-                                    }
-                                }
-                            }
-                            Text("Source: \(appState.playbackSource.uppercased())")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            if appState.featureFlags.ledfxEnabled {
-                                Text("LedFX: \(appState.ledfxBaseURL)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                        statusIndicatorSection
                     }
                     .padding()
                 }
@@ -560,6 +533,38 @@ struct MasterControlView: View {
         case .refrain: return "Refrain"
         case .songInfo: return "Song Info"
         case .image: return "Image"
+        }
+    }
+
+    @ViewBuilder
+    private var statusIndicatorSection: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack {
+                Circle()
+                    .fill(appState.isRunning ? .green : .red)
+                    .frame(width: 10, height: 10)
+                Text(appState.isRunning ? "Connected" : "Disconnected")
+            }
+            if appState.featureFlags.ledfxEnabled {
+                HStack {
+                    Circle()
+                        .fill(appState.ledfxIsRunning ? .green : .red)
+                        .frame(width: 10, height: 10)
+                    if appState.ledfxIsRunning {
+                        Text("LedFX Online \(appState.ledfxHealthSummary)")
+                    } else {
+                        Text("LedFX Offline")
+                    }
+                }
+            }
+            Text("Source: \(appState.playbackSource.uppercased())")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            if appState.featureFlags.ledfxEnabled {
+                Text("LedFX: \(appState.ledfxBaseURL)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 }
