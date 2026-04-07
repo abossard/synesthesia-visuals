@@ -50,8 +50,11 @@ else
 fi
 
 # Find the built executable (handles both .build/release/ and .build/<triple>/release/ paths)
-EXEC=$(find "$SCRIPT_DIR/.build" -path "*/$CONFIG/SwiftVJApp" -not -path "*.dSYM*" -type f 2>/dev/null | head -1)
+EXEC=$(find "$SCRIPT_DIR/.build" -path "*/$CONFIG/SwiftVJApp" -not -path "*.dSYM*" -not -path "*/index-build/*" -type f 2>/dev/null | head -1)
 if [ -z "$EXEC" ]; then
+    echo "Debug: SCRIPT_DIR=$SCRIPT_DIR, CONFIG=$CONFIG"
+    echo "Debug: Contents of .build directories matching *$CONFIG*:"
+    find "$SCRIPT_DIR/.build" -name "SwiftVJApp" -type f 2>/dev/null || true
     echo "Error: Could not find SwiftVJApp executable in .build/*/$CONFIG/"
     exit 1
 fi
