@@ -36,7 +36,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR/.build/$CONFIG"
 APP_NAME="Swift VJ"
 BUNDLE_DIR="$SCRIPT_DIR/$APP_NAME.app"
 CONTENTS_DIR="$BUNDLE_DIR/Contents"
@@ -49,6 +48,15 @@ if [ "$CONFIG" = "release" ]; then
 else
     swift build --target SwiftVJApp
 fi
+
+# Find the built executable (handles both .build/release/ and .build/<triple>/release/ paths)
+EXEC=$(find "$SCRIPT_DIR/.build" -path "*/$CONFIG/SwiftVJApp" -not -path "*.dSYM*" -type f 2>/dev/null | head -1)
+if [ -z "$EXEC" ]; then
+    echo "Error: Could not find SwiftVJApp executable in .build/*/$CONFIG/"
+    exit 1
+fi
+BUILD_DIR="$(dirname "$EXEC")"
+echo "Found executable: $EXEC"
 
 echo "Creating app bundle: $APP_NAME.app"
 
