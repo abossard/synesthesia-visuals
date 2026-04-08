@@ -18,6 +18,10 @@ let package = Package(
         .executable(
             name: "SwiftVJApp",
             targets: ["SwiftVJApp"]),
+        // RealityKit VJ Kitchen Sink app
+        .executable(
+            name: "RealityKitVJKitchenSink",
+            targets: ["RealityKitVJKitchenSink"]),
         // Shader compilation CLI
         .executable(
             name: "shader-compile",
@@ -107,6 +111,26 @@ let package = Package(
                 .process("Resources/SharedVertex.metal"),
                 .process("Resources/Assets.xcassets"),
             ]),
+
+        // RealityKit VJ Kitchen Sink - demonstrates RealityKit rendering with Syphon output
+        .executableTarget(
+            name: "RealityKitVJKitchenSink",
+            dependencies: [
+                "SyphonKit",
+            ],
+            exclude: [
+                "README.md",
+                "Resources/Textures/.gitkeep",
+                "Resources/Shaders/.gitkeep",
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("RealityKit"),
+                .linkedFramework("ModelIO"),
+                .linkedFramework("Accelerate"),
+            ]
+        ),
 
         // Core library containing all business logic
         .target(
